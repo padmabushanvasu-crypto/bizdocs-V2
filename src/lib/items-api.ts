@@ -1,0 +1,118 @@
+import { supabase } from "@/integrations/supabase/client";
+import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
+
+export interface Item {
+  id: string;
+  item_code: string;
+  description: string;
+  drawing_number: string | null;
+  item_type: string;
+  unit: string;
+  hsn_sac_code: string | null;
+  sale_price: number;
+  purchase_price: number;
+  gst_rate: number;
+  min_stock: number;
+  current_stock: number;
+  notes: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  standard_cost: number;
+  min_stock_override: number | null;
+  parent_item_id: string | null;
+}
+
+export interface StockStatusRow {
+  id: string;
+  item_code: string;
+  description: string;
+  unit: string;
+  item_type: string;
+  current_stock: number;
+  min_stock: number;
+  min_stock_override: number | null;
+  standard_cost: number;
+  parent_item_id: string | null;
+  effective_min_stock: number;
+  stock_status: "green" | "amber" | "red";
+  company_id: string;
+}
+
+export interface ItemFilters {
+  search?: string;
+  type?: string;
+  status?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export async function fetchItems(filters: ItemFilters = {}) {
+  const { search, type = "all", status = "active", page = 1, pageSize = 50 } = filters;
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let query = supabase
+    .from("items")
+    .select("*", { count: "exact" })
+    .order("item_code", { ascending: true })
+    .range(from, to);
+
+  if (status !== "all") query = query.eq("status", status);
+  if (type && type !== "all") query = query.eq("item_type", type);
+
+  if (search?.trim()) {
+    const sanitized = sanitizeSearchTerm(search);
+    if (sanitized) {
+      const term = `%${sanitized}%`;
+      query = query.or(`item_code.ilike.${term},description.ilike.${term},drawing_number.ilike.${term},hsn_sac_code.ilike.${term}`);
+    }
+  }
+
+  const { data, error, count } = await query;
+  if (error) throw error;
+  return { data: (data ?? []) as Item[], count: count ?? 0 };
+}
+
+export async function fetchItem(id: string) {
+  const { data, error } = await supabase.from("items").select("*").eq("id", id).single();
+  if (error) throw error;
+  return data as Item;
+}
+
+export async function createItem(item: Partial<Item>) {
+  const companyId = await getCompanyId();
+  const { data, error } = await supabase.from("items").insert({ ...item, company_id: companyId } as any).select().single();
+  if (error) throw error;
+  return data as Item;
+}
+
+export async function updateItem(id: string, item: Partial<Item>) {
+  const { data, error } = await supabase.from("items").update(item as any).eq("id", id).select().single();
+  if (error) throw error;
+  return data as Item;
+}
+
+export async function deleteItem(id: string) {
+  return updateItem(id, { status: "inactive" } as any);
+}
+
+export async function fetchStockStatus() {
+  const { data, error } = await supabase
+    .from("stock_status" as any)
+    .select("*")
+    .order("item_code", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as StockStatusRow[];
+}
+
+export async function updateMinStockOverride(id: string, value: number | null) {
+  const { data, error } = await supabase
+    .from("items")
+    .update({ min_stock_override: value } as any)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as Item;
+}

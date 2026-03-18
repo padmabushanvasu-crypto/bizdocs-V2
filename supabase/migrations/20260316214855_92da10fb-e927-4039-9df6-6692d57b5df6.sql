@@ -1,0 +1,1 @@
+ALTER TABLE public.document_settings ADD COLUMN IF NOT EXISTS template_config jsonb DEFAULT '{}'::jsonb;
