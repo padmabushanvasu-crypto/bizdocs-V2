@@ -20,6 +20,7 @@ import {
   Hash,
   ClipboardCheck,
   Shield,
+  ShoppingBag,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -56,6 +57,8 @@ const purchasingNav = [
 ];
 
 const dispatchBillingNav = [
+  { title: "Sales Orders", url: "/sales-orders", icon: ShoppingBag },
+  { title: "Dispatch Notes", url: "/dispatch-notes", icon: Truck },
   { title: "Delivery Challans", url: "/delivery-challans", icon: Truck },
   { title: "Invoices", url: "/invoices", icon: FileText },
   { title: "Receipts", url: "/receipts", icon: Receipt },

@@ -2,13 +2,14 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import {
   IndianRupee, FileText, Truck, ShoppingCart, AlertTriangle,
-  Receipt, Activity, Factory, Package, Clock, Layers, ClipboardCheck,
+  Receipt, Activity, Factory, Package, Clock, Layers, ClipboardCheck, ShoppingBag,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/gst-utils";
 import { fetchWipSummary, fetchWipRegister } from "@/lib/job-cards-api";
 import { fetchStockStatus } from "@/lib/items-api";
 import { fetchAssemblyOrderStats } from "@/lib/assembly-orders-api";
 import { fetchFatStats } from "@/lib/fat-api";
+import { fetchRecentSalesOrders } from "@/lib/sales-orders-api";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { format, startOfMonth } from "date-fns";
@@ -209,6 +210,12 @@ export default function Dashboard() {
   const { data: fatStats } = useQuery({
     queryKey: ["fat-stats-dashboard"],
     queryFn: fetchFatStats,
+    refetchInterval: 60000,
+  });
+
+  const { data: recentSOs = [] } = useQuery({
+    queryKey: ["recent-sales-orders-dashboard"],
+    queryFn: () => fetchRecentSalesOrders(4),
     refetchInterval: 60000,
   });
 
@@ -582,6 +589,60 @@ export default function Dashboard() {
                       </p>
                     </div>
                     <StatusPill status={po.status} />
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Card SO: Sales Orders */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-emerald-200">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <ShoppingBag className="h-4 w-4 text-slate-400" />
+                <h3 className="font-semibold text-slate-900 text-sm">Sales Orders</h3>
+                {recentSOs.length > 0 && (
+                  <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold px-2 py-0.5 rounded-full">
+                    {recentSOs.length}
+                  </span>
+                )}
+              </div>
+              <button
+                className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors"
+                onClick={() => navigate("/sales-orders")}
+              >
+                View all →
+              </button>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {recentSOs.length === 0 ? (
+                <div className="px-5 py-6 text-center text-sm text-slate-400">
+                  No confirmed sales orders
+                </div>
+              ) : (
+                recentSOs.map((so: any) => (
+                  <div
+                    key={so.id}
+                    className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 cursor-pointer transition-colors"
+                    onClick={() => navigate(`/sales-orders/${so.id}`)}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono text-blue-600 font-medium text-sm">{so.so_number}</span>
+                        <span className="text-slate-500 text-sm truncate">{so.customer_name ?? "—"}</span>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {so.so_date ? format(new Date(so.so_date), "dd MMM yyyy") : ""}
+                        {so.grand_total ? ` · ${formatCurrency(so.grand_total)}` : ""}
+                      </p>
+                    </div>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${
+                      so.status === "in_production"
+                        ? "bg-amber-50 text-amber-700 border-amber-200"
+                        : "bg-blue-50 text-blue-700 border-blue-200"
+                    }`}>
+                      {so.status === "in_production" ? "In Production" : "Confirmed"}
+                    </span>
                   </div>
                 ))
               )}

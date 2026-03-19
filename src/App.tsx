@@ -50,6 +50,12 @@ import SerialNumbers from "@/pages/SerialNumbers";
 import FatCertificates from "@/pages/FatCertificates";
 import FatCertificateDetail from "@/pages/FatCertificateDetail";
 import WarrantyTracker from "@/pages/WarrantyTracker";
+import SalesOrders from "@/pages/SalesOrders";
+import SalesOrderForm from "@/pages/SalesOrderForm";
+import SalesOrderDetail from "@/pages/SalesOrderDetail";
+import DispatchNotes from "@/pages/DispatchNotes";
+import DispatchNoteForm from "@/pages/DispatchNoteForm";
+import DispatchNoteDetail from "@/pages/DispatchNoteDetail";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -107,6 +113,14 @@ const App = () => (
               <Route path="/fat-certificates" element={<FatCertificates />} />
               <Route path="/fat-certificates/:id" element={<FatCertificateDetail />} />
               <Route path="/warranty-tracker" element={<WarrantyTracker />} />
+              <Route path="/sales-orders" element={<SalesOrders />} />
+              <Route path="/sales-orders/new" element={<SalesOrderForm />} />
+              <Route path="/sales-orders/:id" element={<SalesOrderDetail />} />
+              <Route path="/sales-orders/:id/edit" element={<SalesOrderForm />} />
+              <Route path="/dispatch-notes" element={<DispatchNotes />} />
+              <Route path="/dispatch-notes/new" element={<DispatchNoteForm />} />
+              <Route path="/dispatch-notes/:id" element={<DispatchNoteDetail />} />
+              <Route path="/dispatch-notes/:id/edit" element={<DispatchNoteForm />} />
               <Route path="/stage-templates" element={<StageTemplates />} />
               <Route path="/more" element={<MoreMenu />} />
               <Route path="/settings/company" element={<CompanySettings />} />
