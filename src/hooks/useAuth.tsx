@@ -74,13 +74,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       (_event, session) => {
         setSession(session);
         if (session?.user) {
-          // Defer profile load to avoid Supabase auth deadlock
-          setTimeout(() => loadProfile(session.user), 0);
+          // Defer to avoid Supabase auth deadlock, but keep loading=true until profile resolves
+          setTimeout(() => loadProfile(session.user).finally(() => setLoading(false)), 0);
         } else {
           setProfile(null);
           clearCompanyId();
+          setLoading(false);
         }
-        setLoading(false);
       }
     );
 

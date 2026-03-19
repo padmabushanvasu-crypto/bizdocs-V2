@@ -40,6 +40,8 @@ export interface JobCard {
   notes: string | null;
   completed_at: string | null;
   linked_grn_id: string | null;
+  drawing_number: string | null;
+  drawing_revision: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -240,13 +242,17 @@ export async function createJobCard(
   const companyId = await getCompanyId();
 
   let standardCost = data.standard_cost ?? 0;
+  let drawingNumber: string | null = null;
+  let drawingRevision: string | null = null;
   if (data.item_id) {
     const { data: item } = await (supabase as any)
       .from("items")
-      .select("standard_cost")
+      .select("standard_cost, drawing_number, drawing_revision")
       .eq("id", data.item_id)
       .single();
     if (item?.standard_cost != null) standardCost = item.standard_cost;
+    if (item?.drawing_number) drawingNumber = item.drawing_number;
+    if (item?.drawing_revision) drawingRevision = item.drawing_revision;
   }
 
   const { data: jc, error } = await (supabase as any)
@@ -268,6 +274,8 @@ export async function createJobCard(
       status: "in_progress",
       notes: data.notes ?? null,
       linked_grn_id: data.linked_grn_id ?? null,
+      drawing_number: drawingNumber,
+      drawing_revision: drawingRevision,
     })
     .select()
     .single();
@@ -842,6 +850,12 @@ export async function fetchVendorJobWorkSteps(vendorId: string): Promise<VendorJ
     item_code: (jcMap.get(step.job_card_id) as any)?.item_code ?? null,
     item_description: (jcMap.get(step.job_card_id) as any)?.item_description ?? null,
   })) as VendorJobWorkStep[];
+}
+
+export async function bulkDeleteJobCards(ids: string[]): Promise<void> {
+  const { error } = await (supabase as any).from("job_cards").delete().in("id", ids);
+  if (error) throw error;
+  logAudit("job_card", ids[0], "Bulk Deleted", { count: ids.length, ids }).catch(console.error);
 }
 
 export async function fetchWipSummary(): Promise<WipSummary> {

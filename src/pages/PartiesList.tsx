@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search, Edit, Eye, MoreHorizontal, UserX, Users as UsersIcon, Upload, Download } from "lucide-react";
+import { Plus, Search, Edit, Eye, MoreHorizontal, UserX, Users as UsersIcon, Upload, Download, CheckSquare, Square, XCircle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -10,7 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { fetchParties, deactivateParty, createParty, type PartiesFilters } from "@/lib/parties-api";
+import { fetchParties, deactivateParty, createParty, bulkDeleteParties, type PartiesFilters } from "@/lib/parties-api";
 import { useToast } from "@/hooks/use-toast";
 import ImportDialog from "@/components/ImportDialog";
 import { PARTIES_IMPORT_CONFIG, type ValidatedRow } from "@/lib/import-utils";
@@ -42,6 +42,7 @@ export default function PartiesList() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [importOpen, setImportOpen] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState<PartiesFilters>({
     search: "",
     type: "all",
@@ -68,6 +69,35 @@ export default function PartiesList() {
       toast({ title: "Failed to deactivate party", variant: "destructive" });
     }
   };
+
+  const bulkDeactivateMutation = useMutation({
+    mutationFn: (ids: string[]) => bulkDeleteParties(ids),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["parties"] });
+      const count = selected.size;
+      setSelected(new Set());
+      toast({ title: `${count} party(s) deactivated` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Bulk deactivate failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (selected.size === parties.length) setSelected(new Set());
+    else setSelected(new Set(parties.map((p) => p.id)));
+  };
+
+  const allSelected = parties.length > 0 && selected.size === parties.length;
 
   const existingPartyNames = (data?.data ?? []).map((p) => p.name);
 
@@ -183,6 +213,34 @@ export default function PartiesList() {
         </div>
       </div>
 
+      {/* Bulk action toolbar */}
+      {selected.size > 0 && (
+        <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
+          <span className="text-sm font-medium text-blue-800">{selected.size} selected</span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs border-blue-300 text-blue-700 hover:bg-blue-100"
+            onClick={() => {
+              if (confirm(`Deactivate ${selected.size} party(s)?`)) {
+                bulkDeactivateMutation.mutate([...selected]);
+              }
+            }}
+            disabled={bulkDeactivateMutation.isPending}
+          >
+            <UserX className="h-3 w-3 mr-1" /> Deactivate
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs"
+            onClick={() => setSelected(new Set())}
+          >
+            <XCircle className="h-3 w-3 mr-1" /> Clear
+          </Button>
+        </div>
+      )}
+
       {/* Table */}
       {isLoading ? (
         <div className="paper-card space-y-3">
@@ -205,6 +263,14 @@ export default function PartiesList() {
             <table className="w-full data-table">
               <thead>
                 <tr>
+                  <th className="w-8">
+                    <button onClick={toggleAll} className="flex items-center justify-center">
+                      {allSelected
+                        ? <CheckSquare className="h-4 w-4 text-blue-600" />
+                        : <Square className="h-4 w-4 text-slate-400" />
+                      }
+                    </button>
+                  </th>
                   <th>Name</th>
                   <th>Type</th>
                   <th className="hidden md:table-cell">City</th>
@@ -219,9 +285,15 @@ export default function PartiesList() {
                 {parties.map((party) => (
                   <tr
                     key={party.id}
-                    className="hover:bg-muted/50 cursor-pointer transition-colors"
+                    className={`hover:bg-muted/50 cursor-pointer transition-colors ${selected.has(party.id) ? "bg-blue-50/60" : ""}`}
                     onClick={() => navigate(`/parties/${party.id}`)}
                   >
+                    <td onClick={(e) => { e.stopPropagation(); toggleSelect(party.id); }}>
+                      {selected.has(party.id)
+                        ? <CheckSquare className="h-4 w-4 text-blue-600 mx-auto" />
+                        : <Square className="h-4 w-4 text-slate-300 mx-auto" />
+                      }
+                    </td>
                     <td>
                       <div>
                         <span className="font-medium text-foreground">{party.name}</span>

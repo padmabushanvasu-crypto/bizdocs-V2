@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, Search, ChevronDown } from "lucide-react";
+import { Plus, Trash2, Search, ChevronDown, ChevronUp, Truck } from "lucide-react";
 import { ItemSuggest } from "@/components/ItemSuggest";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { format, addDays } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -88,6 +89,19 @@ export default function InvoiceForm() {
   const [successOpen, setSuccessOpen] = useState(false);
   const [savedId, setSavedId] = useState<string | null>(null);
 
+  // Dispatch & Transport fields (FIX 7)
+  const [dispatchOpen, setDispatchOpen] = useState(false);
+  const [reverseCharge, setReverseCharge] = useState(false);
+  const [supplyType, setSupplyType] = useState("");
+  const [ewayBillNumber, setEwayBillNumber] = useState("");
+  const [dispatchVehicleNumber, setDispatchVehicleNumber] = useState("");
+  const [transporterName, setTransporterName] = useState("");
+  const [lrNumber, setLrNumber] = useState("");
+  const [lrDate, setLrDate] = useState("");
+  const [serialNumberRef, setSerialNumberRef] = useState("");
+  const [dispatchThrough, setDispatchThrough] = useState("");
+  const [destination, setDestination] = useState("");
+
   // Queries
   const { data: companySettings } = useQuery({
     queryKey: ["company-settings"],
@@ -134,6 +148,16 @@ export default function InvoiceForm() {
       setBankAccount(inv.bank_account_number || "");
       setBankIfsc(inv.bank_ifsc || "");
       setBankBranch(inv.bank_branch || "");
+      setReverseCharge((inv as any).reverse_charge || false);
+      setSupplyType((inv as any).supply_type || "");
+      setEwayBillNumber((inv as any).eway_bill_number || "");
+      setDispatchVehicleNumber((inv as any).vehicle_number || "");
+      setTransporterName((inv as any).transporter_name || "");
+      setLrNumber((inv as any).lr_number || "");
+      setLrDate((inv as any).lr_date || "");
+      setSerialNumberRef((inv as any).serial_number_ref || "");
+      setDispatchThrough((inv as any).dispatch_through || "");
+      setDestination((inv as any).destination || "");
       if (inv.customer_id) {
         setSelectedCustomer({
           id: inv.customer_id,
@@ -279,6 +303,16 @@ export default function InvoiceForm() {
         bank_account_number: bankAccount || null,
         bank_ifsc: bankIfsc || null,
         bank_branch: bankBranch || null,
+        reverse_charge: reverseCharge,
+        supply_type: supplyType || null,
+        eway_bill_number: ewayBillNumber || null,
+        vehicle_number: dispatchVehicleNumber || null,
+        transporter_name: transporterName || null,
+        lr_number: lrNumber || null,
+        lr_date: lrDate || null,
+        serial_number_ref: serialNumberRef || null,
+        dispatch_through: dispatchThrough || null,
+        destination: destination || null,
         sub_total: totals.subTotal,
         total_discount: totals.totalDiscount,
         taxable_value: totals.taxableValue,
@@ -619,6 +653,84 @@ export default function InvoiceForm() {
           </div>
           <div className="text-xs text-muted-foreground italic">{amountInWords(totals.grandTotal)}</div>
         </div>
+      </div>
+
+      {/* Dispatch & Transport Details */}
+      <div className="border border-border rounded-lg">
+        <button
+          type="button"
+          className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors"
+          onClick={() => setDispatchOpen((o) => !o)}
+        >
+          <div className="flex items-center gap-2">
+            <Truck className="h-4 w-4 text-slate-500" />
+            <span className="font-medium text-sm text-slate-700">Dispatch & Transport Details</span>
+            <span className="text-xs text-muted-foreground">(optional)</span>
+          </div>
+          {dispatchOpen
+            ? <ChevronUp className="h-4 w-4 text-slate-400" />
+            : <ChevronDown className="h-4 w-4 text-slate-400" />
+          }
+        </button>
+        {dispatchOpen && (
+          <div className="px-4 pb-4 space-y-4 border-t border-border pt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-xs font-semibold uppercase text-muted-foreground">Reverse Charge Applicable</Label>
+                <p className="text-xs text-muted-foreground">Mark if GST under reverse charge mechanism</p>
+              </div>
+              <Switch checked={reverseCharge} onCheckedChange={setReverseCharge} />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase text-muted-foreground">Supply Type</Label>
+                <Select value={supplyType} onValueChange={setSupplyType}>
+                  <SelectTrigger><SelectValue placeholder="Select type…" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="B2B">B2B</SelectItem>
+                    <SelectItem value="B2C">B2C</SelectItem>
+                    <SelectItem value="B2CL">B2CL (Large)</SelectItem>
+                    <SelectItem value="SEZWP">SEZ with Payment</SelectItem>
+                    <SelectItem value="SEZWOP">SEZ without Payment</SelectItem>
+                    <SelectItem value="export">Export</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase text-muted-foreground">E-Way Bill Number</Label>
+                <Input value={ewayBillNumber} onChange={(e) => setEwayBillNumber(e.target.value)} placeholder="EWB-12345678901234" className="font-mono" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase text-muted-foreground">Vehicle Number</Label>
+                <Input value={dispatchVehicleNumber} onChange={(e) => setDispatchVehicleNumber(e.target.value)} placeholder="e.g. MH-01-AB-1234" className="font-mono" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase text-muted-foreground">Transporter Name</Label>
+                <Input value={transporterName} onChange={(e) => setTransporterName(e.target.value)} placeholder="Transport company name" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase text-muted-foreground">LR Number</Label>
+                <Input value={lrNumber} onChange={(e) => setLrNumber(e.target.value)} placeholder="Lorry receipt number" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase text-muted-foreground">LR Date</Label>
+                <Input type="date" value={lrDate} onChange={(e) => setLrDate(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase text-muted-foreground">Serial Number Ref</Label>
+                <Input value={serialNumberRef} onChange={(e) => setSerialNumberRef(e.target.value)} placeholder="Serial / batch reference" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase text-muted-foreground">Dispatch Through</Label>
+                <Input value={dispatchThrough} onChange={(e) => setDispatchThrough(e.target.value)} placeholder="Mode of dispatch" />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label className="text-xs font-semibold uppercase text-muted-foreground">Destination</Label>
+                <Input value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="Place of delivery" />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Action Bar */}

@@ -6,6 +6,7 @@ export interface Item {
   item_code: string;
   description: string;
   drawing_number: string | null;
+  drawing_revision: string | null;
   item_type: string;
   unit: string;
   hsn_sac_code: string | null;
@@ -104,6 +105,15 @@ export async function fetchStockStatus() {
     .order("item_code", { ascending: true });
   if (error) throw error;
   return (data ?? []) as StockStatusRow[];
+}
+
+export async function bulkUpdateItemStatus(ids: string[], status: string) {
+  const { error } = await supabase.from("items").update({ status } as any).in("id", ids);
+  if (error) throw error;
+}
+
+export async function bulkDeleteItems(ids: string[]) {
+  return bulkUpdateItemStatus(ids, "inactive");
 }
 
 export async function updateMinStockOverride(id: string, value: number | null) {

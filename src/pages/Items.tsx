@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Package, Plus, Search, Edit, Trash2, X, Upload, Download } from "lucide-react";
+import { Package, Plus, Search, Edit, Trash2, X, Upload, Download, CheckSquare, Square, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { fetchItems, createItem, updateItem, deleteItem, type Item, type ItemFilters } from "@/lib/items-api";
+import { fetchItems, createItem, updateItem, deleteItem, bulkDeleteItems, type Item, type ItemFilters } from "@/lib/items-api";
 import { formatCurrency } from "@/lib/gst-utils";
 import ImportDialog from "@/components/ImportDialog";
 import { ITEMS_IMPORT_CONFIG, type ValidatedRow } from "@/lib/import-utils";
@@ -18,16 +18,30 @@ import { exportToExcel, ITEMS_EXPORT_COLS } from "@/lib/export-utils";
 const ITEM_TYPES = [
   { value: "finished_good", label: "Finished Good" },
   { value: "raw_material", label: "Raw Material" },
+  { value: "component", label: "Component" },
+  { value: "sub_assembly", label: "Sub-Assembly" },
+  { value: "bought_out", label: "Bought-Out" },
   { value: "job_work", label: "Job Work" },
   { value: "service", label: "Service" },
   { value: "consumable", label: "Consumable" },
 ];
 
+const TYPE_BADGE: Record<string, string> = {
+  finished_good: "bg-emerald-100 text-emerald-800",
+  raw_material: "bg-orange-100 text-orange-800",
+  component: "bg-sky-100 text-sky-800",
+  sub_assembly: "bg-indigo-100 text-indigo-800",
+  bought_out: "bg-amber-100 text-amber-800",
+  job_work: "bg-blue-100 text-blue-800",
+  service: "bg-violet-100 text-violet-800",
+  consumable: "bg-teal-100 text-teal-800",
+};
+
 const UNITS = ["NOS", "KG", "MTR", "SFT", "SET", "ROLL", "SHEET", "LITRE", "BOX"];
 const GST_RATES = [0, 5, 12, 18, 28];
 
 const emptyItem = {
-  item_code: "", description: "", drawing_number: "", item_type: "finished_good",
+  item_code: "", description: "", drawing_number: "", drawing_revision: "", item_type: "finished_good",
   unit: "NOS", hsn_sac_code: "", sale_price: 0, purchase_price: 0, gst_rate: 18,
   min_stock: 0, notes: "", standard_cost: 0, min_stock_override: "" as string,
 };
@@ -40,6 +54,7 @@ export default function Items() {
   const [importOpen, setImportOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [form, setForm] = useState(emptyItem);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const { data, isLoading } = useQuery({
     queryKey: ["items", filters],
@@ -78,6 +93,35 @@ export default function Items() {
     },
   });
 
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => bulkDeleteItems(ids),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["items"] });
+      setSelected(new Set());
+      toast({ title: `${selected.size} item(s) deactivated` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Bulk deactivate failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (selected.size === items.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(items.map((i) => i.id)));
+    }
+  };
+
   const openNew = () => {
     setEditingItem(null);
     setForm(emptyItem);
@@ -88,7 +132,7 @@ export default function Items() {
     setEditingItem(item);
     setForm({
       item_code: item.item_code, description: item.description,
-      drawing_number: item.drawing_number || "", item_type: item.item_type,
+      drawing_number: item.drawing_number || "", drawing_revision: item.drawing_revision || "", item_type: item.item_type,
       unit: item.unit, hsn_sac_code: item.hsn_sac_code || "",
       sale_price: item.sale_price, purchase_price: item.purchase_price,
       gst_rate: item.gst_rate, min_stock: item.min_stock, notes: item.notes || "",
@@ -107,6 +151,7 @@ export default function Items() {
   };
 
   const typeLabel = ITEM_TYPES.reduce((a, t) => ({ ...a, [t.value]: t.label }), {} as Record<string, string>);
+  const allSelected = items.length > 0 && selected.size === items.length;
 
   const handleImportItems = async (rows: ValidatedRow[]) => {
     let imported = 0, warnings = 0;
@@ -170,11 +215,47 @@ export default function Items() {
         </Select>
       </div>
 
+      {/* Bulk action toolbar */}
+      {selected.size > 0 && (
+        <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
+          <span className="text-sm font-medium text-blue-800">{selected.size} selected</span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs border-blue-300 text-blue-700 hover:bg-blue-100"
+            onClick={() => {
+              if (confirm(`Deactivate ${selected.size} item(s)?`)) {
+                bulkDeleteMutation.mutate([...selected]);
+              }
+            }}
+            disabled={bulkDeleteMutation.isPending}
+          >
+            <Trash2 className="h-3 w-3 mr-1" /> Deactivate
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs"
+            onClick={() => setSelected(new Set())}
+          >
+            <XCircle className="h-3 w-3 mr-1" /> Clear
+          </Button>
+        </div>
+      )}
+
       <div className="paper-card !p-0">
         <div className="overflow-x-auto">
           <table className="w-full data-table">
             <thead>
               <tr>
+                <th className="w-8">
+                  <button onClick={toggleAll} className="flex items-center justify-center">
+                    {allSelected
+                      ? <CheckSquare className="h-4 w-4 text-blue-600" />
+                      : <Square className="h-4 w-4 text-slate-400" />
+                    }
+                  </button>
+                </th>
                 <th>Code</th><th>Description</th><th>Drawing</th><th>Type</th>
                 <th>Unit</th><th>HSN</th><th className="text-right">Sale Price</th>
                 <th className="text-right">GST%</th><th className="w-20">Actions</th>
@@ -182,16 +263,35 @@ export default function Items() {
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={9} className="text-center py-8 text-muted-foreground">Loading...</td></tr>
+                <tr><td colSpan={10} className="text-center py-8 text-muted-foreground">Loading...</td></tr>
               ) : items.length === 0 ? (
-                <tr><td colSpan={9} className="text-center py-8 text-muted-foreground">No items found. Add your first item.</td></tr>
+                <tr><td colSpan={10} className="text-center py-8 text-muted-foreground">No items found. Add your first item.</td></tr>
               ) : (
                 items.map((item) => (
-                  <tr key={item.id} className="hover:bg-muted/50 cursor-pointer transition-colors" onClick={() => openEdit(item)}>
+                  <tr key={item.id} className={`hover:bg-muted/50 cursor-pointer transition-colors ${selected.has(item.id) ? "bg-blue-50/60" : ""}`} onClick={() => openEdit(item)}>
+                    <td onClick={(e) => { e.stopPropagation(); toggleSelect(item.id); }}>
+                      {selected.has(item.id)
+                        ? <CheckSquare className="h-4 w-4 text-blue-600 mx-auto" />
+                        : <Square className="h-4 w-4 text-slate-300 mx-auto" />
+                      }
+                    </td>
                     <td className="font-mono text-xs font-medium text-foreground">{item.item_code}</td>
                     <td className="font-medium">{item.description}</td>
-                    <td className="text-muted-foreground text-sm">{item.drawing_number || "—"}</td>
-                    <td className="text-muted-foreground">{typeLabel[item.item_type] || item.item_type}</td>
+                    <td>
+                      {item.drawing_number ? (
+                        <div>
+                          <span className="font-mono text-xs text-slate-600">{item.drawing_number}</span>
+                          {item.drawing_revision && (
+                            <span className="font-mono text-[10px] text-slate-400 ml-1">· {item.drawing_revision}</span>
+                          )}
+                        </div>
+                      ) : "—"}
+                    </td>
+                    <td>
+                      <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${TYPE_BADGE[item.item_type] || "bg-slate-100 text-slate-600"}`}>
+                        {typeLabel[item.item_type] || item.item_type}
+                      </span>
+                    </td>
                     <td>{item.unit}</td>
                     <td className="font-mono text-xs">{item.hsn_sac_code || "—"}</td>
                     <td className="text-right font-mono tabular-nums">{formatCurrency(item.sale_price)}</td>
@@ -244,10 +344,14 @@ export default function Items() {
                 <Label>Description *</Label>
                 <Input value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Item description" />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1.5 col-span-1">
                   <Label>Drawing Number</Label>
-                  <Input value={form.drawing_number} onChange={(e) => setForm((f) => ({ ...f, drawing_number: e.target.value }))} />
+                  <Input value={form.drawing_number} onChange={(e) => setForm((f) => ({ ...f, drawing_number: e.target.value }))} placeholder="e.g. DWG-FCA-001" className="font-mono" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Drawing Revision</Label>
+                  <Input value={form.drawing_revision} onChange={(e) => setForm((f) => ({ ...f, drawing_revision: e.target.value }))} placeholder="e.g. Rev.A" className="font-mono" />
                 </div>
                 <div className="space-y-1.5">
                   <Label>HSN/SAC Code</Label>

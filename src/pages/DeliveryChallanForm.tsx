@@ -31,6 +31,11 @@ const DC_TYPES = [
   { value: "returnable", label: "Returnable", description: "Goods to be returned after processing" },
   { value: "non_returnable", label: "Non-Returnable", description: "Goods sent permanently" },
   { value: "job_work_143", label: "Job Work (Sec 143)", description: "Under GST Section 143" },
+  { value: "job_work_out", label: "Job Work Out (Rule 45)", description: "GST Rule 45 — return within 1 year" },
+  { value: "job_work_return", label: "Job Work Return", description: "Return of processed goods to principal" },
+  { value: "supply", label: "Supply", description: "Supply of goods to customer" },
+  { value: "sample", label: "Sample", description: "Sample dispatch (no commercial value)" },
+  { value: "loan_borrow", label: "Loan / Borrow", description: "Goods loaned or borrowed temporarily" },
 ];
 
 const CHALLAN_CATEGORIES = [
@@ -45,6 +50,7 @@ function emptyLineItem(serial: number): DCLineItem {
     serial_number: serial,
     item_code: "",
     description: "",
+    drawing_number: "",
     unit: "NOS",
     quantity: 0,
     rate: 0,
@@ -170,7 +176,8 @@ export default function DeliveryChallanForm() {
   const subTotal = useMemo(() => lineItems.reduce((s, i) => s + (i.amount || 0), 0), [lineItems]);
   const totalItems = lineItems.filter((i) => i.description.trim()).length;
   const totalQty = lineItems.reduce((s, i) => s + (i.quantity || 0), 0);
-  const isReturnable = dcType === "returnable" || dcType === "job_work_143";
+  const isReturnable = ["returnable", "job_work_143", "job_work_out", "loan_borrow"].includes(dcType);
+  const isRule45 = dcType === "job_work_out";
 
   const companyStateCode = company?.state_code || "33";
   const partyStateCode = selectedParty?.state_code || companyStateCode;
@@ -274,23 +281,38 @@ export default function DeliveryChallanForm() {
       </div>
 
       {/* DC Type Selector */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {DC_TYPES.map((type) => (
           <button
             key={type.value}
             onClick={() => setDcType(type.value)}
             className={cn(
-              "p-4 rounded-lg border-2 text-left transition-all",
+              "p-3 rounded-lg border-2 text-left transition-all",
               dcType === type.value
                 ? "border-primary bg-primary/5"
                 : "border-border hover:border-muted-foreground/30"
             )}
           >
             <p className="font-medium text-sm text-foreground">{type.label}</p>
-            <p className="text-xs text-muted-foreground mt-1">{type.description}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{type.description}</p>
           </button>
         ))}
       </div>
+
+      {/* GST Rule 45 Banner */}
+      {isRule45 && (
+        <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 flex items-start gap-3">
+          <Info className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold text-amber-800 text-sm">GST Rule 45 — Job Work Challan</p>
+            <p className="text-xs text-amber-700 mt-1">
+              Goods sent for job work must be returned within <strong>1 year (365 days)</strong> from
+              the date of dispatch. Failure to return within the prescribed time will attract GST
+              liability as if a supply was made on the date of original dispatch.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Header Section */}
       <div className="paper-card space-y-6">
@@ -445,7 +467,8 @@ export default function DeliveryChallanForm() {
               <tr className="bg-secondary text-muted-foreground text-xs uppercase tracking-wider">
                 <th className="px-3 py-2 text-left w-8">#</th>
                 <th className="px-3 py-2 text-left w-[100px]">Item Code</th>
-                <th className="px-3 py-2 text-left min-w-[200px]">Description</th>
+                <th className="px-3 py-2 text-left min-w-[180px]">Description</th>
+                <th className="px-3 py-2 text-left w-[110px]">Drawing #</th>
                 <th className="px-3 py-2 text-left w-[80px]">Unit</th>
                 <th className="px-3 py-2 text-right w-[90px]">Quantity</th>
                 <th className="px-3 py-2 text-right w-[100px]">Rate (₹)</th>
@@ -467,6 +490,7 @@ export default function DeliveryChallanForm() {
                         updateLineItem(index, "description", selectedItem.description);
                         updateLineItem(index, "unit", selectedItem.unit || "NOS");
                         updateLineItem(index, "rate", selectedItem.sale_price || 0);
+                        updateLineItem(index, "drawing_number", selectedItem.drawing_number || "");
                         // Recalculate amount
                         setLineItems((items) => {
                           const updated = [...items];
@@ -484,6 +508,14 @@ export default function DeliveryChallanForm() {
                       onChange={(e) => updateLineItem(index, "description", e.target.value)}
                       placeholder="Item description"
                       className="h-8 text-sm"
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <Input
+                      value={item.drawing_number || ""}
+                      onChange={(e) => updateLineItem(index, "drawing_number", e.target.value)}
+                      placeholder="DWG-001"
+                      className="h-8 text-sm font-mono"
                     />
                   </td>
                   <td className="px-3 py-2">
@@ -570,9 +602,16 @@ export default function DeliveryChallanForm() {
             {isReturnable && (
               <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 text-sm space-y-1">
                 <p className="font-medium text-primary">
-                  {dcType === "returnable" ? "RETURNABLE DELIVERY CHALLAN" : "JOB WORK CHALLAN (SEC 143)"}
+                  {dcType === "returnable" ? "RETURNABLE DELIVERY CHALLAN"
+                    : dcType === "job_work_out" ? "JOB WORK CHALLAN — RULE 45"
+                    : dcType === "loan_borrow" ? "LOAN / BORROW CHALLAN"
+                    : "JOB WORK CHALLAN (SEC 143)"}
                 </p>
-                <p className="text-xs text-muted-foreground font-medium">NOT FOR SALE{dcType === "job_work_143" ? " — JOB WORK ONLY" : ""}</p>
+                <p className="text-xs text-muted-foreground font-medium">
+                  NOT FOR SALE
+                  {dcType === "job_work_143" ? " — JOB WORK ONLY" : ""}
+                  {dcType === "job_work_out" ? " — RETURN WITHIN 1 YEAR" : ""}
+                </p>
               </div>
             )}
           </div>

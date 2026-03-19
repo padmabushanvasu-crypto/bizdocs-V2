@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
+import { useState } from "react";
 import {
   IndianRupee, FileText, Truck, ShoppingCart, AlertTriangle,
   Receipt, Activity, Factory, Package, Clock,
@@ -166,6 +167,14 @@ function StatusPill({ status }: { status: string | null }) {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const [showTour, setShowTour] = useState(
+    () => localStorage.getItem("bizdocs_welcome_dismissed") !== "true"
+  );
+
+  const handleTourDismiss = () => {
+    localStorage.setItem("bizdocs_welcome_dismissed", "true");
+    setShowTour(false);
+  };
 
   const { data: analytics } = useQuery({
     queryKey: ["dashboard-analytics-v2"],
@@ -203,7 +212,7 @@ export default function Dashboard() {
 
   return (
     <div className="p-4 md:p-6 space-y-6">
-      <OnboardingTour />
+      {showTour && <OnboardingTour onDismiss={handleTourDismiss} />}
 
       {/* ── HEADER ─────────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-4 flex-wrap">

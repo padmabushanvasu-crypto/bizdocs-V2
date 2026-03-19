@@ -34,6 +34,11 @@ const typeLabels: Record<string, string> = {
   returnable: "Returnable",
   non_returnable: "Non-Returnable",
   job_work_143: "Job Work (143)",
+  job_work_out: "Job Work Out (R45)",
+  job_work_return: "Job Work Return",
+  supply: "Supply",
+  sample: "Sample",
+  loan_borrow: "Loan/Borrow",
 };
 
 export default function DeliveryChallansRegister() {
@@ -78,6 +83,20 @@ export default function DeliveryChallansRegister() {
     dc.return_due_date &&
     dc.return_due_date < today &&
     !["fully_returned", "cancelled", "deleted"].includes(dc.status);
+
+  // Rule 45: job_work_out must return within 365 days
+  const getRule45Status = (dc: any): "overdue" | "warning" | null => {
+    if (dc.dc_type !== "job_work_out" || ["fully_returned", "cancelled", "deleted"].includes(dc.status)) return null;
+    const dueDate = new Date(dc.dc_date);
+    dueDate.setFullYear(dueDate.getFullYear() + 1);
+    const dueDateStr = dueDate.toISOString().split("T")[0];
+    const warnDate = new Date(dueDate);
+    warnDate.setDate(warnDate.getDate() - 30);
+    const warnDateStr = warnDate.toISOString().split("T")[0];
+    if (today >= dueDateStr) return "overdue";
+    if (today >= warnDateStr) return "warning";
+    return null;
+  };
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -179,13 +198,14 @@ export default function DeliveryChallansRegister() {
               ) : (
                 dcs.map((dc) => {
                   const overdue = isOverdue(dc);
+                  const rule45Status = getRule45Status(dc);
                   const days = getDaysOpen(dc.issued_at, dc.status, ["fully_returned", "cancelled", "deleted"]);
                   const daysClass = getDaysOpenClass(days);
                   const isDeleted = dc.status === "deleted";
                   return (
                     <tr
                       key={dc.id}
-                      className={`hover:bg-muted/50 cursor-pointer transition-colors ${overdue ? "bg-destructive/5" : ""} ${isDeleted ? "opacity-50" : ""}`}
+                      className={`hover:bg-muted/50 cursor-pointer transition-colors ${overdue || rule45Status === "overdue" ? "bg-destructive/5" : ""} ${isDeleted ? "opacity-50" : ""}`}
                       onClick={() => !isDeleted && navigate(`/delivery-challans/${dc.id}`)}
                     >
                       <td className="font-mono text-sm font-medium text-foreground">{dc.dc_number}</td>
@@ -193,7 +213,15 @@ export default function DeliveryChallansRegister() {
                         {new Date(dc.dc_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
                       </td>
                       <td className="font-medium">{dc.party_name || "—"}</td>
-                      <td className="text-muted-foreground">{typeLabels[dc.dc_type] || dc.dc_type}</td>
+                      <td>
+                        <span className="text-muted-foreground">{typeLabels[dc.dc_type] || dc.dc_type}</span>
+                        {rule45Status === "overdue" && (
+                          <span className="ml-1.5 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">R45 OVERDUE</span>
+                        )}
+                        {rule45Status === "warning" && (
+                          <span className="ml-1.5 bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">R45 DUE SOON</span>
+                        )}
+                      </td>
                       <td className="text-right font-mono tabular-nums">{dc.total_items}</td>
                       <td className="text-muted-foreground">
                         {dc.return_due_date ? (

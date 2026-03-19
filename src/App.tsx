@@ -40,6 +40,9 @@ import WipRegister from "@/pages/WipRegister";
 import VendorScorecards from "@/pages/VendorScorecards";
 import GstReports from "@/pages/GstReports";
 import NotificationsSettings from "@/pages/NotificationsSettings";
+import BillOfMaterials from "@/pages/BillOfMaterials";
+import DataImport from "@/pages/DataImport";
+import DocumentSettings from "@/pages/DocumentSettings";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -87,6 +90,9 @@ const App = () => (
               <Route path="/vendor-scorecards" element={<VendorScorecards />} />
               <Route path="/gst-reports" element={<GstReports />} />
               <Route path="/settings/notifications" element={<NotificationsSettings />} />
+              <Route path="/settings/documents" element={<DocumentSettings />} />
+              <Route path="/settings/import" element={<DataImport />} />
+              <Route path="/bill-of-materials" element={<BillOfMaterials />} />
               <Route path="/stage-templates" element={<StageTemplates />} />
               <Route path="/more" element={<MoreMenu />} />
               <Route path="/settings/company" element={<CompanySettings />} />

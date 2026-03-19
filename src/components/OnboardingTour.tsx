@@ -1,4 +1,3 @@
-import { useState, useEffect } from "react";
 import Joyride, { CallBackProps, STATUS, Step } from "react-joyride";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -49,34 +48,37 @@ const steps: Step[] = [
   },
 ];
 
-export function OnboardingTour() {
-  const { user, profile } = useAuth();
-  const [run, setRun] = useState(false);
+interface OnboardingTourProps {
+  onDismiss: () => void;
+}
 
-  useEffect(() => {
-    if (profile && (profile as any).tour_completed === false) {
-      // Small delay so DOM is ready
-      const timer = setTimeout(() => setRun(true), 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [profile]);
+/**
+ * Renders and immediately runs the Joyride tour.
+ * Contains NO internal logic about whether to show — that decision lives
+ * entirely in the parent (Dashboard) via conditional rendering.
+ * This component only renders when the parent chooses to mount it.
+ */
+export function OnboardingTour({ onDismiss }: OnboardingTourProps) {
+  const { user } = useAuth();
 
-  const handleCallback = async (data: CallBackProps) => {
+  const handleCallback = (data: CallBackProps) => {
     const { status } = data;
     if (status === STATUS.FINISHED || status === STATUS.SKIPPED) {
-      setRun(false);
+      onDismiss();
       if (user) {
-        await (supabase as any).from("profiles").update({ tour_completed: true }).eq("id", user.id);
+        (supabase as any)
+          .from("profiles")
+          .update({ tour_completed: true })
+          .eq("id", user.id)
+          .catch(console.error);
       }
     }
   };
 
-  if (!run) return null;
-
   return (
     <Joyride
       steps={steps}
-      run={run}
+      run={true}
       continuous
       showSkipButton
       showProgress

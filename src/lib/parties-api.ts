@@ -91,3 +91,12 @@ export async function deactivateParty(id: string) {
 export async function deleteParty(id: string) {
   return deactivateParty(id);
 }
+
+export async function bulkUpdatePartyStatus(ids: string[], status: string) {
+  const { error } = await supabase.from("parties").update({ status } as any).in("id", ids);
+  if (error) throw error;
+}
+
+export async function bulkDeleteParties(ids: string[]) {
+  return bulkUpdatePartyStatus(ids, "inactive");
+}

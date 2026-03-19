@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { Activity, Plus, Search, Eye, ChevronDown, Trash2, Factory, Truck } from "lucide-react";
+import { Activity, Plus, Search, Eye, ChevronDown, Trash2, Factory, Truck, CheckSquare, Square, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +17,7 @@ import {
   fetchJobCardStats,
   createJobCard,
   deleteJobCard,
+  bulkDeleteJobCards,
   getNextJCNumber,
   type JobCardFilters,
 } from "@/lib/job-cards-api";
@@ -58,6 +59,7 @@ export default function JobCards() {
 
   const [newOpen, setNewOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [itemOpen, setItemOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
 
@@ -140,7 +142,35 @@ export default function JobCards() {
     }
   };
 
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => bulkDeleteJobCards(ids),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["job-cards"] });
+      queryClient.invalidateQueries({ queryKey: ["jc-stats"] });
+      const count = selected.size;
+      setSelected(new Set());
+      toast({ title: `${count} job card(s) deleted` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Bulk delete failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const jcs = data?.data ?? [];
+  const allSelected = jcs.length > 0 && selected.size === jcs.length;
+  const toggleAll = () => {
+    if (allSelected) setSelected(new Set());
+    else setSelected(new Set(jcs.map((j) => j.id)));
+  };
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -209,12 +239,48 @@ export default function JobCards() {
         </Select>
       </div>
 
+      {/* Bulk action toolbar */}
+      {selected.size > 0 && (
+        <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
+          <span className="text-sm font-medium text-blue-800">{selected.size} selected</span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs border-red-300 text-red-700 hover:bg-red-50"
+            onClick={() => {
+              if (confirm(`Delete ${selected.size} job card(s)? This cannot be undone.`)) {
+                bulkDeleteMutation.mutate([...selected]);
+              }
+            }}
+            disabled={bulkDeleteMutation.isPending}
+          >
+            <Trash2 className="h-3 w-3 mr-1" /> Delete
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs"
+            onClick={() => setSelected(new Set())}
+          >
+            <XCircle className="h-3 w-3 mr-1" /> Clear
+          </Button>
+        </div>
+      )}
+
       {/* Table */}
       <div className="paper-card !p-0">
         <div className="overflow-x-auto">
           <table className="w-full data-table">
             <thead>
               <tr>
+                <th className="w-8">
+                  <button onClick={toggleAll} className="flex items-center justify-center">
+                    {allSelected
+                      ? <CheckSquare className="h-4 w-4 text-blue-600" />
+                      : <Square className="h-4 w-4 text-slate-400" />
+                    }
+                  </button>
+                </th>
                 <th>JC #</th>
                 <th>Item Code</th>
                 <th>Description</th>
@@ -231,13 +297,13 @@ export default function JobCards() {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={11} className="text-center py-8 text-muted-foreground">
+                  <td colSpan={12} className="text-center py-8 text-muted-foreground">
                     Loading...
                   </td>
                 </tr>
               ) : jcs.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="text-center py-12">
+                  <td colSpan={12} className="text-center py-12">
                     <Activity className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
                     <p className="text-muted-foreground font-medium">No job cards yet</p>
                     <p className="text-sm text-muted-foreground">
@@ -258,9 +324,15 @@ export default function JobCards() {
                   return (
                     <tr
                       key={jc.id}
-                      className="hover:bg-muted/50 cursor-pointer transition-colors"
+                      className={`hover:bg-muted/50 cursor-pointer transition-colors ${selected.has(jc.id) ? "bg-blue-50/60" : ""}`}
                       onClick={() => navigate(`/job-cards/${jc.id}`)}
                     >
+                      <td onClick={(e) => { e.stopPropagation(); toggleSelect(jc.id); }}>
+                        {selected.has(jc.id)
+                          ? <CheckSquare className="h-4 w-4 text-blue-600 mx-auto" />
+                          : <Square className="h-4 w-4 text-slate-300 mx-auto" />
+                        }
+                      </td>
                       <td className="font-mono text-sm font-medium text-foreground">
                         {jc.jc_number}
                       </td>

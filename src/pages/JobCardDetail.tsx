@@ -512,6 +512,12 @@ export default function JobCardDetail() {
               {jc.item_description}
             </p>
           )}
+          {jc.drawing_number && (
+            <p className="font-mono text-xs text-slate-500 mt-0.5">
+              {jc.drawing_number}
+              {jc.drawing_revision && <span> · {jc.drawing_revision}</span>}
+            </p>
+          )}
           {jc.batch_ref && (
             <p className="text-xs text-muted-foreground">
               {jc.tracking_mode === "batch" ? "Batch" : "Serial"}: {jc.batch_ref}

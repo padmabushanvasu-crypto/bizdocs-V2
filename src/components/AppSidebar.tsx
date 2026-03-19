@@ -11,10 +11,10 @@ import {
   ClipboardList,
   BarChart3,
   Activity,
-  GitBranch,
   AlertTriangle,
   Star,
   FileSpreadsheet,
+  GitFork,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -34,31 +34,80 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 
-const mainNav = [
+const startHereNav = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Open Items", url: "/open-items", icon: ClipboardList },
+];
+
+const dailyWorkNav = [
+  { title: "Job Cards", url: "/job-cards", icon: Activity },
+];
+
+const purchasingNav = [
+  { title: "Purchase Orders", url: "/purchase-orders", icon: ShoppingCart },
+  { title: "GRN", url: "/grn", icon: PackageCheck },
+];
+
+const dispatchBillingNav = [
+  { title: "Delivery Challans", url: "/delivery-challans", icon: Truck },
+  { title: "Invoices", url: "/invoices", icon: FileText },
+  { title: "Receipts", url: "/receipts", icon: Receipt },
+];
+
+const masterDataNav = [
   { title: "Parties", url: "/parties", icon: Users },
   { title: "Items", url: "/items", icon: Package },
+  { title: "Bill of Materials", url: "/bill-of-materials", icon: GitFork },
   { title: "Stock Register", url: "/stock-register", icon: BarChart3 },
 ];
 
-const documentsNav = [
-  { title: "Purchase Orders", url: "/purchase-orders", icon: ShoppingCart },
-  { title: "Delivery Challans", url: "/delivery-challans", icon: Truck },
-  { title: "GRN", url: "/grn", icon: PackageCheck },
-  { title: "Invoices", url: "/invoices", icon: FileText },
-  { title: "Receipts", url: "/receipts", icon: Receipt },
+const reportsNav = [
   { title: "GST Reports", url: "/gst-reports", icon: FileSpreadsheet },
-];
-
-const operationsNav = [
-  { title: "Job Cards", url: "/job-cards", icon: Activity },
-  { title: "Stage Templates", url: "/stage-templates", icon: GitBranch },
+  { title: "Vendor Scorecards", url: "/vendor-scorecards", icon: Star },
 ];
 
 const settingsNav = [
   { title: "Settings", url: "/settings", icon: Settings },
 ];
+
+function NavGroup({
+  label,
+  items,
+  collapsed,
+  isActive,
+}: {
+  label: string;
+  items: { title: string; url: string; icon: React.ComponentType<any> }[];
+  collapsed: boolean;
+  isActive: (path: string) => boolean;
+}) {
+  return (
+    <SidebarGroup>
+      <SidebarGroupLabel className="text-slate-500 text-[10px] uppercase tracking-widest font-semibold">
+        {label}
+      </SidebarGroupLabel>
+      <SidebarGroupContent>
+        <SidebarMenu>
+          {items.map((item) => (
+            <SidebarMenuItem key={item.title}>
+              <SidebarMenuButton asChild isActive={isActive(item.url)}>
+                <NavLink
+                  to={item.url}
+                  end={item.url === "/"}
+                  className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                  activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
+                >
+                  <item.icon className="h-4 w-4 shrink-0" />
+                  {!collapsed && <span>{item.title}</span>}
+                </NavLink>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
+  );
+}
 
 export function AppSidebar() {
   const { state } = useSidebar();
@@ -95,62 +144,16 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel className="text-slate-500 text-[10px] uppercase tracking-widest font-semibold">
-            Main
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {mainNav.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild isActive={isActive(item.url)}>
-                    <NavLink
-                      to={item.url}
-                      end={item.url === "/"}
-                      className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                      activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
-                    >
-                      <item.icon className="h-4 w-4 shrink-0" />
-                      {!collapsed && <span>{item.title}</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        <NavGroup label="Start Here" items={startHereNav} collapsed={collapsed} isActive={isActive} />
 
+        {/* Daily Work — includes WIP Register with badge */}
         <SidebarGroup>
           <SidebarGroupLabel className="text-slate-500 text-[10px] uppercase tracking-widest font-semibold">
-            Documents
+            Daily Work
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {documentsNav.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild isActive={isActive(item.url)}>
-                    <NavLink
-                      to={item.url}
-                      className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                      activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
-                    >
-                      <item.icon className="h-4 w-4 shrink-0" />
-                      {!collapsed && <span>{item.title}</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarGroup>
-          <SidebarGroupLabel className="text-slate-500 text-[10px] uppercase tracking-widest font-semibold">
-            Operations
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {operationsNav.map((item) => (
+              {dailyWorkNav.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild isActive={isActive(item.url)}>
                     <NavLink
@@ -189,46 +192,15 @@ export function AppSidebar() {
                   </NavLink>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-              {/* Vendor Scorecards */}
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={isActive("/vendor-scorecards")}>
-                  <NavLink
-                    to="/vendor-scorecards"
-                    className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                    activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
-                  >
-                    <Star className="h-4 w-4 shrink-0" />
-                    {!collapsed && <span>Vendor Scorecards</span>}
-                  </NavLink>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup>
-          <SidebarGroupLabel className="text-slate-500 text-[10px] uppercase tracking-widest font-semibold">
-            Configuration
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {settingsNav.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild isActive={isActive(item.url)}>
-                    <NavLink
-                      to={item.url}
-                      className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                      activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
-                    >
-                      <item.icon className="h-4 w-4 shrink-0" />
-                      {!collapsed && <span>{item.title}</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        <NavGroup label="Purchasing" items={purchasingNav} collapsed={collapsed} isActive={isActive} />
+        <NavGroup label="Dispatch & Billing" items={dispatchBillingNav} collapsed={collapsed} isActive={isActive} />
+        <NavGroup label="Master Data" items={masterDataNav} collapsed={collapsed} isActive={isActive} />
+        <NavGroup label="Reports" items={reportsNav} collapsed={collapsed} isActive={isActive} />
+        <NavGroup label="Settings" items={settingsNav} collapsed={collapsed} isActive={isActive} />
       </SidebarContent>
 
       <SidebarFooter className="px-4 py-3">
