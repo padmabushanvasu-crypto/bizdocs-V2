@@ -355,6 +355,112 @@ export async function deleteBomLine(id: string): Promise<void> {
 }
 
 // ============================================================
+// BOM Line Vendors
+// ============================================================
+
+export interface BomLineVendor {
+  id: string;
+  company_id: string;
+  bom_line_id: string;
+  vendor_id: string | null;
+  vendor_name: string;
+  vendor_code: string | null;
+  unit_price: number | null;
+  lead_time_days: number | null;
+  min_order_qty: number | null;
+  currency: string;
+  is_preferred: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchBomLineVendors(bomLineId: string): Promise<BomLineVendor[]> {
+  const { data, error } = await (supabase as any)
+    .from("bom_line_vendors")
+    .select("*")
+    .eq("bom_line_id", bomLineId)
+    .order("is_preferred", { ascending: false })
+    .order("created_at", { ascending: true });
+  if (error) return [];
+  return (data ?? []) as BomLineVendor[];
+}
+
+export async function fetchBomLineVendorsBatch(lineIds: string[]): Promise<BomLineVendor[]> {
+  if (!lineIds.length) return [];
+  const { data, error } = await (supabase as any)
+    .from("bom_line_vendors")
+    .select("*")
+    .in("bom_line_id", lineIds)
+    .order("is_preferred", { ascending: false })
+    .order("created_at", { ascending: true });
+  if (error) return [];
+  return (data ?? []) as BomLineVendor[];
+}
+
+export async function addBomLineVendor(data: {
+  bom_line_id: string;
+  vendor_id?: string | null;
+  vendor_name: string;
+  vendor_code?: string | null;
+  unit_price?: number | null;
+  lead_time_days?: number | null;
+  min_order_qty?: number | null;
+  is_preferred?: boolean;
+  notes?: string | null;
+}): Promise<BomLineVendor> {
+  const companyId = await getCompanyId();
+  if (data.is_preferred) {
+    await (supabase as any)
+      .from("bom_line_vendors")
+      .update({ is_preferred: false })
+      .eq("bom_line_id", data.bom_line_id);
+  }
+  const { data: v, error } = await (supabase as any)
+    .from("bom_line_vendors")
+    .insert({
+      company_id: companyId,
+      bom_line_id: data.bom_line_id,
+      vendor_id: data.vendor_id ?? null,
+      vendor_name: data.vendor_name,
+      vendor_code: data.vendor_code ?? null,
+      unit_price: data.unit_price ?? null,
+      lead_time_days: data.lead_time_days ?? null,
+      min_order_qty: data.min_order_qty ?? null,
+      currency: "INR",
+      is_preferred: data.is_preferred ?? false,
+      notes: data.notes ?? null,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return v as BomLineVendor;
+}
+
+export async function updateBomLineVendor(id: string, data: Partial<BomLineVendor> & { bom_line_id?: string }): Promise<BomLineVendor> {
+  if (data.is_preferred && data.bom_line_id) {
+    await (supabase as any)
+      .from("bom_line_vendors")
+      .update({ is_preferred: false })
+      .eq("bom_line_id", data.bom_line_id)
+      .neq("id", id);
+  }
+  const { data: v, error } = await (supabase as any)
+    .from("bom_line_vendors")
+    .update({ ...data, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  return v as BomLineVendor;
+}
+
+export async function removeBomLineVendor(id: string): Promise<void> {
+  const { error } = await (supabase as any).from("bom_line_vendors").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// ============================================================
 // BOM Explosion (multi-level recursive)
 // ============================================================
 

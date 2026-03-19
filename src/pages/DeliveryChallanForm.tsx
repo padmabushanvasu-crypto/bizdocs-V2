@@ -27,15 +27,18 @@ import {
 } from "@/lib/delivery-challans-api";
 import { formatCurrency, amountInWords, calculateGST } from "@/lib/gst-utils";
 
-const DC_TYPES = [
-  { value: "returnable", label: "Returnable", description: "Goods to be returned after processing" },
-  { value: "non_returnable", label: "Non-Returnable", description: "Goods sent permanently" },
-  { value: "job_work_143", label: "Job Work (Sec 143)", description: "Under GST Section 143" },
-  { value: "job_work_out", label: "Job Work Out (Rule 45)", description: "GST Rule 45 — return within 1 year" },
-  { value: "job_work_return", label: "Job Work Return", description: "Return of processed goods to principal" },
-  { value: "supply", label: "Supply", description: "Supply of goods to customer" },
-  { value: "sample", label: "Sample", description: "Sample dispatch (no commercial value)" },
-  { value: "loan_borrow", label: "Loan / Borrow", description: "Goods loaned or borrowed temporarily" },
+const RETURNABLE_SUBTYPES = [
+  { value: "returnable", label: "Standard Returnable" },
+  { value: "job_work_143", label: "Job Work (Sec 143)" },
+  { value: "job_work_out", label: "Job Work Out (Rule 45)" },
+  { value: "loan_borrow", label: "Loan / Borrow" },
+];
+
+const NON_RETURNABLE_SUBTYPES = [
+  { value: "non_returnable", label: "Standard Non-Returnable" },
+  { value: "supply", label: "Supply" },
+  { value: "sample", label: "Sample" },
+  { value: "job_work_return", label: "Job Work Return" },
 ];
 
 const CHALLAN_CATEGORIES = [
@@ -286,22 +289,39 @@ export default function DeliveryChallanForm() {
       </div>
 
       {/* DC Type Selector */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {DC_TYPES.map((type) => (
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
           <button
-            key={type.value}
-            onClick={() => setDcType(type.value)}
+            onClick={() => { if (!isReturnable) setDcType("returnable"); }}
             className={cn(
-              "p-3 rounded-lg border-2 text-left transition-all",
-              dcType === type.value
-                ? "border-primary bg-primary/5"
-                : "border-border hover:border-muted-foreground/30"
+              "p-4 rounded-xl border-2 text-center transition-all",
+              isReturnable ? "border-blue-500 bg-blue-50" : "border-border hover:border-muted-foreground/40"
             )}
           >
-            <p className="font-medium text-sm text-foreground">{type.label}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">{type.description}</p>
+            <p className="font-bold text-sm text-foreground">RETURNABLE</p>
+            <p className="text-xs text-muted-foreground mt-1">Goods to be returned after processing</p>
           </button>
-        ))}
+          <button
+            onClick={() => { if (isReturnable) setDcType("non_returnable"); }}
+            className={cn(
+              "p-4 rounded-xl border-2 text-center transition-all",
+              !isReturnable ? "border-blue-500 bg-blue-50" : "border-border hover:border-muted-foreground/40"
+            )}
+          >
+            <p className="font-bold text-sm text-foreground">NON-RETURNABLE</p>
+            <p className="text-xs text-muted-foreground mt-1">Goods sent permanently to party</p>
+          </button>
+        </div>
+        <Select value={dcType} onValueChange={setDcType}>
+          <SelectTrigger>
+            <SelectValue placeholder="Select sub-type..." />
+          </SelectTrigger>
+          <SelectContent>
+            {(isReturnable ? RETURNABLE_SUBTYPES : NON_RETURNABLE_SUBTYPES).map((t) => (
+              <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* GST Rule 45 Banner */}

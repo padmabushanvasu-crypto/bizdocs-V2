@@ -38,6 +38,7 @@ const emptyExternal = {
   vendor_name: "",
   expected_return_date: "",
   qty_sent: null as number | null,
+  unit: "NOS",
   job_work_charges: 0,
   transport_cost_out: 0,
   transport_cost_in: 0,
@@ -77,6 +78,7 @@ export function AddStepDialog({ open, onOpenChange, editingStep, onSave, isSavin
           vendor_name: editingStep.vendor_name ?? "",
           expected_return_date: editingStep.expected_return_date ?? "",
           qty_sent: editingStep.qty_sent ?? null,
+          unit: editingStep.unit ?? "NOS",
           job_work_charges: editingStep.job_work_charges ?? 0,
           transport_cost_out: editingStep.transport_cost_out ?? 0,
           transport_cost_in: editingStep.transport_cost_in ?? 0,
@@ -134,6 +136,7 @@ export function AddStepDialog({ open, onOpenChange, editingStep, onSave, isSavin
         vendor_name: externalForm.vendor_name || undefined,
         expected_return_date: externalForm.expected_return_date || undefined,
         qty_sent: externalForm.qty_sent ?? undefined,
+        unit: externalForm.unit || "NOS",
         job_work_charges: externalForm.job_work_charges,
         transport_cost_out: externalForm.transport_cost_out,
         transport_cost_in: externalForm.transport_cost_in,
@@ -422,7 +425,7 @@ export function AddStepDialog({ open, onOpenChange, editingStep, onSave, isSavin
               </Popover>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label>Qty Sent</Label>
                 <Input
@@ -436,6 +439,16 @@ export function AddStepDialog({ open, onOpenChange, editingStep, onSave, isSavin
                     }))
                   }
                   placeholder="Optional"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Unit</Label>
+                <Input
+                  value={externalForm.unit}
+                  onChange={(e) => setExternalForm((f) => ({ ...f, unit: e.target.value.toUpperCase() }))}
+                  placeholder="NOS"
+                  className="font-mono"
+                  maxLength={10}
                 />
               </div>
               <div className="space-y-1.5">

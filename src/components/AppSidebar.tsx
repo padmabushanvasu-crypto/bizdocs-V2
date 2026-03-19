@@ -108,7 +108,7 @@ const startHereNav: NavItem[] = [
 ];
 
 const dailyWorkNav: NavItem[] = [
-  { title: "Job Cards", url: "/job-cards", icon: Activity },
+  { title: "Work Orders", url: "/job-cards", icon: Activity },
   { title: "Assembly Orders", url: "/assembly-orders", icon: Layers },
 ];
 

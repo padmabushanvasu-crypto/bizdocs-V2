@@ -228,7 +228,7 @@ export default function WipRegister() {
         </div>
 
         <Input
-          placeholder="Search JC number, AO number, item, vendor…"
+          placeholder="Search WO number, AO number, item, vendor…"
           className="h-9 w-72 text-sm"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -247,32 +247,17 @@ export default function WipRegister() {
             </span>
           </div>
 
-          {/* 3 mini summary cards */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="paper-card py-3">
-              <div className="flex items-center gap-1.5 mb-1">
-                <Truck className="h-3.5 w-3.5 text-amber-600" />
-                <p className="text-[11px] uppercase text-muted-foreground font-bold tracking-wider">At Vendors</p>
-              </div>
-              <p className="text-xl font-bold font-mono text-amber-700">{atVendor}</p>
-              <p className="text-[11px] text-muted-foreground">Job Cards</p>
-            </div>
-            <div className="paper-card py-3">
-              <div className="flex items-center gap-1.5 mb-1">
-                <Factory className="h-3.5 w-3.5 text-blue-600" />
-                <p className="text-[11px] uppercase text-muted-foreground font-bold tracking-wider">Internal Processing</p>
-              </div>
-              <p className="text-xl font-bold font-mono text-blue-700">{inHouse}</p>
-              <p className="text-[11px] text-muted-foreground">Job Cards</p>
-            </div>
-            <div className={`paper-card py-3 ${overdueCount > 0 ? "border-l-4 border-l-destructive" : ""}`}>
-              <div className="flex items-center gap-1.5 mb-1">
-                <AlertTriangle className={`h-3.5 w-3.5 ${overdueCount > 0 ? "text-destructive" : "text-muted-foreground"}`} />
-                <p className="text-[11px] uppercase text-muted-foreground font-bold tracking-wider">Overdue Returns</p>
-              </div>
-              <p className={`text-xl font-bold font-mono ${overdueCount > 0 ? "text-destructive" : ""}`}>{overdueCount}</p>
-              <p className="text-[11px] text-muted-foreground">Past expected date</p>
-            </div>
+          {/* Inline stat chips */}
+          <div className="flex items-center gap-2 flex-wrap text-sm">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 font-medium text-xs">
+              <Truck className="h-3 w-3" /> {atVendor} at vendors
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-800 font-medium text-xs">
+              <Factory className="h-3 w-3" /> {inHouse} in house
+            </span>
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-medium text-xs ${overdueCount > 0 ? "bg-red-50 border border-red-200 text-red-800" : "bg-slate-50 border border-slate-200 text-slate-600"}`}>
+              <AlertTriangle className="h-3 w-3" /> {overdueCount} overdue
+            </span>
           </div>
 
           {/* Component WIP table */}
@@ -281,7 +266,7 @@ export default function WipRegister() {
               <table className="w-full data-table">
                 <thead>
                   <tr>
-                    <th>JC Number</th>
+                    <th>WO Number</th>
                     <th>Item</th>
                     <th>Status</th>
                     <th>Location</th>
@@ -304,8 +289,8 @@ export default function WipRegister() {
                     <tr>
                       <td colSpan={10} className="text-center py-10 text-muted-foreground">
                         {rows.length === 0
-                          ? "No active job cards. All clear!"
-                          : "No job cards match current search."}
+                          ? "No active work orders. All clear!"
+                          : "No work orders match current search."}
                       </td>
                     </tr>
                   ) : (

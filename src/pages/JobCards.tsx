@@ -124,7 +124,7 @@ export default function JobCards() {
       setNewOpen(false);
       setSelectedItem(null);
       setForm(emptyForm);
-      toast({ title: "Job Card created", description: `${jc.jc_number} is now active.` });
+      toast({ title: "Work Order created", description: `${jc.jc_number} is now active.` });
       navigate(`/job-cards/${jc.id}`);
     },
     onError: (err: any) => {
@@ -137,7 +137,7 @@ export default function JobCards() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["job-cards"] });
       queryClient.invalidateQueries({ queryKey: ["jc-stats"] });
-      toast({ title: "Job Card deleted" });
+      toast({ title: "Work Order deleted" });
     },
     onError: (err: any) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -154,7 +154,7 @@ export default function JobCards() {
 
   const handleDelete = (e: React.MouseEvent, id: string, jcNumber: string) => {
     e.stopPropagation();
-    if (confirm(`Delete Job Card ${jcNumber}? This cannot be undone.`)) {
+    if (confirm(`Delete Work Order ${jcNumber}? This cannot be undone.`)) {
       deleteMutation.mutate(id);
     }
   };
@@ -194,12 +194,12 @@ export default function JobCards() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-            <Activity className="h-5 w-5 text-blue-600" /> Job Cards
+            <Activity className="h-5 w-5 text-blue-600" /> Work Orders
           </h1>
           <p className="text-sm text-slate-500">Track manufacturing jobs through each process stage</p>
         </div>
         <Button onClick={() => setNewOpen(true)} className="active:scale-[0.98] transition-transform">
-          <Plus className="h-4 w-4 mr-1" /> New Job Card
+          <Plus className="h-4 w-4 mr-1" /> New Work Order
         </Button>
       </div>
 
@@ -322,9 +322,9 @@ export default function JobCards() {
                 <tr>
                   <td colSpan={12} className="text-center py-12">
                     <Activity className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
-                    <p className="text-muted-foreground font-medium">No job cards yet</p>
+                    <p className="text-muted-foreground font-medium">No work orders yet</p>
                     <p className="text-sm text-muted-foreground">
-                      Create your first Job Card to track manufacturing
+                      Create your first Work Order to track manufacturing
                     </p>
                   </td>
                 </tr>
@@ -482,7 +482,7 @@ export default function JobCards() {
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>New Job Card</DialogTitle>
+            <DialogTitle>New Work Order</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
@@ -542,7 +542,7 @@ export default function JobCards() {
               )}
               {selectedItem && bomLines && bomLines.length > 0 && (
                 <div className="bg-blue-50 border border-blue-200 rounded-md p-2.5 text-xs text-blue-700">
-                  This component has a standard processing route. Steps will be auto-populated when the Job Card is created.
+                  This component has a standard processing route. Steps will be auto-populated when the Work Order is created.
                 </div>
               )}
             </div>
@@ -625,7 +625,7 @@ export default function JobCards() {
               Cancel
             </Button>
             <Button onClick={handleCreate} disabled={createMutation.isPending}>
-              Create Job Card
+              Create Work Order
             </Button>
           </DialogFooter>
         </DialogContent>

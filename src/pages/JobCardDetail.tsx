@@ -16,6 +16,9 @@ import {
   Pause,
   Play,
   PackageCheck,
+  TrendingDown,
+  TrendingUp,
+  Package,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -42,8 +45,11 @@ import {
   completeJobCard,
   updateJobCardStatus,
   fetchItemCurrentStock,
+  issueJobCardMaterial,
+  fetchJobCardStockMovements,
   type JobCardStep,
   type RecordReturnData,
+  type StockMovement,
 } from "@/lib/job-cards-api";
 import { AddStepDialog } from "@/components/AddStepDialog";
 import { RecordReturnDialog } from "@/components/RecordReturnDialog";
@@ -270,6 +276,10 @@ export default function JobCardDetail() {
   const [completionOutcome, setCompletionOutcome] = useState<"stock" | "assembly" | "customer">("stock");
   const [completionNote, setCompletionNote] = useState("");
 
+  // Material issue dialog state
+  const [materialIssueOpen, setMaterialIssueOpen] = useState(false);
+  const [issuingMaterial, setIssuingMaterial] = useState(false);
+
   const { data: jc, isLoading } = useQuery({
     queryKey: ["job-card", id],
     queryFn: () => fetchJobCard(id!),
@@ -285,7 +295,13 @@ export default function JobCardDetail() {
   const { data: currentItemStock } = useQuery({
     queryKey: ["item-stock-for-completion", jc?.item_id],
     queryFn: () => fetchItemCurrentStock(jc!.item_id!),
-    enabled: completeDialogOpen && !!jc?.item_id,
+    enabled: (completeDialogOpen || materialIssueOpen) && !!jc?.item_id,
+  });
+
+  const { data: stockMovements = [] } = useQuery<StockMovement[]>({
+    queryKey: ["job-card-stock-movements", id],
+    queryFn: () => fetchJobCardStockMovements(id!),
+    enabled: !!id,
   });
 
   const invalidateAll = () => {
@@ -311,7 +327,7 @@ export default function JobCardDetail() {
       invalidateAll();
       queryClient.invalidateQueries({ queryKey: ["stock-status"] });
       setCompleteDialogOpen(false);
-      toast({ title: "Job Card completed" });
+      toast({ title: "Work Order completed" });
     },
     onError: (err: any) =>
       toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -330,7 +346,7 @@ export default function JobCardDetail() {
   if (isLoading || !jc) {
     return (
       <div className="p-6 text-center text-muted-foreground">
-        {isLoading ? "Loading…" : "Job Card not found"}
+        {isLoading ? "Loading…" : "Work Order not found"}
       </div>
     );
   }
@@ -539,9 +555,17 @@ export default function JobCardDetail() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() =>
-                holdMutation.mutate(jc.status === "on_hold" ? "in_progress" : "on_hold")
-              }
+              onClick={() => {
+                if (jc.status === "on_hold") {
+                  if (jc.item_id) {
+                    setMaterialIssueOpen(true);
+                  } else {
+                    holdMutation.mutate("in_progress");
+                  }
+                } else {
+                  holdMutation.mutate("on_hold");
+                }
+              }}
               disabled={holdMutation.isPending}
             >
               {jc.status === "on_hold" ? (
@@ -719,6 +743,67 @@ export default function JobCardDetail() {
         </div>
       </div>
 
+      {/* Stock Movements */}
+      <div className="space-y-2">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+          <Package className="h-4 w-4" /> Stock Movements
+        </h2>
+        {stockMovements.length === 0 ? (
+          <div className="paper-card text-center py-6 text-sm text-muted-foreground">
+            No stock movements recorded yet
+          </div>
+        ) : (
+          <div className="paper-card !p-0 overflow-x-auto">
+            <table className="w-full data-table text-sm">
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Date</th>
+                  <th>Item</th>
+                  <th className="text-right">Qty In</th>
+                  <th className="text-right">Qty Out</th>
+                  <th className="text-right">Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stockMovements.map((mv) => (
+                  <tr key={mv.id}>
+                    <td>
+                      {mv.transaction_type === "job_card_issue" ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-100">
+                          <TrendingDown className="h-3 w-3" /> Issued
+                        </span>
+                      ) : mv.transaction_type === "job_card_return" ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-100">
+                          <TrendingUp className="h-3 w-3" /> Returned
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground capitalize">
+                          {mv.transaction_type.replace(/_/g, " ")}
+                        </span>
+                      )}
+                    </td>
+                    <td className="text-xs text-muted-foreground">
+                      {new Date(mv.transaction_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                    </td>
+                    <td className="font-mono text-xs text-blue-600">{mv.item_code ?? "—"}</td>
+                    <td className="text-right font-mono tabular-nums text-green-700">
+                      {mv.qty_in > 0 ? `+${mv.qty_in}` : "—"}
+                    </td>
+                    <td className="text-right font-mono tabular-nums text-red-700">
+                      {mv.qty_out > 0 ? `-${mv.qty_out}` : "—"}
+                    </td>
+                    <td className="text-right font-mono tabular-nums text-sm font-medium">
+                      {mv.balance_qty}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* Audit Trail */}
       <AuditTimeline documentId={id!} />
 
@@ -744,11 +829,74 @@ export default function JobCardDetail() {
         />
       )}
 
+      {/* Material Issue Dialog */}
+      <Dialog open={materialIssueOpen} onOpenChange={setMaterialIssueOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Issue Material from Stock?</DialogTitle>
+            <DialogDescription>
+              This work order consumes stock. Do you want to deduct the quantity now?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg bg-muted/50 border border-border p-3 space-y-1.5 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Item</span>
+              <span className="font-mono font-medium text-blue-700">{jc.item_code ?? "—"}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Quantity to deduct</span>
+              <span className="font-mono font-medium">{jc.quantity_original}</span>
+            </div>
+            {currentItemStock != null && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Stock after issue</span>
+                <span className={`font-mono font-medium ${Math.max(0, currentItemStock - jc.quantity_original) === 0 ? "text-red-600" : "text-slate-700"}`}>
+                  {currentItemStock} → {Math.max(0, currentItemStock - jc.quantity_original)}
+                </span>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="gap-2 flex-col sm:flex-row">
+            <Button
+              variant="outline"
+              className="flex-1"
+              disabled={issuingMaterial}
+              onClick={async () => {
+                setMaterialIssueOpen(false);
+                holdMutation.mutate("in_progress");
+              }}
+            >
+              Skip for Now
+            </Button>
+            <Button
+              className="flex-1"
+              disabled={issuingMaterial}
+              onClick={async () => {
+                setIssuingMaterial(true);
+                try {
+                  await issueJobCardMaterial(id!);
+                  queryClient.invalidateQueries({ queryKey: ["job-card-stock-movements", id] });
+                  queryClient.invalidateQueries({ queryKey: ["item-stock-for-completion", jc.item_id] });
+                  setMaterialIssueOpen(false);
+                  holdMutation.mutate("in_progress");
+                } catch (err: any) {
+                  toast({ title: "Error", description: err.message, variant: "destructive" });
+                } finally {
+                  setIssuingMaterial(false);
+                }
+              }}
+            >
+              {issuingMaterial ? "Issuing…" : "Yes, Issue Stock"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Completion dialog */}
       <Dialog open={completeDialogOpen} onOpenChange={setCompleteDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Complete Job Card</DialogTitle>
+            <DialogTitle>Complete Work Order</DialogTitle>
             <DialogDescription>
               Review the summary and choose what happens to the finished units.
             </DialogDescription>

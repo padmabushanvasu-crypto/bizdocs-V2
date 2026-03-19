@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   GitFork, Plus, Trash2, Search, ChevronDown, ChevronRight,
   Pencil, RefreshCw, Download, Printer, CheckCircle2, Star,
-  AlertTriangle, BarChart3,
+  AlertTriangle, BarChart3, Users, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,8 +29,10 @@ import {
   fetchBomLines, createBomLine, updateBomLine, deleteBomLine,
   fetchBomVariants, createBomVariant, updateBomVariant, deleteBomVariant, setDefaultVariant,
   explodeBom, calculateBomCost, fetchWhereUsed, compareBomVariants,
-  type BomLine, type BomVariant, type BomNode,
+  fetchBomLineVendorsBatch, addBomLineVendor, updateBomLineVendor, removeBomLineVendor,
+  type BomLine, type BomVariant, type BomNode, type BomLineVendor,
 } from "@/lib/bom-api";
+import { fetchParties, type Party } from "@/lib/parties-api";
 import { fetchItems, type Item } from "@/lib/items-api";
 import { formatCurrency } from "@/lib/gst-utils";
 import { exportToExcel } from "@/lib/export-utils";
@@ -202,6 +204,22 @@ export default function BillOfMaterials() {
   const [lineForm, setLineForm] = useState({ ...emptyLineForm });
   const [variantForm, setVariantForm] = useState({ ...emptyVariantForm });
 
+  // ── Vendor state ─────────────────────────────────────────────────────────────
+  const [expandedLines, setExpandedLines] = useState<Set<string>>(new Set());
+  const [vendorDialogOpen, setVendorDialogOpen] = useState(false);
+  const [vendorDialogLine, setVendorDialogLine] = useState<BomLine | null>(null);
+  const [editingVendor, setEditingVendor] = useState<BomLineVendor | null>(null);
+  const [vendorForm, setVendorForm] = useState({
+    vendor_id: null as string | null,
+    vendor_name: "",
+    vendor_code: "",
+    unit_price: null as number | null,
+    lead_time_days: 7,
+    is_preferred: false,
+    notes: "",
+  });
+  const [vendorPartyOpen, setVendorPartyOpen] = useState(false);
+
   // ── Reset state when item changes ────────────────────────────────────────────
   const handleSelectItem = (item: Item) => {
     setSelectedItem(item);
@@ -277,6 +295,30 @@ export default function BillOfMaterials() {
 
   const childCandidates = allItems.filter((i) => i.id !== selectedItem?.id);
   const whereUsedItems = allItems; // for where-used search
+
+  // Vendors: fetch for all lines in the current view (batch)
+  const bomLineIds = useMemo(() => bomLines.map((l) => l.id), [bomLines]);
+  const { data: allVendors = [], refetch: refetchVendors } = useQuery<BomLineVendor[]>({
+    queryKey: ["bom-line-vendors-batch", bomLineIds],
+    queryFn: () => fetchBomLineVendorsBatch(bomLineIds),
+    enabled: bomLineIds.length > 0,
+  });
+  const vendorsByLine = useMemo(() => {
+    const map = new Map<string, BomLineVendor[]>();
+    for (const v of allVendors) {
+      const arr = map.get(v.bom_line_id) ?? [];
+      arr.push(v);
+      map.set(v.bom_line_id, arr);
+    }
+    return map;
+  }, [allVendors]);
+
+  const { data: vendorPartiesData } = useQuery({
+    queryKey: ["parties-vendors-bom"],
+    queryFn: () => fetchParties({ type: "vendor", status: "active", pageSize: 500 }),
+    enabled: vendorDialogOpen,
+  });
+  const vendorParties: Party[] = vendorPartiesData?.data ?? [];
 
   // ── Cost chart data ──────────────────────────────────────────────────────────
   const chartData = useMemo(() => {
@@ -407,6 +449,88 @@ export default function BillOfMaterials() {
     },
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
+
+  // ── Vendor mutations ─────────────────────────────────────────────────────────
+
+  const addVendorMutation = useMutation({
+    mutationFn: () =>
+      addBomLineVendor({
+        bom_line_id: vendorDialogLine!.id,
+        vendor_id: vendorForm.vendor_id ?? null,
+        vendor_name: vendorForm.vendor_name,
+        vendor_code: vendorForm.vendor_code || null,
+        unit_price: vendorForm.unit_price,
+        lead_time_days: vendorForm.lead_time_days,
+        is_preferred: vendorForm.is_preferred,
+        notes: vendorForm.notes || null,
+      }),
+    onSuccess: () => {
+      refetchVendors();
+      setVendorDialogOpen(false);
+      toast({ title: "Vendor added" });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const updateVendorMutation = useMutation({
+    mutationFn: () =>
+      updateBomLineVendor(editingVendor!.id, {
+        bom_line_id: vendorDialogLine!.id,
+        vendor_id: vendorForm.vendor_id ?? null,
+        vendor_name: vendorForm.vendor_name,
+        vendor_code: vendorForm.vendor_code || null,
+        unit_price: vendorForm.unit_price,
+        lead_time_days: vendorForm.lead_time_days,
+        is_preferred: vendorForm.is_preferred,
+        notes: vendorForm.notes || null,
+      }),
+    onSuccess: () => {
+      refetchVendors();
+      setVendorDialogOpen(false);
+      toast({ title: "Vendor updated" });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const removeVendorMutation = useMutation({
+    mutationFn: (id: string) => removeBomLineVendor(id),
+    onSuccess: () => {
+      refetchVendors();
+      toast({ title: "Vendor removed" });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const openAddVendor = (line: BomLine) => {
+    setVendorDialogLine(line);
+    setEditingVendor(null);
+    setVendorForm({ vendor_id: null, vendor_name: "", vendor_code: "", unit_price: null, lead_time_days: 7, is_preferred: false, notes: "" });
+    setVendorDialogOpen(true);
+  };
+
+  const openEditVendor = (line: BomLine, v: BomLineVendor) => {
+    setVendorDialogLine(line);
+    setEditingVendor(v);
+    setVendorForm({
+      vendor_id: v.vendor_id,
+      vendor_name: v.vendor_name,
+      vendor_code: v.vendor_code ?? "",
+      unit_price: v.unit_price,
+      lead_time_days: v.lead_time_days ?? 7,
+      is_preferred: v.is_preferred,
+      notes: v.notes ?? "",
+    });
+    setVendorDialogOpen(true);
+  };
+
+  const toggleLineExpand = (lineId: string) => {
+    setExpandedLines((prev) => {
+      const next = new Set(prev);
+      if (next.has(lineId)) next.delete(lineId);
+      else next.add(lineId);
+      return next;
+    });
+  };
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -712,6 +836,7 @@ export default function BillOfMaterials() {
                         <table className="w-full data-table text-sm">
                           <thead>
                             <tr>
+                              <th className="w-6"></th>
                               <th>#</th>
                               <th>Item Code</th>
                               <th>Description</th>
@@ -727,89 +852,195 @@ export default function BillOfMaterials() {
                             </tr>
                           </thead>
                           <tbody>
-                            {bomLines.map((line, idx) => (
-                              <tr key={line.id}>
-                                <td className="text-muted-foreground text-xs">{idx + 1}</td>
-                                <td className="font-mono text-xs text-blue-600 font-medium">
-                                  {line.child_item_code ?? "—"}
-                                </td>
-                                <td className="font-medium text-sm max-w-[160px] truncate">
-                                  {line.child_item_description ?? "—"}
-                                </td>
-                                <td>
-                                  {line.child_item_type && (
-                                    <TypeBadge type={line.child_item_type} />
+                            {bomLines.map((line, idx) => {
+                              const lineVendors = vendorsByLine.get(line.id) ?? [];
+                              const isExpanded = expandedLines.has(line.id);
+                              return (
+                                <>
+                                  <tr key={line.id}>
+                                    <td>
+                                      <button
+                                        onClick={() => toggleLineExpand(line.id)}
+                                        className="h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                                      >
+                                        {isExpanded
+                                          ? <ChevronDown className="h-3.5 w-3.5" />
+                                          : <ChevronRight className="h-3.5 w-3.5" />}
+                                      </button>
+                                    </td>
+                                    <td className="text-muted-foreground text-xs">{idx + 1}</td>
+                                    <td className="font-mono text-xs text-blue-600 font-medium">
+                                      {line.child_item_code ?? "—"}
+                                    </td>
+                                    <td>
+                                      <div className="flex flex-col gap-0.5">
+                                        <span className="font-medium text-sm max-w-[140px] truncate">
+                                          {line.child_item_description ?? "—"}
+                                        </span>
+                                        {lineVendors.length > 0 && (
+                                          <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 w-fit">
+                                            <Users className="h-2.5 w-2.5" />
+                                            {lineVendors.length} vendor{lineVendors.length !== 1 ? "s" : ""}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td>
+                                      {line.child_item_type && (
+                                        <TypeBadge type={line.child_item_type} />
+                                      )}
+                                    </td>
+                                    <td className="text-xs text-muted-foreground font-mono">
+                                      {line.drawing_number ?? "—"}
+                                    </td>
+                                    <td className="text-right font-mono tabular-nums text-sm">
+                                      {line.quantity}
+                                    </td>
+                                    <td className="text-xs text-muted-foreground">
+                                      {line.child_unit ?? line.unit ?? ""}
+                                    </td>
+                                    <td className="text-right text-xs">
+                                      {line.scrap_factor > 0 ? (
+                                        <span className="text-amber-600 font-medium">{line.scrap_factor}%</span>
+                                      ) : (
+                                        <span className="text-muted-foreground">—</span>
+                                      )}
+                                    </td>
+                                    <td className="text-center">
+                                      {line.is_critical && (
+                                        <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-semibold">
+                                          CRIT
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="text-right">
+                                      <span
+                                        className={`text-xs font-medium px-2 py-0.5 rounded ${
+                                          (line.child_current_stock ?? 0) <= 0
+                                            ? "bg-red-50 text-red-700"
+                                            : (line.child_current_stock ?? 0) < line.quantity
+                                            ? "bg-amber-50 text-amber-700"
+                                            : "bg-green-50 text-green-700"
+                                        }`}
+                                      >
+                                        {line.child_current_stock ?? 0}
+                                      </span>
+                                    </td>
+                                    <td className="text-right font-mono tabular-nums text-sm font-medium">
+                                      {formatCurrency(line.quantity * (line.child_standard_cost ?? 0))}
+                                    </td>
+                                    <td>
+                                      <div className="flex gap-1">
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-7 w-7"
+                                          onClick={() => openEdit(line)}
+                                        >
+                                          <Pencil className="h-3 w-3" />
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-7 w-7"
+                                          onClick={() => {
+                                            if (
+                                              confirm(
+                                                `Remove ${line.child_item_code ?? "this component"} from BOM?`
+                                              )
+                                            ) {
+                                              deleteLineMutation.mutate(line.id);
+                                            }
+                                          }}
+                                        >
+                                          <Trash2 className="h-3 w-3 text-destructive" />
+                                        </Button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                  {/* Vendor sub-table */}
+                                  {isExpanded && (
+                                    <tr key={`${line.id}-vendors`}>
+                                      <td colSpan={13} className="bg-slate-50 border-t border-b border-slate-100 !p-0">
+                                        <div className="px-10 py-3">
+                                          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1.5">
+                                            <Users className="h-3 w-3" /> Approved Vendors
+                                          </p>
+                                          {lineVendors.length === 0 ? (
+                                            <p className="text-xs text-muted-foreground py-2">No vendors added yet.</p>
+                                          ) : (
+                                            <table className="w-full text-xs mb-2">
+                                              <thead>
+                                                <tr className="text-left text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                                                  <th className="pb-1.5 pr-4 font-semibold">Vendor</th>
+                                                  <th className="pb-1.5 pr-4 font-semibold">Process</th>
+                                                  <th className="pb-1.5 pr-4 font-semibold text-right">Lead Time</th>
+                                                  <th className="pb-1.5 pr-4 font-semibold text-right">Unit Cost</th>
+                                                  <th className="pb-1.5 pr-4 font-semibold text-center">Preferred</th>
+                                                  <th className="pb-1.5 font-semibold">Actions</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody>
+                                                {lineVendors.map((v) => (
+                                                  <tr key={v.id} className="border-b border-slate-100 last:border-0">
+                                                    <td className="py-1.5 pr-4 font-medium text-slate-800">
+                                                      {v.vendor_name}
+                                                      {v.vendor_code && (
+                                                        <span className="ml-1 text-slate-400 font-mono">({v.vendor_code})</span>
+                                                      )}
+                                                    </td>
+                                                    <td className="py-1.5 pr-4 text-slate-600">
+                                                      {v.notes ?? "—"}
+                                                    </td>
+                                                    <td className="py-1.5 pr-4 text-right text-slate-600">
+                                                      {v.lead_time_days != null ? `${v.lead_time_days} days` : "—"}
+                                                    </td>
+                                                    <td className="py-1.5 pr-4 text-right font-mono text-slate-700">
+                                                      {v.unit_price != null ? formatCurrency(v.unit_price) : "—"}
+                                                    </td>
+                                                    <td className="py-1.5 pr-4 text-center">
+                                                      {v.is_preferred && (
+                                                        <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500 inline-block" />
+                                                      )}
+                                                    </td>
+                                                    <td className="py-1.5">
+                                                      <div className="flex gap-1">
+                                                        <button
+                                                          onClick={() => openEditVendor(line, v)}
+                                                          className="h-6 w-6 flex items-center justify-center rounded hover:bg-slate-200 text-slate-500 transition-colors"
+                                                        >
+                                                          <Pencil className="h-3 w-3" />
+                                                        </button>
+                                                        <button
+                                                          onClick={() => {
+                                                            if (confirm(`Remove ${v.vendor_name}?`)) {
+                                                              removeVendorMutation.mutate(v.id);
+                                                            }
+                                                          }}
+                                                          className="h-6 w-6 flex items-center justify-center rounded hover:bg-red-100 text-slate-400 hover:text-red-600 transition-colors"
+                                                        >
+                                                          <X className="h-3 w-3" />
+                                                        </button>
+                                                      </div>
+                                                    </td>
+                                                  </tr>
+                                                ))}
+                                              </tbody>
+                                            </table>
+                                          )}
+                                          <button
+                                            onClick={() => openAddVendor(line)}
+                                            className="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1 transition-colors"
+                                          >
+                                            <Plus className="h-3 w-3" /> Add Vendor
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </tr>
                                   )}
-                                </td>
-                                <td className="text-xs text-muted-foreground font-mono">
-                                  {line.drawing_number ?? "—"}
-                                </td>
-                                <td className="text-right font-mono tabular-nums text-sm">
-                                  {line.quantity}
-                                </td>
-                                <td className="text-xs text-muted-foreground">
-                                  {line.child_unit ?? line.unit ?? ""}
-                                </td>
-                                <td className="text-right text-xs">
-                                  {line.scrap_factor > 0 ? (
-                                    <span className="text-amber-600 font-medium">{line.scrap_factor}%</span>
-                                  ) : (
-                                    <span className="text-muted-foreground">—</span>
-                                  )}
-                                </td>
-                                <td className="text-center">
-                                  {line.is_critical && (
-                                    <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-semibold">
-                                      CRIT
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="text-right">
-                                  <span
-                                    className={`text-xs font-medium px-2 py-0.5 rounded ${
-                                      (line.child_current_stock ?? 0) <= 0
-                                        ? "bg-red-50 text-red-700"
-                                        : (line.child_current_stock ?? 0) < line.quantity
-                                        ? "bg-amber-50 text-amber-700"
-                                        : "bg-green-50 text-green-700"
-                                    }`}
-                                  >
-                                    {line.child_current_stock ?? 0}
-                                  </span>
-                                </td>
-                                <td className="text-right font-mono tabular-nums text-sm font-medium">
-                                  {formatCurrency(line.quantity * (line.child_standard_cost ?? 0))}
-                                </td>
-                                <td>
-                                  <div className="flex gap-1">
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-7 w-7"
-                                      onClick={() => openEdit(line)}
-                                    >
-                                      <Pencil className="h-3 w-3" />
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-7 w-7"
-                                      onClick={() => {
-                                        if (
-                                          confirm(
-                                            `Remove ${line.child_item_code ?? "this component"} from BOM?`
-                                          )
-                                        ) {
-                                          deleteLineMutation.mutate(line.id);
-                                        }
-                                      }}
-                                    >
-                                      <Trash2 className="h-3 w-3 text-destructive" />
-                                    </Button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
+                                </>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -1894,6 +2125,115 @@ export default function BillOfMaterials() {
               disabled={updateVariantMutation.isPending || !variantForm.variant_name.trim()}
             >
               Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── ADD / EDIT VENDOR DIALOG ─────────────────────────────────────── */}
+      <Dialog open={vendorDialogOpen} onOpenChange={(v) => { setVendorDialogOpen(v); if (!v) { setEditingVendor(null); setVendorPartyOpen(false); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingVendor ? "Edit Vendor" : "Add Approved Vendor"}</DialogTitle>
+            {vendorDialogLine && (
+              <DialogDescription>
+                For: <span className="font-mono text-blue-700">{vendorDialogLine.child_item_code ?? "component"}</span>
+                {" — "}{vendorDialogLine.child_item_description}
+              </DialogDescription>
+            )}
+          </DialogHeader>
+
+          <div className="space-y-3">
+            {/* Vendor combobox */}
+            <div className="space-y-1.5">
+              <Label>Vendor *</Label>
+              <Popover open={vendorPartyOpen} onOpenChange={setVendorPartyOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
+                    {vendorForm.vendor_name || "Select vendor..."}
+                    <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-full p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search vendors..." />
+                    <CommandList>
+                      <CommandEmpty>No vendor found.</CommandEmpty>
+                      <CommandGroup>
+                        {vendorParties.map((p) => (
+                          <CommandItem
+                            key={p.id}
+                            value={p.name}
+                            onSelect={() => {
+                              setVendorForm((f) => ({ ...f, vendor_id: p.id, vendor_name: p.name }));
+                              setVendorPartyOpen(false);
+                            }}
+                          >
+                            <div>
+                              <p className="font-medium text-sm">{p.name}</p>
+                              {p.city && <p className="text-xs text-muted-foreground">{p.city}</p>}
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            {/* Process name used as notes */}
+            <div className="space-y-1.5">
+              <Label>Process Name</Label>
+              <Input
+                value={vendorForm.notes}
+                onChange={(e) => setVendorForm((f) => ({ ...f, notes: e.target.value }))}
+                placeholder="e.g. Nickel Plating, CNC Machining"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Lead Time (days)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={vendorForm.lead_time_days ?? ""}
+                  onChange={(e) => setVendorForm((f) => ({ ...f, lead_time_days: parseInt(e.target.value) || 0 }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Unit Cost ₹ (optional)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={vendorForm.unit_price ?? ""}
+                  onChange={(e) => setVendorForm((f) => ({ ...f, unit_price: e.target.value ? parseFloat(e.target.value) : null }))}
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="vendor-preferred"
+                checked={vendorForm.is_preferred}
+                onCheckedChange={(v) => setVendorForm((f) => ({ ...f, is_preferred: !!v }))}
+              />
+              <Label htmlFor="vendor-preferred" className="cursor-pointer flex items-center gap-1.5">
+                <Star className="h-3.5 w-3.5 text-amber-500" /> Mark as preferred vendor
+              </Label>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setVendorDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => editingVendor ? updateVendorMutation.mutate() : addVendorMutation.mutate()}
+              disabled={!vendorForm.vendor_name.trim() || addVendorMutation.isPending || updateVendorMutation.isPending}
+            >
+              {editingVendor ? "Save Changes" : "Add Vendor"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, FileText, Save, ChevronRight, Plus, Settings, Trash2, Calendar } from "lucide-react";
+import { ArrowLeft, FileText, Save, ChevronRight, Plus, Settings, Trash2, Calendar, Upload, X, PenLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +17,7 @@ import {
   startNewFinancialYear,
   type DocumentSettings, type CustomField,
 } from "@/lib/settings-api";
+import { supabase } from "@/integrations/supabase/client";
 
 const DOC_TYPES = [
   { key: "purchase_order", label: "Purchase Order" },
@@ -48,6 +49,11 @@ export default function DocumentSettings() {
   const [cfDialogOpen, setCfDialogOpen] = useState(false);
   const [editingField, setEditingField] = useState<CustomField | null>(null);
 
+  // Signature upload
+  const [sigFile, setSigFile] = useState<File | null>(null);
+  const [sigPreview, setSigPreview] = useState<string>("");
+  const [sigUploading, setSigUploading] = useState(false);
+
   const { data: companyData } = useQuery({
     queryKey: ["company-settings"],
     queryFn: fetchCompanySettings,
@@ -58,6 +64,9 @@ export default function DocumentSettings() {
       financial_year_label: companyData.financial_year_label,
       financial_year_start: companyData.financial_year_start,
     }), 0);
+  }
+  if (companyData?.signature_url && !sigPreview) {
+    setTimeout(() => setSigPreview(companyData.signature_url!), 0);
   }
 
   // Document settings
@@ -140,6 +149,40 @@ export default function DocumentSettings() {
       default_value: cf.default_value || "", is_searchable: cf.is_searchable, sort_order: cf.sort_order,
     });
     setCfDialogOpen(true);
+  };
+
+  const sigSave = useMutation({
+    mutationFn: async () => {
+      let sigUrl = companyData?.signature_url ?? "";
+      if (sigFile) {
+        setSigUploading(true);
+        try {
+          const ext = sigFile.name.split(".").pop();
+          const path = `signature/signature.${ext}`;
+          await supabase.storage.from("company-assets").upload(path, sigFile, { upsert: true });
+          const { data: urlData } = supabase.storage.from("company-assets").getPublicUrl(path);
+          sigUrl = urlData.publicUrl;
+        } finally {
+          setSigUploading(false);
+        }
+      }
+      return saveCompanySettings({ signature_url: sigUrl } as any);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["company-settings"] });
+      toast({ title: "Signature saved" });
+      setSigFile(null);
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const handleSigChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSigFile(file);
+    const reader = new FileReader();
+    reader.onload = () => setSigPreview(reader.result as string);
+    reader.readAsDataURL(file);
   };
 
   // Financial Year
@@ -282,6 +325,57 @@ export default function DocumentSettings() {
                   ))}
                 </div>
               </div>
+            </div>
+          </div>
+          {/* Signature Upload */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <PenLine className="h-4 w-4 text-slate-400" />
+                <h2 className="font-semibold text-slate-900">Authorized Signature</h2>
+              </div>
+              <p className="text-sm text-slate-500 mt-0.5">Printed on invoices, DCs, and POs</p>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <div className="flex items-center gap-4">
+                {sigPreview ? (
+                  <div className="relative">
+                    <img
+                      src={sigPreview}
+                      alt="Signature"
+                      className="h-20 w-auto max-w-[200px] object-contain border border-slate-200 rounded-lg p-1 bg-white"
+                    />
+                    <button
+                      onClick={() => { setSigPreview(""); setSigFile(null); }}
+                      className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-red-500 text-white flex items-center justify-center hover:bg-red-600"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="h-20 w-40 border-2 border-dashed border-slate-300 rounded-lg flex items-center justify-center text-slate-400 text-xs">
+                    No signature
+                  </div>
+                )}
+                <div>
+                  <label className="cursor-pointer">
+                    <input type="file" accept="image/*" className="hidden" onChange={handleSigChange} />
+                    <div className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-700 hover:border-blue-400 hover:text-blue-600 transition-colors">
+                      <Upload className="h-4 w-4" /> Upload Signature
+                    </div>
+                  </label>
+                  <p className="text-xs text-slate-400 mt-1">PNG with transparent background recommended</p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => sigSave.mutate()}
+                disabled={sigSave.isPending || sigUploading || !sigFile}
+              >
+                <Save className="h-4 w-4 mr-1" />
+                {sigUploading ? "Uploading…" : sigSave.isPending ? "Saving…" : "Save Signature"}
+              </Button>
             </div>
           </div>
         </>

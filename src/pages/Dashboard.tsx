@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import {
-  IndianRupee, FileText, Truck, ShoppingCart, AlertTriangle,
+  FileText, Truck, ShoppingCart, AlertTriangle,
   Receipt, Activity, Factory, Package, Clock, Layers, ClipboardCheck, ShoppingBag,
   TrendingDown,
 } from "lucide-react";
@@ -227,8 +227,6 @@ export default function Dashboard() {
     refetchInterval: 60000,
   });
 
-  const gstTotal = analytics?.gstTotal ?? 0;
-
   return (
     <div className="p-4 md:p-6 space-y-6">
       {/* ── HEADER ─────────────────────────────────────────────────────────── */}
@@ -242,7 +240,7 @@ export default function Dashboard() {
             className="bg-blue-600 hover:bg-blue-700 text-white gap-1.5 h-9 shadow-sm font-semibold"
             onClick={() => navigate("/job-cards")}
           >
-            <Activity className="h-3.5 w-3.5" /> New Job Card
+            <Activity className="h-3.5 w-3.5" /> New Work Order
           </Button>
           <Button
             className="h-9 gap-1.5 bg-white border border-slate-300 shadow-sm hover:border-blue-400 hover:text-blue-600 transition-all text-slate-700"
@@ -266,7 +264,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── ZONE 1: OPERATIONAL ALERTS ────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
 
         {/* At Vendors */}
         <div
@@ -354,26 +352,6 @@ export default function Dashboard() {
             </div>
           );
         })()}
-
-        {/* GST Collected */}
-        <div
-          className="rounded-xl bg-teal-50 border border-teal-200 border-l-4 border-l-teal-500 shadow-sm p-5 cursor-pointer hover:shadow-md hover:-translate-y-px transition-all duration-200 min-h-[110px] relative overflow-hidden"
-          onClick={() => navigate("/invoices")}
-        >
-          <IndianRupee className="absolute top-2 right-3 h-12 w-12 text-teal-600 opacity-10 pointer-events-none" />
-          <div className="flex flex-col justify-between h-full relative">
-            <div>
-              <span className="text-[11px] font-bold tracking-widest uppercase opacity-80 text-teal-600">GST COLLECTED</span>
-              <p className="text-3xl font-bold font-mono tabular-nums text-teal-700 mt-1 leading-tight">
-                {formatCurrency(gstTotal)}
-              </p>
-            </div>
-            <div className="flex items-center justify-between mt-2">
-              <p className="text-xs text-teal-600">this month</p>
-              <span className="text-xs font-medium text-teal-500">View →</span>
-            </div>
-          </div>
-        </div>
 
         {/* Assembly Orders */}
         <div
@@ -468,12 +446,12 @@ export default function Dashboard() {
         })()}
       </div>
 
-      {/* ── ZONE 2: ACTIVE JOB CARDS ──────────────────────────────────────── */}
+      {/* ── ZONE 2: ACTIVE WORK ORDERS ──────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div className="flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-            <h2 className="font-semibold text-slate-900">Active Job Cards</h2>
+            <h2 className="font-semibold text-slate-900">Active Work Orders</h2>
           </div>
           <div className="flex items-center gap-3">
             {wipRows.length > 0 && (
@@ -493,14 +471,14 @@ export default function Dashboard() {
         {activeJCs.length === 0 ? (
           <div className="py-8 text-center">
             <Activity className="h-8 w-8 text-slate-300 mx-auto mb-3" />
-            <p className="text-slate-500 font-medium text-sm">No active job cards</p>
+            <p className="text-slate-500 font-medium text-sm">No active work orders</p>
             <p className="text-slate-400 text-xs mt-1">Create one to start tracking components.</p>
             <Button
               className="mt-4 bg-blue-600 hover:bg-blue-700 text-white gap-1.5"
               size="sm"
               onClick={() => navigate("/job-cards")}
             >
-              <Activity className="h-3.5 w-3.5" /> New Job Card
+              <Activity className="h-3.5 w-3.5" /> New Work Order
             </Button>
           </div>
         ) : (

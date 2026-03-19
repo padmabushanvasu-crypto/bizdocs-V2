@@ -76,6 +76,7 @@ export interface JobCardStep {
   return_dc_id: string | null;
   return_grn_id: string | null;
   qty_sent: number | null;
+  unit: string | null;
   qty_returned: number | null;
   job_work_charges: number;
   transport_cost_out: number;
@@ -344,14 +345,38 @@ export async function completeJobCard(
   if (outcome === "stock" && (jc as any)?.item_id && ((jc as any)?.quantity_accepted ?? 0) > 0) {
     const { data: item } = await (supabase as any)
       .from("items")
-      .select("current_stock")
+      .select("current_stock, item_code, description, standard_cost")
       .eq("id", (jc as any).item_id)
       .single();
     if (item) {
+      const qtyAccepted = (jc as any).quantity_accepted;
+      const newStock = ((item as any).current_stock ?? 0) + qtyAccepted;
       await (supabase as any)
         .from("items")
-        .update({ current_stock: ((item as any).current_stock ?? 0) + (jc as any).quantity_accepted })
+        .update({ current_stock: newStock })
         .eq("id", (jc as any).item_id);
+
+      const companyId = await getCompanyId();
+      const { data: { user } } = await supabase.auth.getUser();
+      const today = new Date().toISOString().slice(0, 10);
+      await (supabase as any).from("stock_ledger").insert({
+        company_id: companyId,
+        item_id: (jc as any).item_id,
+        item_code: (item as any)?.item_code ?? (jc as any)?.item_code ?? null,
+        item_description: (item as any)?.description ?? (jc as any)?.item_description ?? null,
+        transaction_date: today,
+        transaction_type: "job_card_return",
+        qty_in: qtyAccepted,
+        qty_out: 0,
+        balance_qty: newStock,
+        unit_cost: (item as any)?.standard_cost ?? 0,
+        total_value: qtyAccepted * ((item as any)?.standard_cost ?? 0),
+        reference_type: "job_card",
+        reference_id: id,
+        reference_number: (jc as any)?.jc_number ?? null,
+        notes: `Returned to stock from ${(jc as any)?.jc_number ?? "work order"}`,
+        created_by: user?.id ?? null,
+      }).catch(console.error);
     }
   }
 
@@ -413,6 +438,93 @@ export async function fetchItemCurrentStock(itemId: string): Promise<number> {
     .eq("id", itemId)
     .single();
   return (data as any)?.current_stock ?? 0;
+}
+
+export interface StockMovement {
+  id: string;
+  item_id: string;
+  item_code: string | null;
+  item_description: string | null;
+  transaction_type: string;
+  transaction_date: string;
+  qty_in: number;
+  qty_out: number;
+  balance_qty: number;
+  notes: string | null;
+  created_at: string;
+}
+
+export async function fetchJobCardStockMovements(jobCardId: string): Promise<StockMovement[]> {
+  const { data, error } = await (supabase as any)
+    .from("stock_ledger")
+    .select("id, item_id, item_code, item_description, transaction_type, transaction_date, qty_in, qty_out, balance_qty, notes, created_at")
+    .eq("reference_id", jobCardId)
+    .order("created_at", { ascending: true });
+  if (error) return [];
+  return (data ?? []) as StockMovement[];
+}
+
+export async function issueJobCardMaterial(jobCardId: string): Promise<void> {
+  const companyId = await getCompanyId();
+  const { data: { user } } = await supabase.auth.getUser();
+  const userId = user?.id ?? null;
+
+  // Fetch job card details
+  const { data: jc, error: jcErr } = await (supabase as any)
+    .from("job_cards")
+    .select("item_id, item_code, item_description, quantity_original, jc_number")
+    .eq("id", jobCardId)
+    .single();
+  if (jcErr) throw jcErr;
+
+  const itemId = (jc as any)?.item_id;
+  if (!itemId) throw new Error("No item linked to this work order");
+
+  const qty = (jc as any)?.quantity_original ?? 0;
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Fetch current stock and cost
+  const { data: item } = await (supabase as any)
+    .from("items")
+    .select("current_stock, standard_cost, item_code, description")
+    .eq("id", itemId)
+    .single();
+
+  const currentStock = (item as any)?.current_stock ?? 0;
+  const newStock = Math.max(0, currentStock - qty);
+
+  // Deduct stock
+  await (supabase as any)
+    .from("items")
+    .update({ current_stock: newStock })
+    .eq("id", itemId);
+
+  // Write stock_ledger entry
+  await (supabase as any).from("stock_ledger").insert({
+    company_id: companyId,
+    item_id: itemId,
+    item_code: (item as any)?.item_code ?? (jc as any)?.item_code ?? null,
+    item_description: (item as any)?.description ?? (jc as any)?.item_description ?? null,
+    transaction_date: today,
+    transaction_type: "job_card_issue",
+    qty_in: 0,
+    qty_out: qty,
+    balance_qty: newStock,
+    unit_cost: (item as any)?.standard_cost ?? 0,
+    total_value: qty * ((item as any)?.standard_cost ?? 0),
+    reference_type: "job_card",
+    reference_id: jobCardId,
+    reference_number: (jc as any)?.jc_number ?? null,
+    notes: `Issued for ${(jc as any)?.jc_number ?? "work order"}`,
+    created_by: userId,
+  });
+
+  logAudit("job_card", jobCardId, "Material Issued", {
+    summary: `${qty} units of ${(jc as any)?.item_code ?? "item"} issued from stock`,
+    item_id: itemId,
+    qty_issued: qty,
+    new_stock: newStock,
+  }).catch(console.error);
 }
 
 export async function fetchJobCardStats() {

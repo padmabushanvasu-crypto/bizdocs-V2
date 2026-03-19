@@ -1,36 +1,171 @@
-import { LayoutDashboard, FileText, Users, Package, MoreHorizontal } from "lucide-react";
+import { useState } from "react";
+import {
+  LayoutDashboard,
+  FileText,
+  Package,
+  MoreHorizontal,
+  Activity,
+  ShoppingCart,
+  PackageCheck,
+  Users,
+  GitFork,
+  BarChart3,
+  Truck,
+  Receipt,
+  Settings,
+  X,
+  Layers,
+  ShoppingBag,
+  BookOpen,
+} from "lucide-react";
 import { NavLink } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { fetchReorderSummary } from "@/lib/reorder-api";
 
-const tabs = [
+const MORE_GROUPS = [
+  {
+    label: "Daily Work",
+    items: [
+      { label: "Work Orders", to: "/job-cards", icon: Activity },
+      { label: "Assembly Orders", to: "/assembly-orders", icon: Layers },
+      { label: "WIP Register", to: "/wip-register", icon: BookOpen },
+    ],
+  },
+  {
+    label: "Purchasing",
+    items: [
+      { label: "Purchase Orders", to: "/purchase-orders", icon: ShoppingCart },
+      { label: "GRN", to: "/grn", icon: PackageCheck },
+    ],
+  },
+  {
+    label: "Dispatch & Billing",
+    items: [
+      { label: "Sales Orders", to: "/sales-orders", icon: ShoppingBag },
+      { label: "Delivery Challans", to: "/delivery-challans", icon: Truck },
+      { label: "Receipts", to: "/receipts", icon: Receipt },
+    ],
+  },
+  {
+    label: "Master Data",
+    items: [
+      { label: "Parties", to: "/parties", icon: Users },
+      { label: "Bill of Materials", to: "/bill-of-materials", icon: GitFork },
+      { label: "Stock Register", to: "/stock-register", icon: BarChart3 },
+    ],
+  },
+  {
+    label: "Settings",
+    items: [
+      { label: "Settings", to: "/settings", icon: Settings },
+    ],
+  },
+];
+
+const MAIN_TABS = [
   { label: "Home", icon: LayoutDashboard, to: "/" },
-  { label: "Parties", icon: Users, to: "/parties" },
+  { label: "Work Orders", icon: Activity, to: "/job-cards" },
   { label: "Invoices", icon: FileText, to: "/invoices" },
   { label: "Items", icon: Package, to: "/items" },
-  { label: "More", icon: MoreHorizontal, to: "/more" },
 ];
 
 export function MobileNav() {
+  const [sheetOpen, setSheetOpen] = useState(false);
+
+  const { data: reorderData } = useQuery({
+    queryKey: ["reorder-summary"],
+    queryFn: fetchReorderSummary,
+    staleTime: 5 * 60 * 1000,
+  });
+  const criticalCount = (reorderData as any)?.critical ?? 0;
+
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border md:hidden">
-      <div className="flex items-center justify-around h-14">
-        {tabs.map((tab) => (
-          <NavLink
-            key={tab.to}
-            to={tab.to}
-            end={tab.to === "/"}
-            className={({ isActive }) =>
-              cn(
-                "flex flex-col items-center justify-center gap-0.5 flex-1 h-full text-muted-foreground transition-colors",
-                isActive && "text-primary"
-              )
-            }
+    <>
+      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border md:hidden">
+        <div className="flex items-center justify-around h-14">
+          {MAIN_TABS.map((tab) => (
+            <NavLink
+              key={tab.to}
+              to={tab.to}
+              end={tab.to === "/"}
+              className={({ isActive }) =>
+                cn(
+                  "flex flex-col items-center justify-center gap-0.5 flex-1 h-full text-muted-foreground transition-colors",
+                  isActive && "text-primary"
+                )
+              }
+            >
+              <tab.icon className="h-5 w-5" />
+              <span className="text-[10px] font-medium">{tab.label}</span>
+            </NavLink>
+          ))}
+
+          {/* More button */}
+          <button
+            onClick={() => setSheetOpen(true)}
+            className="flex flex-col items-center justify-center gap-0.5 flex-1 h-full text-muted-foreground transition-colors relative"
           >
-            <tab.icon className="h-5 w-5" />
-            <span className="text-[10px] font-medium">{tab.label}</span>
-          </NavLink>
-        ))}
-      </div>
-    </nav>
+            <div className="relative">
+              <MoreHorizontal className="h-5 w-5" />
+              {criticalCount > 0 && (
+                <span className="absolute -top-1 -right-1 h-3.5 w-3.5 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center leading-none">
+                  {criticalCount > 9 ? "9+" : criticalCount}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] font-medium">More</span>
+          </button>
+        </div>
+      </nav>
+
+      {/* More Sheet */}
+      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+        <SheetContent side="bottom" className="md:hidden h-[75vh] rounded-t-2xl p-0 overflow-y-auto">
+          <SheetHeader className="px-5 pt-4 pb-3 border-b border-border sticky top-0 bg-background z-10">
+            <div className="flex items-center justify-between">
+              <SheetTitle className="text-base font-bold">Menu</SheetTitle>
+              <button
+                onClick={() => setSheetOpen(false)}
+                className="h-7 w-7 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </SheetHeader>
+
+          <div className="px-4 py-3 space-y-4">
+            {MORE_GROUPS.map((group) => (
+              <div key={group.label}>
+                <p className="text-[10px] uppercase tracking-widest font-semibold text-muted-foreground px-1 mb-1.5">
+                  {group.label}
+                </p>
+                <div className="space-y-0.5">
+                  {group.items.map((item) => (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      onClick={() => setSheetOpen(false)}
+                      className={({ isActive }) =>
+                        cn(
+                          "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
+                          isActive
+                            ? "bg-primary/10 text-primary font-medium"
+                            : "text-foreground hover:bg-muted"
+                        )
+                      }
+                    >
+                      <item.icon className="h-4 w-4 shrink-0" />
+                      {item.label}
+                    </NavLink>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }

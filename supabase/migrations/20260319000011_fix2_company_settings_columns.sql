@@ -1,0 +1,20 @@
+-- Fix 2: Add document/company settings columns to company_settings
+ALTER TABLE public.company_settings
+  ADD COLUMN IF NOT EXISTS fy_year varchar DEFAULT '2526',
+  ADD COLUMN IF NOT EXISTS invoice_prefix varchar DEFAULT 'INV/',
+  ADD COLUMN IF NOT EXISTS invoice_next_number integer DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS po_prefix varchar DEFAULT 'PO/',
+  ADD COLUMN IF NOT EXISTS po_next_number integer DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS dc_prefix varchar DEFAULT 'DC/',
+  ADD COLUMN IF NOT EXISTS dc_next_number integer DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS grn_prefix varchar DEFAULT 'GRN/',
+  ADD COLUMN IF NOT EXISTS grn_next_number integer DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS invoice_title varchar DEFAULT 'TAX INVOICE',
+  ADD COLUMN IF NOT EXISTS show_logo_on_print boolean DEFAULT true,
+  ADD COLUMN IF NOT EXISTS show_signature_on_print boolean DEFAULT true,
+  ADD COLUMN IF NOT EXISTS show_bank_details_on_print boolean DEFAULT true,
+  ADD COLUMN IF NOT EXISTS show_gst_breakup_on_print boolean DEFAULT true,
+  ADD COLUMN IF NOT EXISTS paper_size varchar DEFAULT 'A4 Portrait',
+  ADD COLUMN IF NOT EXISTS copies_per_page integer DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS default_invoice_terms text,
+  ADD COLUMN IF NOT EXISTS default_dc_terms text;
