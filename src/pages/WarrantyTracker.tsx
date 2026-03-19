@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchSerialNumbers } from "@/lib/fat-api";
-import { exportToExcel } from "@/lib/export-utils";
+import { exportMultiSheet } from "@/lib/export-utils";
 import { format, differenceInDays } from "date-fns";
 
 type WarrantyFilter = "all" | "active" | "expiring" | "expired";
@@ -14,7 +14,7 @@ export default function WarrantyTracker() {
   const [search, setSearch] = useState("");
   const [warrantyFilter, setWarrantyFilter] = useState<WarrantyFilter>("all");
 
-  const { data } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["warranty-serial-numbers"],
     queryFn: () => fetchSerialNumbers({ pageSize: 500 }),
     refetchInterval: 60000,
@@ -52,22 +52,25 @@ export default function WarrantyTracker() {
   }, [allRows, warrantyFilter, search, today, in30Str]);
 
   const handleExport = () => {
-    exportToExcel([
-      {
-        sheetName: "Warranty Tracker",
-        columns: [
-          { key: "serial_number", label: "Serial Number" },
-          { key: "item_code", label: "Item Code" },
-          { key: "item_description", label: "Description" },
-          { key: "customer_name", label: "Customer" },
-          { key: "dispatch_date", label: "Dispatch Date", type: "date" },
-          { key: "warranty_months", label: "Warranty (Months)", type: "number" },
-          { key: "warranty_expiry", label: "Expiry Date", type: "date" },
-          { key: "status", label: "Status" },
-        ],
-        data: filtered.map((r) => ({ ...r })),
-      },
-    ], "Warranty_Tracker");
+    exportMultiSheet(
+      [
+        {
+          sheetName: "Warranty Tracker",
+          columns: [
+            { key: "serial_number", label: "Serial Number" },
+            { key: "item_code", label: "Item Code" },
+            { key: "item_description", label: "Description" },
+            { key: "customer_name", label: "Customer" },
+            { key: "dispatch_date", label: "Dispatch Date", type: "date" },
+            { key: "warranty_months", label: "Warranty (Months)", type: "number" },
+            { key: "warranty_expiry", label: "Expiry Date", type: "date" },
+            { key: "status", label: "Status" },
+          ],
+          data: filtered.map((r) => ({ ...r })),
+        },
+      ],
+      "Warranty_Tracker.xlsx"
+    );
   };
 
   const getRowStyle = (expiry: string | null) => {
@@ -131,7 +134,15 @@ export default function WarrantyTracker() {
 
       {/* Table */}
       <div className="paper-card !p-0 overflow-x-auto">
-        {filtered.length === 0 ? (
+        {isLoading ? (
+          <div className="py-12 text-center text-muted-foreground">Loading...</div>
+        ) : isError ? (
+          <div className="py-12 text-center">
+            <Shield className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+            <p className="text-sm text-muted-foreground font-medium">Unable to load warranty data</p>
+            <p className="text-xs text-muted-foreground mt-1">The database table may not be set up yet. Run the Phase 8 migration to enable this feature.</p>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="py-12 text-center">
             <Shield className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
             <p className="text-sm text-muted-foreground font-medium">No units found</p>

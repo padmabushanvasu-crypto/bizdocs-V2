@@ -60,10 +60,11 @@ export default function FatCertificateDetail() {
   const [completeOpen, setCompleteOpen] = useState(false);
   const [dirty, setDirty] = useState(false);
 
-  const { data: fat, isLoading } = useQuery({
+  const { data: fat, isLoading, isError } = useQuery({
     queryKey: ["fat-certificate", id],
     queryFn: () => fetchFatCertificate(id!),
     enabled: !!id,
+    retry: 1,
   });
 
   useEffect(() => {
@@ -150,8 +151,15 @@ export default function FatCertificateDetail() {
     setDirty(true);
   };
 
-  if (isLoading) return <div className="p-6 text-muted-foreground">Loading...</div>;
-  if (!fat) return <div className="p-6 text-muted-foreground">FAT Certificate not found.</div>;
+  if (isLoading) return <div className="p-6 text-center text-muted-foreground">Loading...</div>;
+  if (isError) return (
+    <div className="p-6 text-center">
+      <ClipboardCheck className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+      <p className="text-sm text-muted-foreground font-medium">Unable to load FAT certificate</p>
+      <p className="text-xs text-muted-foreground mt-1">The database table may not be set up yet. Run the Phase 8 migration.</p>
+    </div>
+  );
+  if (!fat) return <div className="p-6 text-center text-muted-foreground">FAT Certificate not found.</div>;
 
   const isCompleted = fat.status !== "pending";
   const allTested = localResults.length > 0 && localResults.every((r) => r.result !== "pending");

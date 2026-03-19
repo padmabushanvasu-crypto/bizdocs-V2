@@ -34,7 +34,7 @@ export default function FatCertificates() {
     refetchInterval: 60000,
   });
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["fat-certificates", statusFilter, search, page],
     queryFn: () => fetchFatCertificates({ search, status: statusFilter, page, pageSize: 20 }),
     refetchInterval: 30000,
@@ -64,20 +64,20 @@ export default function FatCertificates() {
       <div className="grid grid-cols-3 gap-4">
         <MetricCard
           title="Pending"
-          value={stats?.pending ?? "—"}
-          icon={<Clock className="h-5 w-5 text-amber-600" />}
+          value={String(stats?.pending ?? "—")}
+          icon={Clock}
           className={(stats?.pending ?? 0) > 0 ? "border-l-4 border-l-amber-500 bg-amber-50/30" : "border-l-4 border-l-green-500"}
         />
         <MetricCard
           title="Passed"
-          value={stats?.passed ?? "—"}
-          icon={<CheckCircle2 className="h-5 w-5 text-green-600" />}
+          value={String(stats?.passed ?? "—")}
+          icon={CheckCircle2}
           className="border-l-4 border-l-green-500"
         />
         <MetricCard
           title="Failed"
-          value={stats?.failed ?? "—"}
-          icon={<XCircle className="h-5 w-5 text-red-600" />}
+          value={String(stats?.failed ?? "—")}
+          icon={XCircle}
           className={(stats?.failed ?? 0) > 0 ? "border-l-4 border-l-red-500 bg-red-50/30" : "border-l-4 border-l-slate-200"}
         />
       </div>
@@ -111,6 +111,12 @@ export default function FatCertificates() {
       <div className="paper-card !p-0 overflow-x-auto">
         {isLoading ? (
           <div className="py-12 text-center text-muted-foreground">Loading...</div>
+        ) : isError ? (
+          <div className="py-12 text-center">
+            <ClipboardCheck className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+            <p className="text-sm text-muted-foreground font-medium">Unable to load FAT certificates</p>
+            <p className="text-xs text-muted-foreground mt-1">The database table may not be set up yet. Run the Phase 8 migration to enable this feature.</p>
+          </div>
         ) : certs.length === 0 ? (
           <div className="py-12 text-center">
             <ClipboardCheck className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />

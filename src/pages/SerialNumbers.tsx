@@ -89,7 +89,7 @@ export default function SerialNumbers() {
     refetchInterval: 60000,
   });
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["serial-numbers", statusFilter, search],
     queryFn: () => fetchSerialNumbers({ status: statusFilter, search, pageSize: 200 }),
     refetchInterval: 30000,
@@ -156,26 +156,26 @@ export default function SerialNumbers() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
           title="In Stock"
-          value={stats?.inStock ?? "—"}
-          icon={<Hash className="h-5 w-5 text-blue-600" />}
+          value={String(stats?.inStock ?? "—")}
+          icon={Hash}
           className="border-l-4 border-l-blue-500"
         />
         <MetricCard
           title="Dispatched"
-          value={stats?.dispatched ?? "—"}
-          icon={<CheckCircle2 className="h-5 w-5 text-green-600" />}
+          value={String(stats?.dispatched ?? "—")}
+          icon={CheckCircle2}
           className="border-l-4 border-l-green-500"
         />
         <MetricCard
           title="Under Warranty"
-          value={stats?.underWarranty ?? "—"}
-          icon={<Shield className="h-5 w-5 text-teal-600" />}
+          value={String(stats?.underWarranty ?? "—")}
+          icon={Shield}
           className="border-l-4 border-l-teal-500"
         />
         <MetricCard
           title="Expiring Soon"
-          value={stats?.expiringSoon ?? "—"}
-          icon={<AlertTriangle className="h-5 w-5 text-amber-600" />}
+          value={String(stats?.expiringSoon ?? "—")}
+          icon={AlertTriangle}
           className={(stats?.expiringSoon ?? 0) > 0 ? "border-l-4 border-l-amber-500 bg-amber-50/40" : "border-l-4 border-l-green-500"}
         />
       </div>
@@ -209,6 +209,12 @@ export default function SerialNumbers() {
       <div className="paper-card !p-0 overflow-x-auto">
         {isLoading ? (
           <div className="py-12 text-center text-muted-foreground">Loading...</div>
+        ) : isError ? (
+          <div className="py-12 text-center">
+            <Hash className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+            <p className="text-sm text-muted-foreground font-medium">Unable to load serial numbers</p>
+            <p className="text-xs text-muted-foreground mt-1">The database table may not be set up yet. Run the Phase 8 migration to enable this feature.</p>
+          </div>
         ) : filtered.length === 0 ? (
           <div className="py-12 text-center">
             <Hash className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
