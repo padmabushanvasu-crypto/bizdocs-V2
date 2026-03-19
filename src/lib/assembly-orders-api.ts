@@ -192,7 +192,7 @@ export async function fetchAssemblyOrder(
 }
 
 export async function createAssemblyOrder(
-  data: Partial<AssemblyOrder> & { item_id?: string }
+  data: Partial<AssemblyOrder> & { item_id?: string; variant_id?: string | null }
 ): Promise<AssemblyOrder> {
   const companyId = await getCompanyId();
 
@@ -225,7 +225,8 @@ export async function createAssemblyOrder(
       created.id,
       companyId,
       data.item_id,
-      created.quantity_to_build
+      created.quantity_to_build,
+      data.variant_id ?? null
     );
   }
 
@@ -244,12 +245,22 @@ async function _populateAOLinesFromBom(
   aoId: string,
   companyId: string,
   parentItemId: string,
-  quantityToBuild: number
+  quantityToBuild: number,
+  variantId: string | null = null
 ) {
-  const { data: bomLines } = await (supabase as any)
+  let query = (supabase as any)
     .from("bom_lines")
     .select("*")
     .eq("parent_item_id", parentItemId);
+
+  // Filter by variant: null = default BOM (variant_id IS NULL), uuid = specific variant
+  if (variantId) {
+    query = query.eq("variant_id", variantId);
+  } else {
+    query = query.is("variant_id", null);
+  }
+
+  const { data: bomLines } = await query;
 
   if (!bomLines || bomLines.length === 0) return;
 
@@ -263,7 +274,8 @@ async function _populateAOLinesFromBom(
 
   const linesToInsert = bomLines.map((bl: any) => {
     const child = itemMap.get(bl.child_item_id) as any;
-    const requiredQty = (bl.quantity ?? 1) * quantityToBuild;
+    const scrapFactor = bl.scrap_factor ?? 0;
+    const requiredQty = (bl.quantity ?? 1) * quantityToBuild * (1 + scrapFactor / 100);
     const availableQty = child?.current_stock ?? 0;
     const unitCost = child?.standard_cost ?? 0;
     return {

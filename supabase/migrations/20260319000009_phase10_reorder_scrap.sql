@@ -98,11 +98,11 @@ CREATE TRIGGER set_scrap_number
 ALTER TABLE public.reorder_rules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.scrap_register ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "company_isolation" ON public.reorder_rules
-  FOR ALL USING (company_id = (SELECT company_id FROM public.profiles WHERE id = auth.uid()));
+DROP POLICY IF EXISTS "company_isolation" ON public.reorder_rules;
+CREATE POLICY "company_isolation" ON public.reorder_rules FOR ALL USING (company_id = (SELECT company_id FROM public.profiles WHERE id = auth.uid()));
 
-CREATE POLICY "company_isolation" ON public.scrap_register
-  FOR ALL USING (company_id = (SELECT company_id FROM public.profiles WHERE id = auth.uid()));
+DROP POLICY IF EXISTS "company_isolation" ON public.scrap_register;
+CREATE POLICY "company_isolation" ON public.scrap_register FOR ALL USING (company_id = (SELECT company_id FROM public.profiles WHERE id = auth.uid()));
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_reorder_rules_company ON public.reorder_rules(company_id);

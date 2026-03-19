@@ -19,6 +19,7 @@ import {
   type AssemblyOrderFilters,
 } from "@/lib/assembly-orders-api";
 import { fetchItems, type Item } from "@/lib/items-api";
+import { fetchBomVariants, type BomVariant } from "@/lib/bom-api";
 import { format } from "date-fns";
 
 const statusClass: Record<string, string> = {
@@ -57,6 +58,7 @@ export default function AssemblyOrders() {
   const [newOpen, setNewOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [itemOpen, setItemOpen] = useState(false);
+  const [selectedVariantId, setSelectedVariantId] = useState<string>("");
   const [form, setForm] = useState(emptyForm);
 
   const { data: stats } = useQuery({
@@ -76,6 +78,12 @@ export default function AssemblyOrders() {
   });
   const items = itemsData?.data ?? [];
 
+  const { data: variants = [] } = useQuery<BomVariant[]>({
+    queryKey: ["bom-variants-ao", selectedItem?.id],
+    queryFn: () => fetchBomVariants(selectedItem!.id),
+    enabled: newOpen && !!selectedItem,
+  });
+
   const createMutation = useMutation({
     mutationFn: () =>
       createAssemblyOrder({
@@ -86,12 +94,14 @@ export default function AssemblyOrders() {
         notes: form.notes || undefined,
         planned_date: form.planned_date || undefined,
         work_order_ref: form.work_order_ref || undefined,
+        variant_id: selectedVariantId || null,
       }),
     onSuccess: (ao) => {
       queryClient.invalidateQueries({ queryKey: ["assembly-orders"] });
       queryClient.invalidateQueries({ queryKey: ["ao-stats"] });
       setNewOpen(false);
       setSelectedItem(null);
+      setSelectedVariantId("");
       setForm(emptyForm);
       toast({ title: "Assembly Order created", description: `${ao.ao_number} is ready.` });
       navigate(`/assembly-orders/${ao.id}`);
@@ -282,6 +292,7 @@ export default function AssemblyOrders() {
           setNewOpen(v);
           if (!v) {
             setSelectedItem(null);
+            setSelectedVariantId("");
             setForm(emptyForm);
           }
         }}
@@ -318,6 +329,7 @@ export default function AssemblyOrders() {
                             value={`${item.item_code} ${item.description}`}
                             onSelect={() => {
                               setSelectedItem(item);
+                              setSelectedVariantId("");
                               setItemOpen(false);
                             }}
                           >
@@ -342,6 +354,27 @@ export default function AssemblyOrders() {
                 </p>
               )}
             </div>
+
+            {selectedItem && variants.length > 0 && (
+              <div className="space-y-1.5">
+                <Label>BOM Variant</Label>
+                <Select value={selectedVariantId} onValueChange={setSelectedVariantId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Default BOM (no variant)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Default BOM</SelectItem>
+                    {variants.map((v) => (
+                      <SelectItem key={v.id} value={v.id}>
+                        {v.variant_name}
+                        {v.variant_code ? ` (${v.variant_code})` : ""}
+                        {v.is_default ? " — Default" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <Label>Quantity to Build *</Label>
@@ -398,6 +431,7 @@ export default function AssemblyOrders() {
               onClick={() => {
                 setNewOpen(false);
                 setSelectedItem(null);
+                setSelectedVariantId("");
                 setForm(emptyForm);
               }}
             >
