@@ -699,6 +699,44 @@ export async function fetchSerialNumber(id: string): Promise<SerialNumber> {
   return data as SerialNumber;
 }
 
+export interface AssemblyOrderWithLines extends AssemblyOrder {
+  lines: AssemblyOrderLine[];
+}
+
+/** Fetch all in-progress assembly orders with their component lines (2 queries, no N+1). */
+export async function fetchInProgressAOsWithLines(): Promise<AssemblyOrderWithLines[]> {
+  const companyId = await getCompanyId();
+
+  const { data: aos, error: aoError } = await (supabase as any)
+    .from("assembly_orders")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("status", "in_progress")
+    .order("created_at", { ascending: false });
+  if (aoError) throw aoError;
+  if (!aos || aos.length === 0) return [];
+
+  const aoIds = (aos as AssemblyOrder[]).map((ao) => ao.id);
+
+  const { data: lines, error: linesError } = await (supabase as any)
+    .from("assembly_order_lines")
+    .select("*")
+    .eq("company_id", companyId)
+    .in("assembly_order_id", aoIds);
+  if (linesError) throw linesError;
+
+  const linesByAo: Record<string, AssemblyOrderLine[]> = {};
+  for (const line of (lines || []) as AssemblyOrderLine[]) {
+    if (!linesByAo[line.assembly_order_id]) linesByAo[line.assembly_order_id] = [];
+    linesByAo[line.assembly_order_id].push(line);
+  }
+
+  return (aos as AssemblyOrder[]).map((ao) => ({
+    ...ao,
+    lines: linesByAo[ao.id] || [],
+  }));
+}
+
 export async function updateSerialNumber(
   id: string,
   data: Partial<SerialNumber>
