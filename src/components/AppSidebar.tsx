@@ -24,12 +24,16 @@ import {
   ShoppingBag,
   ChevronRight,
   ChevronDown,
+  TrendingDown,
+  Settings2,
+  Trash2,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { fetchWipSummary } from "@/lib/job-cards-api";
 import { fetchFatStats, fetchSerialStats } from "@/lib/fat-api";
+import { fetchReorderSummary } from "@/lib/reorder-api";
 import {
   Sidebar,
   SidebarContent,
@@ -44,31 +48,39 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 
-// ── Group definitions ────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type NavItem = {
+  title: string;
+  url: string;
+  icon: React.ComponentType<any>;
+  badge?: number;
+};
+
+// ── Group definitions ─────────────────────────────────────────────────────────
 
 const STORAGE_KEY = "bizdocs_sidebar_state";
 
-// Paths belonging to each group — used to auto-expand the active group
 const GROUP_PATHS: Record<string, string[]> = {
-  "Start Here":         ["/", "/open-items"],
-  "Daily Work":         ["/job-cards", "/assembly-orders", "/wip-register"],
-  "Purchasing":         ["/purchase-orders", "/grn"],
-  "Dispatch & Billing": ["/sales-orders", "/dispatch-notes", "/delivery-challans", "/invoices", "/receipts"],
-  "Master Data":        ["/parties", "/items", "/bill-of-materials", "/stock-register"],
-  "Reports":            ["/gst-reports", "/vendor-scorecards", "/stock-ledger"],
+  "Start Here":           ["/", "/open-items"],
+  "Daily Work":           ["/job-cards", "/assembly-orders", "/wip-register"],
+  "Purchasing":           ["/purchase-orders", "/grn"],
+  "Dispatch & Billing":   ["/sales-orders", "/dispatch-notes", "/delivery-challans", "/invoices", "/receipts"],
+  "Master Data":          ["/parties", "/items", "/bill-of-materials", "/stock-register"],
+  "Reports":              ["/gst-reports", "/vendor-scorecards", "/stock-ledger", "/reorder-intelligence", "/reorder-rules", "/scrap-register"],
   "Quality & Compliance": ["/serial-numbers", "/fat-certificates", "/warranty-tracker"],
-  "Settings":           ["/settings"],
+  "Settings":             ["/settings"],
 };
 
 const DEFAULTS: Record<string, boolean> = {
-  "Start Here":         true,
-  "Daily Work":         true,
-  "Purchasing":         false,
-  "Dispatch & Billing": false,
-  "Master Data":        false,
-  "Reports":            false,
+  "Start Here":           true,
+  "Daily Work":           true,
+  "Purchasing":           false,
+  "Dispatch & Billing":   false,
+  "Master Data":          false,
+  "Reports":              false,
   "Quality & Compliance": false,
-  "Settings":           false,
+  "Settings":             false,
 };
 
 function loadGroupState(): Record<string, boolean> {
@@ -88,24 +100,24 @@ function getActiveGroupForPath(pathname: string): string | null {
   return null;
 }
 
-// ── Nav data ─────────────────────────────────────────────────────────────────
+// ── Static nav arrays ─────────────────────────────────────────────────────────
 
-const startHereNav = [
+const startHereNav: NavItem[] = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Open Items", url: "/open-items", icon: ClipboardList },
 ];
 
-const dailyWorkNav = [
+const dailyWorkNav: NavItem[] = [
   { title: "Job Cards", url: "/job-cards", icon: Activity },
   { title: "Assembly Orders", url: "/assembly-orders", icon: Layers },
 ];
 
-const purchasingNav = [
+const purchasingNav: NavItem[] = [
   { title: "Purchase Orders", url: "/purchase-orders", icon: ShoppingCart },
   { title: "GRN", url: "/grn", icon: PackageCheck },
 ];
 
-const dispatchBillingNav = [
+const dispatchBillingNav: NavItem[] = [
   { title: "Sales Orders", url: "/sales-orders", icon: ShoppingBag },
   { title: "Dispatch Notes", url: "/dispatch-notes", icon: Truck },
   { title: "Delivery Challans", url: "/delivery-challans", icon: Truck },
@@ -113,24 +125,18 @@ const dispatchBillingNav = [
   { title: "Receipts", url: "/receipts", icon: Receipt },
 ];
 
-const masterDataNav = [
+const masterDataNav: NavItem[] = [
   { title: "Parties", url: "/parties", icon: Users },
   { title: "Items", url: "/items", icon: Package },
   { title: "Bill of Materials", url: "/bill-of-materials", icon: GitFork },
   { title: "Stock Register", url: "/stock-register", icon: BarChart3 },
 ];
 
-const reportsNav = [
-  { title: "GST Reports", url: "/gst-reports", icon: FileSpreadsheet },
-  { title: "Vendor Scorecards", url: "/vendor-scorecards", icon: Star },
-  { title: "Stock Ledger", url: "/stock-ledger", icon: BookOpen },
-];
-
-const settingsNav = [
+const settingsNav: NavItem[] = [
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 
-// ── NavGroup (generic, collapsible) ──────────────────────────────────────────
+// ── NavGroup (collapsible, badge-aware) ──────────────────────────────────────
 
 function NavGroup({
   label,
@@ -141,7 +147,7 @@ function NavGroup({
   onToggle,
 }: {
   label: string;
-  items: { title: string; url: string; icon: React.ComponentType<any> }[];
+  items: NavItem[];
   collapsed: boolean;
   isActive: (path: string) => boolean;
   open: boolean;
@@ -177,7 +183,21 @@ function NavGroup({
                     activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
                   >
                     <item.icon className="h-4 w-4 shrink-0" />
-                    {!collapsed && <span>{item.title}</span>}
+                    {!collapsed && (
+                      item.badge != null && item.badge > 0 ? (
+                        <span className="flex-1 flex items-center justify-between">
+                          {item.title}
+                          <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                            {item.badge}
+                          </span>
+                        </span>
+                      ) : (
+                        <span>{item.title}</span>
+                      )
+                    )}
+                    {collapsed && item.badge != null && item.badge > 0 && (
+                      <span className="absolute top-0.5 right-0.5 h-2 w-2 rounded-full bg-red-500" />
+                    )}
                   </NavLink>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -198,7 +218,7 @@ export function AppSidebar() {
 
   const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>(loadGroupState);
 
-  // Auto-expand the group that contains the current page
+  // Auto-expand the group containing the current page
   useEffect(() => {
     const activeGroup = getActiveGroupForPath(location.pathname);
     if (activeGroup && !groupOpen[activeGroup]) {
@@ -206,7 +226,7 @@ export function AppSidebar() {
     }
   }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Persist to localStorage whenever state changes
+  // Persist to localStorage
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(groupOpen));
@@ -238,8 +258,36 @@ export function AppSidebar() {
     refetchInterval: 60000,
   });
 
+  const { data: reorderSummary } = useQuery({
+    queryKey: ["reorder-summary-sidebar"],
+    queryFn: async () => {
+      try {
+        return await fetchReorderSummary();
+      } catch {
+        return { critical: 0, warning: 0 };
+      }
+    },
+    refetchInterval: 120000,
+  });
+
+  // Build dynamic reportsNav with badge
+  const reorderCritical = reorderSummary?.critical ?? 0;
+  const reportsNav: NavItem[] = [
+    { title: "GST Reports", url: "/gst-reports", icon: FileSpreadsheet },
+    { title: "Vendor Scorecards", url: "/vendor-scorecards", icon: Star },
+    { title: "Stock Ledger", url: "/stock-ledger", icon: BookOpen },
+    {
+      title: "Reorder Alerts",
+      url: "/reorder-intelligence",
+      icon: TrendingDown,
+      badge: reorderCritical > 0 ? reorderCritical : undefined,
+    },
+    { title: "Reorder Rules", url: "/reorder-rules", icon: Settings2 },
+    { title: "Scrap Register", url: "/scrap-register", icon: Trash2 },
+  ];
+
   const dailyWorkOpen = collapsed || groupOpen["Daily Work"];
-  const qualityOpen = collapsed || groupOpen["Quality & Compliance"];
+  const qualityOpen   = collapsed || groupOpen["Quality & Compliance"];
 
   return (
     <Sidebar collapsible="icon" className="border-r-0">
@@ -271,7 +319,7 @@ export function AppSidebar() {
           onToggle={() => toggleGroup("Start Here")}
         />
 
-        {/* Daily Work — includes WIP Register with badge */}
+        {/* Daily Work — inline with WIP badge */}
         <SidebarGroup>
           {!collapsed && (
             <SidebarGroupLabel
@@ -366,7 +414,7 @@ export function AppSidebar() {
           onToggle={() => toggleGroup("Reports")}
         />
 
-        {/* Quality & Compliance — with FAT Pending + Expiring Soon badges */}
+        {/* Quality & Compliance — inline with FAT + Warranty badges */}
         <SidebarGroup>
           {!collapsed && (
             <SidebarGroupLabel
@@ -384,7 +432,6 @@ export function AppSidebar() {
           {qualityOpen && (
             <SidebarGroupContent>
               <SidebarMenu>
-                {/* Serial Numbers */}
                 <SidebarMenuItem>
                   <SidebarMenuButton asChild isActive={isActive("/serial-numbers")}>
                     <NavLink
@@ -464,9 +511,7 @@ export function AppSidebar() {
 
       <SidebarFooter className="px-4 py-3">
         {!collapsed && (
-          <p className="text-slate-500 text-xs font-mono">
-            FY 2025–26
-          </p>
+          <p className="text-slate-500 text-xs font-mono">FY 2025–26</p>
         )}
       </SidebarFooter>
     </Sidebar>

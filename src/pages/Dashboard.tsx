@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   IndianRupee, FileText, Truck, ShoppingCart, AlertTriangle,
   Receipt, Activity, Factory, Package, Clock, Layers, ClipboardCheck, ShoppingBag,
+  TrendingDown,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/gst-utils";
 import { fetchWipSummary, fetchWipRegister } from "@/lib/job-cards-api";
@@ -10,6 +11,7 @@ import { fetchStockStatus } from "@/lib/items-api";
 import { fetchAssemblyOrderStats } from "@/lib/assembly-orders-api";
 import { fetchFatStats } from "@/lib/fat-api";
 import { fetchRecentSalesOrders } from "@/lib/sales-orders-api";
+import { fetchReorderSummary } from "@/lib/reorder-api";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { format, startOfMonth } from "date-fns";
@@ -219,6 +221,12 @@ export default function Dashboard() {
     refetchInterval: 60000,
   });
 
+  const { data: reorderSummary } = useQuery({
+    queryKey: ["reorder-summary-dashboard"],
+    queryFn: fetchReorderSummary,
+    refetchInterval: 60000,
+  });
+
   const gstTotal = analytics?.gstTotal ?? 0;
 
   return (
@@ -258,7 +266,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── ZONE 1: OPERATIONAL ALERTS ────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
 
         {/* At Vendors */}
         <div
@@ -415,6 +423,44 @@ export default function Dashboard() {
                     {isAlert ? "awaiting test results" : "all FATs complete"}
                   </p>
                   <span className={`text-xs font-medium ${isAlert ? "text-red-500" : "text-green-500"}`}>View →</span>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Reorder Alerts */}
+        {(() => {
+          const critical = reorderSummary?.critical ?? 0;
+          const warning = reorderSummary?.warning ?? 0;
+          const total = critical + warning;
+          const color = critical > 0 ? "red" : warning > 0 ? "amber" : "green";
+          const colorMap = {
+            red:   { bg: "bg-red-50",   border: "border-red-200 border-l-red-500",   text: "text-red-600",   num: "text-red-700",   sub: "text-red-600",   arrow: "text-red-500" },
+            amber: { bg: "bg-amber-50", border: "border-amber-200 border-l-amber-500", text: "text-amber-600", num: "text-amber-700", sub: "text-amber-600", arrow: "text-amber-500" },
+            green: { bg: "bg-green-50", border: "border-green-200 border-l-green-500", text: "text-green-600", num: "text-green-700", sub: "text-green-600", arrow: "text-green-500" },
+          };
+          const c = colorMap[color];
+          return (
+            <div
+              className={`rounded-xl ${c.bg} border ${c.border} border-l-4 shadow-sm p-5 cursor-pointer hover:shadow-md hover:-translate-y-px transition-all duration-200 min-h-[110px] relative overflow-hidden`}
+              onClick={() => navigate("/reorder-intelligence")}
+            >
+              <TrendingDown className={`absolute top-2 right-3 h-12 w-12 opacity-10 pointer-events-none ${c.text}`} />
+              <div className="flex flex-col justify-between h-full relative">
+                <div>
+                  <span className={`text-[11px] font-bold tracking-widest uppercase opacity-80 ${c.text}`}>
+                    REORDER ALERTS
+                  </span>
+                  <p className={`text-4xl font-bold font-mono tabular-nums mt-1 ${c.num}`}>
+                    {reorderSummary ? total : "—"}
+                  </p>
+                </div>
+                <div className="flex items-center justify-between mt-2">
+                  <p className={`text-xs ${c.sub}`}>
+                    {total === 0 ? "all stock levels healthy" : `${critical} critical · ${warning} warning`}
+                  </p>
+                  <span className={`text-xs font-medium ${c.arrow}`}>View →</span>
                 </div>
               </div>
             </div>

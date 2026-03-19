@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, Search, Info, ChevronDown } from "lucide-react";
 import { ItemSuggest } from "@/components/ItemSuggest";
@@ -50,8 +50,12 @@ export default function PurchaseOrderForm() {
   const { id } = useParams();
   const isEdit = !!id;
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  const prefillState = location.state as { vendor_id?: string; prefill_items?: { item_id: string; description: string; qty: number; unit: string }[] } | null;
+  const [prefillApplied, setPrefillApplied] = useState(false);
 
   // Form state
   const [poNumber, setPONumber] = useState("");
@@ -126,6 +130,33 @@ export default function PurchaseOrderForm() {
       }
     }
   }, [existingPO, vendors]);
+
+  // Pre-fill from Reorder Intelligence
+  useEffect(() => {
+    if (isEdit || !prefillState || prefillApplied || vendors.length === 0) return;
+    if (prefillState.vendor_id) {
+      const v = vendors.find((v) => v.id === prefillState.vendor_id);
+      if (v) {
+        setVendorId(v.id);
+        setSelectedVendor(v);
+        if (v.payment_terms) setPaymentTerms(v.payment_terms);
+      }
+    }
+    if (prefillState.prefill_items?.length) {
+      const items: POLineItem[] = prefillState.prefill_items.map((pi, idx) => ({
+        serial_number: idx + 1,
+        description: pi.description,
+        drawing_number: "",
+        quantity: pi.qty,
+        unit: pi.unit || "NOS",
+        unit_price: 0,
+        line_total: 0,
+        gst_rate: 18,
+      }));
+      setLineItems(items);
+    }
+    setPrefillApplied(true);
+  }, [isEdit, prefillState, prefillApplied, vendors]);
 
   const handleVendorSelect = (vendor: Party) => {
     setVendorId(vendor.id);
@@ -270,6 +301,13 @@ export default function PurchaseOrderForm() {
           {isEdit ? `Editing PO ${poNumber}` : "Create a new purchase order for your vendor"}
         </p>
       </div>
+
+      {prefillApplied && (
+        <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          <Info className="h-4 w-4 mt-0.5 shrink-0 text-blue-500" />
+          <span>Pre-filled from Reorder Intelligence — please review quantities and unit prices before saving.</span>
+        </div>
+      )}
 
       {/* Header Section */}
       <div className="paper-card space-y-6">

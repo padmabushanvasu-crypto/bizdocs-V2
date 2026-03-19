@@ -56,6 +56,9 @@ import SalesOrderDetail from "@/pages/SalesOrderDetail";
 import DispatchNotes from "@/pages/DispatchNotes";
 import DispatchNoteForm from "@/pages/DispatchNoteForm";
 import DispatchNoteDetail from "@/pages/DispatchNoteDetail";
+import ReorderIntelligence from "@/pages/ReorderIntelligence";
+import ReorderRules from "@/pages/ReorderRules";
+import ScrapRegister from "@/pages/ScrapRegister";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -121,6 +124,9 @@ const App = () => (
               <Route path="/dispatch-notes/new" element={<DispatchNoteForm />} />
               <Route path="/dispatch-notes/:id" element={<DispatchNoteDetail />} />
               <Route path="/dispatch-notes/:id/edit" element={<DispatchNoteForm />} />
+              <Route path="/reorder-intelligence" element={<ReorderIntelligence />} />
+              <Route path="/reorder-rules" element={<ReorderRules />} />
+              <Route path="/scrap-register" element={<ScrapRegister />} />
               <Route path="/stage-templates" element={<StageTemplates />} />
               <Route path="/more" element={<MoreMenu />} />
               <Route path="/settings/company" element={<CompanySettings />} />
