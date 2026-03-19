@@ -2,11 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import {
   IndianRupee, FileText, Truck, ShoppingCart, AlertTriangle,
-  Receipt, Activity, Factory, Package, Clock,
+  Receipt, Activity, Factory, Package, Clock, Layers,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/gst-utils";
 import { fetchWipSummary, fetchWipRegister } from "@/lib/job-cards-api";
 import { fetchStockStatus } from "@/lib/items-api";
+import { fetchAssemblyOrderStats } from "@/lib/assembly-orders-api";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { format, startOfMonth } from "date-fns";
@@ -198,6 +199,12 @@ export default function Dashboard() {
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   const todayStr = format(new Date(), "EEEE, d MMMM yyyy");
 
+  const { data: aoStats } = useQuery({
+    queryKey: ["ao-stats-dashboard"],
+    queryFn: fetchAssemblyOrderStats,
+    refetchInterval: 60000,
+  });
+
   const gstTotal = analytics?.gstTotal ?? 0;
 
   return (
@@ -237,7 +244,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── ZONE 1: OPERATIONAL ALERTS ────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
 
         {/* At Vendors */}
         <div
@@ -342,6 +349,26 @@ export default function Dashboard() {
             <div className="flex items-center justify-between mt-2">
               <p className="text-xs text-teal-600">this month</p>
               <span className="text-xs font-medium text-teal-500">View →</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Assembly Orders */}
+        <div
+          className="rounded-xl bg-blue-50 border border-blue-200 border-l-4 border-l-blue-500 shadow-sm p-5 cursor-pointer hover:shadow-md hover:-translate-y-px transition-all duration-200 min-h-[110px] relative overflow-hidden"
+          onClick={() => navigate("/assembly-orders")}
+        >
+          <Layers className="absolute top-2 right-3 h-12 w-12 text-blue-600 opacity-10 pointer-events-none" />
+          <div className="flex flex-col justify-between h-full relative">
+            <div>
+              <span className="text-[11px] font-bold tracking-widest uppercase opacity-80 text-blue-600">ASSEMBLY ORDERS</span>
+              <p className="text-4xl font-bold font-mono tabular-nums text-blue-700 mt-1">
+                {aoStats?.active ?? "—"}
+              </p>
+            </div>
+            <div className="flex items-center justify-between mt-2">
+              <p className="text-xs text-blue-600">in progress</p>
+              <span className="text-xs font-medium text-blue-500">View →</span>
             </div>
           </div>
         </div>

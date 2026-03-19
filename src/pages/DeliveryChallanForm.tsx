@@ -56,6 +56,9 @@ function emptyLineItem(serial: number): DCLineItem {
     rate: 0,
     amount: 0,
     remarks: "",
+    nature_of_process: "",
+    qty_kgs: undefined,
+    qty_sft: undefined,
   };
 }
 
@@ -82,10 +85,10 @@ export default function DeliveryChallanForm() {
   const [successDialogOpen, setSuccessDialogOpen] = useState(false);
   const [savedDCId, setSavedDCId] = useState<string | null>(null);
   const [vehicleNumber, setVehicleNumber] = useState("");
-  const [driverName, setDriverName] = useState("");
+  const [loNumber, setLoNumber] = useState("");
+  const [approxValue, setApproxValue] = useState<number | undefined>();
   const [poReference, setPoReference] = useState("");
   const [poDate, setPoDate] = useState<Date | undefined>();
-  const [challanCategory, setChallanCategory] = useState("supply_on_approval");
   const [gstRate, setGstRate] = useState(18);
   const [preparedBy, setPreparedBy] = useState("");
   const [checkedBy, setCheckedBy] = useState("");
@@ -130,9 +133,9 @@ export default function DeliveryChallanForm() {
       setInternalRemarks(existingDC.internal_remarks || "");
       setNatureOfJobWork(existingDC.nature_of_job_work || "");
       setVehicleNumber(existingDC.vehicle_number || "");
-      setDriverName(existingDC.driver_name || "");
+      setLoNumber(existingDC.lo_number || "");
+      setApproxValue(existingDC.approx_value ?? undefined);
       setPoReference(existingDC.po_reference || "");
-      setChallanCategory(existingDC.challan_category || "supply_on_approval");
       setGstRate(existingDC.gst_rate || 18);
       setPreparedBy(existingDC.prepared_by || "");
       setCheckedBy(existingDC.checked_by || "");
@@ -212,7 +215,9 @@ export default function DeliveryChallanForm() {
         cancelled_at: null,
         cancellation_reason: null,
         vehicle_number: vehicleNumber || null,
-        driver_name: driverName || null,
+        driver_name: null,
+        lo_number: loNumber || null,
+        approx_value: approxValue ?? null,
         sub_total: subTotal,
         cgst_amount: gstResult.cgst,
         sgst_amount: gstResult.sgst,
@@ -222,7 +227,7 @@ export default function DeliveryChallanForm() {
         gst_rate: gstRate,
         po_reference: poReference || null,
         po_date: poDate ? format(poDate, "yyyy-MM-dd") : null,
-        challan_category: challanCategory,
+        challan_category: "supply_on_approval",
         prepared_by: preparedBy || null,
         checked_by: checkedBy || null,
       };
@@ -367,17 +372,6 @@ export default function DeliveryChallanForm() {
               </div>
             )}
 
-            <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Challan Category</Label>
-              <Select value={challanCategory} onValueChange={setChallanCategory}>
-                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {CHALLAN_CATEGORIES.map((c) => (
-                    <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
           </div>
 
           {/* Right - DC Details */}
@@ -408,16 +402,30 @@ export default function DeliveryChallanForm() {
                 <Input value={vehicleNumber} onChange={(e) => setVehicleNumber(e.target.value)} className="mt-1" placeholder="e.g., MH-01-AB-1234" />
               </div>
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Driver Name</Label>
-                <Input value={driverName} onChange={(e) => setDriverName(e.target.value)} className="mt-1" placeholder="Driver name" />
+                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">L.O. No / Works Order Ref</Label>
+                <Input value={loNumber} onChange={(e) => setLoNumber(e.target.value)} className="mt-1" placeholder="Works order / job order no." />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
+                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Approx. Value ₹</Label>
+                <Input
+                  type="number"
+                  value={approxValue ?? ""}
+                  onChange={(e) => setApproxValue(e.target.value ? parseFloat(e.target.value) : undefined)}
+                  className="mt-1"
+                  placeholder="Declared value"
+                />
+                <p className="text-[10px] text-muted-foreground mt-0.5">Required for e-way bill if goods &gt; ₹50,000</p>
+              </div>
+              <div>
                 <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">PO Reference</Label>
                 <Input value={poReference} onChange={(e) => setPoReference(e.target.value)} className="mt-1" placeholder="PO number" />
               </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">PO Date</Label>
                 <Popover>
@@ -467,13 +475,16 @@ export default function DeliveryChallanForm() {
               <tr className="bg-secondary text-muted-foreground text-xs uppercase tracking-wider">
                 <th className="px-3 py-2 text-left w-8">#</th>
                 <th className="px-3 py-2 text-left w-[100px]">Item Code</th>
-                <th className="px-3 py-2 text-left min-w-[180px]">Description</th>
-                <th className="px-3 py-2 text-left w-[110px]">Drawing #</th>
-                <th className="px-3 py-2 text-left w-[80px]">Unit</th>
-                <th className="px-3 py-2 text-right w-[90px]">Quantity</th>
-                <th className="px-3 py-2 text-right w-[100px]">Rate (₹)</th>
-                <th className="px-3 py-2 text-right w-[110px]">Amount (₹)</th>
-                <th className="px-3 py-2 text-left min-w-[120px]">Remarks</th>
+                <th className="px-3 py-2 text-left min-w-[150px]">Description</th>
+                <th className="px-3 py-2 text-left min-w-[160px]">Nature of Process</th>
+                <th className="px-3 py-2 text-left w-[90px]">Drawing #</th>
+                <th className="px-3 py-2 text-left w-[60px]">Unit</th>
+                <th className="px-3 py-2 text-right w-[75px]">Qty</th>
+                <th className="px-3 py-2 text-right w-[65px]">KGS</th>
+                <th className="px-3 py-2 text-right w-[65px]">SFT</th>
+                <th className="px-3 py-2 text-right w-[90px]">Rate (₹)</th>
+                <th className="px-3 py-2 text-right w-[100px]">Amount (₹)</th>
+                <th className="px-3 py-2 text-left min-w-[100px]">Remarks</th>
                 <th className="px-3 py-2 w-8"></th>
               </tr>
             </thead>
@@ -512,6 +523,14 @@ export default function DeliveryChallanForm() {
                   </td>
                   <td className="px-3 py-2">
                     <Input
+                      value={item.nature_of_process || ""}
+                      onChange={(e) => updateLineItem(index, "nature_of_process", e.target.value)}
+                      placeholder="e.g. Nickel Plating, CNC Machining & Return"
+                      className="h-8 text-sm"
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <Input
                       value={item.drawing_number || ""}
                       onChange={(e) => updateLineItem(index, "drawing_number", e.target.value)}
                       placeholder="DWG-001"
@@ -531,6 +550,26 @@ export default function DeliveryChallanForm() {
                       value={item.quantity || ""}
                       onChange={(e) => updateLineItem(index, "quantity", Number(e.target.value))}
                       className="h-8 text-sm text-right font-mono"
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <Input
+                      type="number"
+                      step="0.001"
+                      value={item.qty_kgs ?? ""}
+                      onChange={(e) => updateLineItem(index, "qty_kgs", e.target.value ? Number(e.target.value) : undefined)}
+                      className="h-8 text-sm text-right font-mono"
+                      placeholder="—"
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={item.qty_sft ?? ""}
+                      onChange={(e) => updateLineItem(index, "qty_sft", e.target.value ? Number(e.target.value) : undefined)}
+                      className="h-8 text-sm text-right font-mono"
+                      placeholder="—"
                     />
                   </td>
                   <td className="px-3 py-2">

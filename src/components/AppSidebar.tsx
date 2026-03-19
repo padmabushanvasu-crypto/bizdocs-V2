@@ -15,6 +15,8 @@ import {
   Star,
   FileSpreadsheet,
   GitFork,
+  Layers,
+  BookOpen,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -41,6 +43,7 @@ const startHereNav = [
 
 const dailyWorkNav = [
   { title: "Job Cards", url: "/job-cards", icon: Activity },
+  { title: "Assembly Orders", url: "/assembly-orders", icon: Layers },
 ];
 
 const purchasingNav = [
@@ -64,6 +67,7 @@ const masterDataNav = [
 const reportsNav = [
   { title: "GST Reports", url: "/gst-reports", icon: FileSpreadsheet },
   { title: "Vendor Scorecards", url: "/vendor-scorecards", icon: Star },
+  { title: "Stock Ledger", url: "/stock-ledger", icon: BookOpen },
 ];
 
 const settingsNav = [

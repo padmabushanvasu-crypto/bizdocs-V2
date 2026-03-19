@@ -535,9 +535,16 @@ export default function InvoiceForm() {
                         updateLineItem(i, "unit", item.unit || "NOS");
                         updateLineItem(i, "unit_price", item.sale_price || 0);
                         updateLineItem(i, "gst_rate", item.gst_rate || 18);
+                        if ((item as any).drawing_number) updateLineItem(i, "drawing_number", (item as any).drawing_number);
                       }}
                       placeholder="Type to search items..."
                       className="min-w-[200px]"
+                    />
+                    <Input
+                      value={li.drawing_number || ""}
+                      onChange={(e) => updateLineItem(i, "drawing_number", e.target.value)}
+                      placeholder="Drawing No (optional)"
+                      className="mt-1 h-7 text-xs text-muted-foreground"
                     />
                   </td>
                   <td><Input value={li.hsn_sac_code || ""} onChange={(e) => updateLineItem(i, "hsn_sac_code", e.target.value)} placeholder="HSN" className="w-24" /></td>

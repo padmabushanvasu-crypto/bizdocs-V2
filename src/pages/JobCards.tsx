@@ -23,6 +23,8 @@ import {
 } from "@/lib/job-cards-api";
 import { fetchItems, type Item } from "@/lib/items-api";
 import { formatCurrency } from "@/lib/gst-utils";
+import { supabase } from "@/integrations/supabase/client";
+import { getCompanyId } from "@/lib/auth-helpers";
 
 const statusClass: Record<string, string> = {
   in_progress: "bg-blue-50 text-blue-700 border border-blue-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
@@ -85,6 +87,21 @@ export default function JobCards() {
     enabled: newOpen,
   });
   const items = itemsData?.data ?? [];
+
+  const { data: bomLines } = useQuery({
+    queryKey: ["bom-lines-check", selectedItem?.id],
+    queryFn: async () => {
+      const companyId = await getCompanyId();
+      const { data } = await (supabase as any)
+        .from("bom_lines")
+        .select("id")
+        .eq("company_id", companyId)
+        .eq("item_id", selectedItem!.id)
+        .limit(1);
+      return data ?? [];
+    },
+    enabled: !!selectedItem?.id,
+  });
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -522,6 +539,11 @@ export default function JobCards() {
                 <p className="text-xs text-muted-foreground">
                   Standard cost: ₹{(selectedItem.standard_cost ?? 0).toLocaleString("en-IN")}
                 </p>
+              )}
+              {selectedItem && bomLines && bomLines.length > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-md p-2.5 text-xs text-blue-700">
+                  This component has a standard processing route. Steps will be auto-populated when the Job Card is created.
+                </div>
               )}
             </div>
 

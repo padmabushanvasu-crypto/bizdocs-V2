@@ -41,6 +41,9 @@ import VendorScorecards from "@/pages/VendorScorecards";
 import GstReports from "@/pages/GstReports";
 import NotificationsSettings from "@/pages/NotificationsSettings";
 import BillOfMaterials from "@/pages/BillOfMaterials";
+import AssemblyOrders from "@/pages/AssemblyOrders";
+import AssemblyOrderDetail from "@/pages/AssemblyOrderDetail";
+import StockLedger from "@/pages/StockLedger";
 import DataImport from "@/pages/DataImport";
 import DocumentSettings from "@/pages/DocumentSettings";
 import NotFound from "@/pages/NotFound";
@@ -93,6 +96,9 @@ const App = () => (
               <Route path="/settings/documents" element={<DocumentSettings />} />
               <Route path="/settings/import" element={<DataImport />} />
               <Route path="/bill-of-materials" element={<BillOfMaterials />} />
+              <Route path="/assembly-orders" element={<AssemblyOrders />} />
+              <Route path="/assembly-orders/:id" element={<AssemblyOrderDetail />} />
+              <Route path="/stock-ledger" element={<StockLedger />} />
               <Route path="/stage-templates" element={<StageTemplates />} />
               <Route path="/more" element={<MoreMenu />} />
               <Route path="/settings/company" element={<CompanySettings />} />

@@ -372,12 +372,13 @@ export function AddStepDialog({ open, onOpenChange, editingStep, onSave, isSavin
             </div>
 
             <div className="space-y-1.5">
-              <Label>Process Name *</Label>
+              <Label>Nature of Process *</Label>
               <Input
                 value={externalForm.name}
                 onChange={(e) => setExternalForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="e.g. Heat Treatment, Plating"
+                placeholder="e.g. Nickel Plating, CNC Machining & Return"
               />
+              <p className="text-xs text-muted-foreground">This will appear on the Job Work DC as the Nature of Process</p>
             </div>
 
             <div className="space-y-1.5">

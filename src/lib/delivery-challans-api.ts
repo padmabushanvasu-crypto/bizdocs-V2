@@ -13,11 +13,12 @@ export interface DCLineItem {
   rate: number;
   amount: number;
   remarks?: string;
-  // Legacy fields kept for backward compat
+  nature_of_process?: string;
+  // Quantity in multiple units
   qty_nos?: number;
   qty_kg?: number;
+  qty_kgs?: number;
   qty_sft?: number;
-  nature_of_process?: string;
   material_type?: string;
   returned_qty_nos?: number;
   returned_qty_kg?: number;
@@ -51,6 +52,8 @@ export interface DeliveryChallan {
   updated_at: string;
   vehicle_number?: string | null;
   driver_name?: string | null;
+  lo_number?: string | null;
+  approx_value?: number | null;
   sub_total?: number;
   cgst_amount?: number;
   sgst_amount?: number;
@@ -151,6 +154,7 @@ export async function createDeliveryChallan({ dc, lineItems }: CreateDCData) {
     return_due_date: dc.return_due_date, nature_of_job_work: dc.nature_of_job_work,
     total_items: dc.total_items, total_qty: dc.total_qty, status: dc.status, issued_at: dc.issued_at,
     vehicle_number: dc.vehicle_number || null, driver_name: dc.driver_name || null,
+    lo_number: dc.lo_number || null, approx_value: dc.approx_value || null,
     sub_total: dc.sub_total || 0, cgst_amount: dc.cgst_amount || 0, sgst_amount: dc.sgst_amount || 0,
     igst_amount: dc.igst_amount || 0, total_gst: dc.total_gst || 0, grand_total: dc.grand_total || 0,
     gst_rate: dc.gst_rate || 18, po_reference: dc.po_reference || null, po_date: dc.po_date || null,
@@ -166,7 +170,8 @@ export async function createDeliveryChallan({ dc, lineItems }: CreateDCData) {
       item_code: item.item_code || null, hsn_sac_code: item.hsn_sac_code || null,
       unit: item.unit || "NOS", quantity: item.quantity || 0, rate: item.rate || 0, amount: item.amount || 0,
       drawing_number: item.drawing_number || null, remarks: item.remarks || null,
-      qty_nos: item.qty_nos || item.quantity || 0, qty_kg: item.qty_kg || 0, qty_sft: item.qty_sft || 0,
+      qty_nos: item.qty_nos || item.quantity || 0, qty_kg: item.qty_kg || 0,
+      qty_kgs: item.qty_kgs || null, qty_sft: item.qty_sft || null,
       nature_of_process: item.nature_of_process || null, material_type: item.material_type || "FINISH",
     }));
     const { error: itemsError } = await supabase.from("dc_line_items").insert(itemsToInsert as any);
@@ -186,6 +191,7 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
     return_due_date: dc.return_due_date, nature_of_job_work: dc.nature_of_job_work,
     total_items: dc.total_items, total_qty: dc.total_qty, status: dc.status, issued_at: dc.issued_at,
     vehicle_number: dc.vehicle_number || null, driver_name: dc.driver_name || null,
+    lo_number: dc.lo_number || null, approx_value: dc.approx_value || null,
     sub_total: dc.sub_total || 0, cgst_amount: dc.cgst_amount || 0, sgst_amount: dc.sgst_amount || 0,
     igst_amount: dc.igst_amount || 0, total_gst: dc.total_gst || 0, grand_total: dc.grand_total || 0,
     gst_rate: dc.gst_rate || 18, po_reference: dc.po_reference || null, po_date: dc.po_date || null,
@@ -201,7 +207,8 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
       item_code: item.item_code || null, hsn_sac_code: item.hsn_sac_code || null,
       unit: item.unit || "NOS", quantity: item.quantity || 0, rate: item.rate || 0, amount: item.amount || 0,
       drawing_number: item.drawing_number || null, remarks: item.remarks || null,
-      qty_nos: item.qty_nos || item.quantity || 0, qty_kg: item.qty_kg || 0, qty_sft: item.qty_sft || 0,
+      qty_nos: item.qty_nos || item.quantity || 0, qty_kg: item.qty_kg || 0,
+      qty_kgs: item.qty_kgs || null, qty_sft: item.qty_sft || null,
       nature_of_process: item.nature_of_process || null, material_type: item.material_type || "FINISH",
     }));
     const { error: itemsError } = await supabase.from("dc_line_items").insert(itemsToInsert as any);

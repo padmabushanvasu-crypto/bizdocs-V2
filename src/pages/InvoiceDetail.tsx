@@ -221,7 +221,10 @@ export default function InvoiceDetail() {
               {items.map((li: any) => (
                 <tr key={li.id}>
                   <td>{li.serial_number}</td>
-                  <td className="font-medium">{li.description}</td>
+                  <td className="font-medium">
+                    {li.description}
+                    {li.drawing_number && <div className="text-xs text-muted-foreground font-normal">Dwg: {li.drawing_number}</div>}
+                  </td>
                   <td className="text-muted-foreground">{li.hsn_sac_code || "—"}</td>
                   <td className="text-right font-mono tabular-nums">{li.quantity}</td>
                   <td>{li.unit}</td>

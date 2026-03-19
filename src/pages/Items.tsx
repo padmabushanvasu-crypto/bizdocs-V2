@@ -16,14 +16,13 @@ import { ITEMS_IMPORT_CONFIG, type ValidatedRow } from "@/lib/import-utils";
 import { exportToExcel, ITEMS_EXPORT_COLS } from "@/lib/export-utils";
 
 const ITEM_TYPES = [
-  { value: "finished_good", label: "Finished Good" },
   { value: "raw_material", label: "Raw Material" },
   { value: "component", label: "Component" },
   { value: "sub_assembly", label: "Sub-Assembly" },
   { value: "bought_out", label: "Bought-Out" },
-  { value: "job_work", label: "Job Work" },
-  { value: "service", label: "Service" },
+  { value: "finished_good", label: "Finished Good" },
   { value: "consumable", label: "Consumable" },
+  { value: "service", label: "Service" },
 ];
 
 const TYPE_BADGE: Record<string, string> = {
@@ -37,13 +36,13 @@ const TYPE_BADGE: Record<string, string> = {
   consumable: "bg-teal-100 text-teal-800",
 };
 
-const UNITS = ["NOS", "KG", "MTR", "SFT", "SET", "ROLL", "SHEET", "LITRE", "BOX"];
+const UNITS = ["NOS", "KG", "KGS", "MTR", "SFT", "SET", "ROLL", "SHEET", "LITRE", "LTR", "BOX", "COIL", "PAIR", "LOT"];
 const GST_RATES = [0, 5, 12, 18, 28];
 
 const emptyItem = {
-  item_code: "", description: "", drawing_number: "", drawing_revision: "", item_type: "finished_good",
+  item_code: "", description: "", drawing_number: "", drawing_revision: "", item_type: "raw_material",
   unit: "NOS", hsn_sac_code: "", sale_price: 0, purchase_price: 0, gst_rate: 18,
-  min_stock: 0, notes: "", standard_cost: 0, min_stock_override: "" as string,
+  min_stock: 0, notes: "", standard_cost: 0,
 };
 
 export default function Items() {
@@ -68,7 +67,7 @@ export default function Items() {
       const payload = {
         ...form,
         standard_cost: form.standard_cost || 0,
-        min_stock_override: form.min_stock_override !== "" ? parseFloat(form.min_stock_override as string) : null,
+        min_stock_override: null,
       };
       if (editingItem) {
         return updateItem(editingItem.id, payload as any);
@@ -137,7 +136,6 @@ export default function Items() {
       sale_price: item.sale_price, purchase_price: item.purchase_price,
       gst_rate: item.gst_rate, min_stock: item.min_stock, notes: item.notes || "",
       standard_cost: item.standard_cost ?? 0,
-      min_stock_override: item.min_stock_override != null ? String(item.min_stock_override) : "",
     });
     setFormOpen(true);
   };
@@ -257,7 +255,7 @@ export default function Items() {
                   </button>
                 </th>
                 <th>Code</th><th>Description</th><th>Drawing</th><th>Type</th>
-                <th>Unit</th><th>HSN</th><th className="text-right">Sale Price</th>
+                <th>Unit</th><th>HSN</th><th className="text-right">Min Stock</th>
                 <th className="text-right">GST%</th><th className="w-20">Actions</th>
               </tr>
             </thead>
@@ -294,7 +292,7 @@ export default function Items() {
                     </td>
                     <td>{item.unit}</td>
                     <td className="font-mono text-xs">{item.hsn_sac_code || "—"}</td>
-                    <td className="text-right font-mono tabular-nums">{formatCurrency(item.sale_price)}</td>
+                    <td className="text-right font-mono tabular-nums">{item.min_stock || "—"}</td>
                     <td className="text-right font-mono tabular-nums">{item.gst_rate}%</td>
                     <td>
                       <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
@@ -367,16 +365,6 @@ export default function Items() {
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Sale Price (₹)</Label>
-                  <Input type="number" value={form.sale_price || ""} onChange={(e) => setForm((f) => ({ ...f, sale_price: parseFloat(e.target.value) || 0 }))} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Purchase Price (₹)</Label>
-                  <Input type="number" value={form.purchase_price || ""} onChange={(e) => setForm((f) => ({ ...f, purchase_price: parseFloat(e.target.value) || 0 }))} />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
                   <Label>GST Rate (%)</Label>
                   <Select value={String(form.gst_rate)} onValueChange={(v) => setForm((f) => ({ ...f, gst_rate: parseFloat(v) }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
@@ -384,8 +372,8 @@ export default function Items() {
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Min Stock</Label>
-                  <Input type="number" value={form.min_stock || ""} onChange={(e) => setForm((f) => ({ ...f, min_stock: parseFloat(e.target.value) || 0 }))} />
+                  <Label>Minimum Stock Level</Label>
+                  <Input type="number" min={0} value={form.min_stock || ""} onChange={(e) => setForm((f) => ({ ...f, min_stock: parseFloat(e.target.value) || 0 }))} placeholder="0" />
                 </div>
               </div>
               <div className="space-y-1.5">
@@ -405,20 +393,7 @@ export default function Items() {
                   onChange={(e) => setForm((f) => ({ ...f, standard_cost: parseFloat(e.target.value) || 0 }))}
                   placeholder="0.00"
                 />
-                <p className="text-xs text-muted-foreground">Internal cost used for margin calculations.</p>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Min Stock Override</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={form.min_stock_override}
-                  onChange={(e) => setForm((f) => ({ ...f, min_stock_override: e.target.value }))}
-                  placeholder="Leave blank to use Min Stock"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Overrides the Min Stock for the Stock Register. Leave blank to use the Min Stock value.
-                </p>
+                <p className="text-xs text-muted-foreground">Internal cost used for margin calculations and assembly costing.</p>
               </div>
             </TabsContent>
           </Tabs>

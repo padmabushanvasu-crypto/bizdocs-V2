@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Edit, X, Truck, CheckCircle2, RotateCcw, AlertTriangle } from "lucide-react";
+import { Edit, X, Truck, CheckCircle2, RotateCcw, AlertTriangle, Printer } from "lucide-react";
 import { EditableSection } from "@/components/EditableSection";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -31,7 +31,10 @@ const statusLabels: Record<string, string> = {
 };
 const typeLabels: Record<string, string> = {
   returnable: "RETURNABLE", non_returnable: "NON-RETURNABLE", job_work_143: "JOB WORK (SEC 143)",
+  job_work_out: "JOB WORK OUT", job_work_return: "JOB WORK RETURN",
 };
+
+const JOB_WORK_TYPES = ["job_work_out", "job_work_return", "returnable", "job_work_143"];
 const categoryLabels: Record<string, string> = {
   supply_on_approval: "Supply on Approval", job_work_return: "Job Work Return",
   sales_return: "Sales Return", others: "Others",
@@ -44,6 +47,7 @@ export default function DeliveryChallanDetail() {
   const queryClient = useQueryClient();
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  const [isDuplicate, setIsDuplicate] = useState(false);
 
   const { data: dc, isLoading } = useQuery({
     queryKey: ["delivery-challan", id],
@@ -71,6 +75,10 @@ export default function DeliveryChallanDetail() {
 
   const items = dc.line_items || [];
   const isReturnable = dc.dc_type === "returnable" || dc.dc_type === "job_work_143";
+  const isJobWork = JOB_WORK_TYPES.includes(dc.dc_type);
+  const hasNatureOfProcess = items.some((i) => i.nature_of_process);
+  const hasQtyKgs = items.some((i) => (i as any).qty_kgs != null);
+  const hasQtySft = items.some((i) => (i as any).qty_sft != null);
   const today = new Date().toISOString().split("T")[0];
   const isOverdue = dc.return_due_date && dc.return_due_date < today && !["fully_returned", "cancelled"].includes(dc.status);
 
@@ -90,6 +98,9 @@ export default function DeliveryChallanDetail() {
           )}
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => { setIsDuplicate(true); setTimeout(() => { window.print(); setIsDuplicate(false); }, 100); }}>
+            <Printer className="h-3.5 w-3.5 mr-1" /> Print Duplicate
+          </Button>
           <DocumentActions documentNumber={dc.dc_number} documentType="Delivery Challan" />
           {dc.status === "draft" && (
             <Button variant="outline" size="sm" onClick={() => navigate(`/delivery-challans/${id}/edit`)}>
@@ -113,11 +124,14 @@ export default function DeliveryChallanDetail() {
       <div className="paper-card space-y-6">
         {/* Header */}
         <DocumentHeader />
-        <div className="text-center border-b border-border pb-4">
+        <div className="text-center border-b border-border pb-4 relative">
           <h2 className="text-lg font-display font-bold text-primary uppercase tracking-wider">
             Delivery Challan
           </h2>
-          <p className="text-xs text-muted-foreground mt-1">[{typeLabels[dc.dc_type]}]</p>
+          <p className="text-xs text-muted-foreground mt-1">[{typeLabels[dc.dc_type] || dc.dc_type}]</p>
+          <span className="absolute top-0 right-0 text-xs font-bold border border-current px-2 py-0.5 rounded tracking-widest">
+            {isDuplicate ? "DUPLICATE" : "ORIGINAL"}
+          </span>
         </div>
 
         <EditableSection
@@ -163,6 +177,12 @@ export default function DeliveryChallanDetail() {
 
           <div className="border border-border rounded-lg p-4 space-y-2 text-sm">
             <p className="text-xs uppercase text-muted-foreground font-bold tracking-wider mb-2">Reference Details</p>
+            {(dc as any).lo_number && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">L.O. No</span>
+                <span className="font-mono">{(dc as any).lo_number}</span>
+              </div>
+            )}
             {dc.po_reference && (
               <div className="flex justify-between">
                 <span className="text-muted-foreground">PO Reference</span>
@@ -179,6 +199,12 @@ export default function DeliveryChallanDetail() {
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Challan Type</span>
                 <span>{categoryLabels[dc.challan_category] || dc.challan_category}</span>
+              </div>
+            )}
+            {(dc as any).approx_value != null && (dc as any).approx_value > 0 && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Approx. Value</span>
+                <span className="font-mono">{formatCurrency((dc as any).approx_value)}</span>
               </div>
             )}
             {dc.return_due_date && (
@@ -201,8 +227,11 @@ export default function DeliveryChallanDetail() {
                 <th className="w-10">#</th>
                 <th>Item Code</th>
                 <th>Description</th>
+                {hasNatureOfProcess && <th>Nature of Process</th>}
                 <th>Unit</th>
-                <th className="text-right">Quantity</th>
+                <th className="text-right">Qty (NOS)</th>
+                {hasQtyKgs && <th className="text-right">Qty (KGS)</th>}
+                {hasQtySft && <th className="text-right">Qty (SFT)</th>}
                 <th className="text-right">Rate (₹)</th>
                 <th className="text-right">Amount (₹)</th>
                 <th>Remarks</th>
@@ -214,8 +243,11 @@ export default function DeliveryChallanDetail() {
                   <td className="font-mono text-muted-foreground">{item.serial_number}</td>
                   <td className="font-mono text-sm">{item.item_code || "—"}</td>
                   <td className="font-medium">{item.description}</td>
+                  {hasNatureOfProcess && <td className="text-sm">{(item as any).nature_of_process || "—"}</td>}
                   <td className="text-muted-foreground">{item.unit || "NOS"}</td>
                   <td className="text-right font-mono tabular-nums">{formatNumber(item.quantity || item.qty_nos || 0)}</td>
+                  {hasQtyKgs && <td className="text-right font-mono tabular-nums">{(item as any).qty_kgs != null ? formatNumber((item as any).qty_kgs) : "—"}</td>}
+                  {hasQtySft && <td className="text-right font-mono tabular-nums">{(item as any).qty_sft != null ? formatNumber((item as any).qty_sft) : "—"}</td>}
                   <td className="text-right font-mono tabular-nums">{formatCurrency(item.rate || 0)}</td>
                   <td className="text-right font-mono tabular-nums font-medium">{formatCurrency(item.amount || 0)}</td>
                   <td className="text-muted-foreground text-sm">{item.remarks || "—"}</td>
@@ -270,9 +302,9 @@ export default function DeliveryChallanDetail() {
         )}
 
         {/* Not for Sale Banner */}
-        {isReturnable && (
-          <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 text-center text-sm font-medium text-primary">
-            NOT FOR SALE{dc.dc_type === "job_work_143" ? " — JOB WORK ONLY" : " — RETURNABLE"}
+        {isJobWork && (
+          <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 text-center text-sm font-bold text-primary uppercase tracking-wider">
+            NOT FOR SALE — JOB WORK ONLY
           </div>
         )}
 
@@ -294,14 +326,19 @@ export default function DeliveryChallanDetail() {
         </div>
 
         {/* Receiver Box */}
-        <div className="border-2 border-dashed border-border rounded-lg p-4 text-center">
-          <p className="text-sm text-muted-foreground mb-8">Received goods in good condition</p>
+        <div className="border-2 border-dashed border-border rounded-lg p-4">
+          <p className="text-sm text-muted-foreground text-center mb-8">Received the above goods in good condition</p>
           <div className="flex justify-between items-end px-8">
-            <div>
-              <p className="border-t border-border pt-1 text-xs text-muted-foreground px-6">Signature</p>
+            <div className="text-center">
+              <div className="border-t border-border pt-1">
+                <p className="text-xs text-muted-foreground px-6">Signature</p>
+                <p className="text-xs text-muted-foreground">for {dc.party_name}</p>
+              </div>
             </div>
-            <div>
-              <p className="border-t border-border pt-1 text-xs text-muted-foreground px-6">Date</p>
+            <div className="text-center">
+              <div className="border-t border-border pt-1">
+                <p className="text-xs text-muted-foreground px-6">Date</p>
+              </div>
             </div>
           </div>
         </div>
