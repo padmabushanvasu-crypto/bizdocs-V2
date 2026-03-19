@@ -55,8 +55,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile(data as Profile);
         if (data.company_id) {
           setCompanyId(data.company_id);
+          localStorage.setItem("bizdocs_company_setup_done", "true");
         } else {
           clearCompanyId();
+          localStorage.removeItem("bizdocs_company_setup_done");
         }
       }
     } catch (err) {
@@ -98,6 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     clearCompanyId();
+    localStorage.removeItem("bizdocs_company_setup_done");
     setProfile(null);
     await supabase.auth.signOut();
   };
