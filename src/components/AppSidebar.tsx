@@ -17,11 +17,15 @@ import {
   GitFork,
   Layers,
   BookOpen,
+  Hash,
+  ClipboardCheck,
+  Shield,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { fetchWipSummary } from "@/lib/job-cards-api";
+import { fetchFatStats, fetchSerialStats } from "@/lib/fat-api";
 import {
   Sidebar,
   SidebarContent,
@@ -127,6 +131,18 @@ export function AppSidebar() {
     refetchInterval: 60000,
   });
 
+  const { data: fatStats } = useQuery({
+    queryKey: ["fat-stats-sidebar"],
+    queryFn: fetchFatStats,
+    refetchInterval: 60000,
+  });
+
+  const { data: serialStats } = useQuery({
+    queryKey: ["serial-stats-sidebar"],
+    queryFn: fetchSerialStats,
+    refetchInterval: 60000,
+  });
+
   return (
     <Sidebar collapsible="icon" className="border-r-0">
       <SidebarHeader className="px-4 py-5">
@@ -204,6 +220,81 @@ export function AppSidebar() {
         <NavGroup label="Dispatch & Billing" items={dispatchBillingNav} collapsed={collapsed} isActive={isActive} />
         <NavGroup label="Master Data" items={masterDataNav} collapsed={collapsed} isActive={isActive} />
         <NavGroup label="Reports" items={reportsNav} collapsed={collapsed} isActive={isActive} />
+
+        {/* Quality & Compliance — with FAT Pending + Expiring Soon badges */}
+        <SidebarGroup>
+          <SidebarGroupLabel className="text-slate-500 text-[10px] uppercase tracking-widest font-semibold">
+            Quality &amp; Compliance
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {/* Serial Numbers */}
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={isActive("/serial-numbers")}>
+                  <NavLink
+                    to="/serial-numbers"
+                    className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                    activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
+                  >
+                    <Hash className="h-4 w-4 shrink-0" />
+                    {!collapsed && <span>Serial Numbers</span>}
+                  </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              {/* FAT Certificates with pending badge */}
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={isActive("/fat-certificates")}>
+                  <NavLink
+                    to="/fat-certificates"
+                    className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                    activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
+                  >
+                    <ClipboardCheck className="h-4 w-4 shrink-0" />
+                    {!collapsed && (
+                      <span className="flex-1 flex items-center justify-between">
+                        FAT Certificates
+                        {fatStats && fatStats.pending > 0 && (
+                          <span className="ml-auto bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                            {fatStats.pending}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                    {collapsed && fatStats && fatStats.pending > 0 && (
+                      <span className="absolute top-0.5 right-0.5 h-2 w-2 rounded-full bg-amber-500" />
+                    )}
+                  </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              {/* Warranty Tracker with expiring soon badge */}
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={isActive("/warranty-tracker")}>
+                  <NavLink
+                    to="/warranty-tracker"
+                    className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                    activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
+                  >
+                    <Shield className="h-4 w-4 shrink-0" />
+                    {!collapsed && (
+                      <span className="flex-1 flex items-center justify-between">
+                        Warranty Tracker
+                        {serialStats && serialStats.expiringSoon > 0 && (
+                          <span className="ml-auto bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                            {serialStats.expiringSoon}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                    {collapsed && serialStats && serialStats.expiringSoon > 0 && (
+                      <span className="absolute top-0.5 right-0.5 h-2 w-2 rounded-full bg-amber-500" />
+                    )}
+                  </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
         <NavGroup label="Settings" items={settingsNav} collapsed={collapsed} isActive={isActive} />
       </SidebarContent>
 

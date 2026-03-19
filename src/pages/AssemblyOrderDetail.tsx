@@ -3,13 +3,13 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Layers, ArrowLeft, CheckCircle2, XCircle, AlertTriangle, Package,
-  TrendingDown, TrendingUp, BookOpen,
+  TrendingDown, TrendingUp, BookOpen, Hash, ClipboardCheck, Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -18,6 +18,11 @@ import {
   cancelAssemblyOrder,
   updateAssemblyOrder,
 } from "@/lib/assembly-orders-api";
+import {
+  fetchSerialNumbers,
+  createFatCertificate,
+  type SerialNumberRecord,
+} from "@/lib/fat-api";
 import { formatCurrency } from "@/lib/gst-utils";
 import { format } from "date-fns";
 
@@ -44,6 +49,8 @@ export default function AssemblyOrderDetail() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [quantityBuilt, setQuantityBuilt] = useState<number>(0);
   const [serialInputs, setSerialInputs] = useState<string[]>([]);
+  const [fatDialogOpen, setFatDialogOpen] = useState(false);
+  const [selectedSerial, setSelectedSerial] = useState<SerialNumberRecord | null>(null);
 
   const { data: ao, isLoading } = useQuery({
     queryKey: ["assembly-order", id],
@@ -107,6 +114,38 @@ export default function AssemblyOrderDetail() {
     },
   });
 
+  const isCompleted = ao?.status === "completed";
+
+  const { data: serialData } = useQuery({
+    queryKey: ["serial-numbers-ao", id],
+    queryFn: () => fetchSerialNumbers({ assemblyOrderId: id!, pageSize: 50 }),
+    enabled: !!id && isCompleted,
+  });
+  const serialRows = serialData?.data ?? [];
+
+  const createFatMutation = useMutation({
+    mutationFn: (serial: SerialNumberRecord) =>
+      createFatCertificate({
+        serial_number_id: serial.id,
+        serial_number: serial.serial_number,
+        item_id: serial.item_id,
+        item_code: serial.item_code,
+        item_description: serial.item_description,
+        assembly_order_id: serial.assembly_order_id,
+      }),
+    onSuccess: (fat) => {
+      queryClient.invalidateQueries({ queryKey: ["serial-numbers-ao", id] });
+      queryClient.invalidateQueries({ queryKey: ["fat-certificates"] });
+      setFatDialogOpen(false);
+      setSelectedSerial(null);
+      toast({ title: "FAT Certificate created", description: fat.fat_number });
+      navigate(`/fat-certificates/${fat.id}`);
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
   if (isLoading) {
     return (
       <div className="p-6 flex justify-center">
@@ -125,9 +164,7 @@ export default function AssemblyOrderDetail() {
   const allAvailable = lines.every((l) => l.is_available);
   const shortLines = lines.filter((l) => !l.is_available);
   const hasAnyStock = lines.some((l) => l.available_qty > 0);
-  const isFinishedGood = ao.item_description?.toLowerCase().includes("finished") || true; // show serial section always for now
   const isEditable = ao.status === "draft" || ao.status === "in_progress";
-  const isCompleted = ao.status === "completed";
 
   // Cost summary
   const totalCost = lines.reduce(
@@ -394,6 +431,112 @@ export default function AssemblyOrderDetail() {
           </div>
         </div>
       )}
+
+      {/* Serial Numbers Section (shown when completed) */}
+      {isCompleted && serialRows.length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Hash className="h-4 w-4 text-slate-400" />
+              <h2 className="font-semibold text-slate-900">Serial Numbers</h2>
+              <span className="text-xs text-slate-400">{serialRows.length} unit{serialRows.length !== 1 ? "s" : ""}</span>
+            </div>
+            <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => navigate("/serial-numbers")}>
+              <Hash className="h-3 w-3" /> View All
+            </Button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full data-table">
+              <thead>
+                <tr>
+                  <th>Serial Number</th>
+                  <th>Status</th>
+                  <th>FAT</th>
+                  <th className="print:hidden">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {serialRows.map((row) => (
+                  <tr key={row.id}>
+                    <td className="font-mono font-semibold text-primary">{row.serial_number}</td>
+                    <td>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                        {row.status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                      </span>
+                    </td>
+                    <td>
+                      {row.fat_completed ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
+                          <CheckCircle2 className="h-3 w-3" /> FAT Passed
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                          FAT Pending
+                        </span>
+                      )}
+                    </td>
+                    <td className="print:hidden">
+                      {row.fat_completed ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs gap-1"
+                          onClick={() => navigate("/fat-certificates")}
+                        >
+                          <ClipboardCheck className="h-3 w-3" /> View FAT
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs gap-1"
+                          onClick={() => { setSelectedSerial(row); setFatDialogOpen(true); }}
+                        >
+                          <Plus className="h-3 w-3" /> Create FAT
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Create FAT Dialog */}
+      <Dialog open={fatDialogOpen} onOpenChange={(v) => { setFatDialogOpen(v); if (!v) setSelectedSerial(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create FAT Certificate</DialogTitle>
+            <DialogDescription>
+              Create a Factory Acceptance Test certificate for serial number{" "}
+              <span className="font-mono font-semibold">{selectedSerial?.serial_number}</span>.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedSerial && (
+            <div className="bg-muted/50 rounded-lg p-3 text-sm space-y-1">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Serial Number</span>
+                <span className="font-mono font-semibold">{selectedSerial.serial_number}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Item</span>
+                <span>{selectedSerial.item_description ?? selectedSerial.item_code ?? "—"}</span>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFatDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => selectedSerial && createFatMutation.mutate(selectedSerial)}
+              disabled={createFatMutation.isPending || !selectedSerial}
+            >
+              {createFatMutation.isPending ? "Creating..." : "Create FAT Certificate"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Confirm Assembly Dialog */}
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>

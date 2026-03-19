@@ -46,6 +46,10 @@ import AssemblyOrderDetail from "@/pages/AssemblyOrderDetail";
 import StockLedger from "@/pages/StockLedger";
 import DataImport from "@/pages/DataImport";
 import DocumentSettings from "@/pages/DocumentSettings";
+import SerialNumbers from "@/pages/SerialNumbers";
+import FatCertificates from "@/pages/FatCertificates";
+import FatCertificateDetail from "@/pages/FatCertificateDetail";
+import WarrantyTracker from "@/pages/WarrantyTracker";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -99,6 +103,10 @@ const App = () => (
               <Route path="/assembly-orders" element={<AssemblyOrders />} />
               <Route path="/assembly-orders/:id" element={<AssemblyOrderDetail />} />
               <Route path="/stock-ledger" element={<StockLedger />} />
+              <Route path="/serial-numbers" element={<SerialNumbers />} />
+              <Route path="/fat-certificates" element={<FatCertificates />} />
+              <Route path="/fat-certificates/:id" element={<FatCertificateDetail />} />
+              <Route path="/warranty-tracker" element={<WarrantyTracker />} />
               <Route path="/stage-templates" element={<StageTemplates />} />
               <Route path="/more" element={<MoreMenu />} />
               <Route path="/settings/company" element={<CompanySettings />} />

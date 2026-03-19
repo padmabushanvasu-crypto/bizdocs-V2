@@ -28,6 +28,7 @@ import {
   type InvoiceLineItem,
 } from "@/lib/invoices-api";
 import { formatCurrency, formatNumber, amountInWords } from "@/lib/gst-utils";
+import { fetchSerialNumbers, assignSerialToInvoice } from "@/lib/fat-api";
 
 const UNITS = ["NOS", "KG", "MTR", "SFT", "SET", "ROLL", "SHEET", "LITRE", "BOX"];
 const PAYMENT_TERMS = ["Immediate", "7 Days", "15 Days", "30 Days", "45 Days", "60 Days"];
@@ -99,6 +100,8 @@ export default function InvoiceForm() {
   const [lrNumber, setLrNumber] = useState("");
   const [lrDate, setLrDate] = useState("");
   const [serialNumberRef, setSerialNumberRef] = useState("");
+  const [serialNumberId, setSerialNumberId] = useState<string | null>(null);
+  const [serialSearchOpen, setSerialSearchOpen] = useState(false);
   const [dispatchThrough, setDispatchThrough] = useState("");
   const [destination, setDestination] = useState("");
 
@@ -125,6 +128,11 @@ export default function InvoiceForm() {
     queryKey: ["invoice", id],
     queryFn: () => fetchInvoice(id!),
     enabled: isEdit,
+  });
+
+  const { data: availableSerials } = useQuery({
+    queryKey: ["serial-numbers-available"],
+    queryFn: () => fetchSerialNumbers({ status: "in_stock", fatCompleted: true, pageSize: 200 }),
   });
 
   useEffect(() => {
@@ -328,11 +336,29 @@ export default function InvoiceForm() {
 
       if (isEdit) {
         await updateInvoice(id!, invoiceData, lineItems);
-        if (status === "sent") await issueInvoice(id!);
+        if (status === "sent") {
+          await issueInvoice(id!);
+          if (serialNumberId) {
+            await assignSerialToInvoice(
+              serialNumberId, id!, invoiceNumber,
+              selectedCustomer?.name || null,
+              format(invoiceDate, "yyyy-MM-dd")
+            );
+          }
+        }
         return id;
       } else {
         const inv = await createInvoice(invoiceData, lineItems);
-        if (status === "sent") await issueInvoice(inv.id);
+        if (status === "sent") {
+          await issueInvoice(inv.id);
+          if (serialNumberId) {
+            await assignSerialToInvoice(
+              serialNumberId, inv.id, invoiceNumber,
+              selectedCustomer?.name || null,
+              format(invoiceDate, "yyyy-MM-dd")
+            );
+          }
+        }
         return inv.id;
       }
     },
@@ -724,8 +750,52 @@ export default function InvoiceForm() {
                 <Input type="date" value={lrDate} onChange={(e) => setLrDate(e.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase text-muted-foreground">Serial Number Ref</Label>
-                <Input value={serialNumberRef} onChange={(e) => setSerialNumberRef(e.target.value)} placeholder="Serial / batch reference" />
+                <Label className="text-xs font-semibold uppercase text-muted-foreground">Serial Number</Label>
+                <Popover open={serialSearchOpen} onOpenChange={setSerialSearchOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" role="combobox" className="w-full justify-between font-normal h-9 text-sm">
+                      {serialNumberRef || "Select serial number..."}
+                      <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[320px] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search serial number, item..." />
+                      <CommandList>
+                        <CommandEmpty>No available serial numbers.</CommandEmpty>
+                        <CommandGroup>
+                          {(availableSerials?.data ?? []).map((sn) => (
+                            <CommandItem
+                              key={sn.id}
+                              value={sn.serial_number}
+                              onSelect={() => {
+                                setSerialNumberRef(sn.serial_number);
+                                setSerialNumberId(sn.id);
+                                setSerialSearchOpen(false);
+                              }}
+                            >
+                              <div>
+                                <p className="font-mono font-semibold text-sm">{sn.serial_number}</p>
+                                {sn.item_description && (
+                                  <p className="text-xs text-muted-foreground">{sn.item_description}</p>
+                                )}
+                              </div>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                {serialNumberRef && (
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:text-red-600 underline"
+                    onClick={() => { setSerialNumberRef(""); setSerialNumberId(null); }}
+                  >
+                    Clear selection
+                  </button>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold uppercase text-muted-foreground">Dispatch Through</Label>

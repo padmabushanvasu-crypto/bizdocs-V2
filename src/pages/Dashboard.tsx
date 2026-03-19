@@ -2,12 +2,13 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import {
   IndianRupee, FileText, Truck, ShoppingCart, AlertTriangle,
-  Receipt, Activity, Factory, Package, Clock, Layers,
+  Receipt, Activity, Factory, Package, Clock, Layers, ClipboardCheck,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/gst-utils";
 import { fetchWipSummary, fetchWipRegister } from "@/lib/job-cards-api";
 import { fetchStockStatus } from "@/lib/items-api";
 import { fetchAssemblyOrderStats } from "@/lib/assembly-orders-api";
+import { fetchFatStats } from "@/lib/fat-api";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { format, startOfMonth } from "date-fns";
@@ -205,6 +206,12 @@ export default function Dashboard() {
     refetchInterval: 60000,
   });
 
+  const { data: fatStats } = useQuery({
+    queryKey: ["fat-stats-dashboard"],
+    queryFn: fetchFatStats,
+    refetchInterval: 60000,
+  });
+
   const gstTotal = analytics?.gstTotal ?? 0;
 
   return (
@@ -244,7 +251,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── ZONE 1: OPERATIONAL ALERTS ────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
 
         {/* At Vendors */}
         <div
@@ -372,6 +379,40 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+
+        {/* FAT Pending */}
+        {(() => {
+          const n = fatStats?.pending ?? 0;
+          const isAlert = n > 0;
+          return (
+            <div
+              className={`rounded-xl border border-l-4 shadow-sm p-5 cursor-pointer hover:shadow-md hover:-translate-y-px transition-all duration-200 min-h-[110px] relative overflow-hidden ${
+                isAlert
+                  ? "bg-red-50 border-red-200 border-l-red-500"
+                  : "bg-green-50 border-green-200 border-l-green-500"
+              }`}
+              onClick={() => navigate("/fat-certificates")}
+            >
+              <ClipboardCheck className={`absolute top-2 right-3 h-12 w-12 opacity-10 pointer-events-none ${isAlert ? "text-red-600" : "text-green-600"}`} />
+              <div className="flex flex-col justify-between h-full relative">
+                <div>
+                  <span className={`text-[11px] font-bold tracking-widest uppercase opacity-80 ${isAlert ? "text-red-600" : "text-green-600"}`}>
+                    FAT PENDING
+                  </span>
+                  <p className={`text-4xl font-bold font-mono tabular-nums mt-1 ${isAlert ? "text-red-700" : "text-green-700"}`}>
+                    {fatStats ? n : "—"}
+                  </p>
+                </div>
+                <div className="flex items-center justify-between mt-2">
+                  <p className={`text-xs ${isAlert ? "text-red-600" : "text-green-600"}`}>
+                    {isAlert ? "awaiting test results" : "all FATs complete"}
+                  </p>
+                  <span className={`text-xs font-medium ${isAlert ? "text-red-500" : "text-green-500"}`}>View →</span>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* ── ZONE 2: ACTIVE JOB CARDS ──────────────────────────────────────── */}
