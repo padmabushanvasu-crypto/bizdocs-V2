@@ -156,7 +156,7 @@ export default function SalesOrderDetail() {
         {/* Customer & SO Details */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <p className="text-xs uppercase text-muted-foreground font-bold tracking-wider mb-1">To</p>
+            <p className="text-xs font-semibold text-slate-500 mb-1">To</p>
             <p className="font-medium text-foreground">{so.customer_name}</p>
             {so.billing_address && <p className="text-sm text-muted-foreground whitespace-pre-line">{so.billing_address}</p>}
             {so.customer_gstin && <p className="text-sm font-mono">GSTIN: {so.customer_gstin}</p>}
@@ -197,7 +197,7 @@ export default function SalesOrderDetail() {
         {/* Shipping Address */}
         {so.shipping_address && so.shipping_address !== so.billing_address && (
           <div>
-            <p className="text-xs uppercase text-muted-foreground font-bold tracking-wider mb-1">Ship To</p>
+            <p className="text-xs font-semibold text-slate-500 mb-1">Ship To</p>
             <p className="text-sm text-muted-foreground whitespace-pre-line">{so.shipping_address}</p>
           </div>
         )}
@@ -277,7 +277,7 @@ export default function SalesOrderDetail() {
 
         {so.special_instructions && (
           <div>
-            <p className="text-xs uppercase text-muted-foreground font-bold tracking-wider mb-1">Special Instructions</p>
+            <p className="text-xs font-semibold text-slate-500 mb-1">Special Instructions</p>
             <p className="text-sm">{so.special_instructions}</p>
           </div>
         )}
@@ -292,7 +292,7 @@ export default function SalesOrderDetail() {
       {/* Linked Dispatch Notes */}
       <div className="paper-card print:hidden">
         <div className="flex items-center justify-between border-b border-border pb-2 mb-4">
-          <h3 className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Dispatch Notes</h3>
+          <h3 className="text-xs font-semibold text-slate-500">Dispatch Notes</h3>
           {["confirmed", "in_production"].includes(so.status) && (
             <Button size="sm" variant="outline" onClick={() => navigate(`/dispatch-notes/new?so=${id}`)}>
               <Truck className="h-3.5 w-3.5 mr-1" /> Create DN

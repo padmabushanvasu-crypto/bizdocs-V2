@@ -175,7 +175,7 @@ export default function PurchaseOrderDetail() {
         >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <p className="text-xs uppercase text-muted-foreground font-bold tracking-wider mb-1">To</p>
+              <p className="text-xs font-semibold text-slate-500 mb-1">To</p>
               <p className="font-medium text-foreground">{po.vendor_name}</p>
               {po.vendor_address && <p className="text-sm text-muted-foreground">{po.vendor_address}</p>}
               {po.vendor_gstin && <p className="text-sm font-mono">GSTIN: {po.vendor_gstin}</p>}
@@ -304,7 +304,7 @@ export default function PurchaseOrderDetail() {
 
         {po.special_instructions && (
           <div>
-            <p className="text-xs uppercase text-muted-foreground font-bold tracking-wider mb-1">Special Instructions</p>
+            <p className="text-xs font-semibold text-slate-500 mb-1">Special Instructions</p>
             <p className="text-sm">{po.special_instructions}</p>
           </div>
         )}
@@ -324,7 +324,7 @@ export default function PurchaseOrderDetail() {
       {/* Receipt History */}
       <div className="paper-card print:hidden">
         <div className="flex items-center justify-between border-b border-border pb-2 mb-4">
-          <h3 className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Receipt History</h3>
+          <h3 className="text-xs font-semibold text-slate-500">Receipt History</h3>
           {canRecordReceipt && (
             <Button size="sm" variant="outline" onClick={() => navigate(`/grn/new?po=${id}`)}>
               <Package className="h-3.5 w-3.5 mr-1" /> Record Receipt

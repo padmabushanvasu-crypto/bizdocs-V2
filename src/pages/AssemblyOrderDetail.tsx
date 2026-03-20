@@ -569,7 +569,7 @@ export default function AssemblyOrderDetail() {
 
             {/* Components to be consumed */}
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-1.5">
-              <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
+              <p className="text-xs font-semibold text-slate-500">
                 Components that will be consumed:
               </p>
               {lines.map((line) => (

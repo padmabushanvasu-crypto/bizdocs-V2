@@ -130,14 +130,14 @@ export default function VendorScorecards() {
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="paper-card">
-          <p className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Total Vendors</p>
+          <p className="text-xs font-semibold text-slate-500">Total Vendors</p>
           <p className="text-2xl font-bold font-mono mt-1">{withSteps.length}</p>
           <p className="text-xs text-muted-foreground mt-0.5">with job work history</p>
         </div>
         <div className={`paper-card ${needReview > 0 ? "border-l-4 border-l-red-500" : ""}`}>
           <div className="flex items-center gap-1.5">
             <AlertTriangle className={`h-3.5 w-3.5 ${needReview > 0 ? "text-red-600" : "text-muted-foreground"}`} />
-            <p className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Need Review</p>
+            <p className="text-xs font-semibold text-slate-500">Need Review</p>
           </div>
           <p className={`text-2xl font-bold font-mono mt-1 ${needReview > 0 ? "text-red-700" : ""}`}>{needReview}</p>
           <p className="text-xs text-muted-foreground mt-0.5">{needReview > 0 ? "high rejection or late deliveries" : "all clear"}</p>
@@ -145,7 +145,7 @@ export default function VendorScorecards() {
         <div className={`paper-card ${onWatch > 0 ? "border-l-4 border-l-amber-400" : ""}`}>
           <div className="flex items-center gap-1.5">
             <Eye className={`h-3.5 w-3.5 ${onWatch > 0 ? "text-amber-600" : "text-muted-foreground"}`} />
-            <p className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Watch</p>
+            <p className="text-xs font-semibold text-slate-500">Watch</p>
           </div>
           <p className={`text-2xl font-bold font-mono mt-1 ${onWatch > 0 ? "text-amber-700" : ""}`}>{onWatch}</p>
           <p className="text-xs text-muted-foreground mt-0.5">{onWatch > 0 ? "approaching threshold" : "all clear"}</p>

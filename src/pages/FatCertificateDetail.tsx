@@ -228,7 +228,7 @@ export default function FatCertificateDetail() {
         {/* Header Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
           <div className="border border-border rounded-lg p-4 space-y-2">
-            <p className="text-xs uppercase text-muted-foreground font-bold tracking-wider mb-2">Certificate Details</p>
+            <p className="text-xs font-semibold text-slate-500 mb-2">Certificate Details</p>
             <div className="flex justify-between">
               <span className="text-muted-foreground">FAT Number</span>
               <span className="font-mono font-semibold">{fat.fat_number}</span>
@@ -252,7 +252,7 @@ export default function FatCertificateDetail() {
           </div>
 
           <div className="border border-border rounded-lg p-4 space-y-2">
-            <p className="text-xs uppercase text-muted-foreground font-bold tracking-wider mb-2">Item Details</p>
+            <p className="text-xs font-semibold text-slate-500 mb-2">Item Details</p>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Item</span>
               <span className="font-medium text-right">{fat.item_description ?? "—"}</span>
@@ -287,7 +287,7 @@ export default function FatCertificateDetail() {
         {/* Test Details Fields (editable when pending) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="space-y-1.5">
-            <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Test Date</Label>
+            <Label className="text-xs font-semibold text-slate-500">Test Date</Label>
             {isCompleted ? (
               <p className="text-sm">{fat.test_date ? format(new Date(fat.test_date), "dd MMM yyyy") : "—"}</p>
             ) : (
@@ -299,7 +299,7 @@ export default function FatCertificateDetail() {
             )}
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Tested By</Label>
+            <Label className="text-xs font-semibold text-slate-500">Tested By</Label>
             {isCompleted ? (
               <p className="text-sm">{fat.tested_by ?? "—"}</p>
             ) : (
@@ -311,7 +311,7 @@ export default function FatCertificateDetail() {
             )}
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Witnessed By (Customer)</Label>
+            <Label className="text-xs font-semibold text-slate-500">Witnessed By (Customer)</Label>
             {isCompleted ? (
               <p className="text-sm">{fat.witnessed_by ?? "—"}</p>
             ) : (
@@ -326,7 +326,7 @@ export default function FatCertificateDetail() {
 
         {/* Test Results Table */}
         <div>
-          <h3 className="text-xs uppercase text-muted-foreground font-bold tracking-wider mb-3">Test Results</h3>
+          <h3 className="text-xs font-semibold text-slate-500 mb-3">Test Results</h3>
           <div className="overflow-x-auto border border-border rounded-lg">
             <table className="w-full text-sm">
               <thead className="bg-secondary text-muted-foreground text-xs uppercase tracking-wider">
@@ -461,7 +461,7 @@ export default function FatCertificateDetail() {
         {!isCompleted && (
           <div className="border-t border-border pt-4 space-y-4 print:hidden">
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider mb-3 block">
+              <Label className="text-xs font-semibold text-slate-500 mb-3 block">
                 Overall Result
               </Label>
               <div className="flex gap-3">
@@ -486,7 +486,7 @@ export default function FatCertificateDetail() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Notes</Label>
+              <Label className="text-xs font-semibold text-slate-500">Notes</Label>
               <Textarea
                 value={notes}
                 onChange={(e) => { setNotes(e.target.value); setDirty(true); }}
@@ -523,7 +523,7 @@ export default function FatCertificateDetail() {
         {/* Notes (read-only when completed) */}
         {isCompleted && fat.notes && (
           <div className="border-t border-border pt-4">
-            <p className="text-xs uppercase text-muted-foreground font-bold tracking-wider mb-1">Notes</p>
+            <p className="text-xs font-semibold text-slate-500 mb-1">Notes</p>
             <p className="text-sm">{fat.notes}</p>
           </div>
         )}

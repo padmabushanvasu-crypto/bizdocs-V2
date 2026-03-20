@@ -86,7 +86,7 @@ export default function GRNDetail() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-2 text-sm">
             <div>
-              <p className="text-xs uppercase text-muted-foreground font-bold tracking-wider mb-1">Vendor</p>
+              <p className="text-xs font-semibold text-slate-500 mb-1">Vendor</p>
               <p className="font-medium text-foreground">{grn.vendor_name || "—"}</p>
             </div>
             {grn.vendor_invoice_number && (
@@ -201,7 +201,7 @@ export default function GRNDetail() {
 
         {grn.notes && (
           <div>
-            <p className="text-xs uppercase text-muted-foreground font-bold tracking-wider mb-1">Notes</p>
+            <p className="text-xs font-semibold text-slate-500 mb-1">Notes</p>
             <p className="text-sm">{grn.notes}</p>
           </div>
         )}

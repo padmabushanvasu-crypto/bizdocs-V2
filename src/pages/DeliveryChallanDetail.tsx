@@ -175,7 +175,7 @@ export default function DeliveryChallanDetail() {
         {/* Consignee Block */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="border border-border rounded-lg p-4">
-            <p className="text-xs uppercase text-muted-foreground font-bold tracking-wider mb-2">Consignee (To)</p>
+            <p className="text-xs font-semibold text-slate-500 mb-2">Consignee (To)</p>
             <p className="font-medium text-foreground">{dc.party_name}</p>
             {dc.party_address && <p className="text-sm text-muted-foreground">{dc.party_address}</p>}
             {dc.party_gstin && <p className="text-sm font-mono">GSTIN: {dc.party_gstin}</p>}
@@ -183,7 +183,7 @@ export default function DeliveryChallanDetail() {
           </div>
 
           <div className="border border-border rounded-lg p-4 space-y-2 text-sm">
-            <p className="text-xs uppercase text-muted-foreground font-bold tracking-wider mb-2">Reference Details</p>
+            <p className="text-xs font-semibold text-slate-500 mb-2">Reference Details</p>
             {(dc as any).lo_number && (
               <div className="flex justify-between">
                 <span className="text-muted-foreground">L.O. No</span>
@@ -303,7 +303,7 @@ export default function DeliveryChallanDetail() {
         {/* Special Instructions */}
         {dc.special_instructions && (
           <div className="border-t border-border pt-4">
-            <p className="text-xs uppercase text-muted-foreground font-bold tracking-wider mb-1">Special Instructions</p>
+            <p className="text-xs font-semibold text-slate-500 mb-1">Special Instructions</p>
             <p className="text-sm">{dc.special_instructions}</p>
           </div>
         )}
@@ -355,7 +355,7 @@ export default function DeliveryChallanDetail() {
       {isReturnable && (
         <div className="paper-card print:hidden">
           <div className="flex items-center justify-between border-b border-border pb-2 mb-4">
-            <h3 className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Return History</h3>
+            <h3 className="text-xs font-semibold text-slate-500">Return History</h3>
             {["issued", "partially_returned"].includes(dc.status) && (
               <Button size="sm" variant="outline" onClick={() => navigate(`/delivery-challans/${id}/record-return`)}>
                 <RotateCcw className="h-3.5 w-3.5 mr-1" /> Record Return

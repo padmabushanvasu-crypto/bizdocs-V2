@@ -334,7 +334,7 @@ export default function ReorderRules() {
           <div className="space-y-4 py-2">
             {/* Item picker */}
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">
+              <Label className="text-sm font-medium text-slate-700">
                 Item *
               </Label>
               <Popover open={itemOpen} onOpenChange={setItemOpen}>
@@ -378,7 +378,7 @@ export default function ReorderRules() {
 
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">
+                <Label className="text-sm font-medium text-slate-700">
                   Reorder Point
                 </Label>
                 <Input
@@ -391,7 +391,7 @@ export default function ReorderRules() {
                 />
               </div>
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">
+                <Label className="text-sm font-medium text-slate-700">
                   Reorder Qty
                 </Label>
                 <Input
@@ -404,7 +404,7 @@ export default function ReorderRules() {
                 />
               </div>
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">
+                <Label className="text-sm font-medium text-slate-700">
                   Lead Time (days)
                 </Label>
                 <Input
@@ -420,7 +420,7 @@ export default function ReorderRules() {
 
             {/* Vendor picker */}
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">
+              <Label className="text-sm font-medium text-slate-700">
                 Preferred Vendor
               </Label>
               <Popover open={vendorOpen} onOpenChange={setVendorOpen}>
@@ -465,7 +465,7 @@ export default function ReorderRules() {
             </div>
 
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">
+              <Label className="text-sm font-medium text-slate-700">
                 Notes
               </Label>
               <Textarea

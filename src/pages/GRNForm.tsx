@@ -229,7 +229,7 @@ export default function GRNForm() {
           {/* Left Column */}
           <div className="space-y-4">
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Linked Purchase Order *</Label>
+              <Label className="text-sm font-medium text-slate-700">Linked Purchase Order *</Label>
               <Popover open={poOpen} onOpenChange={setPOOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" role="combobox" className="w-full justify-between mt-1 font-normal">
@@ -275,12 +275,12 @@ export default function GRNForm() {
             )}
 
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Vendor Invoice Number</Label>
+              <Label className="text-sm font-medium text-slate-700">Vendor Invoice Number</Label>
               <Input value={vendorInvoiceNumber} onChange={(e) => setVendorInvoiceNumber(e.target.value)} className="mt-1" placeholder="e.g., INV-0001" />
             </div>
 
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Vendor Invoice Date</Label>
+              <Label className="text-sm font-medium text-slate-700">Vendor Invoice Date</Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className={cn("w-full mt-1 justify-start font-normal", !vendorInvoiceDate && "text-muted-foreground")}>
@@ -294,7 +294,7 @@ export default function GRNForm() {
             </div>
 
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Notes</Label>
+              <Label className="text-sm font-medium text-slate-700">Notes</Label>
               <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="mt-1" rows={2} />
             </div>
           </div>
@@ -302,12 +302,12 @@ export default function GRNForm() {
           {/* Right Column */}
           <div className="space-y-4">
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">GRN Number</Label>
+              <Label className="text-sm font-medium text-slate-700">GRN Number</Label>
               <Input value={grnNumber} onChange={(e) => setGrnNumber(e.target.value)} className="mt-1 font-mono" />
             </div>
 
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">GRN Date</Label>
+              <Label className="text-sm font-medium text-slate-700">GRN Date</Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className={cn("w-full mt-1 justify-start font-normal")}>
@@ -321,17 +321,17 @@ export default function GRNForm() {
             </div>
 
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Vehicle Number</Label>
+              <Label className="text-sm font-medium text-slate-700">Vehicle Number</Label>
               <Input value={vehicleNumber} onChange={(e) => setVehicleNumber(e.target.value)} className="mt-1" placeholder="e.g., TN 01 AB 1234" />
             </div>
 
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">LR / Transporter Ref</Label>
+              <Label className="text-sm font-medium text-slate-700">LR / Transporter Ref</Label>
               <Input value={lrReference} onChange={(e) => setLrReference(e.target.value)} className="mt-1" placeholder="Optional" />
             </div>
 
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Received By</Label>
+              <Label className="text-sm font-medium text-slate-700">Received By</Label>
               <Input value={receivedBy} onChange={(e) => setReceivedBy(e.target.value)} className="mt-1" placeholder="Name of person" />
             </div>
           </div>

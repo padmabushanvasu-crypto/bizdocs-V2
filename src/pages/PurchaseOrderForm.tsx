@@ -322,7 +322,7 @@ export default function PurchaseOrderForm() {
           {/* Left Column */}
           <div className="space-y-4">
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Vendor *</Label>
+              <Label className="text-sm font-medium text-slate-700">Vendor *</Label>
               <Popover open={vendorOpen} onOpenChange={setVendorOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" role="combobox" className="w-full justify-between mt-1 font-normal">
@@ -372,17 +372,17 @@ export default function PurchaseOrderForm() {
             )}
 
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Reference / L.O. Number</Label>
+              <Label className="text-sm font-medium text-slate-700">Reference / L.O. Number</Label>
               <Input value={referenceNumber} onChange={(e) => setReferenceNumber(e.target.value)} className="mt-1" placeholder="Optional" />
             </div>
 
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Special Instructions</Label>
+              <Label className="text-sm font-medium text-slate-700">Special Instructions</Label>
               <Textarea value={specialInstructions} onChange={(e) => setSpecialInstructions(e.target.value)} className="mt-1" rows={2} />
             </div>
 
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Internal Remarks</Label>
+              <Label className="text-sm font-medium text-slate-700">Internal Remarks</Label>
               <Textarea value={internalRemarks} onChange={(e) => setInternalRemarks(e.target.value)} className="mt-1" rows={2} />
               <p className="text-[10px] text-muted-foreground mt-1">Not printed on document</p>
             </div>
@@ -391,12 +391,12 @@ export default function PurchaseOrderForm() {
           {/* Right Column */}
           <div className="space-y-4">
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">PO Number</Label>
+              <Label className="text-sm font-medium text-slate-700">PO Number</Label>
               <Input value={poNumber} onChange={(e) => setPONumber(e.target.value)} className="mt-1 font-mono" />
             </div>
 
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">PO Date *</Label>
+              <Label className="text-sm font-medium text-slate-700">PO Date *</Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className={cn("w-full mt-1 justify-start font-normal", !poDate && "text-muted-foreground")}>
@@ -410,7 +410,7 @@ export default function PurchaseOrderForm() {
             </div>
 
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Payment Terms</Label>
+              <Label className="text-sm font-medium text-slate-700">Payment Terms</Label>
               <Select value={paymentTerms} onValueChange={setPaymentTerms}>
                 <SelectTrigger className="mt-1">
                   <SelectValue placeholder="Select terms" />
@@ -432,7 +432,7 @@ export default function PurchaseOrderForm() {
             </div>
 
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Delivery Address</Label>
+              <Label className="text-sm font-medium text-slate-700">Delivery Address</Label>
               <Textarea value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} className="mt-1" rows={2} placeholder="Defaults to company address" />
             </div>
           </div>
@@ -568,7 +568,7 @@ export default function PurchaseOrderForm() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* GST Info */}
         <div className="paper-card space-y-2">
-          <h3 className="text-xs uppercase text-muted-foreground font-bold tracking-wider border-b border-border pb-2">GST Information</h3>
+          <h3 className="text-sm font-medium text-slate-700 border-b border-border pb-2">GST Information</h3>
           {selectedVendor ? (
             <>
               <p className="text-sm">
@@ -591,7 +591,7 @@ export default function PurchaseOrderForm() {
 
         {/* Additional Charges */}
         <div className="paper-card space-y-2">
-          <h3 className="text-xs uppercase text-muted-foreground font-bold tracking-wider border-b border-border pb-2">Additional Charges</h3>
+          <h3 className="text-sm font-medium text-slate-700 border-b border-border pb-2">Additional Charges</h3>
           {additionalCharges.map((charge, i) => (
             <div key={i} className="flex gap-2 items-center">
               <Input
@@ -619,7 +619,7 @@ export default function PurchaseOrderForm() {
 
         {/* Totals */}
         <div className="paper-card">
-          <h3 className="text-xs uppercase text-muted-foreground font-bold tracking-wider border-b border-border pb-2 mb-3">Totals</h3>
+          <h3 className="text-sm font-medium text-slate-700 border-b border-border pb-2 mb-3">Totals</h3>
           <div className="space-y-1.5 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Sub Total</span>

@@ -43,8 +43,8 @@ export default function SettingsPage() {
     },
     {
       icon: GitBranch,
-      iconBg: "bg-teal-50",
-      iconColor: "text-teal-600",
+      iconBg: "bg-blue-50",
+      iconColor: "text-blue-600",
       title: "Process Library",
       description: "Standard processing steps for Job Cards. Configure once, auto-populate forever.",
       action: () => navigate("/stage-templates"),
@@ -67,8 +67,8 @@ export default function SettingsPage() {
     },
     {
       icon: Users,
-      iconBg: "bg-purple-50",
-      iconColor: "text-purple-600",
+      iconBg: "bg-blue-50",
+      iconColor: "text-blue-600",
       title: "Users and Roles",
       description: "Invite team members and assign access permissions",
       action: () => toast({ title: "Users and Roles is coming in a future update" }),

@@ -308,14 +308,14 @@ export default function DispatchNoteForm() {
 
       {/* Header */}
       <div className="paper-card space-y-6">
-        <h2 className="text-xs uppercase text-muted-foreground font-bold tracking-wider border-b border-border pb-2">
+        <h2 className="text-sm font-medium text-slate-700 border-b border-border pb-2">
           Delivery & Transport Details
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Left — Customer */}
           <div className="space-y-4">
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Customer *</Label>
+              <Label className="text-sm font-medium text-slate-700">Customer *</Label>
               <Popover open={customerOpen} onOpenChange={setCustomerOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" role="combobox" className="w-full justify-between mt-1 font-normal">
@@ -357,7 +357,7 @@ export default function DispatchNoteForm() {
             )}
 
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Shipping / Delivery Address</Label>
+              <Label className="text-sm font-medium text-slate-700">Shipping / Delivery Address</Label>
               <Textarea
                 value={shippingAddress}
                 onChange={(e) => setShippingAddress(e.target.value)}
@@ -368,7 +368,7 @@ export default function DispatchNoteForm() {
             </div>
 
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">SO Reference</Label>
+              <Label className="text-sm font-medium text-slate-700">SO Reference</Label>
               <Input
                 value={soNumber}
                 onChange={(e) => setSoNumber(e.target.value)}
@@ -378,7 +378,7 @@ export default function DispatchNoteForm() {
             </div>
 
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Reference / PO No.</Label>
+              <Label className="text-sm font-medium text-slate-700">Reference / PO No.</Label>
               <Input
                 value={referenceNumber}
                 onChange={(e) => setReferenceNumber(e.target.value)}
@@ -392,7 +392,7 @@ export default function DispatchNoteForm() {
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">DN Date *</Label>
+                <Label className="text-sm font-medium text-slate-700">DN Date *</Label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button variant="outline" className="w-full mt-1 justify-start font-normal">
@@ -405,7 +405,7 @@ export default function DispatchNoteForm() {
                 </Popover>
               </div>
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Vehicle Number</Label>
+                <Label className="text-sm font-medium text-slate-700">Vehicle Number</Label>
                 <Input
                   value={vehicleNumber}
                   onChange={(e) => setVehicleNumber(e.target.value)}
@@ -417,7 +417,7 @@ export default function DispatchNoteForm() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Driver Name</Label>
+                <Label className="text-sm font-medium text-slate-700">Driver Name</Label>
                 <Input
                   value={driverName}
                   onChange={(e) => setDriverName(e.target.value)}
@@ -426,7 +426,7 @@ export default function DispatchNoteForm() {
                 />
               </div>
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Transporter</Label>
+                <Label className="text-sm font-medium text-slate-700">Transporter</Label>
                 <Input
                   value={transporter}
                   onChange={(e) => setTransporter(e.target.value)}
@@ -438,7 +438,7 @@ export default function DispatchNoteForm() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">LR / Docket No.</Label>
+                <Label className="text-sm font-medium text-slate-700">LR / Docket No.</Label>
                 <Input
                   value={lrNumber}
                   onChange={(e) => setLrNumber(e.target.value)}
@@ -447,7 +447,7 @@ export default function DispatchNoteForm() {
                 />
               </div>
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">LR Date</Label>
+                <Label className="text-sm font-medium text-slate-700">LR Date</Label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button variant="outline" className={cn("w-full mt-1 justify-start font-normal", !lrDate && "text-muted-foreground")}>
@@ -462,7 +462,7 @@ export default function DispatchNoteForm() {
             </div>
 
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Special Instructions</Label>
+              <Label className="text-sm font-medium text-slate-700">Special Instructions</Label>
               <Textarea
                 value={specialInstructions}
                 onChange={(e) => setSpecialInstructions(e.target.value)}
@@ -471,7 +471,7 @@ export default function DispatchNoteForm() {
               />
             </div>
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Internal Remarks</Label>
+              <Label className="text-sm font-medium text-slate-700">Internal Remarks</Label>
               <Textarea
                 value={internalRemarks}
                 onChange={(e) => setInternalRemarks(e.target.value)}

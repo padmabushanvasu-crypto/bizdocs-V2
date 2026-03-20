@@ -6,7 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { LogOut, Settings, User } from "lucide-react";
+import { LogOut, Settings, User, LayoutDashboard } from "lucide-react";
 
 export function AppLayout() {
   const { user, profile, signOut } = useAuth();
@@ -33,8 +33,18 @@ export function AppLayout() {
         <div className="flex-1 flex flex-col min-w-0">
           <header className="h-12 flex items-center justify-between border-b border-border bg-card px-4 shrink-0">
             <div className="flex items-center gap-2">
-              <div className="md:hidden">
-                <span className="font-display font-bold text-foreground cursor-pointer" onClick={() => navigate('/')}>BizDocs</span>
+              <div className="md:hidden flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
+                <div
+                  className="h-7 w-7 flex items-center justify-center shrink-0"
+                  style={{
+                    background: 'linear-gradient(135deg, #1D4ED8, #2563EB)',
+                    borderRadius: '7px',
+                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.15)',
+                  }}
+                >
+                  <LayoutDashboard className="h-4 w-4 text-white" />
+                </div>
+                <span className="font-bold text-foreground" style={{ letterSpacing: '-0.3px' }}>BizDocs</span>
               </div>
             </div>
             <DropdownMenu>
@@ -66,7 +76,7 @@ export function AppLayout() {
             </DropdownMenu>
           </header>
 
-          <main className="flex-1 overflow-auto pb-16 md:pb-0 bg-slate-50 min-h-screen">
+          <main className="flex-1 overflow-auto pb-16 md:pb-0 bg-white min-h-screen">
             <div className="animate-fade-in">
               <Outlet />
             </div>

@@ -517,7 +517,7 @@ export default function InvoiceForm() {
 
           {/* Bank Details */}
           <div className="border border-border rounded-md p-3 space-y-2">
-            <Label className="text-xs font-bold uppercase text-muted-foreground">Bank Details</Label>
+            <Label className="text-sm font-medium text-slate-700">Bank Details</Label>
             <Input placeholder="Bank Name" value={bankName} onChange={(e) => setBankName(e.target.value)} />
             <Input placeholder="Account Number" value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} />
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -620,7 +620,7 @@ export default function InvoiceForm() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* GST Info */}
         <div className="bg-secondary/50 border border-border rounded-md p-4 text-sm space-y-2">
-          <Label className="text-xs font-bold uppercase text-muted-foreground">GST Information</Label>
+          <Label className="text-sm font-medium text-slate-700">GST Information</Label>
           {selectedCustomer ? (
             <>
               <div>Customer: {selectedCustomer.state || "Unknown"} ({placeOfSupply || selectedCustomer.state_code || "?"})</div>
@@ -716,14 +716,14 @@ export default function InvoiceForm() {
           <div className="px-4 pb-4 space-y-4 border-t border-border pt-4">
             <div className="flex items-center justify-between">
               <div>
-                <Label className="text-xs font-semibold uppercase text-muted-foreground">Reverse Charge Applicable</Label>
+                <Label className="text-sm font-medium text-slate-700">Reverse Charge Applicable</Label>
                 <p className="text-xs text-muted-foreground">Mark if GST under reverse charge mechanism</p>
               </div>
               <Switch checked={reverseCharge} onCheckedChange={setReverseCharge} />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase text-muted-foreground">Supply Type</Label>
+                <Label className="text-sm font-medium text-slate-700">Supply Type</Label>
                 <Select value={supplyType} onValueChange={setSupplyType}>
                   <SelectTrigger><SelectValue placeholder="Select type…" /></SelectTrigger>
                   <SelectContent>
@@ -737,27 +737,27 @@ export default function InvoiceForm() {
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase text-muted-foreground">E-Way Bill Number</Label>
+                <Label className="text-sm font-medium text-slate-700">E-Way Bill Number</Label>
                 <Input value={ewayBillNumber} onChange={(e) => setEwayBillNumber(e.target.value)} placeholder="EWB-12345678901234" className="font-mono" />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase text-muted-foreground">Vehicle Number</Label>
+                <Label className="text-sm font-medium text-slate-700">Vehicle Number</Label>
                 <Input value={dispatchVehicleNumber} onChange={(e) => setDispatchVehicleNumber(e.target.value)} placeholder="e.g. MH-01-AB-1234" className="font-mono" />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase text-muted-foreground">Transporter Name</Label>
+                <Label className="text-sm font-medium text-slate-700">Transporter Name</Label>
                 <Input value={transporterName} onChange={(e) => setTransporterName(e.target.value)} placeholder="Transport company name" />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase text-muted-foreground">LR Number</Label>
+                <Label className="text-sm font-medium text-slate-700">LR Number</Label>
                 <Input value={lrNumber} onChange={(e) => setLrNumber(e.target.value)} placeholder="Lorry receipt number" />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase text-muted-foreground">LR Date</Label>
+                <Label className="text-sm font-medium text-slate-700">LR Date</Label>
                 <Input type="date" value={lrDate} onChange={(e) => setLrDate(e.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase text-muted-foreground">Serial Number</Label>
+                <Label className="text-sm font-medium text-slate-700">Serial Number</Label>
                 <Popover open={serialSearchOpen} onOpenChange={setSerialSearchOpen}>
                   <PopoverTrigger asChild>
                     <Button variant="outline" role="combobox" className="w-full justify-between font-normal h-9 text-sm">
@@ -805,11 +805,11 @@ export default function InvoiceForm() {
                 )}
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase text-muted-foreground">Dispatch Through</Label>
+                <Label className="text-sm font-medium text-slate-700">Dispatch Through</Label>
                 <Input value={dispatchThrough} onChange={(e) => setDispatchThrough(e.target.value)} placeholder="Mode of dispatch" />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
-                <Label className="text-xs font-semibold uppercase text-muted-foreground">Destination</Label>
+                <Label className="text-sm font-medium text-slate-700">Destination</Label>
                 <Input value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="Place of delivery" />
               </div>
             </div>

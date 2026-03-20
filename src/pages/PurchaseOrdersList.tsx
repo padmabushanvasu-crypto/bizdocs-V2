@@ -159,10 +159,14 @@ export default function PurchaseOrdersList() {
                 </tr>
               ) : pos.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-12">
-                    <ShoppingCart className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
-                    <p className="text-muted-foreground font-medium">No purchase orders yet</p>
-                    <p className="text-sm text-muted-foreground">Create your first PO to get started</p>
+                  <td colSpan={7}>
+                    <div className="flex flex-col items-center justify-center py-16 text-center">
+                      <div className="h-16 w-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
+                        <ShoppingCart className="h-8 w-8 text-slate-400" />
+                      </div>
+                      <h3 className="text-base font-semibold text-slate-900 mb-1">No purchase orders yet</h3>
+                      <p className="text-sm text-slate-500 mb-6 max-w-xs">Raise a purchase order to start procuring materials from your vendors.</p>
+                    </div>
                   </td>
                 </tr>
               ) : (

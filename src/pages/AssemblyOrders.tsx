@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { Layers, Plus, Search, Eye, ChevronDown } from "lucide-react";
+import { Layers, Plus, Search, Eye, ChevronDown, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -206,10 +206,14 @@ export default function AssemblyOrders() {
                 </tr>
               ) : aos.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-12">
-                    <Layers className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
-                    <p className="text-muted-foreground font-medium">No assembly orders yet</p>
-                    <p className="text-sm text-muted-foreground">Create one to build finished goods from components</p>
+                  <td colSpan={7}>
+                    <div className="flex flex-col items-center justify-center py-16 text-center">
+                      <div className="h-16 w-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
+                        <Package className="h-8 w-8 text-slate-400" />
+                      </div>
+                      <h3 className="text-base font-semibold text-slate-900 mb-1">No assembly orders yet</h3>
+                      <p className="text-sm text-slate-500 mb-6 max-w-xs">Create an assembly order to build finished goods from your raw material components.</p>
+                    </div>
                   </td>
                 </tr>
               ) : (

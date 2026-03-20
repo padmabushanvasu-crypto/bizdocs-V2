@@ -137,13 +137,13 @@ export default function DispatchNoteDetail() {
         {/* Customer & Reference */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="border border-border rounded-lg p-4">
-            <p className="text-xs uppercase text-muted-foreground font-bold tracking-wider mb-2">Consignee (To)</p>
+            <p className="text-xs font-semibold text-slate-500 mb-2">Consignee (To)</p>
             <p className="font-medium text-foreground">{dn.customer_name}</p>
             {dn.shipping_address && <p className="text-sm text-muted-foreground whitespace-pre-line">{dn.shipping_address}</p>}
             {dn.customer_gstin && <p className="text-sm font-mono">GSTIN: {dn.customer_gstin}</p>}
           </div>
           <div className="border border-border rounded-lg p-4 space-y-2 text-sm">
-            <p className="text-xs uppercase text-muted-foreground font-bold tracking-wider mb-2">Reference Details</p>
+            <p className="text-xs font-semibold text-slate-500 mb-2">Reference Details</p>
             {dn.so_number && (
               <div className="flex justify-between">
                 <span className="text-muted-foreground">SO Reference</span>
@@ -247,7 +247,7 @@ export default function DispatchNoteDetail() {
 
         {dn.special_instructions && (
           <div className="border-t border-border pt-4">
-            <p className="text-xs uppercase text-muted-foreground font-bold tracking-wider mb-1">Special Instructions</p>
+            <p className="text-xs font-semibold text-slate-500 mb-1">Special Instructions</p>
             <p className="text-sm">{dn.special_instructions}</p>
           </div>
         )}
@@ -285,7 +285,7 @@ export default function DispatchNoteDetail() {
       {/* Packing List */}
       {packing.length > 0 && (
         <div className="paper-card print:block">
-          <h3 className="text-xs uppercase text-muted-foreground font-bold tracking-wider border-b border-border pb-2 mb-4">
+          <h3 className="text-xs font-semibold text-slate-500 border-b border-border pb-2 mb-4">
             Packing List
           </h3>
           <table className="w-full data-table">

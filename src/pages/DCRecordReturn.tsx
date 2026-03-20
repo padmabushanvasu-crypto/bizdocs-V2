@@ -157,7 +157,7 @@ export default function DCRecordReturn() {
       <div className="paper-card">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Return Date</Label>
+            <Label className="text-sm font-medium text-slate-700">Return Date</Label>
             <Popover>
               <PopoverTrigger asChild>
                 <Button variant="outline" className={cn("w-full mt-1 justify-start font-normal")}>
@@ -170,11 +170,11 @@ export default function DCRecordReturn() {
             </Popover>
           </div>
           <div>
-            <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Received By</Label>
+            <Label className="text-sm font-medium text-slate-700">Received By</Label>
             <Input value={receivedBy} onChange={(e) => setReceivedBy(e.target.value)} className="mt-1" placeholder="Name of person" />
           </div>
           <div>
-            <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Notes</Label>
+            <Label className="text-sm font-medium text-slate-700">Notes</Label>
             <Input value={notes} onChange={(e) => setNotes(e.target.value)} className="mt-1" placeholder="Optional notes" />
           </div>
         </div>

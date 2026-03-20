@@ -348,12 +348,12 @@ export default function DeliveryChallanForm() {
 
       {/* Header Section */}
       <div className="paper-card space-y-6">
-        <h2 className="text-xs uppercase text-muted-foreground font-bold tracking-wider border-b border-border pb-2">Consignee & DC Details</h2>
+        <h2 className="text-sm font-medium text-slate-700 border-b border-border pb-2">Consignee & DC Details</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Left - Consignee */}
           <div className="space-y-4">
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Party / Consignee *</Label>
+              <Label className="text-sm font-medium text-slate-700">Party / Consignee *</Label>
               <Popover open={partyOpen} onOpenChange={setPartyOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" role="combobox" className="w-full justify-between mt-1 font-normal">
@@ -405,11 +405,11 @@ export default function DeliveryChallanForm() {
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">DC Number</Label>
+                <Label className="text-sm font-medium text-slate-700">DC Number</Label>
                 <Input value={dcNumber} onChange={(e) => setDcNumber(e.target.value)} className="mt-1 font-mono" />
               </div>
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">DC Date *</Label>
+                <Label className="text-sm font-medium text-slate-700">DC Date *</Label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button variant="outline" className={cn("w-full mt-1 justify-start font-normal", !dcDate && "text-muted-foreground")}>
@@ -425,18 +425,18 @@ export default function DeliveryChallanForm() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Vehicle Number</Label>
+                <Label className="text-sm font-medium text-slate-700">Vehicle Number</Label>
                 <Input value={vehicleNumber} onChange={(e) => setVehicleNumber(e.target.value)} className="mt-1" placeholder="e.g., MH-01-AB-1234" />
               </div>
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">L.O. No / Works Order Ref</Label>
+                <Label className="text-sm font-medium text-slate-700">L.O. No / Works Order Ref</Label>
                 <Input value={loNumber} onChange={(e) => setLoNumber(e.target.value)} className="mt-1" placeholder="Works order / job order no." />
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Approx. Value ₹</Label>
+                <Label className="text-sm font-medium text-slate-700">Approx. Value ₹</Label>
                 <Input
                   type="number"
                   value={approxValue ?? ""}
@@ -447,14 +447,14 @@ export default function DeliveryChallanForm() {
                 <p className="text-[10px] text-muted-foreground mt-0.5">Required for e-way bill if goods &gt; ₹50,000</p>
               </div>
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">PO Reference</Label>
+                <Label className="text-sm font-medium text-slate-700">PO Reference</Label>
                 <Input value={poReference} onChange={(e) => setPoReference(e.target.value)} className="mt-1" placeholder="PO number" />
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">PO Date</Label>
+                <Label className="text-sm font-medium text-slate-700">PO Date</Label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button variant="outline" className={cn("w-full mt-1 justify-start font-normal", !poDate && "text-muted-foreground")}>
@@ -470,7 +470,7 @@ export default function DeliveryChallanForm() {
 
             {isReturnable && (
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Return Due Date</Label>
+                <Label className="text-sm font-medium text-slate-700">Return Due Date</Label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button variant="outline" className={cn("w-full mt-1 justify-start font-normal", !returnDueDate && "text-muted-foreground")}>
@@ -646,21 +646,21 @@ export default function DeliveryChallanForm() {
           {/* Left - Notes & Signatures */}
           <div className="space-y-4">
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Special Instructions</Label>
+              <Label className="text-sm font-medium text-slate-700">Special Instructions</Label>
               <Textarea value={specialInstructions} onChange={(e) => setSpecialInstructions(e.target.value)} className="mt-1" rows={2} />
             </div>
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Internal Remarks</Label>
+              <Label className="text-sm font-medium text-slate-700">Internal Remarks</Label>
               <Textarea value={internalRemarks} onChange={(e) => setInternalRemarks(e.target.value)} className="mt-1" rows={2} />
               <p className="text-[10px] text-muted-foreground mt-1">Not printed on document</p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Prepared By</Label>
+                <Label className="text-sm font-medium text-slate-700">Prepared By</Label>
                 <Input value={preparedBy} onChange={(e) => setPreparedBy(e.target.value)} className="mt-1" placeholder="Name" />
               </div>
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Checked By</Label>
+                <Label className="text-sm font-medium text-slate-700">Checked By</Label>
                 <Input value={checkedBy} onChange={(e) => setCheckedBy(e.target.value)} className="mt-1" placeholder="Name" />
               </div>
             </div>

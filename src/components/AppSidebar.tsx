@@ -389,16 +389,31 @@ export function AppSidebar() {
           }}
         >
           {!railMode && (
-            <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
-              <div className="h-8 w-8 rounded bg-gradient-to-br from-blue-600 to-blue-400 flex items-center justify-center shadow-sm">
-                <span className="font-bold text-sm text-white">B</span>
+            <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => navigate('/')}>
+              <div
+                className="h-8 w-8 flex items-center justify-center shrink-0"
+                style={{
+                  background: 'linear-gradient(135deg, #1D4ED8, #2563EB)',
+                  borderRadius: '8px',
+                  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.15)',
+                }}
+              >
+                <LayoutDashboard className="h-[18px] w-[18px] text-white" />
               </div>
-              <span className="font-bold text-lg text-white tracking-tight">BizDocs</span>
+              <span className="font-bold text-lg text-white" style={{ letterSpacing: '-0.3px' }}>BizDocs</span>
             </div>
           )}
           {railMode && (
-            <div className="h-8 w-8 rounded bg-gradient-to-br from-blue-600 to-blue-400 flex items-center justify-center shadow-sm cursor-pointer" onClick={() => navigate('/')}>
-              <span className="font-bold text-sm text-white">B</span>
+            <div
+              className="h-8 w-8 flex items-center justify-center cursor-pointer shrink-0"
+              style={{
+                background: 'linear-gradient(135deg, #1D4ED8, #2563EB)',
+                borderRadius: '8px',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.15)',
+              }}
+              onClick={() => navigate('/')}
+            >
+              <LayoutDashboard className="h-[18px] w-[18px] text-white" />
             </div>
           )}
         </div>

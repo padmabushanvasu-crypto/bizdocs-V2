@@ -479,7 +479,7 @@ export default function ScrapRegister() {
             <div className="grid grid-cols-2 gap-4">
               {/* Item */}
               <div className="col-span-2">
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">
+                <Label className="text-sm font-medium text-slate-700">
                   Item *
                 </Label>
                 <Popover open={itemOpen} onOpenChange={setItemOpen}>
@@ -522,7 +522,7 @@ export default function ScrapRegister() {
 
               {/* Drawing number */}
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">
+                <Label className="text-sm font-medium text-slate-700">
                   Drawing No.
                 </Label>
                 <Input
@@ -535,7 +535,7 @@ export default function ScrapRegister() {
 
               {/* Date */}
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">
+                <Label className="text-sm font-medium text-slate-700">
                   Scrap Date
                 </Label>
                 <Input
@@ -548,7 +548,7 @@ export default function ScrapRegister() {
 
               {/* Qty and unit */}
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">
+                <Label className="text-sm font-medium text-slate-700">
                   Qty Scrapped *
                 </Label>
                 <Input
@@ -561,7 +561,7 @@ export default function ScrapRegister() {
                 />
               </div>
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">
+                <Label className="text-sm font-medium text-slate-700">
                   Unit
                 </Label>
                 <Select value={form.unit} onValueChange={(v) => setForm((f) => ({ ...f, unit: v }))}>
@@ -576,7 +576,7 @@ export default function ScrapRegister() {
 
               {/* Scrap reason */}
               <div className="col-span-2">
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">
+                <Label className="text-sm font-medium text-slate-700">
                   Scrap Reason *
                 </Label>
                 <Input
@@ -589,7 +589,7 @@ export default function ScrapRegister() {
 
               {/* Category */}
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">
+                <Label className="text-sm font-medium text-slate-700">
                   Category
                 </Label>
                 <Select
@@ -609,7 +609,7 @@ export default function ScrapRegister() {
 
               {/* Disposal method */}
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">
+                <Label className="text-sm font-medium text-slate-700">
                   Disposal Method
                 </Label>
                 <Select
@@ -629,7 +629,7 @@ export default function ScrapRegister() {
 
               {/* Cost per unit + total */}
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">
+                <Label className="text-sm font-medium text-slate-700">
                   Cost Per Unit (₹)
                 </Label>
                 <Input
@@ -643,7 +643,7 @@ export default function ScrapRegister() {
                 />
               </div>
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">
+                <Label className="text-sm font-medium text-slate-700">
                   Total Scrap Value (₹)
                 </Label>
                 <div className="mt-1 px-3 py-2 bg-muted/50 rounded-md border border-border text-sm font-mono font-bold text-destructive">
@@ -655,7 +655,7 @@ export default function ScrapRegister() {
               {form.disposal_method === "scrap_sale" && (
                 <>
                   <div>
-                    <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">
+                    <Label className="text-sm font-medium text-slate-700">
                       Scrap Sale Value (₹)
                     </Label>
                     <Input
@@ -668,7 +668,7 @@ export default function ScrapRegister() {
                     />
                   </div>
                   <div>
-                    <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">
+                    <Label className="text-sm font-medium text-slate-700">
                       Buyer / Vendor
                     </Label>
                     <Popover open={vendorOpen} onOpenChange={setVendorOpen}>
@@ -708,7 +708,7 @@ export default function ScrapRegister() {
 
               {/* Linked JC / AO */}
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">
+                <Label className="text-sm font-medium text-slate-700">
                   Linked Job Card (optional)
                 </Label>
                 <Input
@@ -719,7 +719,7 @@ export default function ScrapRegister() {
                 />
               </div>
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">
+                <Label className="text-sm font-medium text-slate-700">
                   Linked Assembly Order (optional)
                 </Label>
                 <Input
@@ -732,7 +732,7 @@ export default function ScrapRegister() {
 
               {/* Remarks + Recorded by */}
               <div className="col-span-2">
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">
+                <Label className="text-sm font-medium text-slate-700">
                   Remarks
                 </Label>
                 <Textarea
@@ -744,7 +744,7 @@ export default function ScrapRegister() {
                 />
               </div>
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">
+                <Label className="text-sm font-medium text-slate-700">
                   Recorded By
                 </Label>
                 <Input

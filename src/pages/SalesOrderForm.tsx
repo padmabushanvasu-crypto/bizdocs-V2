@@ -255,14 +255,14 @@ export default function SalesOrderForm() {
 
       {/* Header Details */}
       <div className="paper-card space-y-6">
-        <h2 className="text-xs uppercase text-muted-foreground font-bold tracking-wider border-b border-border pb-2">
+        <h2 className="text-sm font-medium text-slate-700 border-b border-border pb-2">
           Customer & Order Details
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Left — Customer */}
           <div className="space-y-4">
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Customer *</Label>
+              <Label className="text-sm font-medium text-slate-700">Customer *</Label>
               <Popover open={customerOpen} onOpenChange={setCustomerOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" role="combobox" className="w-full justify-between mt-1 font-normal">
@@ -308,7 +308,7 @@ export default function SalesOrderForm() {
             )}
 
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Billing Address</Label>
+              <Label className="text-sm font-medium text-slate-700">Billing Address</Label>
               <Textarea
                 value={billingAddress}
                 onChange={(e) => setBillingAddress(e.target.value)}
@@ -318,7 +318,7 @@ export default function SalesOrderForm() {
               />
             </div>
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Shipping Address</Label>
+              <Label className="text-sm font-medium text-slate-700">Shipping Address</Label>
               <Textarea
                 value={shippingAddress}
                 onChange={(e) => setShippingAddress(e.target.value)}
@@ -333,7 +333,7 @@ export default function SalesOrderForm() {
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">SO Date *</Label>
+                <Label className="text-sm font-medium text-slate-700">SO Date *</Label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button variant="outline" className={cn("w-full mt-1 justify-start font-normal")}>
@@ -346,7 +346,7 @@ export default function SalesOrderForm() {
                 </Popover>
               </div>
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Priority</Label>
+                <Label className="text-sm font-medium text-slate-700">Priority</Label>
                 <Select value={priority} onValueChange={setPriority}>
                   <SelectTrigger className="mt-1">
                     <SelectValue />
@@ -362,7 +362,7 @@ export default function SalesOrderForm() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Reference / PO No.</Label>
+                <Label className="text-sm font-medium text-slate-700">Reference / PO No.</Label>
                 <Input
                   value={referenceNumber}
                   onChange={(e) => setReferenceNumber(e.target.value)}
@@ -371,7 +371,7 @@ export default function SalesOrderForm() {
                 />
               </div>
               <div>
-                <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Payment Terms</Label>
+                <Label className="text-sm font-medium text-slate-700">Payment Terms</Label>
                 <Input
                   value={paymentTerms}
                   onChange={(e) => setPaymentTerms(e.target.value)}
@@ -382,7 +382,7 @@ export default function SalesOrderForm() {
             </div>
 
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Expected Delivery Date</Label>
+              <Label className="text-sm font-medium text-slate-700">Expected Delivery Date</Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className={cn("w-full mt-1 justify-start font-normal", !deliveryDate && "text-muted-foreground")}>
@@ -396,7 +396,7 @@ export default function SalesOrderForm() {
             </div>
 
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Special Instructions</Label>
+              <Label className="text-sm font-medium text-slate-700">Special Instructions</Label>
               <Textarea
                 value={specialInstructions}
                 onChange={(e) => setSpecialInstructions(e.target.value)}
@@ -405,7 +405,7 @@ export default function SalesOrderForm() {
               />
             </div>
             <div>
-              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Internal Remarks</Label>
+              <Label className="text-sm font-medium text-slate-700">Internal Remarks</Label>
               <Textarea
                 value={internalRemarks}
                 onChange={(e) => setInternalRemarks(e.target.value)}
