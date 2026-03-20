@@ -24,7 +24,7 @@ import { formatCurrency } from "@/lib/gst-utils";
 import { exportToExcel } from "@/lib/export-utils";
 import { format, differenceInDays } from "date-fns";
 
-type WipTab = "all" | "component" | "assembly";
+type WipTab = "all" | "component" | "subassembly";
 
 // ── Status badge (component WIP) ─────────────────────────────────────────────
 
@@ -180,7 +180,7 @@ export default function WipRegister() {
   };
 
   const showComponent = tab === "all" || tab === "component";
-  const showAssembly  = tab === "all" || tab === "assembly";
+  const showAssembly  = tab === "all" || tab === "subassembly";
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -209,9 +209,9 @@ export default function WipRegister() {
       <div className="flex items-center gap-4 flex-wrap">
         <SegmentedControl
           options={[
-            { value: "all", label: "All WIP" },
-            { value: "component", label: "Component WIP" },
-            { value: "assembly", label: "Sub-Assembly WIP" },
+            { value: "all",         label: "All WIP",           color: "#0F172A", count: rows.length + aoRows.length },
+            { value: "component",   label: "Component WIP",     color: "#2563EB", count: rows.length },
+            { value: "subassembly", label: "Sub-Assembly WIP",  color: "#0F766E", count: aoRows.length },
           ]}
           value={tab}
           onChange={(v) => setTab(v as WipTab)}
