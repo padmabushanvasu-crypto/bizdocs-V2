@@ -236,9 +236,6 @@ export function AppSidebar() {
   const [flyoutY, setFlyoutY] = useState(0);
   const closeTimer = useRef<ReturnType<typeof setTimeout>>();
 
-  // DEBUG
-  console.log("SIDEBAR RENDER — railMode:", railMode, "localStorage:", localStorage.getItem(RAIL_MODE_KEY));
-
   // Persist rail mode
   useEffect(() => {
     try {
@@ -247,9 +244,7 @@ export function AppSidebar() {
   }, [railMode]);
 
   const toggleRailMode = () => {
-    const next = !railMode;
-    console.log("TOGGLE CLICKED — next railMode:", next);
-    setRailMode(next);
+    setRailMode((prev) => !prev);
     setHoveredGroup(null);
   };
 

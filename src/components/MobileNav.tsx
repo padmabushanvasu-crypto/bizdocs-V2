@@ -116,7 +116,7 @@ export function MobileNav() {
               )
             }
           >
-            <MAIN_TABS[0].icon className="h-5 w-5" />
+            <LayoutDashboard className="h-5 w-5" />
             <span className="text-[10px] font-medium">{MAIN_TABS[0].label}</span>
           </NavLink>
 
@@ -130,7 +130,7 @@ export function MobileNav() {
               )
             }
           >
-            <MAIN_TABS[1].icon className="h-5 w-5" />
+            <Activity className="h-5 w-5" />
             <span className="text-[10px] font-medium">{MAIN_TABS[1].label}</span>
           </NavLink>
 
@@ -155,7 +155,7 @@ export function MobileNav() {
               )
             }
           >
-            <MAIN_TABS[2].icon className="h-5 w-5" />
+            <Package className="h-5 w-5" />
             <span className="text-[10px] font-medium">{MAIN_TABS[2].label}</span>
           </NavLink>
 
