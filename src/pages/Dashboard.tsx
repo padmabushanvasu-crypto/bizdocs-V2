@@ -236,6 +236,19 @@ export default function Dashboard() {
           <p className="text-sm text-slate-400 mt-0.5">{todayStr}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {/* DEBUG: test rail mode toggle */}
+          <Button
+            className="bg-red-600 hover:bg-red-700 text-white h-9 font-bold"
+            onClick={() => { localStorage.setItem("bizdocs_sidebar_mode", "rail"); window.location.reload(); }}
+          >
+            TEST RAIL
+          </Button>
+          <Button
+            className="bg-green-600 hover:bg-green-700 text-white h-9 font-bold"
+            onClick={() => { localStorage.setItem("bizdocs_sidebar_mode", "full"); window.location.reload(); }}
+          >
+            TEST FULL
+          </Button>
           <Button
             className="bg-blue-600 hover:bg-blue-700 text-white gap-1.5 h-9 shadow-sm font-semibold"
             onClick={() => navigate("/job-cards")}

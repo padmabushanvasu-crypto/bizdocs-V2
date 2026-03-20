@@ -236,6 +236,9 @@ export function AppSidebar() {
   const [flyoutY, setFlyoutY] = useState(0);
   const closeTimer = useRef<ReturnType<typeof setTimeout>>();
 
+  // DEBUG
+  console.log("SIDEBAR RENDER — railMode:", railMode, "localStorage:", localStorage.getItem(RAIL_MODE_KEY));
+
   // Persist rail mode
   useEffect(() => {
     try {
@@ -244,7 +247,9 @@ export function AppSidebar() {
   }, [railMode]);
 
   const toggleRailMode = () => {
-    setRailMode((prev) => !prev);
+    const next = !railMode;
+    console.log("TOGGLE CLICKED — next railMode:", next);
+    setRailMode(next);
     setHoveredGroup(null);
   };
 
@@ -363,6 +368,7 @@ export function AppSidebar() {
     <>
       {/* ── Plain div sidebar — no shadcn Sidebar component ── */}
       <div
+        data-rail={String(railMode)}
         style={{
           width: railMode ? 52 : 240,
           minWidth: railMode ? 52 : 240,
