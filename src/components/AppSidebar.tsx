@@ -12,6 +12,7 @@ import {
   Settings,
   ClipboardList,
   BarChart3,
+  BarChart2,
   Activity,
   AlertTriangle,
   Star,
@@ -30,6 +31,8 @@ import {
   Trash2,
   PanelLeft,
   PanelLeftClose,
+  Wrench,
+  Database,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -89,12 +92,12 @@ const DEFAULTS: Record<string, boolean> = {
 // Group icons for rail mode
 const GROUP_ICONS: Record<string, React.ComponentType<any>> = {
   "Start Here":           LayoutDashboard,
-  "Daily Work":           Activity,
+  "Daily Work":           Wrench,
   "Purchasing":           ShoppingCart,
-  "Dispatch & Billing":   FileText,
-  "Master Data":          Package,
-  "Reports":              BarChart3,
-  "Quality & Compliance": ClipboardCheck,
+  "Dispatch & Billing":   Truck,
+  "Master Data":          Database,
+  "Reports":              BarChart2,
+  "Quality & Compliance": Shield,
   "Settings":             Settings,
 };
 
@@ -298,9 +301,8 @@ export function AppSidebar() {
 
   const handleGroupEnter = (groupName: string, e: React.MouseEvent) => {
     cancelClose();
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setFlyoutY(rect.top);
-    setHoveredGroup(groupName); // instant open
+    setHoveredGroup(groupName);
+    setFlyoutY((e.currentTarget as HTMLElement).getBoundingClientRect().top);
   };
 
   const handleGroupLeave = () => startClose();
