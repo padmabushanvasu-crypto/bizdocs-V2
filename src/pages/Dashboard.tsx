@@ -228,82 +228,88 @@ export default function Dashboard() {
     <div className="flex flex-col min-h-screen">
 
       {/* ── ZONE 1: DARK TOP SECTION ─────────────────────────────────────── */}
-      <div style={{ backgroundColor: "#0F172A", padding: "24px 28px 32px" }}>
+      <div
+        className="px-4 pt-5 pb-7 lg:px-7 lg:pt-6 lg:pb-8"
+        style={{ backgroundColor: "#0F172A" }}
+      >
+        {/* Header row — stacks on mobile, side-by-side on desktop */}
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between lg:gap-4">
 
-        {/* Header row */}
-        <div className="flex items-start justify-between gap-4 flex-wrap">
+          {/* Company info */}
           <div>
             <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-1">
               {greetingWord}
             </p>
-            <h1 className="text-xl font-bold text-slate-100 tracking-tight">{companyName}</h1>
+            <h1 className="text-lg lg:text-xl font-bold text-slate-100 tracking-tight">{companyName}</h1>
             <p className="text-xs text-slate-600 mt-0.5">{todayStr}</p>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Alert status pill */}
+
+          {/* Alert pill + action buttons */}
+          <div className="flex flex-col gap-2 lg:items-end">
+            {/* Alert pill */}
             {allClear ? (
-              <span className="flex items-center gap-1.5 text-xs font-medium text-green-400 px-3 py-1 rounded-full border"
+              <span className="self-start flex items-center gap-1.5 text-xs font-medium text-green-400 px-3 py-1 rounded-full border w-fit"
                 style={{ backgroundColor: "rgba(34,197,94,0.08)", borderColor: "rgba(34,197,94,0.2)" }}>
                 <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
                 All clear
               </span>
             ) : (
-              <span className="flex items-center gap-1.5 text-xs font-medium text-red-400 px-3 py-1 rounded-full border"
+              <span className="self-start flex items-center gap-1.5 text-xs font-medium text-red-400 px-3 py-1 rounded-full border w-fit"
                 style={{ backgroundColor: "rgba(239,68,68,0.08)", borderColor: "rgba(239,68,68,0.2)" }}>
                 <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
                 {totalAlerts} alert{totalAlerts !== 1 ? "s" : ""}
               </span>
             )}
 
-            {/* Action buttons */}
-            <button
-              className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white transition-colors"
-              style={{ backgroundColor: "#2563EB" }}
-              onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#1D4ED8")}
-              onMouseLeave={e => (e.currentTarget.style.backgroundColor = "#2563EB")}
-              onClick={() => navigate("/job-cards/new")}
-            >
-              <Activity className="h-3.5 w-3.5" />
-              New Work Order
-            </button>
-            {[
-              { label: "PO", route: "/purchase-orders/new" },
-              { label: "DC", route: "/delivery-challans/new" },
-              { label: "Invoice", route: "/invoices/new" },
-            ].map((btn) => (
+            {/* Buttons — horizontally scrollable on mobile, wrapping on desktop */}
+            <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 lg:mx-0 lg:px-0 lg:overflow-x-visible lg:flex-wrap lg:justify-end">
               <button
-                key={btn.label}
-                className="rounded-xl px-3 py-2 text-sm text-slate-300 transition-colors"
-                style={{ backgroundColor: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.10)" }}
-                onMouseEnter={e => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.12)")}
-                onMouseLeave={e => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.07)")}
-                onClick={() => navigate(btn.route)}
+                className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white transition-colors shrink-0"
+                style={{ backgroundColor: "#2563EB" }}
+                onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#1D4ED8")}
+                onMouseLeave={e => (e.currentTarget.style.backgroundColor = "#2563EB")}
+                onClick={() => navigate("/job-cards/new")}
               >
-                {btn.label}
+                <Activity className="h-3.5 w-3.5" />
+                New Work Order
               </button>
-            ))}
+              {[
+                { label: "PO", route: "/purchase-orders/new" },
+                { label: "DC", route: "/delivery-challans/new" },
+                { label: "Invoice", route: "/invoices/new" },
+              ].map((btn) => (
+                <button
+                  key={btn.label}
+                  className="rounded-xl px-3 py-2 text-sm text-slate-300 transition-colors shrink-0"
+                  style={{ backgroundColor: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.10)" }}
+                  onMouseEnter={e => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.12)")}
+                  onMouseLeave={e => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.07)")}
+                  onClick={() => navigate(btn.route)}
+                >
+                  {btn.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
-        {/* Three stat panels */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-6">
+        {/* Three stat panels — single column on mobile, 3-col on desktop */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mt-5">
 
           {/* Panel 1 — Production */}
           <div
-            className="rounded-xl p-5"
+            className="rounded-xl p-4 lg:p-5"
             style={{ backgroundColor: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}
           >
             <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-4">
               Production
             </p>
-            <div className="space-y-0">
+            <div>
               <div className="flex items-center justify-between py-2.5">
                 <span className="text-sm text-slate-400">Work Orders</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-xl font-bold text-slate-100 font-mono tabular-nums">
-                    {wipSummary?.atVendor !== undefined ? (activeJCs.length) : "—"}
-                  </span>
-                </div>
+                <span className="text-xl font-bold text-slate-100 font-mono tabular-nums">
+                  {wipSummary?.atVendor !== undefined ? activeJCs.length : "—"}
+                </span>
               </div>
               <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }} />
               <div className="flex items-center justify-between py-2.5">
@@ -327,13 +333,13 @@ export default function Dashboard() {
 
           {/* Panel 2 — Purchasing & Stock */}
           <div
-            className="rounded-xl p-5"
+            className="rounded-xl p-4 lg:p-5"
             style={{ backgroundColor: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}
           >
             <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-4">
               Purchasing & Stock
             </p>
-            <div className="space-y-0">
+            <div>
               <div className="flex items-center justify-between py-2.5 cursor-pointer group" onClick={() => navigate("/wip-register?location=at_vendor")}>
                 <span className="text-sm text-slate-400 group-hover:text-slate-300 transition-colors">At Vendors</span>
                 <span className="text-xl font-bold text-slate-100 font-mono tabular-nums">
@@ -365,7 +371,7 @@ export default function Dashboard() {
 
           {/* Panel 3 — GST This Month */}
           <div
-            className="rounded-xl p-5"
+            className="rounded-xl p-4 lg:p-5"
             style={{
               background: "linear-gradient(135deg, rgba(37,99,235,0.25), rgba(29,78,216,0.15))",
               border: "1px solid rgba(37,99,235,0.35)",
@@ -374,7 +380,7 @@ export default function Dashboard() {
             <p className="text-[10px] text-blue-400 uppercase tracking-widest font-semibold mb-2">
               GST This Month
             </p>
-            <p className="text-4xl font-extrabold text-slate-100 tracking-tight mb-4 font-mono tabular-nums">
+            <p className="text-3xl lg:text-4xl font-extrabold text-slate-100 tracking-tight mb-4 font-mono tabular-nums">
               {formatCurrency(analytics?.gstTotal ?? 0)}
             </p>
             <div className="space-y-2">
@@ -400,14 +406,15 @@ export default function Dashboard() {
       </div>
 
       {/* ── ZONE 2: LIGHT CONTENT AREA ───────────────────────────────────── */}
-      <div className="flex-1" style={{ backgroundColor: "#F1F5F9", padding: "20px 28px" }}>
-        <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 320px" }}>
+      <div className="flex-1 px-4 py-4 lg:px-7 lg:py-5" style={{ backgroundColor: "#F1F5F9" }}>
+        {/* Single column on mobile, two-column on desktop */}
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
 
           {/* ── LEFT COLUMN ─────────────────────────────────────────────── */}
           <div className="flex flex-col gap-3 min-w-0">
 
             {/* Card: Active Work Orders */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 lg:p-5">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
@@ -510,8 +517,8 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* Card row: Purchase Orders + Sales Orders */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* Card row: Purchase Orders + Sales Orders — 1 col on mobile, 2 on sm+ */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
 
               {/* Purchase Orders */}
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
@@ -642,11 +649,11 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* ── RIGHT COLUMN ─────────────────────────────────────────────── */}
-          <div className="flex flex-col gap-3 w-[320px] shrink-0">
+          {/* ── RIGHT COLUMN — full width on mobile, 320px fixed on desktop ── */}
+          <div className="flex flex-col gap-3 w-full lg:w-[320px] lg:shrink-0">
 
             {/* Card: Recent Activity */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 lg:p-5">
               <div className="flex items-center gap-2 mb-4">
                 <Activity className="h-4 w-4 text-slate-400" />
                 <h3 className="font-semibold text-slate-900">Recent Activity</h3>
