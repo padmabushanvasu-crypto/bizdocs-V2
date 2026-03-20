@@ -389,7 +389,7 @@ export function AppSidebar() {
           }}
         >
           {!railMode && (
-            <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/dashboard')}>
+            <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
               <div className="h-8 w-8 rounded bg-gradient-to-br from-blue-600 to-blue-400 flex items-center justify-center shadow-sm">
                 <span className="font-bold text-sm text-white">B</span>
               </div>
@@ -397,7 +397,7 @@ export function AppSidebar() {
             </div>
           )}
           {railMode && (
-            <div className="h-8 w-8 rounded bg-gradient-to-br from-blue-600 to-blue-400 flex items-center justify-center shadow-sm cursor-pointer" onClick={() => navigate('/dashboard')}>
+            <div className="h-8 w-8 rounded bg-gradient-to-br from-blue-600 to-blue-400 flex items-center justify-center shadow-sm cursor-pointer" onClick={() => navigate('/')}>
               <span className="font-bold text-sm text-white">B</span>
             </div>
           )}

@@ -34,7 +34,7 @@ export function AppLayout() {
           <header className="h-12 flex items-center justify-between border-b border-border bg-card px-4 shrink-0">
             <div className="flex items-center gap-2">
               <div className="md:hidden">
-                <span className="font-display font-bold text-foreground cursor-pointer" onClick={() => navigate('/dashboard')}>BizDocs</span>
+                <span className="font-display font-bold text-foreground cursor-pointer" onClick={() => navigate('/')}>BizDocs</span>
               </div>
             </div>
             <DropdownMenu>
