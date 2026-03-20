@@ -587,6 +587,7 @@ export async function createJobCardStep(
       outward_dc_id: data.outward_dc_id ?? null,
       expected_return_date: data.expected_return_date ?? null,
       qty_sent: data.qty_sent ?? null,
+      unit: data.unit ?? "NOS",
       job_work_charges: data.job_work_charges ?? 0,
       transport_cost_out: data.transport_cost_out ?? 0,
       transport_cost_in: data.transport_cost_in ?? 0,

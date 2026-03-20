@@ -7,11 +7,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 import { fetchStageTemplates, type JobCardStep } from "@/lib/job-cards-api";
 import { fetchParties } from "@/lib/parties-api";
+
+const UNIT_OPTIONS = ["NOS", "KG", "KGS", "MTR", "SFT", "SET", "PAIR", "LOT"];
 
 interface AddStepDialogProps {
   open: boolean;
@@ -19,6 +22,7 @@ interface AddStepDialogProps {
   editingStep?: JobCardStep | null;
   onSave: (step: Partial<JobCardStep>) => void;
   isSaving?: boolean;
+  itemUnit?: string;
 }
 
 type StepType = "internal" | "external" | null;
@@ -48,7 +52,7 @@ const emptyExternal = {
   notes: "",
 };
 
-export function AddStepDialog({ open, onOpenChange, editingStep, onSave, isSaving }: AddStepDialogProps) {
+export function AddStepDialog({ open, onOpenChange, editingStep, onSave, isSaving, itemUnit }: AddStepDialogProps) {
   const isEditing = !!editingStep;
 
   const [stepType, setStepType] = useState<StepType>(null);
@@ -92,7 +96,7 @@ export function AddStepDialog({ open, onOpenChange, editingStep, onSave, isSavin
     } else {
       setStepType(null);
       setInternalForm(emptyInternal);
-      setExternalForm(emptyExternal);
+      setExternalForm({ ...emptyExternal, unit: itemUnit ?? "NOS" });
       setVendorOpen(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -443,13 +447,19 @@ export function AddStepDialog({ open, onOpenChange, editingStep, onSave, isSavin
               </div>
               <div className="space-y-1.5">
                 <Label>Unit</Label>
-                <Input
+                <Select
                   value={externalForm.unit}
-                  onChange={(e) => setExternalForm((f) => ({ ...f, unit: e.target.value.toUpperCase() }))}
-                  placeholder="NOS"
-                  className="font-mono"
-                  maxLength={10}
-                />
+                  onValueChange={(v) => setExternalForm((f) => ({ ...f, unit: v }))}
+                >
+                  <SelectTrigger className="font-mono">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {UNIT_OPTIONS.map((u) => (
+                      <SelectItem key={u} value={u} className="font-mono">{u}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5">
                 <Label>Expected Return</Label>
