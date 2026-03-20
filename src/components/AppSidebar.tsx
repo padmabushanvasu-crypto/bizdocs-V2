@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   LayoutDashboard,
   FileText,
@@ -248,7 +249,7 @@ export function AppSidebar() {
   });
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
   const [flyoutY, setFlyoutY] = useState(0);
-  const leaveTimer = useRef<ReturnType<typeof setTimeout>>();
+  const closeTimer = useRef<ReturnType<typeof setTimeout>>();
 
   // Force sidebar collapsed when in rail mode
   useEffect(() => {
@@ -301,24 +302,23 @@ export function AppSidebar() {
   };
 
   // Rail mode hover handlers
+  const cancelClose = () => clearTimeout(closeTimer.current);
+
+  const startClose = () => {
+    cancelClose();
+    closeTimer.current = setTimeout(() => setHoveredGroup(null), 300);
+  };
+
   const handleGroupEnter = (groupName: string, e: React.MouseEvent) => {
-    clearTimeout(leaveTimer.current);
+    cancelClose();
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setFlyoutY(rect.top);
-    setHoveredGroup(groupName);
+    setHoveredGroup(groupName); // instant open
   };
 
-  const handleGroupLeave = () => {
-    leaveTimer.current = setTimeout(() => setHoveredGroup(null), 120);
-  };
-
-  const handleFlyoutEnter = () => {
-    clearTimeout(leaveTimer.current);
-  };
-
-  const handleFlyoutLeave = () => {
-    leaveTimer.current = setTimeout(() => setHoveredGroup(null), 120);
-  };
+  const handleGroupLeave = () => startClose();
+  const handleFlyoutEnter = () => cancelClose();
+  const handleFlyoutLeave = () => startClose();
 
   // Queries
   const { data: wipSummary } = useQuery({
@@ -667,18 +667,29 @@ export function AppSidebar() {
         </SidebarFooter>
       </Sidebar>
 
-      {/* Rail mode flyout panel (fixed, appears to the right of the rail) */}
-      {railMode && collapsed && hoveredGroup && (
+      {/* Rail mode flyout — rendered into document.body via portal to escape any stacking context */}
+      {railMode && collapsed && hoveredGroup && createPortal(
         <div
-          className="fixed z-[200] bg-[#0f1623] border border-slate-700/80 rounded-r-xl shadow-2xl overflow-hidden"
-          style={{ left: 64, top: flyoutY, minWidth: 210, maxHeight: "70vh", overflowY: "auto" }}
+          style={{
+            position: "fixed",
+            left: 64,
+            top: flyoutY,
+            zIndex: 9999,
+            minWidth: 210,
+            maxHeight: "70vh",
+            overflowY: "auto",
+            background: "#0f1623",
+            border: "1px solid rgba(100,116,139,0.5)",
+            borderRadius: "0 12px 12px 0",
+            boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+          }}
           onMouseEnter={handleFlyoutEnter}
           onMouseLeave={handleFlyoutLeave}
         >
-          <p className="text-[10px] uppercase tracking-widest font-semibold px-3 pt-3 pb-1.5 text-slate-400 border-b border-slate-700/60 mb-1">
+          <p style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 600, padding: "12px 12px 6px", color: "#94a3b8", borderBottom: "1px solid rgba(100,116,139,0.3)" }}>
             {hoveredGroup}
           </p>
-          <div className="py-1">
+          <div style={{ padding: "4px 0" }}>
             {(GROUP_ITEMS_MAP[hoveredGroup] ?? []).map((item) => (
               <NavLink
                 key={item.url}
@@ -698,7 +709,8 @@ export function AppSidebar() {
               </NavLink>
             ))}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
