@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from 'react'
+
 interface SegmentedControlOption {
   value: string
   label: string
@@ -14,8 +16,36 @@ interface SegmentedControlProps {
 
 export function SegmentedControl({ options, value, onChange, className }: SegmentedControlProps) {
   const activeIndex = options.findIndex((opt) => opt.value === value)
-  const n = options.length
-  const activeColor = options[activeIndex]?.color ?? '#0F172A'
+  const activeOption = options[activeIndex]
+
+  const buttonRefs = useRef<(HTMLButtonElement | null)[]>([])
+  const [pillStyle, setPillStyle] = useState({ left: 0, width: 0 })
+
+  const measure = () => {
+    const activeBtn = buttonRefs.current[activeIndex]
+    if (activeBtn) {
+      const parent = activeBtn.parentElement
+      if (parent) {
+        const parentRect = parent.getBoundingClientRect()
+        const btnRect = activeBtn.getBoundingClientRect()
+        setPillStyle({
+          left: btnRect.left - parentRect.left,
+          width: btnRect.width,
+        })
+      }
+    }
+  }
+
+  // Measure on value change
+  useEffect(() => {
+    measure()
+  }, [activeIndex, value])
+
+  // Measure on mount after layout is complete
+  useEffect(() => {
+    const t = setTimeout(measure, 50)
+    return () => clearTimeout(t)
+  }, [])
 
   return (
     <div
@@ -26,24 +56,26 @@ export function SegmentedControl({ options, value, onChange, className }: Segmen
         style={{
           position: 'absolute',
           top: 4,
+          left: pillStyle.left,
+          width: pillStyle.width,
           height: 'calc(100% - 8px)',
-          width: `calc((100% - 8px) / ${n})`,
-          left: `calc(${activeIndex} * (100% - 8px) / ${n} + 4px)`,
-          background: activeColor,
+          background: activeOption?.color ?? '#0F172A',
           borderRadius: 9,
           boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
-          transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1), background 0.22s ease',
+          transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1), width 0.22s ease, background 0.22s ease',
           zIndex: 0,
+          pointerEvents: 'none',
         }}
       />
 
-      {options.map((opt) => {
+      {options.map((opt, i) => {
         const isActive = opt.value === value
         const inactiveColor = opt.color ?? '#64748B'
 
         return (
           <button
             key={opt.value}
+            ref={(el) => { buttonRefs.current[i] = el }}
             onClick={() => onChange(opt.value)}
             style={{
               position: 'relative',
