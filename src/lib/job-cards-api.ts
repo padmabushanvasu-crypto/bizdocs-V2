@@ -440,6 +440,15 @@ export async function fetchItemCurrentStock(itemId: string): Promise<number> {
   return (data as any)?.current_stock ?? 0;
 }
 
+export async function fetchItemUnit(itemId: string): Promise<string> {
+  const { data } = await (supabase as any)
+    .from("items")
+    .select("unit")
+    .eq("id", itemId)
+    .single();
+  return (data as any)?.unit ?? "NOS";
+}
+
 export interface StockMovement {
   id: string;
   item_id: string;

@@ -383,7 +383,7 @@ export default function AssemblyOrders() {
                 min={1}
                 value={form.quantity_to_build || ""}
                 onChange={(e) =>
-                  setForm((f) => ({ ...f, quantity_to_build: parseFloat(e.target.value) || 1 }))
+                  setForm((f) => ({ ...f, quantity_to_build: parseFloat(e.target.value) || 0 }))
                 }
               />
             </div>

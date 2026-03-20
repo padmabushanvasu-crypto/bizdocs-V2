@@ -429,23 +429,23 @@ export function AddStepDialog({ open, onOpenChange, editingStep, onSave, isSavin
               </Popover>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1.5">
+            <div className="flex gap-2">
+              <div className="flex-1 space-y-1.5">
                 <Label>Qty Sent</Label>
                 <Input
-                  type="number"
-                  min={0}
+                  type="text"
+                  inputMode="decimal"
                   value={externalForm.qty_sent ?? ""}
                   onChange={(e) =>
                     setExternalForm((f) => ({
                       ...f,
-                      qty_sent: e.target.value ? parseFloat(e.target.value) : null,
+                      qty_sent: e.target.value === "" ? null : parseFloat(e.target.value) || null,
                     }))
                   }
                   placeholder="Optional"
                 />
               </div>
-              <div className="space-y-1.5">
+              <div className="w-28 space-y-1.5">
                 <Label>Unit</Label>
                 <Select
                   value={externalForm.unit}
@@ -461,16 +461,17 @@ export function AddStepDialog({ open, onOpenChange, editingStep, onSave, isSavin
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5">
-                <Label>Expected Return</Label>
-                <Input
-                  type="date"
-                  value={externalForm.expected_return_date}
-                  onChange={(e) =>
-                    setExternalForm((f) => ({ ...f, expected_return_date: e.target.value }))
-                  }
-                />
-              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Expected Return</Label>
+              <Input
+                type="date"
+                value={externalForm.expected_return_date}
+                onChange={(e) =>
+                  setExternalForm((f) => ({ ...f, expected_return_date: e.target.value }))
+                }
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-3">

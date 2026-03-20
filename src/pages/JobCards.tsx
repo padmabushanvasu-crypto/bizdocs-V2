@@ -583,7 +583,7 @@ export default function JobCards() {
                   onChange={(e) =>
                     setForm((f) => ({
                       ...f,
-                      quantity_original: parseFloat(e.target.value) || 1,
+                      quantity_original: parseFloat(e.target.value) || 0,
                     }))
                   }
                 />

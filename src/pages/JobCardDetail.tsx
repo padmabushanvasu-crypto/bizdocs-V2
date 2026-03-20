@@ -45,6 +45,7 @@ import {
   completeJobCard,
   updateJobCardStatus,
   fetchItemCurrentStock,
+  fetchItemUnit,
   issueJobCardMaterial,
   fetchJobCardStockMovements,
   type JobCardStep,
@@ -205,7 +206,7 @@ function StepCard({ step, readOnly, onEdit, onDelete, onRecordReturn }: StepCard
               {step.vendor_name && (
                 <span className="font-medium text-foreground">{step.vendor_name}</span>
               )}
-              {step.qty_sent != null && <span>Sent: {step.qty_sent} units</span>}
+              {step.qty_sent != null && <span>Sent: {step.qty_sent} {step.unit ?? "NOS"}</span>}
               {step.expected_return_date && (
                 <span>
                   Expected: {new Date(step.expected_return_date).toLocaleDateString("en-IN")}
@@ -231,10 +232,10 @@ function StepCard({ step, readOnly, onEdit, onDelete, onRecordReturn }: StepCard
               <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-border/50">
                 {inspectionBadge(step.inspection_result)}
                 {step.qty_accepted != null && (
-                  <span className="text-xs text-green-600">Accepted: {step.qty_accepted}</span>
+                  <span className="text-xs text-green-600">Accepted: {step.qty_accepted} {step.unit ?? "NOS"}</span>
                 )}
                 {(step.qty_rejected ?? 0) > 0 && (
-                  <span className="text-xs text-red-600">Rejected: {step.qty_rejected}</span>
+                  <span className="text-xs text-red-600">Rejected: {step.qty_rejected} {step.unit ?? "NOS"}</span>
                 )}
                 {step.inspected_by && (
                   <span className="text-xs text-muted-foreground">by {step.inspected_by}</span>
@@ -296,6 +297,12 @@ export default function JobCardDetail() {
     queryKey: ["item-stock-for-completion", jc?.item_id],
     queryFn: () => fetchItemCurrentStock(jc!.item_id!),
     enabled: (completeDialogOpen || materialIssueOpen) && !!jc?.item_id,
+  });
+
+  const { data: itemUnit = "NOS" } = useQuery({
+    queryKey: ["item-unit", jc?.item_id],
+    queryFn: () => fetchItemUnit(jc!.item_id!),
+    enabled: !!jc?.item_id,
   });
 
   const { data: stockMovements = [] } = useQuery<StockMovement[]>({
@@ -814,6 +821,7 @@ export default function JobCardDetail() {
         editingStep={editingStep}
         onSave={handleSaveStep}
         isSaving={isStepSaving}
+        itemUnit={itemUnit}
       />
 
       {/* Record Return dialog */}
