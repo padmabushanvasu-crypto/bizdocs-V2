@@ -18,6 +18,38 @@ async function parseExcel(file: File): Promise<Record<string, string>[]> {
   return (XLSX as any).utils.sheet_to_json(ws, { defval: "" }) as Record<string, string>[];
 }
 
+// Normalize headers to match template exactly (case-insensitive, trimmed).
+// Also trims all string values. Returns normalized rows and any required columns missing.
+function normalizeRows(
+  raw: Record<string, string>[],
+  templateHeaders: string[]
+): { parsed: Record<string, string>[]; missingRequired: string[] } {
+  const actualHeaders = Object.keys(raw[0] ?? {});
+
+  // Build map: actual header in file → expected template header
+  const headerMap = new Map<string, string>();
+  for (const expected of templateHeaders) {
+    const match = actualHeaders.find(
+      (h) => h.trim().toLowerCase() === expected.trim().toLowerCase()
+    );
+    if (match) headerMap.set(match, expected);
+  }
+
+  // Required columns are those with * in the name
+  const required = templateHeaders.filter((h) => h.includes("*"));
+  const missingRequired = required.filter((h) => !Array.from(headerMap.values()).includes(h));
+
+  const parsed = raw.map((row) => {
+    const normalized: Record<string, string> = {};
+    for (const [actual, expected] of headerMap) {
+      normalized[expected] = String(row[actual] ?? "").trim();
+    }
+    return normalized;
+  });
+
+  return { parsed, missingRequired };
+}
+
 // ── Template download helpers ──────────────────────────────────────────────
 
 async function downloadTemplate(sheetName: string, headers: string[]) {
@@ -49,6 +81,7 @@ async function downloadBOMTemplate() {
 
 const PARTY_HEADERS = ["Company Name *", "Party Type (vendor/customer/both) *", "Contact Person", "Address Line 1", "City", "State", "PIN Code", "Phone 1", "Email", "GSTIN", "PAN", "Payment Terms", "Notes"];
 const ITEM_HEADERS = ["Item Code *", "Description *", "Item Type *", "Unit", "HSN/SAC Code", "Sale Price", "Purchase Price", "GST Rate %", "Min Stock", "Notes"];
+const BOM_HEADERS = ["Parent Item Code *", "Child Item Code *", "Quantity *", "Unit", "Scrap Factor %", "Variant Name", "Notes"];
 // BOM template is handled by downloadBOMTemplate() with example rows
 const STOCK_HEADERS = ["Item Code *", "Opening Stock Qty *", "Notes"];
 
@@ -158,7 +191,26 @@ function BOMImportTab() {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const parsed = await parseExcel(file);
+      const raw = await parseExcel(file);
+
+      if (raw.length === 0) {
+        toast({ title: "No data found", description: "The file is empty or contains only column headers.", variant: "destructive" });
+        e.target.value = "";
+        return;
+      }
+
+      const { parsed, missingRequired } = normalizeRows(raw, BOM_HEADERS);
+
+      if (missingRequired.length > 0) {
+        toast({
+          title: "Missing required columns",
+          description: `Not found in file: ${missingRequired.join(", ")}. Download the template to see expected column names.`,
+          variant: "destructive",
+        });
+        e.target.value = "";
+        return;
+      }
+
       setRows(parsed);
       setValidating(true);
       setResult(null);
@@ -328,7 +380,7 @@ function BOMImportTab() {
         <Button variant="outline" size="sm" className="gap-1.5" onClick={() => fileRef.current?.click()}>
           <Upload className="h-4 w-4" /> Choose Excel File
         </Button>
-        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFile} />
+        <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xls,.csv" className="hidden" onChange={handleFile} />
         {validRows.length > 0 && (
           <Button
             size="sm"
@@ -348,7 +400,7 @@ function BOMImportTab() {
       {rows.length > 0 && !validating && (
         <div className="flex items-center gap-2 flex-wrap">
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-green-50 border border-green-200 text-green-800 text-xs font-medium">
-            <CheckCircle className="h-3 w-3" /> {validRows.length} valid
+            <CheckCircle className="h-3 w-3" /> {validRows.length} ready to import
           </span>
           {errorRows.size > 0 && (
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-50 border border-red-200 text-red-800 text-xs font-medium">
@@ -422,25 +474,60 @@ function ImportTab({
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
+  const [validRows, setValidRows] = useState<Record<string, string>[]>([]);
   const [errorRows, setErrorRows] = useState<Set<number>>(new Set());
   const [errors, setErrors] = useState<string[]>([]);
   const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const clearAll = () => {
+    setRows([]); setValidRows([]); setErrorRows(new Set()); setErrors([]); setResult(null);
+  };
+
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const parsed = await parseExcel(file);
+      const raw = await parseExcel(file);
+
+      if (raw.length === 0) {
+        toast({ title: "No data found", description: "The file is empty or contains only column headers.", variant: "destructive" });
+        e.target.value = "";
+        return;
+      }
+
+      const { parsed, missingRequired } = normalizeRows(raw, templateHeaders);
+
+      if (missingRequired.length > 0) {
+        toast({
+          title: "Missing required columns",
+          description: `Not found in file: ${missingRequired.join(", ")}. Download the template to see expected column names.`,
+          variant: "destructive",
+        });
+        e.target.value = "";
+        return;
+      }
+
       const newErrorRows = new Set<number>();
       const newErrors: string[] = [];
+      const newValidRows: Record<string, string>[] = [];
+
       if (validate) {
         parsed.forEach((row, i) => {
           const err = validate(row, i);
-          if (err) { newErrorRows.add(i); newErrors.push(`Row ${i + 1}: ${err}`); }
+          if (err) {
+            newErrorRows.add(i);
+            newErrors.push(`Row ${i + 1}: ${err}`);
+          } else {
+            newValidRows.push(row);
+          }
         });
+      } else {
+        newValidRows.push(...parsed);
       }
+
       setRows(parsed);
+      setValidRows(newValidRows);
       setErrorRows(newErrorRows);
       setErrors(newErrors);
       setResult(null);
@@ -451,14 +538,15 @@ function ImportTab({
   };
 
   const handleImport = async () => {
-    if (rows.length === 0) return;
+    if (validRows.length === 0) return;
     setLoading(true);
     try {
-      const res = await onImport(rows);
+      const res = await onImport(validRows);
       setResult({ imported: res.imported, skipped: res.skipped });
       if (res.errors.length > 0) setErrors((prev) => [...prev, ...res.errors]);
       toast({ title: `Imported ${res.imported} row(s)` });
       setRows([]);
+      setValidRows([]);
     } catch (err: any) {
       toast({ title: "Import failed", description: err.message, variant: "destructive" });
     } finally {
@@ -496,18 +584,30 @@ function ImportTab({
         >
           <Upload className="h-4 w-4" /> Choose Excel File
         </Button>
-        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFile} />
-        {rows.length > 0 && (
+        <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xls,.csv" className="hidden" onChange={handleFile} />
+        {validRows.length > 0 && (
           <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white" onClick={handleImport} disabled={loading}>
-            {loading ? "Importing…" : `Import ${rows.length} Rows`}
+            {loading ? "Importing…" : `Import ${validRows.length} Row${validRows.length !== 1 ? "s" : ""}`}
           </Button>
         )}
         {rows.length > 0 && (
-          <Button size="sm" variant="ghost" onClick={() => { setRows([]); setErrors([]); setResult(null); }}>
-            Clear
-          </Button>
+          <Button size="sm" variant="ghost" onClick={clearAll}>Clear</Button>
         )}
       </div>
+
+      {/* Summary chips */}
+      {rows.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-green-50 border border-green-200 text-green-800 text-xs font-medium">
+            <CheckCircle className="h-3 w-3" /> {validRows.length} ready to import
+          </span>
+          {errorRows.size > 0 && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-50 border border-red-200 text-red-800 text-xs font-medium">
+              <XCircle className="h-3 w-3" /> {errorRows.size} errors — will be skipped
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Validation Errors */}
       {errors.length > 0 && (
@@ -673,8 +773,8 @@ export default function DataImport() {
             onImport={handlePartyImport}
             validate={(row) => {
               if (!row["Company Name *"]?.trim()) return "Company Name is required";
-              const type = (row["Party Type (vendor/customer/both) *"] || "").toLowerCase();
-              if (!["vendor", "customer", "both", ""].includes(type)) return `Invalid party type: ${type}`;
+              const type = (row["Party Type (vendor/customer/both) *"] || "").toLowerCase().trim();
+              if (type && !["vendor", "customer", "both"].includes(type)) return `Invalid party type: "${type}" — use vendor, customer, or both`;
               return null;
             }}
           />
