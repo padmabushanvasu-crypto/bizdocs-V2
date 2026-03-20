@@ -18,11 +18,12 @@ import {
   Plus,
   FileText,
   Send,
+  X,
 } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { fetchReorderSummary } from "@/lib/reorder-api";
 
 const MORE_GROUPS = [
@@ -177,9 +178,14 @@ export function MobileNav() {
 
       {/* Create New Sheet */}
       <Sheet open={createOpen} onOpenChange={setCreateOpen}>
-        <SheetContent side="bottom" className="md:hidden rounded-t-2xl p-0">
-          <SheetHeader className="px-5 pt-4 pb-3 border-b border-border">
+        <SheetContent side="bottom" className="md:hidden rounded-t-2xl p-0 [&>button]:hidden">
+          <SheetHeader className="px-5 pt-4 pb-3 border-b border-border flex flex-row items-center justify-between">
             <SheetTitle className="text-base font-bold">Create New</SheetTitle>
+            <SheetClose asChild>
+              <button style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }}>
+                <X className="h-5 w-5 text-slate-500" />
+              </button>
+            </SheetClose>
           </SheetHeader>
           <div className="px-4 py-4 grid grid-cols-2 gap-3">
             {CREATE_TYPES.map((type) => (
@@ -200,9 +206,14 @@ export function MobileNav() {
 
       {/* More Sheet */}
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetContent side="bottom" className="md:hidden h-[75vh] rounded-t-2xl p-0 overflow-y-auto">
-          <SheetHeader className="px-5 pt-4 pb-3 border-b border-border sticky top-0 bg-background z-10">
+        <SheetContent side="bottom" className="md:hidden h-[75vh] rounded-t-2xl p-0 overflow-y-auto [&>button]:hidden">
+          <SheetHeader className="px-5 pt-4 pb-3 border-b border-border sticky top-0 bg-background z-10 flex flex-row items-center justify-between">
             <SheetTitle className="text-base font-bold">Menu</SheetTitle>
+            <SheetClose asChild>
+              <button style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }}>
+                <X className="h-5 w-5 text-slate-500" />
+              </button>
+            </SheetClose>
           </SheetHeader>
 
           <div className="px-4 py-3 space-y-4">
