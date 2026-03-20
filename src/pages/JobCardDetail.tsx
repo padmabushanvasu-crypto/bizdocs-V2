@@ -670,11 +670,11 @@ export default function JobCardDetail() {
           <div className="paper-card space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Original</span>
-              <span className="font-mono">{jc.quantity_original}</span>
+              <span className="font-mono">{jc.quantity_original} {jc.unit ?? "NOS"}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Accepted</span>
-              <span className="font-mono text-green-600">{jc.quantity_accepted}</span>
+              <span className="font-mono text-green-600">{jc.quantity_accepted} {jc.unit ?? "NOS"}</span>
             </div>
             {jc.quantity_rejected > 0 && (
               <div className="flex justify-between">
@@ -914,11 +914,11 @@ export default function JobCardDetail() {
           <div className="rounded-lg bg-muted/50 border border-border p-3 space-y-1.5 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Original Qty</span>
-              <span className="font-mono">{jc.quantity_original}</span>
+              <span className="font-mono">{jc.quantity_original} {jc.unit ?? "NOS"}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Accepted Qty</span>
-              <span className="font-mono text-green-600 font-medium">{jc.quantity_accepted}</span>
+              <span className="font-mono text-green-600 font-medium">{jc.quantity_accepted} {jc.unit ?? "NOS"}</span>
             </div>
             {jc.quantity_rejected > 0 && (
               <div className="flex justify-between">
@@ -979,7 +979,7 @@ export default function JobCardDetail() {
           {completionOutcome === "stock" && jc.item_id && currentItemStock != null && (
             <p className="text-sm text-green-700 bg-green-50 border border-green-100 rounded-md px-3 py-2">
               Stock will increase: {currentItemStock} → {currentItemStock + jc.quantity_accepted}{" "}
-              units
+              {jc.unit ?? "NOS"}
             </p>
           )}
 

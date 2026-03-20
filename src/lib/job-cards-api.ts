@@ -28,6 +28,7 @@ export interface JobCard {
   item_description: string | null;
   tracking_mode: "batch" | "single";
   batch_ref: string | null;
+  unit: string | null;
   quantity_original: number;
   quantity_accepted: number;
   quantity_rejected: number;
@@ -266,6 +267,7 @@ export async function createJobCard(
       item_description: data.item_description ?? null,
       tracking_mode: data.tracking_mode ?? "batch",
       batch_ref: data.batch_ref ?? null,
+      unit: data.unit ?? "NOS",
       quantity_original: data.quantity_original ?? 1,
       quantity_accepted: data.quantity_accepted ?? data.quantity_original ?? 1,
       quantity_rejected: 0,

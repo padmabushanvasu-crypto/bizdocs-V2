@@ -38,10 +38,13 @@ const statusLabels: Record<string, string> = {
   on_hold: "On Hold",
 };
 
+const UNIT_OPTIONS = ["NOS", "KG", "KGS", "MTR", "SFT", "SET", "PAIR", "LOT"];
+
 const emptyForm = {
   tracking_mode: "batch" as "batch" | "single",
   batch_ref: "",
-  quantity_original: 1,
+  unit: "NOS",
+  quantity_original: 0,
   initial_cost: 0,
   notes: "",
 };
@@ -112,6 +115,7 @@ export default function JobCards() {
         item_description: selectedItem?.description ?? undefined,
         tracking_mode: form.tracking_mode,
         batch_ref: form.batch_ref || undefined,
+        unit: form.unit,
         quantity_original: form.quantity_original,
         quantity_accepted: form.quantity_original,
         initial_cost: form.initial_cost,
@@ -380,6 +384,7 @@ export default function JobCards() {
                       <td className="text-right font-mono tabular-nums text-sm">
                         <span className="text-foreground font-semibold">{jc.quantity_accepted}</span>
                         <span className="text-muted-foreground"> / {jc.quantity_original}</span>
+                        <span className="text-muted-foreground text-xs"> {jc.unit ?? "NOS"}</span>
                       </td>
                       <td className="text-right font-mono tabular-nums">
                         {formatCurrency(jc.total_cost ?? 0)}
@@ -521,6 +526,7 @@ export default function JobCards() {
                             value={`${item.item_code} ${item.description}`}
                             onSelect={() => {
                               setSelectedItem(item);
+                              setForm((f) => ({ ...f, unit: item.unit ?? "NOS" }));
                               setItemOpen(false);
                             }}
                           >
@@ -565,29 +571,50 @@ export default function JobCards() {
               </Select>
             </div>
 
+            <div className="space-y-1.5">
+              <Label>Batch / Serial Ref</Label>
+              <Input
+                value={form.batch_ref}
+                onChange={(e) => setForm((f) => ({ ...f, batch_ref: e.target.value }))}
+                placeholder="Optional"
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Batch / Serial Ref</Label>
-                <Input
-                  value={form.batch_ref}
-                  onChange={(e) => setForm((f) => ({ ...f, batch_ref: e.target.value }))}
-                  placeholder="Optional"
-                />
-              </div>
               <div className="space-y-1.5">
                 <Label>Quantity *</Label>
                 <Input
-                  type="number"
-                  min={1}
-                  value={form.quantity_original || ""}
+                  type="text"
+                  inputMode="numeric"
+                  value={String(form.quantity_original || "")}
                   onChange={(e) =>
                     setForm((f) => ({
                       ...f,
                       quantity_original: parseFloat(e.target.value) || 0,
                     }))
                   }
+                  placeholder="Enter quantity"
                 />
               </div>
+              <div className="space-y-1.5">
+                <Label>Unit</Label>
+                <Select
+                  value={form.unit}
+                  onValueChange={(v) => setForm((f) => ({ ...f, unit: v }))}
+                >
+                  <SelectTrigger className="font-mono">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {UNIT_OPTIONS.map((u) => (
+                      <SelectItem key={u} value={u} className="font-mono">{u}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="text-xs text-blue-600 bg-blue-50 rounded px-3 py-2">
+              Unit auto-fills from the selected item. Change if needed.
             </div>
 
             <div className="space-y-1.5">
