@@ -41,16 +41,12 @@ import { fetchWipSummary } from "@/lib/job-cards-api";
 import { fetchFatStats, fetchSerialStats } from "@/lib/fat-api";
 import { fetchReorderSummary } from "@/lib/reorder-api";
 import {
-  Sidebar,
-  SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarHeader,
-  SidebarFooter,
 } from "@/components/ui/sidebar";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -170,36 +166,30 @@ const settingsNav: NavItem[] = [
 function NavGroup({
   label,
   items,
-  collapsed,
   isActive,
   open,
   onToggle,
 }: {
   label: string;
   items: NavItem[];
-  collapsed: boolean;
   isActive: (path: string) => boolean;
   open: boolean;
   onToggle: () => void;
 }) {
-  const showContent = collapsed || open;
-
   return (
     <SidebarGroup>
-      {!collapsed && (
-        <SidebarGroupLabel
-          className="text-slate-500 text-[10px] uppercase tracking-widest font-semibold cursor-pointer flex items-center justify-between hover:text-slate-300 transition-colors select-none"
-          onClick={onToggle}
-        >
-          {label}
-          {open ? (
-            <ChevronDown className="h-3 w-3 shrink-0 opacity-70" />
-          ) : (
-            <ChevronRight className="h-3 w-3 shrink-0 opacity-70" />
-          )}
-        </SidebarGroupLabel>
-      )}
-      {showContent && (
+      <SidebarGroupLabel
+        className="text-slate-500 text-[10px] uppercase tracking-widest font-semibold cursor-pointer flex items-center justify-between hover:text-slate-300 transition-colors select-none"
+        onClick={onToggle}
+      >
+        {label}
+        {open ? (
+          <ChevronDown className="h-3 w-3 shrink-0 opacity-70" />
+        ) : (
+          <ChevronRight className="h-3 w-3 shrink-0 opacity-70" />
+        )}
+      </SidebarGroupLabel>
+      {open && (
         <SidebarGroupContent>
           <SidebarMenu>
             {items.map((item) => (
@@ -212,20 +202,15 @@ function NavGroup({
                     activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
                   >
                     <item.icon className="h-4 w-4 shrink-0" />
-                    {!collapsed && (
-                      item.badge != null && item.badge > 0 ? (
-                        <span className="flex-1 flex items-center justify-between">
-                          {item.title}
-                          <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
-                            {item.badge}
-                          </span>
+                    {item.badge != null && item.badge > 0 ? (
+                      <span className="flex-1 flex items-center justify-between">
+                        {item.title}
+                        <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                          {item.badge}
                         </span>
-                      ) : (
-                        <span>{item.title}</span>
-                      )
-                    )}
-                    {collapsed && item.badge != null && item.badge > 0 && (
-                      <span className="absolute top-0.5 right-0.5 h-2 w-2 rounded-full bg-red-500" />
+                      </span>
+                    ) : (
+                      <span>{item.title}</span>
                     )}
                   </NavLink>
                 </SidebarMenuButton>
@@ -259,8 +244,7 @@ export function AppSidebar() {
   }, [railMode]);
 
   const toggleRailMode = () => {
-    const next = !railMode;
-    setRailMode(next);
+    setRailMode((prev) => !prev);
     setHoveredGroup(null);
   };
 
@@ -375,293 +359,298 @@ export function AppSidebar() {
     "Settings": settingsNav,
   };
 
-  const dailyWorkOpen = railMode || groupOpen["Daily Work"];
-  const qualityOpen   = railMode || groupOpen["Quality & Compliance"];
-
-  // Rail mode content
-  const railContent = (
-    <SidebarContent>
-      <div className="flex flex-col items-center py-2 gap-0.5">
-        {ALL_GROUP_NAMES.map((groupName) => {
-          const GroupIcon = GROUP_ICONS[groupName] ?? LayoutDashboard;
-          const active = isGroupActive(groupName);
-          const hovered = hoveredGroup === groupName;
-          return (
-            <div
-              key={groupName}
-              className={`flex items-center justify-center w-10 h-10 rounded-lg cursor-pointer transition-all ${
-                active ? "bg-blue-900/40 text-white" :
-                hovered ? "bg-white/10 text-white" :
-                "text-slate-400 hover:bg-white/5 hover:text-slate-200"
-              }`}
-              onMouseEnter={(e) => handleGroupEnter(groupName, e)}
-              onMouseLeave={handleGroupLeave}
-              title={groupName}
-            >
-              <GroupIcon className="h-[18px] w-[18px]" />
-            </div>
-          );
-        })}
-      </div>
-    </SidebarContent>
-  );
-
-  // Full sidebar content
-  const fullContent = (
-    <SidebarContent>
-      <NavGroup
-        label="Start Here"
-        items={startHereNav}
-        collapsed={railMode}
-        isActive={isActive}
-        open={groupOpen["Start Here"]}
-        onToggle={() => toggleGroup("Start Here")}
-      />
-
-      {/* Daily Work — inline with WIP badge */}
-      <SidebarGroup>
-        {!railMode && (
-          <SidebarGroupLabel
-            className="text-slate-500 text-[10px] uppercase tracking-widest font-semibold cursor-pointer flex items-center justify-between hover:text-slate-300 transition-colors select-none"
-            onClick={() => toggleGroup("Daily Work")}
-          >
-            Daily Work
-            {groupOpen["Daily Work"] ? (
-              <ChevronDown className="h-3 w-3 shrink-0 opacity-70" />
-            ) : (
-              <ChevronRight className="h-3 w-3 shrink-0 opacity-70" />
-            )}
-          </SidebarGroupLabel>
-        )}
-        {dailyWorkOpen && (
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {dailyWorkNav.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild isActive={isActive(item.url)}>
-                    <NavLink
-                      to={item.url}
-                      className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                      activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
-                    >
-                      <item.icon className="h-4 w-4 shrink-0" />
-                      {!railMode && <span>{item.title}</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-              {/* WIP Register with overdue badge */}
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={isActive("/wip-register")}>
-                  <NavLink
-                    to="/wip-register"
-                    className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                    activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
-                  >
-                    <AlertTriangle className="h-4 w-4 shrink-0" />
-                    {!railMode && (
-                      <span className="flex-1 flex items-center justify-between">
-                        WIP Register
-                        {wipSummary && wipSummary.overdueReturns > 0 && (
-                          <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
-                            {wipSummary.overdueReturns}
-                          </span>
-                        )}
-                      </span>
-                    )}
-                    {railMode && wipSummary && wipSummary.overdueReturns > 0 && (
-                      <span className="absolute top-0.5 right-0.5 h-2 w-2 rounded-full bg-red-500" />
-                    )}
-                  </NavLink>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        )}
-      </SidebarGroup>
-
-      <NavGroup
-        label="Purchasing"
-        items={purchasingNav}
-        collapsed={railMode}
-        isActive={isActive}
-        open={groupOpen["Purchasing"]}
-        onToggle={() => toggleGroup("Purchasing")}
-      />
-      <NavGroup
-        label="Dispatch & Billing"
-        items={dispatchBillingNav}
-        collapsed={railMode}
-        isActive={isActive}
-        open={groupOpen["Dispatch & Billing"]}
-        onToggle={() => toggleGroup("Dispatch & Billing")}
-      />
-      <NavGroup
-        label="Master Data"
-        items={masterDataNav}
-        collapsed={railMode}
-        isActive={isActive}
-        open={groupOpen["Master Data"]}
-        onToggle={() => toggleGroup("Master Data")}
-      />
-      <NavGroup
-        label="Reports"
-        items={reportsNav}
-        collapsed={railMode}
-        isActive={isActive}
-        open={groupOpen["Reports"]}
-        onToggle={() => toggleGroup("Reports")}
-      />
-
-      {/* Quality & Compliance — inline with FAT + Warranty badges */}
-      <SidebarGroup>
-        {!railMode && (
-          <SidebarGroupLabel
-            className="text-slate-500 text-[10px] uppercase tracking-widest font-semibold cursor-pointer flex items-center justify-between hover:text-slate-300 transition-colors select-none"
-            onClick={() => toggleGroup("Quality & Compliance")}
-          >
-            Quality &amp; Compliance
-            {groupOpen["Quality & Compliance"] ? (
-              <ChevronDown className="h-3 w-3 shrink-0 opacity-70" />
-            ) : (
-              <ChevronRight className="h-3 w-3 shrink-0 opacity-70" />
-            )}
-          </SidebarGroupLabel>
-        )}
-        {qualityOpen && (
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={isActive("/serial-numbers")}>
-                  <NavLink
-                    to="/serial-numbers"
-                    className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                    activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
-                  >
-                    <Hash className="h-4 w-4 shrink-0" />
-                    {!railMode && <span>Serial Numbers</span>}
-                  </NavLink>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              {/* FAT Certificates with pending badge */}
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={isActive("/fat-certificates")}>
-                  <NavLink
-                    to="/fat-certificates"
-                    className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                    activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
-                  >
-                    <ClipboardCheck className="h-4 w-4 shrink-0" />
-                    {!railMode && (
-                      <span className="flex-1 flex items-center justify-between">
-                        FAT Certificates
-                        {fatStats && fatStats.pending > 0 && (
-                          <span className="ml-auto bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
-                            {fatStats.pending}
-                          </span>
-                        )}
-                      </span>
-                    )}
-                    {railMode && fatStats && fatStats.pending > 0 && (
-                      <span className="absolute top-0.5 right-0.5 h-2 w-2 rounded-full bg-amber-500" />
-                    )}
-                  </NavLink>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              {/* Warranty Tracker with expiring soon badge */}
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={isActive("/warranty-tracker")}>
-                  <NavLink
-                    to="/warranty-tracker"
-                    className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                    activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
-                  >
-                    <Shield className="h-4 w-4 shrink-0" />
-                    {!railMode && (
-                      <span className="flex-1 flex items-center justify-between">
-                        Warranty Tracker
-                        {serialStats && serialStats.expiringSoon > 0 && (
-                          <span className="ml-auto bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
-                            {serialStats.expiringSoon}
-                          </span>
-                        )}
-                      </span>
-                    )}
-                    {railMode && serialStats && serialStats.expiringSoon > 0 && (
-                      <span className="absolute top-0.5 right-0.5 h-2 w-2 rounded-full bg-amber-500" />
-                    )}
-                  </NavLink>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        )}
-      </SidebarGroup>
-
-      <NavGroup
-        label="Settings"
-        items={settingsNav}
-        collapsed={railMode}
-        isActive={isActive}
-        open={groupOpen["Settings"]}
-        onToggle={() => toggleGroup("Settings")}
-      />
-    </SidebarContent>
-  );
-
   return (
     <>
-      <Sidebar
-        collapsible="none"
-        className="border-r-0 transition-all duration-200"
-        style={{ width: railMode ? "48px" : "240px", minWidth: railMode ? "48px" : "240px" }}
+      {/* ── Plain div sidebar — no shadcn Sidebar component ── */}
+      <div
+        style={{
+          width: railMode ? 52 : 240,
+          minWidth: railMode ? 52 : 240,
+          transition: "width 0.2s ease",
+          background: "#0F172A",
+          height: "100vh",
+          display: "flex",
+          flexDirection: "column",
+          position: "relative",
+          flexShrink: 0,
+          overflowX: "hidden",
+        }}
       >
-        <SidebarHeader className="px-4 py-5">
+        {/* Header */}
+        <div
+          style={{
+            padding: "20px 16px",
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: railMode ? "center" : "flex-start",
+          }}
+        >
           {!railMode && (
             <div className="flex items-center gap-2">
               <div className="h-8 w-8 rounded bg-gradient-to-br from-blue-600 to-blue-400 flex items-center justify-center shadow-sm">
                 <span className="font-bold text-sm text-white">B</span>
               </div>
-              <span className="font-bold text-lg text-sidebar-foreground tracking-tight">
-                BizDocs
-              </span>
+              <span className="font-bold text-lg text-white tracking-tight">BizDocs</span>
             </div>
           )}
           {railMode && (
-            <div className="h-8 w-8 rounded bg-gradient-to-br from-blue-600 to-blue-400 flex items-center justify-center mx-auto shadow-sm">
+            <div className="h-8 w-8 rounded bg-gradient-to-br from-blue-600 to-blue-400 flex items-center justify-center shadow-sm">
               <span className="font-bold text-sm text-white">B</span>
             </div>
           )}
-        </SidebarHeader>
+        </div>
 
-        {railMode ? railContent : fullContent}
+        {/* Scrollable content */}
+        <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
+          {railMode ? (
+            /* Rail mode: one icon per group */
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "8px 0", gap: 2 }}>
+              {ALL_GROUP_NAMES.map((groupName) => {
+                const GroupIcon = GROUP_ICONS[groupName] ?? LayoutDashboard;
+                const active = isGroupActive(groupName);
+                const hovered = hoveredGroup === groupName;
+                return (
+                  <div
+                    key={groupName}
+                    style={{
+                      width: 52,
+                      height: 44,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor: "pointer",
+                      borderRadius: 8,
+                      background: active
+                        ? "rgba(30,58,138,0.5)"
+                        : hovered
+                        ? "rgba(255,255,255,0.1)"
+                        : "transparent",
+                      color: active || hovered ? "#ffffff" : "#94a3b8",
+                      transition: "background 0.15s, color 0.15s",
+                    }}
+                    onMouseEnter={(e) => handleGroupEnter(groupName, e)}
+                    onMouseLeave={handleGroupLeave}
+                    title={groupName}
+                  >
+                    <GroupIcon style={{ width: 18, height: 18 }} />
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            /* Full mode: collapsible nav groups */
+            <div>
+              <NavGroup
+                label="Start Here"
+                items={startHereNav}
+                isActive={isActive}
+                open={groupOpen["Start Here"]}
+                onToggle={() => toggleGroup("Start Here")}
+              />
 
-        <SidebarFooter className="px-4 py-3">
-          <div className="flex items-center justify-between">
-            {!railMode && (
-              <p className="text-slate-500 text-xs font-mono">FY 2025–26</p>
+              {/* Daily Work — inline with WIP badge */}
+              <SidebarGroup>
+                <SidebarGroupLabel
+                  className="text-slate-500 text-[10px] uppercase tracking-widest font-semibold cursor-pointer flex items-center justify-between hover:text-slate-300 transition-colors select-none"
+                  onClick={() => toggleGroup("Daily Work")}
+                >
+                  Daily Work
+                  {groupOpen["Daily Work"] ? (
+                    <ChevronDown className="h-3 w-3 shrink-0 opacity-70" />
+                  ) : (
+                    <ChevronRight className="h-3 w-3 shrink-0 opacity-70" />
+                  )}
+                </SidebarGroupLabel>
+                {groupOpen["Daily Work"] && (
+                  <SidebarGroupContent>
+                    <SidebarMenu>
+                      {dailyWorkNav.map((item) => (
+                        <SidebarMenuItem key={item.title}>
+                          <SidebarMenuButton asChild isActive={isActive(item.url)}>
+                            <NavLink
+                              to={item.url}
+                              className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                              activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
+                            >
+                              <item.icon className="h-4 w-4 shrink-0" />
+                              <span>{item.title}</span>
+                            </NavLink>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      ))}
+                      {/* WIP Register with overdue badge */}
+                      <SidebarMenuItem>
+                        <SidebarMenuButton asChild isActive={isActive("/wip-register")}>
+                          <NavLink
+                            to="/wip-register"
+                            className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                            activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
+                          >
+                            <AlertTriangle className="h-4 w-4 shrink-0" />
+                            <span className="flex-1 flex items-center justify-between">
+                              WIP Register
+                              {wipSummary && wipSummary.overdueReturns > 0 && (
+                                <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                                  {wipSummary.overdueReturns}
+                                </span>
+                              )}
+                            </span>
+                          </NavLink>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    </SidebarMenu>
+                  </SidebarGroupContent>
+                )}
+              </SidebarGroup>
+
+              <NavGroup
+                label="Purchasing"
+                items={purchasingNav}
+                isActive={isActive}
+                open={groupOpen["Purchasing"]}
+                onToggle={() => toggleGroup("Purchasing")}
+              />
+              <NavGroup
+                label="Dispatch & Billing"
+                items={dispatchBillingNav}
+                isActive={isActive}
+                open={groupOpen["Dispatch & Billing"]}
+                onToggle={() => toggleGroup("Dispatch & Billing")}
+              />
+              <NavGroup
+                label="Master Data"
+                items={masterDataNav}
+                isActive={isActive}
+                open={groupOpen["Master Data"]}
+                onToggle={() => toggleGroup("Master Data")}
+              />
+              <NavGroup
+                label="Reports"
+                items={reportsNav}
+                isActive={isActive}
+                open={groupOpen["Reports"]}
+                onToggle={() => toggleGroup("Reports")}
+              />
+
+              {/* Quality & Compliance — inline with FAT + Warranty badges */}
+              <SidebarGroup>
+                <SidebarGroupLabel
+                  className="text-slate-500 text-[10px] uppercase tracking-widest font-semibold cursor-pointer flex items-center justify-between hover:text-slate-300 transition-colors select-none"
+                  onClick={() => toggleGroup("Quality & Compliance")}
+                >
+                  Quality &amp; Compliance
+                  {groupOpen["Quality & Compliance"] ? (
+                    <ChevronDown className="h-3 w-3 shrink-0 opacity-70" />
+                  ) : (
+                    <ChevronRight className="h-3 w-3 shrink-0 opacity-70" />
+                  )}
+                </SidebarGroupLabel>
+                {groupOpen["Quality & Compliance"] && (
+                  <SidebarGroupContent>
+                    <SidebarMenu>
+                      <SidebarMenuItem>
+                        <SidebarMenuButton asChild isActive={isActive("/serial-numbers")}>
+                          <NavLink
+                            to="/serial-numbers"
+                            className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                            activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
+                          >
+                            <Hash className="h-4 w-4 shrink-0" />
+                            <span>Serial Numbers</span>
+                          </NavLink>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                      {/* FAT Certificates with pending badge */}
+                      <SidebarMenuItem>
+                        <SidebarMenuButton asChild isActive={isActive("/fat-certificates")}>
+                          <NavLink
+                            to="/fat-certificates"
+                            className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                            activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
+                          >
+                            <ClipboardCheck className="h-4 w-4 shrink-0" />
+                            <span className="flex-1 flex items-center justify-between">
+                              FAT Certificates
+                              {fatStats && fatStats.pending > 0 && (
+                                <span className="ml-auto bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                                  {fatStats.pending}
+                                </span>
+                              )}
+                            </span>
+                          </NavLink>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                      {/* Warranty Tracker with expiring soon badge */}
+                      <SidebarMenuItem>
+                        <SidebarMenuButton asChild isActive={isActive("/warranty-tracker")}>
+                          <NavLink
+                            to="/warranty-tracker"
+                            className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                            activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
+                          >
+                            <Shield className="h-4 w-4 shrink-0" />
+                            <span className="flex-1 flex items-center justify-between">
+                              Warranty Tracker
+                              {serialStats && serialStats.expiringSoon > 0 && (
+                                <span className="ml-auto bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                                  {serialStats.expiringSoon}
+                                </span>
+                              )}
+                            </span>
+                          </NavLink>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    </SidebarMenu>
+                  </SidebarGroupContent>
+                )}
+              </SidebarGroup>
+
+              <NavGroup
+                label="Settings"
+                items={settingsNav}
+                isActive={isActive}
+                open={groupOpen["Settings"]}
+                onToggle={() => toggleGroup("Settings")}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div
+          style={{
+            padding: "12px 16px",
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: railMode ? "center" : "space-between",
+            borderTop: "1px solid rgba(100,116,139,0.15)",
+          }}
+        >
+          {!railMode && (
+            <p className="text-slate-500 text-xs font-mono">FY 2025–26</p>
+          )}
+          <button
+            onClick={toggleRailMode}
+            title={railMode ? "Expand sidebar" : "Switch to icon rail"}
+            className="flex items-center justify-center h-7 w-7 rounded-md text-slate-500 hover:text-slate-300 hover:bg-white/10 transition-colors"
+          >
+            {railMode ? (
+              <PanelLeft className="h-4 w-4" />
+            ) : (
+              <PanelLeftClose className="h-4 w-4" />
             )}
-            <button
-              onClick={toggleRailMode}
-              title={railMode ? "Expand sidebar" : "Switch to icon rail"}
-              className={`flex items-center justify-center h-7 w-7 rounded-md text-slate-500 hover:text-slate-300 hover:bg-white/10 transition-colors ${railMode ? "mx-auto" : ""}`}
-            >
-              {railMode ? (
-                <PanelLeft className="h-4 w-4" />
-              ) : (
-                <PanelLeftClose className="h-4 w-4" />
-              )}
-            </button>
-          </div>
-        </SidebarFooter>
-      </Sidebar>
+          </button>
+        </div>
+      </div>
 
-      {/* Rail mode flyout — rendered into document.body via portal to escape any stacking context */}
+      {/* Rail mode flyout — rendered into document.body via portal */}
       {railMode && hoveredGroup && createPortal(
         <div
           style={{
             position: "fixed",
-            left: 48,
+            left: 52,
             top: flyoutY,
             zIndex: 9999,
             minWidth: 210,

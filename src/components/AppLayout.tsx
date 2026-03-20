@@ -1,4 +1,4 @@
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { MobileNav } from "@/components/MobileNav";
 import { Outlet, useNavigate } from "react-router-dom";
@@ -33,7 +33,6 @@ export function AppLayout() {
         <div className="flex-1 flex flex-col min-w-0">
           <header className="h-12 flex items-center justify-between border-b border-border bg-card px-4 shrink-0">
             <div className="flex items-center gap-2">
-              <SidebarTrigger className="hidden md:flex text-muted-foreground hover:text-foreground" />
               <div className="md:hidden">
                 <span className="font-display font-bold text-foreground">BizDocs</span>
               </div>
