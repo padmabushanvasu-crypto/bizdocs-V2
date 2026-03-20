@@ -495,7 +495,7 @@ export default function DeliveryChallanForm() {
               <tr className="bg-secondary text-muted-foreground text-xs uppercase tracking-wider">
                 <th className="px-3 py-2 text-left w-8">#</th>
                 <th className="px-3 py-2 text-left w-[100px]">Item Code</th>
-                <th className="px-3 py-2 text-left min-w-[150px]">Description</th>
+                <th className="px-3 py-2 text-left min-w-[180px]">Description</th>
                 <th className="px-3 py-2 text-left min-w-[160px]">Nature of Process</th>
                 <th className="px-3 py-2 text-left w-[90px]">Drawing #</th>
                 <th className="px-3 py-2 text-left w-[60px]">Unit</th>
