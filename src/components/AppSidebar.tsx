@@ -35,7 +35,7 @@ import {
   Database,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { fetchWipSummary } from "@/lib/job-cards-api";
 import { fetchFatStats, fetchSerialStats } from "@/lib/fat-api";
@@ -227,6 +227,7 @@ function NavGroup({
 
 export function AppSidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
 
   const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>(loadGroupState);
   const [railMode, setRailMode] = useState<boolean>(() => {
@@ -388,7 +389,7 @@ export function AppSidebar() {
           }}
         >
           {!railMode && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/dashboard')}>
               <div className="h-8 w-8 rounded bg-gradient-to-br from-blue-600 to-blue-400 flex items-center justify-center shadow-sm">
                 <span className="font-bold text-sm text-white">B</span>
               </div>
@@ -396,7 +397,7 @@ export function AppSidebar() {
             </div>
           )}
           {railMode && (
-            <div className="h-8 w-8 rounded bg-gradient-to-br from-blue-600 to-blue-400 flex items-center justify-center shadow-sm">
+            <div className="h-8 w-8 rounded bg-gradient-to-br from-blue-600 to-blue-400 flex items-center justify-center shadow-sm cursor-pointer" onClick={() => navigate('/dashboard')}>
               <span className="font-bold text-sm text-white">B</span>
             </div>
           )}

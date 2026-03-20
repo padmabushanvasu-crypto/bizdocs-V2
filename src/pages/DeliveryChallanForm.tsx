@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, ChevronDown, Info } from "lucide-react";
+import { Plus, Trash2, ChevronDown, Info, ChevronLeft } from "lucide-react";
 import { ItemSuggest } from "@/components/ItemSuggest";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -279,6 +279,13 @@ export default function DeliveryChallanForm() {
 
   return (
     <div className="p-4 md:p-6 pb-24 space-y-6 max-w-5xl mx-auto">
+      <button
+        onClick={() => navigate(-1)}
+        className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 transition-colors mb-3"
+      >
+        <ChevronLeft className="h-4 w-4" />
+        Back
+      </button>
       <div>
         <h1 className="text-xl font-display font-bold text-foreground">
           {isEdit ? "Edit Delivery Challan" : "New Delivery Challan"}

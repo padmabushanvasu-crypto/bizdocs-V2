@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { Upload, Download, CheckCircle, XCircle, AlertTriangle, Table, Users, Package, GitFork } from "lucide-react";
+import { Upload, Download, CheckCircle, XCircle, AlertTriangle, Table, Users, Package, GitFork, ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { useToast } from "@/hooks/use-toast";
@@ -649,6 +650,7 @@ function ImportTab({
 // ── Main Page ──────────────────────────────────────────────────────────────
 
 export default function DataImport() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("parties");
 
@@ -741,6 +743,13 @@ export default function DataImport() {
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-4xl mx-auto">
+      <button
+        onClick={() => navigate(-1)}
+        className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 transition-colors mb-3"
+      >
+        <ChevronLeft className="h-4 w-4" />
+        Back
+      </button>
       <div>
         <h1 className="text-xl font-bold text-slate-900 tracking-tight">Data Import</h1>
         <p className="text-sm text-slate-500 mt-0.5">

@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { FileText, Edit, Copy, X, ShoppingCart, Clock, CheckCircle2, AlertCircle, Package, Trash2 } from "lucide-react";
+import { FileText, Edit, Copy, X, ShoppingCart, Clock, CheckCircle2, AlertCircle, Package, Trash2, ChevronLeft } from "lucide-react";
 import { EditableSection } from "@/components/EditableSection";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -108,6 +108,13 @@ export default function PurchaseOrderDetail() {
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-5xl mx-auto">
+      <button
+        onClick={() => navigate(-1)}
+        className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 transition-colors mb-3"
+      >
+        <ChevronLeft className="h-4 w-4" />
+        Back
+      </button>
       {/* Top Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div className="flex items-center gap-3">

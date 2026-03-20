@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, AlertTriangle, PackageCheck } from "lucide-react";
+import { ChevronDown, AlertTriangle, PackageCheck, ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -211,6 +211,13 @@ export default function GRNForm() {
 
   return (
     <div className="p-4 md:p-6 pb-24 space-y-6 max-w-5xl mx-auto">
+      <button
+        onClick={() => navigate(-1)}
+        className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 transition-colors mb-3"
+      >
+        <ChevronLeft className="h-4 w-4" />
+        Back
+      </button>
       <div>
         <h1 className="text-xl font-display font-bold text-foreground">New Goods Receipt Note</h1>
         <p className="text-sm text-muted-foreground">Record incoming material against a purchase order</p>

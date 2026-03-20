@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { Bell, Save, X } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Bell, Save, X, ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -92,6 +93,7 @@ function EmailTagInput({
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function NotificationsSettings() {
+  const navigate = useNavigate();
   const { toast } = useToast();
   const [settings, setSettings] = useState<NotificationSettings>(DEFAULTS);
   const [loading, setLoading] = useState(true);
@@ -131,6 +133,13 @@ export default function NotificationsSettings() {
 
   return (
     <div className="space-y-6">
+      <button
+        onClick={() => navigate(-1)}
+        className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 transition-colors mb-3"
+      >
+        <ChevronLeft className="h-4 w-4" />
+        Back
+      </button>
       <div className="flex items-center gap-2">
         <Bell className="h-5 w-5 text-blue-600" />
         <h2 className="text-lg font-semibold text-slate-900">Notification Settings</h2>
