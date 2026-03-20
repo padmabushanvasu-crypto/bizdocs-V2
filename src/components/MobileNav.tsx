@@ -12,14 +12,12 @@ import {
   Truck,
   Receipt,
   Settings,
-  X,
   Layers,
   ShoppingBag,
   BookOpen,
   Plus,
   FileText,
   Send,
-  ClipboardCheck,
 } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -181,15 +179,7 @@ export function MobileNav() {
       <Sheet open={createOpen} onOpenChange={setCreateOpen}>
         <SheetContent side="bottom" className="md:hidden rounded-t-2xl p-0">
           <SheetHeader className="px-5 pt-4 pb-3 border-b border-border">
-            <div className="flex items-center justify-between">
-              <SheetTitle className="text-base font-bold">Create New</SheetTitle>
-              <button
-                onClick={() => setCreateOpen(false)}
-                className="h-7 w-7 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+            <SheetTitle className="text-base font-bold">Create New</SheetTitle>
           </SheetHeader>
           <div className="px-4 py-4 grid grid-cols-2 gap-3">
             {CREATE_TYPES.map((type) => (
@@ -212,15 +202,7 @@ export function MobileNav() {
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetContent side="bottom" className="md:hidden h-[75vh] rounded-t-2xl p-0 overflow-y-auto">
           <SheetHeader className="px-5 pt-4 pb-3 border-b border-border sticky top-0 bg-background z-10">
-            <div className="flex items-center justify-between">
-              <SheetTitle className="text-base font-bold">Menu</SheetTitle>
-              <button
-                onClick={() => setSheetOpen(false)}
-                className="h-7 w-7 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+            <SheetTitle className="text-base font-bold">Menu</SheetTitle>
           </SheetHeader>
 
           <div className="px-4 py-3 space-y-4">
