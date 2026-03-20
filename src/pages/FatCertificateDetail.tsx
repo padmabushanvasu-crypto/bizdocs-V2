@@ -20,6 +20,7 @@ import {
   type FatTestResult,
 } from "@/lib/fat-api";
 import { DocumentHeader } from "@/components/DocumentHeader";
+import { DocumentActions } from "@/components/DocumentActions";
 import { format } from "date-fns";
 
 const statusClass: Record<string, string> = {
@@ -171,7 +172,7 @@ export default function FatCertificateDetail() {
         <Button variant="ghost" size="sm" onClick={() => navigate("/fat-certificates")} className="gap-1.5 -ml-2">
           <ArrowLeft className="h-4 w-4" /> FAT Certificates
         </Button>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           {!isCompleted && dirty && (
             <Button variant="outline" size="sm" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
               {saveMutation.isPending ? "Saving..." : "Save Progress"}
@@ -180,6 +181,22 @@ export default function FatCertificateDetail() {
           <Button variant="outline" size="sm" onClick={() => window.print()}>
             <Printer className="h-3.5 w-3.5 mr-1" /> Print
           </Button>
+          <DocumentActions
+            documentNumber={fat.fat_number}
+            documentType="FAT Certificate"
+            partyName={fat.customer_name}
+            date={fat.fat_date}
+            customMessage={[
+              `FAT Certificate: ${fat.fat_number}`,
+              fat.item_description ? `Item: ${fat.item_description}` : null,
+              fat.item_code ? `Item Code: ${fat.item_code}` : null,
+              fat.serial_number ? `Serial No: ${fat.serial_number}` : null,
+              fat.customer_name ? `Customer: ${fat.customer_name}` : null,
+              fat.customer_po_ref ? `Customer PO: ${fat.customer_po_ref}` : null,
+              isCompleted ? `Overall Result: ${fat.overall_result?.toUpperCase() ?? fat.status.toUpperCase()}` : `Status: Pending`,
+              fat.tested_by ? `Tested By: ${fat.tested_by}` : null,
+            ].filter(Boolean).join("\n")}
+          />
         </div>
       </div>
 

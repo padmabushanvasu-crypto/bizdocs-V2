@@ -28,9 +28,28 @@ async function downloadTemplate(sheetName: string, headers: string[]) {
   (XLSX as any).writeFile(wb, `${sheetName.replace(/\s/g, "_")}_Template.xlsx`);
 }
 
+async function downloadBOMTemplate() {
+  const XLSX = await import("xlsx-js-style");
+  const wb = (XLSX as any).utils.book_new();
+  const headers = ["Parent Item Code *", "Child Item Code *", "Quantity *", "Unit", "Scrap Factor %", "Variant Name", "Notes"];
+  const examples = [
+    ["PROD-001", "COMP-A", "2", "NOS", "5", "", "Main component"],
+    ["PROD-001", "COMP-B", "1", "KG", "0", "Variant-1", "Optional variant"],
+    ["PROD-002", "COMP-A", "4", "NOS", "2", "", "Sub-assembly use"],
+  ];
+  const ws = (XLSX as any).utils.aoa_to_sheet([headers, ...examples]);
+  // Style header row bold
+  headers.forEach((_h, i) => {
+    const cell = String.fromCharCode(65 + i) + "1";
+    if (ws[cell]) ws[cell].s = { font: { bold: true } };
+  });
+  (XLSX as any).utils.book_append_sheet(wb, ws, "BOM Import");
+  (XLSX as any).writeFile(wb, "BOM_Import_Template.xlsx");
+}
+
 const PARTY_HEADERS = ["Company Name *", "Party Type (vendor/customer/both) *", "Contact Person", "Address Line 1", "City", "State", "PIN Code", "Phone 1", "Email", "GSTIN", "PAN", "Payment Terms", "Notes"];
 const ITEM_HEADERS = ["Item Code *", "Description *", "Item Type *", "Unit", "HSN/SAC Code", "Sale Price", "Purchase Price", "GST Rate %", "Min Stock", "Notes"];
-const BOM_HEADERS = ["Parent Item Code *", "Child Item Code *", "Quantity *", "Unit"];
+// BOM template is handled by downloadBOMTemplate() with example rows
 const STOCK_HEADERS = ["Item Code *", "Opening Stock Qty *", "Notes"];
 
 // ── Preview Table ──────────────────────────────────────────────────────────
@@ -62,6 +81,323 @@ function PreviewTable({ rows, errorRows }: { rows: Record<string, string>[]; err
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ── Preview Table with per-row error tooltip ───────────────────────────────
+
+function PreviewTableWithErrors({
+  rows,
+  errorRows,
+  errorMessages,
+}: {
+  rows: Record<string, string>[];
+  errorRows: Set<number>;
+  errorMessages: Map<number, string>;
+}) {
+  if (rows.length === 0) return null;
+  const headers = Object.keys(rows[0]);
+  return (
+    <div className="overflow-auto max-h-64 border border-border rounded-lg">
+      <table className="w-full text-xs">
+        <thead className="bg-muted sticky top-0">
+          <tr>
+            <th className="px-2 py-1.5 text-left text-muted-foreground font-semibold">#</th>
+            {headers.map((h) => (
+              <th key={h} className="px-2 py-1.5 text-left text-muted-foreground font-semibold whitespace-nowrap">
+                {h}
+              </th>
+            ))}
+            <th className="px-2 py-1.5 text-left text-muted-foreground font-semibold">Issue</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => {
+            const hasError = errorRows.has(i);
+            return (
+              <tr key={i} className={hasError ? "bg-red-50" : i % 2 === 0 ? "bg-white" : "bg-muted/20"}>
+                <td className="px-2 py-1 text-muted-foreground">{i + 1}</td>
+                {headers.map((h) => (
+                  <td key={h} className="px-2 py-1 max-w-[140px] truncate">{String(row[h] ?? "")}</td>
+                ))}
+                <td className="px-2 py-1 text-red-700 text-[10px] max-w-[160px]">
+                  {hasError ? errorMessages.get(i) : ""}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── BOM Import Tab (async validation + upsert + variant support) ───────────
+
+function BOMImportTab() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const [rows, setRows] = useState<Record<string, string>[]>([]);
+  const [validRows, setValidRows] = useState<Record<string, string>[]>([]);
+  const [errorRows, setErrorRows] = useState<Set<number>>(new Set());
+  const [errorMessages, setErrorMessages] = useState<Map<number, string>>(new Map());
+  const [errors, setErrors] = useState<string[]>([]);
+  const [validating, setValidating] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{ imported: number; updated: number; skipped: number } | null>(null);
+
+  const clearAll = () => {
+    setRows([]); setValidRows([]); setErrors([]);
+    setErrorRows(new Set()); setErrorMessages(new Map()); setResult(null);
+  };
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const parsed = await parseExcel(file);
+      setRows(parsed);
+      setValidating(true);
+      setResult(null);
+
+      // Collect all codes for batch existence check
+      const allCodes = [
+        ...new Set(
+          parsed.flatMap((r) =>
+            [r["Parent Item Code *"]?.trim(), r["Child Item Code *"]?.trim()].filter(Boolean)
+          )
+        ),
+      ];
+      const { data: itemsData } = await supabase
+        .from("items")
+        .select("id, item_code")
+        .in("item_code", allCodes);
+      const existingCodes = new Set((itemsData ?? []).map((i: any) => i.item_code));
+
+      const newErrorRows = new Set<number>();
+      const newErrorMsgs = new Map<number, string>();
+      const newErrors: string[] = [];
+      const newValidRows: Record<string, string>[] = [];
+
+      parsed.forEach((row, i) => {
+        const parentCode = row["Parent Item Code *"]?.trim();
+        const childCode = row["Child Item Code *"]?.trim();
+        const qty = parseFloat(row["Quantity *"] || "0");
+
+        let rowError = "";
+        if (!parentCode) rowError = "Parent Item Code required";
+        else if (!childCode) rowError = "Child Item Code required";
+        else if (qty <= 0) rowError = "Quantity must be > 0";
+        else if (parentCode === childCode) rowError = "Self-reference: parent and child are the same";
+        else if (!existingCodes.has(parentCode)) rowError = `Parent not found: ${parentCode}`;
+        else if (!existingCodes.has(childCode)) rowError = `Child not found: ${childCode}`;
+
+        if (rowError) {
+          newErrorRows.add(i);
+          newErrorMsgs.set(i, rowError);
+          newErrors.push(`Row ${i + 1}: ${rowError}`);
+        } else {
+          newValidRows.push(row);
+        }
+      });
+
+      setErrorRows(newErrorRows);
+      setErrorMessages(newErrorMsgs);
+      setErrors(newErrors);
+      setValidRows(newValidRows);
+      setValidating(false);
+    } catch (err: any) {
+      toast({ title: "Failed to parse file", description: err.message, variant: "destructive" });
+      setValidating(false);
+    }
+    e.target.value = "";
+  };
+
+  const handleImport = async () => {
+    if (validRows.length === 0) return;
+    setLoading(true);
+    try {
+      const companyId = await getCompanyId();
+      const codes = [
+        ...new Set(
+          validRows.flatMap((r) =>
+            [r["Parent Item Code *"]?.trim(), r["Child Item Code *"]?.trim()].filter(Boolean)
+          )
+        ),
+      ];
+      const { data: itemsData } = await supabase.from("items").select("id, item_code").in("item_code", codes);
+      const codeToId = new Map((itemsData ?? []).map((i: any) => [i.item_code, i.id]));
+
+      let imported = 0, updated = 0, skipped = 0;
+
+      for (const row of validRows) {
+        const parentCode = row["Parent Item Code *"]?.trim();
+        const childCode = row["Child Item Code *"]?.trim();
+        const qty = parseFloat(row["Quantity *"] || "0");
+        const parentId = codeToId.get(parentCode);
+        const childId = codeToId.get(childCode);
+        if (!parentId || !childId) { skipped++; continue; }
+
+        // Variant find-or-create
+        const variantName = row["Variant Name"]?.trim();
+        let variantId = null;
+        if (variantName) {
+          const { data: existingVariant } = await (supabase as any)
+            .from("bom_variants")
+            .select("id")
+            .eq("parent_item_id", parentId)
+            .eq("variant_name", variantName)
+            .maybeSingle();
+          if (existingVariant) {
+            variantId = existingVariant.id;
+          } else {
+            const { data: newVariant } = await (supabase as any)
+              .from("bom_variants")
+              .insert({ parent_item_id: parentId, variant_name: variantName, company_id: companyId })
+              .select("id")
+              .single();
+            variantId = newVariant?.id ?? null;
+          }
+        }
+
+        const payload: any = {
+          quantity: qty,
+          unit: row["Unit"]?.trim() || "NOS",
+          scrap_factor: parseFloat(row["Scrap Factor %"] || "0") || 0,
+          notes: row["Notes"]?.trim() || null,
+        };
+        if (variantId) payload.variant_id = variantId;
+
+        try {
+          const { data: existing } = await (supabase as any)
+            .from("bom_lines")
+            .select("id")
+            .eq("company_id", companyId)
+            .eq("parent_item_id", parentId)
+            .eq("child_item_id", childId)
+            .maybeSingle();
+
+          if (existing) {
+            await (supabase as any).from("bom_lines").update(payload).eq("id", existing.id);
+            updated++;
+          } else {
+            await (supabase as any).from("bom_lines").insert({
+              ...payload,
+              company_id: companyId,
+              parent_item_id: parentId,
+              child_item_id: childId,
+            });
+            imported++;
+          }
+        } catch {
+          skipped++;
+        }
+      }
+
+      setResult({ imported, updated, skipped });
+      toast({ title: `BOM import complete`, description: `${imported} new, ${updated} updated, ${skipped} skipped` });
+      setRows([]); setValidRows([]);
+      queryClient.invalidateQueries({ queryKey: ["bom-lines"] });
+    } catch (err: any) {
+      toast({ title: "Import failed", description: err.message, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Result Banner */}
+      {result && (
+        <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg p-3">
+          <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
+          <span className="text-sm text-green-800 font-medium">
+            {result.imported} new · {result.updated} updated · {result.skipped} skipped
+          </span>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="flex flex-wrap gap-3">
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={downloadBOMTemplate}>
+          <Download className="h-4 w-4" /> Download Template
+        </Button>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => fileRef.current?.click()}>
+          <Upload className="h-4 w-4" /> Choose Excel File
+        </Button>
+        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFile} />
+        {validRows.length > 0 && (
+          <Button
+            size="sm"
+            className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"
+            onClick={handleImport}
+            disabled={loading || validating}
+          >
+            {loading ? "Importing…" : `Import ${validRows.length} Valid Row${validRows.length !== 1 ? "s" : ""}`}
+          </Button>
+        )}
+        {rows.length > 0 && (
+          <Button size="sm" variant="ghost" onClick={clearAll}>Clear</Button>
+        )}
+      </div>
+
+      {/* Summary chips */}
+      {rows.length > 0 && !validating && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-green-50 border border-green-200 text-green-800 text-xs font-medium">
+            <CheckCircle className="h-3 w-3" /> {validRows.length} valid
+          </span>
+          {errorRows.size > 0 && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-50 border border-red-200 text-red-800 text-xs font-medium">
+              <XCircle className="h-3 w-3" /> {errorRows.size} errors — will be skipped
+            </span>
+          )}
+        </div>
+      )}
+      {rows.length > 0 && validating && (
+        <p className="text-xs text-muted-foreground">Validating item codes…</p>
+      )}
+
+      {/* Validation Error List */}
+      {errors.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1">
+          <div className="flex items-center gap-1.5 text-amber-800 text-xs font-semibold">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            {errors.length} issue{errors.length !== 1 ? "s" : ""} found — affected rows highlighted in red
+          </div>
+          {errors.slice(0, 5).map((e, i) => (
+            <p key={i} className="text-xs text-amber-700 pl-5">{e}</p>
+          ))}
+          {errors.length > 5 && <p className="text-xs text-amber-600 pl-5">…and {errors.length - 5} more</p>}
+        </div>
+      )}
+
+      {/* Preview */}
+      {rows.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-slate-700">Preview — {rows.length} rows</p>
+          <PreviewTableWithErrors
+            rows={rows.slice(0, 20)}
+            errorRows={errorRows}
+            errorMessages={errorMessages}
+          />
+          {rows.length > 20 && (
+            <p className="text-xs text-muted-foreground">Showing first 20 of {rows.length} rows</p>
+          )}
+        </div>
+      )}
+
+      {/* Empty state */}
+      {rows.length === 0 && !result && (
+        <div className="border-2 border-dashed border-border rounded-xl py-12 text-center">
+          <GitFork className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground font-medium">Upload an Excel file to preview and import BOM Lines</p>
+          <p className="text-xs text-muted-foreground mt-1">Download the template above to get started · 7 columns with 3 example rows</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -277,44 +613,6 @@ export default function DataImport() {
     return { imported, skipped, errors };
   };
 
-  const handleBOMImport = async (rows: Record<string, string>[]) => {
-    const companyId = await getCompanyId();
-    let imported = 0, skipped = 0;
-    const errors: string[] = [];
-
-    // Resolve item codes to IDs
-    const codes = [...new Set(rows.flatMap((r) => [r["Parent Item Code *"], r["Child Item Code *"]]).filter(Boolean))];
-    const { data: itemsData } = await supabase.from("items").select("id, item_code").in("item_code", codes);
-    const codeToId = new Map((itemsData ?? []).map((i: any) => [i.item_code, i.id]));
-
-    for (const row of rows) {
-      const parentCode = row["Parent Item Code *"]?.trim();
-      const childCode = row["Child Item Code *"]?.trim();
-      const qty = parseFloat(row["Quantity *"] || "0");
-      if (!parentCode || !childCode || !qty) { skipped++; continue; }
-      const parentId = codeToId.get(parentCode);
-      const childId = codeToId.get(childCode);
-      if (!parentId || !childId) {
-        skipped++;
-        errors.push(`Item codes not found: ${parentCode} → ${childCode}`);
-        continue;
-      }
-      try {
-        await (supabase as any).from("bom_lines").insert({
-          company_id: companyId,
-          parent_item_id: parentId,
-          child_item_id: childId,
-          quantity: qty,
-          unit: row["Unit"] || "NOS",
-        });
-        imported++;
-      } catch {
-        skipped++;
-      }
-    }
-    return { imported, skipped, errors };
-  };
-
   const handleStockImport = async (rows: Record<string, string>[]) => {
     let imported = 0, skipped = 0;
     const errors: string[] = [];
@@ -407,21 +705,10 @@ export default function DataImport() {
         <TabsContent value="bom" className="paper-card mt-4">
           <h2 className="font-semibold text-slate-900 mb-1">Import Bill of Materials</h2>
           <p className="text-sm text-muted-foreground mb-4">
-            Define parent-child relationships between items. Both items must already exist in the system.
+            Define parent-child relationships. Both items must already exist. Existing BOM lines are updated (upsert).
+            Supports Variant Name and Scrap Factor columns.
           </p>
-          <ImportTab
-            title="BOM Lines"
-            icon={GitFork}
-            templateHeaders={BOM_HEADERS}
-            templateSheetName="BOM Import"
-            onImport={handleBOMImport}
-            validate={(row) => {
-              if (!row["Parent Item Code *"]?.trim()) return "Parent Item Code is required";
-              if (!row["Child Item Code *"]?.trim()) return "Child Item Code is required";
-              if (!parseFloat(row["Quantity *"] || "0")) return "Quantity must be > 0";
-              return null;
-            }}
-          />
+          <BOMImportTab />
         </TabsContent>
 
         <TabsContent value="stock" className="paper-card mt-4">

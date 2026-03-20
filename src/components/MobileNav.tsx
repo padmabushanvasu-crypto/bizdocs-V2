@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
   LayoutDashboard,
-  FileText,
   Package,
   MoreHorizontal,
   Activity,
@@ -17,8 +16,12 @@ import {
   Layers,
   ShoppingBag,
   BookOpen,
+  Plus,
+  FileText,
+  Send,
+  ClipboardCheck,
 } from "lucide-react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -64,15 +67,27 @@ const MORE_GROUPS = [
   },
 ];
 
+const CREATE_TYPES = [
+  { label: "Invoice", to: "/invoices/new", icon: FileText },
+  { label: "Sales Order", to: "/sales-orders/new", icon: ShoppingBag },
+  { label: "Purchase Order", to: "/purchase-orders/new", icon: ShoppingCart },
+  { label: "Delivery Challan", to: "/delivery-challans/new", icon: Truck },
+  { label: "GRN", to: "/grn/new", icon: PackageCheck },
+  { label: "Dispatch Note", to: "/dispatch-notes/new", icon: Send },
+  { label: "Work Order", to: "/job-cards", icon: Activity },
+  { label: "Assembly Order", to: "/assembly-orders", icon: Layers },
+];
+
 const MAIN_TABS = [
   { label: "Home", icon: LayoutDashboard, to: "/" },
   { label: "Work Orders", icon: Activity, to: "/job-cards" },
-  { label: "Invoices", icon: FileText, to: "/invoices" },
   { label: "Items", icon: Package, to: "/items" },
 ];
 
 export function MobileNav() {
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const navigate = useNavigate();
 
   const { data: reorderData } = useQuery({
     queryKey: ["reorder-summary"],
@@ -81,26 +96,68 @@ export function MobileNav() {
   });
   const criticalCount = (reorderData as any)?.critical ?? 0;
 
+  const handleCreate = (to: string) => {
+    setCreateOpen(false);
+    navigate(to);
+  };
+
   return (
     <>
       <nav className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border md:hidden">
         <div className="flex items-center justify-around h-14">
-          {MAIN_TABS.map((tab) => (
-            <NavLink
-              key={tab.to}
-              to={tab.to}
-              end={tab.to === "/"}
-              className={({ isActive }) =>
-                cn(
-                  "flex flex-col items-center justify-center gap-0.5 flex-1 h-full text-muted-foreground transition-colors",
-                  isActive && "text-primary"
-                )
-              }
+          {/* Home */}
+          <NavLink
+            to={MAIN_TABS[0].to}
+            end
+            className={({ isActive }) =>
+              cn(
+                "flex flex-col items-center justify-center gap-0.5 flex-1 h-full text-muted-foreground transition-colors",
+                isActive && "text-primary"
+              )
+            }
+          >
+            <MAIN_TABS[0].icon className="h-5 w-5" />
+            <span className="text-[10px] font-medium">{MAIN_TABS[0].label}</span>
+          </NavLink>
+
+          {/* Work Orders */}
+          <NavLink
+            to={MAIN_TABS[1].to}
+            className={({ isActive }) =>
+              cn(
+                "flex flex-col items-center justify-center gap-0.5 flex-1 h-full text-muted-foreground transition-colors",
+                isActive && "text-primary"
+              )
+            }
+          >
+            <MAIN_TABS[1].icon className="h-5 w-5" />
+            <span className="text-[10px] font-medium">{MAIN_TABS[1].label}</span>
+          </NavLink>
+
+          {/* Center + button */}
+          <div className="flex items-center justify-center flex-1 h-full">
+            <button
+              onClick={() => setCreateOpen(true)}
+              className="h-12 w-12 -mt-5 rounded-full bg-blue-600 shadow-lg flex items-center justify-center text-white active:scale-95 transition-transform"
+              aria-label="Create new"
             >
-              <tab.icon className="h-5 w-5" />
-              <span className="text-[10px] font-medium">{tab.label}</span>
-            </NavLink>
-          ))}
+              <Plus className="h-6 w-6" />
+            </button>
+          </div>
+
+          {/* Items */}
+          <NavLink
+            to={MAIN_TABS[2].to}
+            className={({ isActive }) =>
+              cn(
+                "flex flex-col items-center justify-center gap-0.5 flex-1 h-full text-muted-foreground transition-colors",
+                isActive && "text-primary"
+              )
+            }
+          >
+            <MAIN_TABS[2].icon className="h-5 w-5" />
+            <span className="text-[10px] font-medium">{MAIN_TABS[2].label}</span>
+          </NavLink>
 
           {/* More button */}
           <button
@@ -119,6 +176,37 @@ export function MobileNav() {
           </button>
         </div>
       </nav>
+
+      {/* Create New Sheet */}
+      <Sheet open={createOpen} onOpenChange={setCreateOpen}>
+        <SheetContent side="bottom" className="md:hidden rounded-t-2xl p-0">
+          <SheetHeader className="px-5 pt-4 pb-3 border-b border-border">
+            <div className="flex items-center justify-between">
+              <SheetTitle className="text-base font-bold">Create New</SheetTitle>
+              <button
+                onClick={() => setCreateOpen(false)}
+                className="h-7 w-7 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </SheetHeader>
+          <div className="px-4 py-4 grid grid-cols-2 gap-3">
+            {CREATE_TYPES.map((type) => (
+              <button
+                key={type.to + type.label}
+                onClick={() => handleCreate(type.to)}
+                className="flex items-center gap-3 px-4 py-3 rounded-xl border border-border bg-muted/30 hover:bg-muted active:scale-95 transition-all text-left"
+              >
+                <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                  <type.icon className="h-4.5 w-4.5 text-primary" />
+                </div>
+                <span className="text-sm font-medium text-foreground leading-tight">{type.label}</span>
+              </button>
+            ))}
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* More Sheet */}
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>

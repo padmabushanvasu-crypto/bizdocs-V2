@@ -9,6 +9,7 @@ interface DocumentActionsProps {
   amount?: number;
   date?: string;
   companyName?: string;
+  customMessage?: string;
 }
 
 export function DocumentActions({
@@ -19,21 +20,27 @@ export function DocumentActions({
   amount,
   date,
   companyName,
+  customMessage,
 }: DocumentActionsProps) {
   const handlePrint = () => {
     window.print();
   };
 
   const handleWhatsApp = () => {
-    const lines: string[] = [];
-    if (companyName) lines.push(`From: ${companyName}`);
-    lines.push(`${documentType}: ${documentNumber}`);
-    if (date) lines.push(`Date: ${date}`);
-    if (partyName) lines.push(`To: ${partyName}`);
-    if (amount != null) lines.push(`Amount: ₹${amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`);
-    lines.push(`\nView: ${window.location.href}`);
-    const text = encodeURIComponent(lines.join("\n"));
-    window.open(`https://wa.me/?text=${text}`, "_blank");
+    let message: string;
+    if (customMessage) {
+      message = customMessage + `\n\nView: ${window.location.href}`;
+    } else {
+      const lines: string[] = [];
+      if (companyName) lines.push(`From: ${companyName}`);
+      lines.push(`${documentType}: ${documentNumber}`);
+      if (date) lines.push(`Date: ${date}`);
+      if (partyName) lines.push(`To: ${partyName}`);
+      if (amount != null) lines.push(`Amount: ₹${amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`);
+      lines.push(`\nView: ${window.location.href}`);
+      message = lines.join("\n");
+    }
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank");
   };
 
   const handleEmail = () => {

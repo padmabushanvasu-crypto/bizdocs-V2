@@ -132,6 +132,9 @@ export default function WipRegister() {
   const inHouse  = rows.filter((r) => r.current_location === "in_house").length;
   const overdueCount = rows.filter((r) => r.is_overdue).length;
 
+  const today = new Date().toISOString().split("T")[0];
+  const aoOverdue = aoRows.filter((ao) => ao.planned_date && ao.planned_date < today).length;
+
   const lastRefreshed = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleTimeString("en-IN", { timeStyle: "short" })
     : "—";
@@ -249,13 +252,17 @@ export default function WipRegister() {
 
           {/* Inline stat chips */}
           <div className="flex items-center gap-2 flex-wrap text-sm">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 font-medium text-xs">
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-medium text-xs ${
+              atVendor > 0 ? "bg-blue-50 border border-blue-200 text-blue-800 shadow-sm" : "bg-slate-50 border border-slate-200 text-slate-600"
+            }`}>
               <Truck className="h-3 w-3" /> {atVendor} at vendors
             </span>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-800 font-medium text-xs">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-50 border border-slate-200 text-slate-600 font-medium text-xs">
               <Factory className="h-3 w-3" /> {inHouse} in house
             </span>
-            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-medium text-xs ${overdueCount > 0 ? "bg-red-50 border border-red-200 text-red-800" : "bg-slate-50 border border-slate-200 text-slate-600"}`}>
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs ${
+              overdueCount > 0 ? "bg-red-50 border border-red-200 text-red-800 font-bold shadow-sm" : "bg-slate-50 border border-slate-200 text-slate-600 font-medium"
+            }`}>
               <AlertTriangle className="h-3 w-3" /> {overdueCount} overdue
             </span>
           </div>
@@ -402,6 +409,20 @@ export default function WipRegister() {
             <h2 className="text-sm font-semibold text-foreground">Sub-Assembly WIP</h2>
             <span className="bg-slate-100 text-slate-700 text-[11px] font-bold px-2 py-0.5 rounded-full border border-slate-200">
               {aoRows.length}
+            </span>
+          </div>
+
+          {/* Sub-Assembly stat chips */}
+          <div className="flex items-center gap-2 flex-wrap text-sm">
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-medium text-xs ${
+              aoRows.length > 0 ? "bg-blue-50 border border-blue-200 text-blue-800 shadow-sm" : "bg-slate-50 border border-slate-200 text-slate-600"
+            }`}>
+              <Layers className="h-3 w-3" /> {aoRows.length} in progress
+            </span>
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs ${
+              aoOverdue > 0 ? "bg-red-50 border border-red-200 text-red-800 font-bold shadow-sm" : "bg-slate-50 border border-slate-200 text-slate-600 font-medium"
+            }`}>
+              <AlertTriangle className="h-3 w-3" /> {aoOverdue} overdue
             </span>
           </div>
 

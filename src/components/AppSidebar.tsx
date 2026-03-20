@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   LayoutDashboard,
   FileText,
@@ -27,6 +27,8 @@ import {
   TrendingDown,
   Settings2,
   Trash2,
+  PanelLeft,
+  PanelLeftClose,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -60,6 +62,7 @@ type NavItem = {
 // ── Group definitions ─────────────────────────────────────────────────────────
 
 const STORAGE_KEY = "bizdocs_sidebar_state";
+const RAIL_MODE_KEY = "bizdocs_sidebar_mode";
 
 const GROUP_PATHS: Record<string, string[]> = {
   "Start Here":           ["/", "/open-items"],
@@ -82,6 +85,29 @@ const DEFAULTS: Record<string, boolean> = {
   "Quality & Compliance": false,
   "Settings":             false,
 };
+
+// Group icons for rail mode
+const GROUP_ICONS: Record<string, React.ComponentType<any>> = {
+  "Start Here":           LayoutDashboard,
+  "Daily Work":           Activity,
+  "Purchasing":           ShoppingCart,
+  "Dispatch & Billing":   FileText,
+  "Master Data":          Package,
+  "Reports":              BarChart3,
+  "Quality & Compliance": ClipboardCheck,
+  "Settings":             Settings,
+};
+
+const ALL_GROUP_NAMES = [
+  "Start Here",
+  "Daily Work",
+  "Purchasing",
+  "Dispatch & Billing",
+  "Master Data",
+  "Reports",
+  "Quality & Compliance",
+  "Settings",
+];
 
 function loadGroupState(): Record<string, boolean> {
   try {
@@ -212,11 +238,40 @@ function NavGroup({
 // ── AppSidebar ────────────────────────────────────────────────────────────────
 
 export function AppSidebar() {
-  const { state } = useSidebar();
+  const { state, setOpen } = useSidebar();
   const collapsed = state === "collapsed";
   const location = useLocation();
 
   const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>(loadGroupState);
+  const [railMode, setRailMode] = useState<boolean>(() => {
+    try { return localStorage.getItem(RAIL_MODE_KEY) === "rail"; } catch { return false; }
+  });
+  const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
+  const [flyoutY, setFlyoutY] = useState(0);
+  const leaveTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  // Force sidebar collapsed when in rail mode
+  useEffect(() => {
+    if (railMode && state !== "collapsed") {
+      setOpen(false);
+    }
+  }, [railMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist rail mode
+  useEffect(() => {
+    try {
+      localStorage.setItem(RAIL_MODE_KEY, railMode ? "rail" : "full");
+    } catch {}
+  }, [railMode]);
+
+  const toggleRailMode = () => {
+    setRailMode((prev) => {
+      const next = !prev;
+      if (!next) setOpen(true);
+      return next;
+    });
+    setHoveredGroup(null);
+  };
 
   // Auto-expand the group containing the current page
   useEffect(() => {
@@ -226,7 +281,7 @@ export function AppSidebar() {
     }
   }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Persist to localStorage
+  // Persist group state to localStorage
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(groupOpen));
@@ -240,6 +295,32 @@ export function AppSidebar() {
   const isActive = (path: string) =>
     path === "/" ? location.pathname === "/" : location.pathname.startsWith(path);
 
+  const isGroupActive = (groupName: string) => {
+    const paths = GROUP_PATHS[groupName] ?? [];
+    return paths.some((p) => p === "/" ? location.pathname === "/" : location.pathname.startsWith(p));
+  };
+
+  // Rail mode hover handlers
+  const handleGroupEnter = (groupName: string, e: React.MouseEvent) => {
+    clearTimeout(leaveTimer.current);
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setFlyoutY(rect.top);
+    setHoveredGroup(groupName);
+  };
+
+  const handleGroupLeave = () => {
+    leaveTimer.current = setTimeout(() => setHoveredGroup(null), 120);
+  };
+
+  const handleFlyoutEnter = () => {
+    clearTimeout(leaveTimer.current);
+  };
+
+  const handleFlyoutLeave = () => {
+    leaveTimer.current = setTimeout(() => setHoveredGroup(null), 120);
+  };
+
+  // Queries
   const { data: wipSummary } = useQuery({
     queryKey: ["wip-summary-sidebar"],
     queryFn: fetchWipSummary,
@@ -286,234 +367,339 @@ export function AppSidebar() {
     { title: "Scrap Register", url: "/scrap-register", icon: Trash2 },
   ];
 
+  // Group items map for rail flyout
+  const GROUP_ITEMS_MAP: Record<string, NavItem[]> = {
+    "Start Here": startHereNav,
+    "Daily Work": [
+      ...dailyWorkNav,
+      { title: "WIP Register", url: "/wip-register", icon: AlertTriangle, badge: wipSummary?.overdueReturns },
+    ],
+    "Purchasing": purchasingNav,
+    "Dispatch & Billing": dispatchBillingNav,
+    "Master Data": masterDataNav,
+    "Reports": reportsNav,
+    "Quality & Compliance": [
+      { title: "Serial Numbers", url: "/serial-numbers", icon: Hash },
+      { title: "FAT Certificates", url: "/fat-certificates", icon: ClipboardCheck, badge: fatStats?.pending },
+      { title: "Warranty Tracker", url: "/warranty-tracker", icon: Shield, badge: serialStats?.expiringSoon },
+    ],
+    "Settings": settingsNav,
+  };
+
   const dailyWorkOpen = collapsed || groupOpen["Daily Work"];
   const qualityOpen   = collapsed || groupOpen["Quality & Compliance"];
 
-  return (
-    <Sidebar collapsible="icon" className="border-r-0">
-      <SidebarHeader className="px-4 py-5">
+  // Rail mode content
+  const railContent = (
+    <SidebarContent>
+      <div className="flex flex-col items-center py-2 gap-0.5">
+        {ALL_GROUP_NAMES.map((groupName) => {
+          const GroupIcon = GROUP_ICONS[groupName] ?? LayoutDashboard;
+          const active = isGroupActive(groupName);
+          const hovered = hoveredGroup === groupName;
+          return (
+            <div
+              key={groupName}
+              className={`flex items-center justify-center w-10 h-10 rounded-lg cursor-pointer transition-all ${
+                active ? "bg-blue-900/40 text-white" :
+                hovered ? "bg-white/10 text-white" :
+                "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+              }`}
+              onMouseEnter={(e) => handleGroupEnter(groupName, e)}
+              onMouseLeave={handleGroupLeave}
+              title={groupName}
+            >
+              <GroupIcon className="h-[18px] w-[18px]" />
+            </div>
+          );
+        })}
+      </div>
+    </SidebarContent>
+  );
+
+  // Full sidebar content
+  const fullContent = (
+    <SidebarContent>
+      <NavGroup
+        label="Start Here"
+        items={startHereNav}
+        collapsed={collapsed}
+        isActive={isActive}
+        open={groupOpen["Start Here"]}
+        onToggle={() => toggleGroup("Start Here")}
+      />
+
+      {/* Daily Work — inline with WIP badge */}
+      <SidebarGroup>
         {!collapsed && (
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded bg-gradient-to-br from-blue-600 to-blue-400 flex items-center justify-center shadow-sm">
+          <SidebarGroupLabel
+            className="text-slate-500 text-[10px] uppercase tracking-widest font-semibold cursor-pointer flex items-center justify-between hover:text-slate-300 transition-colors select-none"
+            onClick={() => toggleGroup("Daily Work")}
+          >
+            Daily Work
+            {groupOpen["Daily Work"] ? (
+              <ChevronDown className="h-3 w-3 shrink-0 opacity-70" />
+            ) : (
+              <ChevronRight className="h-3 w-3 shrink-0 opacity-70" />
+            )}
+          </SidebarGroupLabel>
+        )}
+        {dailyWorkOpen && (
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {dailyWorkNav.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild isActive={isActive(item.url)}>
+                    <NavLink
+                      to={item.url}
+                      className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                      activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
+                    >
+                      <item.icon className="h-4 w-4 shrink-0" />
+                      {!collapsed && <span>{item.title}</span>}
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+              {/* WIP Register with overdue badge */}
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={isActive("/wip-register")}>
+                  <NavLink
+                    to="/wip-register"
+                    className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                    activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
+                  >
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    {!collapsed && (
+                      <span className="flex-1 flex items-center justify-between">
+                        WIP Register
+                        {wipSummary && wipSummary.overdueReturns > 0 && (
+                          <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                            {wipSummary.overdueReturns}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                    {collapsed && wipSummary && wipSummary.overdueReturns > 0 && (
+                      <span className="absolute top-0.5 right-0.5 h-2 w-2 rounded-full bg-red-500" />
+                    )}
+                  </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        )}
+      </SidebarGroup>
+
+      <NavGroup
+        label="Purchasing"
+        items={purchasingNav}
+        collapsed={collapsed}
+        isActive={isActive}
+        open={groupOpen["Purchasing"]}
+        onToggle={() => toggleGroup("Purchasing")}
+      />
+      <NavGroup
+        label="Dispatch & Billing"
+        items={dispatchBillingNav}
+        collapsed={collapsed}
+        isActive={isActive}
+        open={groupOpen["Dispatch & Billing"]}
+        onToggle={() => toggleGroup("Dispatch & Billing")}
+      />
+      <NavGroup
+        label="Master Data"
+        items={masterDataNav}
+        collapsed={collapsed}
+        isActive={isActive}
+        open={groupOpen["Master Data"]}
+        onToggle={() => toggleGroup("Master Data")}
+      />
+      <NavGroup
+        label="Reports"
+        items={reportsNav}
+        collapsed={collapsed}
+        isActive={isActive}
+        open={groupOpen["Reports"]}
+        onToggle={() => toggleGroup("Reports")}
+      />
+
+      {/* Quality & Compliance — inline with FAT + Warranty badges */}
+      <SidebarGroup>
+        {!collapsed && (
+          <SidebarGroupLabel
+            className="text-slate-500 text-[10px] uppercase tracking-widest font-semibold cursor-pointer flex items-center justify-between hover:text-slate-300 transition-colors select-none"
+            onClick={() => toggleGroup("Quality & Compliance")}
+          >
+            Quality &amp; Compliance
+            {groupOpen["Quality & Compliance"] ? (
+              <ChevronDown className="h-3 w-3 shrink-0 opacity-70" />
+            ) : (
+              <ChevronRight className="h-3 w-3 shrink-0 opacity-70" />
+            )}
+          </SidebarGroupLabel>
+        )}
+        {qualityOpen && (
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={isActive("/serial-numbers")}>
+                  <NavLink
+                    to="/serial-numbers"
+                    className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                    activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
+                  >
+                    <Hash className="h-4 w-4 shrink-0" />
+                    {!collapsed && <span>Serial Numbers</span>}
+                  </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              {/* FAT Certificates with pending badge */}
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={isActive("/fat-certificates")}>
+                  <NavLink
+                    to="/fat-certificates"
+                    className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                    activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
+                  >
+                    <ClipboardCheck className="h-4 w-4 shrink-0" />
+                    {!collapsed && (
+                      <span className="flex-1 flex items-center justify-between">
+                        FAT Certificates
+                        {fatStats && fatStats.pending > 0 && (
+                          <span className="ml-auto bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                            {fatStats.pending}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                    {collapsed && fatStats && fatStats.pending > 0 && (
+                      <span className="absolute top-0.5 right-0.5 h-2 w-2 rounded-full bg-amber-500" />
+                    )}
+                  </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              {/* Warranty Tracker with expiring soon badge */}
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={isActive("/warranty-tracker")}>
+                  <NavLink
+                    to="/warranty-tracker"
+                    className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                    activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
+                  >
+                    <Shield className="h-4 w-4 shrink-0" />
+                    {!collapsed && (
+                      <span className="flex-1 flex items-center justify-between">
+                        Warranty Tracker
+                        {serialStats && serialStats.expiringSoon > 0 && (
+                          <span className="ml-auto bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                            {serialStats.expiringSoon}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                    {collapsed && serialStats && serialStats.expiringSoon > 0 && (
+                      <span className="absolute top-0.5 right-0.5 h-2 w-2 rounded-full bg-amber-500" />
+                    )}
+                  </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        )}
+      </SidebarGroup>
+
+      <NavGroup
+        label="Settings"
+        items={settingsNav}
+        collapsed={collapsed}
+        isActive={isActive}
+        open={groupOpen["Settings"]}
+        onToggle={() => toggleGroup("Settings")}
+      />
+    </SidebarContent>
+  );
+
+  return (
+    <>
+      <Sidebar
+        collapsible="icon"
+        className="border-r-0 transition-all duration-200"
+        style={railMode ? { "--sidebar-width-icon": "4rem" } as React.CSSProperties : undefined}
+      >
+        <SidebarHeader className="px-4 py-5">
+          {!collapsed && (
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-8 rounded bg-gradient-to-br from-blue-600 to-blue-400 flex items-center justify-center shadow-sm">
+                <span className="font-bold text-sm text-white">B</span>
+              </div>
+              <span className="font-bold text-lg text-sidebar-foreground tracking-tight">
+                BizDocs
+              </span>
+            </div>
+          )}
+          {collapsed && (
+            <div className="h-8 w-8 rounded bg-gradient-to-br from-blue-600 to-blue-400 flex items-center justify-center mx-auto shadow-sm">
               <span className="font-bold text-sm text-white">B</span>
             </div>
-            <span className="font-bold text-lg text-sidebar-foreground tracking-tight">
-              BizDocs
-            </span>
-          </div>
-        )}
-        {collapsed && (
-          <div className="h-8 w-8 rounded bg-gradient-to-br from-blue-600 to-blue-400 flex items-center justify-center mx-auto shadow-sm">
-            <span className="font-bold text-sm text-white">B</span>
-          </div>
-        )}
-      </SidebarHeader>
+          )}
+        </SidebarHeader>
 
-      <SidebarContent>
-        <NavGroup
-          label="Start Here"
-          items={startHereNav}
-          collapsed={collapsed}
-          isActive={isActive}
-          open={groupOpen["Start Here"]}
-          onToggle={() => toggleGroup("Start Here")}
-        />
+        {railMode && collapsed ? railContent : fullContent}
 
-        {/* Daily Work — inline with WIP badge */}
-        <SidebarGroup>
-          {!collapsed && (
-            <SidebarGroupLabel
-              className="text-slate-500 text-[10px] uppercase tracking-widest font-semibold cursor-pointer flex items-center justify-between hover:text-slate-300 transition-colors select-none"
-              onClick={() => toggleGroup("Daily Work")}
+        <SidebarFooter className="px-4 py-3">
+          <div className="flex items-center justify-between">
+            {!collapsed && (
+              <p className="text-slate-500 text-xs font-mono">FY 2025–26</p>
+            )}
+            <button
+              onClick={toggleRailMode}
+              title={railMode ? "Expand sidebar" : "Switch to icon rail"}
+              className={`flex items-center justify-center h-7 w-7 rounded-md text-slate-500 hover:text-slate-300 hover:bg-white/10 transition-colors ${collapsed ? "mx-auto" : ""}`}
             >
-              Daily Work
-              {groupOpen["Daily Work"] ? (
-                <ChevronDown className="h-3 w-3 shrink-0 opacity-70" />
+              {railMode ? (
+                <PanelLeft className="h-4 w-4" />
               ) : (
-                <ChevronRight className="h-3 w-3 shrink-0 opacity-70" />
+                <PanelLeftClose className="h-4 w-4" />
               )}
-            </SidebarGroupLabel>
-          )}
-          {dailyWorkOpen && (
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {dailyWorkNav.map((item) => (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild isActive={isActive(item.url)}>
-                      <NavLink
-                        to={item.url}
-                        className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                        activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
-                      >
-                        <item.icon className="h-4 w-4 shrink-0" />
-                        {!collapsed && <span>{item.title}</span>}
-                      </NavLink>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-                {/* WIP Register with overdue badge */}
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={isActive("/wip-register")}>
-                    <NavLink
-                      to="/wip-register"
-                      className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                      activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
-                    >
-                      <AlertTriangle className="h-4 w-4 shrink-0" />
-                      {!collapsed && (
-                        <span className="flex-1 flex items-center justify-between">
-                          WIP Register
-                          {wipSummary && wipSummary.overdueReturns > 0 && (
-                            <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
-                              {wipSummary.overdueReturns}
-                            </span>
-                          )}
-                        </span>
-                      )}
-                      {collapsed && wipSummary && wipSummary.overdueReturns > 0 && (
-                        <span className="absolute top-0.5 right-0.5 h-2 w-2 rounded-full bg-red-500" />
-                      )}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarGroupContent>
-          )}
-        </SidebarGroup>
+            </button>
+          </div>
+        </SidebarFooter>
+      </Sidebar>
 
-        <NavGroup
-          label="Purchasing"
-          items={purchasingNav}
-          collapsed={collapsed}
-          isActive={isActive}
-          open={groupOpen["Purchasing"]}
-          onToggle={() => toggleGroup("Purchasing")}
-        />
-        <NavGroup
-          label="Dispatch & Billing"
-          items={dispatchBillingNav}
-          collapsed={collapsed}
-          isActive={isActive}
-          open={groupOpen["Dispatch & Billing"]}
-          onToggle={() => toggleGroup("Dispatch & Billing")}
-        />
-        <NavGroup
-          label="Master Data"
-          items={masterDataNav}
-          collapsed={collapsed}
-          isActive={isActive}
-          open={groupOpen["Master Data"]}
-          onToggle={() => toggleGroup("Master Data")}
-        />
-        <NavGroup
-          label="Reports"
-          items={reportsNav}
-          collapsed={collapsed}
-          isActive={isActive}
-          open={groupOpen["Reports"]}
-          onToggle={() => toggleGroup("Reports")}
-        />
-
-        {/* Quality & Compliance — inline with FAT + Warranty badges */}
-        <SidebarGroup>
-          {!collapsed && (
-            <SidebarGroupLabel
-              className="text-slate-500 text-[10px] uppercase tracking-widest font-semibold cursor-pointer flex items-center justify-between hover:text-slate-300 transition-colors select-none"
-              onClick={() => toggleGroup("Quality & Compliance")}
-            >
-              Quality &amp; Compliance
-              {groupOpen["Quality & Compliance"] ? (
-                <ChevronDown className="h-3 w-3 shrink-0 opacity-70" />
-              ) : (
-                <ChevronRight className="h-3 w-3 shrink-0 opacity-70" />
-              )}
-            </SidebarGroupLabel>
-          )}
-          {qualityOpen && (
-            <SidebarGroupContent>
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={isActive("/serial-numbers")}>
-                    <NavLink
-                      to="/serial-numbers"
-                      className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                      activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
-                    >
-                      <Hash className="h-4 w-4 shrink-0" />
-                      {!collapsed && <span>Serial Numbers</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                {/* FAT Certificates with pending badge */}
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={isActive("/fat-certificates")}>
-                    <NavLink
-                      to="/fat-certificates"
-                      className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                      activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
-                    >
-                      <ClipboardCheck className="h-4 w-4 shrink-0" />
-                      {!collapsed && (
-                        <span className="flex-1 flex items-center justify-between">
-                          FAT Certificates
-                          {fatStats && fatStats.pending > 0 && (
-                            <span className="ml-auto bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
-                              {fatStats.pending}
-                            </span>
-                          )}
-                        </span>
-                      )}
-                      {collapsed && fatStats && fatStats.pending > 0 && (
-                        <span className="absolute top-0.5 right-0.5 h-2 w-2 rounded-full bg-amber-500" />
-                      )}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                {/* Warranty Tracker with expiring soon badge */}
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={isActive("/warranty-tracker")}>
-                    <NavLink
-                      to="/warranty-tracker"
-                      className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                      activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
-                    >
-                      <Shield className="h-4 w-4 shrink-0" />
-                      {!collapsed && (
-                        <span className="flex-1 flex items-center justify-between">
-                          Warranty Tracker
-                          {serialStats && serialStats.expiringSoon > 0 && (
-                            <span className="ml-auto bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
-                              {serialStats.expiringSoon}
-                            </span>
-                          )}
-                        </span>
-                      )}
-                      {collapsed && serialStats && serialStats.expiringSoon > 0 && (
-                        <span className="absolute top-0.5 right-0.5 h-2 w-2 rounded-full bg-amber-500" />
-                      )}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarGroupContent>
-          )}
-        </SidebarGroup>
-
-        <NavGroup
-          label="Settings"
-          items={settingsNav}
-          collapsed={collapsed}
-          isActive={isActive}
-          open={groupOpen["Settings"]}
-          onToggle={() => toggleGroup("Settings")}
-        />
-      </SidebarContent>
-
-      <SidebarFooter className="px-4 py-3">
-        {!collapsed && (
-          <p className="text-slate-500 text-xs font-mono">FY 2025–26</p>
-        )}
-      </SidebarFooter>
-    </Sidebar>
+      {/* Rail mode flyout panel (fixed, appears to the right of the rail) */}
+      {railMode && collapsed && hoveredGroup && (
+        <div
+          className="fixed z-[200] bg-[#0f1623] border border-slate-700/80 rounded-r-xl shadow-2xl overflow-hidden"
+          style={{ left: 64, top: flyoutY, minWidth: 210, maxHeight: "70vh", overflowY: "auto" }}
+          onMouseEnter={handleFlyoutEnter}
+          onMouseLeave={handleFlyoutLeave}
+        >
+          <p className="text-[10px] uppercase tracking-widest font-semibold px-3 pt-3 pb-1.5 text-slate-400 border-b border-slate-700/60 mb-1">
+            {hoveredGroup}
+          </p>
+          <div className="py-1">
+            {(GROUP_ITEMS_MAP[hoveredGroup] ?? []).map((item) => (
+              <NavLink
+                key={item.url}
+                to={item.url}
+                end={item.url === "/"}
+                onClick={() => setHoveredGroup(null)}
+                className="flex items-center gap-2.5 px-3 py-2 text-sm text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                activeClassName="text-white bg-blue-900/50"
+              >
+                <item.icon className="h-4 w-4 shrink-0" />
+                <span className="flex-1">{item.title}</span>
+                {item.badge != null && item.badge > 0 && (
+                  <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                    {item.badge}
+                  </span>
+                )}
+              </NavLink>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
   );
 }

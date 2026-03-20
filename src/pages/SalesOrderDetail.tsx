@@ -14,6 +14,7 @@ import {
 } from "@/lib/sales-orders-api";
 import { formatCurrency, amountInWords } from "@/lib/gst-utils";
 import { DocumentHeader } from "@/components/DocumentHeader";
+import { DocumentActions } from "@/components/DocumentActions";
 import { AuditTimeline } from "@/components/AuditTimeline";
 import { DocumentSignature } from "@/components/DocumentSignature";
 import { format } from "date-fns";
@@ -93,6 +94,13 @@ export default function SalesOrderDetail() {
           )}
         </div>
         <div className="flex flex-wrap gap-2">
+          <DocumentActions
+            documentNumber={so.so_number}
+            documentType="Sales Order"
+            partyName={so.customer_name}
+            date={so.so_date}
+            amount={so.grand_total}
+          />
           {so.status === "draft" && (
             <>
               <Button variant="outline" size="sm" onClick={() => navigate(`/sales-orders/${id}/edit`)}>
