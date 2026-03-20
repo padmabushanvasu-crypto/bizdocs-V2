@@ -251,13 +251,6 @@ export function AppSidebar() {
   const [flyoutY, setFlyoutY] = useState(0);
   const closeTimer = useRef<ReturnType<typeof setTimeout>>();
 
-  // Force sidebar collapsed when in rail mode
-  useEffect(() => {
-    if (railMode && state !== "collapsed") {
-      setOpen(false);
-    }
-  }, [railMode]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // Persist rail mode
   useEffect(() => {
     try {
@@ -266,11 +259,9 @@ export function AppSidebar() {
   }, [railMode]);
 
   const toggleRailMode = () => {
-    setRailMode((prev) => {
-      const next = !prev;
-      if (!next) setOpen(true);
-      return next;
-    });
+    const next = !railMode;
+    setRailMode(next);
+    setOpen(!next); // false = collapse to icon rail; true = expand to full sidebar
     setHoveredGroup(null);
   };
 
@@ -625,7 +616,6 @@ export function AppSidebar() {
       <Sidebar
         collapsible="icon"
         className="border-r-0 transition-all duration-200"
-        style={railMode ? { "--sidebar-width-icon": "4rem" } as React.CSSProperties : undefined}
       >
         <SidebarHeader className="px-4 py-5">
           {!collapsed && (
@@ -645,7 +635,7 @@ export function AppSidebar() {
           )}
         </SidebarHeader>
 
-        {railMode && collapsed ? railContent : fullContent}
+        {railMode ? railContent : fullContent}
 
         <SidebarFooter className="px-4 py-3">
           <div className="flex items-center justify-between">
@@ -668,11 +658,11 @@ export function AppSidebar() {
       </Sidebar>
 
       {/* Rail mode flyout — rendered into document.body via portal to escape any stacking context */}
-      {railMode && collapsed && hoveredGroup && createPortal(
+      {railMode && hoveredGroup && createPortal(
         <div
           style={{
             position: "fixed",
-            left: 64,
+            left: 48,
             top: flyoutY,
             zIndex: 9999,
             minWidth: 210,
