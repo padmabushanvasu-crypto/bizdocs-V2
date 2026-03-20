@@ -48,7 +48,6 @@ import {
   SidebarMenuItem,
   SidebarHeader,
   SidebarFooter,
-  useSidebar,
 } from "@/components/ui/sidebar";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -239,8 +238,6 @@ function NavGroup({
 // ── AppSidebar ────────────────────────────────────────────────────────────────
 
 export function AppSidebar() {
-  const { state, setOpen } = useSidebar();
-  const collapsed = state === "collapsed";
   const location = useLocation();
 
   const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>(loadGroupState);
@@ -261,7 +258,6 @@ export function AppSidebar() {
   const toggleRailMode = () => {
     const next = !railMode;
     setRailMode(next);
-    setOpen(!next); // false = collapse to icon rail; true = expand to full sidebar
     setHoveredGroup(null);
   };
 
@@ -377,8 +373,8 @@ export function AppSidebar() {
     "Settings": settingsNav,
   };
 
-  const dailyWorkOpen = collapsed || groupOpen["Daily Work"];
-  const qualityOpen   = collapsed || groupOpen["Quality & Compliance"];
+  const dailyWorkOpen = railMode || groupOpen["Daily Work"];
+  const qualityOpen   = railMode || groupOpen["Quality & Compliance"];
 
   // Rail mode content
   const railContent = (
@@ -414,7 +410,7 @@ export function AppSidebar() {
       <NavGroup
         label="Start Here"
         items={startHereNav}
-        collapsed={collapsed}
+        collapsed={railMode}
         isActive={isActive}
         open={groupOpen["Start Here"]}
         onToggle={() => toggleGroup("Start Here")}
@@ -422,7 +418,7 @@ export function AppSidebar() {
 
       {/* Daily Work — inline with WIP badge */}
       <SidebarGroup>
-        {!collapsed && (
+        {!railMode && (
           <SidebarGroupLabel
             className="text-slate-500 text-[10px] uppercase tracking-widest font-semibold cursor-pointer flex items-center justify-between hover:text-slate-300 transition-colors select-none"
             onClick={() => toggleGroup("Daily Work")}
@@ -447,7 +443,7 @@ export function AppSidebar() {
                       activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
                     >
                       <item.icon className="h-4 w-4 shrink-0" />
-                      {!collapsed && <span>{item.title}</span>}
+                      {!railMode && <span>{item.title}</span>}
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -461,7 +457,7 @@ export function AppSidebar() {
                     activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
                   >
                     <AlertTriangle className="h-4 w-4 shrink-0" />
-                    {!collapsed && (
+                    {!railMode && (
                       <span className="flex-1 flex items-center justify-between">
                         WIP Register
                         {wipSummary && wipSummary.overdueReturns > 0 && (
@@ -471,7 +467,7 @@ export function AppSidebar() {
                         )}
                       </span>
                     )}
-                    {collapsed && wipSummary && wipSummary.overdueReturns > 0 && (
+                    {railMode && wipSummary && wipSummary.overdueReturns > 0 && (
                       <span className="absolute top-0.5 right-0.5 h-2 w-2 rounded-full bg-red-500" />
                     )}
                   </NavLink>
@@ -485,7 +481,7 @@ export function AppSidebar() {
       <NavGroup
         label="Purchasing"
         items={purchasingNav}
-        collapsed={collapsed}
+        collapsed={railMode}
         isActive={isActive}
         open={groupOpen["Purchasing"]}
         onToggle={() => toggleGroup("Purchasing")}
@@ -493,7 +489,7 @@ export function AppSidebar() {
       <NavGroup
         label="Dispatch & Billing"
         items={dispatchBillingNav}
-        collapsed={collapsed}
+        collapsed={railMode}
         isActive={isActive}
         open={groupOpen["Dispatch & Billing"]}
         onToggle={() => toggleGroup("Dispatch & Billing")}
@@ -501,7 +497,7 @@ export function AppSidebar() {
       <NavGroup
         label="Master Data"
         items={masterDataNav}
-        collapsed={collapsed}
+        collapsed={railMode}
         isActive={isActive}
         open={groupOpen["Master Data"]}
         onToggle={() => toggleGroup("Master Data")}
@@ -509,7 +505,7 @@ export function AppSidebar() {
       <NavGroup
         label="Reports"
         items={reportsNav}
-        collapsed={collapsed}
+        collapsed={railMode}
         isActive={isActive}
         open={groupOpen["Reports"]}
         onToggle={() => toggleGroup("Reports")}
@@ -517,7 +513,7 @@ export function AppSidebar() {
 
       {/* Quality & Compliance — inline with FAT + Warranty badges */}
       <SidebarGroup>
-        {!collapsed && (
+        {!railMode && (
           <SidebarGroupLabel
             className="text-slate-500 text-[10px] uppercase tracking-widest font-semibold cursor-pointer flex items-center justify-between hover:text-slate-300 transition-colors select-none"
             onClick={() => toggleGroup("Quality & Compliance")}
@@ -541,7 +537,7 @@ export function AppSidebar() {
                     activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
                   >
                     <Hash className="h-4 w-4 shrink-0" />
-                    {!collapsed && <span>Serial Numbers</span>}
+                    {!railMode && <span>Serial Numbers</span>}
                   </NavLink>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -554,7 +550,7 @@ export function AppSidebar() {
                     activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
                   >
                     <ClipboardCheck className="h-4 w-4 shrink-0" />
-                    {!collapsed && (
+                    {!railMode && (
                       <span className="flex-1 flex items-center justify-between">
                         FAT Certificates
                         {fatStats && fatStats.pending > 0 && (
@@ -564,7 +560,7 @@ export function AppSidebar() {
                         )}
                       </span>
                     )}
-                    {collapsed && fatStats && fatStats.pending > 0 && (
+                    {railMode && fatStats && fatStats.pending > 0 && (
                       <span className="absolute top-0.5 right-0.5 h-2 w-2 rounded-full bg-amber-500" />
                     )}
                   </NavLink>
@@ -579,7 +575,7 @@ export function AppSidebar() {
                     activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
                   >
                     <Shield className="h-4 w-4 shrink-0" />
-                    {!collapsed && (
+                    {!railMode && (
                       <span className="flex-1 flex items-center justify-between">
                         Warranty Tracker
                         {serialStats && serialStats.expiringSoon > 0 && (
@@ -589,7 +585,7 @@ export function AppSidebar() {
                         )}
                       </span>
                     )}
-                    {collapsed && serialStats && serialStats.expiringSoon > 0 && (
+                    {railMode && serialStats && serialStats.expiringSoon > 0 && (
                       <span className="absolute top-0.5 right-0.5 h-2 w-2 rounded-full bg-amber-500" />
                     )}
                   </NavLink>
@@ -603,7 +599,7 @@ export function AppSidebar() {
       <NavGroup
         label="Settings"
         items={settingsNav}
-        collapsed={collapsed}
+        collapsed={railMode}
         isActive={isActive}
         open={groupOpen["Settings"]}
         onToggle={() => toggleGroup("Settings")}
@@ -614,11 +610,12 @@ export function AppSidebar() {
   return (
     <>
       <Sidebar
-        collapsible="icon"
+        collapsible="none"
         className="border-r-0 transition-all duration-200"
+        style={{ width: railMode ? "48px" : "240px", minWidth: railMode ? "48px" : "240px" }}
       >
         <SidebarHeader className="px-4 py-5">
-          {!collapsed && (
+          {!railMode && (
             <div className="flex items-center gap-2">
               <div className="h-8 w-8 rounded bg-gradient-to-br from-blue-600 to-blue-400 flex items-center justify-center shadow-sm">
                 <span className="font-bold text-sm text-white">B</span>
@@ -628,7 +625,7 @@ export function AppSidebar() {
               </span>
             </div>
           )}
-          {collapsed && (
+          {railMode && (
             <div className="h-8 w-8 rounded bg-gradient-to-br from-blue-600 to-blue-400 flex items-center justify-center mx-auto shadow-sm">
               <span className="font-bold text-sm text-white">B</span>
             </div>
@@ -639,13 +636,13 @@ export function AppSidebar() {
 
         <SidebarFooter className="px-4 py-3">
           <div className="flex items-center justify-between">
-            {!collapsed && (
+            {!railMode && (
               <p className="text-slate-500 text-xs font-mono">FY 2025–26</p>
             )}
             <button
               onClick={toggleRailMode}
               title={railMode ? "Expand sidebar" : "Switch to icon rail"}
-              className={`flex items-center justify-center h-7 w-7 rounded-md text-slate-500 hover:text-slate-300 hover:bg-white/10 transition-colors ${collapsed ? "mx-auto" : ""}`}
+              className={`flex items-center justify-center h-7 w-7 rounded-md text-slate-500 hover:text-slate-300 hover:bg-white/10 transition-colors ${railMode ? "mx-auto" : ""}`}
             >
               {railMode ? (
                 <PanelLeft className="h-4 w-4" />
