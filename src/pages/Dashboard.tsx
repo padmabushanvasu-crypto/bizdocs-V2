@@ -10,7 +10,7 @@ import { fetchWipSummary, fetchWipRegister } from "@/lib/job-cards-api";
 import { fetchAssemblyOrderStats } from "@/lib/assembly-orders-api";
 import { fetchFatStats } from "@/lib/fat-api";
 import { fetchRecentSalesOrders } from "@/lib/sales-orders-api";
-import { fetchReorderSummary } from "@/lib/reorder-api";
+import { fetchReorderSummary, fetchReorderAlerts } from "@/lib/reorder-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { supabase } from "@/integrations/supabase/client";
 import { format, startOfMonth } from "date-fns";
@@ -212,6 +212,14 @@ export default function Dashboard() {
     staleTime: 300000,
   });
 
+  const { data: reorderAlerts = [] } = useQuery({
+    queryKey: ["dashboard-reorder-alerts"],
+    queryFn: fetchReorderAlerts,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const criticalCount = reorderAlerts.filter((a) => a.alert_level === "critical").length;
+
   const hour = new Date().getHours();
   const greetingWord = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   const todayStr = format(new Date(), "EEEE, d MMMM yyyy");
@@ -357,14 +365,9 @@ export default function Dashboard() {
                 </div>
               </div>
               <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }} />
-              <div className="flex items-center justify-between py-2.5 cursor-pointer group" onClick={() => navigate("/reorder-intelligence")}>
-                <span className="text-sm text-slate-400 group-hover:text-slate-300 transition-colors">Reorder Alerts</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-xl font-bold text-slate-100 font-mono tabular-nums">
-                    {reorderSummary ? (reorderSummary.critical + reorderSummary.warning) : "—"}
-                  </span>
-                  <StatBadge count={reorderSummary ? reorderSummary.critical + reorderSummary.warning : undefined} />
-                </div>
+              <div className="flex items-center justify-between py-2.5">
+                <span className="text-sm text-slate-400">Reorder Alerts</span>
+                <span style={{ fontSize: "10px", color: "#475569" }}>↓ see below</span>
               </div>
             </div>
           </div>
@@ -403,6 +406,156 @@ export default function Dashboard() {
           </div>
 
         </div>
+
+        {/* Reorder Alerts Widget — only shown when alerts exist */}
+        {reorderAlerts.length > 0 && (
+          <div
+            style={{
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: "12px",
+              padding: "16px",
+              marginTop: "12px",
+            }}
+          >
+            {/* Header row */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span
+                  className={criticalCount > 0 ? "animate-pulse" : ""}
+                  style={{
+                    height: "6px",
+                    width: "6px",
+                    borderRadius: "50%",
+                    flexShrink: 0,
+                    backgroundColor: criticalCount > 0 ? "#EF4444" : "#F59E0B",
+                    display: "inline-block",
+                  }}
+                />
+                <span style={{ fontSize: "10px", color: "#CBD5E1", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 600 }}>
+                  Reorder Alerts
+                </span>
+                <span
+                  style={{
+                    fontSize: "10px",
+                    fontWeight: 600,
+                    padding: "1px 8px",
+                    borderRadius: "9999px",
+                    backgroundColor: criticalCount > 0 ? "rgba(239,68,68,0.15)" : "rgba(245,158,11,0.15)",
+                    color: criticalCount > 0 ? "#FCA5A5" : "#FCD34D",
+                  }}
+                >
+                  {reorderAlerts.length}
+                </span>
+              </div>
+              <button
+                style={{ fontSize: "12px", color: "#60A5FA", background: "none", border: "none", cursor: "pointer" }}
+                onClick={() => navigate("/reorder-intelligence")}
+              >
+                See all {reorderAlerts.length} →
+              </button>
+            </div>
+
+            {/* Items list */}
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "6px",
+                maxHeight: "198px",
+                overflowY: reorderAlerts.length > 3 ? "auto" : "visible",
+                paddingRight: reorderAlerts.length > 3 ? "4px" : "0",
+              }}
+            >
+              {reorderAlerts.map((alert) => {
+                const isCritical = alert.alert_level === "critical";
+                return (
+                  <div
+                    key={alert.item_id}
+                    style={{
+                      background: isCritical ? "rgba(239,68,68,0.08)" : "rgba(245,158,11,0.08)",
+                      border: `1px solid ${isCritical ? "rgba(239,68,68,0.2)" : "rgba(245,158,11,0.2)"}`,
+                      borderRadius: "8px",
+                      padding: "9px 12px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    {/* Item info */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          color: isCritical ? "#FCA5A5" : "#FCD34D",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          margin: 0,
+                        }}
+                      >
+                        {alert.item_description}
+                      </p>
+                      <p style={{ fontSize: "11px", color: "#64748B", margin: 0 }}>
+                        Stock: {alert.current_stock} · Min: {alert.min_stock}
+                      </p>
+                    </div>
+
+                    {/* Status badge */}
+                    <span
+                      style={{
+                        fontSize: "9px",
+                        fontWeight: 700,
+                        textTransform: "uppercase",
+                        padding: "2px 7px",
+                        borderRadius: "9999px",
+                        flexShrink: 0,
+                        backgroundColor: isCritical ? "rgba(239,68,68,0.2)" : "rgba(245,158,11,0.2)",
+                        color: isCritical ? "#FCA5A5" : "#FCD34D",
+                      }}
+                    >
+                      {isCritical ? "Critical" : "Warning"}
+                    </span>
+
+                    {/* Raise PO button */}
+                    <button
+                      style={{
+                        background: "rgba(37,99,235,0.15)",
+                        border: "1px solid rgba(37,99,235,0.3)",
+                        borderRadius: "6px",
+                        padding: "4px 10px",
+                        fontSize: "11px",
+                        color: "#60A5FA",
+                        flexShrink: 0,
+                        cursor: "pointer",
+                      }}
+                      onClick={() =>
+                        navigate("/purchase-orders/new", {
+                          state: {
+                            vendor_id: alert.preferred_vendor_id,
+                            items: [{ item_id: alert.item_id, description: alert.item_description, qty: alert.recommended_order_qty }],
+                          },
+                        })
+                      }
+                    >
+                      Raise PO
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Scroll hint */}
+            {reorderAlerts.length > 3 && (
+              <p style={{ textAlign: "center", color: "#475569", fontSize: "10px", marginTop: "6px" }}>
+                Scroll to see all {reorderAlerts.length} alerts
+              </p>
+            )}
+          </div>
+        )}
+
       </div>
 
       {/* ── ZONE 2: LIGHT CONTENT AREA ───────────────────────────────────── */}
