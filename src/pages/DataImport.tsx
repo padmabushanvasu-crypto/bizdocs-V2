@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Upload, Download, CheckCircle, XCircle, AlertTriangle, Table, Users, Package, GitFork } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SegmentedControl } from "@/components/SegmentedControl";
 import { useToast } from "@/hooks/use-toast";
 import { createParty } from "@/lib/parties-api";
 import { createItem } from "@/lib/items-api";
@@ -550,6 +550,7 @@ function ImportTab({
 
 export default function DataImport() {
   const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState("parties");
 
   const handlePartyImport = async (rows: Record<string, string>[]) => {
     let imported = 0, skipped = 0;
@@ -647,23 +648,19 @@ export default function DataImport() {
         </p>
       </div>
 
-      <Tabs defaultValue="parties">
-        <TabsList className="flex-wrap">
-          <TabsTrigger value="parties" className="gap-1.5">
-            <Users className="h-3.5 w-3.5" /> Parties
-          </TabsTrigger>
-          <TabsTrigger value="items" className="gap-1.5">
-            <Package className="h-3.5 w-3.5" /> Items
-          </TabsTrigger>
-          <TabsTrigger value="bom" className="gap-1.5">
-            <GitFork className="h-3.5 w-3.5" /> Bill of Materials
-          </TabsTrigger>
-          <TabsTrigger value="stock" className="gap-1.5">
-            <Table className="h-3.5 w-3.5" /> Opening Stock
-          </TabsTrigger>
-        </TabsList>
+      <SegmentedControl
+        options={[
+          { value: "parties", label: "Parties" },
+          { value: "items", label: "Items" },
+          { value: "bom", label: "Bill of Materials" },
+          { value: "stock", label: "Opening Stock" },
+        ]}
+        value={activeTab}
+        onChange={setActiveTab}
+      />
 
-        <TabsContent value="parties" className="paper-card mt-4">
+      {activeTab === "parties" && (
+        <div className="paper-card mt-4">
           <h2 className="font-semibold text-slate-900 mb-1">Import Parties</h2>
           <p className="text-sm text-muted-foreground mb-4">
             Import vendors, customers, and sub-contractors. Duplicate names will be skipped.
@@ -681,9 +678,11 @@ export default function DataImport() {
               return null;
             }}
           />
-        </TabsContent>
+        </div>
+      )}
 
-        <TabsContent value="items" className="paper-card mt-4">
+      {activeTab === "items" && (
+        <div className="paper-card mt-4">
           <h2 className="font-semibold text-slate-900 mb-1">Import Items</h2>
           <p className="text-sm text-muted-foreground mb-4">
             Import your product, component, and material master list.
@@ -700,18 +699,22 @@ export default function DataImport() {
               return null;
             }}
           />
-        </TabsContent>
+        </div>
+      )}
 
-        <TabsContent value="bom" className="paper-card mt-4">
+      {activeTab === "bom" && (
+        <div className="paper-card mt-4">
           <h2 className="font-semibold text-slate-900 mb-1">Import Bill of Materials</h2>
           <p className="text-sm text-muted-foreground mb-4">
             Define parent-child relationships. Both items must already exist. Existing BOM lines are updated (upsert).
             Supports Variant Name and Scrap Factor columns.
           </p>
           <BOMImportTab />
-        </TabsContent>
+        </div>
+      )}
 
-        <TabsContent value="stock" className="paper-card mt-4">
+      {activeTab === "stock" && (
+        <div className="paper-card mt-4">
           <h2 className="font-semibold text-slate-900 mb-1">Import Opening Stock</h2>
           <p className="text-sm text-muted-foreground mb-4">
             Set the opening stock quantity for each item. Items must already exist in the system.
@@ -729,8 +732,8 @@ export default function DataImport() {
               return null;
             }}
           />
-        </TabsContent>
-      </Tabs>
+        </div>
+      )}
     </div>
   );
 }

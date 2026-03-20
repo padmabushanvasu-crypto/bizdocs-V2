@@ -45,23 +45,18 @@ export default function DispatchNotes() {
   return (
     <div className="p-4 md:p-6 space-y-6">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
-            <Truck className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-xl font-display font-bold text-foreground">Dispatch Notes</h1>
-            <p className="text-sm text-muted-foreground">Outward dispatch records for customer deliveries</p>
-          </div>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Dispatch Notes</h1>
+          <p className="text-sm text-slate-500 mt-1">Outward dispatch records for customer deliveries</p>
         </div>
-        <Button size="sm" onClick={() => navigate("/dispatch-notes/new")}>
+        <Button size="sm" onClick={() => navigate("/dispatch-notes/new")} className="flex-shrink-0">
           <Plus className="h-3.5 w-3.5 mr-1" /> New Dispatch Note
         </Button>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
         <MetricCard
           title="Draft"
           value={String(stats?.draft ?? "0")}

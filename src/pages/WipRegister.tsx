@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SegmentedControl } from "@/components/SegmentedControl";
 import { fetchWipRegister, type WipEntry } from "@/lib/job-cards-api";
 import {
   fetchInProgressAOsWithLines,
@@ -184,9 +185,9 @@ export default function WipRegister() {
   return (
     <div className="p-4 md:p-6 space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-display font-bold text-foreground flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
             <Activity className="h-5 w-5" />
             WIP Register
             <span className="flex items-center gap-1 text-xs font-normal text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
@@ -194,11 +195,11 @@ export default function WipRegister() {
               Live
             </span>
           </h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-slate-500 mt-1">
             Live view of all work in progress — components and sub-assemblies
           </p>
         </div>
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={handleExport}>
+        <Button variant="outline" size="sm" className="gap-1.5 flex-shrink-0" onClick={handleExport}>
           <Download className="h-3.5 w-3.5" />
           Export
         </Button>
@@ -206,29 +207,15 @@ export default function WipRegister() {
 
       {/* Tab bar + Search */}
       <div className="flex items-center gap-4 flex-wrap">
-        {/* Tabs */}
-        <div className="flex gap-1 bg-muted rounded-lg p-1">
-          {(["all", "component", "assembly"] as const).map((t) => {
-            const labels: Record<WipTab, string> = {
-              all:       "All WIP",
-              component: "Component WIP",
-              assembly:  "Sub-Assembly WIP",
-            };
-            return (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                  tab === t
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {labels[t]}
-              </button>
-            );
-          })}
-        </div>
+        <SegmentedControl
+          options={[
+            { value: "all", label: "All WIP" },
+            { value: "component", label: "Component WIP" },
+            { value: "assembly", label: "Sub-Assembly WIP" },
+          ]}
+          value={tab}
+          onChange={(v) => setTab(v as WipTab)}
+        />
 
         <Input
           placeholder="Search WO number, AO number, item, vendor…"

@@ -124,20 +124,20 @@ export default function AssemblyOrders() {
   return (
     <div className="p-4 md:p-6 space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <Layers className="h-5 w-5 text-blue-600" /> Assembly Orders
           </h1>
-          <p className="text-sm text-slate-500">Build sub-assemblies and finished goods from components</p>
+          <p className="text-sm text-slate-500 mt-1">Build sub-assemblies and finished goods from components</p>
         </div>
-        <Button onClick={() => setNewOpen(true)} className="active:scale-[0.98] transition-transform">
+        <Button onClick={() => setNewOpen(true)} className="flex-shrink-0 active:scale-[0.98] transition-transform">
           <Plus className="h-4 w-4 mr-1" /> New Assembly Order
         </Button>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <MetricCard
           title="Active"
           value={String(stats?.active ?? 0)}
@@ -388,7 +388,7 @@ export default function AssemblyOrders() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Planned Date</Label>
                 <Input

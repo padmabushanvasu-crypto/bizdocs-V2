@@ -111,14 +111,14 @@ export default function StockLedger() {
   return (
     <div className="p-4 md:p-6 space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <BookOpen className="h-5 w-5 text-blue-600" /> Stock Ledger
           </h1>
-          <p className="text-sm text-slate-500">Complete history of every stock movement</p>
+          <p className="text-sm text-slate-500 mt-1">Complete history of every stock movement</p>
         </div>
-        <Button variant="outline" onClick={handleExport} className="gap-1.5">
+        <Button variant="outline" onClick={handleExport} className="gap-1.5 flex-shrink-0">
           <Download className="h-4 w-4" /> Export
         </Button>
       </div>

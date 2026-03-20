@@ -445,7 +445,7 @@ export default function InvoiceForm() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Place of Supply</Label>
               <Input value={placeOfSupply} onChange={(e) => setPlaceOfSupply(e.target.value)} placeholder="State code" />
@@ -513,7 +513,7 @@ export default function InvoiceForm() {
             <Label className="text-xs font-bold uppercase text-muted-foreground">Bank Details</Label>
             <Input placeholder="Bank Name" value={bankName} onChange={(e) => setBankName(e.target.value)} />
             <Input placeholder="Account Number" value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} />
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <Input placeholder="IFSC Code" value={bankIfsc} onChange={(e) => setBankIfsc(e.target.value)} />
               <Input placeholder="Branch" value={bankBranch} onChange={(e) => setBankBranch(e.target.value)} />
             </div>

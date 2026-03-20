@@ -21,12 +21,12 @@ export default function PaymentReceipts() {
 
   return (
     <div className="p-4 md:p-6 space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-display font-bold text-foreground">Payment Receipts</h1>
-          <p className="text-sm text-muted-foreground">All recorded payment receipts</p>
+          <h1 className="text-2xl font-bold text-slate-900">Payment Receipts</h1>
+          <p className="text-sm text-slate-500 mt-1">All recorded payment receipts</p>
         </div>
-        <Button variant="outline" onClick={() => exportToExcel(receipts, PAYMENT_EXPORT_COLS, `Payment_Receipts_${new Date().toISOString().split("T")[0]}.xlsx`, "Payment Receipts")} disabled={receipts.length === 0}>
+        <Button variant="outline" className="flex-shrink-0" onClick={() => exportToExcel(receipts, PAYMENT_EXPORT_COLS, `Payment_Receipts_${new Date().toISOString().split("T")[0]}.xlsx`, "Payment Receipts")} disabled={receipts.length === 0}>
           <Download className="h-4 w-4 mr-1" /> Export
         </Button>
       </div>

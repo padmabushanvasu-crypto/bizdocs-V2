@@ -107,16 +107,16 @@ export default function StageTemplates() {
 
   return (
     <div className="p-4 md:p-6 space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-display font-bold text-foreground flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
             <GitBranch className="h-5 w-5" /> Stage Templates
           </h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-slate-500 mt-1">
             Reusable process stages for Job Cards
           </p>
         </div>
-        <Button onClick={openNew} className="active:scale-[0.98] transition-transform">
+        <Button onClick={openNew} className="active:scale-[0.98] transition-transform flex-shrink-0">
           <Plus className="h-4 w-4 mr-1" /> Add Template
         </Button>
       </div>

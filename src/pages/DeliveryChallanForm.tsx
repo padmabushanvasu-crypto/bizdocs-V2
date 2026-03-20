@@ -290,7 +290,7 @@ export default function DeliveryChallanForm() {
 
       {/* DC Type Selector */}
       <div className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <button
             onClick={() => { if (!isReturnable) setDcType("returnable"); }}
             className={cn(
@@ -396,7 +396,7 @@ export default function DeliveryChallanForm() {
 
           {/* Right - DC Details */}
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">DC Number</Label>
                 <Input value={dcNumber} onChange={(e) => setDcNumber(e.target.value)} className="mt-1 font-mono" />
@@ -416,7 +416,7 @@ export default function DeliveryChallanForm() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Vehicle Number</Label>
                 <Input value={vehicleNumber} onChange={(e) => setVehicleNumber(e.target.value)} className="mt-1" placeholder="e.g., MH-01-AB-1234" />
@@ -427,7 +427,7 @@ export default function DeliveryChallanForm() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Approx. Value ₹</Label>
                 <Input
@@ -445,7 +445,7 @@ export default function DeliveryChallanForm() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">PO Date</Label>
                 <Popover>
@@ -647,7 +647,7 @@ export default function DeliveryChallanForm() {
               <Textarea value={internalRemarks} onChange={(e) => setInternalRemarks(e.target.value)} className="mt-1" rows={2} />
               <p className="text-[10px] text-muted-foreground mt-1">Not printed on document</p>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Prepared By</Label>
                 <Input value={preparedBy} onChange={(e) => setPreparedBy(e.target.value)} className="mt-1" placeholder="Name" />

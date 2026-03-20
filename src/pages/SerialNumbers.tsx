@@ -140,15 +140,10 @@ export default function SerialNumbers() {
   return (
     <div className="p-4 md:p-6 space-y-6">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
-            <Hash className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-xl font-display font-bold text-foreground">Serial Numbers</h1>
-            <p className="text-sm text-muted-foreground">Track every finished unit from assembly to dispatch</p>
-          </div>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Serial Numbers</h1>
+          <p className="text-sm text-slate-500 mt-1">Track every finished unit from assembly to dispatch</p>
         </div>
       </div>
 

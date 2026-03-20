@@ -91,19 +91,14 @@ export default function WarrantyTracker() {
   return (
     <div className="p-4 md:p-6 space-y-6">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
-            <Shield className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-xl font-display font-bold text-foreground">Warranty Tracker</h1>
-            <p className="text-sm text-muted-foreground">
-              {allRows.length} dispatched unit{allRows.length !== 1 ? "s" : ""} under warranty tracking
-            </p>
-          </div>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Warranty Tracker</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            {allRows.length} dispatched unit{allRows.length !== 1 ? "s" : ""} under warranty tracking
+          </p>
         </div>
-        <Button variant="outline" size="sm" onClick={handleExport}>
+        <Button variant="outline" size="sm" onClick={handleExport} className="flex-shrink-0">
           <Download className="h-3.5 w-3.5 mr-1" /> Export Excel
         </Button>
       </div>

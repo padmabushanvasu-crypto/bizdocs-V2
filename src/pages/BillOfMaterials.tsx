@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { SegmentedControl } from "@/components/SegmentedControl";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
@@ -778,15 +779,19 @@ export default function BillOfMaterials() {
                 </div>
 
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1">
-                  <TabsList className="mx-5 mt-3 justify-start h-9 w-fit gap-0.5">
-                    <TabsTrigger value="structure" className="text-xs px-3">Structure</TabsTrigger>
-                    <TabsTrigger value="explosion" className="text-xs px-3">BOM Explosion</TabsTrigger>
-                    <TabsTrigger value="cost" className="text-xs px-3">Cost Rollup</TabsTrigger>
-                    <TabsTrigger value="where-used" className="text-xs px-3">Where Used</TabsTrigger>
-                    <TabsTrigger value="variants" className="text-xs px-3">
-                      Variants {bomVariants.length > 0 && `(${bomVariants.length})`}
-                    </TabsTrigger>
-                  </TabsList>
+                  <div className="mx-5 mt-3 overflow-x-auto">
+                    <SegmentedControl
+                      options={[
+                        { value: "structure", label: "Structure" },
+                        { value: "explosion", label: "BOM Explosion" },
+                        { value: "cost", label: "Cost Rollup" },
+                        { value: "where-used", label: "Where Used" },
+                        { value: "variants", label: bomVariants.length > 0 ? `Variants (${bomVariants.length})` : "Variants" },
+                      ]}
+                      value={activeTab}
+                      onChange={setActiveTab}
+                    />
+                  </div>
 
                   {/* ── TAB 1: STRUCTURE ──────────────────────────────────── */}
                   <TabsContent value="structure" className="flex flex-col flex-1 mt-0">

@@ -60,12 +60,12 @@ export default function GRNRegister() {
 
   return (
     <div className="p-4 md:p-6 space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-display font-bold text-foreground">Goods Receipt Notes</h1>
-          <p className="text-sm text-muted-foreground">Record incoming material against POs</p>
+          <h1 className="text-2xl font-bold text-slate-900">Goods Receipt Notes</h1>
+          <p className="text-sm text-slate-500 mt-1">Record incoming material against POs</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 flex-shrink-0">
           <Button variant="outline" onClick={() => exportToExcel(grns, GRN_EXPORT_COLS, `GRNs_${new Date().toISOString().split("T")[0]}.xlsx`, "GRNs")} disabled={grns.length === 0}>
             <Download className="h-4 w-4 mr-1" /> Export
           </Button>

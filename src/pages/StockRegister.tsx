@@ -119,12 +119,12 @@ export default function StockRegister() {
 
   return (
     <div className="p-4 md:p-6 space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <Shield className="h-5 w-5 text-blue-600" /> Stock Register
           </h1>
-          <p className="text-sm text-slate-500">Current stock vs minimum levels for all active items</p>
+          <p className="text-sm text-slate-500 mt-1">Current stock vs minimum levels for all active items</p>
         </div>
       </div>
 

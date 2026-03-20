@@ -48,20 +48,15 @@ export default function FatCertificates() {
   return (
     <div className="p-4 md:p-6 space-y-6">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
-            <ClipboardCheck className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-xl font-display font-bold text-foreground">FAT Certificates</h1>
-            <p className="text-sm text-muted-foreground">Factory Acceptance Test records</p>
-          </div>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">FAT Certificates</h1>
+          <p className="text-sm text-slate-500 mt-1">Factory Acceptance Test records</p>
         </div>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
         <MetricCard
           title="Pending"
           value={String(stats?.pending ?? "—")}

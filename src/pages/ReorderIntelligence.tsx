@@ -117,13 +117,13 @@ export default function ReorderIntelligence() {
   return (
     <div className="p-4 md:p-6 space-y-4">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-display font-bold text-foreground flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
             <TrendingDown className="h-5 w-5" />
             Reorder Intelligence
           </h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-slate-500 mt-1">
             Smart reorder alerts based on stock levels and consumption patterns
           </p>
         </div>
@@ -146,7 +146,7 @@ export default function ReorderIntelligence() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <div
           className={`paper-card cursor-pointer transition-colors ${criticalCount > 0 ? "border-l-4 border-l-destructive" : ""}`}
           onClick={() => setLevelFilter(levelFilter === "critical" ? "all" : "critical")}

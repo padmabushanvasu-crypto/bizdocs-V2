@@ -324,7 +324,7 @@ export default function SalesOrderForm() {
 
           {/* Right — SO Details */}
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">SO Date *</Label>
                 <Popover>
@@ -353,7 +353,7 @@ export default function SalesOrderForm() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Reference / PO No.</Label>
                 <Input

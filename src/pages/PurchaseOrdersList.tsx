@@ -72,12 +72,12 @@ export default function PurchaseOrdersList() {
 
   return (
     <div className="p-4 md:p-6 space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-display font-bold text-foreground">Purchase Orders</h1>
-          <p className="text-sm text-muted-foreground">Track vendor orders and receipts</p>
+          <h1 className="text-2xl font-bold text-slate-900">Purchase Orders</h1>
+          <p className="text-sm text-slate-500 mt-1">Track vendor orders and receipts</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 flex-shrink-0">
           <Button variant="outline" onClick={() => exportToExcel(pos, PO_EXPORT_COLS, `Purchase_Orders_${new Date().toISOString().split("T")[0]}.xlsx`, "Purchase Orders")} disabled={pos.length === 0}>
             <Download className="h-4 w-4 mr-1" /> Export
           </Button>

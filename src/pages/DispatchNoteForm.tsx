@@ -383,7 +383,7 @@ export default function DispatchNoteForm() {
 
           {/* Right — Transport Details */}
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">DN Date *</Label>
                 <Popover>
@@ -408,7 +408,7 @@ export default function DispatchNoteForm() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">Driver Name</Label>
                 <Input
@@ -429,7 +429,7 @@ export default function DispatchNoteForm() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs uppercase text-muted-foreground font-bold tracking-wider">LR / Docket No.</Label>
                 <Input

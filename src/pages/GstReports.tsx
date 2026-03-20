@@ -507,11 +507,11 @@ export default function GstReports() {
     <div className="p-4 md:p-6 space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-xl font-display font-bold text-foreground flex items-center gap-2">
+        <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
           <FileSpreadsheet className="h-5 w-5 text-blue-600" />
           GST Reports
         </h1>
-        <p className="text-sm text-muted-foreground">Download GST-ready Excel files for CA filing</p>
+        <p className="text-sm text-slate-500 mt-1">Download GST-ready Excel files for CA filing</p>
       </div>
 
       {/* Notice */}
