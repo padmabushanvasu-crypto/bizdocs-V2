@@ -447,25 +447,35 @@ export const INVOICE_IMPORT_CONFIG: ImportConfig = {
 
 // ── Flexible column matching ────────────────────────────────────────────────
 
+// Shared normaliser used by both resolveColumns and the smart header detector
+export function normaliseHeader(s: string): string {
+  return s
+    .toLowerCase()
+    .trim()
+    .replace(/\*/g, "")          // remove asterisks
+    .replace(/₹/g, "")           // remove rupee symbol
+    .replace(/\(.*?\)/g, "")     // remove parenthetical content
+    .replace(/[^a-z0-9\s]/g, " ") // replace remaining non-alphanumeric with space
+    .replace(/\s+/g, " ")        // collapse multiple spaces
+    .trim();
+}
+
 export function resolveColumns(
   headers: string[],
   fieldMap: Record<string, string[]>
 ): Record<string, number> {
-  const normalise = (s: string) =>
-    s.toLowerCase().trim()
-      .replace(/\*/g, "")
-      .replace(/\(.*?\)/g, "")
-      .replace(/[^a-z0-9 ]/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
   const result: Record<string, number> = {};
-  const normHeaders = headers.map(normalise);
+  const normHeaders = headers.map(normaliseHeader);
   for (const [field, aliases] of Object.entries(fieldMap)) {
     for (const alias of aliases) {
-      const normAlias = normalise(alias);
-      const idx = normHeaders.findIndex(
-        (h) => h === normAlias || h.includes(normAlias) || normAlias.includes(h)
-      );
+      const normAlias = normaliseHeader(alias);
+      // Only allow short aliases (< 4 chars) to match by substring to avoid false positives
+      const idx = normHeaders.findIndex((h) => {
+        if (h === normAlias) return true;
+        if (normAlias.length >= 4 && h.includes(normAlias)) return true;
+        if (normAlias.length >= 4 && normAlias.includes(h) && h.length >= 4) return true;
+        return false;
+      });
       if (idx !== -1) { result[field] = idx; break; }
     }
   }
@@ -567,8 +577,8 @@ export const ITEM_FIELD_MAP: Record<string, string[]> = {
 
 export const BOM_FIELD_MAP: Record<string, string[]> = {
   finished_item_code: ["finished item code", "parent item code", "parent code", "finished item", "parent item"],
-  component_code: ["component code", "child item code", "child code", "component", "child item"],
-  quantity: ["quantity", "qty", "quantity required", "bom qty"],
+  component_code: ["component code", "child item code", "child code", "child item"],
+  quantity: ["quantity per unit", "quantity", "qty", "quantity required", "bom qty"],
   unit: ["unit", "uom"],
   scrap_factor: ["scrap factor %", "scrap factor", "scrap %", "waste %"],
   variant_name: ["variant name", "variant", "bom variant"],
@@ -580,3 +590,49 @@ export const STOCK_FIELD_MAP: Record<string, string[]> = {
   current_stock: ["opening stock qty", "opening stock", "current stock", "stock qty", "opening qty", "quantity", "qty"],
   notes: ["notes", "remarks"],
 };
+
+// ── Human-readable field display names ──────────────────────────────────────
+
+export const FIELD_DISPLAY_NAMES: Record<string, string> = {
+  name: "Party Name",
+  party_type: "Party Type",
+  state_code: "State Code",
+  state: "State",
+  city: "City",
+  pin_code: "PIN Code",
+  phone1: "Phone 1",
+  phone2: "Phone 2",
+  email1: "Email",
+  gstin: "GSTIN",
+  pan: "PAN",
+  payment_terms: "Payment Terms",
+  credit_limit: "Credit Limit",
+  contact_person: "Contact Person",
+  address_line1: "Address Line 1",
+  address_line2: "Address Line 2",
+  notes: "Notes",
+  item_code: "Item Code",
+  description: "Description",
+  item_type: "Item Type",
+  unit: "Unit",
+  hsn_sac_code: "HSN/SAC Code",
+  gst_rate: "GST Rate",
+  min_stock: "Min Stock",
+  drawing_number: "Drawing Number",
+  standard_cost: "Standard Cost",
+  purchase_price: "Purchase Price",
+  sale_price: "Sale Price",
+  finished_item_code: "Finished Item Code",
+  component_code: "Component Code",
+  quantity: "Quantity",
+  scrap_factor: "Scrap Factor %",
+  variant_name: "Variant Name",
+  current_stock: "Opening Stock / Current Stock",
+};
+
+export function fieldDisplayName(field: string): string {
+  return (
+    FIELD_DISPLAY_NAMES[field] ??
+    field.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())
+  );
+}

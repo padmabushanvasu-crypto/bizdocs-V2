@@ -12,18 +12,76 @@ import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId } from "@/lib/auth-helpers";
 import {
   resolveColumns, extractRow, buildMappingSummary,
-  normalizePartyType, normalizeItemType,
+  normalizePartyType, normalizeItemType, normaliseHeader, fieldDisplayName,
   PARTY_FIELD_MAP, ITEM_FIELD_MAP, BOM_FIELD_MAP, STOCK_FIELD_MAP,
   type ColumnMappingSummary,
 } from "@/lib/import-utils";
 
-// Lazy-load xlsx to keep bundle light
-async function parseExcel(file: File): Promise<Record<string, string>[]> {
+// Smart Excel parser: auto-detects the header row by scanning the first 10 rows
+// and scoring each row against known field aliases. Skips preamble rows and
+// instruction/example rows that appear after the header.
+async function parseExcelSmart(
+  file: File,
+  fieldMap: Record<string, string[]>
+): Promise<Record<string, string>[]> {
   const XLSX = await import("xlsx-js-style");
   const buffer = await file.arrayBuffer();
-  const wb = (XLSX as any).read(new Uint8Array(buffer), { type: "array" });
+  const wb = (XLSX as any).read(new Uint8Array(buffer), { type: "array", raw: false });
   const ws = wb.Sheets[wb.SheetNames[0]];
-  return (XLSX as any).utils.sheet_to_json(ws, { defval: "" }) as Record<string, string>[];
+
+  // Read all rows as raw arrays so we can pick the header row ourselves
+  const allRows = (XLSX as any).utils.sheet_to_json(ws, {
+    header: 1,
+    defval: "",
+    raw: false,
+  }) as string[][];
+
+  if (allRows.length === 0) return [];
+
+  // Build alias list for scoring (use the same normaliser as resolveColumns)
+  const allAliases = Object.values(fieldMap).flat().map(normaliseHeader).filter((a) => a.length >= 3);
+
+  // Score each of the first 10 rows: count how many cells match known aliases
+  const scanLimit = Math.min(10, allRows.length);
+  let headerRowIdx = 0;
+  let bestScore = -1;
+
+  for (let i = 0; i < scanLimit; i++) {
+    let score = 0;
+    for (const cell of allRows[i]) {
+      const norm = normaliseHeader(String(cell));
+      if (norm.length < 2) continue;
+      if (allAliases.some((alias) => norm === alias || norm.includes(alias) || alias.includes(norm))) {
+        score++;
+      }
+    }
+    if (score > bestScore) { bestScore = score; headerRowIdx = i; }
+  }
+
+  const headers = allRows[headerRowIdx].map((c) => String(c).trim());
+
+  // Phrases that mark a row as an instruction/example to skip
+  const SKIP_PHRASES = ["required field", "example data", "how to use", "instructions", "sample only", "do not change", "delete this row"];
+
+  const result: Record<string, string>[] = [];
+  for (let i = headerRowIdx + 1; i < allRows.length; i++) {
+    const row = allRows[i];
+    const rowText = row.map((c) => String(c)).join(" ").toLowerCase();
+    if (SKIP_PHRASES.some((p) => rowText.includes(p))) continue;
+
+    const mapped: Record<string, string> = {};
+    let hasData = false;
+    headers.forEach((header, idx) => {
+      const val = String(row[idx] ?? "").trim();
+      if (header) {
+        mapped[header] = val;
+        if (val) hasData = true;
+      }
+    });
+    if (hasData) result.push(mapped);
+  }
+
+  return result;
 }
 
 
@@ -64,21 +122,30 @@ const STOCK_HEADERS = ["Item Code *", "Opening Stock Qty *", "Notes"];
 
 // ── Column Mapping Summary ─────────────────────────────────────────────────
 
-function MappingSummaryBar({ summary }: { summary: ColumnMappingSummary }) {
+function MappingSummaryBar({ summary, columnWarnings }: { summary: ColumnMappingSummary; columnWarnings?: string[] }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-      {summary.found.map(({ originalHeader, field }) => (
-        <span key={field} className="inline-flex items-center gap-1 text-green-700">
-          <CheckCircle className="h-3 w-3 shrink-0" />
-          <span className="font-medium">{originalHeader}</span>
-          <span className="text-slate-400">→</span>
-          <span className="text-slate-600">{field}</span>
-        </span>
-      ))}
-      {summary.missingOptional.length > 0 && (
-        <span className="text-slate-400">
-          — {summary.missingOptional.length} optional column{summary.missingOptional.length !== 1 ? "s" : ""} not found (skipped)
-        </span>
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+        {summary.found.map(({ originalHeader, field }) => (
+          <span key={field} className="inline-flex items-center gap-1 text-green-700">
+            <CheckCircle className="h-3 w-3 shrink-0" />
+            <span className="font-medium">{originalHeader}</span>
+            <span className="text-slate-400">→</span>
+            <span className="text-slate-600">{fieldDisplayName(field)}</span>
+          </span>
+        ))}
+        {summary.missingOptional.length > 0 && (
+          <span className="text-slate-400">
+            — {summary.missingOptional.length} optional column{summary.missingOptional.length !== 1 ? "s" : ""} not found (skipped)
+          </span>
+        )}
+      </div>
+      {columnWarnings && columnWarnings.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+          <span className="font-semibold">Column warning: </span>
+          {columnWarnings.join(" · ")}
+          {" "}Rows missing these values will be skipped.
+        </div>
       )}
     </div>
   );
@@ -181,18 +248,19 @@ function BOMImportTab() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ imported: number; updated: number; skipped: number } | null>(null);
   const [mappingSummary, setMappingSummary] = useState<ColumnMappingSummary | null>(null);
+  const [columnWarnings, setColumnWarnings] = useState<string[]>([]);
 
   const clearAll = () => {
     setRows([]); setValidRows([]); setErrors([]);
     setErrorRows(new Set()); setErrorMessages(new Map()); setResult(null);
-    setMappingSummary(null);
+    setMappingSummary(null); setColumnWarnings([]);
   };
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const raw = await parseExcel(file);
+      const raw = await parseExcelSmart(file, BOM_FIELD_MAP);
 
       if (raw.length === 0) {
         toast({ title: "No data found", description: "The file is empty or contains only column headers.", variant: "destructive" });
@@ -205,15 +273,11 @@ function BOMImportTab() {
       const bomSummary = buildMappingSummary(bomHeaders, bomColMap, BOM_FIELD_MAP, ["finished_item_code", "component_code", "quantity"]);
       setMappingSummary(bomSummary);
 
-      if (bomSummary.missingRequired.length > 0) {
-        toast({
-          title: "Missing required columns",
-          description: `Not found: ${bomSummary.missingRequired.join(", ")}. Download the template to see expected column names.`,
-          variant: "destructive",
-        });
-        e.target.value = "";
-        return;
-      }
+      // Non-blocking: show warning for missing required columns instead of blocking
+      const warnings = bomSummary.missingRequired.map(
+        (f) => `"${fieldDisplayName(f)}" column not found`
+      );
+      setColumnWarnings(warnings);
 
       const parsed = raw.map((r) => extractRow(r, bomHeaders, bomColMap));
 
@@ -458,7 +522,7 @@ function BOMImportTab() {
 
       {/* Column Mapping Summary */}
       {mappingSummary && rows.length > 0 && (
-        <MappingSummaryBar summary={mappingSummary} />
+        <MappingSummaryBar summary={mappingSummary} columnWarnings={columnWarnings} />
       )}
 
       {/* Preview */}
@@ -518,17 +582,18 @@ function ImportTab({
   const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [mappingSummary, setMappingSummary] = useState<ColumnMappingSummary | null>(null);
+  const [columnWarnings, setColumnWarnings] = useState<string[]>([]);
 
   const clearAll = () => {
     setRows([]); setValidRows([]); setErrorRows(new Set()); setErrors([]); setResult(null);
-    setMappingSummary(null);
+    setMappingSummary(null); setColumnWarnings([]);
   };
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const raw = await parseExcel(file);
+      const raw = await parseExcelSmart(file, fieldMap);
 
       if (raw.length === 0) {
         toast({ title: "No data found", description: "The file is empty or contains only column headers.", variant: "destructive" });
@@ -541,15 +606,11 @@ function ImportTab({
       const summary = buildMappingSummary(headers, colMap, fieldMap, requiredFields);
       setMappingSummary(summary);
 
-      if (summary.missingRequired.length > 0) {
-        toast({
-          title: "Missing required columns",
-          description: `Not found: ${summary.missingRequired.join(", ")}. Download the template to see expected column names.`,
-          variant: "destructive",
-        });
-        e.target.value = "";
-        return;
-      }
+      // Non-blocking: show amber warning for missing required columns instead of blocking
+      const warnings = summary.missingRequired.map(
+        (f) => `"${fieldDisplayName(f)}" column not found`
+      );
+      setColumnWarnings(warnings);
 
       const parsed = raw.map((r) => extractRow(r, headers, colMap));
 
@@ -670,7 +731,7 @@ function ImportTab({
 
       {/* Column Mapping Summary */}
       {mappingSummary && rows.length > 0 && (
-        <MappingSummaryBar summary={mappingSummary} />
+        <MappingSummaryBar summary={mappingSummary} columnWarnings={columnWarnings} />
       )}
 
       {/* Preview */}
