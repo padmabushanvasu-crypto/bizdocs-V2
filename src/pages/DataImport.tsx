@@ -370,14 +370,25 @@ function BOMImportTab() {
       ];
       const { data: itemsByCode } = await supabase
         .from("items").select("id, item_code, drawing_revision").in("item_code", allCodes);
-      const resolvedCodes = new Set<string>((itemsByCode ?? []).map((i: any) => i.item_code));
+      // resolvedCodes stores normalized (lowercase) versions of every code that matched an item
+      const resolvedCodes = new Set<string>(
+        (itemsByCode ?? []).map((i: any) => (i.item_code as string).toLowerCase())
+      );
 
-      const missingCodes = allCodes.filter((c) => !resolvedCodes.has(c));
+      // For codes not found by item_code, try drawing_revision ILIKE (case-insensitive)
+      const missingCodes = allCodes.filter((c) => !resolvedCodes.has(c.toLowerCase()));
       if (missingCodes.length > 0) {
+        const ilikeFilter = missingCodes.map((c) => `drawing_revision.ilike.${c}`).join(",");
         const { data: itemsByRev } = await supabase
-          .from("items").select("id, item_code, drawing_revision").in("drawing_revision", missingCodes);
+          .from("items").select("id, item_code, drawing_revision").or(ilikeFilter);
         for (const item of (itemsByRev ?? []) as any[]) {
-          if (item.drawing_revision) resolvedCodes.add(item.drawing_revision);
+          if (item.drawing_revision) {
+            // Mark whichever missing code this item's drawing_revision matches
+            const matched = missingCodes.find(
+              (c) => c.toLowerCase() === (item.drawing_revision as string).toLowerCase()
+            );
+            if (matched) resolvedCodes.add(matched.toLowerCase());
+          }
         }
       }
 
@@ -399,8 +410,8 @@ function BOMImportTab() {
         else if (!childCode) rowError = "Component Code was blank or missing";
         else if (isNaN(qty) || qty <= 0) rowError = "Quantity must be a number greater than 0";
         else if (parentCode === childCode) rowError = "Parent and component cannot be the same item";
-        else if (!resolvedCodes.has(parentCode)) rowError = `Referenced item '${parentCode}' not found in Items master`;
-        else if (!resolvedCodes.has(childCode)) rowError = `Referenced item '${childCode}' not found in Items master`;
+        else if (!resolvedCodes.has(parentCode.toLowerCase())) rowError = `Item '${parentCode}' not found — checked both item code and drawing number`;
+        else if (!resolvedCodes.has(childCode.toLowerCase())) rowError = `Item '${childCode}' not found — checked both item code and drawing number`;
 
         if (rowError) {
           newErrorRows.add(i);
@@ -438,13 +449,23 @@ function BOMImportTab() {
       ),
     ];
     const { data: itemsData } = await supabase.from("items").select("id, item_code, drawing_revision").in("item_code", codes);
-    const codeToId = new Map((itemsData ?? []).map((i: any) => [i.item_code, i.id]));
+    // codeToId keys are lowercased input codes for case-insensitive lookup
+    const codeToId = new Map<string, string>(
+      (itemsData ?? []).map((i: any) => [(i.item_code as string).toLowerCase(), i.id as string])
+    );
 
-    const missingCodes = codes.filter((c) => !codeToId.has(c));
+    // For codes not resolved by item_code, try drawing_revision ILIKE
+    const missingCodes = codes.filter((c) => !codeToId.has(c.toLowerCase()));
     if (missingCodes.length > 0) {
-      const { data: byRevData } = await supabase.from("items").select("id, item_code, drawing_revision").in("drawing_revision", missingCodes);
+      const ilikeFilter = missingCodes.map((c) => `drawing_revision.ilike.${c}`).join(",");
+      const { data: byRevData } = await supabase.from("items").select("id, item_code, drawing_revision").or(ilikeFilter);
       for (const item of (byRevData ?? []) as any[]) {
-        if (item.drawing_revision) codeToId.set(item.drawing_revision, item.id);
+        if (item.drawing_revision) {
+          const matched = missingCodes.find(
+            (c) => c.toLowerCase() === (item.drawing_revision as string).toLowerCase()
+          );
+          if (matched) codeToId.set(matched.toLowerCase(), item.id as string);
+        }
       }
     }
 
@@ -458,11 +479,12 @@ function BOMImportTab() {
       const parentCode = row["finished_item_code"]?.trim();
       const childCode = row["component_code"]?.trim();
       const qty = parseFloat(row["quantity"] || "0");
-      const parentId = codeToId.get(parentCode);
-      const childId = codeToId.get(childCode);
+      const parentId = codeToId.get(parentCode.toLowerCase());
+      const childId = codeToId.get(childCode.toLowerCase());
       if (!parentId || !childId) {
         skipped++;
-        skipReasons.push({ row: excelRow, value: parentCode || "", reason: `Referenced item '${!parentId ? parentCode : childCode}' not found in Items master` });
+        const missingCode = !parentId ? parentCode : childCode;
+        skipReasons.push({ row: excelRow, value: parentCode || "", reason: `Item '${missingCode}' not found — checked both item code and drawing number` });
         continue;
       }
 
@@ -982,20 +1004,56 @@ export default function DataImport() {
     let imported = 0, skipped = 0;
     const errors: string[] = [];
     const skipReasons: SkipReason[] = [];
+    let autoCodeIndex = 1;
+
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const excelRow = rowNums[i] ?? (i + 2);
-      const code = row["item_code"]?.trim();
-      const desc = row["description"]?.trim();
+      const code = row["item_code"]?.trim() || "";
+      // "Drawing Number" column maps to field key drawing_number; stored in both DB columns
+      const drawingNum = row["drawing_number"]?.trim() || "";
+      const desc = row["description"]?.trim() || "";
+      // Best identifier for skip reason display (FIX 3)
+      const displayKey = code || drawingNum || "";
+
       if (!desc) {
         skipped++;
-        errors.push(`Row ${excelRow}${code ? ` (${code})` : ""}: Description was blank or missing`);
-        skipReasons.push({ row: excelRow, value: code || "", reason: "Description was blank or missing" });
+        errors.push(`Row ${excelRow}${displayKey ? ` (${displayKey})` : ""}: Description was blank or missing`);
+        skipReasons.push({ row: excelRow, value: displayKey, reason: "Description was blank or missing" });
         continue;
       }
+
       try {
-        await createItem({
-          item_code: code || null,
+        // ── Determine lookup key and whether item already exists ──────────
+        let existingId: string | null = null;
+        let resolvedCode = code;
+
+        if (code) {
+          // 1. Lookup by item_code (exact match)
+          const { data } = await supabase
+            .from("items").select("id").eq("item_code", code).limit(1);
+          existingId = (data as any[])?.[0]?.id ?? null;
+        } else if (drawingNum) {
+          // 2. Lookup by drawing_revision (case-insensitive)
+          const { data } = await supabase
+            .from("items").select("id, item_code").ilike("drawing_revision", drawingNum).limit(1);
+          existingId = (data as any[])?.[0]?.id ?? null;
+          // Use existing item_code if found, otherwise fall back to drawing number
+          resolvedCode = (data as any[])?.[0]?.item_code || drawingNum;
+        } else {
+          // 3. Auto-generate item_code from description (first 3 words, uppercase, hyphenated)
+          const words = desc.trim().split(/\s+/).slice(0, 3)
+            .map((w) => w.toUpperCase().replace(/[^A-Z0-9]/g, "")).filter(Boolean);
+          resolvedCode = `${words.join("-")}-${String(autoCodeIndex).padStart(4, "0")}`;
+          autoCodeIndex++;
+          // Check if the auto-generated code already exists
+          const { data } = await supabase
+            .from("items").select("id").eq("item_code", resolvedCode).limit(1);
+          existingId = (data as any[])?.[0]?.id ?? null;
+        }
+
+        const itemPayload: any = {
+          item_code: resolvedCode || null,
           description: desc,
           item_type: normalizeItemType(row["item_type"] || ""),
           unit: row["unit"] || "NOS",
@@ -1005,15 +1063,25 @@ export default function DataImport() {
           gst_rate: parseFloat(row["gst_rate"] || "18") || 18,
           min_stock: parseFloat(row["min_stock"] || "0") || 0,
           notes: row["notes"] || null,
-          drawing_number: row["drawing_number"] || null,
-        } as any);
+          drawing_number: drawingNum || null,
+          drawing_revision: drawingNum || null, // always populate from Drawing Number column
+        };
+
+        if (existingId) {
+          const { error } = await supabase.from("items").update(itemPayload).eq("id", existingId);
+          if (error) throw error;
+        } else {
+          await createItem(itemPayload);
+        }
         imported++;
       } catch (err: any) {
         skipped++;
         const isDup = err?.code === "23505" || String(err?.message ?? "").toLowerCase().includes("duplicate") || String(err?.message ?? "").toLowerCase().includes("unique");
-        const reason = isDup ? `Duplicate — item with code "${code || desc}" already exists` : `DB error: ${err?.message ?? "unknown"}`;
-        errors.push(`Row ${excelRow} (${code || desc}): ${reason}`);
-        skipReasons.push({ row: excelRow, value: code || desc, reason });
+        const reason = isDup
+          ? `Duplicate — item "${displayKey || desc}" already exists`
+          : `DB error: ${err?.message ?? "unknown"}`;
+        errors.push(`Row ${excelRow}${displayKey ? ` (${displayKey})` : ""}: ${reason}`);
+        skipReasons.push({ row: excelRow, value: displayKey, reason });
       }
     }
     queryClient.invalidateQueries({ queryKey: ["items"] });
@@ -1143,8 +1211,8 @@ export default function DataImport() {
             templateHeaders={ITEM_HEADERS}
             templateSheetName="Items Import"
             fieldMap={ITEM_FIELD_MAP}
-            requiredFields={["description"]}
-            primaryKeyField="item_code"
+            requiredFields={["description", "item_type", "unit"]}
+            primaryKeyField="drawing_number"
             onImport={handleItemImport}
             validate={(row) => {
               if (!row["description"]?.trim()) return "Description is required";
