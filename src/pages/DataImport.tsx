@@ -6,8 +6,6 @@ import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { createParty } from "@/lib/parties-api";
-import { createItem } from "@/lib/items-api";
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId } from "@/lib/auth-helpers";
 import {
@@ -958,6 +956,7 @@ export default function DataImport() {
     let imported = 0, skipped = 0;
     const errors: string[] = [];
     const skipReasons: SkipReason[] = [];
+    const companyId = await getCompanyId();
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const excelRow = rowNums[i] ?? (i + 2);
@@ -971,9 +970,10 @@ export default function DataImport() {
       try {
         const gstin = row["gstin"] || null;
         const state_code = row["state_code"] || (gstin && gstin.length >= 2 ? gstin.substring(0, 2) : null);
-        await createParty({
+        const { error } = await (supabase as any).from("parties").insert({
+          company_id: companyId,
           name,
-          party_type: normalizePartyType(row["party_type"] || "") as any,
+          party_type: normalizePartyType(row["party_type"] || ""),
           contact_person: row["contact_person"] || null,
           address_line1: row["address_line1"] || null,
           city: row["city"] || null,
@@ -986,7 +986,8 @@ export default function DataImport() {
           payment_terms: row["payment_terms"] || null,
           notes: row["notes"] || null,
           state_code,
-        } as any);
+        });
+        if (error) throw error;
         imported++;
       } catch (err: any) {
         skipped++;
@@ -1004,16 +1005,15 @@ export default function DataImport() {
     let imported = 0, skipped = 0;
     const errors: string[] = [];
     const skipReasons: SkipReason[] = [];
+    const companyId = await getCompanyId();
     let autoCodeIndex = 1;
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const excelRow = rowNums[i] ?? (i + 2);
       const code = row["item_code"]?.trim() || "";
-      // "Drawing Number" column maps to field key drawing_number; stored in both DB columns
       const drawingNum = row["drawing_number"]?.trim() || "";
       const desc = row["description"]?.trim() || "";
-      // Best identifier for skip reason display (FIX 3)
       const displayKey = code || drawingNum || "";
 
       if (!desc) {
@@ -1024,35 +1024,30 @@ export default function DataImport() {
       }
 
       try {
-        // ── Determine lookup key and whether item already exists ──────────
         let existingId: string | null = null;
         let resolvedCode = code;
 
         if (code) {
-          // 1. Lookup by item_code (exact match)
           const { data } = await supabase
-            .from("items").select("id").eq("item_code", code).limit(1);
+            .from("items").select("id").eq("company_id", companyId).eq("item_code", code).limit(1);
           existingId = (data as any[])?.[0]?.id ?? null;
         } else if (drawingNum) {
-          // 2. Lookup by drawing_revision (case-insensitive)
           const { data } = await supabase
-            .from("items").select("id, item_code").ilike("drawing_revision", drawingNum).limit(1);
+            .from("items").select("id, item_code").eq("company_id", companyId).ilike("drawing_revision", drawingNum).limit(1);
           existingId = (data as any[])?.[0]?.id ?? null;
-          // Use existing item_code if found, otherwise fall back to drawing number
           resolvedCode = (data as any[])?.[0]?.item_code || drawingNum;
         } else {
-          // 3. Auto-generate item_code from description (first 3 words, uppercase, hyphenated)
           const words = desc.trim().split(/\s+/).slice(0, 3)
             .map((w) => w.toUpperCase().replace(/[^A-Z0-9]/g, "")).filter(Boolean);
           resolvedCode = `${words.join("-")}-${String(autoCodeIndex).padStart(4, "0")}`;
           autoCodeIndex++;
-          // Check if the auto-generated code already exists
           const { data } = await supabase
-            .from("items").select("id").eq("item_code", resolvedCode).limit(1);
+            .from("items").select("id").eq("company_id", companyId).eq("item_code", resolvedCode).limit(1);
           existingId = (data as any[])?.[0]?.id ?? null;
         }
 
-        const itemPayload: any = {
+        const itemData: any = {
+          company_id: companyId,
           item_code: resolvedCode || null,
           description: desc,
           item_type: normalizeItemType(row["item_type"] || ""),
@@ -1064,14 +1059,15 @@ export default function DataImport() {
           min_stock: parseFloat(row["min_stock"] || "0") || 0,
           notes: row["notes"] || null,
           drawing_number: drawingNum || null,
-          drawing_revision: drawingNum || null, // always populate from Drawing Number column
+          drawing_revision: drawingNum || null,
         };
 
         if (existingId) {
-          const { error } = await supabase.from("items").update(itemPayload).eq("id", existingId);
+          const { error } = await supabase.from("items").update(itemData).eq("id", existingId);
           if (error) throw error;
         } else {
-          await createItem(itemPayload);
+          const { error } = await supabase.from("items").insert(itemData);
+          if (error) throw error;
         }
         imported++;
       } catch (err: any) {
@@ -1092,8 +1088,9 @@ export default function DataImport() {
     let imported = 0, skipped = 0;
     const errors: string[] = [];
     const skipReasons: SkipReason[] = [];
+    const companyId = await getCompanyId();
     const codes = rows.map((r) => r["item_code"]?.trim()).filter(Boolean);
-    const { data: itemsData } = await supabase.from("items").select("id, item_code").in("item_code", codes);
+    const { data: itemsData } = await supabase.from("items").select("id, item_code").eq("company_id", companyId).in("item_code", codes);
     const codeToId = new Map((itemsData ?? []).map((i: any) => [i.item_code, i.id]));
 
     for (let i = 0; i < rows.length; i++) {
