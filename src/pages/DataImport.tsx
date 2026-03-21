@@ -10,6 +10,12 @@ import { createParty } from "@/lib/parties-api";
 import { createItem } from "@/lib/items-api";
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId } from "@/lib/auth-helpers";
+import {
+  resolveColumns, extractRow, buildMappingSummary,
+  normalizePartyType, normalizeItemType,
+  PARTY_FIELD_MAP, ITEM_FIELD_MAP, BOM_FIELD_MAP, STOCK_FIELD_MAP,
+  type ColumnMappingSummary,
+} from "@/lib/import-utils";
 
 // Lazy-load xlsx to keep bundle light
 async function parseExcel(file: File): Promise<Record<string, string>[]> {
@@ -20,37 +26,6 @@ async function parseExcel(file: File): Promise<Record<string, string>[]> {
   return (XLSX as any).utils.sheet_to_json(ws, { defval: "" }) as Record<string, string>[];
 }
 
-// Normalize headers to match template exactly (case-insensitive, trimmed).
-// Also trims all string values. Returns normalized rows and any required columns missing.
-function normalizeRows(
-  raw: Record<string, string>[],
-  templateHeaders: string[]
-): { parsed: Record<string, string>[]; missingRequired: string[] } {
-  const actualHeaders = Object.keys(raw[0] ?? {});
-
-  // Build map: actual header in file → expected template header
-  const headerMap = new Map<string, string>();
-  for (const expected of templateHeaders) {
-    const match = actualHeaders.find(
-      (h) => h.trim().toLowerCase() === expected.trim().toLowerCase()
-    );
-    if (match) headerMap.set(match, expected);
-  }
-
-  // Required columns are those with * in the name
-  const required = templateHeaders.filter((h) => h.includes("*"));
-  const missingRequired = required.filter((h) => !Array.from(headerMap.values()).includes(h));
-
-  const parsed = raw.map((row) => {
-    const normalized: Record<string, string> = {};
-    for (const [actual, expected] of headerMap) {
-      normalized[expected] = String(row[actual] ?? "").trim();
-    }
-    return normalized;
-  });
-
-  return { parsed, missingRequired };
-}
 
 // ── Template download helpers ──────────────────────────────────────────────
 
@@ -86,6 +61,28 @@ const ITEM_HEADERS = ["Item Code *", "Description *", "Item Type *", "Unit", "HS
 const BOM_HEADERS = ["Finished Item Code *", "Component Code *", "Quantity *", "Unit", "Scrap Factor %", "Variant Name", "Notes"];
 // BOM template is handled by downloadBOMTemplate() with example rows
 const STOCK_HEADERS = ["Item Code *", "Opening Stock Qty *", "Notes"];
+
+// ── Column Mapping Summary ─────────────────────────────────────────────────
+
+function MappingSummaryBar({ summary }: { summary: ColumnMappingSummary }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+      {summary.found.map(({ originalHeader, field }) => (
+        <span key={field} className="inline-flex items-center gap-1 text-green-700">
+          <CheckCircle className="h-3 w-3 shrink-0" />
+          <span className="font-medium">{originalHeader}</span>
+          <span className="text-slate-400">→</span>
+          <span className="text-slate-600">{field}</span>
+        </span>
+      ))}
+      {summary.missingOptional.length > 0 && (
+        <span className="text-slate-400">
+          — {summary.missingOptional.length} optional column{summary.missingOptional.length !== 1 ? "s" : ""} not found (skipped)
+        </span>
+      )}
+    </div>
+  );
+}
 
 // ── Preview Table ──────────────────────────────────────────────────────────
 
@@ -183,10 +180,12 @@ function BOMImportTab() {
   const [validating, setValidating] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ imported: number; updated: number; skipped: number } | null>(null);
+  const [mappingSummary, setMappingSummary] = useState<ColumnMappingSummary | null>(null);
 
   const clearAll = () => {
     setRows([]); setValidRows([]); setErrors([]);
     setErrorRows(new Set()); setErrorMessages(new Map()); setResult(null);
+    setMappingSummary(null);
   };
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -201,17 +200,22 @@ function BOMImportTab() {
         return;
       }
 
-      const { parsed, missingRequired } = normalizeRows(raw, BOM_HEADERS);
+      const bomHeaders = Object.keys(raw[0]);
+      const bomColMap = resolveColumns(bomHeaders, BOM_FIELD_MAP);
+      const bomSummary = buildMappingSummary(bomHeaders, bomColMap, BOM_FIELD_MAP, ["finished_item_code", "component_code", "quantity"]);
+      setMappingSummary(bomSummary);
 
-      if (missingRequired.length > 0) {
+      if (bomSummary.missingRequired.length > 0) {
         toast({
           title: "Missing required columns",
-          description: `Not found in file: ${missingRequired.join(", ")}. Download the template to see expected column names.`,
+          description: `Not found: ${bomSummary.missingRequired.join(", ")}. Download the template to see expected column names.`,
           variant: "destructive",
         });
         e.target.value = "";
         return;
       }
+
+      const parsed = raw.map((r) => extractRow(r, bomHeaders, bomColMap));
 
       setRows(parsed);
       setValidating(true);
@@ -221,7 +225,7 @@ function BOMImportTab() {
       const allCodes = [
         ...new Set(
           parsed.flatMap((r) =>
-            [r["Finished Item Code *"]?.trim(), r["Component Code *"]?.trim()].filter(Boolean)
+            [r["finished_item_code"]?.trim(), r["component_code"]?.trim()].filter(Boolean)
           )
         ),
       ];
@@ -250,9 +254,9 @@ function BOMImportTab() {
       const newValidRows: Record<string, string>[] = [];
 
       parsed.forEach((row, i) => {
-        const parentCode = row["Finished Item Code *"]?.trim();
-        const childCode = row["Component Code *"]?.trim();
-        const qty = parseFloat(row["Quantity *"] || "0");
+        const parentCode = row["finished_item_code"]?.trim();
+        const childCode = row["component_code"]?.trim();
+        const qty = parseFloat(row["quantity"] || "0");
 
         let rowError = "";
         if (!parentCode) rowError = "Finished Item Code required";
@@ -291,7 +295,7 @@ function BOMImportTab() {
       const codes = [
         ...new Set(
           validRows.flatMap((r) =>
-            [r["Finished Item Code *"]?.trim(), r["Component Code *"]?.trim()].filter(Boolean)
+            [r["finished_item_code"]?.trim(), r["component_code"]?.trim()].filter(Boolean)
           )
         ),
       ];
@@ -311,15 +315,15 @@ function BOMImportTab() {
       let imported = 0, updated = 0, skipped = 0;
 
       for (const row of validRows) {
-        const parentCode = row["Finished Item Code *"]?.trim();
-        const childCode = row["Component Code *"]?.trim();
-        const qty = parseFloat(row["Quantity *"] || "0");
+        const parentCode = row["finished_item_code"]?.trim();
+        const childCode = row["component_code"]?.trim();
+        const qty = parseFloat(row["quantity"] || "0");
         const parentId = codeToId.get(parentCode);
         const childId = codeToId.get(childCode);
         if (!parentId || !childId) { skipped++; continue; }
 
         // Variant find-or-create
-        const variantName = row["Variant Name"]?.trim();
+        const variantName = row["variant_name"]?.trim();
         let variantId = null;
         if (variantName) {
           const { data: existingVariant } = await (supabase as any)
@@ -342,9 +346,9 @@ function BOMImportTab() {
 
         const payload: any = {
           quantity: qty,
-          unit: row["Unit"]?.trim() || "NOS",
-          scrap_factor: parseFloat(row["Scrap Factor %"] || "0") || 0,
-          notes: row["Notes"]?.trim() || null,
+          unit: row["unit"]?.trim() || "NOS",
+          scrap_factor: parseFloat(row["scrap_factor"] || "0") || 0,
+          notes: row["notes"]?.trim() || null,
         };
         if (variantId) payload.variant_id = variantId;
 
@@ -452,6 +456,11 @@ function BOMImportTab() {
         </div>
       )}
 
+      {/* Column Mapping Summary */}
+      {mappingSummary && rows.length > 0 && (
+        <MappingSummaryBar summary={mappingSummary} />
+      )}
+
       {/* Preview */}
       {rows.length > 0 && (
         <div className="space-y-2">
@@ -486,6 +495,8 @@ function ImportTab({
   icon: Icon,
   templateHeaders,
   templateSheetName,
+  fieldMap,
+  requiredFields,
   onImport,
   validate,
 }: {
@@ -493,6 +504,8 @@ function ImportTab({
   icon: React.ComponentType<any>;
   templateHeaders: string[];
   templateSheetName: string;
+  fieldMap: Record<string, string[]>;
+  requiredFields: string[];
   onImport: (rows: Record<string, string>[]) => Promise<{ imported: number; skipped: number; errors: string[] }>;
   validate?: (row: Record<string, string>, i: number) => string | null;
 }) {
@@ -504,9 +517,11 @@ function ImportTab({
   const [errors, setErrors] = useState<string[]>([]);
   const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [mappingSummary, setMappingSummary] = useState<ColumnMappingSummary | null>(null);
 
   const clearAll = () => {
     setRows([]); setValidRows([]); setErrorRows(new Set()); setErrors([]); setResult(null);
+    setMappingSummary(null);
   };
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -521,17 +536,22 @@ function ImportTab({
         return;
       }
 
-      const { parsed, missingRequired } = normalizeRows(raw, templateHeaders);
+      const headers = Object.keys(raw[0]);
+      const colMap = resolveColumns(headers, fieldMap);
+      const summary = buildMappingSummary(headers, colMap, fieldMap, requiredFields);
+      setMappingSummary(summary);
 
-      if (missingRequired.length > 0) {
+      if (summary.missingRequired.length > 0) {
         toast({
           title: "Missing required columns",
-          description: `Not found in file: ${missingRequired.join(", ")}. Download the template to see expected column names.`,
+          description: `Not found: ${summary.missingRequired.join(", ")}. Download the template to see expected column names.`,
           variant: "destructive",
         });
         e.target.value = "";
         return;
       }
+
+      const parsed = raw.map((r) => extractRow(r, headers, colMap));
 
       const newErrorRows = new Set<number>();
       const newErrors: string[] = [];
@@ -648,6 +668,11 @@ function ImportTab({
         </div>
       )}
 
+      {/* Column Mapping Summary */}
+      {mappingSummary && rows.length > 0 && (
+        <MappingSummaryBar summary={mappingSummary} />
+      )}
+
       {/* Preview */}
       {rows.length > 0 && (
         <div className="space-y-2">
@@ -750,23 +775,26 @@ export default function DataImport() {
     let imported = 0, skipped = 0;
     const errors: string[] = [];
     for (const row of rows) {
-      const name = row["Party Name *"]?.trim();
+      const name = row["name"]?.trim();
       if (!name) { skipped++; continue; }
       try {
+        const gstin = row["gstin"] || null;
+        const state_code = row["state_code"] || (gstin && gstin.length >= 2 ? gstin.substring(0, 2) : null);
         await createParty({
           name,
-          party_type: ((row["Party Type (vendor/customer/both) *"] || "both").toLowerCase()) as any,
-          contact_person: row["Contact Person"] || null,
-          address_line1: row["Address Line 1"] || null,
-          city: row["City"] || null,
-          state: row["State"] || null,
-          pin_code: row["PIN Code"] || null,
-          phone1: row["Phone 1"] || null,
-          email1: row["Email"] || null,
-          gstin: row["GSTIN"] || null,
-          pan: row["PAN"] || null,
-          payment_terms: row["Payment Terms"] || null,
-          notes: row["Notes"] || null,
+          party_type: normalizePartyType(row["party_type"] || "") as any,
+          contact_person: row["contact_person"] || null,
+          address_line1: row["address_line1"] || null,
+          city: row["city"] || null,
+          state: row["state"] || null,
+          pin_code: row["pin_code"] || null,
+          phone1: row["phone1"] || null,
+          email1: row["email1"] || null,
+          gstin,
+          pan: row["pan"] || null,
+          payment_terms: row["payment_terms"] || null,
+          notes: row["notes"] || null,
+          state_code,
         } as any);
         imported++;
       } catch {
@@ -782,26 +810,27 @@ export default function DataImport() {
     let imported = 0, skipped = 0;
     const errors: string[] = [];
     for (const row of rows) {
-      const code = row["Item Code *"]?.trim();
-      const desc = row["Description *"]?.trim();
-      if (!code || !desc) { skipped++; continue; }
+      const code = row["item_code"]?.trim();
+      const desc = row["description"]?.trim();
+      if (!desc) { skipped++; continue; }
       try {
         await createItem({
-          item_code: code,
+          item_code: code || null,
           description: desc,
-          item_type: (row["Item Type *"] || "finished_good").toLowerCase().replace(/ /g, "_"),
-          unit: row["Unit"] || "NOS",
-          hsn_sac_code: row["HSN/SAC Code"] || null,
-          sale_price: parseFloat(row["Sale Price"] || "0") || 0,
-          purchase_price: parseFloat(row["Purchase Price"] || "0") || 0,
-          gst_rate: parseFloat(row["GST Rate %"] || "18") || 18,
-          min_stock: parseFloat(row["Min Stock"] || "0") || 0,
-          notes: row["Notes"] || null,
+          item_type: normalizeItemType(row["item_type"] || ""),
+          unit: row["unit"] || "NOS",
+          hsn_sac_code: row["hsn_sac_code"] || null,
+          sale_price: parseFloat(row["sale_price"] || "0") || 0,
+          purchase_price: parseFloat(row["purchase_price"] || "0") || 0,
+          gst_rate: parseFloat(row["gst_rate"] || "18") || 18,
+          min_stock: parseFloat(row["min_stock"] || "0") || 0,
+          notes: row["notes"] || null,
+          drawing_number: row["drawing_number"] || null,
         } as any);
         imported++;
       } catch {
         skipped++;
-        errors.push(`Failed to import: ${code}`);
+        errors.push(`Failed to import: ${code || desc}`);
       }
     }
     queryClient.invalidateQueries({ queryKey: ["items"] });
@@ -811,13 +840,13 @@ export default function DataImport() {
   const handleStockImport = async (rows: Record<string, string>[]) => {
     let imported = 0, skipped = 0;
     const errors: string[] = [];
-    const codes = rows.map((r) => r["Item Code *"]?.trim()).filter(Boolean);
+    const codes = rows.map((r) => r["item_code"]?.trim()).filter(Boolean);
     const { data: itemsData } = await supabase.from("items").select("id, item_code").in("item_code", codes);
     const codeToId = new Map((itemsData ?? []).map((i: any) => [i.item_code, i.id]));
 
     for (const row of rows) {
-      const code = row["Item Code *"]?.trim();
-      const qty = parseFloat(row["Opening Stock Qty *"] || "0");
+      const code = row["item_code"]?.trim();
+      const qty = parseFloat(row["current_stock"] || "0");
       if (!code || isNaN(qty)) { skipped++; continue; }
       const itemId = codeToId.get(code);
       if (!itemId) { skipped++; errors.push(`Item not found: ${code}`); continue; }
@@ -879,11 +908,11 @@ export default function DataImport() {
             icon={Users}
             templateHeaders={PARTY_HEADERS}
             templateSheetName="Parties Import"
+            fieldMap={PARTY_FIELD_MAP}
+            requiredFields={["name"]}
             onImport={handlePartyImport}
             validate={(row) => {
-              if (!row["Party Name *"]?.trim()) return "Party Name is required";
-              const type = (row["Party Type (vendor/customer/both) *"] || "").toLowerCase().trim();
-              if (type && !["vendor", "customer", "both"].includes(type)) return `Invalid party type: "${type}" — use vendor, customer, or both`;
+              if (!row["name"]?.trim()) return "Party Name is required";
               return null;
             }}
           />
@@ -909,10 +938,11 @@ export default function DataImport() {
             icon={Package}
             templateHeaders={ITEM_HEADERS}
             templateSheetName="Items Import"
+            fieldMap={ITEM_FIELD_MAP}
+            requiredFields={["description"]}
             onImport={handleItemImport}
             validate={(row) => {
-              if (!row["Item Code *"]?.trim()) return "Item Code is required";
-              if (!row["Description *"]?.trim()) return "Description is required";
+              if (!row["description"]?.trim()) return "Description is required";
               return null;
             }}
           />
@@ -958,10 +988,12 @@ export default function DataImport() {
             icon={Table}
             templateHeaders={STOCK_HEADERS}
             templateSheetName="Opening Stock"
+            fieldMap={STOCK_FIELD_MAP}
+            requiredFields={["item_code", "current_stock"]}
             onImport={handleStockImport}
             validate={(row) => {
-              if (!row["Item Code *"]?.trim()) return "Item Code is required";
-              if (isNaN(parseFloat(row["Opening Stock Qty *"] || ""))) return "Quantity must be a number";
+              if (!row["item_code"]?.trim()) return "Item Code is required";
+              if (isNaN(parseFloat(row["current_stock"] || ""))) return "Quantity must be a number";
               return null;
             }}
           />

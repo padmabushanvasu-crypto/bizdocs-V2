@@ -444,3 +444,139 @@ export const INVOICE_IMPORT_CONFIG: ImportConfig = {
     { key: "status", label: "Status", description: "draft/issued/paid/partially_paid/cancelled", required: false, example: "issued" },
   ],
 };
+
+// ── Flexible column matching ────────────────────────────────────────────────
+
+export function resolveColumns(
+  headers: string[],
+  fieldMap: Record<string, string[]>
+): Record<string, number> {
+  const normalise = (s: string) =>
+    s.toLowerCase().trim()
+      .replace(/\*/g, "")
+      .replace(/\(.*?\)/g, "")
+      .replace(/[^a-z0-9 ]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  const result: Record<string, number> = {};
+  const normHeaders = headers.map(normalise);
+  for (const [field, aliases] of Object.entries(fieldMap)) {
+    for (const alias of aliases) {
+      const normAlias = normalise(alias);
+      const idx = normHeaders.findIndex(
+        (h) => h === normAlias || h.includes(normAlias) || normAlias.includes(h)
+      );
+      if (idx !== -1) { result[field] = idx; break; }
+    }
+  }
+  return result;
+}
+
+export function extractRow(
+  rawRow: Record<string, string>,
+  headers: string[],
+  colMap: Record<string, number>
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [field, idx] of Object.entries(colMap)) {
+    result[field] = String(rawRow[headers[idx]] ?? "").trim();
+  }
+  return result;
+}
+
+export interface ColumnMappingSummary {
+  found: Array<{ originalHeader: string; field: string }>;
+  missingRequired: string[];
+  missingOptional: string[];
+}
+
+export function buildMappingSummary(
+  headers: string[],
+  colMap: Record<string, number>,
+  fieldMap: Record<string, string[]>,
+  requiredFields: string[]
+): ColumnMappingSummary {
+  const found = Object.entries(colMap).map(([field, idx]) => ({
+    originalHeader: headers[idx],
+    field,
+  }));
+  const mappedFields = new Set(Object.keys(colMap));
+  const allFields = Object.keys(fieldMap);
+  const missing = allFields.filter((f) => !mappedFields.has(f));
+  const reqSet = new Set(requiredFields);
+  return {
+    found,
+    missingRequired: missing.filter((f) => reqSet.has(f)),
+    missingOptional: missing.filter((f) => !reqSet.has(f)),
+  };
+}
+
+export function normalizePartyType(raw: string): string {
+  const v = raw.toLowerCase().trim();
+  if (["vendor", "supplier", "v"].includes(v)) return "vendor";
+  if (["customer", "client", "buyer", "c"].includes(v)) return "customer";
+  if (["both", "b"].includes(v)) return "both";
+  return "vendor";
+}
+
+export function normalizeItemType(raw: string): string {
+  const v = raw.toLowerCase().trim().replace(/[^a-z ]/g, "");
+  if (["raw material", "rm"].includes(v)) return "raw_material";
+  if (["component", "comp"].includes(v)) return "component";
+  if (["sub assembly", "sa"].includes(v)) return "sub_assembly";
+  if (["bought out", "bo"].includes(v)) return "bought_out";
+  if (["finished good", "fg", "finished goods"].includes(v)) return "finished_good";
+  if (v === "consumable") return "consumable";
+  return "component";
+}
+
+export const PARTY_FIELD_MAP: Record<string, string[]> = {
+  name: ["party name", "company name", "name", "vendor name", "customer name", "supplier name"],
+  party_type: ["party type", "type", "vendor customer", "party type"],
+  contact_person: ["contact person", "contact", "contact name"],
+  address_line1: ["address line 1", "address 1", "address", "street address"],
+  address_line2: ["address line 2", "address 2"],
+  city: ["city", "town"],
+  state: ["state", "state name"],
+  pin_code: ["pin code", "pin", "pincode", "postal code", "zip code"],
+  phone1: ["phone 1", "phone", "phone1", "mobile", "mobile number", "contact number"],
+  phone2: ["phone 2", "phone2"],
+  email1: ["email", "email 1", "email1", "email address"],
+  gstin: ["gstin", "gst number", "gst no", "gst in"],
+  pan: ["pan", "pan number", "pan no"],
+  payment_terms: ["payment terms", "terms"],
+  state_code: ["state code"],
+  credit_limit: ["credit limit", "credit"],
+  notes: ["notes", "remarks", "comments"],
+};
+
+export const ITEM_FIELD_MAP: Record<string, string[]> = {
+  item_code: ["item code", "code", "sku", "part number", "part no"],
+  description: ["description", "item name", "name", "part description", "item description"],
+  item_type: ["item type", "type", "category"],
+  unit: ["unit", "uom", "unit of measure", "default unit"],
+  hsn_sac_code: ["hsn sac code", "hsnsac", "hsn", "sac", "hsn code", "sac code"],
+  gst_rate: ["gst rate %", "gst rate", "tax rate"],
+  min_stock: ["min stock", "minimum stock", "reorder level", "minimum qty"],
+  notes: ["notes", "remarks", "comments"],
+  drawing_number: ["drawing number", "drawing no", "dwg no", "dwg number"],
+  standard_cost: ["standard cost", "std cost"],
+  purchase_price: ["default purchase price", "purchase price", "buy price"],
+  sale_price: ["default sale price", "sale price", "selling price"],
+};
+
+export const BOM_FIELD_MAP: Record<string, string[]> = {
+  finished_item_code: ["finished item code", "parent item code", "parent code", "finished item", "parent item"],
+  component_code: ["component code", "child item code", "child code", "component", "child item"],
+  quantity: ["quantity", "qty", "quantity required", "bom qty"],
+  unit: ["unit", "uom"],
+  scrap_factor: ["scrap factor %", "scrap factor", "scrap %", "waste %"],
+  variant_name: ["variant name", "variant", "bom variant"],
+  notes: ["notes", "remarks"],
+};
+
+export const STOCK_FIELD_MAP: Record<string, string[]> = {
+  item_code: ["item code", "code", "sku", "part number", "part no"],
+  current_stock: ["opening stock qty", "opening stock", "current stock", "stock qty", "opening qty", "quantity", "qty"],
+  notes: ["notes", "remarks"],
+};
