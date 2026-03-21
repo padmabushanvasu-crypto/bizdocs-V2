@@ -23,6 +23,12 @@ export interface ValidatedRow {
   messages: string[];
 }
 
+export interface SkipReason {
+  row: number;    // 1-based Excel row number
+  value: string;  // primary key value (or blank)
+  reason: string; // human-readable reason
+}
+
 // ── Styling constants ──
 const HEADER_STYLE: XLSX.CellStyle = {
   font: { bold: true, color: { rgb: "FFFFFF" }, sz: 11 },

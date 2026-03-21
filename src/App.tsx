@@ -60,6 +60,7 @@ import ReorderIntelligence from "@/pages/ReorderIntelligence";
 import ReorderRules from "@/pages/ReorderRules";
 import ScrapRegister from "@/pages/ScrapRegister";
 import NotFound from "@/pages/NotFound";
+import { ImportQueueProvider } from "@/lib/import-queue";
 
 const queryClient = new QueryClient();
 
@@ -70,6 +71,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <ImportQueueProvider>
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/reset-password" element={<ResetPassword />} />
@@ -134,6 +136,7 @@ const App = () => (
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </ImportQueueProvider>
         </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>
