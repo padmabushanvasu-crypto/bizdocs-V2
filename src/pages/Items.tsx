@@ -36,12 +36,12 @@ const TYPE_BADGE: Record<string, string> = {
   consumable: "bg-teal-100 text-teal-800",
 };
 
-const UNITS = ["NOS", "KG", "KGS", "MTR", "SFT", "SET", "ROLL", "SHEET", "LITRE", "LTR", "BOX", "COIL", "PAIR", "LOT"];
+const UNITS = ["NOS", "KG", "KGS", "MTR", "SFT", "SET", "ROLL", "SHEET", "LTR", "BOX", "COIL", "PAIR", "LOT"];
 const GST_RATES = [0, 5, 12, 18, 28];
 
 const emptyItem = {
   item_code: "", description: "", drawing_number: "", drawing_revision: "", item_type: "raw_material",
-  unit: "NOS", hsn_sac_code: "", sale_price: 0, purchase_price: 0, gst_rate: 18,
+  unit: "NOS", hsn_sac_code: "", gst_rate: 18,
   min_stock: 0, notes: "", standard_cost: 0,
 };
 
@@ -136,7 +136,6 @@ export default function Items() {
       item_code: item.item_code, description: item.description,
       drawing_number: item.drawing_number || "", drawing_revision: item.drawing_revision || "", item_type: item.item_type,
       unit: item.unit, hsn_sac_code: item.hsn_sac_code || "",
-      sale_price: item.sale_price, purchase_price: item.purchase_price,
       gst_rate: item.gst_rate, min_stock: item.min_stock, notes: item.notes || "",
       standard_cost: item.standard_cost ?? 0,
     });

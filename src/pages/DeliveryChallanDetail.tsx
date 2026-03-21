@@ -17,6 +17,7 @@ import { DocumentHeader } from "@/components/DocumentHeader";
 import { DocumentActions } from "@/components/DocumentActions";
 import { AuditTimeline } from "@/components/AuditTimeline";
 import { DocumentSignature } from "@/components/DocumentSignature";
+import { fetchCompanySettings } from "@/lib/settings-api";
 
 const statusClass: Record<string, string> = {
   draft: "status-draft",
@@ -59,6 +60,12 @@ export default function DeliveryChallanDetail() {
     queryKey: ["dc-returns", id],
     queryFn: () => fetchDCReturns(id!),
     enabled: !!id,
+  });
+
+  const { data: companySettings } = useQuery({
+    queryKey: ["company-settings"],
+    queryFn: fetchCompanySettings,
+    staleTime: 60_000,
   });
 
   const cancelMutation = useMutation({
@@ -173,57 +180,75 @@ export default function DeliveryChallanDetail() {
           </div>
         </EditableSection>
 
-        {/* Consignee Block */}
+        {/* FROM / TO Block */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="border border-border rounded-lg p-4 space-y-4">
+            <div>
+              <p className="text-xs font-semibold text-slate-500 mb-2">FROM</p>
+              {companySettings ? (
+                <>
+                  <p className="font-medium text-foreground">{companySettings.company_name}</p>
+                  {companySettings.address_line1 && <p className="text-sm text-muted-foreground">{companySettings.address_line1}</p>}
+                  {companySettings.address_line2 && <p className="text-sm text-muted-foreground">{companySettings.address_line2}</p>}
+                  {(companySettings.city || companySettings.state) && (
+                    <p className="text-sm text-muted-foreground">
+                      {[companySettings.city, companySettings.state, companySettings.pin_code].filter(Boolean).join(", ")}
+                    </p>
+                  )}
+                  {companySettings.gstin && <p className="text-sm font-mono">GSTIN: {companySettings.gstin}</p>}
+                </>
+              ) : null}
+            </div>
+            <div className="border-t border-border pt-3 space-y-1.5 text-sm">
+              <p className="text-xs font-semibold text-slate-500 mb-2">Reference Details</p>
+              {(dc as any).lo_number && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">L.O. No</span>
+                  <span className="font-mono">{(dc as any).lo_number}</span>
+                </div>
+              )}
+              {dc.po_reference && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">PO Reference</span>
+                  <span className="font-mono">{dc.po_reference}</span>
+                </div>
+              )}
+              {dc.po_date && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">PO Date</span>
+                  <span>{new Date(dc.po_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>
+                </div>
+              )}
+              {dc.challan_category && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Challan Type</span>
+                  <span>{categoryLabels[dc.challan_category] || dc.challan_category}</span>
+                </div>
+              )}
+              {(dc as any).approx_value != null && (dc as any).approx_value > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Approx. Value</span>
+                  <span className="font-mono">{formatCurrency((dc as any).approx_value)}</span>
+                </div>
+              )}
+              {dc.return_due_date && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Return Due</span>
+                  <span className={isOverdue ? "text-destructive font-medium" : ""}>
+                    {new Date(dc.return_due_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                    {isOverdue && " ⚠ OVERDUE"}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="border border-border rounded-lg p-4">
-            <p className="text-xs font-semibold text-slate-500 mb-2">Consignee (To)</p>
+            <p className="text-xs font-semibold text-slate-500 mb-2">TO</p>
             <p className="font-medium text-foreground">{dc.party_name}</p>
             {dc.party_address && <p className="text-sm text-muted-foreground">{dc.party_address}</p>}
             {dc.party_gstin && <p className="text-sm font-mono">GSTIN: {dc.party_gstin}</p>}
             {dc.party_phone && <p className="text-sm text-muted-foreground">Ph: {dc.party_phone}</p>}
-          </div>
-
-          <div className="border border-border rounded-lg p-4 space-y-2 text-sm">
-            <p className="text-xs font-semibold text-slate-500 mb-2">Reference Details</p>
-            {(dc as any).lo_number && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">L.O. No</span>
-                <span className="font-mono">{(dc as any).lo_number}</span>
-              </div>
-            )}
-            {dc.po_reference && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">PO Reference</span>
-                <span className="font-mono">{dc.po_reference}</span>
-              </div>
-            )}
-            {dc.po_date && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">PO Date</span>
-                <span>{new Date(dc.po_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>
-              </div>
-            )}
-            {dc.challan_category && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Challan Type</span>
-                <span>{categoryLabels[dc.challan_category] || dc.challan_category}</span>
-              </div>
-            )}
-            {(dc as any).approx_value != null && (dc as any).approx_value > 0 && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Approx. Value</span>
-                <span className="font-mono">{formatCurrency((dc as any).approx_value)}</span>
-              </div>
-            )}
-            {dc.return_due_date && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Return Due</span>
-                <span className={isOverdue ? "text-destructive font-medium" : ""}>
-                  {new Date(dc.return_due_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
-                  {isOverdue && " ⚠ OVERDUE"}
-                </span>
-              </div>
-            )}
           </div>
         </div>
 
@@ -316,9 +341,9 @@ export default function DeliveryChallanDetail() {
         )}
 
         {/* Not for Sale Banner */}
-        {isJobWork && (
+        {isReturnable && (
           <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 text-center text-sm font-bold text-primary uppercase tracking-wider">
-            NOT FOR SALE — JOB WORK ONLY
+            NOT FOR SALE — GOODS FOR JOB WORK / RETURNABLE
           </div>
         )}
 

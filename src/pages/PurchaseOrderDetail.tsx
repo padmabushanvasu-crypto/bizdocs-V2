@@ -310,8 +310,8 @@ export default function PurchaseOrderDetail() {
         )}
 
         <div className="border-t border-border pt-4">
-          <div className="flex justify-end">
-            <DocumentSignature label="Authorised Signatory" />
+          <div className="flex justify-start">
+            <DocumentSignature label="Authorised Signatory" showCompanyName />
           </div>
         </div>
       </div>

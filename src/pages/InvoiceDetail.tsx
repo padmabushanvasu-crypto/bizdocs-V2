@@ -292,7 +292,7 @@ export default function InvoiceDetail() {
         {/* Signature Block */}
         <div className="border-t border-border pt-4">
           <div className="flex justify-end">
-            <DocumentSignature label="Authorised Signatory" />
+            <DocumentSignature label="Authorised Signatory" showCompanyName />
           </div>
         </div>
       </div>

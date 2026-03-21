@@ -5,9 +5,10 @@ interface DocumentSignatureProps {
   /** Override URL; if provided, takes precedence over company default */
   overrideUrl?: string | null;
   label?: string;
+  showCompanyName?: boolean;
 }
 
-export function DocumentSignature({ overrideUrl, label = "Authorised Signatory" }: DocumentSignatureProps) {
+export function DocumentSignature({ overrideUrl, label = "Authorised Signatory", showCompanyName }: DocumentSignatureProps) {
   const { data: settings } = useQuery({
     queryKey: ["company-settings"],
     queryFn: fetchCompanySettings,
@@ -30,6 +31,9 @@ export function DocumentSignature({ overrideUrl, label = "Authorised Signatory" 
         )}
       </div>
       <div className="border-t border-border pt-1">
+        {showCompanyName && settings?.company_name && (
+          <p className="text-xs text-muted-foreground">for {settings.company_name}</p>
+        )}
         <p className="text-xs text-muted-foreground font-medium">{label}</p>
       </div>
     </div>
