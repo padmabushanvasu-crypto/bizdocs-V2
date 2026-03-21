@@ -367,7 +367,16 @@ export default function Dashboard() {
               <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }} />
               <div className="flex items-center justify-between py-2.5">
                 <span className="text-sm text-slate-400">Reorder Alerts</span>
-                <span style={{ fontSize: "10px", color: "#475569" }}>↓ see below</span>
+                {reorderAlerts.length === 0 ? (
+                  <span style={{ fontSize: "10px", color: "#22C55E" }}>all healthy ✓</span>
+                ) : (
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span style={{ fontSize: "10px", fontWeight: 600, padding: "1px 8px", borderRadius: "9999px", backgroundColor: "rgba(239,68,68,0.15)", color: "#FCA5A5" }}>
+                      {reorderAlerts.length}
+                    </span>
+                    <span style={{ fontSize: "10px", color: "#EF4444" }}>↓ see below</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>

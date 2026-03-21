@@ -24,6 +24,28 @@ export interface CompanySettings {
   default_terms: string | null;
   financial_year_start: string | null;
   financial_year_label: string | null;
+  // Document settings columns (added via migration)
+  fy_year: string | null;
+  invoice_prefix: string | null;
+  po_prefix: string | null;
+  dc_prefix: string | null;
+  grn_prefix: string | null;
+  jc_prefix: string | null;
+  ao_prefix: string | null;
+  so_prefix: string | null;
+  dn_prefix: string | null;
+  fat_prefix: string | null;
+  default_payment_terms: string | null;
+  default_terms_conditions: string | null;
+  default_bank_name: string | null;
+  default_bank_account: string | null;
+  default_bank_ifsc: string | null;
+  default_bank_branch: string | null;
+  show_logo: boolean | null;
+  show_signature: boolean | null;
+  show_not_for_sale: boolean | null;
+  show_original_duplicate: boolean | null;
+  default_footer_text: string | null;
 }
 
 export interface DocumentSettings {
@@ -97,6 +119,11 @@ export async function saveDocumentSettings(docType: string, settings: Partial<Do
   const { data, error } = await supabase.from("document_settings").update(settings as any).eq("document_type", docType).select().single();
   if (error) throw error;
   return data;
+}
+
+export async function upsertDocumentSettings(docType: string, settings: Partial<DocumentSettings>) {
+  // Update existing row; silently no-ops for doc types not yet in document_settings
+  await supabase.from("document_settings").update(settings as any).eq("document_type", docType);
 }
 
 // Custom Fields
