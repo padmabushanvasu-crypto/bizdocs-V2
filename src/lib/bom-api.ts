@@ -356,6 +356,12 @@ export async function deleteBomLine(id: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function bulkDeleteBomLines(ids: string[]): Promise<void> {
+  if (!ids.length) return;
+  const { error } = await (supabase as any).from("bom_lines").delete().in("id", ids);
+  if (error) throw error;
+}
+
 // ============================================================
 // BOM Line Vendors
 // ============================================================

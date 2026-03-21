@@ -94,13 +94,16 @@ export default function Items() {
 
   const bulkDeleteMutation = useMutation({
     mutationFn: (ids: string[]) => bulkDeleteItems(ids),
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["items"] });
       setSelected(new Set());
-      toast({ title: `${selected.size} item(s) deactivated` });
+      const parts: string[] = [];
+      if (result.deleted > 0) parts.push(`${result.deleted} deleted`);
+      if (result.deactivated > 0) parts.push(`${result.deactivated} deactivated (have transaction history)`);
+      toast({ title: parts.join(", ") || "Done" });
     },
     onError: (err: any) => {
-      toast({ title: "Bulk deactivate failed", description: err.message, variant: "destructive" });
+      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
     },
   });
 
@@ -222,13 +225,13 @@ export default function Items() {
             variant="outline"
             className="h-7 text-xs border-blue-300 text-blue-700 hover:bg-blue-100"
             onClick={() => {
-              if (confirm(`Deactivate ${selected.size} item(s)?`)) {
+              if (confirm(`Delete ${selected.size} item(s)? Items with transaction history will be deactivated instead.`)) {
                 bulkDeleteMutation.mutate([...selected]);
               }
             }}
             disabled={bulkDeleteMutation.isPending}
           >
-            <Trash2 className="h-3 w-3 mr-1" /> Deactivate
+            <Trash2 className="h-3 w-3 mr-1" /> Delete Selected
           </Button>
           <Button
             size="sm"

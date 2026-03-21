@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   GitFork, Plus, Trash2, Search, ChevronDown, ChevronRight,
   Pencil, RefreshCw, Download, Printer, CheckCircle2, Star,
-  AlertTriangle, BarChart3, Users, X,
+  AlertTriangle, BarChart3, Users, X, Square, CheckSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,7 +27,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, Cell,
 } from "recharts";
 import {
-  fetchBomLines, createBomLine, updateBomLine, deleteBomLine,
+  fetchBomLines, createBomLine, updateBomLine, deleteBomLine, bulkDeleteBomLines,
   fetchBomVariants, createBomVariant, updateBomVariant, deleteBomVariant, setDefaultVariant,
   explodeBom, calculateBomCost, fetchWhereUsed, compareBomVariants,
   fetchBomLineVendorsBatch, addBomLineVendor, updateBomLineVendor, removeBomLineVendor,
@@ -205,6 +205,10 @@ export default function BillOfMaterials() {
   const [lineForm, setLineForm] = useState({ ...emptyLineForm });
   const [variantForm, setVariantForm] = useState({ ...emptyVariantForm });
 
+  // ── BOM line bulk select state ───────────────────────────────────────────────
+  const [selectedBomLines, setSelectedBomLines] = useState<Set<string>>(new Set());
+  const [deleteLinesConfirmOpen, setDeleteLinesConfirmOpen] = useState(false);
+
   // ── Vendor state ─────────────────────────────────────────────────────────────
   const [expandedLines, setExpandedLines] = useState<Set<string>>(new Set());
   const [vendorDialogOpen, setVendorDialogOpen] = useState(false);
@@ -230,6 +234,7 @@ export default function BillOfMaterials() {
     setWhereUsedItemId(item.id);
     setCompareV1("");
     setCompareV2("");
+    setSelectedBomLines(new Set());
   };
 
   // ── Queries ─────────────────────────────────────────────────────────────────
@@ -384,6 +389,18 @@ export default function BillOfMaterials() {
       queryClient.invalidateQueries({ queryKey: ["bom-lines-v2", selectedItem?.id] });
       queryClient.invalidateQueries({ queryKey: ["bom-explosion", selectedItem?.id] });
       toast({ title: "Component removed" });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const bulkDeleteLinesMutation = useMutation({
+    mutationFn: (ids: string[]) => bulkDeleteBomLines(ids),
+    onSuccess: (_, ids) => {
+      queryClient.invalidateQueries({ queryKey: ["bom-lines-v2", selectedItem?.id] });
+      queryClient.invalidateQueries({ queryKey: ["bom-explosion", selectedItem?.id] });
+      setSelectedBomLines(new Set());
+      setDeleteLinesConfirmOpen(false);
+      toast({ title: `${ids.length} component${ids.length !== 1 ? "s" : ""} removed` });
     },
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -813,6 +830,16 @@ export default function BillOfMaterials() {
                           {bomLines.length} component{bomLines.length !== 1 ? "s" : ""} ·{" "}
                           <span className="font-medium text-slate-700">{formatCurrency(estimatedCost)}</span>
                         </span>
+                        {selectedBomLines.size > 0 && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-1.5 h-8 text-xs text-red-600 border-red-200 hover:bg-red-50"
+                            onClick={() => setDeleteLinesConfirmOpen(true)}
+                          >
+                            <Trash2 className="h-3 w-3" /> Delete {selectedBomLines.size} Line{selectedBomLines.size !== 1 ? "s" : ""}
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           variant="outline"
@@ -846,6 +873,23 @@ export default function BillOfMaterials() {
                         <table className="w-full data-table text-sm">
                           <thead>
                             <tr>
+                              <th className="w-6">
+                                <button
+                                  className="flex items-center justify-center"
+                                  onClick={() => {
+                                    const sortedIds = [...bomLines].map((l) => l.id);
+                                    if (selectedBomLines.size === sortedIds.length) {
+                                      setSelectedBomLines(new Set());
+                                    } else {
+                                      setSelectedBomLines(new Set(sortedIds));
+                                    }
+                                  }}
+                                >
+                                  {selectedBomLines.size === bomLines.length && bomLines.length > 0
+                                    ? <CheckSquare className="h-3.5 w-3.5 text-blue-600" />
+                                    : <Square className="h-3.5 w-3.5 text-slate-400" />}
+                                </button>
+                              </th>
                               <th className="w-6"></th>
                               <th>#</th>
                               <th className="min-w-[110px]">Drawing No.</th>
@@ -871,7 +915,22 @@ export default function BillOfMaterials() {
                               const isExpanded = expandedLines.has(line.id);
                               return (
                                 <>
-                                  <tr key={line.id}>
+                                  <tr key={line.id} className={selectedBomLines.has(line.id) ? "bg-blue-50/60" : ""}>
+                                    <td>
+                                      <button
+                                        className="flex items-center justify-center"
+                                        onClick={() => setSelectedBomLines((prev) => {
+                                          const next = new Set(prev);
+                                          if (next.has(line.id)) next.delete(line.id);
+                                          else next.add(line.id);
+                                          return next;
+                                        })}
+                                      >
+                                        {selectedBomLines.has(line.id)
+                                          ? <CheckSquare className="h-3.5 w-3.5 text-blue-600" />
+                                          : <Square className="h-3.5 w-3.5 text-slate-300" />}
+                                      </button>
+                                    </td>
                                     <td>
                                       <button
                                         onClick={() => toggleLineExpand(line.id)}
@@ -975,7 +1034,7 @@ export default function BillOfMaterials() {
                                   {/* Vendor sub-table */}
                                   {isExpanded && (
                                     <tr key={`${line.id}-vendors`}>
-                                      <td colSpan={13} className="bg-slate-50 border-t border-b border-slate-100 !p-0">
+                                      <td colSpan={14} className="bg-slate-50 border-t border-b border-slate-100 !p-0">
                                         <div className="px-10 py-3">
                                           <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1.5">
                                             <Users className="h-3 w-3" /> Approved Vendors
@@ -1671,6 +1730,28 @@ export default function BillOfMaterials() {
           </div>
         </div>
       </div>
+
+      {/* ── DELETE LINES CONFIRMATION DIALOG ─────────────────────────────── */}
+      <Dialog open={deleteLinesConfirmOpen} onOpenChange={(v) => { if (!bulkDeleteLinesMutation.isPending) setDeleteLinesConfirmOpen(v); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete {selectedBomLines.size} Component{selectedBomLines.size !== 1 ? "s" : ""}?</DialogTitle>
+            <DialogDescription>
+              This will permanently remove {selectedBomLines.size} BOM line{selectedBomLines.size !== 1 ? "s" : ""} from this item. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteLinesConfirmOpen(false)} disabled={bulkDeleteLinesMutation.isPending}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => bulkDeleteLinesMutation.mutate([...selectedBomLines])}
+              disabled={bulkDeleteLinesMutation.isPending}
+            >
+              {bulkDeleteLinesMutation.isPending ? "Deleting…" : `Delete ${selectedBomLines.size}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ── ADD COMPONENT DIALOG ─────────────────────────────────────────── */}
       <Dialog

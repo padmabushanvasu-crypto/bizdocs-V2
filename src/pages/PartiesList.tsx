@@ -72,14 +72,16 @@ export default function PartiesList() {
 
   const bulkDeactivateMutation = useMutation({
     mutationFn: (ids: string[]) => bulkDeleteParties(ids),
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["parties"] });
-      const count = selected.size;
       setSelected(new Set());
-      toast({ title: `${count} party(s) deactivated` });
+      const parts: string[] = [];
+      if (result.deleted > 0) parts.push(`${result.deleted} deleted`);
+      if (result.deactivated > 0) parts.push(`${result.deactivated} deactivated (have transaction history)`);
+      toast({ title: parts.join(", ") || "Done" });
     },
     onError: (err: any) => {
-      toast({ title: "Bulk deactivate failed", description: err.message, variant: "destructive" });
+      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
     },
   });
 
@@ -222,13 +224,13 @@ export default function PartiesList() {
             variant="outline"
             className="h-7 text-xs border-blue-300 text-blue-700 hover:bg-blue-100"
             onClick={() => {
-              if (confirm(`Deactivate ${selected.size} party(s)?`)) {
+              if (confirm(`Delete ${selected.size} party(s)? Parties with transaction history will be deactivated instead.`)) {
                 bulkDeactivateMutation.mutate([...selected]);
               }
             }}
             disabled={bulkDeactivateMutation.isPending}
           >
-            <UserX className="h-3 w-3 mr-1" /> Deactivate
+            <Trash2 className="h-3 w-3 mr-1" /> Delete Selected
           </Button>
           <Button
             size="sm"

@@ -1,10 +1,11 @@
 import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
-import { Upload, Download, CheckCircle, XCircle, AlertTriangle, Table, Users, Package, GitFork, ChevronLeft } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Upload, Download, CheckCircle, XCircle, AlertTriangle, Table, Users, Package, GitFork, ChevronLeft, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { useToast } from "@/hooks/use-toast";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { createParty } from "@/lib/parties-api";
 import { createItem } from "@/lib/items-api";
 import { supabase } from "@/integrations/supabase/client";
@@ -672,10 +673,78 @@ function ImportTab({
 
 // ── Main Page ──────────────────────────────────────────────────────────────
 
+type ClearTarget = { type: "parties" | "items" | "bom" | "stock"; noun: string; count: number };
+
 export default function DataImport() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("parties");
+  const [clearTarget, setClearTarget] = useState<ClearTarget | null>(null);
+  const [clearLoading, setClearLoading] = useState(false);
+
+  const { data: partiesCount = 0, refetch: refetchPartiesCount } = useQuery({
+    queryKey: ["count", "parties"],
+    queryFn: async () => {
+      const companyId = await getCompanyId();
+      const { count } = await supabase.from("parties").select("id", { count: "exact", head: true }).eq("company_id", companyId);
+      return count ?? 0;
+    },
+  });
+
+  const { data: itemsCount = 0, refetch: refetchItemsCount } = useQuery({
+    queryKey: ["count", "items"],
+    queryFn: async () => {
+      const companyId = await getCompanyId();
+      const { count } = await supabase.from("items").select("id", { count: "exact", head: true }).eq("company_id", companyId);
+      return count ?? 0;
+    },
+  });
+
+  const { data: bomLinesCount = 0, refetch: refetchBomCount } = useQuery({
+    queryKey: ["count", "bom_lines"],
+    queryFn: async () => {
+      const companyId = await getCompanyId();
+      const { count } = await (supabase as any).from("bom_lines").select("id", { count: "exact", head: true }).eq("company_id", companyId);
+      return count ?? 0;
+    },
+  });
+
+  const { data: stockEntriesCount = 0, refetch: refetchStockCount } = useQuery({
+    queryKey: ["count", "opening_stock"],
+    queryFn: async () => {
+      const companyId = await getCompanyId();
+      const { count } = await (supabase as any).from("stock_ledger").select("id", { count: "exact", head: true }).eq("company_id", companyId).eq("transaction_type", "opening_stock");
+      return count ?? 0;
+    },
+  });
+
+  const doClear = async () => {
+    if (!clearTarget) return;
+    setClearLoading(true);
+    try {
+      const companyId = await getCompanyId();
+      const rpcMap: Record<ClearTarget["type"], string> = {
+        parties: "clear_all_parties",
+        items: "clear_all_items",
+        bom: "clear_all_bom_lines",
+        stock: "clear_opening_stock",
+      };
+      const { data, error } = await (supabase as any).rpc(rpcMap[clearTarget.type], { p_company_id: companyId });
+      if (error) throw error;
+      const count = (data as number) ?? 0;
+      if (clearTarget.type === "parties") { queryClient.invalidateQueries({ queryKey: ["parties"] }); refetchPartiesCount(); }
+      else if (clearTarget.type === "items") { queryClient.invalidateQueries({ queryKey: ["items"] }); refetchItemsCount(); }
+      else if (clearTarget.type === "bom") { queryClient.invalidateQueries({ queryKey: ["bom-lines"] }); refetchBomCount(); }
+      else { queryClient.invalidateQueries({ queryKey: ["items"] }); queryClient.invalidateQueries({ queryKey: ["stock_status"] }); refetchStockCount(); }
+      toast({ title: `All ${count} ${clearTarget.noun} cleared successfully` });
+      setClearTarget(null);
+    } catch (err: any) {
+      toast({ title: "Clear failed", description: err.message, variant: "destructive" });
+    } finally {
+      setClearLoading(false);
+    }
+  };
 
   const handlePartyImport = async (rows: Record<string, string>[]) => {
     let imported = 0, skipped = 0;
@@ -793,7 +862,15 @@ export default function DataImport() {
 
       {activeTab === "parties" && (
         <div className="paper-card mt-4">
-          <h2 className="font-semibold text-slate-900 mb-1">Import Parties</h2>
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="font-semibold text-slate-900">Import Parties</h2>
+            {partiesCount > 0 && (
+              <Button variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50 gap-1.5"
+                onClick={() => setClearTarget({ type: "parties", noun: "parties", count: partiesCount })}>
+                <Trash2 className="h-3.5 w-3.5" /> Clear All ({partiesCount})
+              </Button>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground mb-4">
             Import vendors, customers, and sub-contractors. Duplicate names will be skipped.
           </p>
@@ -815,7 +892,15 @@ export default function DataImport() {
 
       {activeTab === "items" && (
         <div className="paper-card mt-4">
-          <h2 className="font-semibold text-slate-900 mb-1">Import Items</h2>
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="font-semibold text-slate-900">Import Items</h2>
+            {itemsCount > 0 && (
+              <Button variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50 gap-1.5"
+                onClick={() => setClearTarget({ type: "items", noun: "items", count: itemsCount })}>
+                <Trash2 className="h-3.5 w-3.5" /> Clear All ({itemsCount})
+              </Button>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground mb-4">
             Import your product, component, and material master list.
           </p>
@@ -836,7 +921,15 @@ export default function DataImport() {
 
       {activeTab === "bom" && (
         <div className="paper-card mt-4">
-          <h2 className="font-semibold text-slate-900 mb-1">Import Bill of Materials</h2>
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="font-semibold text-slate-900">Import Bill of Materials</h2>
+            {bomLinesCount > 0 && (
+              <Button variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50 gap-1.5"
+                onClick={() => setClearTarget({ type: "bom", noun: "BOM lines", count: bomLinesCount })}>
+                <Trash2 className="h-3.5 w-3.5" /> Clear All ({bomLinesCount})
+              </Button>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground mb-4">
             Define finished item–component relationships. Both items must already exist. Existing BOM lines are updated (upsert).
             Supports Variant Name and Scrap Factor columns.
@@ -847,7 +940,15 @@ export default function DataImport() {
 
       {activeTab === "stock" && (
         <div className="paper-card mt-4">
-          <h2 className="font-semibold text-slate-900 mb-1">Import Opening Stock</h2>
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="font-semibold text-slate-900">Import Opening Stock</h2>
+            {stockEntriesCount > 0 && (
+              <Button variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50 gap-1.5"
+                onClick={() => setClearTarget({ type: "stock", noun: "opening stock entries", count: stockEntriesCount })}>
+                <Trash2 className="h-3.5 w-3.5" /> Clear All ({stockEntriesCount})
+              </Button>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground mb-4">
             Set the opening stock quantity for each item. Items must already exist in the system.
             This will overwrite the current_stock value.
@@ -866,6 +967,24 @@ export default function DataImport() {
           />
         </div>
       )}
+
+      {/* Clear All Confirmation Dialog */}
+      <Dialog open={!!clearTarget} onOpenChange={(open) => { if (!open && !clearLoading) setClearTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Clear All {clearTarget?.noun}</DialogTitle>
+            <DialogDescription>
+              You are about to delete all {clearTarget?.count} {clearTarget?.noun}. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClearTarget(null)} disabled={clearLoading}>Cancel</Button>
+            <Button variant="destructive" onClick={doClear} disabled={clearLoading}>
+              {clearLoading ? "Clearing…" : `Delete All ${clearTarget?.count}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

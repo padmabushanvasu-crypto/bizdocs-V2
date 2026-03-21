@@ -112,8 +112,27 @@ export async function bulkUpdateItemStatus(ids: string[], status: string) {
   if (error) throw error;
 }
 
-export async function bulkDeleteItems(ids: string[]) {
-  return bulkUpdateItemStatus(ids, "inactive");
+export async function bulkDeleteItems(ids: string[]): Promise<{ deleted: number; deactivated: number; errors: number }> {
+  let deleted = 0, deactivated = 0, errors = 0;
+  for (const id of ids) {
+    try {
+      const [{ count: stockCount }, { count: bomCount }] = await Promise.all([
+        (supabase as any).from("stock_ledger").select("id", { count: "exact", head: true }).eq("item_id", id),
+        (supabase as any).from("bom_lines").select("id", { count: "exact", head: true }).or(`parent_item_id.eq.${id},child_item_id.eq.${id}`),
+      ]);
+      if ((stockCount ?? 0) > 0 || (bomCount ?? 0) > 0) {
+        await updateItem(id, { status: "inactive" } as any);
+        deactivated++;
+      } else {
+        const { error } = await supabase.from("items").delete().eq("id", id);
+        if (error) throw error;
+        deleted++;
+      }
+    } catch {
+      errors++;
+    }
+  }
+  return { deleted, deactivated, errors };
 }
 
 export async function updateMinStockOverride(id: string, value: number | null) {

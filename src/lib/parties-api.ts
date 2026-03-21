@@ -97,6 +97,26 @@ export async function bulkUpdatePartyStatus(ids: string[], status: string) {
   if (error) throw error;
 }
 
-export async function bulkDeleteParties(ids: string[]) {
-  return bulkUpdatePartyStatus(ids, "inactive");
+export async function bulkDeleteParties(ids: string[]): Promise<{ deleted: number; deactivated: number; errors: number }> {
+  let deleted = 0, deactivated = 0, errors = 0;
+  for (const id of ids) {
+    try {
+      const [{ count: poCount }, { count: dcCount }, { count: soCount }] = await Promise.all([
+        (supabase as any).from("purchase_orders").select("id", { count: "exact", head: true }).eq("vendor_id", id),
+        (supabase as any).from("delivery_challans").select("id", { count: "exact", head: true }).eq("party_id", id),
+        (supabase as any).from("sales_orders").select("id", { count: "exact", head: true }).eq("customer_id", id),
+      ]);
+      if ((poCount ?? 0) > 0 || (dcCount ?? 0) > 0 || (soCount ?? 0) > 0) {
+        await updateParty(id, { status: "inactive" });
+        deactivated++;
+      } else {
+        const { error } = await supabase.from("parties").delete().eq("id", id);
+        if (error) throw error;
+        deleted++;
+      }
+    } catch {
+      errors++;
+    }
+  }
+  return { deleted, deactivated, errors };
 }
