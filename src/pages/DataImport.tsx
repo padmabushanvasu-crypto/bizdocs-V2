@@ -224,11 +224,24 @@ function BOMImportTab() {
           )
         ),
       ];
-      const { data: itemsData } = await supabase
+      // Step 1: lookup by item_code
+      const { data: itemsByCode } = await supabase
         .from("items")
-        .select("id, item_code")
+        .select("id, item_code, drawing_revision")
         .in("item_code", allCodes);
-      const existingCodes = new Set((itemsData ?? []).map((i: any) => i.item_code));
+      const resolvedCodes = new Set<string>((itemsByCode ?? []).map((i: any) => i.item_code));
+
+      // Step 2: for codes not found by item_code, try drawing_revision fallback
+      const missingCodes = allCodes.filter((c) => !resolvedCodes.has(c));
+      if (missingCodes.length > 0) {
+        const { data: itemsByRev } = await supabase
+          .from("items")
+          .select("id, item_code, drawing_revision")
+          .in("drawing_revision", missingCodes);
+        for (const item of (itemsByRev ?? []) as any[]) {
+          if (item.drawing_revision) resolvedCodes.add(item.drawing_revision);
+        }
+      }
 
       const newErrorRows = new Set<number>();
       const newErrorMsgs = new Map<number, string>();
@@ -245,8 +258,8 @@ function BOMImportTab() {
         else if (!childCode) rowError = "Child Item Code required";
         else if (qty <= 0) rowError = "Quantity must be > 0";
         else if (parentCode === childCode) rowError = "Self-reference: parent and child are the same";
-        else if (!existingCodes.has(parentCode)) rowError = `Parent not found: ${parentCode}`;
-        else if (!existingCodes.has(childCode)) rowError = `Child not found: ${childCode}`;
+        else if (!resolvedCodes.has(parentCode)) rowError = `Item not found by code or drawing number: ${parentCode}`;
+        else if (!resolvedCodes.has(childCode)) rowError = `Item not found by code or drawing number: ${childCode}`;
 
         if (rowError) {
           newErrorRows.add(i);
@@ -281,8 +294,18 @@ function BOMImportTab() {
           )
         ),
       ];
-      const { data: itemsData } = await supabase.from("items").select("id, item_code").in("item_code", codes);
+      // Primary lookup by item_code
+      const { data: itemsData } = await supabase.from("items").select("id, item_code, drawing_revision").in("item_code", codes);
       const codeToId = new Map((itemsData ?? []).map((i: any) => [i.item_code, i.id]));
+
+      // Fallback: for codes not found by item_code, try drawing_revision
+      const missingImportCodes = codes.filter((c) => !codeToId.has(c));
+      if (missingImportCodes.length > 0) {
+        const { data: byRevData } = await supabase.from("items").select("id, item_code, drawing_revision").in("drawing_revision", missingImportCodes);
+        for (const item of (byRevData ?? []) as any[]) {
+          if (item.drawing_revision) codeToId.set(item.drawing_revision, item.id);
+        }
+      }
 
       let imported = 0, updated = 0, skipped = 0;
 

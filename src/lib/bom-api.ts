@@ -42,6 +42,7 @@ export interface BomLine {
   child_current_stock?: number;
   child_standard_cost?: number;
   child_unit?: string | null;
+  child_drawing_revision?: string | null;
 }
 
 export interface BomNode {
@@ -279,7 +280,7 @@ export async function fetchBomLines(
   const childIds = (data as any[]).map((l: any) => l.child_item_id);
   const { data: childItems } = await (supabase as any)
     .from("items")
-    .select("id, item_code, description, item_type, unit, current_stock, standard_cost, drawing_number")
+    .select("id, item_code, description, item_type, unit, current_stock, standard_cost, drawing_number, drawing_revision")
     .in("id", childIds);
 
   const itemMap = new Map(((childItems ?? []) as any[]).map((i: any) => [i.id, i]));
@@ -294,6 +295,7 @@ export async function fetchBomLines(
       child_current_stock: child?.current_stock ?? 0,
       child_standard_cost: child?.standard_cost ?? 0,
       child_unit: child?.unit ?? bl.unit ?? null,
+      child_drawing_revision: child?.drawing_revision ?? null,
       is_critical: bl.is_critical ?? false,
       scrap_factor: bl.scrap_factor ?? 0,
       reference_designator: bl.reference_designator ?? null,

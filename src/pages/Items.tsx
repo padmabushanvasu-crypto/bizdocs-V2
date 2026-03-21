@@ -275,14 +275,24 @@ export default function Items() {
                     </td>
                     <td className="font-mono text-xs font-medium text-foreground">{item.item_code}</td>
                     <td className="font-medium">{item.description}</td>
-                    <td>
-                      {item.drawing_number ? (
+                    <td onClick={(e) => e.stopPropagation()}>
+                      {item.drawing_revision ? (
                         <div>
-                          <span className="font-mono text-xs text-slate-600">{item.drawing_number}</span>
-                          {item.drawing_revision && (
-                            <span className="font-mono text-[10px] text-slate-400 ml-1">· {item.drawing_revision}</span>
+                          <button
+                            className="font-mono text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                            onClick={() => setFilters((f) => ({ ...f, search: item.drawing_revision! }))}
+                            title="Click to filter by this drawing number"
+                          >
+                            {item.drawing_revision}
+                          </button>
+                          {item.drawing_number && (
+                            <span className="font-mono text-[10px] text-slate-400 ml-1 block">
+                              {item.drawing_number}
+                            </span>
                           )}
                         </div>
+                      ) : item.drawing_number ? (
+                        <span className="font-mono text-xs text-slate-400">{item.drawing_number}</span>
                       ) : "—"}
                     </td>
                     <td>

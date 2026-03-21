@@ -247,7 +247,8 @@ export default function BillOfMaterials() {
     ? parentCandidates.filter(
         (i) =>
           i.item_code.toLowerCase().includes(itemSearch.toLowerCase()) ||
-          i.description.toLowerCase().includes(itemSearch.toLowerCase())
+          i.description.toLowerCase().includes(itemSearch.toLowerCase()) ||
+          (i.drawing_revision ?? "").toLowerCase().includes(itemSearch.toLowerCase())
       )
     : parentCandidates;
 
@@ -743,7 +744,11 @@ export default function BillOfMaterials() {
                         : ""
                     }`}
                   >
-                    <p className="font-mono text-xs font-medium text-blue-600">{item.item_code}</p>
+                    {item.drawing_revision ? (
+                      <p className="font-mono text-xs font-bold text-blue-600">{item.drawing_revision}</p>
+                    ) : (
+                      <p className="font-mono text-xs font-medium text-slate-400">{item.item_code}</p>
+                    )}
                     <p className="text-sm text-slate-700 truncate">{item.description}</p>
                     <TypeBadge type={item.item_type} />
                   </button>
@@ -843,10 +848,10 @@ export default function BillOfMaterials() {
                             <tr>
                               <th className="w-6"></th>
                               <th>#</th>
+                              <th className="min-w-[110px]">Drawing No.</th>
                               <th>Item Code</th>
                               <th>Description</th>
                               <th>Type</th>
-                              <th>Drawing No</th>
                               <th className="text-right">Qty</th>
                               <th>Unit</th>
                               <th className="text-right">Scrap%</th>
@@ -857,7 +862,11 @@ export default function BillOfMaterials() {
                             </tr>
                           </thead>
                           <tbody>
-                            {bomLines.map((line, idx) => {
+                            {[...bomLines].sort((a, b) => {
+                              const da = (a as any).child_drawing_revision ?? "";
+                              const db = (b as any).child_drawing_revision ?? "";
+                              return da.localeCompare(db, undefined, { numeric: true, sensitivity: "base" });
+                            }).map((line, idx) => {
                               const lineVendors = vendorsByLine.get(line.id) ?? [];
                               const isExpanded = expandedLines.has(line.id);
                               return (
@@ -874,6 +883,9 @@ export default function BillOfMaterials() {
                                       </button>
                                     </td>
                                     <td className="text-muted-foreground text-xs">{idx + 1}</td>
+                                    <td className="font-mono text-xs font-semibold text-blue-700 min-w-[110px]">
+                                      {(line as any).child_drawing_revision ?? "—"}
+                                    </td>
                                     <td className="font-mono text-xs text-blue-600 font-medium">
                                       {line.child_item_code ?? "—"}
                                     </td>
@@ -894,9 +906,6 @@ export default function BillOfMaterials() {
                                       {line.child_item_type && (
                                         <TypeBadge type={line.child_item_type} />
                                       )}
-                                    </td>
-                                    <td className="text-xs text-muted-foreground font-mono">
-                                      {line.drawing_number ?? "—"}
                                     </td>
                                     <td className="text-right font-mono tabular-nums text-sm">
                                       {line.quantity}
@@ -1691,7 +1700,9 @@ export default function BillOfMaterials() {
                 <PopoverTrigger asChild>
                   <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
                     {selectedChild
-                      ? `${selectedChild.item_code} — ${selectedChild.description}`
+                      ? selectedChild.drawing_revision
+                        ? `${selectedChild.drawing_revision} — ${selectedChild.description}`
+                        : `${selectedChild.item_code} — ${selectedChild.description}`
                       : "Search and select component..."}
                     <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
@@ -1705,22 +1716,27 @@ export default function BillOfMaterials() {
                         {childCandidates.map((item) => (
                           <CommandItem
                             key={item.id}
-                            value={`${item.item_code} ${item.description}`}
+                            value={`${item.item_code} ${item.description} ${item.drawing_revision ?? ""}`}
                             onSelect={() => {
                               setSelectedChild(item);
                               setLineForm((f) => ({
                                 ...f,
                                 unit: item.unit ?? "",
-                                drawing_number: item.drawing_number ?? "",
+                                drawing_number: item.drawing_revision ?? item.drawing_number ?? "",
                               }));
                               setChildItemOpen(false);
                             }}
                           >
                             <div>
-                              <p className="font-mono text-xs font-medium">{item.item_code}</p>
-                              <p className="text-sm">{item.description}</p>
+                              {item.drawing_revision ? (
+                                <p className="font-mono text-xs font-bold text-blue-700">
+                                  {item.drawing_revision} — {item.description}
+                                </p>
+                              ) : (
+                                <p className="text-sm font-medium">{item.description}</p>
+                              )}
                               <p className="text-xs text-muted-foreground capitalize">
-                                {item.item_type?.replace(/_/g, " ")} · Stock: {item.current_stock}{" "}
+                                {item.item_code} · {item.item_type?.replace(/_/g, " ")} · Stock: {item.current_stock}{" "}
                                 {item.unit}
                               </p>
                             </div>

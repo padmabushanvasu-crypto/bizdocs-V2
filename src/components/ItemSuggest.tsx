@@ -60,7 +60,9 @@ export function ItemSuggest({ value, onSelect, onChange, placeholder = "Type to 
             >
               <div className="flex items-center justify-between">
                 <span className="font-mono text-xs text-muted-foreground">{item.item_code}</span>
-                <span className="text-xs text-muted-foreground">{item.hsn_sac_code || ""}</span>
+                {item.drawing_revision && (
+                  <span className="font-mono text-xs font-semibold text-blue-600">{item.drawing_revision}</span>
+                )}
               </div>
               <div className="font-medium text-foreground">{item.description}</div>
               <div className="flex gap-3 text-xs text-muted-foreground">

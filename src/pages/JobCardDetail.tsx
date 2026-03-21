@@ -530,16 +530,28 @@ export default function JobCardDetail() {
             )}
           </div>
           {jc.item_description && (
-            <p className="text-sm text-muted-foreground mt-0.5">
-              {jc.item_code && <span className="font-mono mr-1">{jc.item_code}</span>}
-              {jc.item_description}
-            </p>
-          )}
-          {jc.drawing_number && (
-            <p className="font-mono text-xs text-slate-500 mt-0.5">
-              {jc.drawing_number}
-              {jc.drawing_revision && <span> · {jc.drawing_revision}</span>}
-            </p>
+            <div className="mt-1 space-y-0.5">
+              <p className="text-sm text-muted-foreground">
+                {jc.item_code && <span className="font-mono mr-1">{jc.item_code}</span>}
+                {jc.item_description}
+              </p>
+              {(jc.drawing_revision || jc.drawing_number) && (
+                <p className="text-xs">
+                  <span className="text-slate-400">Drawing: </span>
+                  <span className="font-mono font-semibold text-slate-700">
+                    {jc.drawing_revision ?? jc.drawing_number}
+                  </span>
+                  {jc.drawing_revision && jc.drawing_number && jc.drawing_number !== jc.drawing_revision && (
+                    <span className="font-mono text-slate-400 ml-1">({jc.drawing_number})</span>
+                  )}
+                </p>
+              )}
+              {(jc as any).item_type && (
+                <p className="text-xs text-slate-400">
+                  Type: <span className="capitalize">{String((jc as any).item_type).replace(/_/g, " ")}</span>
+                </p>
+              )}
+            </div>
           )}
           {jc.batch_ref && (
             <p className="text-xs text-muted-foreground">

@@ -66,7 +66,7 @@ export async function fetchItems(filters: ItemFilters = {}) {
     const sanitized = sanitizeSearchTerm(search);
     if (sanitized) {
       const term = `%${sanitized}%`;
-      query = query.or(`item_code.ilike.${term},description.ilike.${term},drawing_number.ilike.${term},hsn_sac_code.ilike.${term}`);
+      query = query.or(`item_code.ilike.${term},description.ilike.${term},drawing_number.ilike.${term},drawing_revision.ilike.${term},hsn_sac_code.ilike.${term}`);
     }
   }
 

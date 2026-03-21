@@ -501,10 +501,10 @@ export default function DeliveryChallanForm() {
             <thead>
               <tr className="bg-secondary text-muted-foreground text-xs uppercase tracking-wider">
                 <th className="px-3 py-2 text-left w-8">#</th>
+                <th className="px-3 py-2 text-left min-w-[120px]">Drawing No.</th>
                 <th className="px-3 py-2 text-left w-[100px]">Item Code</th>
                 <th className="px-3 py-2 text-left min-w-[180px]">Description</th>
                 <th className="px-3 py-2 text-left min-w-[160px]">Nature of Process</th>
-                <th className="px-3 py-2 text-left w-[90px]">Drawing #</th>
                 <th className="px-3 py-2 text-left w-[60px]">Unit</th>
                 <th className="px-3 py-2 text-right w-[75px]">Qty</th>
                 <th className="px-3 py-2 text-right w-[65px]">KGS</th>
@@ -520,6 +520,14 @@ export default function DeliveryChallanForm() {
                 <tr key={index} className="border-t border-border">
                   <td className="px-3 py-2 text-muted-foreground font-mono text-sm">{item.serial_number}</td>
                   <td className="px-3 py-2">
+                    <Input
+                      value={item.drawing_number || ""}
+                      onChange={(e) => updateLineItem(index, "drawing_number", e.target.value)}
+                      placeholder="e.g. 230086"
+                      className="h-8 text-sm font-mono min-w-[120px]"
+                    />
+                  </td>
+                  <td className="px-3 py-2">
                     <ItemSuggest
                       value={item.item_code || ""}
                       onChange={(v) => updateLineItem(index, "item_code", v)}
@@ -528,7 +536,7 @@ export default function DeliveryChallanForm() {
                         updateLineItem(index, "description", selectedItem.description);
                         updateLineItem(index, "unit", selectedItem.unit || "NOS");
                         updateLineItem(index, "rate", selectedItem.sale_price || 0);
-                        updateLineItem(index, "drawing_number", selectedItem.drawing_number || "");
+                        updateLineItem(index, "drawing_number", selectedItem.drawing_revision || selectedItem.drawing_number || "");
                         // Recalculate amount
                         setLineItems((items) => {
                           const updated = [...items];
@@ -554,14 +562,6 @@ export default function DeliveryChallanForm() {
                       onChange={(e) => updateLineItem(index, "nature_of_process", e.target.value)}
                       placeholder="e.g. Nickel Plating, CNC Machining & Return"
                       className="h-8 text-sm"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <Input
-                      value={item.drawing_number || ""}
-                      onChange={(e) => updateLineItem(index, "drawing_number", e.target.value)}
-                      placeholder="DWG-001"
-                      className="h-8 text-sm font-mono"
                     />
                   </td>
                   <td className="px-3 py-2">

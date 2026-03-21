@@ -77,6 +77,7 @@ export default function DeliveryChallanDetail() {
   const isReturnable = dc.dc_type === "returnable" || dc.dc_type === "job_work_143";
   const isJobWork = JOB_WORK_TYPES.includes(dc.dc_type);
   const hasNatureOfProcess = items.some((i) => i.nature_of_process);
+  const hasDrawingNumber = items.some((i) => i.drawing_number);
   const hasQtyKgs = items.some((i) => (i as any).qty_kgs != null);
   const hasQtySft = items.some((i) => (i as any).qty_sft != null);
   const today = new Date().toISOString().split("T")[0];
@@ -232,6 +233,7 @@ export default function DeliveryChallanDetail() {
             <thead>
               <tr>
                 <th className="w-10">#</th>
+                {hasDrawingNumber && <th className="min-w-[110px]">Drawing No.</th>}
                 <th>Item Code</th>
                 <th>Description</th>
                 {hasNatureOfProcess && <th>Nature of Process</th>}
@@ -248,6 +250,11 @@ export default function DeliveryChallanDetail() {
               {items.map((item) => (
                 <tr key={item.serial_number}>
                   <td className="font-mono text-muted-foreground">{item.serial_number}</td>
+                  {hasDrawingNumber && (
+                    <td className="font-mono text-sm font-semibold text-blue-700">
+                      {item.drawing_number || "—"}
+                    </td>
+                  )}
                   <td className="font-mono text-sm">{item.item_code || "—"}</td>
                   <td className="font-medium">{item.description}</td>
                   {hasNatureOfProcess && <td className="text-sm">{(item as any).nature_of_process || "—"}</td>}
