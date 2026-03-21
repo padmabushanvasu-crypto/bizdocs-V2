@@ -1392,7 +1392,7 @@ export default function BillOfMaterials() {
                           Not used as a component in any BOM
                         </p>
                         <p className="text-xs text-slate-400 mt-1">
-                          This item has no parent assemblies.
+                          This item is not used in any finished item.
                         </p>
                       </div>
                     ) : (
@@ -1400,7 +1400,7 @@ export default function BillOfMaterials() {
                         <table className="w-full data-table text-sm">
                           <thead>
                             <tr>
-                              <th>Parent Item Code</th>
+                              <th>Finished Item Code</th>
                               <th>Description</th>
                               <th>Type</th>
                               <th className="text-right">Qty Used</th>

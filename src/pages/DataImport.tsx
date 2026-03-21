@@ -64,7 +64,7 @@ async function downloadTemplate(sheetName: string, headers: string[]) {
 async function downloadBOMTemplate() {
   const XLSX = await import("xlsx-js-style");
   const wb = (XLSX as any).utils.book_new();
-  const headers = ["Parent Item Code *", "Child Item Code *", "Quantity *", "Unit", "Scrap Factor %", "Variant Name", "Notes"];
+  const headers = ["Finished Item Code *", "Component Code *", "Quantity *", "Unit", "Scrap Factor %", "Variant Name", "Notes"];
   const examples = [
     ["PROD-001", "COMP-A", "2", "NOS", "5", "", "Main component"],
     ["PROD-001", "COMP-B", "1", "KG", "0", "Variant-1", "Optional variant"],
@@ -82,7 +82,7 @@ async function downloadBOMTemplate() {
 
 const PARTY_HEADERS = ["Company Name *", "Party Type (vendor/customer/both) *", "Contact Person", "Address Line 1", "City", "State", "PIN Code", "Phone 1", "Email", "GSTIN", "PAN", "Payment Terms", "Notes"];
 const ITEM_HEADERS = ["Item Code *", "Description *", "Item Type *", "Unit", "HSN/SAC Code", "Sale Price", "Purchase Price", "GST Rate %", "Min Stock", "Notes"];
-const BOM_HEADERS = ["Parent Item Code *", "Child Item Code *", "Quantity *", "Unit", "Scrap Factor %", "Variant Name", "Notes"];
+const BOM_HEADERS = ["Finished Item Code *", "Component Code *", "Quantity *", "Unit", "Scrap Factor %", "Variant Name", "Notes"];
 // BOM template is handled by downloadBOMTemplate() with example rows
 const STOCK_HEADERS = ["Item Code *", "Opening Stock Qty *", "Notes"];
 
@@ -220,7 +220,7 @@ function BOMImportTab() {
       const allCodes = [
         ...new Set(
           parsed.flatMap((r) =>
-            [r["Parent Item Code *"]?.trim(), r["Child Item Code *"]?.trim()].filter(Boolean)
+            [r["Finished Item Code *"]?.trim(), r["Component Code *"]?.trim()].filter(Boolean)
           )
         ),
       ];
@@ -249,15 +249,15 @@ function BOMImportTab() {
       const newValidRows: Record<string, string>[] = [];
 
       parsed.forEach((row, i) => {
-        const parentCode = row["Parent Item Code *"]?.trim();
-        const childCode = row["Child Item Code *"]?.trim();
+        const parentCode = row["Finished Item Code *"]?.trim();
+        const childCode = row["Component Code *"]?.trim();
         const qty = parseFloat(row["Quantity *"] || "0");
 
         let rowError = "";
-        if (!parentCode) rowError = "Parent Item Code required";
-        else if (!childCode) rowError = "Child Item Code required";
+        if (!parentCode) rowError = "Finished Item Code required";
+        else if (!childCode) rowError = "Component Code required";
         else if (qty <= 0) rowError = "Quantity must be > 0";
-        else if (parentCode === childCode) rowError = "Self-reference: parent and child are the same";
+        else if (parentCode === childCode) rowError = "Self-reference: finished item and component are the same";
         else if (!resolvedCodes.has(parentCode)) rowError = `Item not found by code or drawing number: ${parentCode}`;
         else if (!resolvedCodes.has(childCode)) rowError = `Item not found by code or drawing number: ${childCode}`;
 
@@ -290,7 +290,7 @@ function BOMImportTab() {
       const codes = [
         ...new Set(
           validRows.flatMap((r) =>
-            [r["Parent Item Code *"]?.trim(), r["Child Item Code *"]?.trim()].filter(Boolean)
+            [r["Finished Item Code *"]?.trim(), r["Component Code *"]?.trim()].filter(Boolean)
           )
         ),
       ];
@@ -310,8 +310,8 @@ function BOMImportTab() {
       let imported = 0, updated = 0, skipped = 0;
 
       for (const row of validRows) {
-        const parentCode = row["Parent Item Code *"]?.trim();
-        const childCode = row["Child Item Code *"]?.trim();
+        const parentCode = row["Finished Item Code *"]?.trim();
+        const childCode = row["Component Code *"]?.trim();
         const qty = parseFloat(row["Quantity *"] || "0");
         const parentId = codeToId.get(parentCode);
         const childId = codeToId.get(childCode);
@@ -838,7 +838,7 @@ export default function DataImport() {
         <div className="paper-card mt-4">
           <h2 className="font-semibold text-slate-900 mb-1">Import Bill of Materials</h2>
           <p className="text-sm text-muted-foreground mb-4">
-            Define parent-child relationships. Both items must already exist. Existing BOM lines are updated (upsert).
+            Define finished item–component relationships. Both items must already exist. Existing BOM lines are updated (upsert).
             Supports Variant Name and Scrap Factor columns.
           </p>
           <BOMImportTab />
