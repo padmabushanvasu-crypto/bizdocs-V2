@@ -81,7 +81,7 @@ async function downloadBOMTemplate() {
   (XLSX as any).writeFile(wb, "BOM_Import_Template.xlsx");
 }
 
-const PARTY_HEADERS = ["Company Name *", "Party Type (vendor/customer/both) *", "Contact Person", "Address Line 1", "City", "State", "PIN Code", "Phone 1", "Email", "GSTIN", "PAN", "Payment Terms", "Notes"];
+const PARTY_HEADERS = ["Party Name *", "Party Type (vendor/customer/both) *", "Contact Person", "Address Line 1", "City", "State", "PIN Code", "Phone 1", "Email", "GSTIN", "PAN", "Payment Terms", "Notes"];
 const ITEM_HEADERS = ["Item Code *", "Description *", "Item Type *", "Unit", "HSN/SAC Code", "Sale Price", "Purchase Price", "GST Rate %", "Min Stock", "Notes"];
 const BOM_HEADERS = ["Finished Item Code *", "Component Code *", "Quantity *", "Unit", "Scrap Factor %", "Variant Name", "Notes"];
 // BOM template is handled by downloadBOMTemplate() with example rows
@@ -750,7 +750,7 @@ export default function DataImport() {
     let imported = 0, skipped = 0;
     const errors: string[] = [];
     for (const row of rows) {
-      const name = row["Company Name *"]?.trim();
+      const name = row["Party Name *"]?.trim();
       if (!name) { skipped++; continue; }
       try {
         await createParty({
@@ -881,7 +881,7 @@ export default function DataImport() {
             templateSheetName="Parties Import"
             onImport={handlePartyImport}
             validate={(row) => {
-              if (!row["Company Name *"]?.trim()) return "Company Name is required";
+              if (!row["Party Name *"]?.trim()) return "Party Name is required";
               const type = (row["Party Type (vendor/customer/both) *"] || "").toLowerCase().trim();
               if (type && !["vendor", "customer", "both"].includes(type)) return `Invalid party type: "${type}" — use vendor, customer, or both`;
               return null;
