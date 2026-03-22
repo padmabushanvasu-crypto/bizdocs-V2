@@ -1131,6 +1131,7 @@ export default function DataImport() {
   };
 
   const handleItemImport: BatchImportFn = async (rows, rowNums, onProgress) => {
+    console.log("[items-import] First mapped row:", rows[0]);
     const companyId = await getCompanyId();
 
     // Pre-fetch ALL existing items in one query
@@ -1216,6 +1217,7 @@ export default function DataImport() {
     }
     console.timeEnd("2-split-rows");
     console.log(`[items-import] toInsert=${toInsert.length} toUpdate=${toUpdate.length} skipped=${skipped}`);
+    console.log("[items-import] First item to insert:", toInsert[0]);
 
     let imported = 0;
     const totalOps = toInsert.length + toUpdate.length;

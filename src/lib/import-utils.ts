@@ -535,15 +535,30 @@ export function normalizePartyType(raw: string): string {
   return "vendor";
 }
 
+const VALID_ITEM_TYPES = [
+  "raw_material", "component", "sub_assembly", "bought_out",
+  "finished_good", "consumable", "job_work", "service",
+];
+
 export function normalizeItemType(raw: string): string {
-  const v = raw.toLowerCase().trim().replace(/[^a-z ]/g, "");
+  // Replace underscores with spaces FIRST so "bought_out" → "bought out",
+  // then strip remaining non-alpha characters and collapse whitespace.
+  const v = raw.toLowerCase().trim().replace(/_/g, " ").replace(/[^a-z ]/g, "").replace(/\s+/g, " ").trim();
   if (["raw material", "rm"].includes(v)) return "raw_material";
   if (["component", "comp"].includes(v)) return "component";
   if (["sub assembly", "sa"].includes(v)) return "sub_assembly";
   if (["bought out", "bo"].includes(v)) return "bought_out";
   if (["finished good", "fg", "finished goods"].includes(v)) return "finished_good";
   if (v === "consumable") return "consumable";
-  return "component";
+  if (["job work", "jw"].includes(v)) return "job_work";
+  if (v === "service") return "service";
+  // Unrecognised value — convert spaces back to underscores and pass through as-is
+  // rather than silently substituting "component".
+  const normalised = v.replace(/ /g, "_") || "component";
+  if (normalised !== "component" && !VALID_ITEM_TYPES.includes(normalised)) {
+    console.warn(`[normalizeItemType] Unrecognised item_type "${raw}" — passing "${normalised}" to DB`);
+  }
+  return normalised;
 }
 
 export const PARTY_FIELD_MAP: Record<string, string[]> = {
