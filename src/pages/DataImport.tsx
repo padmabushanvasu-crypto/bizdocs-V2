@@ -94,10 +94,21 @@ async function parseExcelSmart(
       continue;
     }
 
-    // Hint-row check: only apply to first 3 positions after header
-    if (positionAfterHeader < 3 && isHintRow(primaryCell)) {
-      skipped.push({ row: excelRowNum, value: primaryCell, reason: "Instruction row — skipped automatically" });
-      continue;
+    // Hint-row check: apply to first 5 positions after header.
+    // Check the primary cell AND every cell in the row — hint rows often
+    // have " / " lists (e.g. "raw_material / component / sub_assembly")
+    // in non-primary columns like item_type.
+    if (positionAfterHeader < 5) {
+      const anyCellIsHint =
+        isHintRow(primaryCell) ||
+        row.some((c) => {
+          const s = String(c).trim();
+          return / \/ /.test(s) || s.split("/").length - 1 > 2;
+        });
+      if (anyCellIsHint) {
+        skipped.push({ row: excelRowNum, value: primaryCell, reason: "Instruction row — skipped automatically" });
+        continue;
+      }
     }
 
     const mapped: Record<string, string> = {};
@@ -718,6 +729,9 @@ function ImportTab({
   primaryKeyField,
   onImport,
   validate,
+  onImportStart,
+  onImportProgress,
+  onImportEnd,
 }: {
   title: string;
   icon: React.ComponentType<any>;
@@ -728,6 +742,9 @@ function ImportTab({
   primaryKeyField?: string;
   onImport: BatchImportFn;
   validate?: (row: Record<string, string>, i: number) => string | null;
+  onImportStart?: (title: string) => void;
+  onImportProgress?: (pct: number) => void;
+  onImportEnd?: () => void;
 }) {
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -814,10 +831,14 @@ function ImportTab({
     const rowNumsToImport = validRowNums;
     const parseSkips = skipReasons.filter((s) => s.reason.includes("skipped automatically"));
     setRows([]); setValidRows([]); setValidRowNums([]); setErrorRows(new Set());
+    onImportStart?.(title);
     setImporting(true);
     setImportProgress(0);
     try {
-      const res = await onImport(rowsToImport, rowNumsToImport, (pct) => setImportProgress(pct));
+      const res = await onImport(rowsToImport, rowNumsToImport, (pct) => {
+        setImportProgress(pct);
+        onImportProgress?.(pct);
+      });
       setResult({ imported: res.imported, skipped: res.skipped });
       setSkipReasons([...parseSkips, ...res.skipReasons]);
       toast({ title: `✓ ${res.imported} ${title} imported successfully` });
@@ -826,6 +847,7 @@ function ImportTab({
     } finally {
       setImporting(false);
       setImportProgress(0);
+      onImportEnd?.();
     }
   };
 
@@ -942,6 +964,8 @@ export default function DataImport() {
   const [activeTab, setActiveTab] = useState("parties");
   const [clearTarget, setClearTarget] = useState<ClearTarget | null>(null);
   const [clearLoading, setClearLoading] = useState(false);
+  const [importingType, setImportingType] = useState<string | null>(null);
+  const [importingProgress, setImportingProgress] = useState(0);
 
   const { data: partiesCount = 0, refetch: refetchPartiesCount } = useQuery({
     queryKey: ["count", "parties"],
@@ -1015,10 +1039,8 @@ export default function DataImport() {
     const companyId = await getCompanyId();
 
     // Pre-fetch all existing parties in one query
-    console.time("1-prefetch");
     const { data: existingParties } = await (supabase as any)
       .from("parties").select("id, name").eq("company_id", companyId);
-    console.timeEnd("1-prefetch");
     const byName = new Map<string, string>(
       (existingParties ?? []).map((p: any) => [p.name?.toLowerCase().trim(), p.id as string])
     );
@@ -1029,7 +1051,6 @@ export default function DataImport() {
     const toInsert: any[] = [];
     const toUpdate: any[] = [];
 
-    console.time("2-split-rows");
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const excelRow = rowNums[i] ?? (i + 2);
@@ -1064,14 +1085,10 @@ export default function DataImport() {
         toInsert.push(partyData);
       }
     }
-    console.timeEnd("2-split-rows");
-    console.log(`[parties-import] toInsert=${toInsert.length} toUpdate=${toUpdate.length} skipped=${skipped}`);
-
     let imported = 0;
     const totalOps = toInsert.length + toUpdate.length;
 
     // Bulk insert new parties in chunks of 200
-    console.time("3-bulk-insert");
     if (toInsert.length > 0) {
       try {
         for (let i = 0; i < toInsert.length; i += 200) {
@@ -1098,10 +1115,7 @@ export default function DataImport() {
         }
       }
     }
-    console.timeEnd("3-bulk-insert");
-
     // Bulk upsert updates in chunks of 100
-    console.time("4-bulk-update");
     for (let i = 0; i < toUpdate.length; i += 100) {
       const chunk = toUpdate.slice(i, i + 100);
       try {
@@ -1124,21 +1138,17 @@ export default function DataImport() {
       }
       if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
     }
-    console.timeEnd("4-bulk-update");
 
     queryClient.invalidateQueries({ queryKey: ["parties"] });
     return { imported, skipped, errors, skipReasons };
   };
 
   const handleItemImport: BatchImportFn = async (rows, rowNums, onProgress) => {
-    console.log("[items-import] First mapped row:", rows[0]);
     const companyId = await getCompanyId();
 
     // Pre-fetch ALL existing items in one query
-    console.time("1-prefetch");
     const { data: existingItems } = await supabase
       .from("items").select("id, item_code, drawing_revision").eq("company_id", companyId);
-    console.timeEnd("1-prefetch");
 
     const byCode = new Map<string, string>(
       (existingItems ?? []).filter((i: any) => i.item_code)
@@ -1156,7 +1166,6 @@ export default function DataImport() {
     const toUpdate: any[] = [];
     let autoCodeIndex = 1;
 
-    console.time("2-split-rows");
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const excelRow = rowNums[i] ?? (i + 2);
@@ -1215,46 +1224,61 @@ export default function DataImport() {
         toInsert.push(itemData);
       }
     }
-    console.timeEnd("2-split-rows");
-    console.log(`[items-import] toInsert=${toInsert.length} toUpdate=${toUpdate.length} skipped=${skipped}`);
-    console.log("[items-import] First item to insert:", toInsert[0]);
 
     let imported = 0;
     const totalOps = toInsert.length + toUpdate.length;
 
+    const VALID_TYPES = ["raw_material", "component", "sub_assembly", "bought_out", "finished_good", "consumable", "job_work", "service"];
+
     // Bulk insert new items in chunks of 200
-    console.time("3-bulk-insert");
     if (toInsert.length > 0) {
-      try {
-        for (let i = 0; i < toInsert.length; i += 200) {
-          const chunk = toInsert.slice(i, i + 200);
+      const bulkInsert = async (items: any[]) => {
+        for (let i = 0; i < items.length; i += 200) {
+          const chunk = items.slice(i, i + 200);
           const { error } = await supabase.from("items").insert(chunk);
           if (error) throw error;
           imported += chunk.length;
           if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
         }
+      };
+
+      try {
+        await bulkInsert(toInsert);
       } catch {
-        // Row-by-row fallback
-        imported = 0;
-        for (const itemData of toInsert) {
+        // Retry with only valid item_types — invalid types cause 400 Bad Request
+        const validInsert = toInsert.filter((item) => VALID_TYPES.includes(item.item_type));
+        const invalidInsert = toInsert.filter((item) => !VALID_TYPES.includes(item.item_type));
+        for (const item of invalidInsert) {
+          skipped++;
+          errors.push(`(${item.item_code || item.description}): Invalid item_type "${item.item_type}"`);
+          skipReasons.push({ row: 0, value: item.item_code || "", reason: `Invalid item_type "${item.item_type}"` });
+        }
+        if (validInsert.length > 0) {
           try {
-            const { error } = await supabase.from("items").insert(itemData);
-            if (error) throw error;
-            imported++;
-          } catch (err: any) {
-            skipped++;
-            const isDup = err?.code === "23505" || String(err?.message ?? "").toLowerCase().includes("duplicate") || String(err?.message ?? "").toLowerCase().includes("unique");
-            const reason = isDup ? `Duplicate — item "${itemData.item_code || itemData.description}" already exists` : `DB error: ${err?.message ?? "unknown"}`;
-            errors.push(`(${itemData.item_code || itemData.description}): ${reason}`);
-            skipReasons.push({ row: 0, value: itemData.item_code || "", reason });
+            imported = 0;
+            await bulkInsert(validInsert);
+          } catch {
+            // Row-by-row fallback
+            imported = 0;
+            for (const itemData of validInsert) {
+              try {
+                const { error } = await supabase.from("items").insert(itemData);
+                if (error) throw error;
+                imported++;
+              } catch (err: any) {
+                skipped++;
+                const isDup = err?.code === "23505" || String(err?.message ?? "").toLowerCase().includes("duplicate") || String(err?.message ?? "").toLowerCase().includes("unique");
+                const reason = isDup ? `Duplicate — item "${itemData.item_code || itemData.description}" already exists` : `DB error: ${err?.message ?? "unknown"}`;
+                errors.push(`(${itemData.item_code || itemData.description}): ${reason}`);
+                skipReasons.push({ row: 0, value: itemData.item_code || "", reason });
+              }
+            }
           }
         }
       }
     }
-    console.timeEnd("3-bulk-insert");
 
     // Bulk upsert updates in chunks of 100
-    console.time("4-bulk-update");
     for (let i = 0; i < toUpdate.length; i += 100) {
       const chunk = toUpdate.slice(i, i + 100);
       try {
@@ -1277,7 +1301,6 @@ export default function DataImport() {
       }
       if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
     }
-    console.timeEnd("4-bulk-update");
 
     queryClient.invalidateQueries({ queryKey: ["items"] });
     return { imported, skipped, errors, skipReasons };
@@ -1406,6 +1429,9 @@ export default function DataImport() {
               if (!row["name"]?.trim()) return "Party Name is required";
               return null;
             }}
+            onImportStart={(t) => { setImportingType(t); setImportingProgress(0); }}
+            onImportProgress={(pct) => setImportingProgress(pct)}
+            onImportEnd={() => setImportingType(null)}
           />
         </div>
       )}
@@ -1437,6 +1463,9 @@ export default function DataImport() {
               if (!row["description"]?.trim()) return "Description is required";
               return null;
             }}
+            onImportStart={(t) => { setImportingType(t); setImportingProgress(0); }}
+            onImportProgress={(pct) => setImportingProgress(pct)}
+            onImportEnd={() => setImportingType(null)}
           />
         </div>
       )}
@@ -1489,7 +1518,24 @@ export default function DataImport() {
               if (isNaN(parseFloat(row["current_stock"] || ""))) return "Quantity must be a number";
               return null;
             }}
+            onImportStart={(t) => { setImportingType(t); setImportingProgress(0); }}
+            onImportProgress={(pct) => setImportingProgress(pct)}
+            onImportEnd={() => setImportingType(null)}
           />
+        </div>
+      )}
+
+      {/* Import progress bar */}
+      {importingType && (
+        <div className="fixed bottom-16 md:bottom-0 left-0 right-0 z-50 bg-blue-600 text-white px-4 py-2 flex items-center gap-3">
+          <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+          <span className="text-sm font-medium">Importing {importingType}... {importingProgress}%</span>
+          <div className="flex-1 bg-blue-500 rounded-full h-1.5 ml-2">
+            <div
+              className="bg-white rounded-full h-1.5 transition-all duration-300"
+              style={{ width: `${importingProgress}%` }}
+            />
+          </div>
         </div>
       )}
 

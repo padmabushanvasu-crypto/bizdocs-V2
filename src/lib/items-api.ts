@@ -61,7 +61,6 @@ export async function fetchItems(filters: ItemFilters = {}) {
 
   if (status !== "all") query = query.eq("status", status);
   if (type && type !== "all") {
-    console.log(`[fetchItems] type filter: "${type}"`);
     query = query.eq("item_type", type);
   }
 
@@ -75,9 +74,6 @@ export async function fetchItems(filters: ItemFilters = {}) {
 
   const { data, error, count } = await query;
   if (error) throw error;
-  if (type && type !== "all") {
-    console.log(`[fetchItems] got ${data?.length ?? 0} results for type="${type}", first 5:`, data?.slice(0, 5));
-  }
   return { data: (data ?? []) as Item[], count: count ?? 0 };
 }
 

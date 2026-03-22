@@ -541,7 +541,9 @@ const VALID_ITEM_TYPES = [
 ];
 
 export function normalizeItemType(raw: string): string {
-  // Replace underscores with spaces FIRST so "bought_out" → "bought out",
+  // Guard: hint/instruction values like "raw_material / component / sub_assembly ..."
+  if (/ \/ /.test(raw) || raw.split("/").length - 1 > 1) return "component";
+  // Normalise: replace underscores with spaces FIRST so "bought_out" → "bought out",
   // then strip remaining non-alpha characters and collapse whitespace.
   const v = raw.toLowerCase().trim().replace(/_/g, " ").replace(/[^a-z ]/g, "").replace(/\s+/g, " ").trim();
   if (["raw material", "rm"].includes(v)) return "raw_material";
@@ -554,11 +556,7 @@ export function normalizeItemType(raw: string): string {
   if (v === "service") return "service";
   // Unrecognised value — convert spaces back to underscores and pass through as-is
   // rather than silently substituting "component".
-  const normalised = v.replace(/ /g, "_") || "component";
-  if (normalised !== "component" && !VALID_ITEM_TYPES.includes(normalised)) {
-    console.warn(`[normalizeItemType] Unrecognised item_type "${raw}" — passing "${normalised}" to DB`);
-  }
-  return normalised;
+  return v.replace(/ /g, "_") || "component";
 }
 
 export const PARTY_FIELD_MAP: Record<string, string[]> = {
