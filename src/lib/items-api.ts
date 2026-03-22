@@ -122,11 +122,32 @@ export async function bulkDeleteItems(ids: string[]): Promise<{ deleted: number;
   let deleted = 0, deactivated = 0, errors = 0;
   for (const id of ids) {
     try {
-      const [{ count: stockCount }, { count: bomCount }] = await Promise.all([
+      const [
+        { count: stockCount },
+        { count: bomCount },
+        { count: jobCardCount },
+        { count: poLineCount },
+        { count: dcLineCount },
+        { count: invoiceLineCount },
+        { count: grnLineCount },
+      ] = await Promise.all([
         (supabase as any).from("stock_ledger").select("id", { count: "exact", head: true }).eq("item_id", id),
         (supabase as any).from("bom_lines").select("id", { count: "exact", head: true }).or(`parent_item_id.eq.${id},child_item_id.eq.${id}`),
+        (supabase as any).from("job_cards").select("id", { count: "exact", head: true }).eq("item_id", id),
+        (supabase as any).from("po_line_items").select("id", { count: "exact", head: true }).eq("item_id", id),
+        (supabase as any).from("dc_line_items").select("id", { count: "exact", head: true }).eq("item_id", id),
+        (supabase as any).from("invoice_line_items").select("id", { count: "exact", head: true }).eq("item_id", id),
+        (supabase as any).from("grn_line_items").select("id", { count: "exact", head: true }).eq("item_id", id),
       ]);
-      if ((stockCount ?? 0) > 0 || (bomCount ?? 0) > 0) {
+      const hasRefs =
+        (stockCount ?? 0) > 0 ||
+        (bomCount ?? 0) > 0 ||
+        (jobCardCount ?? 0) > 0 ||
+        (poLineCount ?? 0) > 0 ||
+        (dcLineCount ?? 0) > 0 ||
+        (invoiceLineCount ?? 0) > 0 ||
+        (grnLineCount ?? 0) > 0;
+      if (hasRefs) {
         await updateItem(id, { status: "inactive" } as any);
         deactivated++;
       } else {

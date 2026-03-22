@@ -101,12 +101,26 @@ export async function bulkDeleteParties(ids: string[]): Promise<{ deleted: numbe
   let deleted = 0, deactivated = 0, errors = 0;
   for (const id of ids) {
     try {
-      const [{ count: poCount }, { count: dcCount }, { count: soCount }] = await Promise.all([
+      const [
+        { count: poCount },
+        { count: dcCount },
+        { count: soCount },
+        { count: invoiceCount },
+        { count: receiptCount },
+      ] = await Promise.all([
         (supabase as any).from("purchase_orders").select("id", { count: "exact", head: true }).eq("vendor_id", id),
         (supabase as any).from("delivery_challans").select("id", { count: "exact", head: true }).eq("party_id", id),
         (supabase as any).from("sales_orders").select("id", { count: "exact", head: true }).eq("customer_id", id),
+        (supabase as any).from("invoices").select("id", { count: "exact", head: true }).eq("customer_id", id),
+        (supabase as any).from("receipts").select("id", { count: "exact", head: true }).eq("party_id", id),
       ]);
-      if ((poCount ?? 0) > 0 || (dcCount ?? 0) > 0 || (soCount ?? 0) > 0) {
+      const hasRefs =
+        (poCount ?? 0) > 0 ||
+        (dcCount ?? 0) > 0 ||
+        (soCount ?? 0) > 0 ||
+        (invoiceCount ?? 0) > 0 ||
+        (receiptCount ?? 0) > 0;
+      if (hasRefs) {
         await updateParty(id, { status: "inactive" });
         deactivated++;
       } else {

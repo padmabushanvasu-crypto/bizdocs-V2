@@ -946,7 +946,12 @@ export default function DataImport() {
       toast({ title: `All ${count} ${clearTarget.noun} cleared successfully` });
       setClearTarget(null);
     } catch (err: any) {
-      toast({ title: "Clear failed", description: err.message, variant: "destructive" });
+      const isFkError = String(err?.message ?? "").includes("violates foreign key constraint");
+      const isItemsOrParties = clearTarget?.type === "items" || clearTarget?.type === "parties";
+      const description = isFkError && isItemsOrParties
+        ? "Cannot delete — some records are linked to existing Work Orders, POs or other documents. Clear those documents first, or contact support."
+        : err.message;
+      toast({ title: "Clear failed", description, variant: "destructive" });
     } finally {
       setClearLoading(false);
     }
