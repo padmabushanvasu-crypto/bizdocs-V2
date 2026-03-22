@@ -737,6 +737,7 @@ function ImportTab({
   const [errorRows, setErrorRows] = useState<Set<number>>(new Set());
   const [errors, setErrors] = useState<string[]>([]);
   const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
   const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
   const [mappingSummary, setMappingSummary] = useState<ColumnMappingSummary | null>(null);
   const [columnWarnings, setColumnWarnings] = useState<string[]>([]);
@@ -814,8 +815,9 @@ function ImportTab({
     const parseSkips = skipReasons.filter((s) => s.reason.includes("skipped automatically"));
     setRows([]); setValidRows([]); setValidRowNums([]); setErrorRows(new Set());
     setImporting(true);
+    setImportProgress(0);
     try {
-      const res = await onImport(rowsToImport, rowNumsToImport);
+      const res = await onImport(rowsToImport, rowNumsToImport, (pct) => setImportProgress(pct));
       setResult({ imported: res.imported, skipped: res.skipped });
       setSkipReasons([...parseSkips, ...res.skipReasons]);
       toast({ title: `✓ ${res.imported} ${title} imported successfully` });
@@ -823,6 +825,7 @@ function ImportTab({
       toast({ title: `Import failed — ${err?.message ?? "unknown error"}`, variant: "destructive" });
     } finally {
       setImporting(false);
+      setImportProgress(0);
     }
   };
 
@@ -862,7 +865,9 @@ function ImportTab({
         <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xls,.csv" className="hidden" onChange={handleFile} />
         {validRows.length > 0 && (
           <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white" onClick={handleImport} disabled={importing}>
-            {importing ? "Importing…" : `Import ${validRows.length} Row${validRows.length !== 1 ? "s" : ""}`}
+            {importing
+              ? `Importing… ${importProgress > 0 ? `${importProgress}%` : ""}`
+              : `Import ${validRows.length} Row${validRows.length !== 1 ? "s" : ""}`}
           </Button>
         )}
         {rows.length > 0 && (
@@ -1006,12 +1011,14 @@ export default function DataImport() {
     }
   };
 
-  const handlePartyImport: BatchImportFn = async (rows, rowNums) => {
+  const handlePartyImport: BatchImportFn = async (rows, rowNums, onProgress) => {
     const companyId = await getCompanyId();
 
     // Pre-fetch all existing parties in one query
+    console.time("1-prefetch");
     const { data: existingParties } = await (supabase as any)
       .from("parties").select("id, name").eq("company_id", companyId);
+    console.timeEnd("1-prefetch");
     const byName = new Map<string, string>(
       (existingParties ?? []).map((p: any) => [p.name?.toLowerCase().trim(), p.id as string])
     );
@@ -1022,6 +1029,7 @@ export default function DataImport() {
     const toInsert: any[] = [];
     const toUpdate: any[] = [];
 
+    console.time("2-split-rows");
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const excelRow = rowNums[i] ?? (i + 2);
@@ -1056,21 +1064,30 @@ export default function DataImport() {
         toInsert.push(partyData);
       }
     }
+    console.timeEnd("2-split-rows");
+    console.log(`[parties-import] toInsert=${toInsert.length} toUpdate=${toUpdate.length} skipped=${skipped}`);
 
     let imported = 0;
+    const totalOps = toInsert.length + toUpdate.length;
 
-    // Bulk insert new parties
+    // Bulk insert new parties in chunks of 200
+    console.time("3-bulk-insert");
     if (toInsert.length > 0) {
       try {
-        const { error } = await (supabase as any).from("parties").insert(toInsert);
-        if (error) throw error;
-        imported += toInsert.length;
+        for (let i = 0; i < toInsert.length; i += 200) {
+          const chunk = toInsert.slice(i, i + 200);
+          const { error } = await (supabase as any).from("parties").insert(chunk);
+          if (error) throw error;
+          imported += chunk.length;
+          if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
+        }
       } catch {
         for (const party of toInsert) {
           try {
             const { error } = await (supabase as any).from("parties").insert(party);
             if (error) throw error;
             imported++;
+            if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
           } catch (err: any) {
             skipped++;
             const isDup = err?.code === "23505" || String(err?.message ?? "").toLowerCase().includes("duplicate") || String(err?.message ?? "").toLowerCase().includes("unique");
@@ -1081,8 +1098,10 @@ export default function DataImport() {
         }
       }
     }
+    console.timeEnd("3-bulk-insert");
 
     // Bulk upsert updates in chunks of 100
+    console.time("4-bulk-update");
     for (let i = 0; i < toUpdate.length; i += 100) {
       const chunk = toUpdate.slice(i, i + 100);
       try {
@@ -1103,18 +1122,23 @@ export default function DataImport() {
           }
         }
       }
+      if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
     }
+    console.timeEnd("4-bulk-update");
 
     queryClient.invalidateQueries({ queryKey: ["parties"] });
     return { imported, skipped, errors, skipReasons };
   };
 
-  const handleItemImport: BatchImportFn = async (rows, rowNums) => {
+  const handleItemImport: BatchImportFn = async (rows, rowNums, onProgress) => {
     const companyId = await getCompanyId();
 
     // Pre-fetch ALL existing items in one query
+    console.time("1-prefetch");
     const { data: existingItems } = await supabase
       .from("items").select("id, item_code, drawing_revision").eq("company_id", companyId);
+    console.timeEnd("1-prefetch");
+
     const byCode = new Map<string, string>(
       (existingItems ?? []).filter((i: any) => i.item_code)
         .map((i: any) => [(i.item_code as string).toLowerCase(), i.id as string])
@@ -1131,6 +1155,7 @@ export default function DataImport() {
     const toUpdate: any[] = [];
     let autoCodeIndex = 1;
 
+    console.time("2-split-rows");
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const excelRow = rowNums[i] ?? (i + 2);
@@ -1189,16 +1214,26 @@ export default function DataImport() {
         toInsert.push(itemData);
       }
     }
+    console.timeEnd("2-split-rows");
+    console.log(`[items-import] toInsert=${toInsert.length} toUpdate=${toUpdate.length} skipped=${skipped}`);
 
     let imported = 0;
+    const totalOps = toInsert.length + toUpdate.length;
 
-    // Bulk insert new items
+    // Bulk insert new items in chunks of 200
+    console.time("3-bulk-insert");
     if (toInsert.length > 0) {
       try {
-        const { error } = await supabase.from("items").insert(toInsert);
-        if (error) throw error;
-        imported += toInsert.length;
+        for (let i = 0; i < toInsert.length; i += 200) {
+          const chunk = toInsert.slice(i, i + 200);
+          const { error } = await supabase.from("items").insert(chunk);
+          if (error) throw error;
+          imported += chunk.length;
+          if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
+        }
       } catch {
+        // Row-by-row fallback
+        imported = 0;
         for (const itemData of toInsert) {
           try {
             const { error } = await supabase.from("items").insert(itemData);
@@ -1214,8 +1249,10 @@ export default function DataImport() {
         }
       }
     }
+    console.timeEnd("3-bulk-insert");
 
     // Bulk upsert updates in chunks of 100
+    console.time("4-bulk-update");
     for (let i = 0; i < toUpdate.length; i += 100) {
       const chunk = toUpdate.slice(i, i + 100);
       try {
@@ -1236,7 +1273,9 @@ export default function DataImport() {
           }
         }
       }
+      if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
     }
+    console.timeEnd("4-bulk-update");
 
     queryClient.invalidateQueries({ queryKey: ["items"] });
     return { imported, skipped, errors, skipReasons };

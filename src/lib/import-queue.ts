@@ -31,7 +31,8 @@ export interface ImportJob {
 
 export type BatchImportFn = (
   rows: Record<string, string>[],
-  rowNums: number[]
+  rowNums: number[],
+  onProgress?: (pct: number) => void
 ) => Promise<{
   imported: number;
   skipped: number;
