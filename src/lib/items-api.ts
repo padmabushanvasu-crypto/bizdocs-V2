@@ -49,7 +49,7 @@ export interface ItemFilters {
 }
 
 export async function fetchItems(filters: ItemFilters = {}) {
-  const { search, type = "all", status = "active", page = 1, pageSize = 50 } = filters;
+  const { search, type = "all", status = "active", page = 1, pageSize = 100 } = filters;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
@@ -60,7 +60,10 @@ export async function fetchItems(filters: ItemFilters = {}) {
     .range(from, to);
 
   if (status !== "all") query = query.eq("status", status);
-  if (type && type !== "all") query = query.eq("item_type", type);
+  if (type && type !== "all") {
+    console.log(`[fetchItems] type filter: "${type}"`);
+    query = query.eq("item_type", type);
+  }
 
   if (search?.trim()) {
     const sanitized = sanitizeSearchTerm(search);
@@ -72,6 +75,9 @@ export async function fetchItems(filters: ItemFilters = {}) {
 
   const { data, error, count } = await query;
   if (error) throw error;
+  if (type && type !== "all") {
+    console.log(`[fetchItems] got ${data?.length ?? 0} results for type="${type}", first 5:`, data?.slice(0, 5));
+  }
   return { data: (data ?? []) as Item[], count: count ?? 0 };
 }
 

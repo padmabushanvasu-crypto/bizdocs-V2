@@ -15,7 +15,7 @@ export interface PartiesFilters {
 }
 
 export async function fetchParties(filters: PartiesFilters = {}) {
-  const { search, type = "all", status = "active", page = 1, pageSize = 20 } = filters;
+  const { search, type = "all", status = "active", page = 1, pageSize = 100 } = filters;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 

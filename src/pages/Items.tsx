@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Package, Plus, Search, Edit, Trash2, X, Upload, Download, CheckSquare, Square, XCircle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Package, Plus, Search, Edit, Trash2, X, Upload, Download, CheckSquare, Square, XCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -55,12 +55,36 @@ export default function Items() {
   const [form, setForm] = useState(emptyItem);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const { data, isLoading } = useQuery({
+  const {
+    data,
+    isLoading,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useInfiniteQuery({
     queryKey: ["items", filters],
-    queryFn: () => fetchItems(filters),
+    queryFn: ({ pageParam }) => fetchItems({ ...filters, page: pageParam, pageSize: 100 }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.data.length === 100 ? allPages.length + 1 : undefined,
   });
 
-  const items = data?.data ?? [];
+  const items = data?.pages.flatMap((p) => p.data) ?? [];
+  const totalCount = data?.pages[0]?.count ?? 0;
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (
+        window.innerHeight + window.scrollY >= document.body.offsetHeight - 300 &&
+        hasNextPage &&
+        !isFetchingNextPage
+      ) {
+        fetchNextPage();
+      }
+    };
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -185,7 +209,11 @@ export default function Items() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Items</h1>
-          <p className="text-sm text-slate-500 mt-1">Master list of products, materials, and services</p>
+          <p className="text-sm text-slate-500 mt-1">
+            {totalCount > 0
+              ? `Showing ${items.length} of ${totalCount} items`
+              : "Master list of products, materials, and services"}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2 flex-shrink-0">
           <Button variant="outline" onClick={() => exportToExcel(items, ITEMS_EXPORT_COLS, `Items_${new Date().toISOString().split("T")[0]}.xlsx`, "Items")} disabled={items.length === 0}>
@@ -323,6 +351,12 @@ export default function Items() {
           </table>
         </div>
       </div>
+
+      {isFetchingNextPage && (
+        <div className="flex justify-center py-4">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      )}
 
       {/* Add/Edit Dialog */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>

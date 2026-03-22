@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search, Edit, Eye, MoreHorizontal, UserX, Users as UsersIcon, Upload, Download, CheckSquare, Square, XCircle, Trash2 } from "lucide-react";
+import { Plus, Search, Edit, Eye, MoreHorizontal, UserX, Users as UsersIcon, Upload, Download, CheckSquare, Square, XCircle, Trash2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -47,18 +47,39 @@ export default function PartiesList() {
     search: "",
     type: "all",
     status: "active",
-    page: 1,
-    pageSize: 20,
+    pageSize: 100,
   });
 
-  const { data, isLoading } = useQuery({
+  const {
+    data,
+    isLoading,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useInfiniteQuery({
     queryKey: ["parties", filters],
-    queryFn: () => fetchParties(filters),
+    queryFn: ({ pageParam }) => fetchParties({ ...filters, page: pageParam, pageSize: 100 }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.data.length === 100 ? allPages.length + 1 : undefined,
   });
 
-  const parties = data?.data ?? [];
-  const totalCount = data?.count ?? 0;
-  const totalPages = Math.ceil(totalCount / (filters.pageSize || 20));
+  const parties = data?.pages.flatMap((p) => p.data) ?? [];
+  const totalCount = data?.pages[0]?.count ?? 0;
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (
+        window.innerHeight + window.scrollY >= document.body.offsetHeight - 300 &&
+        hasNextPage &&
+        !isFetchingNextPage
+      ) {
+        fetchNextPage();
+      }
+    };
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const handleDeactivate = async (id: string) => {
     try {
@@ -148,7 +169,7 @@ export default function PartiesList() {
   };
 
   const updateFilter = (key: keyof PartiesFilters, value: string | number) => {
-    setFilters((prev) => ({ ...prev, [key]: value, page: key === "page" ? Number(value) : 1 }));
+    setFilters((prev) => ({ ...prev, [key]: value }));
   };
 
   return (
@@ -157,7 +178,11 @@ export default function PartiesList() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Parties</h1>
-          <p className="text-sm text-slate-500 mt-1">Manage vendors and customers</p>
+          <p className="text-sm text-slate-500 mt-1">
+            {totalCount > 0
+              ? `Showing ${parties.length} of ${totalCount} parties`
+              : "Manage vendors and customers"}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2 flex-shrink-0">
           <Button variant="outline" onClick={() => exportToExcel(parties, PARTIES_EXPORT_COLS, `Parties_${new Date().toISOString().split("T")[0]}.xlsx`, "Parties")} disabled={parties.length === 0}>
@@ -362,35 +387,15 @@ export default function PartiesList() {
             </table>
           </div>
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between px-6 py-3 border-t border-border">
-              <p className="text-xs text-muted-foreground">
-                Showing {((filters.page || 1) - 1) * (filters.pageSize || 20) + 1}–
-                {Math.min((filters.page || 1) * (filters.pageSize || 20), totalCount)} of {totalCount}
-              </p>
-              <div className="flex gap-1">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={(filters.page || 1) <= 1}
-                  onClick={() => updateFilter("page", (filters.page || 1) - 1)}
-                >
-                  Previous
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={(filters.page || 1) >= totalPages}
-                  onClick={() => updateFilter("page", (filters.page || 1) + 1)}
-                >
-                  Next
-                </Button>
-              </div>
-            </div>
-          )}
         </div>
       )}
+
+      {isFetchingNextPage && (
+        <div className="flex justify-center py-4">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      )}
+
       <ImportDialog
         open={importOpen}
         onOpenChange={setImportOpen}
