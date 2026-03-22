@@ -14,7 +14,7 @@ import {
   PARTY_FIELD_MAP, ITEM_FIELD_MAP, BOM_FIELD_MAP, STOCK_FIELD_MAP,
   type ColumnMappingSummary, type SkipReason,
 } from "@/lib/import-utils";
-import { useImportQueue, type BatchImportFn } from "@/lib/import-queue";
+import type { BatchImportFn } from "@/lib/import-queue";
 
 // Returns true if the given primary-key cell value looks like a hint/instruction.
 // Only applied to the first 3 rows after the detected header row.
@@ -310,7 +310,6 @@ function SkipReasonsPanel({ reasons }: { reasons: SkipReason[] }) {
 
 function BOMImportTab() {
   const { toast } = useToast();
-  const { addJob } = useImportQueue();
   const queryClient = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -321,6 +320,7 @@ function BOMImportTab() {
   const [errorMessages, setErrorMessages] = useState<Map<number, string>>(new Map());
   const [errors, setErrors] = useState<string[]>([]);
   const [validating, setValidating] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
   const [mappingSummary, setMappingSummary] = useState<ColumnMappingSummary | null>(null);
   const [columnWarnings, setColumnWarnings] = useState<string[]>([]);
@@ -436,98 +436,148 @@ function BOMImportTab() {
     e.target.value = "";
   };
 
-  // Extracted as BatchImportFn so addJob can call it in batches of 50
-  const bomImportFn: BatchImportFn = async (batchRows, batchRowNums) => {
+  const bomImportFn: BatchImportFn = async (rows, rowNums) => {
     const companyId = await getCompanyId();
-    const codes = [
-      ...new Set(
-        batchRows.flatMap((r) =>
-          [r["finished_item_code"]?.trim(), r["component_code"]?.trim()].filter(Boolean)
-        )
-      ),
-    ];
-    const { data: itemsData } = await supabase.from("items").select("id, item_code, drawing_revision").in("item_code", codes);
-    // codeToId keys are lowercased input codes for case-insensitive lookup
-    const codeToId = new Map<string, string>(
-      (itemsData ?? []).map((i: any) => [(i.item_code as string).toLowerCase(), i.id as string])
+
+    // Pre-fetch ALL items in one query
+    const { data: allItems } = await supabase
+      .from("items").select("id, item_code, drawing_revision").eq("company_id", companyId);
+    const codeToId = new Map<string, string>();
+    const drawingToId = new Map<string, string>();
+    for (const item of (allItems ?? []) as any[]) {
+      if (item.item_code) codeToId.set((item.item_code as string).toLowerCase(), item.id as string);
+      if (item.drawing_revision) drawingToId.set((item.drawing_revision as string).toLowerCase(), item.id as string);
+    }
+
+    let skipped = 0;
+    const errors: string[] = [];
+    const skipReasons: SkipReason[] = [];
+
+    // Resolve parent/child IDs in memory
+    type ResolvedRow = {
+      parentId: string; childId: string; qty: number; unit: string;
+      scrapFactor: number; notes: string | null; variantName: string | null; excelRow: number;
+    };
+    const resolvedRows: ResolvedRow[] = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const excelRow = rowNums[i] ?? (i + 2);
+      const parentCode = row["finished_item_code"]?.trim() ?? "";
+      const childCode = row["component_code"]?.trim() ?? "";
+      const qty = parseFloat(row["quantity"] || "0");
+      const parentId = codeToId.get(parentCode.toLowerCase()) ?? drawingToId.get(parentCode.toLowerCase());
+      const childId = codeToId.get(childCode.toLowerCase()) ?? drawingToId.get(childCode.toLowerCase());
+      if (!parentId || !childId) {
+        skipped++;
+        const missingCode = !parentId ? parentCode : childCode;
+        skipReasons.push({ row: excelRow, value: parentCode, reason: `Item '${missingCode}' not found — checked both item code and drawing number` });
+        continue;
+      }
+      resolvedRows.push({
+        parentId, childId, qty, unit: row["unit"]?.trim() || "NOS",
+        scrapFactor: parseFloat(row["scrap_factor"] || "0") || 0,
+        notes: row["notes"]?.trim() || null,
+        variantName: row["variant_name"]?.trim() || null,
+        excelRow,
+      });
+    }
+
+    if (resolvedRows.length === 0) {
+      return { imported: 0, skipped, errors, skipReasons };
+    }
+
+    // Pre-fetch existing variants + BOM lines in two queries
+    const [{ data: existingVariants }, { data: existingBomLines }] = await Promise.all([
+      (supabase as any).from("bom_variants").select("id, parent_item_id, variant_name").eq("company_id", companyId),
+      (supabase as any).from("bom_lines").select("id, parent_item_id, child_item_id").eq("company_id", companyId),
+    ]);
+
+    const variantMap = new Map<string, string>(
+      (existingVariants ?? []).map((v: any) => [`${v.parent_item_id}:${v.variant_name}`, v.id as string])
+    );
+    const bomLineMap = new Map<string, string>(
+      (existingBomLines ?? []).map((b: any) => [`${b.parent_item_id}:${b.child_item_id}`, b.id as string])
     );
 
-    // For codes not resolved by item_code, try drawing_revision ILIKE
-    const missingCodes = codes.filter((c) => !codeToId.has(c.toLowerCase()));
-    if (missingCodes.length > 0) {
-      const ilikeFilter = missingCodes.map((c) => `drawing_revision.ilike.${c}`).join(",");
-      const { data: byRevData } = await supabase.from("items").select("id, item_code, drawing_revision").or(ilikeFilter);
-      for (const item of (byRevData ?? []) as any[]) {
-        if (item.drawing_revision) {
-          const matched = missingCodes.find(
-            (c) => c.toLowerCase() === (item.drawing_revision as string).toLowerCase()
-          );
-          if (matched) codeToId.set(matched.toLowerCase(), item.id as string);
+    // Bulk insert any new variants needed
+    const newVariantsNeeded = new Map<string, { parent_item_id: string; variant_name: string }>();
+    for (const r of resolvedRows) {
+      if (r.variantName) {
+        const key = `${r.parentId}:${r.variantName}`;
+        if (!variantMap.has(key)) {
+          newVariantsNeeded.set(key, { parent_item_id: r.parentId, variant_name: r.variantName });
+        }
+      }
+    }
+    if (newVariantsNeeded.size > 0) {
+      const toInsertVariants = [...newVariantsNeeded.values()].map((v) => ({ ...v, company_id: companyId }));
+      const { data: insertedVariants } = await (supabase as any)
+        .from("bom_variants").insert(toInsertVariants).select("id, parent_item_id, variant_name");
+      for (const v of (insertedVariants ?? []) as any[]) {
+        variantMap.set(`${v.parent_item_id}:${v.variant_name}`, v.id as string);
+      }
+    }
+
+    // Split BOM lines into insert vs update
+    const toInsert: any[] = [];
+    const toUpdate: any[] = [];
+    for (const r of resolvedRows) {
+      const variantId = r.variantName ? (variantMap.get(`${r.parentId}:${r.variantName}`) ?? null) : null;
+      const payload: any = {
+        company_id: companyId, parent_item_id: r.parentId, child_item_id: r.childId,
+        quantity: r.qty, unit: r.unit, scrap_factor: r.scrapFactor, notes: r.notes,
+      };
+      if (variantId) payload.variant_id = variantId;
+      const existingId = bomLineMap.get(`${r.parentId}:${r.childId}`);
+      if (existingId) {
+        toUpdate.push({ id: existingId, ...payload });
+      } else {
+        toInsert.push(payload);
+      }
+    }
+
+    let imported = 0;
+
+    // Bulk insert new BOM lines
+    if (toInsert.length > 0) {
+      try {
+        const { error } = await (supabase as any).from("bom_lines").insert(toInsert);
+        if (error) throw error;
+        imported += toInsert.length;
+      } catch {
+        for (const line of toInsert) {
+          try {
+            const { error } = await (supabase as any).from("bom_lines").insert(line);
+            if (error) throw error;
+            imported++;
+          } catch (err: any) {
+            skipped++;
+            skipReasons.push({ row: 0, value: "", reason: `DB error: ${err?.message ?? "unknown"}` });
+          }
         }
       }
     }
 
-    let imported = 0, skipped = 0;
-    const errors: string[] = [];
-    const skipReasons: SkipReason[] = [];
-
-    for (let i = 0; i < batchRows.length; i++) {
-      const row = batchRows[i];
-      const excelRow = batchRowNums[i] ?? (i + 2);
-      const parentCode = row["finished_item_code"]?.trim();
-      const childCode = row["component_code"]?.trim();
-      const qty = parseFloat(row["quantity"] || "0");
-      const parentId = codeToId.get(parentCode.toLowerCase());
-      const childId = codeToId.get(childCode.toLowerCase());
-      if (!parentId || !childId) {
-        skipped++;
-        const missingCode = !parentId ? parentCode : childCode;
-        skipReasons.push({ row: excelRow, value: parentCode || "", reason: `Item '${missingCode}' not found — checked both item code and drawing number` });
-        continue;
-      }
-
-      // Variant find-or-create
-      const variantName = row["variant_name"]?.trim();
-      let variantId = null;
-      if (variantName) {
-        const { data: existingVariant } = await (supabase as any)
-          .from("bom_variants").select("id")
-          .eq("parent_item_id", parentId).eq("variant_name", variantName).maybeSingle();
-        if (existingVariant) {
-          variantId = existingVariant.id;
-        } else {
-          const { data: newVariant } = await (supabase as any)
-            .from("bom_variants")
-            .insert({ parent_item_id: parentId, variant_name: variantName, company_id: companyId })
-            .select("id").single();
-          variantId = newVariant?.id ?? null;
-        }
-      }
-
-      const payload: any = {
-        quantity: qty,
-        unit: row["unit"]?.trim() || "NOS",
-        scrap_factor: parseFloat(row["scrap_factor"] || "0") || 0,
-        notes: row["notes"]?.trim() || null,
-      };
-      if (variantId) payload.variant_id = variantId;
-
+    // Bulk upsert updated BOM lines in chunks of 100
+    for (let i = 0; i < toUpdate.length; i += 100) {
+      const chunk = toUpdate.slice(i, i + 100);
       try {
-        const { data: existing } = await (supabase as any)
-          .from("bom_lines").select("id")
-          .eq("company_id", companyId).eq("parent_item_id", parentId).eq("child_item_id", childId).maybeSingle();
-
-        if (existing) {
-          await (supabase as any).from("bom_lines").update(payload).eq("id", existing.id);
-        } else {
-          await (supabase as any).from("bom_lines").insert({
-            ...payload, company_id: companyId, parent_item_id: parentId, child_item_id: childId,
-          });
+        const { error } = await (supabase as any).from("bom_lines").upsert(chunk, { onConflict: "id" });
+        if (error) throw error;
+        imported += chunk.length;
+      } catch {
+        for (const line of chunk) {
+          const { id, ...rest } = line;
+          try {
+            const { error } = await (supabase as any).from("bom_lines").update(rest).eq("id", id);
+            if (error) throw error;
+            imported++;
+          } catch (err: any) {
+            skipped++;
+            skipReasons.push({ row: 0, value: "", reason: `DB error: ${err?.message ?? "unknown"}` });
+          }
         }
-        imported++;
-      } catch (err: any) {
-        skipped++;
-        skipReasons.push({ row: excelRow, value: parentCode || "", reason: `DB error: ${err?.message ?? "unknown"}` });
       }
     }
 
@@ -535,23 +585,23 @@ function BOMImportTab() {
     return { imported, skipped, errors, skipReasons };
   };
 
-  const handleImport = () => {
-    if (validRows.length === 0) return;
+  const handleImport = async () => {
+    if (validRows.length === 0 || importing) return;
     const rowsToImport = validRows;
     const rowNumsToImport = validRowNums;
     const parseSkips = skipReasons.filter((s) => s.reason.includes("skipped automatically"));
-
-    // Clear the form immediately
     setRows([]); setValidRows([]); setValidRowNums([]);
-
-    addJob("BOM lines", rowsToImport, rowNumsToImport, bomImportFn, {
-      onComplete: (res) => {
-        setResult({ imported: res.imported, skipped: res.skipped });
-        setSkipReasons([...parseSkips, ...res.skipReasons]);
-      },
-    });
-
-    toast({ title: "Importing BOM lines in background — you can keep working" });
+    setImporting(true);
+    try {
+      const res = await bomImportFn(rowsToImport, rowNumsToImport);
+      setResult({ imported: res.imported, skipped: res.skipped });
+      setSkipReasons([...parseSkips, ...res.skipReasons]);
+      toast({ title: `✓ ${res.imported} BOM lines imported successfully` });
+    } catch (err: any) {
+      toast({ title: `Import failed — ${err?.message ?? "unknown error"}`, variant: "destructive" });
+    } finally {
+      setImporting(false);
+    }
   };
 
   return (
@@ -583,9 +633,9 @@ function BOMImportTab() {
             size="sm"
             className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"
             onClick={handleImport}
-            disabled={validating}
+            disabled={validating || importing}
           >
-            Import {validRows.length} Valid Row{validRows.length !== 1 ? "s" : ""}
+            {importing ? "Importing…" : `Import ${validRows.length} Valid Row${validRows.length !== 1 ? "s" : ""}`}
           </Button>
         )}
         {rows.length > 0 && (
@@ -680,13 +730,13 @@ function ImportTab({
   validate?: (row: Record<string, string>, i: number) => string | null;
 }) {
   const { toast } = useToast();
-  const { addJob } = useImportQueue();
   const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [validRows, setValidRows] = useState<Record<string, string>[]>([]);
   const [validRowNums, setValidRowNums] = useState<number[]>([]);
   const [errorRows, setErrorRows] = useState<Set<number>>(new Set());
   const [errors, setErrors] = useState<string[]>([]);
+  const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
   const [mappingSummary, setMappingSummary] = useState<ColumnMappingSummary | null>(null);
   const [columnWarnings, setColumnWarnings] = useState<string[]>([]);
@@ -757,24 +807,23 @@ function ImportTab({
     e.target.value = "";
   };
 
-  const handleImport = () => {
-    if (validRows.length === 0) return;
-    // Snapshot the rows before clearing the form
+  const handleImport = async () => {
+    if (validRows.length === 0 || importing) return;
     const rowsToImport = validRows;
     const rowNumsToImport = validRowNums;
     const parseSkips = skipReasons.filter((s) => s.reason.includes("skipped automatically"));
-
-    // Clear the form immediately so user can start something else
     setRows([]); setValidRows([]); setValidRowNums([]); setErrorRows(new Set());
-
-    addJob(title, rowsToImport, rowNumsToImport, onImport, {
-      onComplete: (res) => {
-        setResult({ imported: res.imported, skipped: res.skipped });
-        setSkipReasons([...parseSkips, ...res.skipReasons]);
-      },
-    });
-
-    toast({ title: `Importing ${title} in background — you can keep working` });
+    setImporting(true);
+    try {
+      const res = await onImport(rowsToImport, rowNumsToImport);
+      setResult({ imported: res.imported, skipped: res.skipped });
+      setSkipReasons([...parseSkips, ...res.skipReasons]);
+      toast({ title: `✓ ${res.imported} ${title} imported successfully` });
+    } catch (err: any) {
+      toast({ title: `Import failed — ${err?.message ?? "unknown error"}`, variant: "destructive" });
+    } finally {
+      setImporting(false);
+    }
   };
 
   return (
@@ -812,8 +861,8 @@ function ImportTab({
         </Button>
         <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xls,.csv" className="hidden" onChange={handleFile} />
         {validRows.length > 0 && (
-          <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white" onClick={handleImport}>
-            Import {validRows.length} Row{validRows.length !== 1 ? "s" : ""}
+          <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white" onClick={handleImport} disabled={importing}>
+            {importing ? "Importing…" : `Import ${validRows.length} Row${validRows.length !== 1 ? "s" : ""}`}
           </Button>
         )}
         {rows.length > 0 && (
@@ -957,11 +1006,22 @@ export default function DataImport() {
     }
   };
 
-  const handlePartyImport = async (rows: Record<string, string>[], rowNums: number[]) => {
-    let imported = 0, skipped = 0;
+  const handlePartyImport: BatchImportFn = async (rows, rowNums) => {
+    const companyId = await getCompanyId();
+
+    // Pre-fetch all existing parties in one query
+    const { data: existingParties } = await (supabase as any)
+      .from("parties").select("id, name").eq("company_id", companyId);
+    const byName = new Map<string, string>(
+      (existingParties ?? []).map((p: any) => [p.name?.toLowerCase().trim(), p.id as string])
+    );
+
+    let skipped = 0;
     const errors: string[] = [];
     const skipReasons: SkipReason[] = [];
-    const companyId = await getCompanyId();
+    const toInsert: any[] = [];
+    const toUpdate: any[] = [];
+
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const excelRow = rowNums[i] ?? (i + 2);
@@ -972,45 +1032,103 @@ export default function DataImport() {
         skipReasons.push({ row: excelRow, value: "", reason: "Party Name was blank or missing" });
         continue;
       }
-      try {
-        const gstin = row["gstin"] || null;
-        const state_code = row["state_code"] || (gstin && gstin.length >= 2 ? gstin.substring(0, 2) : null);
-        const { error } = await (supabase as any).from("parties").insert({
-          company_id: companyId,
-          name,
-          party_type: normalizePartyType(row["party_type"] || ""),
-          contact_person: row["contact_person"] || null,
-          address_line1: row["address_line1"] || null,
-          city: row["city"] || null,
-          state: row["state"] || null,
-          pin_code: row["pin_code"] || null,
-          phone1: row["phone1"] || null,
-          email1: row["email1"] || null,
-          gstin,
-          pan: row["pan"] || null,
-          payment_terms: row["payment_terms"] || null,
-          notes: row["notes"] || null,
-          state_code,
-        });
-        if (error) throw error;
-        imported++;
-      } catch (err: any) {
-        skipped++;
-        const isDup = err?.code === "23505" || String(err?.message ?? "").toLowerCase().includes("duplicate") || String(err?.message ?? "").toLowerCase().includes("unique");
-        const reason = isDup ? `Duplicate — party with name "${name}" already exists` : `DB error: ${err?.message ?? "unknown"}`;
-        errors.push(`Row ${excelRow} (${name}): ${reason}`);
-        skipReasons.push({ row: excelRow, value: name, reason });
+      const gstin = row["gstin"] || null;
+      const state_code = row["state_code"] || (gstin && gstin.length >= 2 ? gstin.substring(0, 2) : null);
+      const partyData: any = {
+        company_id: companyId, name,
+        party_type: normalizePartyType(row["party_type"] || ""),
+        contact_person: row["contact_person"] || null,
+        address_line1: row["address_line1"] || null,
+        city: row["city"] || null,
+        state: row["state"] || null,
+        pin_code: row["pin_code"] || null,
+        phone1: row["phone1"] || null,
+        email1: row["email1"] || null,
+        gstin, pan: row["pan"] || null,
+        payment_terms: row["payment_terms"] || null,
+        notes: row["notes"] || null,
+        state_code,
+      };
+      const existingId = byName.get(name.toLowerCase());
+      if (existingId) {
+        toUpdate.push({ id: existingId, ...partyData });
+      } else {
+        toInsert.push(partyData);
       }
     }
+
+    let imported = 0;
+
+    // Bulk insert new parties
+    if (toInsert.length > 0) {
+      try {
+        const { error } = await (supabase as any).from("parties").insert(toInsert);
+        if (error) throw error;
+        imported += toInsert.length;
+      } catch {
+        for (const party of toInsert) {
+          try {
+            const { error } = await (supabase as any).from("parties").insert(party);
+            if (error) throw error;
+            imported++;
+          } catch (err: any) {
+            skipped++;
+            const isDup = err?.code === "23505" || String(err?.message ?? "").toLowerCase().includes("duplicate") || String(err?.message ?? "").toLowerCase().includes("unique");
+            const reason = isDup ? `Duplicate — party "${party.name}" already exists` : `DB error: ${err?.message ?? "unknown"}`;
+            errors.push(`(${party.name}): ${reason}`);
+            skipReasons.push({ row: 0, value: party.name, reason });
+          }
+        }
+      }
+    }
+
+    // Bulk upsert updates in chunks of 100
+    for (let i = 0; i < toUpdate.length; i += 100) {
+      const chunk = toUpdate.slice(i, i + 100);
+      try {
+        const { error } = await (supabase as any).from("parties").upsert(chunk, { onConflict: "id" });
+        if (error) throw error;
+        imported += chunk.length;
+      } catch {
+        for (const party of chunk) {
+          const { id, ...rest } = party;
+          try {
+            const { error } = await (supabase as any).from("parties").update(rest).eq("id", id);
+            if (error) throw error;
+            imported++;
+          } catch (err: any) {
+            skipped++;
+            errors.push(`(${rest.name}): DB error: ${err?.message ?? "unknown"}`);
+            skipReasons.push({ row: 0, value: rest.name, reason: `DB error: ${err?.message ?? "unknown"}` });
+          }
+        }
+      }
+    }
+
     queryClient.invalidateQueries({ queryKey: ["parties"] });
     return { imported, skipped, errors, skipReasons };
   };
 
-  const handleItemImport = async (rows: Record<string, string>[], rowNums: number[]) => {
-    let imported = 0, skipped = 0;
+  const handleItemImport: BatchImportFn = async (rows, rowNums) => {
+    const companyId = await getCompanyId();
+
+    // Pre-fetch ALL existing items in one query
+    const { data: existingItems } = await supabase
+      .from("items").select("id, item_code, drawing_revision").eq("company_id", companyId);
+    const byCode = new Map<string, string>(
+      (existingItems ?? []).filter((i: any) => i.item_code)
+        .map((i: any) => [(i.item_code as string).toLowerCase(), i.id as string])
+    );
+    const byDrawing = new Map<string, { id: string; item_code: string }>(
+      (existingItems ?? []).filter((i: any) => i.drawing_revision)
+        .map((i: any) => [(i.drawing_revision as string).toLowerCase(), { id: i.id as string, item_code: i.item_code as string }])
+    );
+
+    let skipped = 0;
     const errors: string[] = [];
     const skipReasons: SkipReason[] = [];
-    const companyId = await getCompanyId();
+    const toInsert: any[] = [];
+    const toUpdate: any[] = [];
     let autoCodeIndex = 1;
 
     for (let i = 0; i < rows.length; i++) {
@@ -1028,75 +1146,115 @@ export default function DataImport() {
         continue;
       }
 
-      try {
-        let existingId: string | null = null;
-        let resolvedCode = code;
+      let existingId: string | null = null;
+      let resolvedCode = code;
 
-        if (code) {
-          const { data } = await supabase
-            .from("items").select("id").eq("company_id", companyId).eq("item_code", code).limit(1);
-          existingId = (data as any[])?.[0]?.id ?? null;
-        } else if (drawingNum) {
-          const { data } = await supabase
-            .from("items").select("id, item_code").eq("company_id", companyId).ilike("drawing_revision", drawingNum).limit(1);
-          existingId = (data as any[])?.[0]?.id ?? null;
-          resolvedCode = (data as any[])?.[0]?.item_code || drawingNum;
+      if (code) {
+        existingId = byCode.get(code.toLowerCase()) ?? null;
+      } else if (drawingNum) {
+        const match = byDrawing.get(drawingNum.toLowerCase());
+        if (match) {
+          existingId = match.id;
+          resolvedCode = match.item_code || drawingNum;
         } else {
-          const words = desc.trim().split(/\s+/).slice(0, 3)
-            .map((w) => w.toUpperCase().replace(/[^A-Z0-9]/g, "")).filter(Boolean);
-          resolvedCode = `${words.join("-")}-${String(autoCodeIndex).padStart(4, "0")}`;
-          autoCodeIndex++;
-          const { data } = await supabase
-            .from("items").select("id").eq("company_id", companyId).eq("item_code", resolvedCode).limit(1);
-          existingId = (data as any[])?.[0]?.id ?? null;
+          resolvedCode = drawingNum;
         }
+      } else {
+        const words = desc.trim().split(/\s+/).slice(0, 3)
+          .map((w) => w.toUpperCase().replace(/[^A-Z0-9]/g, "")).filter(Boolean);
+        resolvedCode = `${words.join("-")}-${String(autoCodeIndex).padStart(4, "0")}`;
+        autoCodeIndex++;
+        existingId = byCode.get(resolvedCode.toLowerCase()) ?? null;
+      }
 
-        const itemData: any = {
-          company_id: companyId,
-          item_code: resolvedCode || null,
-          description: desc,
-          item_type: normalizeItemType(row["item_type"] || ""),
-          unit: row["unit"] || "NOS",
-          hsn_sac_code: row["hsn_sac_code"] || null,
-          sale_price: parseFloat(row["sale_price"] || "0") || 0,
-          purchase_price: parseFloat(row["purchase_price"] || "0") || 0,
-          gst_rate: parseFloat(row["gst_rate"] || "18") || 18,
-          min_stock: parseFloat(row["min_stock"] || "0") || 0,
-          notes: row["notes"] || null,
-          drawing_number: drawingNum || null,
-          drawing_revision: drawingNum || null,
-        };
+      const itemData: any = {
+        company_id: companyId,
+        item_code: resolvedCode || null,
+        description: desc,
+        item_type: normalizeItemType(row["item_type"] || ""),
+        unit: row["unit"] || "NOS",
+        hsn_sac_code: row["hsn_sac_code"] || null,
+        sale_price: parseFloat(row["sale_price"] || "0") || 0,
+        purchase_price: parseFloat(row["purchase_price"] || "0") || 0,
+        gst_rate: parseFloat(row["gst_rate"] || "18") || 18,
+        min_stock: parseFloat(row["min_stock"] || "0") || 0,
+        notes: row["notes"] || null,
+        drawing_number: drawingNum || null,
+        drawing_revision: drawingNum || null,
+      };
 
-        if (existingId) {
-          const { error } = await supabase.from("items").update(itemData).eq("id", existingId);
-          if (error) throw error;
-        } else {
-          const { error } = await supabase.from("items").insert(itemData);
-          if (error) throw error;
-        }
-        imported++;
-      } catch (err: any) {
-        skipped++;
-        const isDup = err?.code === "23505" || String(err?.message ?? "").toLowerCase().includes("duplicate") || String(err?.message ?? "").toLowerCase().includes("unique");
-        const reason = isDup
-          ? `Duplicate — item "${displayKey || desc}" already exists`
-          : `DB error: ${err?.message ?? "unknown"}`;
-        errors.push(`Row ${excelRow}${displayKey ? ` (${displayKey})` : ""}: ${reason}`);
-        skipReasons.push({ row: excelRow, value: displayKey, reason });
+      if (existingId) {
+        toUpdate.push({ id: existingId, ...itemData });
+      } else {
+        toInsert.push(itemData);
       }
     }
+
+    let imported = 0;
+
+    // Bulk insert new items
+    if (toInsert.length > 0) {
+      try {
+        const { error } = await supabase.from("items").insert(toInsert);
+        if (error) throw error;
+        imported += toInsert.length;
+      } catch {
+        for (const itemData of toInsert) {
+          try {
+            const { error } = await supabase.from("items").insert(itemData);
+            if (error) throw error;
+            imported++;
+          } catch (err: any) {
+            skipped++;
+            const isDup = err?.code === "23505" || String(err?.message ?? "").toLowerCase().includes("duplicate") || String(err?.message ?? "").toLowerCase().includes("unique");
+            const reason = isDup ? `Duplicate — item "${itemData.item_code || itemData.description}" already exists` : `DB error: ${err?.message ?? "unknown"}`;
+            errors.push(`(${itemData.item_code || itemData.description}): ${reason}`);
+            skipReasons.push({ row: 0, value: itemData.item_code || "", reason });
+          }
+        }
+      }
+    }
+
+    // Bulk upsert updates in chunks of 100
+    for (let i = 0; i < toUpdate.length; i += 100) {
+      const chunk = toUpdate.slice(i, i + 100);
+      try {
+        const { error } = await supabase.from("items").upsert(chunk, { onConflict: "id" });
+        if (error) throw error;
+        imported += chunk.length;
+      } catch {
+        for (const itemData of chunk) {
+          const { id, ...rest } = itemData;
+          try {
+            const { error } = await supabase.from("items").update(rest).eq("id", id);
+            if (error) throw error;
+            imported++;
+          } catch (err: any) {
+            skipped++;
+            errors.push(`(${rest.item_code || rest.description}): DB error: ${err?.message ?? "unknown"}`);
+            skipReasons.push({ row: 0, value: rest.item_code || "", reason: `DB error: ${err?.message ?? "unknown"}` });
+          }
+        }
+      }
+    }
+
     queryClient.invalidateQueries({ queryKey: ["items"] });
     return { imported, skipped, errors, skipReasons };
   };
 
-  const handleStockImport = async (rows: Record<string, string>[], rowNums: number[]) => {
-    let imported = 0, skipped = 0;
+  const handleStockImport: BatchImportFn = async (rows, rowNums) => {
+    const companyId = await getCompanyId();
+
+    // Pre-fetch all items in one query
+    const codes = rows.map((r) => r["item_code"]?.trim()).filter(Boolean);
+    const { data: itemsData } = await supabase
+      .from("items").select("id, item_code").eq("company_id", companyId).in("item_code", codes);
+    const codeToId = new Map<string, string>((itemsData ?? []).map((i: any) => [i.item_code, i.id]));
+
+    let skipped = 0;
     const errors: string[] = [];
     const skipReasons: SkipReason[] = [];
-    const companyId = await getCompanyId();
-    const codes = rows.map((r) => r["item_code"]?.trim()).filter(Boolean);
-    const { data: itemsData } = await supabase.from("items").select("id, item_code").eq("company_id", companyId).in("item_code", codes);
-    const codeToId = new Map((itemsData ?? []).map((i: any) => [i.item_code, i.id]));
+    const toUpdate: Array<{ id: string; current_stock: number }> = [];
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
@@ -1122,14 +1280,32 @@ export default function DataImport() {
         skipReasons.push({ row: excelRow, value: code, reason: `Item Code '${code}' not found in Items master` });
         continue;
       }
+      toUpdate.push({ id: itemId, current_stock: qty });
+    }
+
+    let imported = 0;
+
+    // Bulk upsert current_stock in chunks of 100
+    for (let i = 0; i < toUpdate.length; i += 100) {
+      const chunk = toUpdate.slice(i, i + 100);
       try {
-        await supabase.from("items").update({ current_stock: qty } as any).eq("id", itemId);
-        imported++;
-      } catch (err: any) {
-        skipped++;
-        skipReasons.push({ row: excelRow, value: code, reason: `DB error: ${err?.message ?? "unknown"}` });
+        const { error } = await supabase.from("items").upsert(chunk as any, { onConflict: "id" });
+        if (error) throw error;
+        imported += chunk.length;
+      } catch {
+        for (const item of chunk) {
+          try {
+            const { error } = await supabase.from("items").update({ current_stock: item.current_stock } as any).eq("id", item.id);
+            if (error) throw error;
+            imported++;
+          } catch (err: any) {
+            skipped++;
+            skipReasons.push({ row: 0, value: item.id, reason: `DB error: ${err?.message ?? "unknown"}` });
+          }
+        }
       }
     }
+
     queryClient.invalidateQueries({ queryKey: ["items"] });
     queryClient.invalidateQueries({ queryKey: ["stock_status"] });
     return { imported, skipped, errors, skipReasons };
