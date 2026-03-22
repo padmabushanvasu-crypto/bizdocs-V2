@@ -4,7 +4,6 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useRef,
   useState,
 } from "react";
 import { Loader2 } from "lucide-react";
@@ -76,13 +75,14 @@ function loadPersistedJobs(): ImportJob[] {
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return [];
-    const jobs: ImportJob[] = JSON.parse(raw);
-    // Any in-flight jobs at startup were interrupted by a page refresh
-    return jobs.map((j) =>
-      j.status === "running" || j.status === "queued"
-        ? { ...j, status: "interrupted" as const }
-        : j
-    );
+    const parsed: ImportJob[] = JSON.parse(raw);
+    // Discard completed/failed — never show stale results after refresh.
+    // Only running/queued were mid-flight; mark them interrupted.
+    // The progress bar does not render interrupted jobs, so they are
+    // silently dropped from view but preserved in state for debugging.
+    return parsed
+      .filter((j) => j.status === "running" || j.status === "queued")
+      .map((j) => ({ ...j, status: "interrupted" as const }));
   } catch {
     return [];
   }
@@ -90,106 +90,56 @@ function loadPersistedJobs(): ImportJob[] {
 
 function persistJobs(jobs: ImportJob[]): void {
   try {
-    // Keep last 20 to avoid bloating localStorage
-    localStorage.setItem(LS_KEY, JSON.stringify(jobs.slice(-20)));
+    // Only persist active (in-flight) jobs so we can detect interruptions
+    // on next load. Clear storage once nothing is running — this also
+    // handles FIX 3 (clear on dismissal) since the bar hides the moment
+    // all jobs leave the active set.
+    const active = jobs.filter(
+      (j) => j.status === "running" || j.status === "queued"
+    );
+    if (active.length === 0) {
+      localStorage.removeItem(LS_KEY);
+    } else {
+      localStorage.setItem(LS_KEY, JSON.stringify(active));
+    }
   } catch {
     // Ignore QuotaExceededError
   }
 }
 
 // ── Progress bar ───────────────────────────────────────────────────────────
+// Only renders while imports are actively running. Auto-hides the moment
+// all jobs complete or fail (toast handles failure feedback). No timers,
+// no dismiss button, no stale state.
 
 function ImportProgressBar({ jobs }: { jobs: ImportJob[] }) {
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
-  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const activeJobs = jobs.filter(
     (j) => j.status === "queued" || j.status === "running"
   );
-  const recentJobs = jobs.filter(
-    (j) =>
-      (j.status === "completed" || j.status === "failed") &&
-      !dismissed.has(j.id)
-  );
-  const interruptedJobs = jobs.filter(
-    (j) => j.status === "interrupted" && !dismissed.has(j.id)
-  );
 
-  const showBar =
-    activeJobs.length > 0 ||
-    recentJobs.length > 0 ||
-    interruptedJobs.length > 0;
+  if (activeJobs.length === 0) return null;
 
-  // Auto-dismiss completed/failed after 5 s
-  useEffect(() => {
-    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-
-    if (activeJobs.length === 0 && recentJobs.length > 0) {
-      hideTimerRef.current = setTimeout(() => {
-        setDismissed((prev) => {
-          const next = new Set(prev);
-          recentJobs.forEach((j) => next.add(j.id));
-          return next;
-        });
-      }, 5000);
-    }
-
-    return () => {
-      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-    };
-  }, [activeJobs.length, recentJobs.length]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  if (!showBar) return null;
-
-  // Derive display state
-  let bgClass = "bg-blue-600";
-  let isSpinning = false;
   let message = "";
   let progressPct = 0;
 
   if (activeJobs.length > 1) {
-    isSpinning = true;
     message = `${activeJobs.length} imports running`;
     const totalProgress = activeJobs.reduce((s, j) => s + j.progress, 0);
     const totalRows = activeJobs.reduce((s, j) => s + j.total, 0);
     progressPct = totalRows > 0 ? (totalProgress / totalRows) * 100 : 0;
-  } else if (activeJobs.length === 1) {
+  } else {
     const j = activeJobs[0];
-    isSpinning = true;
     message = `Importing ${j.type} — ${j.progress} / ${j.total} rows`;
     progressPct = j.total > 0 ? (j.progress / j.total) * 100 : 0;
-  } else if (recentJobs.length > 0) {
-    const lastJob = recentJobs[recentJobs.length - 1];
-    if (lastJob.status === "completed") {
-      bgClass = "bg-green-600";
-      const skipped = lastJob.total - lastJob.completed;
-      message = `Import complete — ${lastJob.completed} ${lastJob.type} imported${skipped > 0 ? `, ${skipped} skipped` : ""}`;
-      progressPct = 100;
-    } else {
-      bgClass = "bg-amber-500";
-      message = `Import failed — see details`;
-    }
-  } else if (interruptedJobs.length > 0) {
-    const j = interruptedJobs[0];
-    bgClass = "bg-amber-500";
-    message = `Import was interrupted — ${j.progress} / ${j.total} rows completed`;
-    progressPct = j.total > 0 ? (j.progress / j.total) * 100 : 0;
   }
-
-  const dismiss = () => {
-    setDismissed((prev) => {
-      const next = new Set(prev);
-      [...recentJobs, ...interruptedJobs].forEach((j) => next.add(j.id));
-      return next;
-    });
-  };
 
   return createElement(
     "div",
     {
-      className: `fixed bottom-14 md:bottom-0 left-0 right-0 z-40 ${bgClass} text-white text-sm shadow-lg`,
+      className:
+        "fixed bottom-14 md:bottom-0 left-0 right-0 z-40 bg-blue-600 text-white text-sm shadow-lg",
     },
-    // Thin progress track (only when in-progress)
+    // Thin progress track
     progressPct > 0 && progressPct < 100
       ? createElement(
           "div",
@@ -204,30 +154,16 @@ function ImportProgressBar({ jobs }: { jobs: ImportJob[] }) {
     createElement(
       "div",
       {
-        className:
-          "flex items-center justify-between px-4 py-2 max-w-4xl mx-auto",
+        className: "flex items-center px-4 py-2 max-w-4xl mx-auto",
       },
       createElement(
         "span",
         { className: "flex items-center gap-2" },
-        isSpinning
-          ? createElement(Loader2, {
-              className: "h-3.5 w-3.5 animate-spin shrink-0",
-            })
-          : null,
+        createElement(Loader2, {
+          className: "h-3.5 w-3.5 animate-spin shrink-0",
+        }),
         createElement("span", null, message)
-      ),
-      activeJobs.length === 0
-        ? createElement(
-            "button",
-            {
-              onClick: dismiss,
-              className: "text-white/70 hover:text-white text-xs ml-4",
-              "aria-label": "Dismiss",
-            },
-            "✕"
-          )
-        : null
+      )
     )
   );
 }
@@ -238,7 +174,7 @@ export function ImportQueueProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<ImportJob[]>(() => loadPersistedJobs());
   const { toast } = useToast();
 
-  // Persist every time jobs change
+  // Persist every time jobs change (clears localStorage when nothing active)
   useEffect(() => {
     persistJobs(jobs);
   }, [jobs]);
