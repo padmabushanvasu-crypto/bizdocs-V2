@@ -607,6 +607,7 @@ export const BOM_FIELD_MAP: Record<string, string[]> = {
 export const STOCK_FIELD_MAP: Record<string, string[]> = {
   item_code: ["item code", "code", "sku", "part number", "part no"],
   current_stock: ["opening stock qty", "opening stock", "current stock", "stock qty", "opening qty", "quantity", "qty"],
+  standard_cost: ["cost per unit ₹", "cost per unit", "cost/unit", "standard cost", "unit cost", "cost"],
   notes: ["notes", "remarks"],
 };
 

@@ -159,11 +159,154 @@ async function downloadBOMTemplate() {
   (XLSX as any).writeFile(wb, "BOM_Import_Template.xlsx");
 }
 
+async function downloadOpeningStockTemplate() {
+  const XLSX = await import("xlsx-js-style");
+  const companyId = await getCompanyId();
+
+  const { data: itemsRaw } = await supabase
+    .from("items")
+    .select("item_code, description, drawing_revision, item_type, unit, current_stock")
+    .eq("company_id", companyId)
+    .eq("status", "active")
+    .order("description", { ascending: true });
+
+  const TYPE_ORDER: Record<string, number> = {
+    raw_material: 0, component: 1, bought_out: 2,
+    sub_assembly: 3, finished_good: 4, consumable: 5,
+  };
+
+  const items = (itemsRaw ?? []).slice().sort((a: any, b: any) => {
+    const ao = TYPE_ORDER[a.item_type] ?? 6;
+    const bo = TYPE_ORDER[b.item_type] ?? 6;
+    if (ao !== bo) return ao - bo;
+    return (a.description ?? "").localeCompare(b.description ?? "");
+  });
+
+  const titleRow  = ["BizDocs — Opening Stock", "", "", "", "", "", "", ""];
+  const noteRow   = ["Fill in columns F and G only. Do not edit other columns.", "", "", "", "", "", "", ""];
+  const headerRow = ["Item Code", "Description", "Drawing Number", "Item Type", "Unit", "Opening Stock Qty", "Cost Per Unit ₹", "Notes"];
+  const dataRows  = items.map((item: any) => [
+    item.item_code ?? "",
+    item.description ?? "",
+    item.drawing_revision ?? "",
+    item.item_type ?? "",
+    item.unit ?? "",
+    "",   // F: client fills
+    "",   // G: client fills
+    "",   // H: optional notes
+  ]);
+
+  const aoa = [titleRow, noteRow, headerRow, ...dataRows];
+  const wb  = (XLSX as any).utils.book_new();
+  const ws  = (XLSX as any).utils.aoa_to_sheet(aoa);
+
+  // Merges
+  ws["!merges"] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 7 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: 7 } },
+  ];
+
+  // Freeze top 3 rows
+  ws["!freeze"] = { xSplit: 0, ySplit: 3 };
+
+  // Column widths
+  ws["!cols"] = [
+    { wch: 16 }, // A
+    { wch: 34 }, // B
+    { wch: 16 }, // C
+    { wch: 14 }, // D
+    { wch: 8  }, // E
+    { wch: 20 }, // F
+    { wch: 18 }, // G
+    { wch: 22 }, // H
+  ];
+
+  // Row heights
+  ws["!rows"] = [{ hpt: 26 }, { hpt: 18 }, { hpt: 18 }];
+
+  // Styles
+  const titleStyle = {
+    fill: { patternType: "solid", fgColor: { rgb: "1E3A5F" } },
+    font: { bold: true, sz: 13, color: { rgb: "FFFFFF" } },
+    alignment: { horizontal: "center", vertical: "center" },
+  };
+  const noteStyle = {
+    fill: { patternType: "solid", fgColor: { rgb: "FFF3CD" } },
+    font: { italic: true, sz: 10, color: { rgb: "856404" } },
+    alignment: { horizontal: "left", vertical: "center" },
+  };
+  const hdrGrey = {
+    fill: { patternType: "solid", fgColor: { rgb: "374151" } },
+    font: { bold: true, sz: 10, color: { rgb: "FFFFFF" } },
+    alignment: { horizontal: "center" },
+    border: { bottom: { style: "medium", color: { rgb: "000000" } } },
+  };
+  const hdrYellow = {
+    fill: { patternType: "solid", fgColor: { rgb: "7C4D00" } },
+    font: { bold: true, sz: 10, color: { rgb: "FFFFFF" } },
+    alignment: { horizontal: "center" },
+    border: { bottom: { style: "medium", color: { rgb: "000000" } } },
+  };
+  const greyCell = {
+    fill: { patternType: "solid", fgColor: { rgb: "F3F4F6" } },
+    font: { sz: 10 },
+    border: {
+      top: { style: "thin", color: { rgb: "D1D5DB" } },
+      bottom: { style: "thin", color: { rgb: "D1D5DB" } },
+      left: { style: "thin", color: { rgb: "D1D5DB" } },
+      right: { style: "thin", color: { rgb: "D1D5DB" } },
+    },
+  };
+  const yellowCell = {
+    fill: { patternType: "solid", fgColor: { rgb: "FEFCE8" } },
+    font: { sz: 10 },
+    border: {
+      top: { style: "thin", color: { rgb: "D1D5DB" } },
+      bottom: { style: "thin", color: { rgb: "D1D5DB" } },
+      left: { style: "thin", color: { rgb: "D1D5DB" } },
+      right: { style: "thin", color: { rgb: "D1D5DB" } },
+    },
+  };
+  const whiteCell = {
+    font: { sz: 10 },
+    border: {
+      top: { style: "thin", color: { rgb: "E5E7EB" } },
+      bottom: { style: "thin", color: { rgb: "E5E7EB" } },
+      left: { style: "thin", color: { rgb: "E5E7EB" } },
+      right: { style: "thin", color: { rgb: "E5E7EB" } },
+    },
+  };
+
+  const cols = ["A", "B", "C", "D", "E", "F", "G", "H"];
+
+  // Row 1: title (only A1 for the merged cell)
+  if (ws["A1"]) ws["A1"].s = titleStyle;
+  // Row 2: note
+  if (ws["A2"]) ws["A2"].s = noteStyle;
+  // Row 3: headers
+  cols.forEach((col, i) => {
+    const ref = `${col}3`;
+    if (ws[ref]) ws[ref].s = i < 5 ? hdrGrey : hdrYellow;
+  });
+  // Data rows
+  for (let r = 0; r < items.length; r++) {
+    const excelRow = r + 4;
+    cols.forEach((col, c) => {
+      const ref = `${col}${excelRow}`;
+      if (!ws[ref]) ws[ref] = { v: "", t: "s" };
+      ws[ref].s = c < 5 ? greyCell : c < 7 ? yellowCell : whiteCell;
+    });
+  }
+
+  (XLSX as any).utils.book_append_sheet(wb, ws, "Opening Stock");
+  (XLSX as any).writeFile(wb, "Opening_Stock_Template.xlsx");
+}
+
 const PARTY_HEADERS = ["Party Name *", "Party Type (vendor/customer/both) *", "Contact Person", "Address Line 1", "City", "State", "PIN Code", "Phone 1", "Email", "GSTIN", "PAN", "Payment Terms", "Notes"];
 const ITEM_HEADERS = ["Item Code *", "Description *", "Item Type *", "Unit", "HSN/SAC Code", "Sale Price", "Purchase Price", "GST Rate %", "Min Stock", "Notes"];
 const BOM_HEADERS = ["Finished Item Code *", "Component Code *", "Quantity *", "Unit", "Scrap Factor %", "Variant Name", "Notes"];
 // BOM template is handled by downloadBOMTemplate() with example rows
-const STOCK_HEADERS = ["Item Code *", "Opening Stock Qty *", "Notes"];
+const STOCK_HEADERS = ["Item Code *", "Description", "Drawing Number", "Item Type", "Unit", "Opening Stock Qty *", "Cost Per Unit ₹", "Notes"];
 
 // ── Column Mapping Summary ─────────────────────────────────────────────────
 
@@ -732,6 +875,7 @@ function ImportTab({
   onImportStart,
   onImportProgress,
   onImportEnd,
+  onDownloadTemplate,
 }: {
   title: string;
   icon: React.ComponentType<any>;
@@ -745,6 +889,7 @@ function ImportTab({
   onImportStart?: (title: string) => void;
   onImportProgress?: (pct: number) => void;
   onImportEnd?: () => void;
+  onDownloadTemplate?: () => void | Promise<void>;
 }) {
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -872,7 +1017,7 @@ function ImportTab({
           variant="outline"
           size="sm"
           className="gap-1.5"
-          onClick={() => downloadTemplate(templateSheetName, templateHeaders)}
+          onClick={() => onDownloadTemplate ? onDownloadTemplate() : downloadTemplate(templateSheetName, templateHeaders)}
         >
           <Download className="h-4 w-4" /> Download Template
         </Button>
@@ -1318,7 +1463,7 @@ export default function DataImport() {
     let skipped = 0;
     const errors: string[] = [];
     const skipReasons: SkipReason[] = [];
-    const toUpdate: Array<{ id: string; current_stock: number }> = [];
+    const toUpdate: Array<{ id: string; current_stock: number; standard_cost?: number }> = [];
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
@@ -1344,12 +1489,15 @@ export default function DataImport() {
         skipReasons.push({ row: excelRow, value: code, reason: `Item Code '${code}' not found in Items master` });
         continue;
       }
-      toUpdate.push({ id: itemId, current_stock: qty });
+      const costPerUnit = parseFloat(row["standard_cost"] || "");
+      const entry: { id: string; current_stock: number; standard_cost?: number } = { id: itemId, current_stock: qty };
+      if (!isNaN(costPerUnit) && costPerUnit >= 0) entry.standard_cost = costPerUnit;
+      toUpdate.push(entry);
     }
 
     let imported = 0;
 
-    // Bulk upsert current_stock in chunks of 100
+    // Bulk upsert current_stock (and standard_cost if provided) in chunks of 100
     for (let i = 0; i < toUpdate.length; i += 100) {
       const chunk = toUpdate.slice(i, i + 100);
       try {
@@ -1359,7 +1507,8 @@ export default function DataImport() {
       } catch {
         for (const item of chunk) {
           try {
-            const { error } = await supabase.from("items").update({ current_stock: item.current_stock } as any).eq("id", item.id);
+            const { id, ...updateFields } = item;
+            const { error } = await supabase.from("items").update(updateFields as any).eq("id", id);
             if (error) throw error;
             imported++;
           } catch (err: any) {
@@ -1521,6 +1670,7 @@ export default function DataImport() {
             onImportStart={(t) => { setImportingType(t); setImportingProgress(0); }}
             onImportProgress={(pct) => setImportingProgress(pct)}
             onImportEnd={() => setImportingType(null)}
+            onDownloadTemplate={downloadOpeningStockTemplate}
           />
         </div>
       )}
