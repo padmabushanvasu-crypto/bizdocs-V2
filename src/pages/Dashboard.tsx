@@ -276,7 +276,7 @@ export default function Dashboard() {
                 style={{ backgroundColor: "#2563EB" }}
                 onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#1D4ED8")}
                 onMouseLeave={e => (e.currentTarget.style.backgroundColor = "#2563EB")}
-                onClick={() => navigate("/job-cards/new")}
+                onClick={() => navigate("/job-cards", { state: { openNew: true } })}
               >
                 <Activity className="h-3.5 w-3.5" />
                 New Work Order

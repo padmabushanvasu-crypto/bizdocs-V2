@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Activity, Plus, Search, Eye, ChevronDown, Trash2, Factory, Truck, CheckSquare, Square, XCircle, ClipboardList, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -72,6 +72,7 @@ const emptyForm = {
 
 export default function JobCards() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -97,6 +98,14 @@ export default function JobCards() {
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, []);
+
+  useEffect(() => {
+    if ((location.state as any)?.openNew) {
+      setNewOpen(true);
+      // Clear state so a refresh doesn't re-open the dialog
+      window.history.replaceState({}, "");
+    }
+  }, [location.state]);
 
   const { data: stats } = useQuery({
     queryKey: ["jc-stats"],
