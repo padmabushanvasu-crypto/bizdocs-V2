@@ -5,6 +5,7 @@ import {
   Activity, Factory, Clock, Layers, ShoppingBag,
   CheckCircle2,
 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatCurrency } from "@/lib/gst-utils";
 import { fetchWipSummary, fetchWipRegister } from "@/lib/job-cards-api";
 import { fetchAssemblyOrderStats } from "@/lib/assembly-orders-api";
@@ -271,31 +272,61 @@ export default function Dashboard() {
 
             {/* Buttons — horizontally scrollable on mobile, wrapping on desktop */}
             <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 lg:mx-0 lg:px-0 lg:overflow-x-visible lg:flex-wrap lg:justify-end">
-              <button
-                className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white transition-colors shrink-0"
-                style={{ backgroundColor: "#2563EB" }}
-                onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#1D4ED8")}
-                onMouseLeave={e => (e.currentTarget.style.backgroundColor = "#2563EB")}
-                onClick={() => navigate("/job-cards", { state: { openNew: true } })}
-              >
-                <Activity className="h-3.5 w-3.5" />
-                New Work Order
-              </button>
+              <Tooltip delayDuration={400}>
+                <TooltipTrigger asChild>
+                  <button
+                    className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white transition-colors shrink-0"
+                    style={{ backgroundColor: "#2563EB" }}
+                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#1D4ED8")}
+                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = "#2563EB")}
+                    onClick={() => navigate("/job-cards", { state: { openNew: true } })}
+                  >
+                    <Activity className="h-3.5 w-3.5" />
+                    New Work Order
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-[280px]">
+                  <p className="font-bold">Work Order</p>
+                  <p className="font-normal mt-0.5">Use this when you are sending a component out for job work — CNC machining, plating, welding, or any external process. One Work Order per component per batch.</p>
+                </TooltipContent>
+              </Tooltip>
               {[
-                { label: "PO", route: "/purchase-orders/new" },
-                { label: "DC", route: "/delivery-challans/new" },
-                { label: "Invoice", route: "/invoices/new" },
+                {
+                  label: "PO",
+                  route: "/purchase-orders/new",
+                  tooltipTitle: "Purchase Order",
+                  tooltipBody: "Use this when buying raw materials or bought-out items from a vendor. Raise a PO before the material arrives so you can record a GRN against it.",
+                },
+                {
+                  label: "DC",
+                  route: "/delivery-challans/new",
+                  tooltipTitle: "Delivery Challan",
+                  tooltipBody: "Use this when goods are physically leaving the factory — either for job work (returnable) or for delivery to a customer (non-returnable).",
+                },
+                {
+                  label: "Invoice",
+                  route: "/invoices/new",
+                  tooltipTitle: "Invoice",
+                  tooltipBody: "Use this to bill a customer after goods are assembled, FAT-passed, and ready to dispatch.",
+                },
               ].map((btn) => (
-                <button
-                  key={btn.label}
-                  className="rounded-xl px-3 py-2 text-sm text-slate-300 transition-colors shrink-0"
-                  style={{ backgroundColor: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.10)" }}
-                  onMouseEnter={e => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.12)")}
-                  onMouseLeave={e => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.07)")}
-                  onClick={() => navigate(btn.route)}
-                >
-                  {btn.label}
-                </button>
+                <Tooltip key={btn.label} delayDuration={400}>
+                  <TooltipTrigger asChild>
+                    <button
+                      className="rounded-xl px-3 py-2 text-sm text-slate-300 transition-colors shrink-0"
+                      style={{ backgroundColor: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.10)" }}
+                      onMouseEnter={e => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.12)")}
+                      onMouseLeave={e => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.07)")}
+                      onClick={() => navigate(btn.route)}
+                    >
+                      {btn.label}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-[280px]">
+                    <p className="font-bold">{btn.tooltipTitle}</p>
+                    <p className="font-normal mt-0.5">{btn.tooltipBody}</p>
+                  </TooltipContent>
+                </Tooltip>
               ))}
             </div>
           </div>
