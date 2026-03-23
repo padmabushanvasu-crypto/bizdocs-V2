@@ -44,6 +44,11 @@ export interface PurchaseOrder {
   issued_at: string | null;
   cancelled_at: string | null;
   cancellation_reason: string | null;
+  payment_status: string | null;
+  amount_paid: number | null;
+  payment_date: string | null;
+  payment_reference: string | null;
+  payment_notes: string | null;
   created_at: string;
   updated_at: string;
   line_items?: POLineItem[];
@@ -208,5 +213,25 @@ export async function fetchPOStats() {
 
 export async function softDeletePurchaseOrder(id: string) {
   const { error } = await supabase.from("purchase_orders").update({ status: "deleted" } as any).eq("id", id);
+  if (error) throw error;
+}
+
+export async function updatePOPayment(
+  id: string,
+  data: { amount_paid: number; payment_date: string; payment_reference?: string; payment_notes?: string },
+  grandTotal: number
+) {
+  const paymentStatus =
+    data.amount_paid >= grandTotal ? "paid" : data.amount_paid > 0 ? "partial" : "unpaid";
+  const { error } = await supabase
+    .from("purchase_orders")
+    .update({
+      amount_paid: data.amount_paid,
+      payment_date: data.payment_date,
+      payment_reference: data.payment_reference || null,
+      payment_notes: data.payment_notes || null,
+      payment_status: paymentStatus,
+    } as any)
+    .eq("id", id);
   if (error) throw error;
 }

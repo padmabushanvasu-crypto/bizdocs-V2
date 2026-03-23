@@ -1,8 +1,10 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { FileText, Edit, Copy, X, ShoppingCart, Clock, CheckCircle2, AlertCircle, Package, Trash2, ChevronLeft } from "lucide-react";
+import { FileText, Edit, Copy, X, ShoppingCart, Clock, CheckCircle2, AlertCircle, Package, Trash2, ChevronLeft, IndianRupee } from "lucide-react";
 import { EditableSection } from "@/components/EditableSection";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -13,6 +15,7 @@ import {
   duplicatePurchaseOrder,
   issuePurchaseOrder,
   softDeletePurchaseOrder,
+  updatePOPayment,
   type PurchaseOrder,
 } from "@/lib/purchase-orders-api";
 import { fetchGRNsForPO } from "@/lib/grn-api";
@@ -43,6 +46,11 @@ export default function PurchaseOrderDetail() {
   const queryClient = useQueryClient();
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split("T")[0]);
+  const [paymentReference, setPaymentReference] = useState("");
+  const [paymentNotes, setPaymentNotes] = useState("");
 
   const { data: po, isLoading } = useQuery({
     queryKey: ["purchase-order", id],
@@ -98,6 +106,27 @@ export default function PurchaseOrderDetail() {
     },
   });
 
+  const paymentMutation = useMutation({
+    mutationFn: () =>
+      updatePOPayment(
+        id!,
+        {
+          amount_paid: Number(paymentAmount),
+          payment_date: paymentDate,
+          payment_reference: paymentReference,
+          payment_notes: paymentNotes,
+        },
+        po!.grand_total
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["purchase-order", id] });
+      queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
+      setPaymentOpen(false);
+      toast({ title: "Payment recorded" });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
   if (isLoading) return <div className="p-6 text-muted-foreground">Loading...</div>;
   if (!po) return <div className="p-6 text-muted-foreground">Purchase order not found.</div>;
 
@@ -139,6 +168,22 @@ export default function PurchaseOrderDetail() {
           {canRecordReceipt && (
             <Button size="sm" onClick={() => navigate(`/grn/new?po=${id}`)}>
               <Package className="h-3.5 w-3.5 mr-1" /> Record Receipt
+            </Button>
+          )}
+          {!["draft", "cancelled", "deleted"].includes(po.status) && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const outstanding = po.grand_total - (po.amount_paid ?? 0);
+                setPaymentAmount(outstanding > 0 ? String(outstanding) : "");
+                setPaymentDate(new Date().toISOString().split("T")[0]);
+                setPaymentReference("");
+                setPaymentNotes("");
+                setPaymentOpen(true);
+              }}
+            >
+              <IndianRupee className="h-3.5 w-3.5 mr-1" /> Record Payment
             </Button>
           )}
           <Button variant="outline" size="sm" onClick={() => duplicateMutation.mutate()}>
@@ -375,6 +420,109 @@ export default function PurchaseOrderDetail() {
           </table>
         )}
       </div>
+
+      {/* Payment Section */}
+      <div className="paper-card print:hidden">
+        <div className="flex items-center justify-between border-b border-border pb-2 mb-4">
+          <h3 className="text-xs font-semibold text-slate-500">Payment</h3>
+          {(() => {
+            const ps = po.payment_status;
+            if (ps === "paid") return <span className="status-paid text-xs">Paid</span>;
+            if (ps === "partial") return <span className="status-pending text-xs">Partial</span>;
+            return <span className="status-draft text-xs">Unpaid</span>;
+          })()}
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <div>
+            <p className="text-xs text-muted-foreground mb-0.5">Grand Total</p>
+            <p className="font-mono font-medium">{formatCurrency(po.grand_total)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground mb-0.5">Amount Paid</p>
+            <p className="font-mono font-medium text-green-700">{formatCurrency(po.amount_paid ?? 0)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground mb-0.5">Outstanding</p>
+            <p className={`font-mono font-medium ${(po.grand_total - (po.amount_paid ?? 0)) > 0 ? "text-amber-700" : "text-green-700"}`}>
+              {formatCurrency(Math.max(0, po.grand_total - (po.amount_paid ?? 0)))}
+            </p>
+          </div>
+          {po.payment_date && (
+            <div>
+              <p className="text-xs text-muted-foreground mb-0.5">Last Payment</p>
+              <p>{new Date(po.payment_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</p>
+            </div>
+          )}
+        </div>
+        {po.payment_reference && (
+          <p className="text-xs text-muted-foreground mt-2">Ref: {po.payment_reference}</p>
+        )}
+        {po.payment_notes && (
+          <p className="text-xs text-muted-foreground mt-1 italic">{po.payment_notes}</p>
+        )}
+      </div>
+
+      {/* Record Payment Dialog */}
+      <Dialog open={paymentOpen} onOpenChange={setPaymentOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Record Payment</DialogTitle>
+            <DialogDescription>
+              Outstanding: {formatCurrency(Math.max(0, po.grand_total - (po.amount_paid ?? 0)))}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-sm">Amount Paid (₹)</Label>
+              <Input
+                type="number"
+                min={0}
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(e.target.value)}
+                className="mt-1 font-mono"
+                placeholder="0.00"
+              />
+            </div>
+            <div>
+              <Label className="text-sm">Payment Date</Label>
+              <Input
+                type="date"
+                value={paymentDate}
+                onChange={(e) => setPaymentDate(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label className="text-sm">Reference / UTR / Cheque No.</Label>
+              <Input
+                value={paymentReference}
+                onChange={(e) => setPaymentReference(e.target.value)}
+                className="mt-1"
+                placeholder="Optional"
+              />
+            </div>
+            <div>
+              <Label className="text-sm">Notes</Label>
+              <Textarea
+                value={paymentNotes}
+                onChange={(e) => setPaymentNotes(e.target.value)}
+                className="mt-1"
+                rows={2}
+                placeholder="Optional"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPaymentOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => paymentMutation.mutate()}
+              disabled={paymentMutation.isPending || !paymentAmount || Number(paymentAmount) <= 0}
+            >
+              Save Payment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Cancel Dialog */}
       <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>

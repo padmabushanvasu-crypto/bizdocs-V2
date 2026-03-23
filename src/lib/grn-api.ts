@@ -43,6 +43,8 @@ export interface GRN {
   created_at: string;
   updated_at: string;
   line_items?: GRNLineItem[];
+  job_card_id?: string | null;
+  job_card_number?: string | null;
 }
 
 export interface GRNFilters {
@@ -112,6 +114,8 @@ export async function createGRN({ grn, lineItems }: CreateGRNData) {
     received_by: grn.received_by, notes: grn.notes,
     total_received: grn.total_received, total_accepted: grn.total_accepted, total_rejected: grn.total_rejected,
     status: grn.status, recorded_at: grn.recorded_at,
+    job_card_id: grn.job_card_id ?? null,
+    job_card_number: grn.job_card_number ?? null,
   } as any).select().single();
   if (error) throw error;
 
@@ -219,6 +223,16 @@ export async function fetchGRNStats() {
     totalRejected: thisMonth.reduce((s: number, g: any) => s + (g.total_rejected || 0), 0),
     pendingVerification: active.filter((g) => g.status === "recorded").length,
   };
+}
+
+export async function fetchGrnsForJobCard(jobCardId: string): Promise<GRN[]> {
+  const { data, error } = await supabase
+    .from("grns")
+    .select("*")
+    .eq("job_card_id", jobCardId)
+    .order("grn_date", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as unknown as GRN[];
 }
 
 export async function softDeleteGRN(id: string) {

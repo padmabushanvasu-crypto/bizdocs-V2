@@ -148,6 +148,7 @@ export default function PurchaseOrdersList() {
                 <th>Vendor</th>
                 <th className="text-right">Total Value</th>
                 <th>Status</th>
+                <th>Payment</th>
                 <th className="text-right">Days Open</th>
                 <th>Actions</th>
               </tr>
@@ -155,11 +156,11 @@ export default function PurchaseOrdersList() {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-8 text-muted-foreground">Loading...</td>
+                  <td colSpan={8} className="text-center py-8 text-muted-foreground">Loading...</td>
                 </tr>
               ) : pos.length === 0 ? (
                 <tr>
-                  <td colSpan={7}>
+                  <td colSpan={8}>
                     <div className="flex flex-col items-center justify-center py-16 text-center">
                       <div className="h-16 w-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
                         <ShoppingCart className="h-8 w-8 text-slate-400" />
@@ -188,6 +189,17 @@ export default function PurchaseOrdersList() {
                         <span className={statusClass[po.status] || "status-draft"}>
                           {statusLabels[po.status] || po.status}
                         </span>
+                      </td>
+                      <td>
+                        {(po as any).payment_status === "paid" ? (
+                          <span className="status-paid text-xs">Paid</span>
+                        ) : (po as any).payment_status === "partial" ? (
+                          <span className="status-pending text-xs">Partial</span>
+                        ) : (po as any).payment_status === "unpaid" ? (
+                          <span className="status-overdue text-xs">Unpaid</span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
                       </td>
                       <td className="text-right">
                         {days !== null ? (

@@ -21,6 +21,7 @@ import {
   recordGRNAndUpdatePO,
   type GRNLineItem,
 } from "@/lib/grn-api";
+import { fetchOpenJobCards } from "@/lib/job-cards-api";
 
 const REJECTION_REASONS = ["Damaged", "Wrong Spec", "Wrong Quantity", "Poor Quality", "Other"];
 
@@ -42,6 +43,8 @@ export default function GRNForm() {
   const [lrReference, setLrReference] = useState("");
   const [receivedBy, setReceivedBy] = useState("");
   const [notes, setNotes] = useState("");
+  const [selectedJobCard, setSelectedJobCard] = useState<any>(null);
+  const [jcOpen, setJcOpen] = useState(false);
   const [lineItems, setLineItems] = useState<GRNLineItem[]>([]);
   const [successDialogOpen, setSuccessDialogOpen] = useState(false);
   const [savedGRNId, setSavedGRNId] = useState<string | null>(null);
@@ -51,6 +54,12 @@ export default function GRNForm() {
   const { data: openPOs } = useQuery({
     queryKey: ["open-pos-for-grn"],
     queryFn: fetchOpenPOs,
+  });
+
+  // Fetch open job cards for WO link
+  const { data: openJobCards } = useQuery({
+    queryKey: ["open-job-cards-for-grn"],
+    queryFn: fetchOpenJobCards,
   });
 
   // Next GRN number
@@ -161,6 +170,8 @@ export default function GRNForm() {
         status,
         recorded_at: status === "recorded" ? new Date().toISOString() : null,
         verified_at: null,
+        job_card_id: selectedJobCard?.id || null,
+        job_card_number: selectedJobCard?.jc_number || null,
       };
 
       const items = lineItems
@@ -291,6 +302,43 @@ export default function GRNForm() {
                   <Calendar mode="single" selected={vendorInvoiceDate} onSelect={setVendorInvoiceDate} className="p-3 pointer-events-auto" />
                 </PopoverContent>
               </Popover>
+            </div>
+
+            <div>
+              <Label className="text-sm font-medium text-slate-700">Link to Work Order (optional)</Label>
+              <Popover open={jcOpen} onOpenChange={setJcOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" role="combobox" className="w-full justify-between mt-1 font-normal">
+                    {selectedJobCard
+                      ? `${selectedJobCard.jc_number} — ${selectedJobCard.item_description ?? selectedJobCard.item_code ?? ""}`
+                      : "Select Work Order..."}
+                    <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-full p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search work order..." />
+                    <CommandList>
+                      <CommandEmpty>No open work orders found.</CommandEmpty>
+                      <CommandGroup>
+                        {(openJobCards ?? []).map((jc: any) => (
+                          <CommandItem
+                            key={jc.id}
+                            value={`${jc.jc_number} ${jc.item_description ?? ""} ${jc.item_code ?? ""}`}
+                            onSelect={() => { setSelectedJobCard(jc); setJcOpen(false); }}
+                          >
+                            <div>
+                              <p className="font-mono font-medium">{jc.jc_number}</p>
+                              <p className="text-xs text-muted-foreground">{jc.item_description ?? jc.item_code}</p>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+              <p className="text-xs text-muted-foreground mt-1">Link this GRN to a Work Order if these materials are for a specific job</p>
             </div>
 
             <div>

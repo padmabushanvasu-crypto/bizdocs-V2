@@ -52,6 +52,7 @@ import {
   type RecordReturnData,
   type StockMovement,
 } from "@/lib/job-cards-api";
+import { fetchGrnsForJobCard, type GRN } from "@/lib/grn-api";
 import { AddStepDialog } from "@/components/AddStepDialog";
 import { RecordReturnDialog } from "@/components/RecordReturnDialog";
 import { AuditTimeline } from "@/components/AuditTimeline";
@@ -308,6 +309,12 @@ export default function JobCardDetail() {
   const { data: stockMovements = [] } = useQuery<StockMovement[]>({
     queryKey: ["job-card-stock-movements", id],
     queryFn: () => fetchJobCardStockMovements(id!),
+    enabled: !!id,
+  });
+
+  const { data: linkedGRNs = [] } = useQuery<GRN[]>({
+    queryKey: ["job-card-grns", id],
+    queryFn: () => fetchGrnsForJobCard(id!),
     enabled: !!id,
   });
 
@@ -814,6 +821,61 @@ export default function JobCardDetail() {
                     </td>
                     <td className="text-right font-mono tabular-nums text-sm font-medium">
                       {mv.balance_qty}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Incoming Materials (linked GRNs) */}
+      <div className="space-y-2">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+          <PackageCheck className="h-4 w-4" /> Incoming Materials
+        </h2>
+        {linkedGRNs.length === 0 ? (
+          <div className="paper-card text-center py-6 text-sm text-muted-foreground">
+            No GRNs linked to this work order yet
+          </div>
+        ) : (
+          <div className="paper-card !p-0 overflow-x-auto">
+            <table className="w-full data-table text-sm">
+              <thead>
+                <tr>
+                  <th>GRN No.</th>
+                  <th>Date</th>
+                  <th>Vendor</th>
+                  <th className="text-right">Accepted</th>
+                  <th className="text-right">Rejected</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {linkedGRNs.map((grn) => (
+                  <tr
+                    key={grn.id}
+                    className="cursor-pointer hover:bg-muted/40"
+                    onClick={() => navigate(`/grn/${grn.id}`)}
+                  >
+                    <td className="font-mono text-primary hover:underline">{grn.grn_number}</td>
+                    <td className="text-xs text-muted-foreground">
+                      {new Date(grn.grn_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                    </td>
+                    <td>{grn.vendor_name ?? "—"}</td>
+                    <td className="text-right font-mono tabular-nums text-green-700">{grn.total_accepted}</td>
+                    <td className="text-right font-mono tabular-nums text-red-700">
+                      {grn.total_rejected > 0 ? grn.total_rejected : "—"}
+                    </td>
+                    <td>
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                        grn.status === "verified" ? "bg-green-50 text-green-700 border border-green-100" :
+                        grn.status === "recorded" ? "bg-blue-50 text-blue-700 border border-blue-100" :
+                        "bg-muted text-muted-foreground border border-border"
+                      }`}>
+                        {grn.status.charAt(0).toUpperCase() + grn.status.slice(1)}
+                      </span>
                     </td>
                   </tr>
                 ))}

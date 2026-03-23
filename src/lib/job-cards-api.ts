@@ -189,6 +189,17 @@ export async function getNextJCNumber(): Promise<string> {
 // Job Cards
 // ============================================================
 
+export async function fetchOpenJobCards(): Promise<Pick<JobCard, "id" | "jc_number" | "item_code" | "item_description">[]> {
+  const { data, error } = await (supabase as any)
+    .from("job_cards")
+    .select("id, jc_number, item_code, item_description")
+    .in("status", ["in_progress", "draft"])
+    .order("jc_number", { ascending: false })
+    .limit(200);
+  if (error) throw error;
+  return (data ?? []) as any[];
+}
+
 export async function fetchJobCards(filters: JobCardFilters = {}) {
   const { search, status = "all", location = "all", item_id, page = 1, pageSize = 20 } = filters;
   const from = (page - 1) * pageSize;
