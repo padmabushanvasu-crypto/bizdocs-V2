@@ -4,6 +4,7 @@ import {
   GitFork, Plus, Trash2, Search, ChevronDown, ChevronRight,
   Pencil, RefreshCw, Download, Printer, CheckCircle2, Star,
   AlertTriangle, BarChart3, Users, X, Square, CheckSquare,
+  ListOrdered, ArrowUp, ArrowDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,7 +32,8 @@ import {
   fetchBomVariants, createBomVariant, updateBomVariant, deleteBomVariant, setDefaultVariant,
   explodeBom, calculateBomCost, fetchWhereUsed, compareBomVariants,
   fetchBomLineVendorsBatch, addBomLineVendor, updateBomLineVendor, removeBomLineVendor,
-  type BomLine, type BomVariant, type BomNode, type BomLineVendor,
+  fetchBomProcessStepsBatch, addBomProcessStep, updateBomProcessStep, deleteBomProcessStep, reorderBomProcessSteps,
+  type BomLine, type BomVariant, type BomNode, type BomLineVendor, type BomProcessStep,
 } from "@/lib/bom-api";
 import { fetchParties, type Party } from "@/lib/parties-api";
 import { fetchItems, type Item } from "@/lib/items-api";
@@ -157,6 +159,8 @@ const emptyLineForm = {
   is_critical: false,
   reference_designator: "",
   notes: "",
+  make_or_buy: "make" as "make" | "buy",
+  lead_time_days: 0,
 };
 
 const emptyVariantForm = {
@@ -224,6 +228,21 @@ export default function BillOfMaterials() {
     notes: "",
   });
   const [vendorPartyOpen, setVendorPartyOpen] = useState(false);
+
+  // ── Process step state ───────────────────────────────────────────────────────
+  const [editingLeadTime, setEditingLeadTime] = useState<{ id: string; val: number } | null>(null);
+  const [stepDialogOpen, setStepDialogOpen] = useState(false);
+  const [stepDialogLine, setStepDialogLine] = useState<BomLine | null>(null);
+  const [editingStep, setEditingStep] = useState<BomProcessStep | null>(null);
+  const [stepVendorOpen, setStepVendorOpen] = useState(false);
+  const [stepForm, setStepForm] = useState({
+    step_type: "internal" as "internal" | "external",
+    process_name: "",
+    vendor_id: null as string | null,
+    vendor_name: "",
+    lead_time_days: 1,
+    notes: "",
+  });
 
   // ── Reset state when item changes ────────────────────────────────────────────
   const handleSelectItem = (item: Item) => {
@@ -310,6 +329,21 @@ export default function BillOfMaterials() {
     queryFn: () => fetchBomLineVendorsBatch(bomLineIds),
     enabled: bomLineIds.length > 0,
   });
+  const { data: allProcessSteps = [], refetch: refetchProcessSteps } = useQuery<BomProcessStep[]>({
+    queryKey: ["bom-process-steps-batch", bomLineIds],
+    queryFn: () => fetchBomProcessStepsBatch(bomLineIds),
+    enabled: bomLineIds.length > 0,
+  });
+  const stepsByLine = useMemo(() => {
+    const map = new Map<string, BomProcessStep[]>();
+    for (const s of allProcessSteps) {
+      const arr = map.get(s.bom_line_id) ?? [];
+      arr.push(s);
+      map.set(s.bom_line_id, arr);
+    }
+    return map;
+  }, [allProcessSteps]);
+
   const vendorsByLine = useMemo(() => {
     const map = new Map<string, BomLineVendor[]>();
     for (const v of allVendors) {
@@ -323,7 +357,7 @@ export default function BillOfMaterials() {
   const { data: vendorPartiesData } = useQuery({
     queryKey: ["parties-vendors-bom"],
     queryFn: () => fetchParties({ type: "vendor", status: "active", pageSize: 500 }),
-    enabled: vendorDialogOpen,
+    enabled: vendorDialogOpen || stepDialogOpen,
   });
   const vendorParties: Party[] = vendorPartiesData?.data ?? [];
 
@@ -357,6 +391,8 @@ export default function BillOfMaterials() {
         reference_designator: lineForm.reference_designator || undefined,
         notes: lineForm.notes || undefined,
         variant_id: variantFilter,
+        make_or_buy: lineForm.make_or_buy,
+        lead_time_days: lineForm.lead_time_days,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["bom-lines-v2", selectedItem?.id] });
@@ -520,6 +556,79 @@ export default function BillOfMaterials() {
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
+  const addStepMutation = useMutation({
+    mutationFn: () =>
+      addBomProcessStep({
+        bom_line_id: stepDialogLine!.id,
+        step_type: stepForm.step_type,
+        process_name: stepForm.process_name,
+        vendor_id: stepForm.vendor_id,
+        vendor_name: stepForm.vendor_name || null,
+        lead_time_days: stepForm.lead_time_days,
+        notes: stepForm.notes || null,
+      }),
+    onSuccess: () => {
+      refetchProcessSteps();
+      setStepDialogOpen(false);
+      toast({ title: "Process step added" });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const updateStepMutation = useMutation({
+    mutationFn: () =>
+      updateBomProcessStep(editingStep!.id, {
+        step_type: stepForm.step_type,
+        process_name: stepForm.process_name,
+        vendor_id: stepForm.vendor_id,
+        vendor_name: stepForm.vendor_name || null,
+        lead_time_days: stepForm.lead_time_days,
+        notes: stepForm.notes || null,
+      }),
+    onSuccess: () => {
+      refetchProcessSteps();
+      setStepDialogOpen(false);
+      toast({ title: "Step updated" });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteStepMutation = useMutation({
+    mutationFn: (id: string) => deleteBomProcessStep(id),
+    onSuccess: () => {
+      refetchProcessSteps();
+      toast({ title: "Step removed" });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const reorderStepMutation = useMutation({
+    mutationFn: ({ lineId, orderedIds }: { lineId: string; orderedIds: string[] }) =>
+      reorderBomProcessSteps(lineId, orderedIds),
+    onSuccess: () => refetchProcessSteps(),
+  });
+
+  const openAddStep = (line: BomLine) => {
+    setStepDialogLine(line);
+    setEditingStep(null);
+    setStepForm({ step_type: "internal", process_name: "", vendor_id: null, vendor_name: "", lead_time_days: 1, notes: "" });
+    setStepDialogOpen(true);
+  };
+
+  const openEditStep = (line: BomLine, step: BomProcessStep) => {
+    setStepDialogLine(line);
+    setEditingStep(step);
+    setStepForm({
+      step_type: step.step_type,
+      process_name: step.process_name,
+      vendor_id: step.vendor_id,
+      vendor_name: step.vendor_name ?? "",
+      lead_time_days: step.lead_time_days,
+      notes: step.notes ?? "",
+    });
+    setStepDialogOpen(true);
+  };
+
   const openAddVendor = (line: BomLine) => {
     setVendorDialogLine(line);
     setEditingVendor(null);
@@ -563,6 +672,8 @@ export default function BillOfMaterials() {
       is_critical: line.is_critical ?? false,
       reference_designator: line.reference_designator ?? "",
       notes: line.notes ?? "",
+      make_or_buy: line.make_or_buy ?? "make",
+      lead_time_days: line.lead_time_days ?? 0,
     });
   };
 
@@ -896,11 +1007,13 @@ export default function BillOfMaterials() {
                               <th>Item Code</th>
                               <th>Description</th>
                               <th>Type</th>
+                              <th>Make/Buy</th>
                               <th className="text-right">Qty</th>
                               <th>Unit</th>
                               <th className="text-right">Scrap%</th>
                               <th className="text-center">Critical</th>
                               <th className="text-right">Stock</th>
+                              <th className="text-right">Lead Time</th>
                               <th className="text-right">Line Cost</th>
                               <th className="w-20">Actions</th>
                             </tr>
@@ -912,6 +1025,7 @@ export default function BillOfMaterials() {
                               return da.localeCompare(db, undefined, { numeric: true, sensitivity: "base" });
                             }).map((line, idx) => {
                               const lineVendors = vendorsByLine.get(line.id) ?? [];
+                              const lineSteps = stepsByLine.get(line.id) ?? [];
                               const isExpanded = expandedLines.has(line.id);
                               return (
                                 <>
@@ -953,18 +1067,43 @@ export default function BillOfMaterials() {
                                         <span className="font-medium text-sm max-w-[140px] truncate">
                                           {line.child_item_description ?? "—"}
                                         </span>
-                                        {lineVendors.length > 0 && (
-                                          <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 w-fit">
-                                            <Users className="h-2.5 w-2.5" />
-                                            {lineVendors.length} vendor{lineVendors.length !== 1 ? "s" : ""}
-                                          </span>
-                                        )}
+                                        <div className="flex flex-wrap gap-1">
+                                          {lineVendors.length > 0 && (
+                                            <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
+                                              <Users className="h-2.5 w-2.5" />
+                                              {lineVendors.length} vendor{lineVendors.length !== 1 ? "s" : ""}
+                                            </span>
+                                          )}
+                                          {lineSteps.length > 0 && (
+                                            <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
+                                              <ListOrdered className="h-2.5 w-2.5" />
+                                              {lineSteps.length} step{lineSteps.length !== 1 ? "s" : ""}: {lineSteps.slice(0, 3).map((s) => s.process_name).join(" → ")}
+                                            </span>
+                                          )}
+                                        </div>
                                       </div>
                                     </td>
                                     <td>
                                       {line.child_item_type && (
                                         <TypeBadge type={line.child_item_type} />
                                       )}
+                                    </td>
+                                    <td>
+                                      <button
+                                        className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border transition-colors ${
+                                          (line.make_or_buy ?? "make") === "make"
+                                            ? "bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100"
+                                            : "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100"
+                                        }`}
+                                        onClick={() =>
+                                          updateLineMutation.mutate({
+                                            id: line.id,
+                                            make_or_buy: (line.make_or_buy ?? "make") === "make" ? "buy" : "make",
+                                          })
+                                        }
+                                      >
+                                        {(line.make_or_buy ?? "make") === "make" ? "Make" : "Buy"}
+                                      </button>
                                     </td>
                                     <td className="text-right font-mono tabular-nums text-sm">
                                       {line.quantity}
@@ -999,6 +1138,41 @@ export default function BillOfMaterials() {
                                         {line.child_current_stock ?? 0}
                                       </span>
                                     </td>
+                                    <td className="text-right text-xs">
+                                      {editingLeadTime?.id === line.id ? (
+                                        <input
+                                          autoFocus
+                                          type="number"
+                                          min={0}
+                                          className="w-14 text-right border border-blue-300 rounded px-1 py-0.5 text-xs font-mono outline-none"
+                                          value={editingLeadTime.val}
+                                          onChange={(e) =>
+                                            setEditingLeadTime({ id: line.id, val: parseInt(e.target.value) || 0 })
+                                          }
+                                          onBlur={() => {
+                                            updateLineMutation.mutate({ id: line.id, lead_time_days: editingLeadTime.val });
+                                            setEditingLeadTime(null);
+                                          }}
+                                          onKeyDown={(e) => {
+                                            if (e.key === "Enter") {
+                                              updateLineMutation.mutate({ id: line.id, lead_time_days: editingLeadTime.val });
+                                              setEditingLeadTime(null);
+                                            } else if (e.key === "Escape") {
+                                              setEditingLeadTime(null);
+                                            }
+                                          }}
+                                        />
+                                      ) : (
+                                        <button
+                                          className="text-muted-foreground hover:text-slate-800 transition-colors font-mono"
+                                          onClick={() =>
+                                            setEditingLeadTime({ id: line.id, val: line.lead_time_days ?? 0 })
+                                          }
+                                        >
+                                          {(line.lead_time_days ?? 0) > 0 ? `${line.lead_time_days}d` : "—"}
+                                        </button>
+                                      )}
+                                    </td>
                                     <td className="text-right font-mono tabular-nums text-sm font-medium">
                                       {formatCurrency(line.quantity * (line.child_standard_cost ?? 0))}
                                     </td>
@@ -1031,82 +1205,189 @@ export default function BillOfMaterials() {
                                       </div>
                                     </td>
                                   </tr>
-                                  {/* Vendor sub-table */}
+                                  {/* Vendor + Process Route sub-table */}
                                   {isExpanded && (
-                                    <tr key={`${line.id}-vendors`}>
-                                      <td colSpan={14} className="bg-slate-50 border-t border-b border-slate-100 !p-0">
-                                        <div className="px-10 py-3">
-                                          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1.5">
-                                            <Users className="h-3 w-3" /> Approved Vendors
-                                          </p>
-                                          {lineVendors.length === 0 ? (
-                                            <p className="text-xs text-muted-foreground py-2">No vendors added yet.</p>
-                                          ) : (
-                                            <table className="w-full text-xs mb-2">
-                                              <thead>
-                                                <tr className="text-left text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
-                                                  <th className="pb-1.5 pr-4 font-semibold">Vendor</th>
-                                                  <th className="pb-1.5 pr-4 font-semibold">Process</th>
-                                                  <th className="pb-1.5 pr-4 font-semibold text-right">Lead Time</th>
-                                                  <th className="pb-1.5 pr-4 font-semibold text-right">Unit Cost</th>
-                                                  <th className="pb-1.5 pr-4 font-semibold text-center">Preferred</th>
-                                                  <th className="pb-1.5 font-semibold">Actions</th>
-                                                </tr>
-                                              </thead>
-                                              <tbody>
-                                                {lineVendors.map((v) => (
-                                                  <tr key={v.id} className="border-b border-slate-100 last:border-0">
-                                                    <td className="py-1.5 pr-4 font-medium text-slate-800">
-                                                      {v.vendor_name}
-                                                      {v.vendor_code && (
-                                                        <span className="ml-1 text-slate-400 font-mono">({v.vendor_code})</span>
-                                                      )}
-                                                    </td>
-                                                    <td className="py-1.5 pr-4 text-slate-600">
-                                                      {v.notes ?? "—"}
-                                                    </td>
-                                                    <td className="py-1.5 pr-4 text-right text-slate-600">
-                                                      {v.lead_time_days != null ? `${v.lead_time_days} days` : "—"}
-                                                    </td>
-                                                    <td className="py-1.5 pr-4 text-right font-mono text-slate-700">
-                                                      {v.unit_price != null ? formatCurrency(v.unit_price) : "—"}
-                                                    </td>
-                                                    <td className="py-1.5 pr-4 text-center">
-                                                      {v.is_preferred && (
-                                                        <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500 inline-block" />
-                                                      )}
-                                                    </td>
-                                                    <td className="py-1.5">
-                                                      <div className="flex gap-1">
-                                                        <button
-                                                          onClick={() => openEditVendor(line, v)}
-                                                          className="h-6 w-6 flex items-center justify-center rounded hover:bg-slate-200 text-slate-500 transition-colors"
-                                                        >
-                                                          <Pencil className="h-3 w-3" />
-                                                        </button>
-                                                        <button
-                                                          onClick={() => {
-                                                            if (confirm(`Remove ${v.vendor_name}?`)) {
-                                                              removeVendorMutation.mutate(v.id);
-                                                            }
-                                                          }}
-                                                          className="h-6 w-6 flex items-center justify-center rounded hover:bg-red-100 text-slate-400 hover:text-red-600 transition-colors"
-                                                        >
-                                                          <X className="h-3 w-3" />
-                                                        </button>
-                                                      </div>
-                                                    </td>
+                                    <tr key={`${line.id}-expanded`}>
+                                      <td colSpan={16} className="bg-slate-50 border-t border-b border-slate-100 !p-0">
+                                        <div className="px-10 py-3 space-y-4">
+                                          {/* Approved Vendors */}
+                                          <div>
+                                            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1.5">
+                                              <Users className="h-3 w-3" /> Approved Vendors
+                                            </p>
+                                            {lineVendors.length === 0 ? (
+                                              <p className="text-xs text-muted-foreground py-1">No vendors added yet.</p>
+                                            ) : (
+                                              <table className="w-full text-xs mb-2">
+                                                <thead>
+                                                  <tr className="text-left text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                                                    <th className="pb-1.5 pr-4 font-semibold">Vendor</th>
+                                                    <th className="pb-1.5 pr-4 font-semibold">Process</th>
+                                                    <th className="pb-1.5 pr-4 font-semibold text-right">Lead Time</th>
+                                                    <th className="pb-1.5 pr-4 font-semibold text-right">Unit Cost</th>
+                                                    <th className="pb-1.5 pr-4 font-semibold text-center">Preferred</th>
+                                                    <th className="pb-1.5 font-semibold">Actions</th>
                                                   </tr>
-                                                ))}
-                                              </tbody>
-                                            </table>
-                                          )}
-                                          <button
-                                            onClick={() => openAddVendor(line)}
-                                            className="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1 transition-colors"
-                                          >
-                                            <Plus className="h-3 w-3" /> Add Vendor
-                                          </button>
+                                                </thead>
+                                                <tbody>
+                                                  {lineVendors.map((v) => (
+                                                    <tr key={v.id} className="border-b border-slate-100 last:border-0">
+                                                      <td className="py-1.5 pr-4 font-medium text-slate-800">
+                                                        {v.vendor_name}
+                                                        {v.vendor_code && (
+                                                          <span className="ml-1 text-slate-400 font-mono">({v.vendor_code})</span>
+                                                        )}
+                                                      </td>
+                                                      <td className="py-1.5 pr-4 text-slate-600">
+                                                        {v.notes ?? "—"}
+                                                      </td>
+                                                      <td className="py-1.5 pr-4 text-right text-slate-600">
+                                                        {v.lead_time_days != null ? `${v.lead_time_days} days` : "—"}
+                                                      </td>
+                                                      <td className="py-1.5 pr-4 text-right font-mono text-slate-700">
+                                                        {v.unit_price != null ? formatCurrency(v.unit_price) : "—"}
+                                                      </td>
+                                                      <td className="py-1.5 pr-4 text-center">
+                                                        {v.is_preferred && (
+                                                          <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500 inline-block" />
+                                                        )}
+                                                      </td>
+                                                      <td className="py-1.5">
+                                                        <div className="flex gap-1">
+                                                          <button
+                                                            onClick={() => openEditVendor(line, v)}
+                                                            className="h-6 w-6 flex items-center justify-center rounded hover:bg-slate-200 text-slate-500 transition-colors"
+                                                          >
+                                                            <Pencil className="h-3 w-3" />
+                                                          </button>
+                                                          <button
+                                                            onClick={() => {
+                                                              if (confirm(`Remove ${v.vendor_name}?`)) {
+                                                                removeVendorMutation.mutate(v.id);
+                                                              }
+                                                            }}
+                                                            className="h-6 w-6 flex items-center justify-center rounded hover:bg-red-100 text-slate-400 hover:text-red-600 transition-colors"
+                                                          >
+                                                            <X className="h-3 w-3" />
+                                                          </button>
+                                                        </div>
+                                                      </td>
+                                                    </tr>
+                                                  ))}
+                                                </tbody>
+                                              </table>
+                                            )}
+                                            <button
+                                              onClick={() => openAddVendor(line)}
+                                              className="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1 transition-colors"
+                                            >
+                                              <Plus className="h-3 w-3" /> Add Vendor
+                                            </button>
+                                          </div>
+
+                                          {/* Process Route */}
+                                          <div className="border-t border-slate-200 pt-3">
+                                            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1.5">
+                                              <ListOrdered className="h-3 w-3" /> Process Route
+                                            </p>
+                                            {lineSteps.length === 0 ? (
+                                              <p className="text-xs text-muted-foreground py-1">No process steps defined.</p>
+                                            ) : (
+                                              <table className="w-full text-xs mb-2">
+                                                <thead>
+                                                  <tr className="text-left text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                                                    <th className="pb-1.5 pr-2 font-semibold w-8">#</th>
+                                                    <th className="pb-1.5 pr-4 font-semibold">Process</th>
+                                                    <th className="pb-1.5 pr-4 font-semibold">Type</th>
+                                                    <th className="pb-1.5 pr-4 font-semibold">Vendor</th>
+                                                    <th className="pb-1.5 pr-4 font-semibold text-right">Lead Time</th>
+                                                    <th className="pb-1.5 pr-4 font-semibold">Notes</th>
+                                                    <th className="pb-1.5 font-semibold">Actions</th>
+                                                  </tr>
+                                                </thead>
+                                                <tbody>
+                                                  {[...lineSteps]
+                                                    .sort((a, b) => a.step_order - b.step_order)
+                                                    .map((step, si) => (
+                                                      <tr key={step.id} className="border-b border-slate-100 last:border-0">
+                                                        <td className="py-1.5 pr-2 text-slate-400 font-mono">{step.step_order}</td>
+                                                        <td className="py-1.5 pr-4 font-medium text-slate-800">{step.process_name}</td>
+                                                        <td className="py-1.5 pr-4">
+                                                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                                                            step.step_type === "internal"
+                                                              ? "bg-green-50 text-green-700"
+                                                              : "bg-purple-50 text-purple-700"
+                                                          }`}>
+                                                            {step.step_type}
+                                                          </span>
+                                                        </td>
+                                                        <td className="py-1.5 pr-4 text-slate-600">
+                                                          {step.vendor_name ?? "—"}
+                                                        </td>
+                                                        <td className="py-1.5 pr-4 text-right text-slate-600">
+                                                          {step.lead_time_days > 0 ? `${step.lead_time_days}d` : "—"}
+                                                        </td>
+                                                        <td className="py-1.5 pr-4 text-slate-500 max-w-[120px] truncate">
+                                                          {step.notes ?? "—"}
+                                                        </td>
+                                                        <td className="py-1.5">
+                                                          <div className="flex gap-0.5">
+                                                            <button
+                                                              disabled={si === 0}
+                                                              onClick={() => {
+                                                                const sorted = [...lineSteps].sort((a, b) => a.step_order - b.step_order);
+                                                                const ids = sorted.map((s) => s.id);
+                                                                const idx2 = ids.indexOf(step.id);
+                                                                [ids[idx2], ids[idx2 - 1]] = [ids[idx2 - 1], ids[idx2]];
+                                                                reorderStepMutation.mutate({ lineId: line.id, orderedIds: ids });
+                                                              }}
+                                                              className="h-5 w-5 flex items-center justify-center rounded hover:bg-slate-200 text-slate-400 disabled:opacity-30 transition-colors"
+                                                            >
+                                                              <ArrowUp className="h-3 w-3" />
+                                                            </button>
+                                                            <button
+                                                              disabled={si === lineSteps.length - 1}
+                                                              onClick={() => {
+                                                                const sorted = [...lineSteps].sort((a, b) => a.step_order - b.step_order);
+                                                                const ids = sorted.map((s) => s.id);
+                                                                const idx2 = ids.indexOf(step.id);
+                                                                [ids[idx2], ids[idx2 + 1]] = [ids[idx2 + 1], ids[idx2]];
+                                                                reorderStepMutation.mutate({ lineId: line.id, orderedIds: ids });
+                                                              }}
+                                                              className="h-5 w-5 flex items-center justify-center rounded hover:bg-slate-200 text-slate-400 disabled:opacity-30 transition-colors"
+                                                            >
+                                                              <ArrowDown className="h-3 w-3" />
+                                                            </button>
+                                                            <button
+                                                              onClick={() => openEditStep(line, step)}
+                                                              className="h-5 w-5 flex items-center justify-center rounded hover:bg-slate-200 text-slate-500 transition-colors"
+                                                            >
+                                                              <Pencil className="h-3 w-3" />
+                                                            </button>
+                                                            <button
+                                                              onClick={() => {
+                                                                if (confirm(`Remove step "${step.process_name}"?`)) {
+                                                                  deleteStepMutation.mutate(step.id);
+                                                                }
+                                                              }}
+                                                              className="h-5 w-5 flex items-center justify-center rounded hover:bg-red-100 text-slate-400 hover:text-red-600 transition-colors"
+                                                            >
+                                                              <X className="h-3 w-3" />
+                                                            </button>
+                                                          </div>
+                                                        </td>
+                                                      </tr>
+                                                    ))}
+                                                </tbody>
+                                              </table>
+                                            )}
+                                            <button
+                                              onClick={() => openAddStep(line)}
+                                              className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1 transition-colors"
+                                            >
+                                              <Plus className="h-3 w-3" /> Add Step
+                                            </button>
+                                          </div>
                                         </div>
                                       </td>
                                     </tr>
@@ -1800,10 +2081,12 @@ export default function BillOfMaterials() {
                             value={`${item.item_code} ${item.description} ${item.drawing_revision ?? ""}`}
                             onSelect={() => {
                               setSelectedChild(item);
+                              const autoBuy = ["bought_out", "raw_material"].includes(item.item_type);
                               setLineForm((f) => ({
                                 ...f,
                                 unit: item.unit ?? "",
                                 drawing_number: item.drawing_revision ?? item.drawing_number ?? "",
+                                make_or_buy: autoBuy ? "buy" : "make",
                               }));
                               setChildItemOpen(false);
                             }}
@@ -1902,6 +2185,46 @@ export default function BillOfMaterials() {
                     Critical component
                   </Label>
                 </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Make / Buy</Label>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    className={`flex-1 text-xs font-semibold py-1.5 rounded-l-md border transition-colors ${
+                      lineForm.make_or_buy === "make"
+                        ? "bg-indigo-600 text-white border-indigo-600"
+                        : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"
+                    }`}
+                    onClick={() => setLineForm((f) => ({ ...f, make_or_buy: "make" }))}
+                  >
+                    Make
+                  </button>
+                  <button
+                    type="button"
+                    className={`flex-1 text-xs font-semibold py-1.5 rounded-r-md border-t border-b border-r transition-colors ${
+                      lineForm.make_or_buy === "buy"
+                        ? "bg-amber-500 text-white border-amber-500"
+                        : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"
+                    }`}
+                    onClick={() => setLineForm((f) => ({ ...f, make_or_buy: "buy" }))}
+                  >
+                    Buy
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Lead Time (days)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={lineForm.lead_time_days}
+                  onChange={(e) => setLineForm((f) => ({ ...f, lead_time_days: parseInt(e.target.value) || 0 }))}
+                  placeholder="0"
+                />
               </div>
             </div>
 
@@ -2336,6 +2659,133 @@ export default function BillOfMaterials() {
               disabled={!vendorForm.vendor_name.trim() || addVendorMutation.isPending || updateVendorMutation.isPending}
             >
               {editingVendor ? "Save Changes" : "Add Vendor"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── ADD / EDIT PROCESS STEP DIALOG ───────────────────────────────── */}
+      <Dialog open={stepDialogOpen} onOpenChange={(v) => { setStepDialogOpen(v); if (!v) { setEditingStep(null); setStepVendorOpen(false); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingStep ? "Edit Process Step" : "Add Process Step"}</DialogTitle>
+            {stepDialogLine && (
+              <DialogDescription>
+                For: <span className="font-mono text-blue-700">{stepDialogLine.child_item_code ?? "component"}</span>
+                {" — "}{stepDialogLine.child_item_description}
+              </DialogDescription>
+            )}
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Process Name *</Label>
+              <Input
+                value={stepForm.process_name}
+                onChange={(e) => setStepForm((f) => ({ ...f, process_name: e.target.value }))}
+                placeholder="e.g. CNC Machining, Nickel Plating, QC Inspection"
+                autoFocus
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Step Type</Label>
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  className={`flex-1 text-xs font-semibold py-1.5 rounded-l-md border transition-colors ${
+                    stepForm.step_type === "internal"
+                      ? "bg-green-600 text-white border-green-600"
+                      : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"
+                  }`}
+                  onClick={() => setStepForm((f) => ({ ...f, step_type: "internal", vendor_id: null, vendor_name: "" }))}
+                >
+                  Internal
+                </button>
+                <button
+                  type="button"
+                  className={`flex-1 text-xs font-semibold py-1.5 rounded-r-md border-t border-b border-r transition-colors ${
+                    stepForm.step_type === "external"
+                      ? "bg-purple-600 text-white border-purple-600"
+                      : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"
+                  }`}
+                  onClick={() => setStepForm((f) => ({ ...f, step_type: "external" }))}
+                >
+                  External (Job Work)
+                </button>
+              </div>
+            </div>
+
+            {stepForm.step_type === "external" && (
+              <div className="space-y-1.5">
+                <Label>Vendor</Label>
+                <Popover open={stepVendorOpen} onOpenChange={setStepVendorOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
+                      {stepForm.vendor_name || "Select vendor..."}
+                      <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-full p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search vendors..." />
+                      <CommandList>
+                        <CommandEmpty>No vendor found.</CommandEmpty>
+                        <CommandGroup>
+                          {vendorParties.map((p) => (
+                            <CommandItem
+                              key={p.id}
+                              value={p.name}
+                              onSelect={() => {
+                                setStepForm((f) => ({ ...f, vendor_id: p.id, vendor_name: p.name }));
+                                setStepVendorOpen(false);
+                              }}
+                            >
+                              <div>
+                                <p className="font-medium text-sm">{p.name}</p>
+                                {p.city && <p className="text-xs text-muted-foreground">{p.city}</p>}
+                              </div>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <Label>Lead Time (days)</Label>
+              <Input
+                type="number"
+                min={0}
+                value={stepForm.lead_time_days}
+                onChange={(e) => setStepForm((f) => ({ ...f, lead_time_days: parseInt(e.target.value) || 0 }))}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Notes</Label>
+              <Input
+                value={stepForm.notes}
+                onChange={(e) => setStepForm((f) => ({ ...f, notes: e.target.value }))}
+                placeholder="Optional"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStepDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => editingStep ? updateStepMutation.mutate() : addStepMutation.mutate()}
+              disabled={
+                !stepForm.process_name.trim() ||
+                addStepMutation.isPending ||
+                updateStepMutation.isPending
+              }
+            >
+              {editingStep ? "Save Changes" : "Add Step"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -16,11 +16,13 @@ import {
   fetchJobCards,
   fetchJobCardStats,
   createJobCard,
+  createJobCardStep,
   deleteJobCard,
   bulkDeleteJobCards,
   getNextJCNumber,
   type JobCardFilters,
 } from "@/lib/job-cards-api";
+import { fetchProcessRouteForItem } from "@/lib/bom-api";
 import { fetchItems, type Item } from "@/lib/items-api";
 import { formatCurrency } from "@/lib/gst-utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -108,7 +110,7 @@ export default function JobCards() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      return createJobCard({
+      const jc = await createJobCard({
         jc_number: nextJCNumber!,
         item_id: selectedItem?.id ?? undefined,
         item_code: selectedItem?.item_code ?? undefined,
@@ -121,14 +123,38 @@ export default function JobCards() {
         initial_cost: form.initial_cost,
         notes: form.notes || undefined,
       });
+
+      let stepsCreated = 0;
+      if (selectedItem?.id) {
+        const processSteps = await fetchProcessRouteForItem(selectedItem.id).catch(() => []);
+        for (const step of processSteps) {
+          await createJobCardStep({
+            job_card_id: jc.id,
+            step_number: step.step_order,
+            step_type: step.step_type === "external" ? "job_work" : "production",
+            name: step.process_name,
+            vendor_id: step.vendor_id ?? undefined,
+            vendor_name: step.vendor_name ?? undefined,
+            notes: step.notes ?? undefined,
+          });
+          stepsCreated++;
+        }
+      }
+
+      return { jc, stepsCreated };
     },
-    onSuccess: (jc) => {
+    onSuccess: ({ jc, stepsCreated }) => {
       queryClient.invalidateQueries({ queryKey: ["job-cards"] });
       queryClient.invalidateQueries({ queryKey: ["jc-stats"] });
       setNewOpen(false);
       setSelectedItem(null);
       setForm(emptyForm);
-      toast({ title: "Work Order created", description: `${jc.jc_number} is now active.` });
+      toast({
+        title: "Work Order created",
+        description: stepsCreated > 0
+          ? `${jc.jc_number} created with ${stepsCreated} process step${stepsCreated !== 1 ? "s" : ""} auto-loaded from BOM.`
+          : `${jc.jc_number} is now active.`,
+      });
       navigate(`/job-cards/${jc.id}`);
     },
     onError: (err: any) => {

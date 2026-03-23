@@ -33,6 +33,8 @@ export interface BomLine {
   scrap_factor: number;
   reference_designator: string | null;
   drawing_number: string | null;
+  make_or_buy: "make" | "buy";
+  lead_time_days: number;
   created_at: string;
   updated_at: string;
   // Joined child item fields
@@ -43,6 +45,20 @@ export interface BomLine {
   child_standard_cost?: number;
   child_unit?: string | null;
   child_drawing_revision?: string | null;
+}
+
+export interface BomProcessStep {
+  id: string;
+  company_id: string;
+  bom_line_id: string;
+  step_order: number;
+  step_type: "internal" | "external";
+  process_name: string;
+  vendor_id: string | null;
+  vendor_name: string | null;
+  lead_time_days: number;
+  notes: string | null;
+  created_at: string;
 }
 
 export interface BomNode {
@@ -300,6 +316,8 @@ export async function fetchBomLines(
       scrap_factor: bl.scrap_factor ?? 0,
       reference_designator: bl.reference_designator ?? null,
       drawing_number: bl.drawing_number ?? child?.drawing_number ?? null,
+      make_or_buy: (bl.make_or_buy ?? "make") as "make" | "buy",
+      lead_time_days: bl.lead_time_days ?? 0,
     };
   }) as BomLine[];
 }
@@ -316,6 +334,8 @@ export async function createBomLine(data: {
   scrap_factor?: number;
   reference_designator?: string;
   drawing_number?: string;
+  make_or_buy?: "make" | "buy";
+  lead_time_days?: number;
 }): Promise<BomLine> {
   const companyId = await getCompanyId();
   const { data: bl, error } = await (supabase as any)
@@ -333,6 +353,8 @@ export async function createBomLine(data: {
       scrap_factor: data.scrap_factor ?? 0,
       reference_designator: data.reference_designator ?? null,
       drawing_number: data.drawing_number ?? null,
+      make_or_buy: data.make_or_buy ?? "make",
+      lead_time_days: data.lead_time_days ?? 0,
     })
     .select()
     .single();
@@ -894,4 +916,135 @@ export async function fetchBomSummary(itemId: string): Promise<{
       variant_count: 0,
     };
   }
+}
+
+// ============================================================
+// BOM Process Steps
+// ============================================================
+
+export async function fetchBomProcessSteps(bom_line_id: string): Promise<BomProcessStep[]> {
+  const { data, error } = await (supabase as any)
+    .from("bom_process_steps")
+    .select("*")
+    .eq("bom_line_id", bom_line_id)
+    .order("step_order", { ascending: true });
+  if (error) return [];
+  return (data ?? []) as BomProcessStep[];
+}
+
+export async function fetchBomProcessStepsBatch(lineIds: string[]): Promise<BomProcessStep[]> {
+  if (!lineIds.length) return [];
+  const { data, error } = await (supabase as any)
+    .from("bom_process_steps")
+    .select("*")
+    .in("bom_line_id", lineIds)
+    .order("step_order", { ascending: true });
+  if (error) return [];
+  return (data ?? []) as BomProcessStep[];
+}
+
+export async function addBomProcessStep(data: {
+  bom_line_id: string;
+  step_order?: number;
+  step_type: "internal" | "external";
+  process_name: string;
+  vendor_id?: string | null;
+  vendor_name?: string | null;
+  lead_time_days?: number;
+  notes?: string | null;
+}): Promise<BomProcessStep> {
+  const companyId = await getCompanyId();
+  let stepOrder = data.step_order;
+  if (stepOrder === undefined) {
+    const { data: existing } = await (supabase as any)
+      .from("bom_process_steps")
+      .select("step_order")
+      .eq("bom_line_id", data.bom_line_id)
+      .order("step_order", { ascending: false })
+      .limit(1);
+    stepOrder = existing && existing.length > 0 ? existing[0].step_order + 1 : 1;
+  }
+  const { data: step, error } = await (supabase as any)
+    .from("bom_process_steps")
+    .insert({
+      company_id: companyId,
+      bom_line_id: data.bom_line_id,
+      step_order: stepOrder,
+      step_type: data.step_type,
+      process_name: data.process_name,
+      vendor_id: data.vendor_id ?? null,
+      vendor_name: data.vendor_name ?? null,
+      lead_time_days: data.lead_time_days ?? 1,
+      notes: data.notes ?? null,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return step as BomProcessStep;
+}
+
+export async function updateBomProcessStep(id: string, data: Partial<BomProcessStep>): Promise<BomProcessStep> {
+  const { data: step, error } = await (supabase as any)
+    .from("bom_process_steps")
+    .update(data)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  return step as BomProcessStep;
+}
+
+export async function deleteBomProcessStep(id: string): Promise<void> {
+  const { error } = await (supabase as any).from("bom_process_steps").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function reorderBomProcessSteps(bom_line_id: string, orderedIds: string[]): Promise<void> {
+  for (let i = 0; i < orderedIds.length; i++) {
+    await (supabase as any)
+      .from("bom_process_steps")
+      .update({ step_order: i + 1 })
+      .eq("id", orderedIds[i]);
+  }
+}
+
+/**
+ * Finds the process route for a given item (as parent in its BOM).
+ * Returns the steps from the first BOM line that has any process steps, ordered by step_order.
+ * Used by Work Order creation to auto-populate job_card_steps.
+ */
+export async function fetchProcessRouteForItem(
+  item_id: string,
+  variant_id?: string
+): Promise<BomProcessStep[]> {
+  let q = (supabase as any)
+    .from("bom_lines")
+    .select("id")
+    .eq("parent_item_id", item_id);
+
+  if (variant_id) {
+    q = q.eq("variant_id", variant_id);
+  } else {
+    q = q.is("variant_id", null);
+  }
+  q = q.order("created_at", { ascending: true });
+
+  const { data: lines } = await q;
+  if (!lines || lines.length === 0) return [];
+
+  const lineIds = (lines as any[]).map((l: any) => l.id);
+  const { data: steps } = await (supabase as any)
+    .from("bom_process_steps")
+    .select("*")
+    .in("bom_line_id", lineIds)
+    .order("step_order", { ascending: true });
+
+  if (!steps || steps.length === 0) return [];
+
+  // Return steps from the first line that has steps
+  for (const lineId of lineIds) {
+    const lineSteps = (steps as BomProcessStep[]).filter((s) => s.bom_line_id === lineId);
+    if (lineSteps.length > 0) return lineSteps;
+  }
+  return [];
 }
