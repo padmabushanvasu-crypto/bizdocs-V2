@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  ClipboardCheck, CheckCircle2, XCircle, AlertTriangle, Printer, ArrowLeft,
+  ClipboardCheck, CheckCircle2, XCircle, AlertTriangle, Printer, ChevronLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -167,11 +167,15 @@ export default function FatCertificateDetail() {
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-5xl mx-auto">
-      {/* Back + Actions */}
+      <button
+        onClick={() => navigate("/fat-certificates")}
+        className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 transition-colors mb-3 print:hidden"
+      >
+        <ChevronLeft className="h-4 w-4" />
+        Back to FAT Certificates
+      </button>
+      {/* Actions */}
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <Button variant="ghost" size="sm" onClick={() => navigate("/fat-certificates")} className="gap-1.5 -ml-2">
-          <ArrowLeft className="h-4 w-4" /> FAT Certificates
-        </Button>
         <div className="flex gap-2 flex-wrap">
           {!isCompleted && dirty && (
             <Button variant="outline" size="sm" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>

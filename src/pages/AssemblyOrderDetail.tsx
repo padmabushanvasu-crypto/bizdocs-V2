@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Layers, ArrowLeft, CheckCircle2, XCircle, AlertTriangle, Package,
+  Layers, ChevronLeft, CheckCircle2, XCircle, AlertTriangle, Package,
   TrendingDown, TrendingUp, BookOpen, Hash, ClipboardCheck, Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -188,10 +188,13 @@ export default function AssemblyOrderDetail() {
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-5xl mx-auto">
-      {/* Back */}
-      <Button variant="ghost" size="sm" onClick={() => navigate("/assembly-orders")} className="gap-1.5 -ml-2">
-        <ArrowLeft className="h-4 w-4" /> Assembly Orders
-      </Button>
+      <button
+        onClick={() => navigate("/assembly-orders")}
+        className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 transition-colors mb-3"
+      >
+        <ChevronLeft className="h-4 w-4" />
+        Back to Assembly Orders
+      </button>
 
       {/* Header */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">

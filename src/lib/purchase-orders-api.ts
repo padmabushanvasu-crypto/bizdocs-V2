@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
+import { getNextDocNumber } from "@/lib/doc-number-utils";
 
 export interface POLineItem {
   id?: string;
@@ -98,12 +99,8 @@ export async function fetchPurchaseOrder(id: string): Promise<PurchaseOrder> {
 }
 
 export async function getNextPONumber(): Promise<string> {
-  const fy = "25-26";
-  const { data, error } = await supabase.from("purchase_orders").select("po_number").ilike("po_number", `${fy}/%`).order("po_number", { ascending: false }).limit(1);
-  if (error) throw error;
-  if (!data || data.length === 0) return `${fy}/001`;
-  const lastNum = parseInt(data[0].po_number.split("/").pop() || "0", 10);
-  return `${fy}/${String(lastNum + 1).padStart(3, "0")}`;
+  const companyId = await getCompanyId();
+  return getNextDocNumber("purchase_orders", "po_number", companyId);
 }
 
 interface CreatePOData {

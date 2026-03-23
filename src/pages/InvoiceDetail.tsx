@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Download, Edit, XCircle, IndianRupee, CheckCircle2 } from "lucide-react";
+import { ChevronLeft, Download, Edit, XCircle, IndianRupee, CheckCircle2 } from "lucide-react";
 import { EditableSection } from "@/components/EditableSection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -133,10 +133,16 @@ export default function InvoiceDetail() {
 
   return (
     <div className="p-4 md:p-6 space-y-6">
+      <button
+        onClick={() => navigate("/invoices")}
+        className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 transition-colors mb-3 print:hidden"
+      >
+        <ChevronLeft className="h-4 w-4" />
+        Back to Invoices
+      </button>
       {/* Top bar */}
       <div className="flex items-center justify-between flex-wrap gap-3 print:hidden">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/invoices")}><ArrowLeft className="h-4 w-4" /></Button>
           <div>
             <h1 className="text-xl font-display font-bold text-foreground font-mono">{inv.invoice_number}</h1>
             <span className={statusClass[inv.status] || "status-draft"}>{statusLabels[inv.status] || inv.status}</span>

@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
 import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
+import { getNextDocNumber } from "@/lib/doc-number-utils";
 
 export interface GRNLineItem {
   id?: string;
@@ -78,12 +79,8 @@ export async function fetchGRN(id: string): Promise<GRN> {
 }
 
 export async function getNextGRNNumber(): Promise<string> {
-  const fy = "25-26";
-  const { data, error } = await supabase.from("grns").select("grn_number").ilike("grn_number", `${fy}/%`).order("grn_number", { ascending: false }).limit(1);
-  if (error) throw error;
-  if (!data || data.length === 0) return `${fy}/001`;
-  const lastNum = parseInt((data[0] as any).grn_number.split("/").pop() || "0", 10);
-  return `${fy}/${String(lastNum + 1).padStart(3, "0")}`;
+  const companyId = await getCompanyId();
+  return getNextDocNumber("grns", "grn_number", companyId);
 }
 
 export async function fetchOpenPOs() {

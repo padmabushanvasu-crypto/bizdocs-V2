@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId } from "@/lib/auth-helpers";
+import { getNextDocNumber } from "@/lib/doc-number-utils";
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -180,12 +181,19 @@ interface CreateSOData {
 
 export async function createSalesOrder({ so, lineItems }: CreateSOData) {
   const companyId = await getCompanyId();
-  const { data: newSO, error } = await (supabase as any)
+  let { data: newSO, error } = await (supabase as any)
     .from("sales_orders")
     .insert({ company_id: companyId, ...so })
     .select()
     .single();
   if (error) throw error;
+
+  // Fallback: if DB trigger didn't set so_number, generate it
+  if (!newSO.so_number) {
+    const soNumber = await getNextDocNumber("sales_orders", "so_number", companyId);
+    await (supabase as any).from("sales_orders").update({ so_number: soNumber }).eq("id", newSO.id);
+    newSO = { ...newSO, so_number: soNumber };
+  }
 
   if (lineItems.length > 0) {
     const items = lineItems.map((item) => ({
@@ -348,12 +356,19 @@ interface CreateDNData {
 
 export async function createDispatchNote({ dn, lineItems, packingList }: CreateDNData) {
   const companyId = await getCompanyId();
-  const { data: newDN, error } = await (supabase as any)
+  let { data: newDN, error } = await (supabase as any)
     .from("dispatch_notes")
     .insert({ company_id: companyId, ...dn })
     .select()
     .single();
   if (error) throw error;
+
+  // Fallback: if DB trigger didn't set dn_number, generate it
+  if (!newDN.dn_number) {
+    const dnNumber = await getNextDocNumber("dispatch_notes", "dn_number", companyId);
+    await (supabase as any).from("dispatch_notes").update({ dn_number: dnNumber }).eq("id", newDN.id);
+    newDN = { ...newDN, dn_number: dnNumber };
+  }
 
   if (lineItems.length > 0) {
     const items = lineItems.map((item) => ({

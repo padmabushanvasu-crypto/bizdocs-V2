@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
+import { getNextDocNumber } from "@/lib/doc-number-utils";
 
 // ============================================================
 // Constants
@@ -207,7 +208,14 @@ export async function createFatCertificate(data: {
     .single();
 
   if (error) throw error;
-  const created = cert as FatCertificate;
+  let created = cert as FatCertificate;
+
+  // Fallback: if DB trigger didn't set fat_number, generate it
+  if (!created.fat_number) {
+    const fatNumber = await getNextDocNumber("fat_certificates", "fat_number", companyId);
+    await (supabase as any).from("fat_certificates").update({ fat_number: fatNumber }).eq("id", created.id);
+    created = { ...created, fat_number: fatNumber };
+  }
 
   // Insert default test results
   const testsToInsert = OLTC_DEFAULT_TESTS.map((t) => ({

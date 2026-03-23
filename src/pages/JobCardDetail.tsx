@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft,
+  ChevronLeft,
   Factory,
   Truck,
   Plus,
@@ -506,16 +506,16 @@ export default function JobCardDetail() {
         </div>
       )}
 
-      {/* back + header */}
+      <button
+        onClick={() => navigate("/job-cards")}
+        className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 transition-colors mb-3"
+      >
+        <ChevronLeft className="h-4 w-4" />
+        Back to Work Orders
+      </button>
+
+      {/* header */}
       <div className="flex items-start gap-3">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="mt-0.5 shrink-0"
-          onClick={() => navigate("/job-cards")}
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold text-slate-900 font-mono">{jc.jc_number}</h1>

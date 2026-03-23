@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
 import { logAudit } from "@/lib/audit-api";
+import { getNextDocNumber } from "@/lib/doc-number-utils";
 
 // ============================================================
 // Interfaces
@@ -217,7 +218,14 @@ export async function createAssemblyOrder(
     .single();
   if (error) throw error;
 
-  const created = ao as AssemblyOrder;
+  let created = ao as AssemblyOrder;
+
+  // Fallback: if DB trigger didn't set ao_number, generate it
+  if (!created.ao_number) {
+    const aoNumber = await getNextDocNumber("assembly_orders", "ao_number", companyId);
+    await (supabase as any).from("assembly_orders").update({ ao_number: aoNumber }).eq("id", created.id);
+    created = { ...created, ao_number: aoNumber };
+  }
 
   // Auto-load BOM lines if item is specified
   if (data.item_id) {
