@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
+import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
 
 export interface InvoiceLineItem {
   id?: string;
@@ -112,6 +113,47 @@ export async function updateInvoice(id: string, invoice: Record<string, any>, li
 export async function issueInvoice(id: string) {
   const { error } = await supabase.from("invoices").update({ status: "sent", issued_at: new Date().toISOString() }).eq("id", id);
   if (error) throw error;
+
+  // Stock dispatch: deduct each line item from inventory
+  const companyId = await getCompanyId();
+  const today = new Date().toISOString().split("T")[0];
+  const { invoice, lineItems } = await fetchInvoice(id);
+
+  for (const li of lineItems) {
+    const line = li as any;
+    const qty: number = line.quantity ?? 0;
+    // Only process lines with a drawing_number (the reliable item lookup key)
+    if (qty <= 0 || !line.drawing_number) continue;
+
+    const { data: itemRecord } = await supabase
+      .from("items")
+      .select("id, item_code, description, current_stock")
+      .eq("drawing_revision", line.drawing_number)
+      .eq("company_id", companyId)
+      .maybeSingle();
+
+    if (!itemRecord) continue;
+    const rec = itemRecord as any;
+    const newStock = Math.max(0, (rec.current_stock ?? 0) - qty);
+    await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
+    await addStockLedgerEntry({
+      item_id: rec.id,
+      item_code: rec.item_code,
+      item_description: rec.description,
+      transaction_date: today,
+      transaction_type: "invoice_dispatch",
+      qty_in: 0,
+      qty_out: qty,
+      balance_qty: newStock,
+      unit_cost: line.unit_price ?? 0,
+      total_value: qty * (line.unit_price ?? 0),
+      reference_type: "invoice",
+      reference_id: id,
+      reference_number: (invoice as any).invoice_number,
+      notes: `Invoice dispatch: ${(invoice as any).invoice_number}`,
+      created_by: null,
+    });
+  }
 }
 
 export async function cancelInvoice(id: string, reason: string) {

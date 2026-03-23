@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
+import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
 
 export interface DCLineItem {
   id?: string;
@@ -219,6 +220,47 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
 export async function issueDeliveryChallan(id: string) {
   const { error } = await supabase.from("delivery_challans").update({ status: "issued", issued_at: new Date().toISOString() } as any).eq("id", id);
   if (error) throw error;
+
+  // Stock deduction: items sent out on this DC
+  const companyId = await getCompanyId();
+  const today = new Date().toISOString().split("T")[0];
+  const dc = await fetchDeliveryChallan(id);
+  const lineItems = dc.line_items ?? [];
+
+  for (const line of lineItems) {
+    const qty: number = line.qty_nos ?? line.quantity ?? 0;
+    // Only process lines with a known item_code
+    if (qty <= 0 || !line.item_code) continue;
+
+    const { data: itemRecord } = await supabase
+      .from("items")
+      .select("id, item_code, description, current_stock")
+      .eq("item_code", line.item_code)
+      .eq("company_id", companyId)
+      .maybeSingle();
+
+    if (!itemRecord) continue;
+    const rec = itemRecord as any;
+    const newStock = Math.max(0, (rec.current_stock ?? 0) - qty);
+    await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
+    await addStockLedgerEntry({
+      item_id: rec.id,
+      item_code: rec.item_code,
+      item_description: rec.description,
+      transaction_date: today,
+      transaction_type: "dc_issue",
+      qty_in: 0,
+      qty_out: qty,
+      balance_qty: newStock,
+      unit_cost: 0,
+      total_value: 0,
+      reference_type: "delivery_challan",
+      reference_id: id,
+      reference_number: dc.dc_number,
+      notes: `DC issued: ${dc.dc_number}`,
+      created_by: null,
+    });
+  }
 }
 
 export async function cancelDeliveryChallan(id: string, reason: string) {
@@ -253,9 +295,17 @@ export async function recordDCReturn(dcId: string, returnDate: string, receivedB
     if (itemsErr) throw itemsErr;
   }
 
+  // Fetch DC number once for ledger reference
+  const { data: dcHeader } = await supabase.from("delivery_challans").select("dc_number").eq("id", dcId).single();
+  const dcNumber = (dcHeader as any)?.dc_number ?? "";
+
   for (const item of items) {
     if (item.returned_nos > 0 || item.returned_kg > 0 || item.returned_sft > 0) {
-      const { data: lineItem } = await supabase.from("dc_line_items").select("returned_qty_nos, returned_qty_kg, returned_qty_sft").eq("id", item.dc_line_item_id).single();
+      const { data: lineItem } = await supabase
+        .from("dc_line_items")
+        .select("returned_qty_nos, returned_qty_kg, returned_qty_sft, item_code, description")
+        .eq("id", item.dc_line_item_id)
+        .single();
       if (lineItem) {
         const li = lineItem as any;
         await supabase.from("dc_line_items").update({
@@ -263,6 +313,39 @@ export async function recordDCReturn(dcId: string, returnDate: string, receivedB
           returned_qty_kg: (li.returned_qty_kg || 0) + item.returned_kg,
           returned_qty_sft: (li.returned_qty_sft || 0) + item.returned_sft,
         } as any).eq("id", item.dc_line_item_id);
+
+        // Stock return: add returned NOS qty back to item stock
+        if (item.returned_nos > 0 && li.item_code) {
+          const { data: itemRecord } = await supabase
+            .from("items")
+            .select("id, item_code, description, current_stock")
+            .eq("item_code", li.item_code)
+            .eq("company_id", companyId)
+            .maybeSingle();
+
+          if (itemRecord) {
+            const rec = itemRecord as any;
+            const newStock = (rec.current_stock ?? 0) + item.returned_nos;
+            await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
+            await addStockLedgerEntry({
+              item_id: rec.id,
+              item_code: rec.item_code,
+              item_description: rec.description,
+              transaction_date: returnDate,
+              transaction_type: "dc_return",
+              qty_in: item.returned_nos,
+              qty_out: 0,
+              balance_qty: newStock,
+              unit_cost: 0,
+              total_value: 0,
+              reference_type: "delivery_challan",
+              reference_id: dcId,
+              reference_number: dcNumber,
+              notes: `DC return: ${dcNumber}`,
+              created_by: null,
+            });
+          }
+        }
       }
     }
   }

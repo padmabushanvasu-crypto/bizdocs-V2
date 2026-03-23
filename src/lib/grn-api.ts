@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
+import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
 
 export interface GRNLineItem {
   id?: string;
@@ -136,7 +137,11 @@ export async function createGRN({ grn, lineItems }: CreateGRNData) {
 
 export async function recordGRNAndUpdatePO(grnData: CreateGRNData) {
   const grn = await createGRN(grnData);
+  const companyId = await getCompanyId();
+  const today = new Date().toISOString().split("T")[0];
+
   for (const item of grnData.lineItems) {
+    // Update PO line item received quantities
     if (item.po_line_item_id && item.accepted_quantity > 0) {
       const { data: poItem } = await supabase.from("po_line_items").select("received_quantity, quantity").eq("id", item.po_line_item_id).single();
       if (poItem) {
@@ -146,7 +151,41 @@ export async function recordGRNAndUpdatePO(grnData: CreateGRNData) {
         await supabase.from("po_line_items").update({ received_quantity: newReceived, pending_quantity: newPending } as any).eq("id", item.po_line_item_id);
       }
     }
+
+    // Stock update: look up item by drawing_revision (drawing_number on GRN line)
+    if (item.accepted_quantity > 0 && item.drawing_number) {
+      const { data: itemRecord } = await supabase
+        .from("items")
+        .select("id, item_code, description, current_stock")
+        .eq("drawing_revision", item.drawing_number)
+        .eq("company_id", companyId)
+        .maybeSingle();
+
+      if (itemRecord) {
+        const rec = itemRecord as any;
+        const newStock = (rec.current_stock ?? 0) + item.accepted_quantity;
+        await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
+        await addStockLedgerEntry({
+          item_id: rec.id,
+          item_code: rec.item_code,
+          item_description: rec.description,
+          transaction_date: today,
+          transaction_type: "grn_receipt",
+          qty_in: item.accepted_quantity,
+          qty_out: 0,
+          balance_qty: newStock,
+          unit_cost: 0,
+          total_value: 0,
+          reference_type: "grn",
+          reference_id: grn.id,
+          reference_number: grn.grn_number,
+          notes: `GRN receipt: ${grn.grn_number}`,
+          created_by: null,
+        });
+      }
+    }
   }
+
   if (grnData.grn.po_id) await recalculatePOStatus(grnData.grn.po_id);
   return grn;
 }
