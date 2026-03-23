@@ -4,7 +4,7 @@ import {
   GitFork, Plus, Trash2, Search, ChevronDown, ChevronRight,
   Pencil, RefreshCw, Download, Printer, CheckCircle2, Star,
   AlertTriangle, BarChart3, Users, X, Square, CheckSquare,
-  ListOrdered, ArrowUp, ArrowDown,
+  ListOrdered, ArrowUp, ArrowDown, ZoomIn, ZoomOut,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -149,6 +149,120 @@ function flattenTree(nodes: BomNode[]): BomNode[] {
   return rows;
 }
 
+// ── Visual Tree ────────────────────────────────────────────────────────────────
+
+const NODE_STYLE: Record<string, { border: string; bg: string; lineColor: string }> = {
+  finished_good:  { border: "border-blue-400",   bg: "bg-blue-50",   lineColor: "#60a5fa" },
+  sub_assembly:   { border: "border-violet-400",  bg: "bg-violet-50", lineColor: "#a78bfa" },
+  component:      { border: "border-green-400",   bg: "bg-green-50",  lineColor: "#4ade80" },
+  bought_out:     { border: "border-amber-400",   bg: "bg-amber-50",  lineColor: "#fbbf24" },
+  raw_material:   { border: "border-orange-400",  bg: "bg-orange-50", lineColor: "#fb923c" },
+  consumable:     { border: "border-teal-400",    bg: "bg-teal-50",   lineColor: "#2dd4bf" },
+  service:        { border: "border-pink-400",    bg: "bg-pink-50",   lineColor: "#f472b6" },
+};
+const DEFAULT_NODE_STYLE = { border: "border-slate-300", bg: "bg-slate-50", lineColor: "#94a3b8" };
+
+function VisualTreeNode({
+  node,
+  collapsed,
+  onToggle,
+  stepsByLine,
+}: {
+  node: BomNode;
+  collapsed: Set<string>;
+  onToggle: (id: string) => void;
+  stepsByLine: Map<string, BomProcessStep[]>;
+}) {
+  const isCollapsed = collapsed.has(node.id);
+  const style = NODE_STYLE[node.item_type] ?? DEFAULT_NODE_STYLE;
+  const steps = (stepsByLine.get(node.bom_line_id) ?? [])
+    .sort((a, b) => a.step_order - b.step_order);
+  const visibleChildren = isCollapsed ? [] : node.children;
+
+  return (
+    <div className="flex flex-col items-center">
+      {/* Node card */}
+      <div
+        className={`rounded-lg border-2 p-3 w-44 shrink-0 shadow-sm transition-shadow hover:shadow-md ${style.border} ${style.bg} ${node.has_children ? "cursor-pointer" : ""}`}
+        onClick={() => node.has_children && onToggle(node.id)}
+      >
+        <TypeBadge type={node.item_type} />
+        {node.drawing_number && (
+          <p className="font-mono text-[10px] font-bold text-blue-700 mt-0.5 truncate">
+            {node.drawing_number}
+          </p>
+        )}
+        <p
+          className="font-semibold text-sm text-slate-800 mt-0.5 leading-tight overflow-hidden"
+          style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const }}
+        >
+          {node.item_description}
+        </p>
+        <p className="font-mono text-[10px] text-slate-400 mt-0.5 truncate">{node.item_code}</p>
+        <div className="flex items-center gap-1.5 mt-1.5">
+          <span
+            className={`h-2 w-2 rounded-full shrink-0 ${node.is_sufficient ? "bg-green-500" : "bg-red-500"}`}
+          />
+          <span className="text-xs font-mono text-slate-700">
+            ×{" "}
+            {node.effective_qty % 1 === 0
+              ? node.effective_qty.toFixed(0)
+              : node.effective_qty.toFixed(2)}{" "}
+            {node.unit}
+          </span>
+        </div>
+        {steps.length > 0 && (
+          <p className="text-[10px] text-slate-400 mt-1 truncate leading-tight">
+            {steps.map((s) => s.process_name).join(" → ")}
+          </p>
+        )}
+        {node.has_children && (
+          <div className="flex justify-center mt-1.5">
+            {isCollapsed
+              ? <ChevronRight className="h-3 w-3 text-slate-400" />
+              : <ChevronDown className="h-3 w-3 text-slate-400" />}
+          </div>
+        )}
+      </div>
+
+      {/* Children connectors + subtree */}
+      {visibleChildren.length > 0 && (
+        <>
+          {/* Vertical stem down from card */}
+          <div style={{ width: 2, height: 28, background: style.lineColor, flexShrink: 0 }} />
+
+          {visibleChildren.length === 1 ? (
+            <VisualTreeNode
+              node={visibleChildren[0]}
+              collapsed={collapsed}
+              onToggle={onToggle}
+              stepsByLine={stepsByLine}
+            />
+          ) : (
+            /* Multi-child: horizontal rail spanning all child stubs */
+            <div className="flex flex-col">
+              <div style={{ height: 2, background: style.lineColor }} />
+              <div className="flex gap-6">
+                {visibleChildren.map((child) => (
+                  <div key={child.id} className="flex flex-col items-center">
+                    <div style={{ width: 2, height: 28, background: style.lineColor, flexShrink: 0 }} />
+                    <VisualTreeNode
+                      node={child}
+                      collapsed={collapsed}
+                      onToggle={onToggle}
+                      stepsByLine={stepsByLine}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 const emptyLineForm = {
@@ -198,6 +312,11 @@ export default function BillOfMaterials() {
   // ── Tab 5: Variants ─────────────────────────────────────────────────────────
   const [compareV1, setCompareV1] = useState("");
   const [compareV2, setCompareV2] = useState("");
+
+  // ── Tab 6: Visual Tree ───────────────────────────────────────────────────────
+  const [treeQty, setTreeQty] = useState(1);
+  const [treeZoom, setTreeZoom] = useState(1);
+  const [treeCollapsedNodes, setTreeCollapsedNodes] = useState<Set<string>>(new Set());
 
   // ── Dialogs ─────────────────────────────────────────────────────────────────
   const [addOpen, setAddOpen] = useState(false);
@@ -254,6 +373,7 @@ export default function BillOfMaterials() {
     setCompareV1("");
     setCompareV2("");
     setSelectedBomLines(new Set());
+    setTreeCollapsedNodes(new Set());
   };
 
   // ── Queries ─────────────────────────────────────────────────────────────────
@@ -318,6 +438,42 @@ export default function BillOfMaterials() {
     enabled: !!selectedItem && !!compareV1 && !!compareV2 && compareV1 !== compareV2 && activeTab === "variants",
     staleTime: 30000,
   });
+
+  const { data: treeData, isLoading: treeLoading } = useQuery({
+    queryKey: ["bom-visual-tree", selectedItem?.id, treeQty, selectedVariantId],
+    queryFn: () => explodeBom(selectedItem!.id, treeQty, variantFilter),
+    enabled: !!selectedItem && activeTab === "visual-tree",
+    staleTime: 30000,
+  });
+
+  const treeLineIds = useMemo(() => {
+    function collect(nodes: BomNode[]): string[] {
+      const ids: string[] = [];
+      for (const n of nodes) {
+        ids.push(n.bom_line_id);
+        if (n.children.length > 0) ids.push(...collect(n.children));
+      }
+      return ids;
+    }
+    if (!treeData) return [];
+    return collect(treeData.children);
+  }, [treeData]);
+
+  const { data: treeStepsRaw = [] } = useQuery<BomProcessStep[]>({
+    queryKey: ["bom-tree-steps", treeLineIds],
+    queryFn: () => fetchBomProcessStepsBatch(treeLineIds),
+    enabled: treeLineIds.length > 0,
+  });
+
+  const treeStepsByLine = useMemo(() => {
+    const map = new Map<string, BomProcessStep[]>();
+    for (const s of treeStepsRaw) {
+      const arr = map.get(s.bom_line_id) ?? [];
+      arr.push(s);
+      map.set(s.bom_line_id, arr);
+    }
+    return map;
+  }, [treeStepsRaw]);
 
   const childCandidates = allItems.filter((i) => i.id !== selectedItem?.id);
   const whereUsedItems = allItems; // for where-used search
@@ -686,6 +842,15 @@ export default function BillOfMaterials() {
     });
   };
 
+  const toggleTreeNode = (id: string) => {
+    setTreeCollapsedNodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const collapseAll = () => {
     if (explosionData) {
       setCollapsedNodes(new Set(explosionData.children.map((n) => n.id)));
@@ -765,65 +930,131 @@ export default function BillOfMaterials() {
 
       {/* Print view (hidden unless printing) */}
       <div className="bom-print-only">
-        <div style={{ fontFamily: "serif", padding: 24 }}>
-          <h1 style={{ fontSize: 18, fontWeight: "bold", marginBottom: 4 }}>
-            BILL OF MATERIALS
-          </h1>
-          <p style={{ marginBottom: 2 }}>
-            <strong>Item:</strong> {selectedItem?.item_code} — {selectedItem?.description}
-          </p>
-          {selectedVariantId && bomVariants.find((v) => v.id === selectedVariantId) && (
+        {activeTab === "visual-tree" && treeData && treeData.children.length > 0 ? (
+          /* Visual Tree print view */
+          <div style={{ fontFamily: "sans-serif", padding: 24 }}>
+            <h1 style={{ fontSize: 18, fontWeight: "bold", marginBottom: 4 }}>
+              BILL OF MATERIALS — VISUAL TREE
+            </h1>
             <p style={{ marginBottom: 2 }}>
-              <strong>Variant:</strong>{" "}
-              {bomVariants.find((v) => v.id === selectedVariantId)?.variant_name}
+              <strong>Item:</strong> {selectedItem?.item_code} — {selectedItem?.description}
             </p>
-          )}
-          <p style={{ marginBottom: 2 }}>
-            <strong>Quantity:</strong> {explosionQty} unit(s)
-          </p>
-          <p style={{ marginBottom: 12 }}>
-            <strong>Date:</strong> {format(new Date(), "dd-MMM-yyyy")}
-          </p>
-          <table className="bom-print-table">
-            <thead>
-              <tr>
-                <th>Lvl</th>
-                <th>Item Code</th>
-                <th>Description</th>
-                <th>Type</th>
-                <th>Qty</th>
-                <th>Unit</th>
-                <th>Unit Cost</th>
-                <th>Total Cost</th>
-                <th>Stock</th>
-              </tr>
-            </thead>
-            <tbody>
-              {printRows.map((row) => (
-                <tr key={row.id}>
-                  <td>{row.level}</td>
-                  <td style={{ fontFamily: "monospace" }}>{row.item_code}</td>
-                  <td style={{ paddingLeft: (row.level - 1) * 12 }}>{row.item_description}</td>
-                  <td>{row.item_type?.replace(/_/g, " ")}</td>
-                  <td style={{ textAlign: "right" }}>{row.effective_qty.toFixed(3)}</td>
-                  <td>{row.unit}</td>
-                  <td style={{ textAlign: "right" }}>{formatCurrency(row.unit_cost)}</td>
-                  <td style={{ textAlign: "right" }}>{formatCurrency(row.total_cost)}</td>
-                  <td style={{ textAlign: "right" }}>{row.current_stock}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {explosionData && (
-            <div style={{ marginTop: 16, borderTop: "2px solid #333", paddingTop: 8 }}>
-              <strong>Total BOM Cost: {formatCurrency(explosionData.total_cost)}</strong>
-              {" · "}Cost per unit: {formatCurrency(explosionData.total_cost / (explosionQty || 1))}
+            <p style={{ marginBottom: 2 }}>
+              <strong>Build Quantity:</strong> {treeQty} unit(s)
+            </p>
+            <p style={{ marginBottom: 12 }}>
+              <strong>Printed on:</strong> {format(new Date(), "dd-MMM-yyyy")}
+            </p>
+            <div style={{ transform: "scale(0.65)", transformOrigin: "top left", marginTop: 8 }}>
+              <div className="flex flex-col items-center">
+                {/* Root node */}
+                <div className="rounded-lg border-2 border-blue-500 bg-blue-50 p-3 w-44 shrink-0">
+                  <TypeBadge type={selectedItem!.item_type} />
+                  {selectedItem?.drawing_revision && (
+                    <p className="font-mono text-[10px] font-bold text-blue-700 mt-0.5">
+                      {selectedItem.drawing_revision}
+                    </p>
+                  )}
+                  <p className="font-semibold text-sm text-slate-900 mt-0.5 leading-tight">
+                    {selectedItem?.description}
+                  </p>
+                  <p className="font-mono text-[10px] text-slate-400 mt-0.5">{selectedItem?.item_code}</p>
+                  <p className="text-[10px] text-blue-600 font-mono mt-1">× {treeQty}</p>
+                </div>
+                <div style={{ width: 2, height: 28, background: "#60a5fa" }} />
+                {treeData.children.length === 1 ? (
+                  <VisualTreeNode
+                    node={treeData.children[0]}
+                    collapsed={new Set()}
+                    onToggle={() => {}}
+                    stepsByLine={treeStepsByLine}
+                  />
+                ) : (
+                  <div className="flex flex-col">
+                    <div style={{ height: 2, background: "#60a5fa" }} />
+                    <div className="flex gap-6">
+                      {treeData.children.map((child) => (
+                        <div key={child.id} className="flex flex-col items-center">
+                          <div style={{ width: 2, height: 28, background: "#60a5fa" }} />
+                          <VisualTreeNode
+                            node={child}
+                            collapsed={new Set()}
+                            onToggle={() => {}}
+                            stepsByLine={treeStepsByLine}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-          )}
-          <p style={{ marginTop: 24, fontSize: 10, color: "#666" }}>
-            This is a computer generated document.
-          </p>
-        </div>
+            <p style={{ marginTop: 32, fontSize: 10, color: "#666" }}>
+              This is a computer generated document.
+            </p>
+          </div>
+        ) : (
+          /* Standard explosion table print view */
+          <div style={{ fontFamily: "serif", padding: 24 }}>
+            <h1 style={{ fontSize: 18, fontWeight: "bold", marginBottom: 4 }}>
+              BILL OF MATERIALS
+            </h1>
+            <p style={{ marginBottom: 2 }}>
+              <strong>Item:</strong> {selectedItem?.item_code} — {selectedItem?.description}
+            </p>
+            {selectedVariantId && bomVariants.find((v) => v.id === selectedVariantId) && (
+              <p style={{ marginBottom: 2 }}>
+                <strong>Variant:</strong>{" "}
+                {bomVariants.find((v) => v.id === selectedVariantId)?.variant_name}
+              </p>
+            )}
+            <p style={{ marginBottom: 2 }}>
+              <strong>Quantity:</strong> {explosionQty} unit(s)
+            </p>
+            <p style={{ marginBottom: 12 }}>
+              <strong>Date:</strong> {format(new Date(), "dd-MMM-yyyy")}
+            </p>
+            <table className="bom-print-table">
+              <thead>
+                <tr>
+                  <th>Lvl</th>
+                  <th>Item Code</th>
+                  <th>Description</th>
+                  <th>Type</th>
+                  <th>Qty</th>
+                  <th>Unit</th>
+                  <th>Unit Cost</th>
+                  <th>Total Cost</th>
+                  <th>Stock</th>
+                </tr>
+              </thead>
+              <tbody>
+                {printRows.map((row) => (
+                  <tr key={row.id}>
+                    <td>{row.level}</td>
+                    <td style={{ fontFamily: "monospace" }}>{row.item_code}</td>
+                    <td style={{ paddingLeft: (row.level - 1) * 12 }}>{row.item_description}</td>
+                    <td>{row.item_type?.replace(/_/g, " ")}</td>
+                    <td style={{ textAlign: "right" }}>{row.effective_qty.toFixed(3)}</td>
+                    <td>{row.unit}</td>
+                    <td style={{ textAlign: "right" }}>{formatCurrency(row.unit_cost)}</td>
+                    <td style={{ textAlign: "right" }}>{formatCurrency(row.total_cost)}</td>
+                    <td style={{ textAlign: "right" }}>{row.current_stock}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {explosionData && (
+              <div style={{ marginTop: 16, borderTop: "2px solid #333", paddingTop: 8 }}>
+                <strong>Total BOM Cost: {formatCurrency(explosionData.total_cost)}</strong>
+                {" · "}Cost per unit: {formatCurrency(explosionData.total_cost / (explosionQty || 1))}
+              </div>
+            )}
+            <p style={{ marginTop: 24, fontSize: 10, color: "#666" }}>
+              This is a computer generated document.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* ── Main UI (hidden when printing) ─────────────────────────────────── */}
@@ -920,6 +1151,7 @@ export default function BillOfMaterials() {
                         { value: "cost", label: "Cost Rollup" },
                         { value: "where-used", label: "Where Used" },
                         { value: "variants", label: bomVariants.length > 0 ? `Variants (${bomVariants.length})` : "Variants" },
+                        { value: "visual-tree", label: "Visual Tree" },
                       ]}
                       value={activeTab}
                       onChange={setActiveTab}
@@ -2002,6 +2234,145 @@ export default function BillOfMaterials() {
                             )}
                           </div>
                         )}
+                      </div>
+                    )}
+                  </TabsContent>
+
+                  {/* ── TAB 6: VISUAL TREE ───────────────────────────────── */}
+                  <TabsContent value="visual-tree" className="flex flex-col flex-1 mt-0">
+                    {/* Toolbar */}
+                    <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between gap-3 flex-wrap">
+                      <div className="flex items-center gap-3">
+                        <Label className="text-xs whitespace-nowrap">Build for</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          className="h-8 w-20 text-sm"
+                          value={treeQty}
+                          onChange={(e) => setTreeQty(Math.max(1, parseInt(e.target.value) || 1))}
+                        />
+                        <Label className="text-xs">units</Label>
+                        <VariantSelector />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => setTreeZoom((z) => Math.max(0.25, +(z - 0.1).toFixed(2)))}
+                          title="Zoom out"
+                        >
+                          <ZoomOut className="h-3.5 w-3.5" />
+                        </Button>
+                        <span className="text-xs text-muted-foreground w-10 text-center tabular-nums">
+                          {Math.round(treeZoom * 100)}%
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => setTreeZoom((z) => Math.min(2, +(z + 0.1).toFixed(2)))}
+                          title="Zoom in"
+                        >
+                          <ZoomIn className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs gap-1.5"
+                          onClick={() => setTreeZoom(1)}
+                        >
+                          Reset
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs gap-1.5"
+                          onClick={() => window.print()}
+                          disabled={!treeData || treeData.children.length === 0}
+                        >
+                          <Printer className="h-3 w-3" /> Print BOM Tree
+                        </Button>
+                      </div>
+                    </div>
+
+                    {treeLoading ? (
+                      <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
+                        <RefreshCw className="h-6 w-6 animate-spin opacity-40" />
+                        <p className="text-sm">Building tree…</p>
+                      </div>
+                    ) : !treeData || treeData.children.length === 0 ? (
+                      <div className="py-12 text-center">
+                        <GitFork className="h-8 w-8 text-slate-200 mx-auto mb-3" />
+                        <p className="text-sm text-slate-500 font-medium">No BOM defined for this item</p>
+                        <p className="text-xs text-slate-400 mt-1">Add components in the Structure tab first</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-auto flex-1 p-8 bg-slate-50/50">
+                        <div
+                          style={{
+                            transform: `scale(${treeZoom})`,
+                            transformOrigin: "top center",
+                            transition: "transform 0.15s ease",
+                            display: "inline-flex",
+                            minWidth: "100%",
+                            justifyContent: "center",
+                          }}
+                        >
+                          {/* Root node (the finished good) */}
+                          <div className="flex flex-col items-center">
+                            <div className="rounded-lg border-2 border-blue-500 bg-blue-50 p-3 w-44 shrink-0 shadow-sm">
+                              <TypeBadge type={selectedItem.item_type} />
+                              {selectedItem.drawing_revision && (
+                                <p className="font-mono text-[10px] font-bold text-blue-700 mt-0.5 truncate">
+                                  {selectedItem.drawing_revision}
+                                </p>
+                              )}
+                              <p
+                                className="font-semibold text-sm text-slate-900 mt-0.5 leading-tight overflow-hidden"
+                                style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const }}
+                              >
+                                {selectedItem.description}
+                              </p>
+                              <p className="font-mono text-[10px] text-slate-400 mt-0.5 truncate">
+                                {selectedItem.item_code}
+                              </p>
+                              <p className="text-[10px] text-blue-600 font-mono mt-1">
+                                × {treeQty} {selectedItem.unit ?? ""}
+                              </p>
+                            </div>
+
+                            {/* Stem to children */}
+                            <div style={{ width: 2, height: 28, background: "#60a5fa", flexShrink: 0 }} />
+
+                            {/* Top-level children */}
+                            {treeData.children.length === 1 ? (
+                              <VisualTreeNode
+                                node={treeData.children[0]}
+                                collapsed={treeCollapsedNodes}
+                                onToggle={toggleTreeNode}
+                                stepsByLine={treeStepsByLine}
+                              />
+                            ) : (
+                              <div className="flex flex-col">
+                                <div style={{ height: 2, background: "#60a5fa" }} />
+                                <div className="flex gap-6">
+                                  {treeData.children.map((child) => (
+                                    <div key={child.id} className="flex flex-col items-center">
+                                      <div style={{ width: 2, height: 28, background: "#60a5fa", flexShrink: 0 }} />
+                                      <VisualTreeNode
+                                        node={child}
+                                        collapsed={treeCollapsedNodes}
+                                        onToggle={toggleTreeNode}
+                                        stepsByLine={treeStepsByLine}
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     )}
                   </TabsContent>
