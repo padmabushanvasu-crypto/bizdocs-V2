@@ -149,7 +149,11 @@ export default function InvoiceDetail() {
           </div>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <DocumentActions documentNumber={inv.invoice_number} documentType="Tax Invoice" />
+          <DocumentActions
+            documentNumber={inv.invoice_number}
+            documentType="Tax Invoice"
+            documentData={{ ...inv, line_items: items } as Record<string, unknown>}
+          />
           {!isFullyPaid && !isCancelled && (
             <Button onClick={openPayment}><IndianRupee className="h-4 w-4 mr-1" /> Record Payment</Button>
           )}

@@ -81,7 +81,7 @@ export default function DispatchNoteDetail() {
           >
             <Printer className="h-3.5 w-3.5 mr-1" /> Print Duplicate
           </Button>
-          <DocumentActions documentNumber={dn.dn_number} documentType="Dispatch Note" />
+          <DocumentActions documentNumber={dn.dn_number} documentType="Dispatch Note" documentData={dn as Record<string, unknown>} />
           {dn.status === "draft" && (
             <Button variant="outline" size="sm" onClick={() => navigate(`/dispatch-notes/${id}/edit`)}>
               <Edit className="h-3.5 w-3.5 mr-1" /> Edit

@@ -190,16 +190,7 @@ export default function FatCertificateDetail() {
             documentType="FAT Certificate"
             partyName={fat.customer_name}
             date={fat.fat_date}
-            customMessage={[
-              `FAT Certificate: ${fat.fat_number}`,
-              fat.item_description ? `Item: ${fat.item_description}` : null,
-              fat.item_code ? `Item Code: ${fat.item_code}` : null,
-              fat.serial_number ? `Serial No: ${fat.serial_number}` : null,
-              fat.customer_name ? `Customer: ${fat.customer_name}` : null,
-              fat.customer_po_ref ? `Customer PO: ${fat.customer_po_ref}` : null,
-              isCompleted ? `Overall Result: ${fat.overall_result?.toUpperCase() ?? fat.status.toUpperCase()}` : `Status: Pending`,
-              fat.tested_by ? `Tested By: ${fat.tested_by}` : null,
-            ].filter(Boolean).join("\n")}
+            documentData={fat as Record<string, unknown>}
           />
         </div>
       </div>

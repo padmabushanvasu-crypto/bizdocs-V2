@@ -107,6 +107,7 @@ export default function SalesOrderDetail() {
             partyName={so.customer_name}
             date={so.so_date}
             amount={so.grand_total}
+            documentData={so as Record<string, unknown>}
           />
           {so.status === "draft" && (
             <>

@@ -122,7 +122,7 @@ export default function PurchaseOrderDetail() {
           <span className={statusClass[po.status] || "status-draft"}>{statusLabels[po.status]}</span>
         </div>
         <div className="flex flex-wrap gap-2">
-          <DocumentActions documentNumber={po.po_number} documentType="Purchase Order" />
+          <DocumentActions documentNumber={po.po_number} documentType="Purchase Order" documentData={po as Record<string, unknown>} />
           {po.status === "draft" && (
             <>
               <Button variant="outline" size="sm" onClick={() => navigate(`/purchase-orders/${id}/edit`)}>

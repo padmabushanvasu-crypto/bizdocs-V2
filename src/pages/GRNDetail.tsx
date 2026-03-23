@@ -48,7 +48,7 @@ export default function GRNDetail() {
           <span className={statusClass[grn.status] || "status-draft"}>{statusLabels[grn.status] || grn.status}</span>
         </div>
         <div className="flex flex-wrap gap-2">
-          <DocumentActions documentNumber={grn.grn_number} documentType="Goods Receipt Note" />
+          <DocumentActions documentNumber={grn.grn_number} documentType="Goods Receipt Note" documentData={grn as Record<string, unknown>} />
           {grn.po_id && (
             <Button variant="outline" size="sm" onClick={() => navigate(`/purchase-orders/${grn.po_id}`)}>
               <ExternalLink className="h-3.5 w-3.5 mr-1" /> View PO {grn.po_number}

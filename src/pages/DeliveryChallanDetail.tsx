@@ -116,7 +116,7 @@ export default function DeliveryChallanDetail() {
           <Button variant="outline" size="sm" onClick={() => { setIsDuplicate(true); setTimeout(() => { window.print(); setIsDuplicate(false); }, 100); }}>
             <Printer className="h-3.5 w-3.5 mr-1" /> Print Duplicate
           </Button>
-          <DocumentActions documentNumber={dc.dc_number} documentType="Delivery Challan" />
+          <DocumentActions documentNumber={dc.dc_number} documentType="Delivery Challan" documentData={dc as Record<string, unknown>} />
           {dc.status === "draft" && (
             <Button variant="outline" size="sm" onClick={() => navigate(`/delivery-challans/${id}/edit`)}>
               <Edit className="h-3.5 w-3.5 mr-1" /> Edit
