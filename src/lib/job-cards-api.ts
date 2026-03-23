@@ -43,6 +43,10 @@ export interface JobCard {
   linked_grn_id: string | null;
   drawing_number: string | null;
   drawing_revision: string | null;
+  planned_start_date: string | null;
+  due_date: string | null;
+  priority: "low" | "normal" | "high" | "urgent";
+  sales_order_ref: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -108,6 +112,7 @@ export interface JobCardFilters {
   item_id?: string;
   page?: number;
   pageSize?: number;
+  overdue?: boolean;
 }
 
 export interface WipEntry {
@@ -192,10 +197,16 @@ export async function fetchJobCards(filters: JobCardFilters = {}) {
   let query = (supabase as any)
     .from("job_card_summary")
     .select("*", { count: "exact" })
+    .order("due_date", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: false })
     .range(from, to);
 
-  if (status !== "all") query = query.eq("status", status);
+  if (status === "overdue") {
+    const today = new Date().toISOString().slice(0, 10);
+    query = query.lt("due_date", today).in("status", ["in_progress", "on_hold"]);
+  } else if (status !== "all") {
+    query = query.eq("status", status);
+  }
   if (location !== "all") query = query.eq("current_location", location);
   if (item_id) query = query.eq("item_id", item_id);
 
@@ -279,6 +290,10 @@ export async function createJobCard(
       linked_grn_id: data.linked_grn_id ?? null,
       drawing_number: drawingNumber,
       drawing_revision: drawingRevision,
+      planned_start_date: data.planned_start_date ?? null,
+      due_date: data.due_date ?? null,
+      priority: data.priority ?? "normal",
+      sales_order_ref: data.sales_order_ref ?? null,
     })
     .select()
     .single();

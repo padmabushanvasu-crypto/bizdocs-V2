@@ -1,13 +1,14 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { Activity, Plus, Search, Eye, ChevronDown, Trash2, Factory, Truck, CheckSquare, Square, XCircle, ClipboardList } from "lucide-react";
+import { Activity, Plus, Search, Eye, ChevronDown, Trash2, Factory, Truck, CheckSquare, Square, XCircle, ClipboardList, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { MetricCard } from "@/components/MetricCard";
@@ -40,6 +41,20 @@ const statusLabels: Record<string, string> = {
   on_hold: "On Hold",
 };
 
+const priorityClass: Record<string, string> = {
+  low: "bg-slate-50 text-slate-600 border border-slate-200 text-xs font-medium px-2 py-0.5 rounded-full",
+  normal: "bg-blue-50 text-blue-700 border border-blue-200 text-xs font-medium px-2 py-0.5 rounded-full",
+  high: "bg-amber-50 text-amber-700 border border-amber-200 text-xs font-medium px-2 py-0.5 rounded-full",
+  urgent: "bg-red-50 text-red-700 border border-red-200 text-xs font-medium px-2 py-0.5 rounded-full",
+};
+
+const priorityLabels: Record<string, string> = {
+  low: "Low",
+  normal: "Normal",
+  high: "High",
+  urgent: "Urgent",
+};
+
 const UNIT_OPTIONS = ["NOS", "KG", "KGS", "MTR", "SFT", "SET", "PAIR", "LOT"];
 
 const emptyForm = {
@@ -47,6 +62,10 @@ const emptyForm = {
   batch_ref: "",
   unit: "NOS",
   quantity_original: 0,
+  planned_start_date: "",
+  due_date: "",
+  priority: "normal",
+  sales_order_ref: "",
   initial_cost: 0,
   notes: "",
 };
@@ -69,6 +88,15 @@ export default function JobCards() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [itemOpen, setItemOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    setIsMobile(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
 
   const { data: stats } = useQuery({
     queryKey: ["jc-stats"],
@@ -110,16 +138,21 @@ export default function JobCards() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
+      const trackingMode = selectedItem?.item_type === "finished_good" ? "single" : "batch";
       const jc = await createJobCard({
         jc_number: nextJCNumber!,
         item_id: selectedItem?.id ?? undefined,
         item_code: selectedItem?.item_code ?? undefined,
         item_description: selectedItem?.description ?? undefined,
-        tracking_mode: form.tracking_mode,
+        tracking_mode: trackingMode,
         batch_ref: form.batch_ref || undefined,
         unit: form.unit,
         quantity_original: form.quantity_original,
         quantity_accepted: form.quantity_original,
+        planned_start_date: form.planned_start_date || undefined,
+        due_date: form.due_date || undefined,
+        priority: form.priority as "low" | "normal" | "high" | "urgent",
+        sales_order_ref: form.sales_order_ref || undefined,
         initial_cost: form.initial_cost,
         notes: form.notes || undefined,
       });
@@ -219,6 +252,165 @@ export default function JobCards() {
     else setSelected(new Set(jcs.map((j) => j.id)));
   };
 
+  const renderFormBody = () => (
+    <>
+      <div className="space-y-1.5">
+        <Label>JC Number</Label>
+        <Input value={nextJCNumber ?? "Generating..."} readOnly className="font-mono bg-muted" />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Item</Label>
+        <Popover open={itemOpen} onOpenChange={setItemOpen}>
+          <PopoverTrigger asChild>
+            <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
+              {selectedItem
+                ? `${selectedItem.item_code} — ${selectedItem.description}`
+                : "Select item (optional)..."}
+              <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-full p-0" align="start">
+            <Command>
+              <CommandInput placeholder="Search items..." />
+              <CommandList>
+                <CommandEmpty>No item found.</CommandEmpty>
+                <CommandGroup>
+                  {items.map((item) => (
+                    <CommandItem
+                      key={item.id}
+                      value={`${item.item_code} ${item.description}`}
+                      onSelect={() => {
+                        setSelectedItem(item);
+                        setForm((f) => ({ ...f, unit: item.unit ?? "NOS" }));
+                        setItemOpen(false);
+                      }}
+                    >
+                      <div>
+                        <p className="font-mono text-xs font-medium">{item.item_code}</p>
+                        <p className="text-sm">{item.description}</p>
+                      </div>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+        {selectedItem && (
+          <p className="text-xs text-muted-foreground">
+            Standard cost: ₹{(selectedItem.standard_cost ?? 0).toLocaleString("en-IN")}
+          </p>
+        )}
+        {selectedItem && bomLines && bomLines.length > 0 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-md p-2.5 text-xs text-blue-700">
+            This component has a standard processing route. Steps will be auto-populated when the Work Order is created.
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label>Quantity *</Label>
+          <Input
+            type="text"
+            inputMode="numeric"
+            value={String(form.quantity_original || "")}
+            onChange={(e) => setForm((f) => ({ ...f, quantity_original: parseFloat(e.target.value) || 0 }))}
+            placeholder="Enter quantity"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Unit</Label>
+          <Select value={form.unit} onValueChange={(v) => setForm((f) => ({ ...f, unit: v }))}>
+            <SelectTrigger className="font-mono"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {UNIT_OPTIONS.map((u) => (
+                <SelectItem key={u} value={u} className="font-mono">{u}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div className="text-xs text-blue-600 bg-blue-50 rounded px-3 py-2">
+        Unit auto-fills from the selected item. Change if needed.
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label>Start Date</Label>
+          <Input
+            type="date"
+            value={form.planned_start_date}
+            onChange={(e) => setForm((f) => ({ ...f, planned_start_date: e.target.value }))}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Due Date</Label>
+          <Input
+            type="date"
+            value={form.due_date}
+            onChange={(e) => setForm((f) => ({ ...f, due_date: e.target.value }))}
+          />
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Priority</Label>
+        <Select value={form.priority} onValueChange={(v) => setForm((f) => ({ ...f, priority: v }))}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="low">Low</SelectItem>
+            <SelectItem value="normal">Normal</SelectItem>
+            <SelectItem value="high">High</SelectItem>
+            <SelectItem value="urgent">Urgent</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Sales Order Ref</Label>
+        <Input
+          value={form.sales_order_ref}
+          onChange={(e) => setForm((f) => ({ ...f, sales_order_ref: e.target.value }))}
+          placeholder="Optional — link to a sales order"
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Batch / Serial Ref</Label>
+        <Input
+          value={form.batch_ref}
+          onChange={(e) => setForm((f) => ({ ...f, batch_ref: e.target.value }))}
+          placeholder="Optional"
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Initial Cost (₹)</Label>
+        <Input
+          type="number"
+          min={0}
+          value={form.initial_cost || ""}
+          onChange={(e) => setForm((f) => ({ ...f, initial_cost: parseFloat(e.target.value) || 0 }))}
+          placeholder="Raw material or incoming cost"
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Notes</Label>
+        <Textarea
+          rows={2}
+          value={form.notes}
+          onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+          placeholder="Optional notes"
+        />
+      </div>
+    </>
+  );
+
   return (
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex items-center justify-between">
@@ -269,6 +461,7 @@ export default function JobCards() {
             <SelectItem value="in_progress">In Progress</SelectItem>
             <SelectItem value="completed">Completed</SelectItem>
             <SelectItem value="on_hold">On Hold</SelectItem>
+            <SelectItem value="overdue">Overdue</SelectItem>
           </SelectContent>
         </Select>
         <Select
@@ -336,6 +529,8 @@ export default function JobCards() {
                 <th className="text-right">Qty (Acc / Orig)</th>
                 <th className="text-right">Total Cost</th>
                 <th className="text-right">Variance</th>
+                <th>Priority</th>
+                <th>Due Date</th>
                 <th>Status</th>
                 <th className="text-right">Days Active</th>
                 <th className="w-20">Actions</th>
@@ -344,13 +539,13 @@ export default function JobCards() {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={12} className="text-center py-8 text-muted-foreground">
+                  <td colSpan={14} className="text-center py-8 text-muted-foreground">
                     Loading...
                   </td>
                 </tr>
               ) : jcs.length === 0 ? (
                 <tr>
-                  <td colSpan={12}>
+                  <td colSpan={14}>
                     <div className="flex flex-col items-center justify-center py-16 text-center">
                       <div className="h-16 w-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
                         <ClipboardList className="h-8 w-8 text-slate-400" />
@@ -424,6 +619,28 @@ export default function JobCards() {
                             {formatCurrency(Math.abs(variance))}
                           </span>
                         ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td>
+                        {jc.priority ? (
+                          <span className={priorityClass[jc.priority] || priorityClass.normal}>
+                            {priorityLabels[jc.priority] || jc.priority}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">—</span>
+                        )}
+                      </td>
+                      <td className="text-sm">
+                        {jc.due_date ? (() => {
+                          const isOverdue = jc.status !== "completed" && jc.due_date < new Date().toISOString().slice(0, 10);
+                          return (
+                            <span className={isOverdue ? "text-red-600 font-medium flex items-center gap-1" : "text-muted-foreground"}>
+                              {isOverdue && <AlertCircle className="h-3 w-3 shrink-0" />}
+                              {new Date(jc.due_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
+                            </span>
+                          );
+                        })() : (
                           <span className="text-muted-foreground">—</span>
                         )}
                       </td>
@@ -502,189 +719,58 @@ export default function JobCards() {
         </div>
       )}
 
-      {/* New Job Card Dialog */}
-      <Dialog
-        open={newOpen}
-        onOpenChange={(v) => {
-          setNewOpen(v);
-          if (!v) {
-            setSelectedItem(null);
-            setForm(emptyForm);
-          }
-        }}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>New Work Order</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label>JC Number</Label>
-              <Input
-                value={nextJCNumber ?? "Generating..."}
-                readOnly
-                className="font-mono bg-muted"
-              />
+      {/* New Work Order — Desktop Dialog / Mobile Sheet */}
+      {isMobile ? (
+        <Sheet
+          open={newOpen}
+          onOpenChange={(v) => {
+            setNewOpen(v);
+            if (!v) { setSelectedItem(null); setForm(emptyForm); }
+          }}
+        >
+          <SheetContent side="bottom" className="h-[90dvh] flex flex-col px-4 pb-0">
+            <SheetHeader className="pb-2 border-b">
+              <SheetTitle>New Work Order</SheetTitle>
+            </SheetHeader>
+            <div className="flex-1 overflow-y-auto py-3 space-y-3">
+              {renderFormBody()}
             </div>
-
-            <div className="space-y-1.5">
-              <Label>Item</Label>
-              <Popover open={itemOpen} onOpenChange={setItemOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    role="combobox"
-                    className="w-full justify-between font-normal"
-                  >
-                    {selectedItem
-                      ? `${selectedItem.item_code} — ${selectedItem.description}`
-                      : "Select item (optional)..."}
-                    <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-full p-0" align="start">
-                  <Command>
-                    <CommandInput placeholder="Search items..." />
-                    <CommandList>
-                      <CommandEmpty>No item found.</CommandEmpty>
-                      <CommandGroup>
-                        {items.map((item) => (
-                          <CommandItem
-                            key={item.id}
-                            value={`${item.item_code} ${item.description}`}
-                            onSelect={() => {
-                              setSelectedItem(item);
-                              setForm((f) => ({ ...f, unit: item.unit ?? "NOS" }));
-                              setItemOpen(false);
-                            }}
-                          >
-                            <div>
-                              <p className="font-mono text-xs font-medium">{item.item_code}</p>
-                              <p className="text-sm">{item.description}</p>
-                            </div>
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-              {selectedItem && (
-                <p className="text-xs text-muted-foreground">
-                  Standard cost: ₹{(selectedItem.standard_cost ?? 0).toLocaleString("en-IN")}
-                </p>
-              )}
-              {selectedItem && bomLines && bomLines.length > 0 && (
-                <div className="bg-blue-50 border border-blue-200 rounded-md p-2.5 text-xs text-blue-700">
-                  This component has a standard processing route. Steps will be auto-populated when the Work Order is created.
-                </div>
-              )}
+            <SheetFooter className="border-t py-3">
+              <Button className="w-full" onClick={handleCreate} disabled={createMutation.isPending}>
+                Create Work Order
+              </Button>
+            </SheetFooter>
+          </SheetContent>
+        </Sheet>
+      ) : (
+        <Dialog
+          open={newOpen}
+          onOpenChange={(v) => {
+            setNewOpen(v);
+            if (!v) { setSelectedItem(null); setForm(emptyForm); }
+          }}
+        >
+          <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>New Work Order</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              {renderFormBody()}
             </div>
-
-            <div className="space-y-1.5">
-              <Label>Tracking Mode</Label>
-              <Select
-                value={form.tracking_mode}
-                onValueChange={(v) =>
-                  setForm((f) => ({ ...f, tracking_mode: v as "batch" | "single" }))
-                }
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => { setNewOpen(false); setSelectedItem(null); setForm(emptyForm); }}
               >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="batch">Batch — multiple identical units</SelectItem>
-                  <SelectItem value="single">Single — one unique unit</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Batch / Serial Ref</Label>
-              <Input
-                value={form.batch_ref}
-                onChange={(e) => setForm((f) => ({ ...f, batch_ref: e.target.value }))}
-                placeholder="Optional"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Quantity *</Label>
-                <Input
-                  type="text"
-                  inputMode="numeric"
-                  value={String(form.quantity_original || "")}
-                  onChange={(e) =>
-                    setForm((f) => ({
-                      ...f,
-                      quantity_original: parseFloat(e.target.value) || 0,
-                    }))
-                  }
-                  placeholder="Enter quantity"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Unit</Label>
-                <Select
-                  value={form.unit}
-                  onValueChange={(v) => setForm((f) => ({ ...f, unit: v }))}
-                >
-                  <SelectTrigger className="font-mono">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {UNIT_OPTIONS.map((u) => (
-                      <SelectItem key={u} value={u} className="font-mono">{u}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="text-xs text-blue-600 bg-blue-50 rounded px-3 py-2">
-              Unit auto-fills from the selected item. Change if needed.
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Initial Cost (₹)</Label>
-              <Input
-                type="number"
-                min={0}
-                value={form.initial_cost || ""}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, initial_cost: parseFloat(e.target.value) || 0 }))
-                }
-                placeholder="Raw material or incoming cost"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Notes</Label>
-              <Textarea
-                rows={2}
-                value={form.notes}
-                onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-                placeholder="Optional notes"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setNewOpen(false);
-                setSelectedItem(null);
-                setForm(emptyForm);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleCreate} disabled={createMutation.isPending}>
-              Create Work Order
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+                Cancel
+              </Button>
+              <Button onClick={handleCreate} disabled={createMutation.isPending}>
+                Create Work Order
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
