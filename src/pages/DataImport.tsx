@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Upload, Download, CheckCircle, XCircle, AlertTriangle, Table, Users, Package, GitFork, ChevronLeft, Trash2 } from "lucide-react";
@@ -14,17 +14,18 @@ import {
   PARTY_FIELD_MAP, ITEM_FIELD_MAP, BOM_FIELD_MAP, STOCK_FIELD_MAP,
   type ColumnMappingSummary, type SkipReason,
 } from "@/lib/import-utils";
-import type { BatchImportFn } from "@/lib/import-queue";
+import { useImportQueue, type BatchImportFn } from "@/lib/import-queue";
 
 // Returns true if the given primary-key cell value looks like a hint/instruction.
-// Only applied to the first 3 rows after the detected header row.
+// Only applied to the first 5 rows after the detected header row.
+// FIX 1: phrases updated to match spec exactly.
 function isHintRow(primaryCell: string): boolean {
   const lower = primaryCell.toLowerCase().trim();
   if (!lower) return false;
   const HINT_PHRASES = [
     "e.g.", "example", "required", "optional", "code of", "full ",
     "company legal", "vendor / customer", "raw_material /", "drawing number or",
-    "enter ", "type here", "fill in", "same as", "description",
+    "enter", "fill",
   ];
   if (lower.length > 80) return true;
   if (/ \/ /.test(primaryCell)) return true; // "vendor / customer / both"
@@ -464,6 +465,7 @@ function SkipReasonsPanel({ reasons }: { reasons: SkipReason[] }) {
 
 function BOMImportTab() {
   const { toast } = useToast();
+  const { addJob, jobs } = useImportQueue();
   const queryClient = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -474,11 +476,25 @@ function BOMImportTab() {
   const [errorMessages, setErrorMessages] = useState<Map<number, string>>(new Map());
   const [errors, setErrors] = useState<string[]>([]);
   const [validating, setValidating] = useState(false);
-  const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
   const [mappingSummary, setMappingSummary] = useState<ColumnMappingSummary | null>(null);
   const [columnWarnings, setColumnWarnings] = useState<string[]>([]);
   const [skipReasons, setSkipReasons] = useState<SkipReason[]>([]);
+  // FIX 6: track the queued job
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+
+  // FIX 6: watch for job completion
+  useEffect(() => {
+    if (!currentJobId) return;
+    const job = jobs.find((j) => j.id === currentJobId);
+    if (!job) return;
+    if (job.status === "completed") {
+      toast({ title: `✓ ${job.completed} BOM lines imported` });
+      setCurrentJobId(null);
+    } else if (job.status === "failed") {
+      setCurrentJobId(null);
+    }
+  }, [jobs, currentJobId, toast]);
 
   const clearAll = () => {
     setRows([]); setValidRows([]); setValidRowNums([]); setErrors([]);
@@ -739,23 +755,22 @@ function BOMImportTab() {
     return { imported, skipped, errors, skipReasons };
   };
 
-  const handleImport = async () => {
-    if (validRows.length === 0 || importing) return;
+  // FIX 6: queue the import instead of awaiting directly
+  const handleImport = () => {
+    if (validRows.length === 0) return;
     const rowsToImport = validRows;
     const rowNumsToImport = validRowNums;
     const parseSkips = skipReasons.filter((s) => s.reason.includes("skipped automatically"));
     setRows([]); setValidRows([]); setValidRowNums([]);
-    setImporting(true);
-    try {
-      const res = await bomImportFn(rowsToImport, rowNumsToImport);
-      setResult({ imported: res.imported, skipped: res.skipped });
-      setSkipReasons([...parseSkips, ...res.skipReasons]);
-      toast({ title: `✓ ${res.imported} BOM lines imported successfully` });
-    } catch (err: any) {
-      toast({ title: `Import failed — ${err?.message ?? "unknown error"}`, variant: "destructive" });
-    } finally {
-      setImporting(false);
-    }
+
+    const id = addJob("BOM lines", rowsToImport, rowNumsToImport, bomImportFn, {
+      onComplete: (res) => {
+        setResult({ imported: res.imported, skipped: res.skipped });
+        setSkipReasons([...parseSkips, ...res.skipReasons]);
+      },
+    });
+    setCurrentJobId(id);
+    toast({ title: "Import started — you can keep working" });
   };
 
   return (
@@ -787,9 +802,9 @@ function BOMImportTab() {
             size="sm"
             className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"
             onClick={handleImport}
-            disabled={validating || importing}
+            disabled={validating}
           >
-            {importing ? "Importing…" : `Import ${validRows.length} Valid Row${validRows.length !== 1 ? "s" : ""}`}
+            Import {validRows.length} Valid Row{validRows.length !== 1 ? "s" : ""}
           </Button>
         )}
         {rows.length > 0 && (
@@ -872,9 +887,6 @@ function ImportTab({
   primaryKeyField,
   onImport,
   validate,
-  onImportStart,
-  onImportProgress,
-  onImportEnd,
   onDownloadTemplate,
 }: {
   title: string;
@@ -886,24 +898,35 @@ function ImportTab({
   primaryKeyField?: string;
   onImport: BatchImportFn;
   validate?: (row: Record<string, string>, i: number) => string | null;
-  onImportStart?: (title: string) => void;
-  onImportProgress?: (pct: number) => void;
-  onImportEnd?: () => void;
   onDownloadTemplate?: () => void | Promise<void>;
 }) {
   const { toast } = useToast();
+  const { addJob, jobs } = useImportQueue();
   const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [validRows, setValidRows] = useState<Record<string, string>[]>([]);
   const [validRowNums, setValidRowNums] = useState<number[]>([]);
   const [errorRows, setErrorRows] = useState<Set<number>>(new Set());
   const [errors, setErrors] = useState<string[]>([]);
-  const [importing, setImporting] = useState(false);
-  const [importProgress, setImportProgress] = useState(0);
   const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
   const [mappingSummary, setMappingSummary] = useState<ColumnMappingSummary | null>(null);
   const [columnWarnings, setColumnWarnings] = useState<string[]>([]);
   const [skipReasons, setSkipReasons] = useState<SkipReason[]>([]);
+  // FIX 6: track the queued job so we can show completion toast
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+
+  // FIX 6: watch for job completion and show toast
+  useEffect(() => {
+    if (!currentJobId) return;
+    const job = jobs.find((j) => j.id === currentJobId);
+    if (!job) return;
+    if (job.status === "completed") {
+      toast({ title: `✓ ${job.completed} ${title} imported` });
+      setCurrentJobId(null);
+    } else if (job.status === "failed") {
+      setCurrentJobId(null);
+    }
+  }, [jobs, currentJobId, title, toast]);
 
   const clearAll = () => {
     setRows([]); setValidRows([]); setValidRowNums([]); setErrorRows(new Set()); setErrors([]); setResult(null);
@@ -970,30 +993,22 @@ function ImportTab({
     e.target.value = "";
   };
 
-  const handleImport = async () => {
-    if (validRows.length === 0 || importing) return;
+  // FIX 6: queue the import instead of awaiting directly
+  const handleImport = () => {
+    if (validRows.length === 0) return;
     const rowsToImport = validRows;
     const rowNumsToImport = validRowNums;
     const parseSkips = skipReasons.filter((s) => s.reason.includes("skipped automatically"));
     setRows([]); setValidRows([]); setValidRowNums([]); setErrorRows(new Set());
-    onImportStart?.(title);
-    setImporting(true);
-    setImportProgress(0);
-    try {
-      const res = await onImport(rowsToImport, rowNumsToImport, (pct) => {
-        setImportProgress(pct);
-        onImportProgress?.(pct);
-      });
-      setResult({ imported: res.imported, skipped: res.skipped });
-      setSkipReasons([...parseSkips, ...res.skipReasons]);
-      toast({ title: `✓ ${res.imported} ${title} imported successfully` });
-    } catch (err: any) {
-      toast({ title: `Import failed — ${err?.message ?? "unknown error"}`, variant: "destructive" });
-    } finally {
-      setImporting(false);
-      setImportProgress(0);
-      onImportEnd?.();
-    }
+
+    const id = addJob(title, rowsToImport, rowNumsToImport, onImport, {
+      onComplete: (res) => {
+        setResult({ imported: res.imported, skipped: res.skipped });
+        setSkipReasons([...parseSkips, ...res.skipReasons]);
+      },
+    });
+    setCurrentJobId(id);
+    toast({ title: "Import started — you can keep working" });
   };
 
   return (
@@ -1031,10 +1046,8 @@ function ImportTab({
         </Button>
         <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xls,.csv" className="hidden" onChange={handleFile} />
         {validRows.length > 0 && (
-          <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white" onClick={handleImport} disabled={importing}>
-            {importing
-              ? `Importing… ${importProgress > 0 ? `${importProgress}%` : ""}`
-              : `Import ${validRows.length} Row${validRows.length !== 1 ? "s" : ""}`}
+          <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white" onClick={handleImport}>
+            Import {validRows.length} Row{validRows.length !== 1 ? "s" : ""}
           </Button>
         )}
         {rows.length > 0 && (
@@ -1109,8 +1122,6 @@ export default function DataImport() {
   const [activeTab, setActiveTab] = useState("parties");
   const [clearTarget, setClearTarget] = useState<ClearTarget | null>(null);
   const [clearLoading, setClearLoading] = useState(false);
-  const [importingType, setImportingType] = useState<string | null>(null);
-  const [importingProgress, setImportingProgress] = useState(0);
 
   const { data: partiesCount = 0, refetch: refetchPartiesCount } = useQuery({
     queryKey: ["count", "parties"],
@@ -1195,6 +1206,8 @@ export default function DataImport() {
     const skipReasons: SkipReason[] = [];
     const toInsert: any[] = [];
     const toUpdate: any[] = [];
+    // FIX 2: track excel row per party for accurate error messages in fallback loops
+    const nameToRow = new Map<string, number>();
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
@@ -1202,10 +1215,11 @@ export default function DataImport() {
       const name = row["name"]?.trim();
       if (!name) {
         skipped++;
-        errors.push(`Row ${excelRow}: Party Name was blank or missing`);
-        skipReasons.push({ row: excelRow, value: "", reason: "Party Name was blank or missing" });
+        errors.push(`Row ${excelRow}: Party Name was blank`);
+        skipReasons.push({ row: excelRow, value: "", reason: "Party Name was blank" });
         continue;
       }
+      nameToRow.set(name.toLowerCase(), excelRow);
       const gstin = row["gstin"] || null;
       const state_code = row["state_code"] || (gstin && gstin.length >= 2 ? gstin.substring(0, 2) : null);
       const partyData: any = {
@@ -1253,9 +1267,11 @@ export default function DataImport() {
           } catch (err: any) {
             skipped++;
             const isDup = err?.code === "23505" || String(err?.message ?? "").toLowerCase().includes("duplicate") || String(err?.message ?? "").toLowerCase().includes("unique");
-            const reason = isDup ? `Duplicate — party "${party.name}" already exists` : `DB error: ${err?.message ?? "unknown"}`;
-            errors.push(`(${party.name}): ${reason}`);
-            skipReasons.push({ row: 0, value: party.name, reason });
+            const reason = isDup ? "Duplicate already exists" : `DB error: ${err?.message ?? "unknown"}`;
+            // FIX 2: include Row N in fallback error
+            const rowNum = nameToRow.get(party.name?.toLowerCase()) ?? 0;
+            errors.push(`Row ${rowNum} (${party.name}): ${reason}`);
+            skipReasons.push({ row: rowNum, value: party.name, reason });
           }
         }
       }
@@ -1276,8 +1292,10 @@ export default function DataImport() {
             imported++;
           } catch (err: any) {
             skipped++;
-            errors.push(`(${rest.name}): DB error: ${err?.message ?? "unknown"}`);
-            skipReasons.push({ row: 0, value: rest.name, reason: `DB error: ${err?.message ?? "unknown"}` });
+            const rowNum = nameToRow.get(rest.name?.toLowerCase()) ?? 0;
+            const reason = `DB error: ${err?.message ?? "unknown"}`;
+            errors.push(`Row ${rowNum} (${rest.name}): ${reason}`);
+            skipReasons.push({ row: rowNum, value: rest.name, reason });
           }
         }
       }
@@ -1310,6 +1328,8 @@ export default function DataImport() {
     const toInsert: any[] = [];
     const toUpdate: any[] = [];
     let autoCodeIndex = 1;
+    // FIX 2: track excel row per item for accurate fallback error messages
+    const codeToRow = new Map<string, number>();
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
@@ -1321,8 +1341,8 @@ export default function DataImport() {
 
       if (!desc) {
         skipped++;
-        errors.push(`Row ${excelRow}${displayKey ? ` (${displayKey})` : ""}: Description was blank or missing`);
-        skipReasons.push({ row: excelRow, value: displayKey, reason: "Description was blank or missing" });
+        errors.push(`Row ${excelRow}${displayKey ? ` (${displayKey})` : ""}: Description was blank`);
+        skipReasons.push({ row: excelRow, value: displayKey, reason: "Description was blank" });
         continue;
       }
 
@@ -1363,6 +1383,9 @@ export default function DataImport() {
         drawing_revision: drawingNum || null,
       };
 
+      // FIX 2: record row number for this item key
+      if (resolvedCode) codeToRow.set(resolvedCode.toLowerCase(), excelRow);
+
       if (existingId) {
         toUpdate.push({ id: existingId, ...itemData });
       } else {
@@ -1395,8 +1418,11 @@ export default function DataImport() {
         const invalidInsert = toInsert.filter((item) => !VALID_TYPES.includes(item.item_type));
         for (const item of invalidInsert) {
           skipped++;
-          errors.push(`(${item.item_code || item.description}): Invalid item_type "${item.item_type}"`);
-          skipReasons.push({ row: 0, value: item.item_code || "", reason: `Invalid item_type "${item.item_type}"` });
+          // FIX 2: include Row N in item_type error
+          const rowNum = codeToRow.get((item.item_code || "").toLowerCase()) ?? 0;
+          const reason = `Item Type value not recognised: "${item.item_type}"`;
+          errors.push(`Row ${rowNum} (${item.item_code || item.description}): ${reason}`);
+          skipReasons.push({ row: rowNum, value: item.item_code || "", reason });
         }
         if (validInsert.length > 0) {
           try {
@@ -1413,9 +1439,11 @@ export default function DataImport() {
               } catch (err: any) {
                 skipped++;
                 const isDup = err?.code === "23505" || String(err?.message ?? "").toLowerCase().includes("duplicate") || String(err?.message ?? "").toLowerCase().includes("unique");
-                const reason = isDup ? `Duplicate — item "${itemData.item_code || itemData.description}" already exists` : `DB error: ${err?.message ?? "unknown"}`;
-                errors.push(`(${itemData.item_code || itemData.description}): ${reason}`);
-                skipReasons.push({ row: 0, value: itemData.item_code || "", reason });
+                const reason = isDup ? "Duplicate already exists" : `DB error: ${err?.message ?? "unknown"}`;
+                // FIX 2: include Row N
+                const rowNum = codeToRow.get((itemData.item_code || "").toLowerCase()) ?? 0;
+                errors.push(`Row ${rowNum} (${itemData.item_code || itemData.description}): ${reason}`);
+                skipReasons.push({ row: rowNum, value: itemData.item_code || "", reason });
               }
             }
           }
@@ -1439,8 +1467,10 @@ export default function DataImport() {
             imported++;
           } catch (err: any) {
             skipped++;
-            errors.push(`(${rest.item_code || rest.description}): DB error: ${err?.message ?? "unknown"}`);
-            skipReasons.push({ row: 0, value: rest.item_code || "", reason: `DB error: ${err?.message ?? "unknown"}` });
+            const rowNum = codeToRow.get((rest.item_code || "").toLowerCase()) ?? 0;
+            const reason = `DB error: ${err?.message ?? "unknown"}`;
+            errors.push(`Row ${rowNum} (${rest.item_code || rest.description}): ${reason}`);
+            skipReasons.push({ row: rowNum, value: rest.item_code || "", reason });
           }
         }
       }
@@ -1578,9 +1608,6 @@ export default function DataImport() {
               if (!row["name"]?.trim()) return "Party Name is required";
               return null;
             }}
-            onImportStart={(t) => { setImportingType(t); setImportingProgress(0); }}
-            onImportProgress={(pct) => setImportingProgress(pct)}
-            onImportEnd={() => setImportingType(null)}
           />
         </div>
       )}
@@ -1612,9 +1639,6 @@ export default function DataImport() {
               if (!row["description"]?.trim()) return "Description is required";
               return null;
             }}
-            onImportStart={(t) => { setImportingType(t); setImportingProgress(0); }}
-            onImportProgress={(pct) => setImportingProgress(pct)}
-            onImportEnd={() => setImportingType(null)}
           />
         </div>
       )}
@@ -1667,25 +1691,8 @@ export default function DataImport() {
               if (isNaN(parseFloat(row["current_stock"] || ""))) return "Quantity must be a number";
               return null;
             }}
-            onImportStart={(t) => { setImportingType(t); setImportingProgress(0); }}
-            onImportProgress={(pct) => setImportingProgress(pct)}
-            onImportEnd={() => setImportingType(null)}
             onDownloadTemplate={downloadOpeningStockTemplate}
           />
-        </div>
-      )}
-
-      {/* Import progress bar */}
-      {importingType && (
-        <div className="fixed bottom-16 md:bottom-0 left-0 right-0 z-50 bg-blue-600 text-white px-4 py-2 flex items-center gap-3">
-          <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
-          <span className="text-sm font-medium">Importing {importingType}... {importingProgress}%</span>
-          <div className="flex-1 bg-blue-500 rounded-full h-1.5 ml-2">
-            <div
-              className="bg-white rounded-full h-1.5 transition-all duration-300"
-              style={{ width: `${importingProgress}%` }}
-            />
-          </div>
         </div>
       )}
 

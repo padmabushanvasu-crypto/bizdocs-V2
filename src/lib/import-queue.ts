@@ -6,9 +6,9 @@ import {
   useEffect,
   useState,
 } from "react";
-import { Loader2 } from "lucide-react";
 import { createElement } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { ImportProgressBar } from "@/components/ImportProgressBar";
 import type { SkipReason } from "@/lib/import-utils";
 
 const LS_KEY = "bizdocs_import_queue";
@@ -19,13 +19,13 @@ const BATCH_SIZE = 50;
 export interface ImportJob {
   id: string;
   type: string;
-  status: "queued" | "running" | "completed" | "failed" | "interrupted";
+  status: "queued" | "running" | "completed" | "failed";
   progress: number;   // rows processed so far
   total: number;      // total rows submitted
   errors: string[];
-  skipReasons: SkipReason[];
+  skipped: SkipReason[];     // FIX 4: renamed from skipReasons → skipped
   completed: number;  // rows successfully imported
-  startedAt: string;  // ISO date string (Date isn't JSON-safe)
+  startedAt: string;  // ISO date string
 }
 
 export type BatchImportFn = (
@@ -57,6 +57,7 @@ interface ImportQueueContextValue {
     importFn: BatchImportFn,
     callbacks?: AddJobCallbacks
   ) => string;
+  clearCompleted: () => void;
 }
 
 // ── Context ────────────────────────────────────────────────────────────────
@@ -76,13 +77,18 @@ function loadPersistedJobs(): ImportJob[] {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return [];
     const parsed: ImportJob[] = JSON.parse(raw);
-    // Discard completed/failed — never show stale results after refresh.
-    // Only running/queued were mid-flight; mark them interrupted.
-    // The progress bar does not render interrupted jobs, so they are
-    // silently dropped from view but preserved in state for debugging.
+    // FIX 4: Mark any running/queued jobs from last session as failed
+    // (page was refreshed mid-import)
     return parsed
       .filter((j) => j.status === "running" || j.status === "queued")
-      .map((j) => ({ ...j, status: "interrupted" as const }));
+      .map((j) => ({
+        ...j,
+        status: "failed" as const,
+        errors: [
+          ...(j.errors ?? []),
+          "Import was interrupted — please re-import",
+        ],
+      }));
   } catch {
     return [];
   }
@@ -90,10 +96,6 @@ function loadPersistedJobs(): ImportJob[] {
 
 function persistJobs(jobs: ImportJob[]): void {
   try {
-    // Only persist active (in-flight) jobs so we can detect interruptions
-    // on next load. Clear storage once nothing is running — this also
-    // handles FIX 3 (clear on dismissal) since the bar hides the moment
-    // all jobs leave the active set.
     const active = jobs.filter(
       (j) => j.status === "running" || j.status === "queued"
     );
@@ -107,74 +109,12 @@ function persistJobs(jobs: ImportJob[]): void {
   }
 }
 
-// ── Progress bar ───────────────────────────────────────────────────────────
-// Only renders while imports are actively running. Auto-hides the moment
-// all jobs complete or fail (toast handles failure feedback). No timers,
-// no dismiss button, no stale state.
-
-function ImportProgressBar({ jobs }: { jobs: ImportJob[] }) {
-  const activeJobs = jobs.filter(
-    (j) => j.status === "queued" || j.status === "running"
-  );
-
-  if (activeJobs.length === 0) return null;
-
-  let message = "";
-  let progressPct = 0;
-
-  if (activeJobs.length > 1) {
-    message = `${activeJobs.length} imports running`;
-    const totalProgress = activeJobs.reduce((s, j) => s + j.progress, 0);
-    const totalRows = activeJobs.reduce((s, j) => s + j.total, 0);
-    progressPct = totalRows > 0 ? (totalProgress / totalRows) * 100 : 0;
-  } else {
-    const j = activeJobs[0];
-    message = `Importing ${j.type} — ${j.progress} / ${j.total} rows`;
-    progressPct = j.total > 0 ? (j.progress / j.total) * 100 : 0;
-  }
-
-  return createElement(
-    "div",
-    {
-      className:
-        "fixed bottom-14 md:bottom-0 left-0 right-0 z-40 bg-blue-600 text-white text-sm shadow-lg",
-    },
-    // Thin progress track
-    progressPct > 0 && progressPct < 100
-      ? createElement(
-          "div",
-          { className: "h-0.5 bg-white/30" },
-          createElement("div", {
-            className: "h-full bg-white transition-all duration-300",
-            style: { width: `${progressPct}%` },
-          })
-        )
-      : null,
-    // Message row
-    createElement(
-      "div",
-      {
-        className: "flex items-center px-4 py-2 max-w-4xl mx-auto",
-      },
-      createElement(
-        "span",
-        { className: "flex items-center gap-2" },
-        createElement(Loader2, {
-          className: "h-3.5 w-3.5 animate-spin shrink-0",
-        }),
-        createElement("span", null, message)
-      )
-    )
-  );
-}
-
 // ── Provider ───────────────────────────────────────────────────────────────
 
 export function ImportQueueProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<ImportJob[]>(() => loadPersistedJobs());
   const { toast } = useToast();
 
-  // Persist every time jobs change (clears localStorage when nothing active)
   useEffect(() => {
     persistJobs(jobs);
   }, [jobs]);
@@ -183,6 +123,10 @@ export function ImportQueueProvider({ children }: { children: ReactNode }) {
     setJobs((prev) =>
       prev.map((j) => (j.id === id ? { ...j, ...update } : j))
     );
+  }, []);
+
+  const clearCompleted = useCallback(() => {
+    setJobs((prev) => prev.filter((j) => j.status !== "completed"));
   }, []);
 
   const addJob = useCallback(
@@ -201,7 +145,7 @@ export function ImportQueueProvider({ children }: { children: ReactNode }) {
         progress: 0,
         total: rows.length,
         errors: [],
-        skipReasons: [],
+        skipped: [],
         completed: 0,
         startedAt: new Date().toISOString(),
       };
@@ -214,7 +158,7 @@ export function ImportQueueProvider({ children }: { children: ReactNode }) {
         let totalImported = 0;
         let totalSkipped = 0;
         const allErrors: string[] = [];
-        const allSkipReasons: SkipReason[] = [];
+        const allSkipped: SkipReason[] = [];
 
         try {
           for (let offset = 0; offset < rows.length; offset += BATCH_SIZE) {
@@ -225,14 +169,14 @@ export function ImportQueueProvider({ children }: { children: ReactNode }) {
             totalImported += res.imported;
             totalSkipped += res.skipped;
             allErrors.push(...res.errors);
-            allSkipReasons.push(...res.skipReasons);
+            allSkipped.push(...res.skipReasons);
 
             const progress = Math.min(offset + batchRows.length, rows.length);
             updateJob(id, {
               progress,
               completed: totalImported,
               errors: [...allErrors],
-              skipReasons: [...allSkipReasons],
+              skipped: [...allSkipped],
             });
 
             // Yield to the UI thread between batches
@@ -245,18 +189,10 @@ export function ImportQueueProvider({ children }: { children: ReactNode }) {
             imported: totalImported,
             skipped: totalSkipped,
             errors: allErrors,
-            skipReasons: allSkipReasons,
+            skipReasons: allSkipped,
           };
 
           callbacks?.onComplete?.(result);
-
-          toast({
-            title: `✓ ${totalImported} ${type} imported successfully`,
-            description:
-              totalSkipped > 0
-                ? `${totalSkipped} row${totalSkipped !== 1 ? "s" : ""} skipped`
-                : undefined,
-          });
         } catch (err: any) {
           updateJob(id, {
             status: "failed",
@@ -276,7 +212,7 @@ export function ImportQueueProvider({ children }: { children: ReactNode }) {
 
   return createElement(
     ImportQueueContext.Provider,
-    { value: { jobs, addJob } },
+    { value: { jobs, addJob, clearCompleted } },
     children,
     createElement(ImportProgressBar, { jobs })
   );
