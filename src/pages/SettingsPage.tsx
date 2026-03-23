@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Building2, FileText, Bell, GitBranch, Upload, FileSpreadsheet, Users, ChevronRight } from "lucide-react";
+import { Building2, FileText, Bell, GitBranch, Upload, FileSpreadsheet, Users, History, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface SettingsCard {
@@ -64,6 +64,14 @@ export default function SettingsPage() {
       title: "GST Reports",
       description: "Download GSTR-1, GSTR-2, HSN Summary, ITC Register and more",
       action: () => navigate("/gst-reports"),
+    },
+    {
+      icon: History,
+      iconBg: "bg-slate-100",
+      iconColor: "text-slate-600",
+      title: "Audit Log",
+      description: "Full history of all actions taken across documents — who did what and when",
+      action: () => navigate("/audit-log"),
     },
     {
       icon: Users,

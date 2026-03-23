@@ -1,5 +1,16 @@
 import * as XLSX from "xlsx-js-style";
 
+const GST_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+/** Returns date in DD-Mon-YYYY format required by GST portal (e.g. 21-Mar-2026) */
+export function formatDateGST(value: any): string {
+  if (!value) return "";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return String(value);
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${day}-${GST_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
+}
+
 export interface ExportColumn {
   key: string;
   label: string;
@@ -124,9 +135,18 @@ export function exportToExcel(
 
 export function exportMultiSheet(
   sheets: ExportSheetData[],
-  filename: string
+  filename: string,
+  disclaimer?: string
 ): void {
   const wb = XLSX.utils.book_new();
+
+  if (disclaimer) {
+    const noteWs = XLSX.utils.aoa_to_sheet([[disclaimer], [""], ["Generated: " + new Date().toLocaleString("en-IN")]]);
+    noteWs["A1"].s = { font: { italic: true, color: { rgb: "555555" } }, fill: { fgColor: { rgb: "FFFBEB" } } };
+    noteWs["!cols"] = [{ wch: 80 }];
+    XLSX.utils.book_append_sheet(wb, noteWs, "Notes");
+  }
+
   for (const sheet of sheets) {
     const ws = buildSheet(sheet);
     XLSX.utils.book_append_sheet(wb, ws, sheet.sheetName.substring(0, 31));

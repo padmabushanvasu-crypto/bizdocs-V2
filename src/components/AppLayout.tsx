@@ -1,12 +1,15 @@
+import { useEffect } from "react";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { MobileNav } from "@/components/MobileNav";
+import { NotificationBell } from "@/components/NotificationBell";
 import { Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { LogOut, Settings, User, LayoutDashboard } from "lucide-react";
+import { generateStockAlerts, generateOverdueDCAlerts } from "@/lib/notifications-api";
 
 export function AppLayout() {
   const { user, profile, signOut } = useAuth();
@@ -22,6 +25,12 @@ export function AppLayout() {
     await signOut();
     navigate("/login");
   };
+
+  // Generate fresh in-app notifications on every app load
+  useEffect(() => {
+    generateStockAlerts();
+    generateOverdueDCAlerts();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <SidebarProvider>
@@ -47,6 +56,8 @@ export function AppLayout() {
                 <span className="font-bold text-foreground" style={{ letterSpacing: '-0.3px' }}>BizDocs</span>
               </div>
             </div>
+            <div className="flex items-center gap-1">
+              <NotificationBell />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="rounded-full h-8 w-8">
@@ -74,6 +85,7 @@ export function AppLayout() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            </div>
           </header>
 
           <main className="flex-1 overflow-auto pb-16 md:pb-0 bg-white min-h-screen">

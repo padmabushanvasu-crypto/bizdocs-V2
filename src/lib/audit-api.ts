@@ -42,3 +42,35 @@ export async function fetchAuditLog(documentId: string): Promise<AuditEntry[]> {
   if (error) throw error;
   return (data ?? []) as AuditEntry[];
 }
+
+export interface AuditLogFilters {
+  dateFrom?: string;
+  dateTo?: string;
+  action?: string;
+  documentType?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export async function fetchAllAuditLog(filters: AuditLogFilters = {}): Promise<{ data: AuditEntry[]; count: number }> {
+  const { dateFrom, dateTo, action, documentType, search, page = 1, pageSize = 50 } = filters;
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let query = (supabase as any)
+    .from("audit_log")
+    .select("*", { count: "exact" })
+    .order("created_at", { ascending: false })
+    .range(from, to);
+
+  if (dateFrom) query = query.gte("created_at", dateFrom);
+  if (dateTo) query = query.lte("created_at", dateTo + "T23:59:59");
+  if (action) query = query.eq("action", action);
+  if (documentType) query = query.eq("document_type", documentType);
+  if (search?.trim()) query = query.ilike("details::text", `%${search.trim()}%`);
+
+  const { data, error, count } = await query;
+  if (error) throw error;
+  return { data: (data ?? []) as AuditEntry[], count: count ?? 0 };
+}
