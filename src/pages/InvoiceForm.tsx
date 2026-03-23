@@ -568,7 +568,7 @@ export default function InvoiceForm() {
                         updateLineItem(i, "unit", item.unit || "NOS");
                         updateLineItem(i, "unit_price", item.sale_price || 0);
                         updateLineItem(i, "gst_rate", item.gst_rate || 18);
-                        if ((item as any).drawing_number) updateLineItem(i, "drawing_number", (item as any).drawing_number);
+                        updateLineItem(i, "drawing_number", item.drawing_revision || "");
                       }}
                       placeholder="Type to search items..."
                       className="min-w-[200px]"

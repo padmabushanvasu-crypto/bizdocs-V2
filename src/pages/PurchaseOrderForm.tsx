@@ -488,9 +488,11 @@ export default function PurchaseOrderForm() {
                       onChange={(v) => updateLineItem(index, "description", v)}
                       onSelect={(selectedItem) => {
                         updateLineItem(index, "description", selectedItem.description);
-                        updateLineItem(index, "drawing_number", selectedItem.drawing_number || "");
+                        updateLineItem(index, "drawing_number", selectedItem.drawing_revision || "");
                         updateLineItem(index, "unit", selectedItem.unit || "NOS");
-                        updateLineItem(index, "unit_price", selectedItem.purchase_price || 0);
+                        if (!item.unit_price) updateLineItem(index, "unit_price", selectedItem.standard_cost || 0);
+                        updateLineItem(index, "gst_rate", selectedItem.gst_rate || 18);
+                        if (selectedItem.hsn_sac_code) updateLineItem(index, "hsn_sac_code", selectedItem.hsn_sac_code);
                       }}
                       placeholder="Type to search items..."
                       className="h-8 text-sm"

@@ -456,7 +456,7 @@ export default function SalesOrderForm() {
                         updateLineItem(index, "description", sel.description);
                         updateLineItem(index, "unit", sel.unit || "NOS");
                         updateLineItem(index, "unit_price", sel.sale_price || 0);
-                        updateLineItem(index, "hsn_sac_code", sel.hsn_code || "");
+                        updateLineItem(index, "hsn_sac_code", sel.hsn_sac_code || "");
                         setLineItems((items) => {
                           const updated = [...items];
                           updated[index].line_total = Math.round((updated[index].quantity || 0) * (sel.sale_price || 0) * 100) / 100;
