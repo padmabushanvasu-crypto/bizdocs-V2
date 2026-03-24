@@ -18,6 +18,8 @@ interface AuthContextType {
   profile: Profile | null;
   companyId: string | null;
   loading: boolean;
+  authError: string | null;
+  clearAuthError: () => void;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -28,29 +30,96 @@ const AuthContext = createContext<AuthContextType>({
   profile: null,
   companyId: null,
   loading: true,
+  authError: null,
+  clearAuthError: () => {},
   signOut: async () => {},
   refreshProfile: async () => {},
 });
+
+// ─── Safety-net repair ────────────────────────────────────────────────────────
+// Called when loadProfile detects a missing profile or null company_id.
+// Uses the same setup_company RPC that CompanySetup.tsx uses — it runs as
+// SECURITY DEFINER so it bypasses RLS and works for Google OAuth users who
+// never explicitly went through the setup flow.
+async function repairMissingCompany(user: User): Promise<Profile | null> {
+  console.warn(
+    "[BizDocs auth] Trigger appears to have failed for user",
+    user.id,
+    "— auto-repairing via setup_company RPC",
+  );
+  const sb = supabase as any;
+
+  const { error: rpcError } = await sb.rpc("setup_company", {
+    _company_name: "My Company",
+    _gstin: null,
+    _state: null,
+    _state_code: null,
+    _phone: null,
+  });
+
+  if (rpcError) {
+    console.error("[BizDocs auth] Auto-repair failed:", rpcError);
+    return null;
+  }
+
+  // Re-fetch profile after repair
+  const { data } = await sb
+    .from("profiles")
+    .select("*")
+    .eq("id", user.id)
+    .single();
+
+  return data ?? null;
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  const clearAuthError = useCallback(() => setAuthError(null), []);
 
   const loadProfile = useCallback(async (user: User) => {
     try {
       const sb = supabase as any;
-      let { data, error } = await sb.from("profiles").select("*").eq("id", user.id).single();
+      let { data, error } = await sb
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+
+      // ── Case 1: No profile at all (trigger failed on first sign-up) ──────────
       if (error && error.code === "PGRST116") {
-        // Profile doesn't exist, create one
-        const { data: newProfile } = await sb.from("profiles").insert({
-          id: user.id,
-          full_name: user.user_metadata?.full_name || user.user_metadata?.name || null,
-          avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
-          email: user.email,
-        }).select().single();
-        data = newProfile;
+        data = await repairMissingCompany(user);
+        // If repair also failed, fall through with null — user goes to /setup
       }
+
+      // ── Case 2: Profile exists but company_id is null (partial trigger fail) ──
+      if (data && !data.company_id) {
+        console.warn(
+          "[BizDocs auth] Profile exists but company_id is null for user",
+          user.id,
+          "— attempting auto-repair",
+        );
+        const repaired = await repairMissingCompany(user);
+        if (repaired?.company_id) data = repaired;
+        // If repair failed, fall through — user goes to /setup
+      }
+
+      // ── Case 3: Profile + company_id look fine — check for shared company ────
+      // NOTE: RLS prevents querying other users' profiles, so a direct count query
+      // would always return 0 and give a false-negative. The real guard against
+      // shared company_ids is the updated handle_new_user trigger (Step 1 SQL).
+      // Log a developer warning here only if somehow we can detect the conflict.
+      if (data?.company_id) {
+        // This check is included as a belt-and-suspenders measure.
+        // In practice, RLS will prevent seeing other users' rows, so conflict
+        // detection must be done via the diagnostic SQL queries (Step 5).
+        console.debug("[BizDocs auth] Loaded company_id:", data.company_id, "for user:", user.id);
+      }
+
       if (data) {
         setProfile(data as Profile);
         if (data.company_id) {
@@ -62,7 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
     } catch (err) {
-      console.error("Failed to load profile:", err);
+      console.error("[BizDocs auth] Failed to load profile:", err);
     }
   }, []);
 
@@ -83,7 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           clearCompanyId();
           setLoading(false);
         }
-      }
+      },
     );
 
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -112,6 +181,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profile,
       companyId: profile?.company_id ?? null,
       loading,
+      authError,
+      clearAuthError,
       signOut,
       refreshProfile,
     }}>

@@ -1,17 +1,19 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Eye, EyeOff, Mail, Lock, User, Check } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, User, Check, AlertTriangle } from "lucide-react";
 
 export default function Login() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { authError, clearAuthError } = useAuth();
   const [tab, setTab] = useState("signin");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -45,6 +47,7 @@ export default function Login() {
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
+    clearAuthError();
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({
       email: signInEmail,
@@ -142,6 +145,13 @@ export default function Login() {
       <div className="flex-1 flex items-center justify-center p-6 bg-background">
         <Card className="w-full max-w-[420px] shadow-lg border-border">
           <CardContent className="p-8">
+            {/* Account conflict / auth error banner */}
+            {authError && (
+              <div className="mb-5 flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                <span>{authError}</span>
+              </div>
+            )}
             {forgotMode ? (
               <form onSubmit={handleForgotPassword} className="space-y-5">
                 <h2 className="font-display text-2xl font-bold text-foreground">Reset Password</h2>
