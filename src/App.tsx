@@ -60,6 +60,7 @@ import ReorderIntelligence from "@/pages/ReorderIntelligence";
 import ReorderRules from "@/pages/ReorderRules";
 import ScrapRegister from "@/pages/ScrapRegister";
 import AuditLog from "@/pages/AuditLog";
+import HowToUse from "@/pages/HowToUse";
 import NotFound from "@/pages/NotFound";
 import { ImportQueueProvider } from "@/lib/import-queue";
 
@@ -131,6 +132,7 @@ const App = () => (
               <Route path="/reorder-rules" element={<ReorderRules />} />
               <Route path="/scrap-register" element={<ScrapRegister />} />
               <Route path="/audit-log" element={<AuditLog />} />
+              <Route path="/how-to-use" element={<HowToUse />} />
               <Route path="/stage-templates" element={<StageTemplates />} />
               <Route path="/more" element={<MoreMenu />} />
               <Route path="/settings/company" element={<CompanySettings />} />

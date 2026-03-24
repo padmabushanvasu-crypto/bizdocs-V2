@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Building2, FileText, Bell, GitBranch, Upload, FileSpreadsheet, Users, History, ChevronRight } from "lucide-react";
+import { Building2, FileText, Bell, GitBranch, Upload, FileSpreadsheet, Users, History, BookOpen, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface SettingsCard {
@@ -72,6 +72,14 @@ export default function SettingsPage() {
       title: "Audit Log",
       description: "Full history of all actions taken across documents — who did what and when",
       action: () => navigate("/audit-log"),
+    },
+    {
+      icon: BookOpen,
+      iconBg: "bg-blue-50",
+      iconColor: "text-blue-600",
+      title: "How to Use BizDocs",
+      description: "Step-by-step guide — what to do first, what comes after, and when to use each feature",
+      action: () => navigate("/how-to-use"),
     },
     {
       icon: Users,
