@@ -184,6 +184,61 @@
     display: none !important;
   }
 
+  /* Utility classes for manual print control */
+  .no-print,
+  .print-hide {
+    display: none !important;
+  }
+
+  /* Full-width document container */
+  .print-full-width {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  /* Override Tailwind max-width utilities */
+  .max-w-5xl,
+  .max-w-4xl,
+  .max-w-3xl,
+  .max-w-2xl,
+  .max-w-xl,
+  .max-w-lg {
+    max-width: 100% !important;
+  }
+
+  /* Remove centering margins */
+  .mx-auto {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  /* Remove sidebar margin offsets */
+  .md\:ml-16,
+  .md\:ml-64 {
+    margin-left: 0 !important;
+  }
+
+  /* Table print rules */
+  table {
+    page-break-inside: auto;
+    width: 100% !important;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
   @page {
     margin: 15mm;
     size: A4 portrait;

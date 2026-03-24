@@ -35,12 +35,12 @@ export function AppLayout() {
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
-        <div className="hidden md:block">
+        <div className="hidden md:block print:hidden">
           <AppSidebar />
         </div>
 
         <div className="flex-1 flex flex-col min-w-0">
-          <header className="h-12 flex items-center justify-between border-b border-border bg-card px-4 shrink-0">
+          <header className="h-12 flex items-center justify-between border-b border-border bg-card px-4 shrink-0 print:hidden">
             <div className="flex items-center gap-2">
               <div className="md:hidden flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
                 <div
@@ -95,7 +95,7 @@ export function AppLayout() {
           </main>
         </div>
 
-        <MobileNav />
+        <div className="print:hidden"><MobileNav /></div>
       </div>
     </SidebarProvider>
   );

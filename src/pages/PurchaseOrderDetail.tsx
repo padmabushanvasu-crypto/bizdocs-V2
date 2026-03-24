@@ -139,7 +139,7 @@ export default function PurchaseOrderDetail() {
     <div className="p-4 md:p-6 space-y-6 max-w-5xl mx-auto">
       <button
         onClick={() => navigate("/purchase-orders")}
-        className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 transition-colors mb-3"
+        className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 transition-colors mb-3 print:hidden"
       >
         <ChevronLeft className="h-4 w-4" />
         Back to Purchase Orders
