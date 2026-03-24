@@ -21,31 +21,49 @@ export function getCurrentFinancialYear(): string {
 /**
  * Returns the next sequential document number for a given table/column/prefix.
  *
- * Queries the last record whose number starts with `{fy}/` and increments.
- * Format: "{fy}/{seq}" e.g. "25-26/001"
+ * If settingsKey is provided, fetches the prefix from company_settings[settingsKey].
+ * With prefix: "{PREFIX}-{fy}/{seq}" e.g. "GRN-25-26/001"
+ * Without prefix: "{fy}/{seq}" e.g. "25-26/001"
  *
- * @param tableName   Supabase table name
+ * @param tableName     Supabase table name
  * @param numberColumn  Column that holds the document number
- * @param companyId   Company UUID to scope the query
+ * @param companyId     Company UUID to scope the query
+ * @param settingsKey   Optional company_settings column key for the prefix (e.g. 'grn_prefix')
  */
 export async function getNextDocNumber(
   tableName: string,
   numberColumn: string,
-  companyId: string
+  companyId: string,
+  settingsKey?: string
 ): Promise<string> {
   const fy = getCurrentFinancialYear();
+
+  let prefix = fy;
+
+  if (settingsKey) {
+    const { data: settings } = await supabase
+      .from("company_settings")
+      .select(settingsKey)
+      .limit(1)
+      .single();
+    const customPrefix = (settings as any)?.[settingsKey];
+    if (customPrefix) {
+      prefix = `${customPrefix}-${fy}`;
+    }
+  }
+
   const { data } = await supabase
     .from(tableName as any)
     .select(numberColumn)
     .eq("company_id", companyId)
-    .ilike(numberColumn, `${fy}/%`)
+    .ilike(numberColumn, `${prefix}/%`)
     .order(numberColumn, { ascending: false })
     .limit(1);
 
-  if (!data || data.length === 0) return `${fy}/001`;
+  if (!data || data.length === 0) return `${prefix}/001`;
   const lastNum = parseInt(
     ((data[0] as any)[numberColumn] as string).split("/").pop() || "0",
     10
   );
-  return `${fy}/${String(lastNum + 1).padStart(3, "0")}`;
+  return `${prefix}/${String(lastNum + 1).padStart(3, "0")}`;
 }

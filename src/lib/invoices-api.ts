@@ -59,15 +59,9 @@ export async function fetchInvoice(id: string) {
 }
 
 export async function getNextInvoiceNumber(): Promise<string> {
-  const now = new Date();
-  const fy = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
-  const prefix = `${String(fy).slice(2)}-${String(fy + 1).slice(2)}/`;
-  const { data } = await supabase.from("invoices").select("invoice_number").ilike("invoice_number", `${prefix}%`).order("invoice_number", { ascending: false }).limit(1);
-  if (data && data.length > 0) {
-    const num = parseInt(data[0].invoice_number.split("/").pop() || "0", 10);
-    return `${prefix}${String(num + 1).padStart(3, "0")}`;
-  }
-  return `${prefix}001`;
+  const companyId = await getCompanyId();
+  const { getNextDocNumber } = await import("@/lib/doc-number-utils");
+  return getNextDocNumber("invoices", "invoice_number", companyId, "invoice_prefix");
 }
 
 export async function createInvoice(invoice: Record<string, any>, lineItems: InvoiceLineItem[]) {
@@ -220,13 +214,56 @@ export async function fetchPayments(filters: { search?: string; page?: number; p
 }
 
 export async function getNextReceiptNumber(): Promise<string> {
-  const now = new Date();
-  const fy = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
-  const prefix = `RCT-${String(fy).slice(2)}${String(fy + 1).slice(2)}/`;
-  const { data } = await supabase.from("payments").select("receipt_number").ilike("receipt_number", `${prefix}%`).order("receipt_number", { ascending: false }).limit(1);
-  if (data && data.length > 0) {
-    const num = parseInt(data[0].receipt_number.split("/").pop() || "0", 10);
-    return `${prefix}${String(num + 1).padStart(3, "0")}`;
-  }
-  return `${prefix}001`;
+  const companyId = await getCompanyId();
+  const { getNextDocNumber } = await import("@/lib/doc-number-utils");
+  return getNextDocNumber("payments", "receipt_number", companyId, "rcp_prefix");
+}
+
+export async function fetchUnpaidInvoices(): Promise<{ id: string; invoice_number: string; customer_name: string; grand_total: number; amount_paid: number; amount_outstanding: number }[]> {
+  const { data } = await supabase
+    .from("invoices")
+    .select("id, invoice_number, customer_name, grand_total, amount_paid, amount_outstanding")
+    .in("status", ["sent", "partially_paid"])
+    .gt("amount_outstanding", 0)
+    .order("invoice_date", { ascending: false })
+    .limit(200);
+  return (data ?? []) as any[];
+}
+
+export async function createReceipt(receipt: {
+  receipt_number: string;
+  receipt_date: string;
+  invoice_id: string;
+  invoice_number: string;
+  customer_name: string;
+  amount: number;
+  payment_mode: string;
+  reference_number?: string;
+  bank_name?: string;
+  notes?: string;
+}): Promise<void> {
+  const companyId = await getCompanyId();
+  const { data: inv } = await supabase
+    .from("invoices")
+    .select("amount_paid, grand_total")
+    .eq("id", receipt.invoice_id)
+    .single();
+  if (!inv) throw new Error("Invoice not found");
+
+  const newPaid = Math.round(((inv.amount_paid ?? 0) + receipt.amount) * 100) / 100;
+  const newOutstanding = Math.max(0, Math.round(((inv.grand_total ?? 0) - newPaid) * 100) / 100);
+  const newStatus = newOutstanding <= 0 ? "fully_paid" : "partially_paid";
+
+  const { error: pmtErr } = await supabase.from("payments").insert({
+    ...receipt,
+    company_id: companyId,
+    payment_date: receipt.receipt_date,
+  } as any);
+  if (pmtErr) throw pmtErr;
+
+  const { error: invErr } = await supabase
+    .from("invoices")
+    .update({ amount_paid: newPaid, amount_outstanding: newOutstanding, status: newStatus })
+    .eq("id", receipt.invoice_id);
+  if (invErr) throw invErr;
 }

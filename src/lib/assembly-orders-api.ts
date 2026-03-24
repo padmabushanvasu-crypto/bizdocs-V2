@@ -222,7 +222,7 @@ export async function createAssemblyOrder(
 
   // Fallback: if DB trigger didn't set ao_number, generate it
   if (!created.ao_number) {
-    const aoNumber = await getNextDocNumber("assembly_orders", "ao_number", companyId);
+    const aoNumber = await getNextDocNumber("assembly_orders", "ao_number", companyId, "ao_prefix");
     await (supabase as any).from("assembly_orders").update({ ao_number: aoNumber }).eq("id", created.id);
     created = { ...created, ao_number: aoNumber };
   }

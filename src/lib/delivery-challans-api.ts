@@ -132,7 +132,7 @@ export async function fetchDeliveryChallan(id: string): Promise<DeliveryChallan>
 
 export async function getNextDCNumber(): Promise<string> {
   const companyId = await getCompanyId();
-  return getNextDocNumber("delivery_challans", "dc_number", companyId);
+  return getNextDocNumber("delivery_challans", "dc_number", companyId, "dc_prefix");
 }
 
 interface CreateDCData {

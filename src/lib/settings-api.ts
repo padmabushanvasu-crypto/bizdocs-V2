@@ -35,6 +35,7 @@ export interface CompanySettings {
   so_prefix: string | null;
   dn_prefix: string | null;
   fat_prefix: string | null;
+  rcp_prefix: string | null;
   default_payment_terms: string | null;
   default_terms_conditions: string | null;
   default_bank_name: string | null;

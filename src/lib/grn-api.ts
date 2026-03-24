@@ -82,7 +82,7 @@ export async function fetchGRN(id: string): Promise<GRN> {
 
 export async function getNextGRNNumber(): Promise<string> {
   const companyId = await getCompanyId();
-  return getNextDocNumber("grns", "grn_number", companyId);
+  return getNextDocNumber("grns", "grn_number", companyId, "grn_prefix");
 }
 
 export async function fetchOpenPOs() {

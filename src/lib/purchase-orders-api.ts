@@ -105,7 +105,7 @@ export async function fetchPurchaseOrder(id: string): Promise<PurchaseOrder> {
 
 export async function getNextPONumber(): Promise<string> {
   const companyId = await getCompanyId();
-  return getNextDocNumber("purchase_orders", "po_number", companyId);
+  return getNextDocNumber("purchase_orders", "po_number", companyId, "po_prefix");
 }
 
 interface CreatePOData {

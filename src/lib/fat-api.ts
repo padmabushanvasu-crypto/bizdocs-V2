@@ -212,7 +212,7 @@ export async function createFatCertificate(data: {
 
   // Fallback: if DB trigger didn't set fat_number, generate it
   if (!created.fat_number) {
-    const fatNumber = await getNextDocNumber("fat_certificates", "fat_number", companyId);
+    const fatNumber = await getNextDocNumber("fat_certificates", "fat_number", companyId, "fat_prefix");
     await (supabase as any).from("fat_certificates").update({ fat_number: fatNumber }).eq("id", created.id);
     created = { ...created, fat_number: fatNumber };
   }

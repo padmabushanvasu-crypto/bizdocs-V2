@@ -190,7 +190,7 @@ export async function createSalesOrder({ so, lineItems }: CreateSOData) {
 
   // Fallback: if DB trigger didn't set so_number, generate it
   if (!newSO.so_number) {
-    const soNumber = await getNextDocNumber("sales_orders", "so_number", companyId);
+    const soNumber = await getNextDocNumber("sales_orders", "so_number", companyId, "so_prefix");
     await (supabase as any).from("sales_orders").update({ so_number: soNumber }).eq("id", newSO.id);
     newSO = { ...newSO, so_number: soNumber };
   }
@@ -365,7 +365,7 @@ export async function createDispatchNote({ dn, lineItems, packingList }: CreateD
 
   // Fallback: if DB trigger didn't set dn_number, generate it
   if (!newDN.dn_number) {
-    const dnNumber = await getNextDocNumber("dispatch_notes", "dn_number", companyId);
+    const dnNumber = await getNextDocNumber("dispatch_notes", "dn_number", companyId, "dn_prefix");
     await (supabase as any).from("dispatch_notes").update({ dn_number: dnNumber }).eq("id", newDN.id);
     newDN = { ...newDN, dn_number: dnNumber };
   }

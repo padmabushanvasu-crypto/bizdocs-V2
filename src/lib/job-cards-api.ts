@@ -168,21 +168,9 @@ export interface WipSummary {
 // ============================================================
 
 export async function getNextJCNumber(): Promise<string> {
-  const now = new Date();
-  const fy = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
-  const fyStr = `${String(fy).slice(2)}${String(fy + 1).slice(2)}`;
-  const prefix = `JC-${fyStr}-`;
-  const { data } = await supabase
-    .from("job_cards" as any)
-    .select("jc_number")
-    .ilike("jc_number", `${prefix}%`)
-    .order("jc_number", { ascending: false })
-    .limit(1);
-  if (data && data.length > 0) {
-    const num = parseInt((data[0] as any).jc_number.split("-").pop() || "0", 10);
-    return `${prefix}${String(num + 1).padStart(3, "0")}`;
-  }
-  return `${prefix}001`;
+  const companyId = await getCompanyId();
+  const { getNextDocNumber } = await import("@/lib/doc-number-utils");
+  return getNextDocNumber("job_cards", "jc_number", companyId, "jc_prefix");
 }
 
 // ============================================================
