@@ -26,7 +26,8 @@ import {
   issuePurchaseOrder,
   type POLineItem,
 } from "@/lib/purchase-orders-api";
-import { formatCurrency, formatNumber, amountInWords, calculateGST } from "@/lib/gst-utils";
+import { formatCurrency, formatNumber, amountInWords } from "@/lib/gst-utils";
+import { getGSTType, calculateLineTax, round2, type GSTType } from "@/lib/tax-utils";
 
 const UNITS = ["NOS", "KG", "MTR", "SFT", "SET", "ROLL", "SHEET", "LITRE", "BOX"];
 const PAYMENT_TERMS = ["Immediate", "7 Days", "15 Days", "30 Days", "45 Days", "60 Days", "Custom"];
@@ -201,17 +202,21 @@ export default function PurchaseOrderForm() {
   };
 
   // Calculations
-  const subTotal = useMemo(() => lineItems.reduce((s, i) => s + (i.line_total || 0), 0), [lineItems]);
-  const additionalTotal = useMemo(() => additionalCharges.reduce((s, c) => s + (c.amount || 0), 0), [additionalCharges]);
-  const taxableValue = subTotal + additionalTotal;
+  const subTotal = useMemo(() => lineItems.reduce((s, i) => round2(s + (i.line_total || 0)), 0), [lineItems]);
+  const additionalTotal = useMemo(() => additionalCharges.reduce((s, c) => round2(s + (c.amount || 0)), 0), [additionalCharges]);
+  const taxableValue = round2(subTotal + additionalTotal);
 
-  const vendorStateCode = selectedVendor?.state_code || "";
-  const isSameState = vendorStateCode === COMPANY_STATE_CODE;
-  const gstResult = useMemo(
-    () => calculateGST(COMPANY_STATE_CODE, vendorStateCode || "99", taxableValue, gstRate),
-    [vendorStateCode, taxableValue, gstRate]
+  // GST type — intra vs inter state based on vendor selection
+  const gstType = useMemo<GSTType>(
+    () => getGSTType(COMPANY_STATE_CODE, selectedVendor?.state_code),
+    [COMPANY_STATE_CODE, selectedVendor?.state_code],
   );
-  const grandTotal = Math.round((taxableValue + gstResult.total) * 100) / 100;
+
+  const taxResult = useMemo(
+    () => calculateLineTax(taxableValue, gstRate, gstType),
+    [taxableValue, gstRate, gstType],
+  );
+  const grandTotal = round2(taxableValue + taxResult.total);
 
   // Save
   const saveMutation = useMutation({
@@ -237,10 +242,10 @@ export default function PurchaseOrderForm() {
         sub_total: subTotal,
         additional_charges: additionalCharges,
         taxable_value: taxableValue,
-        igst_amount: gstResult.igst,
-        cgst_amount: gstResult.cgst,
-        sgst_amount: gstResult.sgst,
-        total_gst: gstResult.total,
+        igst_amount: taxResult.igst,
+        cgst_amount: taxResult.cgst,
+        sgst_amount: taxResult.sgst,
+        total_gst: taxResult.total,
         grand_total: grandTotal,
         gst_rate: gstRate,
         status,
@@ -581,10 +586,19 @@ export default function PurchaseOrderForm() {
                 <span className="text-muted-foreground">Your Company:</span>{" "}
                 <span className="font-medium">{companySettings?.state || "N/A"} ({COMPANY_STATE_CODE || "?"})</span>
               </p>
-              <div className={cn("rounded-md p-2 text-xs flex items-start gap-2 mt-2", isSameState ? "bg-blue-50 text-blue-700" : "bg-amber-50 text-amber-700")}>
-                <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                <span>GST Type: <strong>{isSameState ? "CGST + SGST" : "IGST"}</strong> will apply</span>
-              </div>
+              {gstType === 'cgst_sgst' ? (
+                <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold mt-1">
+                  <Info className="h-3 w-3 shrink-0" /> Intra-state — Input CGST + SGST
+                </div>
+              ) : !selectedVendor.state_code ? (
+                <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold mt-1">
+                  <Info className="h-3 w-3 shrink-0" /> State unknown — defaulting to IGST
+                </div>
+              ) : (
+                <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold mt-1">
+                  <Info className="h-3 w-3 shrink-0" /> Inter-state — Input IGST
+                </div>
+              )}
             </>
           ) : (
             <p className="text-sm text-muted-foreground">Select a vendor to see GST details</p>
@@ -638,21 +652,21 @@ export default function PurchaseOrderForm() {
               <span className="font-mono tabular-nums">{formatCurrency(taxableValue)}</span>
             </div>
             <div className="border-t border-border my-2" />
-            {isSameState || !vendorStateCode ? (
+            {gstType === 'cgst_sgst' ? (
               <>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">CGST @ {gstRate / 2}%</span>
-                  <span className="font-mono tabular-nums">{formatCurrency(gstResult.cgst)}</span>
+                  <span className="text-muted-foreground">Input CGST @ {gstRate / 2}%</span>
+                  <span className="font-mono tabular-nums">{formatCurrency(taxResult.cgst)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">SGST @ {gstRate / 2}%</span>
-                  <span className="font-mono tabular-nums">{formatCurrency(gstResult.sgst)}</span>
+                  <span className="text-muted-foreground">Input SGST @ {gstRate / 2}%</span>
+                  <span className="font-mono tabular-nums">{formatCurrency(taxResult.sgst)}</span>
                 </div>
               </>
             ) : (
               <div className="flex justify-between">
-                <span className="text-muted-foreground">IGST @ {gstRate}%</span>
-                <span className="font-mono tabular-nums">{formatCurrency(gstResult.igst)}</span>
+                <span className="text-muted-foreground">Input IGST @ {gstRate}%</span>
+                <span className="font-mono tabular-nums">{formatCurrency(taxResult.igst)}</span>
               </div>
             )}
             <div className="border-t border-border my-2" />

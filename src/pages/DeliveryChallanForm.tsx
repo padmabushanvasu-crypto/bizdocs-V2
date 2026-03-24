@@ -25,7 +25,8 @@ import {
   issueDeliveryChallan,
   type DCLineItem,
 } from "@/lib/delivery-challans-api";
-import { formatCurrency, amountInWords, calculateGST } from "@/lib/gst-utils";
+import { formatCurrency, amountInWords } from "@/lib/gst-utils";
+import { getGSTType, calculateLineTax, round2, type GSTType } from "@/lib/tax-utils";
 
 const RETURNABLE_SUBTYPES = [
   { value: "returnable", label: "Standard Returnable" },
@@ -179,16 +180,24 @@ export default function DeliveryChallanForm() {
   };
 
   // Totals & GST
-  const subTotal = useMemo(() => lineItems.reduce((s, i) => s + (i.amount || 0), 0), [lineItems]);
+  const subTotal = useMemo(() => lineItems.reduce((s, i) => round2(s + (i.amount || 0)), 0), [lineItems]);
   const totalItems = lineItems.filter((i) => i.description.trim()).length;
   const totalQty = lineItems.reduce((s, i) => s + (i.quantity || 0), 0);
   const isReturnable = ["returnable", "job_work_143", "job_work_out", "loan_borrow"].includes(dcType);
   const isRule45 = dcType === "job_work_out";
+  const isJobWork143 = dcType === "job_work_143";
 
-  const companyStateCode = company?.state_code || "33";
-  const partyStateCode = selectedParty?.state_code || companyStateCode;
-  const gstResult = useMemo(() => calculateGST(companyStateCode, partyStateCode, subTotal, gstRate), [companyStateCode, partyStateCode, subTotal, gstRate]);
-  const grandTotal = Math.round((subTotal + gstResult.total) * 100) / 100;
+  // GST type — derive from company state vs party state. Never assume intra-state.
+  const gstType = useMemo<GSTType>(
+    () => getGSTType(company?.state_code, selectedParty?.state_code),
+    [company?.state_code, selectedParty?.state_code],
+  );
+
+  const taxResult = useMemo(
+    () => calculateLineTax(subTotal, gstRate, gstType),
+    [subTotal, gstRate, gstType],
+  );
+  const grandTotal = round2(subTotal + taxResult.total);
 
   // Save
   const saveMutation = useMutation({
@@ -222,10 +231,10 @@ export default function DeliveryChallanForm() {
         lo_number: loNumber || null,
         approx_value: approxValue ?? null,
         sub_total: subTotal,
-        cgst_amount: gstResult.cgst,
-        sgst_amount: gstResult.sgst,
-        igst_amount: gstResult.igst,
-        total_gst: gstResult.total,
+        cgst_amount: taxResult.cgst,
+        sgst_amount: taxResult.sgst,
+        igst_amount: taxResult.igst,
+        total_gst: taxResult.total,
         grand_total: grandTotal,
         gst_rate: gstRate,
         po_reference: poReference || null,
@@ -330,6 +339,21 @@ export default function DeliveryChallanForm() {
           </SelectContent>
         </Select>
       </div>
+
+      {/* Job Work Sec 143 — no GST note */}
+      {isJobWork143 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
+          <Info className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold text-blue-800 text-sm">Section 143 — Job Work Challan (No GST)</p>
+            <p className="text-xs text-blue-700 mt-1">
+              No GST is applicable on goods sent for job work under Section 143 of the CGST Act.
+              Goods must be returned within <strong>1 year</strong> (3 years for capital goods).
+              The approximate value field is used only for e-way bill purposes.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* GST Rule 45 Banner */}
       {isRule45 && (
@@ -701,21 +725,23 @@ export default function DeliveryChallanForm() {
                 </Select>
               </span>
             </div>
-            {gstResult.type === "CGST_SGST" ? (
+            {isJobWork143 ? (
+              <div className="text-xs text-blue-600 italic">No GST — Sec 143 Job Work</div>
+            ) : gstType === 'cgst_sgst' ? (
               <>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">CGST @ {gstRate / 2}%</span>
-                  <span className="font-mono tabular-nums">{formatCurrency(gstResult.cgst)}</span>
+                  <span className="font-mono tabular-nums">{formatCurrency(taxResult.cgst)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">SGST @ {gstRate / 2}%</span>
-                  <span className="font-mono tabular-nums">{formatCurrency(gstResult.sgst)}</span>
+                  <span className="font-mono tabular-nums">{formatCurrency(taxResult.sgst)}</span>
                 </div>
               </>
             ) : (
               <div className="flex justify-between">
                 <span className="text-muted-foreground">IGST @ {gstRate}%</span>
-                <span className="font-mono tabular-nums">{formatCurrency(gstResult.igst)}</span>
+                <span className="font-mono tabular-nums">{formatCurrency(taxResult.igst)}</span>
               </div>
             )}
             <div className="border-t border-border my-1" />

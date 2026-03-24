@@ -105,7 +105,9 @@ export default function InvoiceDetail() {
 
   const inv = data.invoice;
   const items = data.lineItems;
-  const isSameState = inv.place_of_supply === "33" || inv.customer_state_code === "33";
+  // Determine tax type from the saved amounts — never hardcode state codes
+  const hasCGST = (inv.cgst_amount ?? 0) > 0;
+  const hasIGST = (inv.igst_amount ?? 0) > 0;
   const outstanding = inv.amount_outstanding ?? 0;
   const isFullyPaid = inv.status === "fully_paid";
   const isCancelled = inv.status === "cancelled";
@@ -260,16 +262,21 @@ export default function InvoiceDetail() {
             <div className="border-t border-border my-2" />
             {Object.entries(gstByRate)
               .filter(([_, v]) => v.taxable > 0)
+              .sort(([a], [b]) => Number(a) - Number(b))
               .map(([rate, vals]) => (
                 <div key={rate}>
-                  {isSameState ? (
+                  {vals.cgst > 0 || (hasCGST && !hasIGST) ? (
                     <>
-                      <div className="flex justify-between text-xs"><span className="text-muted-foreground">CGST @ {Number(rate) / 2}%</span><span className="font-mono">{formatCurrency(vals.cgst)}</span></div>
-                      <div className="flex justify-between text-xs"><span className="text-muted-foreground">SGST @ {Number(rate) / 2}%</span><span className="font-mono">{formatCurrency(vals.sgst)}</span></div>
+                      {vals.cgst > 0 && (
+                        <div className="flex justify-between text-xs"><span className="text-muted-foreground">CGST @ {Number(rate) / 2}%</span><span className="font-mono">{formatCurrency(vals.cgst)}</span></div>
+                      )}
+                      {vals.sgst > 0 && (
+                        <div className="flex justify-between text-xs"><span className="text-muted-foreground">SGST @ {Number(rate) / 2}%</span><span className="font-mono">{formatCurrency(vals.sgst)}</span></div>
+                      )}
                     </>
-                  ) : (
+                  ) : vals.igst > 0 ? (
                     <div className="flex justify-between text-xs"><span className="text-muted-foreground">IGST @ {rate}%</span><span className="font-mono">{formatCurrency(vals.igst)}</span></div>
-                  )}
+                  ) : null}
                 </div>
               ))}
             <div className="border-t border-border my-2" />

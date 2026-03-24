@@ -28,6 +28,7 @@ import {
   type InvoiceLineItem,
 } from "@/lib/invoices-api";
 import { formatCurrency, formatNumber, amountInWords } from "@/lib/gst-utils";
+import { getGSTType, calculateLineTax, round2, type GSTType } from "@/lib/tax-utils";
 import { fetchSerialNumbers, assignSerialToInvoice } from "@/lib/fat-api";
 
 const UNITS = ["NOS", "KG", "MTR", "SFT", "SET", "ROLL", "SHEET", "LITRE", "BOX"];
@@ -218,11 +219,33 @@ export default function InvoiceForm() {
     setDueDate(getDueDateFromTerms(invoiceDate, terms));
   }, [invoiceDate]);
 
-  // GST logic
-  const isSameState = useMemo(() => {
-    const custState = placeOfSupply || selectedCustomer?.state_code || "";
-    return custState === COMPANY_STATE_CODE;
-  }, [placeOfSupply, selectedCustomer]);
+  // GST type — derived from company state vs customer/place-of-supply state
+  const gstType = useMemo<GSTType>(
+    () => getGSTType(COMPANY_STATE_CODE, placeOfSupply || selectedCustomer?.state_code),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [COMPANY_STATE_CODE, placeOfSupply, selectedCustomer?.state_code],
+  );
+
+  // Recalculate all line item taxes instantly when party/state changes
+  useEffect(() => {
+    setLineItems((prev) =>
+      prev.map((item) => {
+        const baseAmount = round2(item.quantity * item.unit_price);
+        const discountAmt = round2(baseAmount * ((item.discount_percent ?? 0) / 100));
+        const taxableAmt = round2(baseAmount - discountAmt);
+        const tax = calculateLineTax(taxableAmt, item.gst_rate, gstType);
+        return {
+          ...item,
+          discount_amount: discountAmt,
+          taxable_amount: taxableAmt,
+          cgst: tax.cgst,
+          sgst: tax.sgst,
+          igst: tax.igst,
+          line_total: round2(taxableAmt + tax.total),
+        };
+      }),
+    );
+  }, [gstType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Line item updates
   const updateLineItem = useCallback((index: number, field: keyof InvoiceLineItem, value: any) => {
@@ -231,29 +254,19 @@ export default function InvoiceForm() {
       const item = { ...updated[index], [field]: value };
 
       // Recalculate
-      const baseAmount = Math.round(item.quantity * item.unit_price * 100) / 100;
-      item.discount_amount = Math.round(baseAmount * (item.discount_percent / 100) * 100) / 100;
-      item.taxable_amount = Math.round((baseAmount - item.discount_amount) * 100) / 100;
-      const gstAmt = Math.round(item.taxable_amount * (item.gst_rate / 100) * 100) / 100;
-
-      const custState = placeOfSupply || selectedCustomer?.state_code || "";
-      const sameState = custState === COMPANY_STATE_CODE;
-
-      if (sameState) {
-        item.cgst = Math.round(gstAmt / 2 * 100) / 100;
-        item.sgst = Math.round(gstAmt / 2 * 100) / 100;
-        item.igst = 0;
-      } else {
-        item.cgst = 0;
-        item.sgst = 0;
-        item.igst = gstAmt;
-      }
-      item.line_total = Math.round((item.taxable_amount + gstAmt) * 100) / 100;
+      const baseAmount = round2(item.quantity * item.unit_price);
+      item.discount_amount = round2(baseAmount * ((item.discount_percent ?? 0) / 100));
+      item.taxable_amount = round2(baseAmount - item.discount_amount);
+      const tax = calculateLineTax(item.taxable_amount, item.gst_rate, gstType);
+      item.cgst = tax.cgst;
+      item.sgst = tax.sgst;
+      item.igst = tax.igst;
+      item.line_total = round2(item.taxable_amount + tax.total);
 
       updated[index] = item;
       return updated;
     });
-  }, [placeOfSupply, selectedCustomer]);
+  }, [gstType]);
 
   const addLineItem = () => setLineItems((prev) => [...prev, emptyLineItem(prev.length + 1)]);
   const removeLineItem = (index: number) => {
@@ -625,9 +638,19 @@ export default function InvoiceForm() {
             <>
               <div>Customer: {selectedCustomer.state || "Unknown"} ({placeOfSupply || selectedCustomer.state_code || "?"})</div>
               <div>Your Company: {companySettings?.state || "N/A"} ({COMPANY_STATE_CODE || "?"})</div>
-              <div className={cn("font-medium mt-1", isSameState ? "text-emerald-600" : "text-blue-600")}>
-                {isSameState ? "CGST + SGST will apply" : "IGST will apply"}
-              </div>
+              {gstType === 'cgst_sgst' ? (
+                <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold mt-1">
+                  Intra-state — CGST + SGST
+                </div>
+              ) : !selectedCustomer.state_code ? (
+                <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold mt-1">
+                  State unknown — defaulting to IGST
+                </div>
+              ) : (
+                <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold mt-1">
+                  Inter-state — IGST
+                </div>
+              )}
             </>
           ) : (
             <div className="text-muted-foreground">Select a customer to see GST type</div>
@@ -655,7 +678,7 @@ export default function InvoiceForm() {
             .sort(([a], [b]) => Number(a) - Number(b))
             .map(([rate, vals]) => (
               <div key={rate}>
-                {isSameState ? (
+                {gstType === 'cgst_sgst' ? (
                   <>
                     <div className="flex justify-between text-xs">
                       <span className="text-muted-foreground">CGST @ {Number(rate) / 2}% on {formatCurrency(vals.taxable)}</span>
