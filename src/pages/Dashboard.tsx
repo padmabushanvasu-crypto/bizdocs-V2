@@ -292,6 +292,31 @@ export default function Dashboard() {
               </Tooltip>
               {[
                 {
+                  label: "Sales Order",
+                  route: "/sales-orders/new",
+                  tooltipTitle: "Sales Order",
+                  tooltipBody: "Use this when a customer places an order. Record their PO number, product, quantity and delivery date before starting production.",
+                },
+                {
+                  label: "Dispatch Note",
+                  route: "/dispatch-notes/new",
+                  tooltipTitle: "Dispatch Note",
+                  tooltipBody: "Use this when goods are physically leaving the factory for a customer delivery. Has vehicle number, driver, LR number and packing list.",
+                },
+                {
+                  label: "Assembly Order",
+                  route: "/assembly-orders",
+                  state: { openNew: true },
+                  tooltipTitle: "Assembly Order",
+                  tooltipBody: "Use this when you are ready to build a sub-assembly or finished OLTC from components already in stock. The BOM loads all required components automatically.",
+                },
+                {
+                  label: "GRN",
+                  route: "/grn/new",
+                  tooltipTitle: "GRN — Goods Receipt",
+                  tooltipBody: "Use this when purchased materials arrive at the factory. Link it to the original PO and record accepted vs rejected quantities. Stock updates automatically.",
+                },
+                {
                   label: "PO",
                   route: "/purchase-orders/new",
                   tooltipTitle: "Purchase Order",
@@ -317,7 +342,7 @@ export default function Dashboard() {
                       style={{ backgroundColor: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.10)" }}
                       onMouseEnter={e => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.12)")}
                       onMouseLeave={e => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.07)")}
-                      onClick={() => navigate(btn.route)}
+                      onClick={() => navigate(btn.route, { state: (btn as any).state })}
                     >
                       {btn.label}
                     </button>

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { fetchItems, type Item } from "@/lib/items-api";
 import { Input } from "@/components/ui/input";
@@ -12,7 +13,7 @@ interface ItemSuggestProps {
 }
 
 const TYPE_SHORT: Record<string, string> = {
-  raw_material: "RM",
+  raw_material: "RAW",
   component: "COMP",
   sub_assembly: "SA",
   bought_out: "BO",
@@ -32,7 +33,11 @@ export function ItemSuggest({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [activeIndex, setActiveIndex] = useState(-1);
-  const ref = useRef<HTMLDivElement>(null);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const { data } = useQuery({
     queryKey: ["items-suggest", search],
@@ -47,9 +52,42 @@ export function ItemSuggest({
     setActiveIndex(-1);
   }, [search]);
 
+  // Recalculate position whenever open state changes or items arrive
+  const updatePosition = () => {
+    if (!inputRef.current) return;
+    const rect = inputRef.current.getBoundingClientRect();
+    setDropdownStyle({
+      position: "fixed",
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: Math.max(rect.width, 300),
+      zIndex: 9999,
+      maxHeight: 300,
+      overflowY: "auto",
+    });
+  };
+
+  useEffect(() => {
+    if (open) updatePosition();
+  }, [open, items.length]);
+
+  // Keep dropdown aligned on scroll / resize
+  useEffect(() => {
+    if (!open) return;
+    window.addEventListener("scroll", updatePosition, true);
+    window.addEventListener("resize", updatePosition);
+    return () => {
+      window.removeEventListener("scroll", updatePosition, true);
+      window.removeEventListener("resize", updatePosition);
+    };
+  }, [open]);
+
+  // Close on outside click — must not close when clicking inside the portal
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const inContainer = containerRef.current?.contains(e.target as Node);
+      const inDropdown = dropdownRef.current?.contains(e.target as Node);
+      if (!inContainer && !inDropdown) setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -72,9 +110,59 @@ export function ItemSuggest({
     }
   }
 
+  const dropdown =
+    open && items.length > 0
+      ? createPortal(
+          <div
+            ref={dropdownRef}
+            style={dropdownStyle}
+            className="bg-popover border border-border rounded-md shadow-xl"
+          >
+            {items.map((item, idx) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`w-full text-left px-3 py-2.5 text-sm transition-colors border-b border-border last:border-0 ${
+                  idx === activeIndex ? "bg-accent" : "hover:bg-accent"
+                }`}
+                onMouseDown={() => {
+                  onSelect(item);
+                  setOpen(false);
+                }}
+                onMouseEnter={() => setActiveIndex(idx)}
+              >
+                {/* Row 1: code + description + type badge + unit */}
+                <div className="flex items-center gap-2 min-w-0">
+                  {item.item_code && (
+                    <span className="font-mono text-sm font-semibold text-blue-600 shrink-0">
+                      {item.item_code}
+                    </span>
+                  )}
+                  <span className="font-bold text-foreground truncate flex-1">
+                    {item.description}
+                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                    {item.item_type && (
+                      <span className="text-[10px] font-mono bg-muted text-muted-foreground px-1.5 py-0.5 rounded">
+                        {TYPE_SHORT[item.item_type] ?? item.item_type}
+                      </span>
+                    )}
+                    {item.unit && (
+                      <span className="text-xs text-muted-foreground">{item.unit}</span>
+                    )}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>,
+          document.body
+        )
+      : null;
+
   return (
-    <div ref={ref} className="relative">
+    <div ref={containerRef} className="relative">
       <Input
+        ref={inputRef}
         value={value}
         onChange={(e) => {
           onChange(e.target.value);
@@ -91,45 +179,7 @@ export function ItemSuggest({
         placeholder={placeholder}
         className={className}
       />
-      {open && items.length > 0 && (
-        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-lg max-h-64 overflow-y-auto">
-          {items.map((item, idx) => (
-            <button
-              key={item.id}
-              type="button"
-              className={`w-full text-left px-3 py-2 text-sm transition-colors border-b border-border last:border-0 ${
-                idx === activeIndex ? "bg-accent" : "hover:bg-accent"
-              }`}
-              onMouseDown={() => {
-                onSelect(item);
-                setOpen(false);
-              }}
-              onMouseEnter={() => setActiveIndex(idx)}
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                {item.drawing_revision && (
-                  <span className="font-mono text-xs font-semibold text-blue-600 shrink-0">
-                    {item.drawing_revision}
-                  </span>
-                )}
-                <span className="font-medium text-foreground truncate flex-1">
-                  {item.description}
-                </span>
-                {item.item_type && (
-                  <span className="shrink-0 text-[10px] font-mono bg-muted text-muted-foreground px-1 py-0.5 rounded">
-                    {TYPE_SHORT[item.item_type] ?? item.item_type}
-                  </span>
-                )}
-              </div>
-              <div className="flex gap-3 text-xs text-muted-foreground mt-0.5">
-                <span className="font-mono">{item.item_code}</span>
-                <span>{item.unit}</span>
-                {(item.standard_cost ?? 0) > 0 && <span>₹{item.standard_cost}</span>}
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
+      {dropdown}
     </div>
   );
 }
