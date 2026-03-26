@@ -364,7 +364,18 @@ export default function PurchaseOrderForm() {
             {/* Vendor Card */}
             {selectedVendor && (
               <div className="bg-muted/50 rounded-lg p-3 border border-border text-sm space-y-1">
-                <p className="font-medium text-foreground">{selectedVendor.name}</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="font-medium text-foreground">{selectedVendor.name}</p>
+                  {selectedVendor.vendor_type && (
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+                      selectedVendor.vendor_type === "raw_material_supplier" ? "bg-teal-50 text-teal-700 border-teal-200" :
+                      selectedVendor.vendor_type === "processor" ? "bg-purple-50 text-purple-700 border-purple-200" :
+                      "bg-slate-100 text-slate-600 border-slate-200"
+                    }`}>
+                      {selectedVendor.vendor_type === "raw_material_supplier" ? "RAW MAT" : selectedVendor.vendor_type === "processor" ? "PROCESSOR" : "BOTH"}
+                    </span>
+                  )}
+                </div>
                 {selectedVendor.address_line1 && <p className="text-muted-foreground">{selectedVendor.address_line1}</p>}
                 {selectedVendor.city && (
                   <p className="text-muted-foreground">

@@ -2965,9 +2965,20 @@ export default function BillOfMaterials() {
                               setVendorPartyOpen(false);
                             }}
                           >
-                            <div>
-                              <p className="font-medium text-sm">{p.name}</p>
-                              {p.city && <p className="text-xs text-muted-foreground">{p.city}</p>}
+                            <div className="flex items-start justify-between w-full gap-2">
+                              <div>
+                                <p className="font-medium text-sm">{p.name}</p>
+                                {p.city && <p className="text-xs text-muted-foreground">{p.city}</p>}
+                              </div>
+                              {p.vendor_type && (
+                                <span className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded border mt-0.5 ${
+                                  p.vendor_type === "raw_material_supplier" ? "bg-teal-50 text-teal-700 border-teal-200" :
+                                  p.vendor_type === "processor" ? "bg-purple-50 text-purple-700 border-purple-200" :
+                                  "bg-slate-100 text-slate-600 border-slate-200"
+                                }`}>
+                                  {p.vendor_type === "raw_material_supplier" ? "RAW MAT" : p.vendor_type === "processor" ? "PROCESSOR" : "BOTH"}
+                                </span>
+                              )}
                             </div>
                           </CommandItem>
                         ))}
@@ -3112,9 +3123,20 @@ export default function BillOfMaterials() {
                                 setStepVendorOpen(false);
                               }}
                             >
-                              <div>
-                                <p className="font-medium text-sm">{p.name}</p>
-                                {p.city && <p className="text-xs text-muted-foreground">{p.city}</p>}
+                              <div className="flex items-start justify-between w-full gap-2">
+                                <div>
+                                  <p className="font-medium text-sm">{p.name}</p>
+                                  {p.city && <p className="text-xs text-muted-foreground">{p.city}</p>}
+                                </div>
+                                {p.vendor_type && (
+                                  <span className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded border mt-0.5 ${
+                                    p.vendor_type === "raw_material_supplier" ? "bg-teal-50 text-teal-700 border-teal-200" :
+                                    p.vendor_type === "processor" ? "bg-purple-50 text-purple-700 border-purple-200" :
+                                    "bg-slate-100 text-slate-600 border-slate-200"
+                                  }`}>
+                                    {p.vendor_type === "raw_material_supplier" ? "RAW MAT" : p.vendor_type === "processor" ? "PROCESSOR" : "BOTH"}
+                                  </span>
+                                )}
                               </div>
                             </CommandItem>
                           ))}

@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { fetchParty, createParty, updateParty, type PartyInsert, type PartyUpdate } from "@/lib/parties-api";
+import { fetchParty, createParty, updateParty, type PartyInsert, type PartyUpdate, type VendorType } from "@/lib/parties-api";
 import { INDIAN_STATES, PAYMENT_TERMS_OPTIONS, validateGSTIN, getStateByName } from "@/lib/indian-states";
 import { fetchCompanySettings } from "@/lib/settings-api";
 
@@ -50,6 +51,7 @@ export default function PartyForm() {
   const { toast } = useToast();
 
   const [partyTypes, setPartyTypes] = useState<Set<"vendor" | "customer">>(new Set());
+  const [vendorType, setVendorType] = useState<VendorType>("processor");
   const [form, setForm] = useState<FormData>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [stateSearch, setStateSearch] = useState("");
@@ -67,6 +69,8 @@ export default function PartyForm() {
       if (pt === "both") setPartyTypes(new Set(["vendor", "customer"]));
       else if (pt === "vendor") setPartyTypes(new Set(["vendor"]));
       else setPartyTypes(new Set(["customer"]));
+
+      if (existingParty.vendor_type) setVendorType(existingParty.vendor_type as VendorType);
 
       const isCustom = existingParty.payment_terms &&
         !PAYMENT_TERMS_OPTIONS.slice(0, -1).includes(existingParty.payment_terms as any);
@@ -159,8 +163,9 @@ export default function PartyForm() {
     setSaving(true);
     try {
       const paymentTerms = form.payment_terms === "Custom" ? form.custom_payment_terms : form.payment_terms;
-      const partyData: PartyInsert = {
+      const partyData: PartyInsert & { vendor_type?: VendorType | null } = {
         party_type: resolvedPartyType,
+        vendor_type: (resolvedPartyType === "vendor" || resolvedPartyType === "both") ? vendorType : null,
         name: form.name.trim(),
         contact_person: form.contact_person || null,
         phone1: form.phone1 || null,
@@ -184,9 +189,9 @@ export default function PartyForm() {
 
       let result;
       if (isEdit && id) {
-        result = await updateParty(id, partyData as PartyUpdate);
+        result = await updateParty(id, partyData as PartyUpdate & { vendor_type?: VendorType | null });
       } else {
-        result = await createParty(partyData);
+        result = await createParty(partyData as PartyInsert);
       }
 
       queryClient.invalidateQueries({ queryKey: ["parties"] });
@@ -233,6 +238,26 @@ export default function PartyForm() {
               onClick={() => toggleType("customer")}
             />
           </div>
+          {(resolvedPartyType === "vendor" || resolvedPartyType === "both") && (
+            <div className="mt-4">
+              <Label htmlFor="vendor_type">Vendor Type</Label>
+              <Select value={vendorType} onValueChange={(v) => setVendorType(v as VendorType)}>
+                <SelectTrigger id="vendor_type" className="mt-1 w-full sm:w-1/2">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="raw_material_supplier">Raw Material Supplier</SelectItem>
+                  <SelectItem value="processor">Component Manufacturer / Processor</SelectItem>
+                  <SelectItem value="both">Both</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground mt-1">
+                {vendorType === "raw_material_supplier" && "Supplies raw materials — copper rod, insulation tape, steel sheets etc."}
+                {vendorType === "processor" && "Takes raw material and machines or processes it into components — CNC, plating, welding."}
+                {vendorType === "both" && "Both supplies raw materials and processes components."}
+              </p>
+            </div>
+          )}
         </FormSection>
 
         {/* Basic Info */}

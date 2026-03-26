@@ -2,20 +2,24 @@ import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
 import type { Tables, TablesInsert, TablesUpdate } from "@/integrations/supabase/types";
 
-export type Party = Tables<"parties">;
+export type VendorType = "raw_material_supplier" | "processor" | "both";
+
+// Extend generated type with vendor_type column added via migration
+export type Party = Tables<"parties"> & { vendor_type?: VendorType | null };
 export type PartyInsert = TablesInsert<"parties">;
 export type PartyUpdate = TablesUpdate<"parties">;
 
 export interface PartiesFilters {
   search?: string;
   type?: "vendor" | "customer" | "both" | "all";
+  vendor_type?: VendorType | "all";
   status?: "active" | "inactive" | "all";
   page?: number;
   pageSize?: number;
 }
 
 export async function fetchParties(filters: PartiesFilters = {}) {
-  const { search, type = "all", status = "active", page = 1, pageSize = 100 } = filters;
+  const { search, type = "all", vendor_type = "all", status = "active", page = 1, pageSize = 100 } = filters;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
@@ -37,6 +41,10 @@ export async function fetchParties(filters: PartiesFilters = {}) {
 
   if (status !== "all") {
     query = query.eq("status", status);
+  }
+
+  if (vendor_type !== "all") {
+    query = (query as any).eq("vendor_type", vendor_type);
   }
 
   if (search && search.trim()) {

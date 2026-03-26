@@ -10,7 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { fetchParties, deactivateParty, createParty, bulkDeleteParties, type PartiesFilters } from "@/lib/parties-api";
+import { fetchParties, deactivateParty, createParty, bulkDeleteParties, type PartiesFilters, type VendorType } from "@/lib/parties-api";
 import { useToast } from "@/hooks/use-toast";
 import ImportDialog from "@/components/ImportDialog";
 import { PARTIES_IMPORT_CONFIG, type ValidatedRow } from "@/lib/import-utils";
@@ -37,6 +37,25 @@ const typeBadge: Record<string, string> = {
   both: "bg-violet-50 text-violet-700 border border-violet-200",
 };
 
+const vendorTypeFilters: { label: string; value: VendorType | "all" }[] = [
+  { label: "All Types", value: "all" },
+  { label: "Raw Material", value: "raw_material_supplier" },
+  { label: "Processor", value: "processor" },
+  { label: "Both", value: "both" },
+];
+
+const vendorTypeBadgeClass: Record<VendorType, string> = {
+  raw_material_supplier: "bg-teal-50 text-teal-700 border border-teal-200",
+  processor: "bg-purple-50 text-purple-700 border border-purple-200",
+  both: "bg-slate-100 text-slate-600 border border-slate-200",
+};
+
+const vendorTypeLabel: Record<VendorType, string> = {
+  raw_material_supplier: "RAW MAT",
+  processor: "PROCESSOR",
+  both: "BOTH",
+};
+
 export default function PartiesList() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -46,6 +65,7 @@ export default function PartiesList() {
   const [filters, setFilters] = useState<PartiesFilters>({
     search: "",
     type: "all",
+    vendor_type: "all",
     status: "active",
     pageSize: 100,
   });
@@ -238,6 +258,23 @@ export default function PartiesList() {
             </button>
           ))}
         </div>
+        {(filters.type === "vendor" || filters.type === "all" || filters.type === "both") && (
+          <div className="flex gap-1 rounded-md border border-border p-0.5 bg-secondary">
+            {vendorTypeFilters.map((f) => (
+              <button
+                key={f.value}
+                onClick={() => updateFilter("vendor_type", f.value)}
+                className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                  filters.vendor_type === f.value
+                    ? "bg-card text-foreground shadow-subtle"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Bulk action toolbar */}
@@ -330,9 +367,16 @@ export default function PartiesList() {
                       </div>
                     </td>
                     <td>
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${typeBadge[party.party_type] || typeBadge.both}`}>
-                        {party.party_type === "both" ? "Both" : party.party_type === "vendor" ? "Vendor" : "Customer"}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${typeBadge[party.party_type] || typeBadge.both}`}>
+                          {party.party_type === "both" ? "Both" : party.party_type === "vendor" ? "Vendor" : "Customer"}
+                        </span>
+                        {party.vendor_type && (party.party_type === "vendor" || party.party_type === "both") && (
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${vendorTypeBadgeClass[party.vendor_type as VendorType]}`}>
+                            {vendorTypeLabel[party.vendor_type as VendorType]}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="hidden md:table-cell text-muted-foreground">{party.city || "—"}</td>
                     <td className="hidden lg:table-cell text-muted-foreground">{party.state || "—"}</td>
