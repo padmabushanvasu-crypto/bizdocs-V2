@@ -218,7 +218,7 @@ export default function WipRegister() {
         />
 
         <Input
-          placeholder="Search WO number, AO number, item, vendor…"
+          placeholder="Search JW number, AO number, item, vendor…"
           className="h-9 w-72 text-sm"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -260,7 +260,7 @@ export default function WipRegister() {
               <table className="w-full data-table">
                 <thead>
                   <tr>
-                    <th>WO Number</th>
+                    <th>JW Number</th>
                     <th>Item</th>
                     <th>Status</th>
                     <th>Location</th>

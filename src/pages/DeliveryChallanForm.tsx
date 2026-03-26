@@ -651,15 +651,15 @@ export default function DeliveryChallanForm() {
               <tr className="bg-secondary text-muted-foreground text-xs uppercase tracking-wider">
                 <th className="px-3 py-2 text-left w-8">#</th>
                 <th className="px-3 py-2 text-left min-w-[120px]">Drawing No.</th>
-                <th className="px-3 py-2 text-left w-[100px]">Item Code</th>
-                <th className="px-3 py-2 text-left min-w-[180px]">Description</th>
-                <th className="px-3 py-2 text-left min-w-[160px]">Nature of Process</th>
-                <th className="px-3 py-2 text-left w-[60px]">Unit</th>
-                <th className="px-3 py-2 text-right w-[75px]">Qty</th>
-                <th className="px-3 py-2 text-right w-[65px]">KGS</th>
-                <th className="px-3 py-2 text-right w-[65px]">SFT</th>
-                <th className="px-3 py-2 text-right w-[90px]">Rate (₹)</th>
-                <th className="px-3 py-2 text-right w-[100px]">Amount (₹)</th>
+                <th className="px-3 py-2 text-left min-w-[110px]">Item Code</th>
+                <th className="px-3 py-2 text-left min-w-[200px]">Description</th>
+                <th className="px-3 py-2 text-left min-w-[180px]">Nature of Process</th>
+                <th className="px-3 py-2 text-left min-w-[80px]">Unit</th>
+                <th className="px-3 py-2 text-right min-w-[80px]">Qty</th>
+                <th className="px-3 py-2 text-right min-w-[80px]">KGS</th>
+                <th className="px-3 py-2 text-right min-w-[80px]">SFT</th>
+                <th className="px-3 py-2 text-right min-w-[100px]">Rate (₹)</th>
+                <th className="px-3 py-2 text-right min-w-[100px]">Amount (₹)</th>
                 <th className="px-3 py-2 text-left min-w-[100px]">Remarks</th>
                 <th className="px-3 py-2 w-8"></th>
               </tr>
@@ -673,7 +673,7 @@ export default function DeliveryChallanForm() {
                       value={item.drawing_number || ""}
                       onChange={(e) => updateLineItem(index, "drawing_number", e.target.value)}
                       placeholder="e.g. 230086"
-                      className="h-8 text-sm font-mono min-w-[120px]"
+                      className="h-8 text-sm font-mono w-full"
                     />
                   </td>
                   <td className="px-3 py-2">
@@ -702,7 +702,7 @@ export default function DeliveryChallanForm() {
                       value={item.description}
                       onChange={(e) => updateLineItem(index, "description", e.target.value)}
                       placeholder="Item description"
-                      className="h-8 text-sm"
+                      className="h-8 text-sm w-full"
                     />
                   </td>
                   <td className="px-3 py-2">
@@ -710,14 +710,14 @@ export default function DeliveryChallanForm() {
                       value={item.nature_of_process || ""}
                       onChange={(e) => updateLineItem(index, "nature_of_process", e.target.value)}
                       placeholder="e.g. Nickel Plating, CNC Machining & Return"
-                      className="h-8 text-sm"
+                      className="h-8 text-sm w-full"
                     />
                   </td>
                   <td className="px-3 py-2">
                     <Input
                       value={item.unit || "NOS"}
                       onChange={(e) => updateLineItem(index, "unit", e.target.value)}
-                      className="h-8 text-sm"
+                      className="h-8 text-sm w-full"
                     />
                   </td>
                   <td className="px-3 py-2">
@@ -725,7 +725,7 @@ export default function DeliveryChallanForm() {
                       type="number"
                       value={item.quantity || ""}
                       onChange={(e) => updateLineItem(index, "quantity", Number(e.target.value))}
-                      className="h-8 text-sm text-right font-mono"
+                      className="h-8 text-sm text-right font-mono w-full"
                     />
                   </td>
                   <td className="px-3 py-2">
@@ -734,7 +734,7 @@ export default function DeliveryChallanForm() {
                       step="0.001"
                       value={item.qty_kgs ?? ""}
                       onChange={(e) => updateLineItem(index, "qty_kgs", e.target.value ? Number(e.target.value) : undefined)}
-                      className="h-8 text-sm text-right font-mono"
+                      className="h-8 text-sm text-right font-mono w-full"
                       placeholder="—"
                     />
                   </td>
@@ -744,7 +744,7 @@ export default function DeliveryChallanForm() {
                       step="0.01"
                       value={item.qty_sft ?? ""}
                       onChange={(e) => updateLineItem(index, "qty_sft", e.target.value ? Number(e.target.value) : undefined)}
-                      className="h-8 text-sm text-right font-mono"
+                      className="h-8 text-sm text-right font-mono w-full"
                       placeholder="—"
                     />
                   </td>
@@ -754,7 +754,7 @@ export default function DeliveryChallanForm() {
                       step="0.01"
                       value={item.rate || ""}
                       onChange={(e) => updateLineItem(index, "rate", Number(e.target.value))}
-                      className="h-8 text-sm text-right font-mono"
+                      className="h-8 text-sm text-right font-mono w-full"
                     />
                   </td>
                   <td className="px-3 py-2 text-right font-mono text-sm tabular-nums font-medium">
@@ -765,7 +765,7 @@ export default function DeliveryChallanForm() {
                       value={item.remarks || ""}
                       onChange={(e) => updateLineItem(index, "remarks", e.target.value)}
                       placeholder="Remarks"
-                      className="h-8 text-sm"
+                      className="h-8 text-sm w-full"
                     />
                   </td>
                   <td className="px-3 py-2">

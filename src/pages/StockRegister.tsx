@@ -135,7 +135,17 @@ export default function StockRegister() {
   };
 
   const handleRaiseJobWork = (row: StockStatusRow) => {
-    navigate(`/job-works/new?item_id=${row.id}`);
+    navigate("/job-works", {
+      state: {
+        openNew: true,
+        prefill: {
+          item_id: row.id,
+          item_code: row.item_code,
+          item_description: row.description,
+          quantity: 1,
+        },
+      },
+    });
   };
 
   return (

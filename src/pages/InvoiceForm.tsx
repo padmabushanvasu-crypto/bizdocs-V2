@@ -555,15 +555,15 @@ export default function InvoiceForm() {
             <thead>
               <tr>
                 <th className="w-8">#</th>
-                <th>Description</th>
-                <th>HSN/SAC</th>
-                <th className="w-20">Qty</th>
-                <th className="w-20">Unit</th>
-                <th className="w-24">Price (₹)</th>
-                <th className="w-20">Disc %</th>
-                <th className="w-20">GST %</th>
-                <th className="text-right">Taxable</th>
-                <th className="text-right">Amount</th>
+                <th className="min-w-[200px]">Description</th>
+                <th className="min-w-[90px]">HSN/SAC</th>
+                <th className="min-w-[80px] text-right">Qty</th>
+                <th className="min-w-[80px]">Unit</th>
+                <th className="min-w-[100px] text-right">Price (₹)</th>
+                <th className="min-w-[80px] text-right">Disc %</th>
+                <th className="min-w-[80px]">GST %</th>
+                <th className="min-w-[100px] text-right">Taxable</th>
+                <th className="min-w-[100px] text-right">Amount</th>
                 <th className="w-10"></th>
               </tr>
             </thead>
@@ -593,19 +593,19 @@ export default function InvoiceForm() {
                       className="mt-1 h-7 text-xs text-muted-foreground"
                     />
                   </td>
-                  <td><Input value={li.hsn_sac_code || ""} onChange={(e) => updateLineItem(i, "hsn_sac_code", e.target.value)} placeholder="HSN" className="w-24" /></td>
-                  <td><Input type="number" value={li.quantity || ""} onChange={(e) => updateLineItem(i, "quantity", parseFloat(e.target.value) || 0)} className="w-20" /></td>
+                  <td><Input value={li.hsn_sac_code || ""} onChange={(e) => updateLineItem(i, "hsn_sac_code", e.target.value)} placeholder="HSN" className="w-full" /></td>
+                  <td><Input type="number" value={li.quantity || ""} onChange={(e) => updateLineItem(i, "quantity", parseFloat(e.target.value) || 0)} className="w-full text-right" /></td>
                   <td>
                     <Select value={li.unit} onValueChange={(v) => updateLineItem(i, "unit", v)}>
-                      <SelectTrigger className="w-20"><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                       <SelectContent>{UNITS.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}</SelectContent>
                     </Select>
                   </td>
-                  <td><Input type="number" value={li.unit_price || ""} onChange={(e) => updateLineItem(i, "unit_price", parseFloat(e.target.value) || 0)} className="w-24" /></td>
-                  <td><Input type="number" value={li.discount_percent || ""} onChange={(e) => updateLineItem(i, "discount_percent", parseFloat(e.target.value) || 0)} className="w-20" /></td>
+                  <td><Input type="number" value={li.unit_price || ""} onChange={(e) => updateLineItem(i, "unit_price", parseFloat(e.target.value) || 0)} className="w-full text-right" /></td>
+                  <td><Input type="number" value={li.discount_percent || ""} onChange={(e) => updateLineItem(i, "discount_percent", parseFloat(e.target.value) || 0)} className="w-full text-right" /></td>
                   <td>
                     <Select value={String(li.gst_rate)} onValueChange={(v) => updateLineItem(i, "gst_rate", parseFloat(v))}>
-                      <SelectTrigger className="w-20"><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                       <SelectContent>{GST_RATES.map((r) => <SelectItem key={r} value={String(r)}>{r}%</SelectItem>)}</SelectContent>
                     </Select>
                   </td>

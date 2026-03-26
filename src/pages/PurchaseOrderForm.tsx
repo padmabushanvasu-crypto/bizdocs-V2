@@ -485,12 +485,12 @@ export default function PurchaseOrderForm() {
               <tr className="bg-secondary text-muted-foreground text-xs uppercase tracking-wider">
                 <th className="px-3 py-2 text-left w-10">#</th>
                 <th className="px-3 py-2 text-left min-w-[200px]">Description</th>
-                <th className="px-3 py-2 text-left w-[100px]">Drawing No.</th>
-                <th className="px-3 py-2 text-right w-[80px]">Qty</th>
-                <th className="px-3 py-2 text-left w-[80px]">Unit</th>
-                <th className="px-3 py-2 text-right w-[110px]">Unit Price (₹)</th>
-                <th className="px-3 py-2 text-left w-[120px]">Delivery Date</th>
-                <th className="px-3 py-2 text-right w-[110px]">Amount (₹)</th>
+                <th className="px-3 py-2 text-left min-w-[100px]">Drawing No.</th>
+                <th className="px-3 py-2 text-right min-w-[80px]">Qty</th>
+                <th className="px-3 py-2 text-left min-w-[80px]">Unit</th>
+                <th className="px-3 py-2 text-right min-w-[110px]">Unit Price (₹)</th>
+                <th className="px-3 py-2 text-left min-w-[120px]">Delivery Date</th>
+                <th className="px-3 py-2 text-right min-w-[110px]">Amount (₹)</th>
                 <th className="px-3 py-2 w-10"></th>
               </tr>
             </thead>
@@ -518,7 +518,7 @@ export default function PurchaseOrderForm() {
                     <Input
                       value={item.drawing_number || ""}
                       onChange={(e) => updateLineItem(index, "drawing_number", e.target.value)}
-                      className="h-8 text-sm"
+                      className="h-8 text-sm w-full"
                     />
                   </td>
                   <td className="px-3 py-2">
@@ -526,7 +526,7 @@ export default function PurchaseOrderForm() {
                       type="number"
                       value={item.quantity || ""}
                       onChange={(e) => updateLineItem(index, "quantity", Number(e.target.value))}
-                      className="h-8 text-sm text-right"
+                      className="h-8 text-sm text-right w-full"
                       step="any"
                     />
                   </td>
@@ -547,7 +547,7 @@ export default function PurchaseOrderForm() {
                       type="number"
                       value={item.unit_price || ""}
                       onChange={(e) => updateLineItem(index, "unit_price", Number(e.target.value))}
-                      className="h-8 text-sm text-right"
+                      className="h-8 text-sm text-right w-full"
                       step="any"
                     />
                   </td>
@@ -556,7 +556,7 @@ export default function PurchaseOrderForm() {
                       type="date"
                       value={item.delivery_date || ""}
                       onChange={(e) => updateLineItem(index, "delivery_date", e.target.value)}
-                      className="h-8 text-sm"
+                      className="h-8 text-sm w-full"
                     />
                   </td>
                   <td className="px-3 py-2 text-right font-mono text-sm tabular-nums">

@@ -89,6 +89,7 @@ export default function JobWorks() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [itemOpen, setItemOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
+  const [prefillData, setPrefillData] = useState<{ item_id: string; item_code: string; item_description: string; quantity: number } | null>(null);
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
@@ -102,10 +103,23 @@ export default function JobWorks() {
   useEffect(() => {
     if ((location.state as any)?.openNew) {
       setNewOpen(true);
+      if ((location.state as any)?.prefill) {
+        setPrefillData((location.state as any).prefill);
+      }
       // Clear state so a refresh doesn't re-open the dialog
       window.history.replaceState({}, "");
     }
   }, [location.state]);
+
+  // Auto-select item from prefill once items are loaded
+  useEffect(() => {
+    if (!prefillData || items.length === 0) return;
+    const found = items.find((it) => it.id === prefillData.item_id);
+    if (found) {
+      setSelectedItem(found);
+      setForm((f) => ({ ...f, quantity_original: prefillData.quantity, unit: found.unit ?? "NOS" }));
+    }
+  }, [prefillData, items]);
 
   const { data: stats } = useQuery({
     queryKey: ["jw-stats"],
@@ -263,6 +277,14 @@ export default function JobWorks() {
 
   const renderFormBody = () => (
     <>
+      {prefillData && (
+        <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+          <AlertCircle className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+          <p className="text-sm text-blue-800">
+            Pre-filled from Stock Register — <span className="font-mono font-semibold">{prefillData.item_code}</span> is below minimum stock level
+          </p>
+        </div>
+      )}
       <div className="space-y-1.5">
         <Label>Job Work Number</Label>
         <Input value={nextJCNumber ?? "Generating..."} readOnly className="font-mono bg-muted" />
@@ -734,7 +756,7 @@ export default function JobWorks() {
           open={newOpen}
           onOpenChange={(v) => {
             setNewOpen(v);
-            if (!v) { setSelectedItem(null); setForm(emptyForm); }
+            if (!v) { setSelectedItem(null); setForm(emptyForm); setPrefillData(null); }
           }}
         >
           <SheetContent side="bottom" className="h-[90dvh] flex flex-col px-4 pb-0">
@@ -756,7 +778,7 @@ export default function JobWorks() {
           open={newOpen}
           onOpenChange={(v) => {
             setNewOpen(v);
-            if (!v) { setSelectedItem(null); setForm(emptyForm); }
+            if (!v) { setSelectedItem(null); setForm(emptyForm); setPrefillData(null); }
           }}
         >
           <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
@@ -769,7 +791,7 @@ export default function JobWorks() {
             <DialogFooter>
               <Button
                 variant="outline"
-                onClick={() => { setNewOpen(false); setSelectedItem(null); setForm(emptyForm); }}
+                onClick={() => { setNewOpen(false); setSelectedItem(null); setForm(emptyForm); setPrefillData(null); }}
               >
                 Cancel
               </Button>
