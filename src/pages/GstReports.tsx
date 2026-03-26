@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { exportMultiSheet, formatDateGST } from "@/lib/export-utils";
+import * as XLSX from "xlsx-js-style";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { format, startOfMonth, endOfMonth, subMonths, startOfQuarter, endOfQuarter } from "date-fns";
 
@@ -408,6 +409,205 @@ async function buildItcData(start: string, end: string) {
   });
 }
 
+// ── GSTR-3B Data Builder ──────────────────────────────────────────────────────
+
+const GSTR3B_MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+interface Gstr3bData {
+  taxable_val: number;
+  igst: number;
+  cgst: number;
+  sgst: number;
+  exempt_val: number;
+  itc_igst: number;
+  itc_cgst: number;
+  itc_sgst: number;
+  net_igst: number;
+  net_cgst: number;
+  net_sgst: number;
+}
+
+async function buildGstr3bData(start: string, end: string): Promise<Gstr3bData> {
+  const { data: invoices } = await supabase
+    .from("invoices")
+    .select("id")
+    .gte("invoice_date", start)
+    .lte("invoice_date", end)
+    .not("status", "in", "(cancelled,deleted)");
+
+  const invIds = (invoices ?? []).map((i: any) => i.id);
+  let lineItems: any[] = [];
+  if (invIds.length > 0) {
+    const { data: li } = await (supabase as any)
+      .from("invoice_line_items")
+      .select("gst_rate, taxable_amount, igst_amount, cgst_amount, sgst_amount")
+      .in("invoice_id", invIds);
+    lineItems = li ?? [];
+  }
+
+  let taxable_val = 0, igst = 0, cgst = 0, sgst = 0, exempt_val = 0;
+  for (const li of lineItems) {
+    const rate = li.gst_rate ?? 0;
+    const tv = li.taxable_amount ?? 0;
+    if (rate === 0) {
+      exempt_val += tv;
+    } else {
+      taxable_val += tv;
+      igst += li.igst_amount ?? 0;
+      cgst += li.cgst_amount ?? 0;
+      sgst += li.sgst_amount ?? 0;
+    }
+  }
+
+  const itcRows = await buildItcData(start, end);
+  let itc_igst = 0, itc_cgst = 0, itc_sgst = 0;
+  for (const r of itcRows) {
+    itc_igst += r.igst ?? 0;
+    itc_cgst += r.cgst ?? 0;
+    itc_sgst += r.sgst ?? 0;
+  }
+
+  return {
+    taxable_val: round2(taxable_val),
+    igst: round2(igst),
+    cgst: round2(cgst),
+    sgst: round2(sgst),
+    exempt_val: round2(exempt_val),
+    itc_igst: round2(itc_igst),
+    itc_cgst: round2(itc_cgst),
+    itc_sgst: round2(itc_sgst),
+    net_igst: round2(Math.max(0, igst - itc_igst)),
+    net_cgst: round2(Math.max(0, cgst - itc_cgst)),
+    net_sgst: round2(Math.max(0, sgst - itc_sgst)),
+  };
+}
+
+function exportGstr3bXlsx(data: Gstr3bData, month: number, year: number, companyName: string) {
+  const periodLabel = `${GSTR3B_MONTHS[month - 1]} ${year}`;
+  const filename = `BizDocs_GSTR3B_${GSTR3B_MONTHS[month - 1]}${year}.xlsx`;
+
+  type RowType = "title" | "meta" | "disclaimer" | "blank" | "section" | "colhdr" | "label" | "computed";
+
+  const aoa: (string | number | null)[][] = [];
+  const rowTypes: RowType[] = [];
+  const merges: { s: { r: number; c: number }; e: { r: number; c: number } }[] = [];
+
+  const addRow = (cells: (string | number | null)[], type: RowType, merge = false) => {
+    const r = aoa.length;
+    const padded = [...cells];
+    while (padded.length < 6) padded.push(null);
+    aoa.push(padded.slice(0, 6));
+    rowTypes.push(type);
+    if (merge) merges.push({ s: { r, c: 0 }, e: { r, c: 5 } });
+  };
+
+  // Meta
+  addRow([`FORM GSTR-3B — ${periodLabel}`], "title", true);
+  addRow([`Company: ${companyName}`], "meta", true);
+  addRow([DISCLAIMER], "disclaimer", true);
+  addRow([null], "blank");
+
+  // 3.1
+  addRow(["3. Tax on outward and reverse charge inward supplies"], "section", true);
+  addRow([null], "blank");
+  addRow(["3.1 Details of Outward Supplies and inward supplies liable to reverse charge"], "section", true);
+  addRow(["Nature of Supplies", "Total Taxable Value (₹)", "Integrated Tax (₹)", "Central Tax (₹)", "State/UT Tax (₹)", "Cess (₹)"], "colhdr");
+  addRow(["(a) Outward taxable supplies (other than zero rated, nil rated and exempt)", data.taxable_val, data.igst, data.cgst, data.sgst, 0], "label");
+  addRow(["(b) Outward taxable supplies (zero rated)", 0, 0, 0, 0, 0], "label");
+  addRow(["(c) Other outward supplies (Nil rated, exempt)", data.exempt_val, 0, 0, 0, 0], "label");
+  addRow(["(d) Inward supplies (liable to reverse charge)", 0, 0, 0, 0, 0], "label");
+  addRow(["(e) Non-GST outward supplies", 0, 0, 0, 0, 0], "label");
+  addRow([null], "blank");
+
+  // 3.2
+  addRow(["3.2 Of the supplies shown in 3.1(a) above, details of inter-State supplies to unregistered, composition & UIN holders"], "section", true);
+  addRow(["Type", "Place of Supply", "Total Taxable Value (₹)", "Amount of Integrated Tax (₹)", null, null], "colhdr");
+  addRow(["Supplies made to Unregistered Persons", "", 0, 0, null, null], "label");
+  addRow(["Supplies made to Composition Taxable Persons", "", 0, 0, null, null], "label");
+  addRow(["Supplies made to UIN holders", "", 0, 0, null, null], "label");
+  addRow([null], "blank");
+
+  // 4
+  addRow(["4. Eligible ITC"], "section", true);
+  addRow([null], "blank");
+  addRow(["4(A) ITC Available (whether in full or part)"], "section", true);
+  addRow(["Details", "Total Taxable Value (₹)", "Integrated Tax (₹)", "Central Tax (₹)", "State/UT Tax (₹)", "Cess (₹)"], "colhdr");
+  addRow(["(1) Import of Goods", 0, 0, 0, 0, 0], "label");
+  addRow(["(2) Import of Services", 0, 0, 0, 0, 0], "label");
+  addRow(["(3) Inward supplies liable to reverse charge (other than 1 & 2 above)", 0, 0, 0, 0, 0], "label");
+  addRow(["(4) Inward supplies from ISD", 0, 0, 0, 0, 0], "label");
+  addRow(["(5) All other ITC", 0, data.itc_igst, data.itc_cgst, data.itc_sgst, 0], "label");
+  addRow([null], "blank");
+  addRow(["4(B) ITC Reversed"], "section", true);
+  addRow(["Details", "Total Taxable Value (₹)", "Integrated Tax (₹)", "Central Tax (₹)", "State/UT Tax (₹)", "Cess (₹)"], "colhdr");
+  addRow(["(1) As per rules 42 & 43 of CGST Rules", 0, 0, 0, 0, 0], "label");
+  addRow(["(2) Others", 0, 0, 0, 0, 0], "label");
+  addRow([null], "blank");
+  addRow(["4(C) Net ITC Available — (A) minus (B)"], "section", true);
+  addRow(["Details", "Total Taxable Value (₹)", "Integrated Tax (₹)", "Central Tax (₹)", "State/UT Tax (₹)", "Cess (₹)"], "colhdr");
+  addRow(["Net ITC Available", 0, data.itc_igst, data.itc_cgst, data.itc_sgst, 0], "computed");
+  addRow([null], "blank");
+  addRow(["4(D) Ineligible ITC"], "section", true);
+  addRow(["Details", "Total Taxable Value (₹)", "Integrated Tax (₹)", "Central Tax (₹)", "State/UT Tax (₹)", "Cess (₹)"], "colhdr");
+  addRow(["(1) As per section 17(5) of CGST Act", 0, 0, 0, 0, 0], "label");
+  addRow(["(2) Others", 0, 0, 0, 0, 0], "label");
+  addRow([null], "blank");
+
+  // 5
+  addRow(["5. Values of exempt, nil-rated and non-GST inward supplies"], "section", true);
+  addRow(["Nature", "Inter-State Supplies (₹)", "Intra-State Supplies (₹)", null, null, null], "colhdr");
+  addRow(["From a supplier under composition scheme, exempt and nil rated supply", 0, 0, null, null, null], "label");
+  addRow(["Non-GST supply", 0, 0, null, null, null], "label");
+  addRow([null], "blank");
+
+  // 6.1
+  addRow(["6.1 Payment of Tax"], "section", true);
+  addRow(["Description", "Tax Payable (₹)", "Paid through ITC — IGST (₹)", "Paid through ITC — CGST (₹)", "Paid through ITC — SGST (₹)", "Tax Paid in Cash (₹)"], "colhdr");
+  addRow(["Integrated Tax", data.igst, data.itc_igst, 0, 0, data.net_igst], "computed");
+  addRow(["Central Tax", data.cgst, 0, data.itc_cgst, 0, data.net_cgst], "computed");
+  addRow(["State/UT Tax", data.sgst, 0, 0, data.itc_sgst, data.net_sgst], "computed");
+  addRow(["Cess", 0, 0, 0, 0, 0], "label");
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa as any);
+  ws["!merges"] = merges;
+  ws["!cols"] = [{ wch: 58 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 20 }];
+
+  const S: Record<RowType, any> = {
+    title:     { font: { bold: true, sz: 13, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "1E3A5F" } }, alignment: { horizontal: "center" } },
+    meta:      { font: { italic: true, sz: 9, color: { rgb: "BFD3F5" } }, fill: { fgColor: { rgb: "1E3A5F" } } },
+    disclaimer:{ font: { italic: true, sz: 9, color: { rgb: "92400E" } }, fill: { fgColor: { rgb: "FFFBEB" } } },
+    section:   { font: { bold: true, sz: 10, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "2D3282" } } },
+    colhdr:    { font: { bold: true, sz: 9, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "374151" } }, alignment: { horizontal: "center" } },
+    label:     { font: { sz: 9 }, fill: { fgColor: { rgb: "F8FAFC" } } },
+    computed:  { font: { bold: true, sz: 9 }, fill: { fgColor: { rgb: "EFF6FF" } } },
+    blank:     {},
+  };
+  const numFmt = "#,##0.00";
+
+  rowTypes.forEach((type, r) => {
+    for (let c = 0; c < 6; c++) {
+      const ref = XLSX.utils.encode_cell({ r, c });
+      if (!ws[ref]) continue;
+      const isNum = typeof aoa[r][c] === "number";
+      if (type === "label" || type === "computed") {
+        const base = { ...S[type] };
+        if (isNum && c > 0) {
+          ws[ref].z = numFmt;
+          ws[ref].s = { ...base, alignment: { horizontal: "right" } };
+        } else {
+          ws[ref].s = base;
+        }
+      } else {
+        ws[ref].s = S[type];
+      }
+    }
+  });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "GSTR-3B");
+  XLSX.writeFile(wb, filename);
+}
+
 // ── Sheet definitions ─────────────────────────────────────────────────────────
 
 const GSTR1_B2B_HEADERS = [
@@ -652,6 +852,119 @@ function ReportCard({ icon, title, description, onDownload, onPreview }: ReportC
   );
 }
 
+// ── GSTR-3B Card ──────────────────────────────────────────────────────────────
+
+function Gstr3bCard({ companyStateCode, companyName }: { companyStateCode: string; companyName: string }) {
+  const { toast } = useToast();
+  const today = new Date();
+  const [month, setMonth] = useState(today.getMonth() + 1);
+  const [year, setYear] = useState(today.getFullYear());
+  const [loading, setLoading] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewSheets, setPreviewSheets] = useState<PreviewSheet[]>([]);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  const prevMonth = () => {
+    if (month === 1) { setMonth(12); setYear((y) => y - 1); }
+    else setMonth((m) => m - 1);
+  };
+  const nextMonth = () => {
+    if (month === 12) { setMonth(1); setYear((y) => y + 1); }
+    else setMonth((m) => m + 1);
+  };
+
+  const getBounds = () => ({
+    start: format(new Date(year, month - 1, 1), "yyyy-MM-dd"),
+    end: format(endOfMonth(new Date(year, month - 1, 1)), "yyyy-MM-dd"),
+  });
+
+  const handlePreview = async () => {
+    setPreviewing(true);
+    try {
+      const { start, end } = getBounds();
+      const data = await buildGstr3bData(start, end);
+      const rows: (string | number)[][] = [
+        ["3.1(a) Outward Taxable Supplies", data.taxable_val, data.igst, data.cgst, data.sgst],
+        ["3.1(c) Nil / Exempt Supplies", data.exempt_val, 0, 0, 0],
+        ["4(A)(5) ITC Available (All other ITC)", "", data.itc_igst, data.itc_cgst, data.itc_sgst],
+        ["6.1 Net Tax Payable (after ITC)", "", data.net_igst, data.net_cgst, data.net_sgst],
+      ];
+      setPreviewSheets([{
+        name: "GSTR-3B Summary",
+        headers: ["Description", "Taxable Value (₹)", "IGST (₹)", "CGST (₹)", "SGST (₹)"],
+        rows,
+        totalRows: rows.length,
+      }]);
+      setPreviewOpen(true);
+    } catch (err: any) {
+      toast({ title: "Failed to load preview", description: err.message, variant: "destructive" });
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    setLoading(true);
+    try {
+      const { start, end } = getBounds();
+      const data = await buildGstr3bData(start, end);
+      exportGstr3bXlsx(data, month, year, companyName);
+    } catch (err: any) {
+      toast({ title: "Failed to generate GSTR-3B", description: err.message, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="paper-card flex flex-col gap-4">
+        <div className="flex items-start gap-3">
+          <div className="rounded-lg bg-blue-50 p-2 shrink-0">
+            <FileSpreadsheet className="h-4 w-4 text-blue-600" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-slate-900 text-sm">GSTR-3B</h3>
+            <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+              Monthly summary return — outward supplies, ITC claimed, and tax payable. Due on 20th of the following month.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1 bg-slate-50 rounded-lg border border-slate-200 px-2 py-1">
+          <button onClick={prevMonth} className="p-1 rounded hover:bg-slate-200 transition-colors">
+            <ChevronLeft className="h-3.5 w-3.5 text-slate-500" />
+          </button>
+          <span className="text-sm font-medium flex-1 text-center tabular-nums text-slate-800">
+            {GSTR3B_MONTHS[month - 1]} {year}
+          </span>
+          <button onClick={nextMonth} className="p-1 rounded hover:bg-slate-200 transition-colors">
+            <ChevronRight className="h-3.5 w-3.5 text-slate-500" />
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button size="sm" variant="outline" className="h-8 gap-1.5 flex-1" onClick={handlePreview} disabled={previewing || loading}>
+            <Eye className="h-3.5 w-3.5" />
+            {previewing ? "Loading…" : "Preview"}
+          </Button>
+          <Button size="sm" className="h-8 gap-1.5 flex-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={handleDownload} disabled={loading || previewing}>
+            <Download className="h-3.5 w-3.5" />
+            {loading ? "Generating…" : "Download"}
+          </Button>
+        </div>
+      </div>
+
+      <PreviewDialog
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        title={`GSTR-3B — ${GSTR3B_MONTHS[month - 1]} ${year}`}
+        sheets={previewSheets}
+      />
+    </>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function GstReports() {
@@ -664,6 +977,7 @@ export default function GstReports() {
 
   const fyYear = companySettings?.fy_year ?? null;
   const companyStateCode = companySettings?.state_code ?? "";
+  const companyName = (companySettings as any)?.company_name ?? "";
 
   const handleError = (title: string) => {
     toast({ title, description: "Check console for details.", variant: "destructive" });
@@ -958,6 +1272,7 @@ export default function GstReports() {
           onDownload={downloadJobWork}
           onPreview={previewJobWork}
         />
+        <Gstr3bCard companyStateCode={companyStateCode} companyName={companyName} />
       </div>
     </div>
   );

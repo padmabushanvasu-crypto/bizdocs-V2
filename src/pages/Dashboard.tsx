@@ -14,7 +14,7 @@ import { fetchRecentSalesOrders } from "@/lib/sales-orders-api";
 import { fetchReorderSummary, fetchReorderAlerts } from "@/lib/reorder-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { supabase } from "@/integrations/supabase/client";
-import { format, startOfMonth } from "date-fns";
+import { format, startOfMonth, addMonths } from "date-fns";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -232,6 +232,13 @@ export default function Dashboard() {
   const reorderCritical = reorderSummary?.critical ?? 0;
   const totalAlerts = overdueReturns + fatPending + reorderCritical;
   const allClear = totalAlerts === 0;
+
+  // GSTR-3B due date: 20th of the current month if today < 20, else 20th of next month
+  const _now = new Date();
+  const gstr3bDue = new Date(_now.getFullYear(), _now.getMonth(), 20);
+  if (_now.getDate() >= 20) gstr3bDue.setMonth(gstr3bDue.getMonth() + 1);
+  const gstr3bDueLabel = format(gstr3bDue, "20 MMMM");
+  const gstr3bDaysLeft = Math.ceil((gstr3bDue.getTime() - _now.setHours(0, 0, 0, 0)) / 86400000);
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -625,6 +632,27 @@ export default function Dashboard() {
 
       {/* ── ZONE 2: LIGHT CONTENT AREA ───────────────────────────────────── */}
       <div className="flex-1 px-4 py-4 lg:px-7 lg:py-5" style={{ backgroundColor: "#F1F5F9" }}>
+
+        {/* GSTR-3B due reminder */}
+        <button
+          onClick={() => navigate("/gst-reports")}
+          className="w-full flex items-center justify-between gap-3 mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-left hover:bg-amber-100 transition-colors"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" />
+            <span className="text-xs font-medium text-amber-800 truncate">
+              GSTR-3B due on {gstr3bDueLabel}
+            </span>
+          </div>
+          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${
+            gstr3bDaysLeft <= 5
+              ? "bg-red-100 text-red-700"
+              : "bg-amber-100 text-amber-700"
+          }`}>
+            {gstr3bDaysLeft} day{gstr3bDaysLeft !== 1 ? "s" : ""} left
+          </span>
+        </button>
+
         {/* Single column on mobile, two-column on desktop */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
 
