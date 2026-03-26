@@ -14,6 +14,7 @@ import {
   cancelDeliveryChallan,
   fetchDCReturns,
   recordJobWorkDCReturn,
+  recordLineItemReturn,
 } from "@/lib/delivery-challans-api";
 import { formatCurrency, formatNumber, amountInWords } from "@/lib/gst-utils";
 import { DocumentHeader } from "@/components/DocumentHeader";
@@ -57,6 +58,13 @@ export default function DeliveryChallanDetail() {
   const [jwReturnQtyRejected, setJwReturnQtyRejected] = useState(0);
   const [jwReturnReason, setJwReturnReason] = useState("");
   const [jwReturnSaving, setJwReturnSaving] = useState(false);
+  // Per-line return state
+  const [lineReturnId, setLineReturnId] = useState<string | null>(null);
+  const [lineReturnItem, setLineReturnItem] = useState<any>(null);
+  const [lineReturnQtyReceived, setLineReturnQtyReceived] = useState(0);
+  const [lineReturnQtyAccepted, setLineReturnQtyAccepted] = useState(0);
+  const [lineReturnReason, setLineReturnReason] = useState("");
+  const [lineReturnSaving, setLineReturnSaving] = useState(false);
 
   const { data: dc, isLoading } = useQuery({
     queryKey: ["delivery-challan", id],
@@ -93,6 +101,7 @@ export default function DeliveryChallanDetail() {
   const isJobWork = JOB_WORK_TYPES.includes(dc.dc_type);
   const hasNatureOfProcess = items.some((i) => i.nature_of_process);
   const hasDrawingNumber = items.some((i) => i.drawing_number);
+  const hasPerLineJW = items.some((i) => (i as any).job_work_id);
   const hasQtyKgs = items.some((i) => (i as any).qty_kgs != null);
   const hasQtySft = items.some((i) => (i as any).qty_sft != null);
   const today = new Date().toISOString().split("T")[0];
@@ -130,11 +139,11 @@ export default function DeliveryChallanDetail() {
               <Edit className="h-3.5 w-3.5 mr-1" /> Edit
             </Button>
           )}
-          {isReturnable && ["issued", "partially_returned"].includes(dc.status) && (dc as any).job_work_id ? (
+          {isReturnable && ["issued", "partially_returned"].includes(dc.status) && (dc as any).job_work_id && !hasPerLineJW ? (
             <Button size="sm" onClick={() => setJwReturnOpen(true)}>
               <RotateCcw className="h-3.5 w-3.5 mr-1" /> Record Return
             </Button>
-          ) : isReturnable && ["issued", "partially_returned"].includes(dc.status) ? (
+          ) : isReturnable && ["issued", "partially_returned"].includes(dc.status) && !hasPerLineJW ? (
             <Button size="sm" onClick={() => navigate(`/delivery-challans/${id}/record-return`)}>
               <RotateCcw className="h-3.5 w-3.5 mr-1" /> Record Return
             </Button>
@@ -291,6 +300,10 @@ export default function DeliveryChallanDetail() {
                 <th className="text-right">Rate (₹)</th>
                 <th className="text-right">Amount (₹)</th>
                 <th>Remarks</th>
+                {hasPerLineJW && <th className="print:hidden">Job Work</th>}
+                {hasPerLineJW && <th className="print:hidden text-right">Returned</th>}
+                {hasPerLineJW && <th className="print:hidden">Status</th>}
+                {hasPerLineJW && isReturnable && ["issued", "partially_returned"].includes(dc.status) && <th className="print:hidden w-20"></th>}
               </tr>
             </thead>
             <tbody>
@@ -309,6 +322,49 @@ export default function DeliveryChallanDetail() {
                   <td className="text-right font-mono tabular-nums">{formatCurrency(item.rate || 0)}</td>
                   <td className="text-right font-mono tabular-nums font-medium">{formatCurrency(item.amount || 0)}</td>
                   <td className="text-muted-foreground text-sm">{item.remarks || "—"}</td>
+                  {hasPerLineJW && (
+                    <td className="print:hidden font-mono text-xs">
+                      {(item as any).job_work_number ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium font-mono px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
+                          {(item as any).job_work_number}
+                        </span>
+                      ) : "—"}
+                    </td>
+                  )}
+                  {hasPerLineJW && (
+                    <td className="print:hidden text-right font-mono tabular-nums text-sm">
+                      {(item as any).qty_accepted != null ? (item as any).qty_accepted : "—"}
+                    </td>
+                  )}
+                  {hasPerLineJW && (
+                    <td className="print:hidden">
+                      {(item as any).return_status === "returned" ? (
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-100">Returned</span>
+                      ) : (item as any).job_work_id ? (
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200">Pending</span>
+                      ) : null}
+                    </td>
+                  )}
+                  {hasPerLineJW && isReturnable && ["issued", "partially_returned"].includes(dc.status) && (
+                    <td className="print:hidden">
+                      {(item as any).job_work_id && (item as any).return_status !== "returned" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs border-amber-300 text-amber-700 hover:bg-amber-50"
+                          onClick={() => {
+                            setLineReturnId((item as any).id);
+                            setLineReturnItem(item);
+                            setLineReturnQtyReceived(item.quantity || 0);
+                            setLineReturnQtyAccepted(item.quantity || 0);
+                            setLineReturnReason("");
+                          }}
+                        >
+                          <RotateCcw className="h-3 w-3 mr-1" /> Return
+                        </Button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -407,7 +463,7 @@ export default function DeliveryChallanDetail() {
         <div className="paper-card print:hidden">
           <div className="flex items-center justify-between border-b border-border pb-2 mb-4">
             <h3 className="text-xs font-semibold text-slate-500">Return History</h3>
-            {["issued", "partially_returned"].includes(dc.status) && (
+            {["issued", "partially_returned"].includes(dc.status) && !hasPerLineJW && (
               (dc as any).job_work_id ? (
                 <Button size="sm" variant="outline" onClick={() => setJwReturnOpen(true)}>
                   <RotateCcw className="h-3.5 w-3.5 mr-1" /> Record Return
@@ -417,6 +473,9 @@ export default function DeliveryChallanDetail() {
                   <RotateCcw className="h-3.5 w-3.5 mr-1" /> Record Return
                 </Button>
               )
+            )}
+            {hasPerLineJW && (
+              <span className="text-xs text-muted-foreground italic">Use per-line Return buttons in the table above</span>
             )}
           </div>
           {(returns ?? []).length === 0 ? (
@@ -522,6 +581,94 @@ export default function DeliveryChallanDetail() {
               }}
             >
               {jwReturnSaving ? "Recording…" : "Confirm Return"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Per-line Return Dialog */}
+      <Dialog open={!!lineReturnId} onOpenChange={(o) => { if (!o) { setLineReturnId(null); setLineReturnItem(null); setLineReturnReason(""); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Record Return — Line Item</DialogTitle>
+            <DialogDescription>
+              {lineReturnItem && (
+                <span>
+                  {(lineReturnItem as any).job_work_number && <strong>{(lineReturnItem as any).job_work_number} · </strong>}
+                  {lineReturnItem.description} (Sent: {lineReturnItem.quantity} {lineReturnItem.unit || "NOS"})
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Qty Received</Label>
+              <Input
+                type="number"
+                min={0}
+                value={lineReturnQtyReceived || ""}
+                onChange={(e) => {
+                  const v = Number(e.target.value) || 0;
+                  setLineReturnQtyReceived(v);
+                  if (lineReturnQtyAccepted > v) setLineReturnQtyAccepted(v);
+                }}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label>Qty Accepted</Label>
+              <Input
+                type="number"
+                min={0}
+                max={lineReturnQtyReceived}
+                value={lineReturnQtyAccepted || ""}
+                onChange={(e) => setLineReturnQtyAccepted(Math.min(Number(e.target.value) || 0, lineReturnQtyReceived))}
+                className="mt-1"
+              />
+            </div>
+            <div className="flex justify-between text-sm text-muted-foreground">
+              <span>Qty Rejected (auto)</span>
+              <span className="font-mono text-red-600">{Math.max(0, lineReturnQtyReceived - lineReturnQtyAccepted)}</span>
+            </div>
+            <div>
+              <Label>Rejection Reason</Label>
+              <Textarea
+                value={lineReturnReason}
+                onChange={(e) => setLineReturnReason(e.target.value)}
+                placeholder="Optional — reason for rejection"
+                rows={2}
+                className="mt-1"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLineReturnId(null)}>Cancel</Button>
+            <Button
+              disabled={lineReturnSaving || lineReturnQtyReceived === 0}
+              onClick={async () => {
+                if (!lineReturnId) return;
+                setLineReturnSaving(true);
+                try {
+                  const qtyRejected = Math.max(0, lineReturnQtyReceived - lineReturnQtyAccepted);
+                  await recordLineItemReturn(lineReturnId, {
+                    qty_received: lineReturnQtyReceived,
+                    qty_accepted: lineReturnQtyAccepted,
+                    qty_rejected: qtyRejected,
+                    rejection_reason: lineReturnReason || undefined,
+                  });
+                  queryClient.invalidateQueries({ queryKey: ["delivery-challan", id] });
+                  queryClient.invalidateQueries({ queryKey: ["dc-stats"] });
+                  setLineReturnId(null);
+                  setLineReturnItem(null);
+                  toast({ title: "Return recorded", description: `${lineReturnQtyAccepted} units moved to finished goods` });
+                } catch (err: any) {
+                  toast({ title: "Error", description: err.message, variant: "destructive" });
+                } finally {
+                  setLineReturnSaving(false);
+                }
+              }}
+            >
+              {lineReturnSaving ? "Recording…" : "Confirm Return"}
             </Button>
           </DialogFooter>
         </DialogContent>

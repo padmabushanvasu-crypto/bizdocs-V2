@@ -54,7 +54,7 @@ import {
   type StockMovement,
 } from "@/lib/job-works-api";
 import { fetchGrnsForJobCard, type GRN } from "@/lib/grn-api";
-import { fetchDCsForJobWork, type DeliveryChallan } from "@/lib/delivery-challans-api";
+import { fetchDCsForJobWork, fetchDCLineItemsForJobWork, type DeliveryChallan, type DCLineItemWithDC } from "@/lib/delivery-challans-api";
 import { AddStepDialog } from "@/components/AddStepDialog";
 import { RecordReturnDialog } from "@/components/RecordReturnDialog";
 import { AuditTimeline } from "@/components/AuditTimeline";
@@ -326,6 +326,12 @@ export default function JobWorkDetail() {
     enabled: !!id,
   });
 
+  const { data: dcLineItems = [] } = useQuery<DCLineItemWithDC[]>({
+    queryKey: ["job-work-dc-line-items", id],
+    queryFn: () => fetchDCLineItemsForJobWork(id!),
+    enabled: !!id,
+  });
+
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["job-work", id] });
     queryClient.invalidateQueries({ queryKey: ["job-work-summary", id] });
@@ -491,7 +497,10 @@ export default function JobWorkDetail() {
               quantity: s.qty_sent ?? jc.quantity_original,
               unit: s.unit ?? jc.unit,
               nature_of_process: s.name,
-              drawing_number: jc.drawing_number,
+              drawing_number: jc.drawing_revision || jc.drawing_number,
+              job_work_id: id,
+              job_work_number: jc.jc_number,
+              job_work_step_id: s.id,
             })),
         },
       },
@@ -881,7 +890,50 @@ export default function JobWorkDetail() {
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
           <FileText className="h-4 w-4" /> Delivery Challans
         </h2>
-        {linkedDCs.length === 0 ? (
+        {dcLineItems.length > 0 ? (
+          <div className="paper-card !p-0 overflow-x-auto">
+            <table className="w-full data-table text-sm">
+              <thead>
+                <tr>
+                  <th>DC Number</th>
+                  <th>Date</th>
+                  <th>Drawing No.</th>
+                  <th>Nature of Process</th>
+                  <th className="text-right">Qty Sent</th>
+                  <th className="text-right">Accepted</th>
+                  <th className="text-right">Rejected</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dcLineItems.map((li) => (
+                  <tr
+                    key={li.id}
+                    className="cursor-pointer hover:bg-muted/40"
+                    onClick={() => navigate(`/delivery-challans/${li.dc_id}`)}
+                  >
+                    <td className="font-mono text-primary hover:underline">{li.dc_number}</td>
+                    <td className="text-xs text-muted-foreground">
+                      {li.dc_date ? new Date(li.dc_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
+                    </td>
+                    <td className="font-mono text-blue-600 text-xs">{li.drawing_number || li.item_code || "—"}</td>
+                    <td className="text-muted-foreground text-xs">{li.nature_of_process || "—"}</td>
+                    <td className="text-right font-mono tabular-nums">{li.quantity}</td>
+                    <td className="text-right font-mono tabular-nums text-green-700">{li.qty_accepted != null ? li.qty_accepted : "—"}</td>
+                    <td className="text-right font-mono tabular-nums text-red-700">{li.qty_rejected != null && li.qty_rejected > 0 ? li.qty_rejected : "—"}</td>
+                    <td>
+                      {li.return_status === "returned" ? (
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-100">Returned</span>
+                      ) : (
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100">Pending</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : linkedDCs.length === 0 ? (
           <div className="paper-card text-center py-6 text-sm text-muted-foreground">
             No delivery challans linked to this work order yet
           </div>
@@ -900,20 +952,10 @@ export default function JobWorkDetail() {
               <tbody>
                 {linkedDCs.map((dc) => {
                   const today = new Date().toISOString().split("T")[0];
-                  const isOverdue =
-                    dc.return_due_date &&
-                    dc.return_due_date < today &&
-                    !["fully_returned", "cancelled"].includes(dc.status);
-                  const totalQtySent = (dc.line_items ?? []).reduce(
-                    (s, li) => s + (li.quantity || 0),
-                    0
-                  );
+                  const isOverdue = dc.return_due_date && dc.return_due_date < today && !["fully_returned", "cancelled"].includes(dc.status);
+                  const totalQtySent = (dc.line_items ?? []).reduce((s, li) => s + (li.quantity || 0), 0);
                   return (
-                    <tr
-                      key={dc.id}
-                      className="cursor-pointer hover:bg-muted/40"
-                      onClick={() => navigate(`/delivery-challans/${dc.id}`)}
-                    >
+                    <tr key={dc.id} className="cursor-pointer hover:bg-muted/40" onClick={() => navigate(`/delivery-challans/${dc.id}`)}>
                       <td className="font-mono text-primary hover:underline">{dc.dc_number}</td>
                       <td className="text-xs text-muted-foreground">
                         {new Date(dc.dc_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
