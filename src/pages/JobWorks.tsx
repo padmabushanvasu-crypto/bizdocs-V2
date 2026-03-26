@@ -192,7 +192,7 @@ export default function JobWorks() {
       setSelectedItem(null);
       setForm(emptyForm);
       toast({
-        title: "Work Order created",
+        title: "Job Work created",
         description: stepsCreated > 0
           ? `${jc.jc_number} created with ${stepsCreated} process step${stepsCreated !== 1 ? "s" : ""} auto-loaded from BOM.`
           : `${jc.jc_number} is now active.`,
@@ -209,7 +209,7 @@ export default function JobWorks() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["job-works"] });
       queryClient.invalidateQueries({ queryKey: ["jw-stats"] });
-      toast({ title: "Work Order deleted" });
+      toast({ title: "Job Work deleted" });
     },
     onError: (err: any) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -226,7 +226,7 @@ export default function JobWorks() {
 
   const handleDelete = (e: React.MouseEvent, id: string, jcNumber: string) => {
     e.stopPropagation();
-    if (confirm(`Delete Work Order ${jcNumber}? This cannot be undone.`)) {
+    if (confirm(`Delete Job Work ${jcNumber}? This cannot be undone.`)) {
       deleteMutation.mutate(id);
     }
   };
@@ -313,7 +313,7 @@ export default function JobWorks() {
         )}
         {selectedItem && bomLines && bomLines.length > 0 && (
           <div className="bg-blue-50 border border-blue-200 rounded-md p-2.5 text-xs text-blue-700">
-            This component has a standard processing route. Steps will be auto-populated when the Work Order is created.
+            This component has a standard processing route. Steps will be auto-populated when the Job Work is created.
           </div>
         )}
       </div>
@@ -425,12 +425,12 @@ export default function JobWorks() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-            <Activity className="h-5 w-5 text-blue-600" /> Work Orders
+            <Activity className="h-5 w-5 text-blue-600" /> Job Works
           </h1>
           <p className="text-sm text-slate-500">Track manufacturing jobs through each process stage</p>
         </div>
         <Button onClick={() => setNewOpen(true)} className="active:scale-[0.98] transition-transform">
-          <Plus className="h-4 w-4 mr-1" /> New Work Order
+          <Plus className="h-4 w-4 mr-1" /> New Job Work
         </Button>
       </div>
 
@@ -559,8 +559,8 @@ export default function JobWorks() {
                       <div className="h-16 w-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
                         <ClipboardList className="h-8 w-8 text-slate-400" />
                       </div>
-                      <h3 className="text-base font-semibold text-slate-900 mb-1">No work orders yet</h3>
-                      <p className="text-sm text-slate-500 mb-6 max-w-xs">Create your first work order to start tracking components through the manufacturing process.</p>
+                      <h3 className="text-base font-semibold text-slate-900 mb-1">No job works yet</h3>
+                      <p className="text-sm text-slate-500 mb-6 max-w-xs">Create your first job work to start tracking components through the manufacturing process.</p>
                     </div>
                   </td>
                 </tr>
@@ -739,14 +739,14 @@ export default function JobWorks() {
         >
           <SheetContent side="bottom" className="h-[90dvh] flex flex-col px-4 pb-0">
             <SheetHeader className="pb-2 border-b">
-              <SheetTitle>New Work Order</SheetTitle>
+              <SheetTitle>New Job Work</SheetTitle>
             </SheetHeader>
             <div className="flex-1 overflow-y-auto py-3 space-y-3">
               {renderFormBody()}
             </div>
             <SheetFooter className="border-t py-3">
               <Button className="w-full" onClick={handleCreate} disabled={createMutation.isPending}>
-                Create Work Order
+                Create Job Work
               </Button>
             </SheetFooter>
           </SheetContent>
@@ -761,7 +761,7 @@ export default function JobWorks() {
         >
           <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>New Work Order</DialogTitle>
+              <DialogTitle>New Job Work</DialogTitle>
             </DialogHeader>
             <div className="space-y-3">
               {renderFormBody()}
@@ -774,7 +774,7 @@ export default function JobWorks() {
                 Cancel
               </Button>
               <Button onClick={handleCreate} disabled={createMutation.isPending}>
-                Create Work Order
+                Create Job Work
               </Button>
             </DialogFooter>
           </DialogContent>

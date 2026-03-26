@@ -305,21 +305,21 @@ export default function GRNForm() {
             </div>
 
             <div>
-              <Label className="text-sm font-medium text-slate-700">Link to Work Order (optional)</Label>
+              <Label className="text-sm font-medium text-slate-700">Link to Job Work (optional)</Label>
               <Popover open={jcOpen} onOpenChange={setJcOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" role="combobox" className="w-full justify-between mt-1 font-normal">
                     {selectedJobCard
                       ? `${selectedJobCard.jc_number} — ${selectedJobCard.item_description ?? selectedJobCard.item_code ?? ""}`
-                      : "Select Work Order..."}
+                      : "Select Job Work..."}
                     <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-full p-0" align="start">
                   <Command>
-                    <CommandInput placeholder="Search work order..." />
+                    <CommandInput placeholder="Search job work..." />
                     <CommandList>
-                      <CommandEmpty>No open work orders found.</CommandEmpty>
+                      <CommandEmpty>No open job works found.</CommandEmpty>
                       <CommandGroup>
                         {(openJobCards ?? []).map((jc: any) => (
                           <CommandItem
@@ -338,7 +338,7 @@ export default function GRNForm() {
                   </Command>
                 </PopoverContent>
               </Popover>
-              <p className="text-xs text-muted-foreground mt-1">Link this GRN to a Work Order if these materials are for a specific job</p>
+              <p className="text-xs text-muted-foreground mt-1">Link this GRN to a Job Work if these materials are for a specific job</p>
             </div>
 
             <div>

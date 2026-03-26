@@ -113,7 +113,7 @@ export default function StageTemplates() {
             <GitBranch className="h-5 w-5" /> Stage Templates
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Reusable process stages for Job Cards
+            Reusable process stages for Job Works
           </p>
         </div>
         <Button onClick={openNew} className="active:scale-[0.98] transition-transform flex-shrink-0">
@@ -172,7 +172,7 @@ export default function StageTemplates() {
                     <GitBranch className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
                     <p className="text-muted-foreground font-medium">No stage templates yet</p>
                     <p className="text-sm text-muted-foreground">
-                      Add templates to reuse across Job Cards
+                      Add templates to reuse across Job Works
                     </p>
                   </td>
                 </tr>

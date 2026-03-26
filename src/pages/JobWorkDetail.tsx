@@ -349,7 +349,7 @@ export default function JobWorkDetail() {
       invalidateAll();
       queryClient.invalidateQueries({ queryKey: ["stock-status"] });
       setCompleteDialogOpen(false);
-      toast({ title: "Work Order completed" });
+      toast({ title: "Job Work completed" });
     },
     onError: (err: any) =>
       toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -368,7 +368,7 @@ export default function JobWorkDetail() {
   if (isLoading || !jc) {
     return (
       <div className="p-6 text-center text-muted-foreground">
-        {isLoading ? "Loading…" : "Work Order not found"}
+        {isLoading ? "Loading…" : "Job Work not found"}
       </div>
     );
   }
@@ -554,7 +554,7 @@ export default function JobWorkDetail() {
         className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 transition-colors mb-3"
       >
         <ChevronLeft className="h-4 w-4" />
-        Back to Work Orders
+        Back to Job Works
       </button>
 
       {/* header */}
@@ -1086,7 +1086,7 @@ export default function JobWorkDetail() {
       <Dialog open={completeDialogOpen} onOpenChange={setCompleteDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Complete Work Order</DialogTitle>
+            <DialogTitle>Complete Job Work</DialogTitle>
             <DialogDescription>
               Review the summary and choose what happens to the finished units.
             </DialogDescription>

@@ -709,13 +709,13 @@ export default function ScrapRegister() {
               {/* Linked JC / AO */}
               <div>
                 <Label className="text-sm font-medium text-slate-700">
-                  Linked Job Card (optional)
+                  Linked Job Work (optional)
                 </Label>
                 <Input
                   className="mt-1"
                   value={form.job_card_number}
                   onChange={(e) => setForm((f) => ({ ...f, job_card_number: e.target.value }))}
-                  placeholder="e.g. JC-25-26-001"
+                  placeholder="e.g. JW-25-26-001"
                 />
               </div>
               <div>

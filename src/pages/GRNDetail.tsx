@@ -126,7 +126,7 @@ export default function GRNDetail() {
             )}
             {grn.job_card_number && (
               <div className="md:text-right">
-                <p className="text-xs text-muted-foreground">Work Order</p>
+                <p className="text-xs text-muted-foreground">Job Work</p>
                 <button
                   className="font-mono text-sm text-primary hover:underline"
                   onClick={() => navigate(`/job-works/${grn.job_card_id}`)}

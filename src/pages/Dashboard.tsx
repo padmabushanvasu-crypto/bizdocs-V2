@@ -282,12 +282,12 @@ export default function Dashboard() {
                     onClick={() => navigate("/job-works", { state: { openNew: true } })}
                   >
                     <Activity className="h-3.5 w-3.5" />
-                    New Work Order
+                    New Job Work
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="max-w-[280px]">
-                  <p className="font-bold">Work Order</p>
-                  <p className="font-normal mt-0.5">Use this when you are sending a component out for job work — CNC machining, plating, welding, or any external process. One Work Order per component per batch.</p>
+                  <p className="font-bold">Job Work</p>
+                  <p className="font-normal mt-0.5">Use this when you are sending a component out for job work — CNC machining, plating, welding, or any external process. One Job Work per component per batch.</p>
                 </TooltipContent>
               </Tooltip>
               {[
@@ -370,7 +370,7 @@ export default function Dashboard() {
             </p>
             <div>
               <div className="flex items-center justify-between py-2.5">
-                <span className="text-sm text-slate-400">Work Orders</span>
+                <span className="text-sm text-slate-400">Job Works</span>
                 <span className="text-xl font-bold text-slate-100 font-mono tabular-nums">
                   {wipSummary?.atVendor !== undefined ? activeJCs.length : "—"}
                 </span>
@@ -631,12 +631,12 @@ export default function Dashboard() {
           {/* ── LEFT COLUMN ─────────────────────────────────────────────── */}
           <div className="flex flex-col gap-3 min-w-0">
 
-            {/* Card: Active Work Orders */}
+            {/* Card: Active Job Works */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 lg:p-5">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                  <h2 className="font-semibold text-slate-900">Active Work Orders</h2>
+                  <h2 className="font-semibold text-slate-900">Active Job Works</h2>
                   {activeJCs.length > 0 && (
                     <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
                       {activeJCs.length}

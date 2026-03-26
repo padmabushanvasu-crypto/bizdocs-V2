@@ -71,7 +71,7 @@ const SETUP_STEPS: SetupStep[] = [
     description:
       "Add every raw material, component, bought-out item, sub-assembly and finished product. Set drawing numbers, HSN codes, units and minimum stock levels.",
     whyMatters:
-      "Every Work Order, PO, DC, Assembly Order and Invoice uses items from here. Missing items = cannot create documents.",
+      "Every Job Work, PO, DC, Assembly Order and Invoice uses items from here. Missing items = cannot create documents.",
     timeNeeded:
       "30–60 minutes. Download the Items template from Data Import, fill it in Excel, upload in one go.",
     tag: "Do this once — add new items as needed",
@@ -260,16 +260,16 @@ const FLOW_ROWS: FlowRow[] = [
       { label: "Job Work", route: "/job-works" },
       { label: "Delivery Challan (Out)", route: "/delivery-challans/new" },
       { label: "Material Returns" },
-      { label: "Complete Work Order" },
+      { label: "Complete Job Work" },
       { label: "Stock Updated" },
     ],
     explanation:
-      "Components don't make themselves. Raw metal goes to a vendor for CNC machining, then to another for plating, then comes back for inspection. A Work Order tracks this entire journey. Each time material leaves the factory raise a Delivery Challan (Returnable type). When it comes back record the return on the DC. Once all steps are done and quality is accepted, complete the Work Order — stock of the finished component goes up.",
+      "Components don't make themselves. Raw metal goes to a vendor for CNC machining, then to another for plating, then comes back for inspection. A Job Work tracks this entire journey. Each time material leaves the factory raise a Delivery Challan (Returnable type). When it comes back record the return on the DC. Once all steps are done and quality is accepted, complete the Job Work — stock of the finished component goes up.",
     rules: [
-      "One Work Order per component per batch",
+      "One Job Work per component per batch",
       "Always raise a DC when material goes out — it's your legal proof of dispatch",
       "GST Rule 45: job work goods must return within 365 days or GST is payable",
-      "Complete the Work Order only after all steps are accepted",
+      "Complete the Job Work only after all steps are accepted",
     ],
   },
   {
@@ -401,11 +401,11 @@ const FEATURES: FeatureCard[] = [
     icon: Wrench,
     iconBg: "bg-amber-50",
     iconColor: "text-amber-600",
-    name: "Work Orders",
+    name: "Job Works",
     whenToUse: "When sending material to a vendor for machining, plating, welding or any external process.",
     thinkOfItAs: "Digital job bag",
     commonMistake:
-      "Raising a DC without a Work Order — you lose track of where material is and when it's due back.",
+      "Raising a DC without a Job Work — you lose track of where material is and when it's due back.",
   },
   {
     icon: Layers,

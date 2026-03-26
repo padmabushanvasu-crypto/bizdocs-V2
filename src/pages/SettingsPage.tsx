@@ -30,7 +30,7 @@ export default function SettingsPage() {
       iconBg: "bg-blue-50",
       iconColor: "text-blue-600",
       title: "Document Settings",
-      description: "Invoice, PO, DC, GRN and Job Card number series. Financial year.",
+      description: "Invoice, PO, DC, GRN and Job Work number series. Financial year.",
       action: () => navigate("/settings/documents"),
     },
     {
@@ -46,7 +46,7 @@ export default function SettingsPage() {
       iconBg: "bg-blue-50",
       iconColor: "text-blue-600",
       title: "Process Library",
-      description: "Standard processing steps for Job Cards. Configure once, auto-populate forever.",
+      description: "Standard processing steps for Job Works. Configure once, auto-populate forever.",
       action: () => navigate("/stage-templates"),
     },
     {
