@@ -278,11 +278,9 @@ export async function fetchBomLines(
   parentItemId: string,
   variantId?: string | null
 ): Promise<BomLine[]> {
-  const companyId = await getCompanyId();
   let query = (supabase as any)
     .from("bom_lines")
     .select("*")
-    .eq("company_id", companyId)
     .eq("parent_item_id", parentItemId)
     .order("created_at", { ascending: true });
 
@@ -294,7 +292,10 @@ export async function fetchBomLines(
   }
 
   const { data, error } = await query;
-  if (error) throw error;
+  if (error) {
+    console.error("[BOM] fetchBomLines error:", error);
+    throw error;
+  }
   if (!data || data.length === 0) return [];
 
   const childIds = (data as any[]).map((l: any) => l.child_item_id);

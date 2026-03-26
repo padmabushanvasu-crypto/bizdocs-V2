@@ -1,9 +1,9 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   GitFork, Plus, Trash2, Search, ChevronDown, ChevronRight, ChevronUp,
   Pencil, RefreshCw, Download, Printer, CheckCircle2, Star,
-  AlertTriangle, BarChart3, Users, X, Square, CheckSquare,
+  AlertTriangle, AlertCircle, BarChart3, Users, X, Square, CheckSquare,
   ListOrdered, ArrowUp, ArrowDown, ZoomIn, ZoomOut,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -272,6 +272,45 @@ function VisualTreeNode({
   );
 }
 
+// ── Error Boundary ─────────────────────────────────────────────────────────────
+
+class BomErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("[BOM] Right panel render error:", error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center py-16 text-center px-5">
+          <AlertCircle className="h-8 w-8 text-red-400 mx-auto mb-3" />
+          <p className="text-sm font-medium text-red-600">Something went wrong loading the BOM</p>
+          <p className="text-xs text-slate-400 mt-1">{this.state.error?.message ?? "Unknown error"}</p>
+          <button
+            onClick={() => this.setState({ hasError: false, error: null })}
+            className="mt-3 text-xs text-blue-600 hover:underline"
+          >
+            Try again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 const emptyLineForm = {
@@ -298,6 +337,9 @@ const emptyVariantForm = {
 export default function BillOfMaterials() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // ── Refs ─────────────────────────────────────────────────────────────────────
+  const rightPanelRef = useRef<HTMLDivElement>(null);
 
   // ── Left panel state ────────────────────────────────────────────────────────
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
@@ -374,6 +416,7 @@ export default function BillOfMaterials() {
 
   // ── Reset state when item changes ────────────────────────────────────────────
   const handleSelectItem = (item: Item) => {
+    console.log("[BOM] Item selected:", item.id, item.description, "type:", item.item_type);
     setSelectedItem(item);
     setSelectedVariantId("");
     setActiveTab("structure");
@@ -383,6 +426,8 @@ export default function BillOfMaterials() {
     setCompareV2("");
     setSelectedBomLines(new Set());
     setTreeCollapsedNodes(new Set());
+    // Scroll right panel to top
+    if (rightPanelRef.current) rightPanelRef.current.scrollTop = 0;
   };
 
   // ── Queries ─────────────────────────────────────────────────────────────────
@@ -409,7 +454,12 @@ export default function BillOfMaterials() {
 
   const { data: bomLines = [], isLoading: bomLoading, isError: bomError, error: bomQueryError, refetch: refetchLines } = useQuery({
     queryKey: ["bom-lines-v2", selectedItem?.id, selectedVariantId],
-    queryFn: () => fetchBomLines(selectedItem!.id, variantFilter),
+    queryFn: async () => {
+      console.log("[BOM] Fetching lines, itemId:", selectedItem?.id, "variant:", variantFilter);
+      const result = await fetchBomLines(selectedItem!.id, variantFilter);
+      console.log("[BOM] Lines fetched:", result.length, "lines", result);
+      return result;
+    },
     enabled: !!selectedItem,
   });
 
@@ -1154,16 +1204,20 @@ export default function BillOfMaterials() {
                     onClick={() => handleSelectItem(item)}
                     className={`w-full text-left px-4 py-2.5 hover:bg-slate-50 transition-colors ${
                       selectedItem?.id === item.id
-                        ? "bg-blue-50 border-l-2 border-blue-500"
-                        : ""
+                        ? "bg-blue-50 border-l-2 border-l-blue-500"
+                        : "border-l-2 border-l-transparent"
                     }`}
                   >
                     {item.drawing_revision ? (
                       <p className="font-mono text-xs font-bold text-blue-600">{item.drawing_revision}</p>
                     ) : (
-                      <p className="font-mono text-xs font-medium text-slate-400">{item.item_code}</p>
+                      <p className={`font-mono text-xs font-medium ${selectedItem?.id === item.id ? "text-blue-600" : "text-slate-400"}`}>
+                        {item.item_code}
+                      </p>
                     )}
-                    <p className="text-sm text-slate-700 truncate">{item.description}</p>
+                    <p className={`text-sm truncate ${selectedItem?.id === item.id ? "text-blue-700 font-medium" : "text-slate-700"}`}>
+                      {item.description}
+                    </p>
                     <TypeBadge type={item.item_type} />
                   </button>
                 ))
@@ -1172,7 +1226,7 @@ export default function BillOfMaterials() {
           </div>
 
           {/* RIGHT PANEL */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-[400px]">
+          <div ref={rightPanelRef} className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-[400px]">
             {!selectedItem ? (
               <div className="flex-1 flex flex-col items-center justify-center py-16 text-center">
                 <GitFork className="h-10 w-10 text-slate-200 mb-3" />
@@ -1182,7 +1236,13 @@ export default function BillOfMaterials() {
                 <p className="text-xs text-slate-400 mt-1">Click any item in the left panel</p>
               </div>
             ) : (
+              <BomErrorBoundary>
               <>
+                {/* Debug — remove after root cause confirmed */}
+                {(() => {
+                  console.log("[BOM] Rendering right panel. selectedItem:", selectedItem?.id, selectedItem?.description, "bomLoading:", bomLoading, "bomError:", bomError, "lines:", bomLines.length);
+                  return null;
+                })()}
                 {/* Item header */}
                 <div className="px-5 py-4 border-b border-slate-100">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -1257,23 +1317,26 @@ export default function BillOfMaterials() {
                     </div>
 
                     {bomLoading ? (
-                      <div className="p-5 space-y-2">
-                        {[...Array(4)].map((_, i) => (
-                          <div key={i} className="h-9 rounded bg-slate-100 animate-pulse" />
-                        ))}
+                      <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
+                        <RefreshCw className="h-6 w-6 animate-spin opacity-40" />
+                        <p className="text-sm">Loading BOM…</p>
                       </div>
                     ) : bomError ? (
-                      <div className="py-10 text-center px-5">
-                        <AlertTriangle className="h-7 w-7 text-red-400 mx-auto mb-2" />
-                        <p className="text-sm font-medium text-red-600">Failed to load BOM</p>
-                        <p className="text-xs text-slate-400 mt-1">{(bomQueryError as any)?.message ?? "Unknown error"}</p>
-                        <button onClick={() => refetchLines()} className="mt-2 text-xs text-blue-600 hover:underline">Retry</button>
+                      <div className="flex flex-col items-center justify-center py-16 text-center px-5">
+                        <AlertCircle className="h-8 w-8 text-red-400 mx-auto mb-3" />
+                        <p className="text-sm font-medium text-red-600">Failed to load BOM — {(bomQueryError as any)?.message ?? "Unknown error"}</p>
+                        <button onClick={() => refetchLines()} className="mt-3 text-xs text-blue-600 hover:underline">Try again</button>
                       </div>
                     ) : bomLines.length === 0 ? (
-                      <div className="py-12 text-center">
-                        <GitFork className="h-8 w-8 text-slate-200 mx-auto mb-3" />
-                        <p className="text-sm text-slate-600 font-medium">No components added yet</p>
-                        <p className="text-xs text-slate-400 mt-1">Click "Add Component" to start building the BOM for this item</p>
+                      <div className="flex flex-col items-center justify-center py-16 text-center px-5">
+                        <GitFork className="h-10 w-10 text-slate-200 mx-auto mb-3" />
+                        <p className="text-sm text-slate-600 font-medium">No components defined yet</p>
+                        <p className="text-xs text-slate-400 mt-1">
+                          Click "Add Component" to start building the BOM for {selectedItem.description}
+                        </p>
+                        <Button size="sm" className="mt-4 gap-1.5 h-8 text-xs" onClick={() => setAddOpen(true)}>
+                          <Plus className="h-3 w-3" /> Add Component
+                        </Button>
                       </div>
                     ) : (
                       <div className="overflow-x-auto flex-1">
@@ -2510,6 +2573,7 @@ export default function BillOfMaterials() {
                   </TabsContent>
                 </Tabs>
               </>
+              </BomErrorBoundary>
             )}
           </div>
         </div>
