@@ -97,10 +97,26 @@ const SETUP_STEPS: SetupStep[] = [
     route: "/bill-of-materials",
   },
   {
+    icon: Factory,
+    iconBg: "bg-purple-50",
+    iconColor: "text-purple-600",
+    stepNum: 5,
+    title: "Configure Production Settings",
+    description:
+      "For each finished product (e.g. OLTC 315 KVA), set a Minimum Finished Stock level and a Production Batch Size. When finished goods stock falls below the minimum, the system automatically alerts you to start a production run.",
+    whyMatters:
+      "Without this, the system cannot tell you when to build more finished goods. This is the pull trigger for your entire assembly process.",
+    timeNeeded: "15 minutes — one setting per product",
+    tag: "Do this once",
+    tagOnce: true,
+    buttonLabel: "Go to Items →",
+    route: "/items",
+  },
+  {
     icon: Database,
     iconBg: "bg-teal-50",
     iconColor: "text-teal-600",
-    stepNum: 5,
+    stepNum: 6,
     title: "Enter Opening Stock",
     description:
       "Download the pre-filled template from Data Import. It already has all your items listed. Fill in current quantities and costs and upload.",
@@ -117,7 +133,7 @@ const SETUP_STEPS: SetupStep[] = [
     icon: FileText,
     iconBg: "bg-slate-100",
     iconColor: "text-slate-600",
-    stepNum: 6,
+    stepNum: 7,
     title: "Configure Document Settings",
     description:
       "Set your invoice prefix, PO prefix, financial year and document number starting points. Add your bank details and standard payment terms.",
@@ -273,7 +289,7 @@ const FLOW_ROWS: FlowRow[] = [
     ],
   },
   {
-    zone: "ASSEMBLE",
+    zone: "PRODUCE",
     zoneClass: "bg-purple-600 text-white",
     pillBg: "bg-purple-50",
     pillBorder: "border-purple-200",
@@ -281,18 +297,20 @@ const FLOW_ROWS: FlowRow[] = [
     pillHover: "hover:bg-purple-100",
     arrowColor: "text-purple-400",
     steps: [
-      { label: "Components Ready" },
-      { label: "Assembly Order", route: "/assembly-orders" },
-      { label: "Confirm Assembly" },
-      { label: "Serial Numbers", route: "/serial-numbers" },
-      { label: "Finished Goods ↑" },
+      { label: "Stock Alert", route: "/reorder-intelligence" },
+      { label: "Start Production", route: "/assembly-orders" },
+      { label: "Assembly on Floor" },
+      { label: "Mark Complete", route: "/assembly-orders" },
+      { label: "FAT Testing", route: "/fat-certificates" },
     ],
     explanation:
-      "When all components are in WIP stock you can build sub-assemblies and finished products. Create an Assembly Order — the BOM loads every required component automatically. Green means you have enough stock. Red means you are short — fix shortages before proceeding. Confirm the assembly: component stock goes down simultaneously, finished goods stock goes up. For OLTC units: assign a unique serial number to each unit, then run the FAT Certificate before you can invoice it.",
+      "Production is triggered by stock level, not by a customer order. When finished goods stock falls below the minimum you set, a Production Required alert appears on the Dashboard and Reorder Intelligence page. Click Start Production — the system immediately generates serial numbers and creates FAT certificate drafts. Assembly happens on the shop floor without any system interaction. When done, the manager clicks Mark Complete — all BOM components are automatically deducted from stock (backflush). No manual component selection ever needed.",
     rules: [
-      "Never confirm an Assembly Order if any component shows red — fix shortages first",
-      "Serial numbers are assigned at Assembly — one per finished unit, never reuse",
-      "FAT must be passed before a unit can be invoiced — enforced by the system",
+      "Set Minimum Finished Stock on every finished good item — this is the pull trigger",
+      "Serial numbers are created when production STARTS, not when it ends — FAT can begin immediately",
+      "Mark Complete triggers automatic stock deduction — no manual component selection",
+      "A unit cannot be invoiced until its FAT certificate is passed",
+      "No date required to start production — stock level is the only trigger",
     ],
   },
   {
@@ -409,14 +427,14 @@ const FEATURES: FeatureCard[] = [
       "Raising a DC without a Job Work — you lose track of where material is and when it's due back.",
   },
   {
-    icon: Layers,
+    icon: Factory,
     iconBg: "bg-purple-50",
     iconColor: "text-purple-600",
-    name: "Assembly Orders",
-    whenToUse: "When finished goods stock is low and all required components are in WIP stock. The BOM loads components automatically — check that all show green before confirming.",
-    thinkOfItAs: "Recipe execution",
+    name: "Production",
+    whenToUse: "When finished goods stock falls below the minimum level set on the item. The system alerts you automatically — you do not need to decide when to build. Just respond to the alert.",
+    thinkOfItAs: "The assembly trigger — one click starts production, one click completes it. Everything in between happens on the shop floor without touching the system.",
     commonMistake:
-      "Confirming when a component shows red — building incomplete products or wrong quantities.",
+      "Do not wait for a customer order to start production. This is a pull-based system — build to stock, sell from stock. The trigger is your finished goods minimum level, not an order.",
   },
   {
     icon: Truck,
@@ -483,10 +501,10 @@ const FEATURES: FeatureCard[] = [
     iconBg: "bg-teal-50",
     iconColor: "text-teal-600",
     name: "FAT Certificates",
-    whenToUse: "When testing a finished OLTC unit. Records test parameters and pass/fail result.",
-    thinkOfItAs: "Test report",
+    whenToUse: "FAT drafts are created automatically when a Production Run starts. The quality team fills in test results at any time — during assembly, after assembly, or when the customer's engineer arrives to witness. No need to wait for assembly to be marked complete.",
+    thinkOfItAs: "The test report — pre-created and waiting to be filled in from the moment production starts.",
     commonMistake:
-      "Not recording individual test values — just marking Overall Pass without entering readings makes the certificate useless for warranty disputes.",
+      "Do not think FAT only happens after Mark Complete. FAT drafts exist from production start. Fill them in whenever testing happens on the floor.",
   },
   {
     icon: BookOpen,
@@ -553,10 +571,10 @@ const FEATURES: FeatureCard[] = [
     iconBg: "bg-slate-100",
     iconColor: "text-slate-600",
     name: "Serial Numbers",
-    whenToUse: "Track each finished OLTC unit by a unique serial number — from assembly through warranty.",
-    thinkOfItAs: "Unit passport",
+    whenToUse: "They are created automatically when you start a Production Run — you never need to create them manually. Each finished OLTC unit gets a unique serial number the moment production begins.",
+    thinkOfItAs: "The unit's birth certificate — exists from the first moment of production, tracks the unit through FAT, invoice, dispatch, and warranty.",
     commonMistake:
-      "Not assigning serial numbers at Assembly — you cannot trace which components went into which unit for warranty claims.",
+      "Serial numbers are NOT created at the end of assembly. They exist from the start so FAT testing can begin immediately during or after assembly.",
   },
 ];
 
@@ -671,6 +689,9 @@ export default function HowToUse() {
               <p className="text-sm font-semibold text-blue-900">Pull-Based Manufacturing</p>
               <p className="text-sm text-blue-800 mt-0.5">
                 This system uses <strong>pull-based manufacturing</strong> — purchasing and production are triggered by stock levels and reorder alerts, not by customer orders. You build to stock and sell from stock. Minimum stock levels (set on each item) are the engine that drives all buying and making decisions.
+              </p>
+              <p className="text-sm text-blue-800 mt-2">
+                Production is triggered the same way as purchasing — by stock falling below a minimum level. Set a <strong>Minimum Finished Stock</strong> on each finished good item and the system will alert you when it is time to build more.
               </p>
             </div>
           </div>
