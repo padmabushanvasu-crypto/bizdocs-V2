@@ -253,7 +253,7 @@ export default function FatCertificateDetail() {
             )}
             {fat.assembly_order_number && (
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Assembly Order</span>
+                <span className="text-muted-foreground">Production Run</span>
                 <span className="font-mono">{fat.assembly_order_number}</span>
               </div>
             )}

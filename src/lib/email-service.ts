@@ -272,7 +272,7 @@ function formatFAT(fat: AnyDoc, companyName?: string): string {
   if (fat.serial_number) lines.push(`Serial No: ${fat.serial_number}`);
   if (fat.customer_name) lines.push(`Customer: ${fat.customer_name}`);
   if (fat.customer_po_ref) lines.push(`Customer PO: ${fat.customer_po_ref}`);
-  if (fat.assembly_order_number) lines.push(`Assembly Order: ${fat.assembly_order_number}`);
+  if (fat.assembly_order_number) lines.push(`Production Run: ${fat.assembly_order_number}`);
   lines.push("");
 
   const result = fat.overall_result ?? fat.status;

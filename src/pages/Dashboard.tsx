@@ -466,7 +466,7 @@ export default function Dashboard() {
             <div className="divide-y divide-slate-100 mt-2">
               <LightStatRow label="Active Job Works"   value={wipSummary?.atVendor ?? "—"}         onClick={() => navigate("/job-works")} />
               <LightStatRow label="Overdue Returns"    value={wipSummary?.overdueReturns ?? "—"}    highlight={(wipSummary?.overdueReturns ?? 0) > 0} onClick={() => navigate("/wip-register?overdue=true")} />
-              <LightStatRow label="Assembly Orders"    value={aoStats?.active ?? "—"}               onClick={() => navigate("/assembly-orders")} />
+              <LightStatRow label="Production"          value={aoStats?.active ?? "—"}               onClick={() => navigate("/assembly-orders")} />
               <LightStatRow label="FAT Pending"        value={fatStats?.pending ?? "—"}             highlight={(fatStats?.pending ?? 0) > 0} onClick={() => navigate("/fat-certificates")} />
             </div>
           </div>

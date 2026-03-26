@@ -71,7 +71,7 @@ const SETUP_STEPS: SetupStep[] = [
     description:
       "Add every raw material, component, bought-out item, sub-assembly and finished product. Set drawing numbers, HSN codes, units and minimum stock levels.",
     whyMatters:
-      "Every Job Work, PO, DC, Assembly Order and Invoice uses items from here. Missing items = cannot create documents.",
+      "Every Job Work, PO, DC, Production Run and Invoice uses items from here. Missing items = cannot create documents.",
     timeNeeded:
       "30–60 minutes. Download the Items template from Data Import, fill it in Excel, upload in one go.",
     tag: "Do this once — add new items as needed",
@@ -88,7 +88,7 @@ const SETUP_STEPS: SetupStep[] = [
     description:
       "For each sub-assembly and finished product define what goes into it — components, bought-outs and quantities. Set up variants for different product ratings (315 KVA, 500 KVA etc.).",
     whyMatters:
-      "Assembly Orders use the BOM to automatically load components. Without a BOM you have to manually enter every component every time you build something.",
+      "Production Runs use the BOM to automatically load components. Without a BOM you have to manually enter every component every time you build something.",
     timeNeeded:
       "1–2 hours for a typical OLTC product range. Done once per product.",
     tag: "Do this once per product",
@@ -121,7 +121,7 @@ const SETUP_STEPS: SetupStep[] = [
     description:
       "Download the pre-filled template from Data Import. It already has all your items listed. Fill in current quantities and costs and upload.",
     whyMatters:
-      "Without opening stock the system thinks you have zero of everything. Reorder alerts, Assembly Order availability checks and stock reports will all be wrong.",
+      "Without opening stock the system thinks you have zero of everything. Reorder alerts, production availability checks and stock reports will all be wrong.",
     timeNeeded:
       "30 minutes — the template is pre-filled, you only enter quantities and costs.",
     tag: "Do this once at go-live",

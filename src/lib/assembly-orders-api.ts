@@ -246,7 +246,7 @@ export async function createAssemblyOrder(
     );
   }
 
-  logAudit("assembly_order", created.id, "Assembly Order Created", {
+  logAudit("assembly_order", created.id, "Production Run Created", {
     summary: `${created.ao_number} — ${created.item_description ?? created.item_code ?? "No item"} × ${created.quantity_to_build}`,
     ao_number: created.ao_number,
     item_code: created.item_code,
@@ -528,8 +528,8 @@ export async function confirmAssemblyOrder(
   }
 
   // Audit
-  const summary = `Assembly Order completed — built ${quantityBuilt} unit(s) of ${ao.item_description ?? ao.item_code} at ₹${Math.round(costPerUnit).toLocaleString("en-IN")}/unit · total cost ₹${Math.round(totalCost).toLocaleString("en-IN")}`;
-  logAudit("assembly_order", id, "Assembly Order Completed", {
+  const summary = `Production Run completed — built ${quantityBuilt} unit(s) of ${ao.item_description ?? ao.item_code} at ₹${Math.round(costPerUnit).toLocaleString("en-IN")}/unit · total cost ₹${Math.round(totalCost).toLocaleString("en-IN")}`;
+  logAudit("assembly_order", id, "Production Run Completed", {
     summary,
     quantity_built: quantityBuilt,
     cost_per_unit: Math.round(costPerUnit * 100) / 100,
@@ -799,8 +799,8 @@ export async function cancelAssemblyOrder(id: string): Promise<void> {
     .update({ status: "cancelled", updated_at: new Date().toISOString() })
     .eq("id", id);
   if (error) throw error;
-  logAudit("assembly_order", id, "Assembly Order Cancelled", {
-    summary: "Assembly Order cancelled",
+  logAudit("assembly_order", id, "Production Run Cancelled", {
+    summary: "Production Run cancelled",
   }).catch(console.error);
 }
 

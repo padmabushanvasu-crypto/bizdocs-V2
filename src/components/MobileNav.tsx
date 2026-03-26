@@ -19,6 +19,7 @@ import {
   FileText,
   Send,
   X,
+  Factory,
 } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -31,7 +32,7 @@ const MORE_GROUPS = [
     label: "Daily Work",
     items: [
       { label: "Job Works", to: "/job-works", icon: Activity },
-      { label: "Assembly Orders", to: "/assembly-orders", icon: Layers },
+      { label: "Production", to: "/assembly-orders", icon: Factory },
       { label: "WIP Register", to: "/wip-register", icon: BookOpen },
     ],
   },
@@ -74,7 +75,7 @@ const CREATE_TYPES = [
   { label: "GRN", to: "/grn/new", icon: PackageCheck },
   { label: "Dispatch Note", to: "/dispatch-notes/new", icon: Send },
   { label: "Job Work", to: "/job-works", icon: Activity },
-  { label: "Assembly Order", to: "/assembly-orders", icon: Layers },
+  { label: "Production Run", to: "/assembly-orders", icon: Factory },
 ];
 
 const MAIN_TABS = [

@@ -94,7 +94,7 @@ export default function AssemblyOrderDetail() {
       queryClient.invalidateQueries({ queryKey: ["ao-stats"] });
       queryClient.invalidateQueries({ queryKey: ["stock_status"] });
       setConfirmOpen(false);
-      toast({ title: "Assembly confirmed!", description: `Built ${quantityBuilt} unit(s) successfully.` });
+      toast({ title: "Production complete!", description: `Built ${quantityBuilt} unit(s) successfully.` });
     },
     onError: (err: any) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -248,7 +248,7 @@ export default function AssemblyOrderDetail() {
                   setConfirmOpen(true);
                 }}
               >
-                <CheckCircle2 className="h-4 w-4" /> Confirm Assembly
+                <CheckCircle2 className="h-4 w-4" /> Mark Complete
               </Button>
             )}
 
@@ -500,7 +500,7 @@ export default function AssemblyOrderDetail() {
             ))}
             <div className="border-t border-slate-100 pt-2 mt-2">
               <div className="flex items-center justify-between text-sm font-semibold text-slate-900">
-                <span>Total Assembly Cost</span>
+                <span>Total Production Cost</span>
                 <span className="font-mono">{formatCurrency(totalCost)}</span>
               </div>
               <div className="flex items-center justify-between text-sm text-slate-500 mt-1">
@@ -622,7 +622,7 @@ export default function AssemblyOrderDetail() {
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Confirm Assembly</DialogTitle>
+            <DialogTitle>Mark Complete</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">

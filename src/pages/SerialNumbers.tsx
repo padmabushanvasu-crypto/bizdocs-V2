@@ -226,7 +226,7 @@ export default function SerialNumbers() {
           <div className="py-12 text-center">
             <Hash className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
             <p className="text-sm text-muted-foreground font-medium">No serial numbers found</p>
-            <p className="text-xs text-muted-foreground mt-1">Serial numbers are created when Assembly Orders are confirmed.</p>
+            <p className="text-xs text-muted-foreground mt-1">Serial numbers are generated automatically when a Production Run is started.</p>
           </div>
         ) : (
           <table className="w-full data-table">
@@ -234,7 +234,7 @@ export default function SerialNumbers() {
               <tr>
                 <th>Serial Number</th>
                 <th>Item</th>
-                <th>Assembly Order</th>
+                <th>Production Run</th>
                 <th>Status</th>
                 <th>FAT</th>
                 <th>Customer</th>

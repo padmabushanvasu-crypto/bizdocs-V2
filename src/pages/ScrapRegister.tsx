@@ -729,13 +729,13 @@ export default function ScrapRegister() {
               </div>
               <div>
                 <Label className="text-sm font-medium text-slate-700">
-                  Linked Assembly Order (optional)
+                  Linked Production Run (optional)
                 </Label>
                 <Input
                   className="mt-1"
                   value={form.assembly_order_number}
                   onChange={(e) => setForm((f) => ({ ...f, assembly_order_number: e.target.value }))}
-                  placeholder="e.g. AO-25-26-001"
+                  placeholder="e.g. PR-25-26-001"
                 />
               </div>
 

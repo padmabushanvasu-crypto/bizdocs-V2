@@ -23,7 +23,7 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   invoice: "Invoice",
   grn: "GRN",
   job_card: "Job Work",
-  assembly_order: "Assembly Order",
+  assembly_order: "Production Run",
   fat_certificate: "FAT Certificate",
   sales_order: "Sales Order",
   dispatch_note: "Dispatch Note",

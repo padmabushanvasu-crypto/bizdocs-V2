@@ -163,9 +163,9 @@ export default function WipRegister() {
           data: filteredJc,
         },
         {
-          sheetName: "Sub-Assembly WIP",
+          sheetName: "Production WIP",
           columns: [
-            { key: "ao_number",          label: "AO Number",        type: "text",   width: 14 },
+            { key: "ao_number",          label: "Run Number",       type: "text",   width: 14 },
             { key: "item_code",          label: "Item Code",         type: "text",   width: 12 },
             { key: "item_description",   label: "Item Being Built",  type: "text",   width: 28 },
             { key: "quantity_to_build",  label: "Qty to Build",      type: "number", width: 12 },
@@ -211,14 +211,14 @@ export default function WipRegister() {
           options={[
             { value: "all",         label: "All WIP",           color: "#0F172A", count: rows.length + aoRows.length },
             { value: "component",   label: "Component WIP",     color: "#2563EB", count: rows.length },
-            { value: "subassembly", label: "Sub-Assembly WIP",  color: "#0F766E", count: aoRows.length },
+            { value: "subassembly", label: "Production WIP",    color: "#0F766E", count: aoRows.length },
           ]}
           value={tab}
           onChange={(v) => setTab(v as WipTab)}
         />
 
         <Input
-          placeholder="Search JW number, AO number, item, vendor…"
+          placeholder="Search JW number, run number, item, vendor…"
           className="h-9 w-72 text-sm"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
