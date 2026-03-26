@@ -1016,3 +1016,9 @@ export async function fetchWipSummary(): Promise<WipSummary> {
     inHouse: all.filter((r) => r.current_location === "in_house").length,
   };
 }
+
+// ── Aliases for renamed exports ──────────────────────────────────────────────
+export const updateJobWorkStatus = updateJobCardStatus;
+export const issueJobWorkMaterial = issueJobCardMaterial;
+export const fetchJobWorkStockMovements = fetchJobCardStockMovements;
+export const fetchJobWorkStats = fetchJobCardStats;
