@@ -144,18 +144,59 @@ async function downloadTemplate(sheetName: string, headers: string[]) {
 async function downloadBOMTemplate() {
   const XLSX = await import("xlsx-js-style");
   const wb = (XLSX as any).utils.book_new();
-  const headers = ["Finished Item Code *", "Component Code *", "Quantity *", "Unit", "Scrap Factor %", "Variant Name", "Notes"];
-  const examples = [
-    ["PROD-001", "COMP-A", "2", "NOS", "5", "", "Main component"],
-    ["PROD-001", "COMP-B", "1", "KG", "0", "Variant-1", "Optional variant"],
-    ["PROD-002", "COMP-A", "4", "NOS", "2", "", "Sub-assembly use"],
+
+  const headers = [
+    "Finished Item Code *", "Component Code *", "Quantity *", "Unit", "Scrap Factor %", "Variant Name", "Notes",
+    "Vendor 1 Code", "Vendor 1 Process", "Vendor 1 Lead Days",
+    "Vendor 2 Code", "Vendor 2 Process", "Vendor 2 Lead Days",
+    "Vendor 3 Code", "Vendor 3 Process", "Vendor 3 Lead Days",
   ];
-  const ws = (XLSX as any).utils.aoa_to_sheet([headers, ...examples]);
-  // Style header row bold
+  const noteRow = [
+    "", "", "", "", "", "", "",
+    "Vendor codes must match existing parties in your Parties master", "", "",
+    "", "", "", "", "", "",
+  ];
+  const examples = [
+    ["PROD-001", "COMP-A", "2", "NOS", "5", "", "Main component", "VEND-001", "Machining", "7", "", "", "", "", "", ""],
+    ["PROD-001", "COMP-B", "1", "KG", "0", "Variant-1", "Optional variant", "VEND-002", "Heat Treatment", "14", "VEND-003", "Plating", "10", "", "", ""],
+    ["PROD-002", "COMP-A", "4", "NOS", "2", "", "Sub-assembly use", "", "", "", "", "", "", "", "", ""],
+  ];
+
+  const aoa = [headers, noteRow, ...examples];
+  const ws = (XLSX as any).utils.aoa_to_sheet(aoa);
+
+  const BOLD_HEADER: Record<string, unknown> = { font: { bold: true, color: { rgb: "FFFFFF" }, sz: 10 }, fill: { fgColor: { rgb: "2D3282" } }, alignment: { horizontal: "center" } };
+  const VENDOR_HEADER: Record<string, unknown> = { font: { bold: true, color: { rgb: "1E40AF" }, sz: 10 }, fill: { fgColor: { rgb: "DBEAFE" } }, alignment: { horizontal: "center" } };
+  const NOTE_STYLE: Record<string, unknown> = { font: { italic: true, sz: 9, color: { rgb: "1E40AF" } }, fill: { fgColor: { rgb: "EFF6FF" } } };
+  const EXAMPLE_STYLE: Record<string, unknown> = { fill: { fgColor: { rgb: "F3F4F6" } }, font: { sz: 10 } };
+  const VENDOR_EXAMPLE: Record<string, unknown> = { fill: { fgColor: { rgb: "EFF6FF" } }, font: { sz: 10 } };
+
+  const VENDOR_START = 7; // 0-based index of "Vendor 1 Code"
+
   headers.forEach((_h, i) => {
-    const cell = String.fromCharCode(65 + i) + "1";
-    if (ws[cell]) ws[cell].s = { font: { bold: true } };
+    const cell = (XLSX as any).utils.encode_cell({ r: 0, c: i });
+    if (ws[cell]) ws[cell].s = i >= VENDOR_START ? VENDOR_HEADER : BOLD_HEADER;
   });
+
+  // Note row
+  headers.forEach((_h, i) => {
+    const cell = (XLSX as any).utils.encode_cell({ r: 1, c: i });
+    if (ws[cell]) ws[cell].s = i >= VENDOR_START ? NOTE_STYLE : { fill: { fgColor: { rgb: "F3F4F6" } } };
+  });
+
+  // Example rows
+  for (let r = 2; r < aoa.length; r++) {
+    headers.forEach((_h, c) => {
+      const cell = (XLSX as any).utils.encode_cell({ r, c });
+      if (!ws[cell]) ws[cell] = { v: "", t: "s" };
+      ws[cell].s = c >= VENDOR_START ? VENDOR_EXAMPLE : EXAMPLE_STYLE;
+    });
+  }
+
+  ws["!cols"] = headers.map((h, i) => ({ wch: i >= VENDOR_START ? 18 : Math.max(h.length + 2, 16) }));
+  ws["!rows"] = [{ hpt: 20 }, { hpt: 28 }, { hpt: 16 }, { hpt: 16 }, { hpt: 16 }];
+  ws["!freeze"] = { xSplit: 0, ySplit: 1 };
+
   (XLSX as any).utils.book_append_sheet(wb, ws, "BOM Import");
   (XLSX as any).writeFile(wb, "BOM_Import_Template.xlsx");
 }
@@ -619,14 +660,27 @@ function BOMImportTab() {
       if (item.drawing_revision) drawingToId.set((item.drawing_revision as string).toLowerCase(), item.id as string);
     }
 
+    // Pre-fetch parties (vendors) for vendor lookup
+    const { data: allParties } = await (supabase as any)
+      .from("parties")
+      .select("id, name, party_code")
+      .in("party_type", ["vendor", "both"])
+      .eq("company_id", companyId);
+    const partyCodeToVendor = new Map<string, { id: string; name: string }>();
+    for (const p of (allParties ?? []) as any[]) {
+      if (p.party_code) partyCodeToVendor.set((p.party_code as string).toLowerCase(), { id: p.id, name: p.name });
+    }
+
     let skipped = 0;
     const errors: string[] = [];
     const skipReasons: SkipReason[] = [];
 
     // Resolve parent/child IDs in memory
+    type VendorEntry = { code: string; process: string; leadDays: number };
     type ResolvedRow = {
       parentId: string; childId: string; qty: number; unit: string;
       scrapFactor: number; notes: string | null; variantName: string | null; excelRow: number;
+      vendors: VendorEntry[];
     };
     const resolvedRows: ResolvedRow[] = [];
 
@@ -644,12 +698,25 @@ function BOMImportTab() {
         skipReasons.push({ row: excelRow, value: parentCode, reason: `Item '${missingCode}' not found — checked both item code and drawing number` });
         continue;
       }
+      // Collect vendor entries (1-3) from row
+      const vendors: VendorEntry[] = [];
+      for (const n of [1, 2, 3] as const) {
+        const code = row[`vendor${n}_code`]?.trim();
+        if (code) {
+          vendors.push({
+            code,
+            process: row[`vendor${n}_process`]?.trim() || "",
+            leadDays: parseInt(row[`vendor${n}_lead_days`] || "7", 10) || 7,
+          });
+        }
+      }
       resolvedRows.push({
         parentId, childId, qty, unit: row["unit"]?.trim() || "NOS",
         scrapFactor: parseFloat(row["scrap_factor"] || "0") || 0,
         notes: row["notes"]?.trim() || null,
         variantName: row["variant_name"]?.trim() || null,
         excelRow,
+        vendors,
       });
     }
 
@@ -689,9 +756,11 @@ function BOMImportTab() {
       }
     }
 
-    // Split BOM lines into insert vs update
-    const toInsert: any[] = [];
-    const toUpdate: any[] = [];
+    // Split BOM lines into insert vs update, tracking vendors per row
+    type InsertRow = { payload: any; vendors: VendorEntry[]; parentId: string; childId: string };
+    type UpdateRow = { id: string; payload: any; vendors: VendorEntry[] };
+    const toInsert: InsertRow[] = [];
+    const toUpdate: UpdateRow[] = [];
     for (const r of resolvedRows) {
       const variantId = r.variantName ? (variantMap.get(`${r.parentId}:${r.variantName}`) ?? null) : null;
       const payload: any = {
@@ -701,24 +770,54 @@ function BOMImportTab() {
       if (variantId) payload.variant_id = variantId;
       const existingId = bomLineMap.get(`${r.parentId}:${r.childId}`);
       if (existingId) {
-        toUpdate.push({ id: existingId, ...payload });
+        toUpdate.push({ id: existingId, payload, vendors: r.vendors });
       } else {
-        toInsert.push(payload);
+        toInsert.push({ payload, vendors: r.vendors, parentId: r.parentId, childId: r.childId });
       }
     }
 
     let imported = 0;
+    // bomLineId lookup for vendor insertion: parentId:childId → bomLineId
+    const insertedLineIds = new Map<string, string>();
 
-    // Bulk insert new BOM lines
+    // Insert new BOM lines (with .select() to get IDs for vendor insertion)
     if (toInsert.length > 0) {
       try {
-        const { error } = await (supabase as any).from("bom_lines").insert(toInsert);
+        const { data: inserted, error } = await (supabase as any)
+          .from("bom_lines").insert(toInsert.map((r) => r.payload)).select("id, parent_item_id, child_item_id");
         if (error) throw error;
         imported += toInsert.length;
+        for (const row of (inserted ?? []) as any[]) {
+          insertedLineIds.set(`${row.parent_item_id}:${row.child_item_id}`, row.id as string);
+        }
       } catch {
         for (const line of toInsert) {
           try {
-            const { error } = await (supabase as any).from("bom_lines").insert(line);
+            const { data: ins, error } = await (supabase as any)
+              .from("bom_lines").insert(line.payload).select("id, parent_item_id, child_item_id").single();
+            if (error) throw error;
+            imported++;
+            if (ins) insertedLineIds.set(`${(ins as any).parent_item_id}:${(ins as any).child_item_id}`, (ins as any).id);
+          } catch (err: any) {
+            skipped++;
+            skipReasons.push({ row: 0, value: "", reason: `DB error: ${err?.message ?? "unknown"}` });
+          }
+        }
+      }
+    }
+
+    // Upsert updated BOM lines in chunks of 100
+    for (let i = 0; i < toUpdate.length; i += 100) {
+      const chunk = toUpdate.slice(i, i + 100);
+      try {
+        const upsertPayloads = chunk.map((r) => ({ id: r.id, ...r.payload }));
+        const { error } = await (supabase as any).from("bom_lines").upsert(upsertPayloads, { onConflict: "id" });
+        if (error) throw error;
+        imported += chunk.length;
+      } catch {
+        for (const line of chunk) {
+          try {
+            const { error } = await (supabase as any).from("bom_lines").update(line.payload).eq("id", line.id);
             if (error) throw error;
             imported++;
           } catch (err: any) {
@@ -729,24 +828,36 @@ function BOMImportTab() {
       }
     }
 
-    // Bulk upsert updated BOM lines in chunks of 100
-    for (let i = 0; i < toUpdate.length; i += 100) {
-      const chunk = toUpdate.slice(i, i + 100);
-      try {
-        const { error } = await (supabase as any).from("bom_lines").upsert(chunk, { onConflict: "id" });
-        if (error) throw error;
-        imported += chunk.length;
-      } catch {
-        for (const line of chunk) {
-          const { id, ...rest } = line;
-          try {
-            const { error } = await (supabase as any).from("bom_lines").update(rest).eq("id", id);
-            if (error) throw error;
-            imported++;
-          } catch (err: any) {
-            skipped++;
-            skipReasons.push({ row: 0, value: "", reason: `DB error: ${err?.message ?? "unknown"}` });
-          }
+    // Insert vendors for each resolved row that has vendor data
+    const allRowsWithVendors = [
+      ...toInsert.map((r) => ({ lineId: insertedLineIds.get(`${r.parentId}:${r.childId}`) ?? null, vendors: r.vendors })),
+      ...toUpdate.map((r) => ({ lineId: r.id, vendors: r.vendors })),
+    ];
+
+    for (const { lineId, vendors } of allRowsWithVendors) {
+      if (!lineId || vendors.length === 0) continue;
+      for (let vi = 0; vi < vendors.length; vi++) {
+        const ve = vendors[vi];
+        const found = partyCodeToVendor.get(ve.code.toLowerCase());
+        if (!found) {
+          skipReasons.push({ row: 0, value: ve.code, reason: `Vendor code '${ve.code}' not found in Parties master` });
+          continue;
+        }
+        try {
+          await (supabase as any).from("bom_line_vendors").insert({
+            company_id: companyId,
+            bom_line_id: lineId,
+            vendor_id: found.id,
+            vendor_name: found.name,
+            vendor_code: ve.code,
+            notes: ve.process || null,
+            lead_time_days: ve.leadDays,
+            currency: "INR",
+            is_preferred: vi === 0,
+            preference_order: vi + 1,
+          });
+        } catch {
+          // Non-fatal — vendor insert failure doesn't fail the BOM line
         }
       }
     }

@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  GitFork, Plus, Trash2, Search, ChevronDown, ChevronRight,
+  GitFork, Plus, Trash2, Search, ChevronDown, ChevronRight, ChevronUp,
   Pencil, RefreshCw, Download, Printer, CheckCircle2, Star,
   AlertTriangle, BarChart3, Users, X, Square, CheckSquare,
   ListOrdered, ArrowUp, ArrowDown, ZoomIn, ZoomOut,
@@ -31,7 +31,7 @@ import {
   fetchBomLines, createBomLine, updateBomLine, deleteBomLine, bulkDeleteBomLines,
   fetchBomVariants, createBomVariant, updateBomVariant, deleteBomVariant, setDefaultVariant,
   explodeBom, calculateBomCost, fetchWhereUsed, compareBomVariants,
-  fetchBomLineVendorsBatch, addBomLineVendor, updateBomLineVendor, removeBomLineVendor,
+  fetchBomLineVendorsBatch, addBomLineVendor, updateBomLineVendor, removeBomLineVendor, swapBomLineVendorOrder,
   fetchBomProcessStepsBatch, addBomProcessStep, updateBomProcessStep, deleteBomProcessStep, reorderBomProcessSteps,
   type BomLine, type BomVariant, type BomNode, type BomLineVendor, type BomProcessStep,
 } from "@/lib/bom-api";
@@ -40,6 +40,13 @@ import { fetchItems, type Item } from "@/lib/items-api";
 import { formatCurrency } from "@/lib/gst-utils";
 import { exportToExcel } from "@/lib/export-utils";
 import { format } from "date-fns";
+
+function ordinal(n: number): string {
+  if (n === 1) return "1st";
+  if (n === 2) return "2nd";
+  if (n === 3) return "3rd";
+  return `${n}th`;
+}
 
 // ── Colour maps ────────────────────────────────────────────────────────────────
 
@@ -709,6 +716,13 @@ export default function BillOfMaterials() {
       refetchVendors();
       toast({ title: "Vendor removed" });
     },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const reorderVendorMutation = useMutation({
+    mutationFn: ({ idA, orderA, idB, orderB }: { idA: string; orderA: number; idB: string; orderB: number }) =>
+      swapBomLineVendorOrder(idA, orderA, idB, orderB),
+    onSuccess: () => refetchVendors(),
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
@@ -1453,17 +1467,29 @@ export default function BillOfMaterials() {
                                               <table className="w-full text-xs mb-2">
                                                 <thead>
                                                   <tr className="text-left text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                                                    <th className="pb-1.5 pr-3 font-semibold w-6">Pref.</th>
                                                     <th className="pb-1.5 pr-4 font-semibold">Vendor</th>
                                                     <th className="pb-1.5 pr-4 font-semibold">Process</th>
                                                     <th className="pb-1.5 pr-4 font-semibold text-right">Lead Time</th>
                                                     <th className="pb-1.5 pr-4 font-semibold text-right">Unit Cost</th>
-                                                    <th className="pb-1.5 pr-4 font-semibold text-center">Preferred</th>
                                                     <th className="pb-1.5 font-semibold">Actions</th>
                                                   </tr>
                                                 </thead>
                                                 <tbody>
-                                                  {lineVendors.map((v) => (
+                                                  {lineVendors.map((v, vi) => {
+                                                    const prevV = vi > 0 ? lineVendors[vi - 1] : null;
+                                                    const nextV = vi < lineVendors.length - 1 ? lineVendors[vi + 1] : null;
+                                                    const isGoldStar = v.preference_order === 1 && v.is_preferred;
+                                                    return (
                                                     <tr key={v.id} className="border-b border-slate-100 last:border-0">
+                                                      <td className="py-1.5 pr-3">
+                                                        <div className="flex items-center gap-1">
+                                                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isGoldStar ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500"}`}>
+                                                            {ordinal(v.preference_order ?? vi + 1)}
+                                                          </span>
+                                                          {isGoldStar && <Star className="h-3 w-3 text-amber-500 fill-amber-500" />}
+                                                        </div>
+                                                      </td>
                                                       <td className="py-1.5 pr-4 font-medium text-slate-800">
                                                         {v.vendor_name}
                                                         {v.vendor_code && (
@@ -1479,13 +1505,24 @@ export default function BillOfMaterials() {
                                                       <td className="py-1.5 pr-4 text-right font-mono text-slate-700">
                                                         {v.unit_price != null ? formatCurrency(v.unit_price) : "—"}
                                                       </td>
-                                                      <td className="py-1.5 pr-4 text-center">
-                                                        {v.is_preferred && (
-                                                          <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500 inline-block" />
-                                                        )}
-                                                      </td>
                                                       <td className="py-1.5">
-                                                        <div className="flex gap-1">
+                                                        <div className="flex gap-0.5">
+                                                          <button
+                                                            disabled={!prevV}
+                                                            onClick={() => prevV && reorderVendorMutation.mutate({ idA: v.id, orderA: v.preference_order ?? vi + 1, idB: prevV.id, orderB: prevV.preference_order ?? vi })}
+                                                            className="h-6 w-6 flex items-center justify-center rounded hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors disabled:opacity-30"
+                                                            title="Move up"
+                                                          >
+                                                            <ChevronUp className="h-3 w-3" />
+                                                          </button>
+                                                          <button
+                                                            disabled={!nextV}
+                                                            onClick={() => nextV && reorderVendorMutation.mutate({ idA: v.id, orderA: v.preference_order ?? vi + 1, idB: nextV.id, orderB: nextV.preference_order ?? vi + 2 })}
+                                                            className="h-6 w-6 flex items-center justify-center rounded hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors disabled:opacity-30"
+                                                            title="Move down"
+                                                          >
+                                                            <ChevronDown className="h-3 w-3" />
+                                                          </button>
                                                           <button
                                                             onClick={() => openEditVendor(line, v)}
                                                             className="h-6 w-6 flex items-center justify-center rounded hover:bg-slate-200 text-slate-500 transition-colors"
@@ -1505,7 +1542,8 @@ export default function BillOfMaterials() {
                                                         </div>
                                                       </td>
                                                     </tr>
-                                                  ))}
+                                                    );
+                                                  })}
                                                 </tbody>
                                               </table>
                                             )}

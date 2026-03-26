@@ -400,6 +400,7 @@ export interface BomLineVendor {
   min_order_qty: number | null;
   currency: string;
   is_preferred: boolean;
+  preference_order: number;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -410,7 +411,7 @@ export async function fetchBomLineVendors(bomLineId: string): Promise<BomLineVen
     .from("bom_line_vendors")
     .select("*")
     .eq("bom_line_id", bomLineId)
-    .order("is_preferred", { ascending: false })
+    .order("preference_order", { ascending: true })
     .order("created_at", { ascending: true });
   if (error) return [];
   return (data ?? []) as BomLineVendor[];
@@ -422,7 +423,7 @@ export async function fetchBomLineVendorsBatch(lineIds: string[]): Promise<BomLi
     .from("bom_line_vendors")
     .select("*")
     .in("bom_line_id", lineIds)
-    .order("is_preferred", { ascending: false })
+    .order("preference_order", { ascending: true })
     .order("created_at", { ascending: true });
   if (error) return [];
   return (data ?? []) as BomLineVendor[];
@@ -437,15 +438,30 @@ export async function addBomLineVendor(data: {
   lead_time_days?: number | null;
   min_order_qty?: number | null;
   is_preferred?: boolean;
+  preference_order?: number;
   notes?: string | null;
 }): Promise<BomLineVendor> {
   const companyId = await getCompanyId();
-  if (data.is_preferred) {
+
+  // Count existing vendors to auto-assign preference_order
+  const { data: existing } = await (supabase as any)
+    .from("bom_line_vendors")
+    .select("id, preference_order")
+    .eq("bom_line_id", data.bom_line_id);
+  const existingCount = (existing ?? []).length;
+  const nextOrder = data.preference_order ?? existingCount + 1;
+
+  // First vendor for this line auto-gets is_preferred
+  const isFirst = existingCount === 0;
+  const isPreferred = isFirst ? true : (data.is_preferred ?? false);
+
+  if (isPreferred && !isFirst) {
     await (supabase as any)
       .from("bom_line_vendors")
       .update({ is_preferred: false })
       .eq("bom_line_id", data.bom_line_id);
   }
+
   const { data: v, error } = await (supabase as any)
     .from("bom_line_vendors")
     .insert({
@@ -458,7 +474,8 @@ export async function addBomLineVendor(data: {
       lead_time_days: data.lead_time_days ?? null,
       min_order_qty: data.min_order_qty ?? null,
       currency: "INR",
-      is_preferred: data.is_preferred ?? false,
+      is_preferred: isPreferred,
+      preference_order: nextOrder,
       notes: data.notes ?? null,
     })
     .select()
@@ -488,6 +505,14 @@ export async function updateBomLineVendor(id: string, data: Partial<BomLineVendo
 export async function removeBomLineVendor(id: string): Promise<void> {
   const { error } = await (supabase as any).from("bom_line_vendors").delete().eq("id", id);
   if (error) throw error;
+}
+
+/** Swap preference_order between two vendors — used for up/down reorder buttons. */
+export async function swapBomLineVendorOrder(idA: string, orderA: number, idB: string, orderB: number): Promise<void> {
+  await Promise.all([
+    (supabase as any).from("bom_line_vendors").update({ preference_order: orderB }).eq("id", idA),
+    (supabase as any).from("bom_line_vendors").update({ preference_order: orderA }).eq("id", idB),
+  ]);
 }
 
 // ============================================================

@@ -602,6 +602,15 @@ export const BOM_FIELD_MAP: Record<string, string[]> = {
   scrap_factor: ["scrap factor %", "scrap factor", "scrap %", "waste %"],
   variant_name: ["variant name", "variant", "bom variant"],
   notes: ["notes", "remarks"],
+  vendor1_code: ["vendor 1 code", "vendor1 code", "preferred vendor", "vendor code"],
+  vendor1_process: ["vendor 1 process", "process 1", "nature of process"],
+  vendor1_lead_days: ["vendor 1 lead days", "lead days", "lead time"],
+  vendor2_code: ["vendor 2 code", "vendor2 code"],
+  vendor2_process: ["vendor 2 process", "process 2"],
+  vendor2_lead_days: ["vendor 2 lead days"],
+  vendor3_code: ["vendor 3 code", "vendor3 code"],
+  vendor3_process: ["vendor 3 process", "process 3"],
+  vendor3_lead_days: ["vendor 3 lead days"],
 };
 
 export const STOCK_FIELD_MAP: Record<string, string[]> = {
