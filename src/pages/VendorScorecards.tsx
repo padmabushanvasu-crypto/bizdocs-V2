@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { Star, AlertTriangle, Eye, Download, CheckCircle } from "lucide-react";
+import { Star, AlertTriangle, Eye, Download, CheckCircle, ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { fetchVendorScorecards, type VendorScorecard } from "@/lib/job-works-api";
@@ -113,6 +113,13 @@ export default function VendorScorecards() {
 
   return (
     <div className="p-4 md:p-6 space-y-4">
+      <button
+        onClick={() => navigate(-1)}
+        className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900"
+      >
+        <ChevronLeft className="h-4 w-4" />
+        Back
+      </button>
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div>

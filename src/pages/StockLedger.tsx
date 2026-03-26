@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { BookOpen, Search, Download } from "lucide-react";
+import { BookOpen, Search, Download, ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -116,6 +116,13 @@ export default function StockLedger() {
 
   return (
     <div className="p-4 md:p-6 space-y-4">
+      <button
+        onClick={() => navigate(-1)}
+        className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900"
+      >
+        <ChevronLeft className="h-4 w-4" />
+        Back
+      </button>
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div>

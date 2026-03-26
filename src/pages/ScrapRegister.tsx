@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Trash2, Plus, Download, ChevronDown, IndianRupee } from "lucide-react";
+import { Trash2, Plus, Download, ChevronDown, IndianRupee, ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -128,6 +129,7 @@ const disposalLabels: Record<string, string> = {
 };
 
 export default function ScrapRegister() {
+  const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -268,6 +270,13 @@ export default function ScrapRegister() {
 
   return (
     <div className="p-4 md:p-6 space-y-4">
+      <button
+        onClick={() => navigate(-1)}
+        className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900"
+      >
+        <ChevronLeft className="h-4 w-4" />
+        Back
+      </button>
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div>

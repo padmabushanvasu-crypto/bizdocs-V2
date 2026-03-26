@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { FileSpreadsheet, Download, Info, Eye, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -968,6 +969,7 @@ function Gstr3bCard({ companyStateCode, companyName }: { companyStateCode: strin
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function GstReports() {
+  const navigate = useNavigate();
   const { toast } = useToast();
 
   const { data: companySettings } = useQuery({
@@ -1211,6 +1213,13 @@ export default function GstReports() {
 
   return (
     <div className="p-4 md:p-6 space-y-6">
+      <button
+        onClick={() => navigate(-1)}
+        className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 mb-4"
+      >
+        <ChevronLeft className="h-4 w-4" />
+        Back
+      </button>
       <div>
         <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
           <FileSpreadsheet className="h-5 w-5 text-blue-600" />

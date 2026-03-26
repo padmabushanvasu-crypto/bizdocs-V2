@@ -111,22 +111,12 @@ export default function JobWorks() {
     }
   }, [location.state]);
 
-  // Auto-select item from prefill once items are loaded
-  useEffect(() => {
-    if (!prefillData || items.length === 0) return;
-    const found = items.find((it) => it.id === prefillData.item_id);
-    if (found) {
-      setSelectedItem(found);
-      setForm((f) => ({ ...f, quantity_original: prefillData.quantity, unit: found.unit ?? "NOS" }));
-    }
-  }, [prefillData, items]);
-
   const { data: stats } = useQuery({
     queryKey: ["jw-stats"],
     queryFn: fetchJobWorkStats,
   });
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ["job-works", filters],
     queryFn: () => fetchJobWorks(filters),
   });
@@ -143,6 +133,17 @@ export default function JobWorks() {
     enabled: newOpen,
   });
   const items = itemsData?.data ?? [];
+
+  // Auto-select item from prefill once items are loaded.
+  // Must come after `items` is declared to avoid TDZ reference error.
+  useEffect(() => {
+    if (!prefillData || items.length === 0) return;
+    const found = items.find((it) => it.id === prefillData.item_id);
+    if (found) {
+      setSelectedItem(found);
+      setForm((f) => ({ ...f, quantity_original: prefillData.quantity, unit: found.unit ?? "NOS" }));
+    }
+  }, [prefillData, items]);
 
   const { data: bomLines } = useQuery({
     queryKey: ["bom-lines-check", selectedItem?.id],
@@ -184,7 +185,7 @@ export default function JobWorks() {
       if (selectedItem?.id) {
         const processSteps = await fetchProcessRouteForItem(selectedItem.id).catch(() => []);
         for (const step of processSteps) {
-          await createJobCardStep({
+          await createJobWorkStep({
             job_card_id: jc.id,
             step_number: step.step_order,
             step_type: step.step_type === "external" ? "job_work" : "production",
@@ -456,6 +457,20 @@ export default function JobWorks() {
         </Button>
       </div>
 
+      {/* Error banner */}
+      {isError && (
+        <div className="flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+          <AlertCircle className="h-5 w-5 text-red-500 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-red-800">Failed to load Job Works</p>
+            <p className="text-xs text-red-600 mt-0.5">{(error as any)?.message ?? "Unknown error"}</p>
+          </div>
+          <Button variant="outline" size="sm" className="shrink-0 border-red-300 text-red-700 hover:bg-red-100" onClick={() => window.location.reload()}>
+            Try Again
+          </Button>
+        </div>
+      )}
+
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <MetricCard
@@ -569,11 +584,26 @@ export default function JobWorks() {
             </thead>
             <tbody>
               {isLoading ? (
-                <tr>
-                  <td colSpan={14} className="text-center py-8 text-muted-foreground">
-                    Loading...
-                  </td>
-                </tr>
+                <>
+                  {[0, 1, 2].map((i) => (
+                    <tr key={i} className="animate-pulse">
+                      <td><div className="h-4 w-4 bg-slate-200 rounded mx-auto" /></td>
+                      <td><div className="h-3 bg-slate-200 rounded w-20" /></td>
+                      <td><div className="h-3 bg-slate-200 rounded w-16" /></td>
+                      <td><div className="h-3 bg-slate-200 rounded w-32" /></td>
+                      <td><div className="h-3 bg-slate-200 rounded w-16" /></td>
+                      <td><div className="h-5 bg-slate-200 rounded-full w-20" /></td>
+                      <td><div className="h-3 bg-slate-200 rounded w-12 ml-auto" /></td>
+                      <td><div className="h-3 bg-slate-200 rounded w-16 ml-auto" /></td>
+                      <td><div className="h-3 bg-slate-200 rounded w-12 ml-auto" /></td>
+                      <td><div className="h-5 bg-slate-200 rounded-full w-14" /></td>
+                      <td><div className="h-3 bg-slate-200 rounded w-12" /></td>
+                      <td><div className="h-5 bg-slate-200 rounded-full w-16" /></td>
+                      <td><div className="h-3 bg-slate-200 rounded w-6 ml-auto" /></td>
+                      <td><div className="h-6 bg-slate-200 rounded w-12" /></td>
+                    </tr>
+                  ))}
+                </>
               ) : jcs.length === 0 ? (
                 <tr>
                   <td colSpan={14}>
