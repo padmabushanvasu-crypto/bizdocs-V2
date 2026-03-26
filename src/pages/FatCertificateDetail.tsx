@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  ClipboardCheck, CheckCircle2, XCircle, AlertTriangle, Printer, ChevronLeft,
+  ClipboardCheck, CheckCircle2, XCircle, AlertTriangle, Printer, ChevronLeft, FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -192,6 +192,19 @@ export default function FatCertificateDetail() {
             date={fat.fat_date}
             documentData={fat as Record<string, unknown>}
           />
+          {fat.status === "passed" && (
+            <Button
+              size="sm"
+              onClick={() => {
+                const params = new URLSearchParams();
+                if (fat.customer_id) params.set("customer_id", fat.customer_id);
+                if (fat.serial_number) params.set("serial_number", fat.serial_number);
+                navigate(`/invoices/new?${params.toString()}`);
+              }}
+            >
+              <FileText className="h-3.5 w-3.5 mr-1" /> Raise Invoice
+            </Button>
+          )}
         </div>
       </div>
 

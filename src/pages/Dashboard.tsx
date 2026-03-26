@@ -660,7 +660,7 @@ export default function Dashboard() {
                   <table className="w-full data-table">
                     <thead>
                       <tr>
-                        <th>JC #</th>
+                        <th>JW #</th>
                         <th>Component</th>
                         <th>Location</th>
                         <th className="text-right">Qty</th>

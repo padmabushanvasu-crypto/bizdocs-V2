@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { BarChart3, ShoppingCart, Check, X, Shield } from "lucide-react";
+import { BarChart3, ShoppingCart, Check, X, Shield, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
@@ -134,6 +134,10 @@ export default function StockRegister() {
     navigate(`/purchase-orders/new?item_id=${row.id}`);
   };
 
+  const handleRaiseJobWork = (row: StockStatusRow) => {
+    navigate(`/job-works/new?item_id=${row.id}`);
+  };
+
   return (
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex items-start justify-between gap-3">
@@ -214,7 +218,7 @@ export default function StockRegister() {
                 <th className="text-right">Min Override</th>
                 <th className="text-right">Effective Min</th>
                 <th>Status</th>
-                <th className="w-28">Actions</th>
+                <th className="w-44">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -258,16 +262,30 @@ export default function StockRegister() {
                     <td className="text-right font-mono tabular-nums font-medium">{row.effective_min_stock}</td>
                     <td><StatusBadge status={row.stock_status} /></td>
                     <td>
-                      {(row.stock_status === "amber" || row.stock_status === "red") && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs gap-1"
-                          onClick={() => handleCreatePO(row)}
-                        >
-                          <ShoppingCart className="h-3 w-3" /> Create PO
-                        </Button>
-                      )}
+                      <div className="flex flex-wrap gap-1">
+                        {(row.stock_status === "amber" || row.stock_status === "red") &&
+                          (row.item_type === "raw_material" || row.item_type === "bought_out") && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs gap-1"
+                            onClick={() => handleCreatePO(row)}
+                          >
+                            <ShoppingCart className="h-3 w-3" /> Create PO
+                          </Button>
+                        )}
+                        {(row.stock_status === "amber" || row.stock_status === "red") &&
+                          (row.item_type === "component" || row.item_type === "sub_assembly") && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs gap-1"
+                            onClick={() => handleRaiseJobWork(row)}
+                          >
+                            <Wrench className="h-3 w-3" /> Raise JW
+                          </Button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))

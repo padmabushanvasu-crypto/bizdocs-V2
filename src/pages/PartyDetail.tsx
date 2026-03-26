@@ -281,7 +281,7 @@ export default function PartyDetail() {
                 <table className="w-full data-table">
                   <thead>
                     <tr>
-                      <th>JC Number</th>
+                      <th>Job Work Number</th>
                       <th>Component</th>
                       <th>Step</th>
                       <th className="text-right">Qty Sent</th>

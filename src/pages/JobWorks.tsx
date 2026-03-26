@@ -264,7 +264,7 @@ export default function JobWorks() {
   const renderFormBody = () => (
     <>
       <div className="space-y-1.5">
-        <Label>JC Number</Label>
+        <Label>Job Work Number</Label>
         <Input value={nextJCNumber ?? "Generating..."} readOnly className="font-mono bg-muted" />
       </div>
 
@@ -530,7 +530,7 @@ export default function JobWorks() {
                     }
                   </button>
                 </th>
-                <th>JC #</th>
+                <th>JW #</th>
                 <th>Item Code</th>
                 <th>Description</th>
                 <th>Batch Ref</th>

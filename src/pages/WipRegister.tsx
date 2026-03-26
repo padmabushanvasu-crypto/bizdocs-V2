@@ -146,7 +146,7 @@ export default function WipRegister() {
         {
           sheetName: "Component WIP",
           columns: [
-            { key: "jc_number",           label: "JC Number",       type: "text",     width: 14 },
+            { key: "jc_number",           label: "JW Number",       type: "text",     width: 14 },
             { key: "item_code",            label: "Item Code",        type: "text",     width: 12 },
             { key: "item_description",     label: "Description",      type: "text",     width: 28 },
             { key: "status",               label: "Status",           type: "text",     width: 12 },

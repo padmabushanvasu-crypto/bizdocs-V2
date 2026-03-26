@@ -234,18 +234,18 @@ const FLOW_ROWS: FlowRow[] = [
     pillHover: "hover:bg-blue-100",
     arrowColor: "text-blue-400",
     steps: [
-      { label: "Customer Order" },
-      { label: "Sales Order", route: "/sales-orders/new" },
+      { label: "Reorder Alert", route: "/reorder-intelligence" },
       { label: "Purchase Order", route: "/purchase-orders/new" },
       { label: "GRN", route: "/grn/new" },
-      { label: "Stock Updated" },
+      { label: "Raw Mat. Stock ↑" },
     ],
     explanation:
-      "A customer calls with an order. You raise a Sales Order to formally record it. Then check what raw materials and bought-out items you need (use BOM Explosion). Raise Purchase Orders to your vendors. When materials arrive, record a GRN — this is what actually updates your stock. Without a GRN the system thinks nothing arrived.",
+      "The system monitors raw material and bought-out stock continuously. When any item falls below its minimum level a Reorder Alert fires. Open the Reorder Intelligence page — it shows exactly what to buy, from which vendor, and in what quantity. Raise a Purchase Order directly from the alert. When materials arrive at the factory, record a GRN linked to the PO. The GRN is what actually moves stock in — without it the system thinks nothing arrived.",
     rules: [
-      "Always raise a PO before materials arrive",
-      "Always record a GRN when materials arrive — never skip this",
-      "GRN updates stock automatically — no manual entry needed",
+      "Never buy on a hunch — check Reorder Alerts first",
+      "Always raise a PO before materials arrive — it's your authorisation",
+      "Always record a GRN when materials arrive — this is the only thing that updates stock",
+      "GRN updates stock_raw_material automatically — no manual entry needed",
     ],
   },
   {
@@ -257,19 +257,19 @@ const FLOW_ROWS: FlowRow[] = [
     pillHover: "hover:bg-amber-100",
     arrowColor: "text-amber-400",
     steps: [
+      { label: "Stock Register", route: "/stock-register" },
       { label: "Job Work", route: "/job-works" },
       { label: "Delivery Challan (Out)", route: "/delivery-challans/new" },
       { label: "Material Returns" },
-      { label: "Complete Job Work" },
-      { label: "Stock Updated" },
+      { label: "Complete → WIP Stock ↑" },
     ],
     explanation:
-      "Components don't make themselves. Raw metal goes to a vendor for CNC machining, then to another for plating, then comes back for inspection. A Job Work tracks this entire journey. Each time material leaves the factory raise a Delivery Challan (Returnable type). When it comes back record the return on the DC. Once all steps are done and quality is accepted, complete the Job Work — stock of the finished component goes up.",
+      "When component WIP stock is low, check the Stock Register to identify what needs to be processed. Raw material goes to a vendor for CNC machining, then to another for plating, then returns for inspection — a Job Work tracks this entire journey. Each time material leaves the factory raise a Delivery Challan (Returnable type). When it comes back, record the return on the DC. Once all steps are accepted and complete the Job Work — WIP stock of the finished component goes up.",
     rules: [
+      "Check the Stock Register to identify low-stock components before raising a Job Work",
       "One Job Work per component per batch",
       "Always raise a DC when material goes out — it's your legal proof of dispatch",
       "GST Rule 45: job work goods must return within 365 days or GST is payable",
-      "Complete the Job Work only after all steps are accepted",
     ],
   },
   {
@@ -281,18 +281,18 @@ const FLOW_ROWS: FlowRow[] = [
     pillHover: "hover:bg-purple-100",
     arrowColor: "text-purple-400",
     steps: [
+      { label: "Components Ready" },
       { label: "Assembly Order", route: "/assembly-orders" },
-      { label: "Check Components" },
       { label: "Confirm Assembly" },
       { label: "Serial Numbers", route: "/serial-numbers" },
-      { label: "FAT Certificate", route: "/fat-certificates" },
+      { label: "Finished Goods ↑" },
     ],
     explanation:
-      "Once all components are in stock you can build sub-assemblies and finished products. Create an Assembly Order and select the product — the BOM loads every required component automatically. Green means you have enough stock. Red means you are short. Fix shortages first, then confirm the assembly. Stock of all components goes down simultaneously. Stock of the finished product goes up. For finished OLTC units: assign a serial number to each unit, then run the FAT before you can invoice it.",
+      "When all components are in WIP stock you can build sub-assemblies and finished products. Create an Assembly Order — the BOM loads every required component automatically. Green means you have enough stock. Red means you are short — fix shortages before proceeding. Confirm the assembly: component stock goes down simultaneously, finished goods stock goes up. For OLTC units: assign a unique serial number to each unit, then run the FAT Certificate before you can invoice it.",
     rules: [
-      "Never confirm an Assembly Order if any component shows red — get the stock first",
-      "Serial numbers are assigned at Assembly — one per finished unit",
-      "FAT must be passed before a unit can be invoiced — this is enforced by the system",
+      "Never confirm an Assembly Order if any component shows red — fix shortages first",
+      "Serial numbers are assigned at Assembly — one per finished unit, never reuse",
+      "FAT must be passed before a unit can be invoiced — enforced by the system",
     ],
   },
   {
@@ -304,13 +304,14 @@ const FLOW_ROWS: FlowRow[] = [
     pillHover: "hover:bg-green-100",
     arrowColor: "text-green-400",
     steps: [
+      { label: "FAT Certificate", route: "/fat-certificates" },
       { label: "Invoice", route: "/invoices/new" },
       { label: "Dispatch Note", route: "/dispatch-notes/new" },
       { label: "Payment Receipt", route: "/receipts" },
       { label: "Warranty Tracking", route: "/warranty-tracker" },
     ],
     explanation:
-      "The unit is built and tested. Now raise an Invoice — only FAT-passed serial numbers appear in the invoice dropdown so you cannot accidentally bill an untested unit. Once invoiced create a Dispatch Note for the physical delivery — it has vehicle number, driver details, LR number and packing list. When the customer pays, record a Payment Receipt against the invoice. The outstanding balance updates automatically. Warranty tracking begins from the dispatch date.",
+      "The unit is built, tested and in finished goods stock. Complete the FAT Certificate for the unit — only FAT-passed serial numbers appear in the invoice dropdown so you cannot accidentally bill an untested unit. Once invoiced, create a Dispatch Note for the physical delivery — it has vehicle number, driver details, LR number and packing list. When the customer pays, record a Payment Receipt against the invoice. The outstanding balance updates automatically. Warranty tracking begins from the dispatch date.",
     rules: [
       "FAT must be passed before invoicing — the system enforces this",
       "Create a Dispatch Note for every customer delivery — it's your lorry receipt",
@@ -402,7 +403,7 @@ const FEATURES: FeatureCard[] = [
     iconBg: "bg-amber-50",
     iconColor: "text-amber-600",
     name: "Job Works",
-    whenToUse: "When sending material to a vendor for machining, plating, welding or any external process.",
+    whenToUse: "When component WIP stock is low and material needs to be sent to a vendor for machining, plating, welding or any external process. Triggered by the Stock Register.",
     thinkOfItAs: "Digital job bag",
     commonMistake:
       "Raising a DC without a Job Work — you lose track of where material is and when it's due back.",
@@ -412,7 +413,7 @@ const FEATURES: FeatureCard[] = [
     iconBg: "bg-purple-50",
     iconColor: "text-purple-600",
     name: "Assembly Orders",
-    whenToUse: "When building a sub-assembly or finished product from components already in stock.",
+    whenToUse: "When finished goods stock is low and all required components are in WIP stock. The BOM loads components automatically — check that all show green before confirming.",
     thinkOfItAs: "Recipe execution",
     commonMistake:
       "Confirming when a component shows red — building incomplete products or wrong quantities.",
@@ -432,7 +433,7 @@ const FEATURES: FeatureCard[] = [
     iconBg: "bg-blue-50",
     iconColor: "text-blue-600",
     name: "Purchase Orders",
-    whenToUse: "When buying raw materials or bought-out items from a vendor. Raise before goods arrive.",
+    whenToUse: "When a Reorder Alert fires for raw materials or bought-out items. Raise directly from the Reorder Intelligence page — never buy on a hunch.",
     thinkOfItAs: "Formal buy request",
     commonMistake:
       "Skipping the PO and going straight to GRN — you lose the paper trail and cannot track vendor delivery performance.",
@@ -462,7 +463,7 @@ const FEATURES: FeatureCard[] = [
     iconBg: "bg-indigo-50",
     iconColor: "text-indigo-600",
     name: "Sales Orders",
-    whenToUse: "When a customer places an order. Record their PO number, product, quantity and delivery date.",
+    whenToUse: "To record a customer's formal order for your files. In pull-based manufacturing this is a demand capture record — it does not trigger production. Check finished goods stock availability before committing a delivery date.",
     thinkOfItAs: "Order book entry",
     commonMistake:
       "Skipping the Sales Order and going straight to Invoice — you lose the customer PO reference and delivery date tracking.",
@@ -512,7 +513,7 @@ const FEATURES: FeatureCard[] = [
     iconBg: "bg-red-50",
     iconColor: "text-red-600",
     name: "Reorder Alerts",
-    whenToUse: "Check which items have fallen below minimum stock level and need to be reordered.",
+    whenToUse: "The primary production trigger — check this page every morning. When any item falls below minimum stock the system fires an alert here. Everything starts here: raise POs for raw materials, raise Job Works for components.",
     thinkOfItAs: "Smart purchase reminder",
     commonMistake:
       "Ignoring amber alerts — by the time it turns red you may already have a production stoppage.",
@@ -664,6 +665,15 @@ export default function HowToUse() {
         </TabsList>
 
         <TabsContent value="getting-started" className="mt-6">
+          <div className="mb-5 rounded-xl bg-blue-50 border border-blue-200 px-4 py-3 flex items-start gap-3">
+            <RefreshCw className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-blue-900">Pull-Based Manufacturing</p>
+              <p className="text-sm text-blue-800 mt-0.5">
+                This system uses <strong>pull-based manufacturing</strong> — purchasing and production are triggered by stock levels and reorder alerts, not by customer orders. You build to stock and sell from stock. Minimum stock levels (set on each item) are the engine that drives all buying and making decisions.
+              </p>
+            </div>
+          </div>
           <div className="mb-5">
             <h2 className="text-base font-semibold text-slate-900">
               Setup Order — do these in sequence when you first start
@@ -679,11 +689,10 @@ export default function HowToUse() {
         <TabsContent value="daily-ops" className="mt-6">
           <div className="mb-5">
             <h2 className="text-base font-semibold text-slate-900">
-              The Manufacturing Cycle
+              The Production Cycle
             </h2>
             <p className="text-sm text-slate-500 mt-0.5">
-              Every order follows one of these four flows. Click any pill to
-              open that feature. Follow the arrows.
+              Production is driven by stock levels, not by customer orders — buy and make when stock is low, sell from what is built. Click any pill to open that feature.
             </p>
           </div>
           <OperationsFlowTab />

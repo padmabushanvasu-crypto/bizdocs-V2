@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, Download, Edit, XCircle, IndianRupee, CheckCircle2 } from "lucide-react";
+import { ChevronLeft, Download, Edit, XCircle, IndianRupee, CheckCircle2, Truck } from "lucide-react";
 import { EditableSection } from "@/components/EditableSection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -161,6 +161,14 @@ export default function InvoiceDetail() {
           )}
           {inv.status === "draft" && (
             <Button variant="outline" onClick={() => navigate(`/invoices/${id}/edit`)}><Edit className="h-4 w-4 mr-1" /> Edit</Button>
+          )}
+          {!isCancelled && (
+            <Button
+              variant="outline"
+              onClick={() => navigate(`/dispatch-notes/new?invoice_id=${id}`)}
+            >
+              <Truck className="h-4 w-4 mr-1" /> Create Dispatch Note
+            </Button>
           )}
           {!isCancelled && !isFullyPaid && (
             <Button variant="outline" onClick={() => setCancelOpen(true)}><XCircle className="h-4 w-4 mr-1" /> Cancel</Button>
