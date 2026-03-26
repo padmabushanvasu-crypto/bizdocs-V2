@@ -629,6 +629,15 @@ export const STOCK_FIELD_MAP: Record<string, string[]> = {
   notes: ["notes", "remarks"],
 };
 
+export const REORDER_FIELD_MAP: Record<string, string[]> = {
+  item_code: ["item code", "code", "sku", "part number"],
+  reorder_point: ["reorder point", "minimum stock", "min stock", "reorder level", "reorder trigger", "minimum level"],
+  reorder_qty: ["reorder quantity", "reorder qty", "order quantity", "order qty", "quantity to order"],
+  lead_time_days: ["lead time days", "lead time", "lead days", "delivery days", "vendor lead time"],
+  preferred_vendor_code: ["preferred vendor code", "vendor code", "vendor", "preferred vendor"],
+  notes: ["notes", "remarks"],
+};
+
 // ── Human-readable field display names ──────────────────────────────────────
 
 export const FIELD_DISPLAY_NAMES: Record<string, string> = {
@@ -666,6 +675,10 @@ export const FIELD_DISPLAY_NAMES: Record<string, string> = {
   scrap_factor: "Scrap Factor %",
   variant_name: "Variant Name",
   current_stock: "Opening Stock / Current Stock",
+  reorder_point: "Reorder Point",
+  reorder_qty: "Reorder Quantity",
+  lead_time_days: "Lead Time Days",
+  preferred_vendor_code: "Preferred Vendor Code",
 };
 
 export function fieldDisplayName(field: string): string {

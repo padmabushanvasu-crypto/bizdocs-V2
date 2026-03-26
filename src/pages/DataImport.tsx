@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Upload, Download, CheckCircle, XCircle, AlertTriangle, Table, Users, Package, GitFork, ChevronLeft, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import { getCompanyId } from "@/lib/auth-helpers";
 import {
   resolveColumns, extractRow, buildMappingSummary,
   normalizePartyType, normalizeItemType, normaliseHeader, fieldDisplayName,
-  PARTY_FIELD_MAP, ITEM_FIELD_MAP, BOM_FIELD_MAP, STOCK_FIELD_MAP, VENDOR_SHEET_FIELD_MAP,
+  PARTY_FIELD_MAP, ITEM_FIELD_MAP, BOM_FIELD_MAP, STOCK_FIELD_MAP, VENDOR_SHEET_FIELD_MAP, REORDER_FIELD_MAP,
   type ColumnMappingSummary, type SkipReason,
 } from "@/lib/import-utils";
 import { useImportQueue, type BatchImportFn } from "@/lib/import-queue";
@@ -370,6 +370,140 @@ async function downloadOpeningStockTemplate() {
 
   (XLSX as any).utils.book_append_sheet(wb, ws, "Opening Stock");
   (XLSX as any).writeFile(wb, "Opening_Stock_Template.xlsx");
+}
+
+async function downloadReorderRulesTemplate() {
+  const XLSX = await import("xlsx-js-style");
+  const companyId = await getCompanyId();
+
+  const { data: itemsRaw } = await supabase
+    .from("items")
+    .select("item_code, description, item_type, unit")
+    .eq("company_id", companyId)
+    .eq("status", "active")
+    .order("description", { ascending: true });
+
+  const TYPE_ORDER: Record<string, number> = {
+    raw_material: 0, bought_out: 1, component: 2,
+    sub_assembly: 3, finished_good: 4, consumable: 5,
+  };
+
+  const items = (itemsRaw ?? []).slice().sort((a: any, b: any) => {
+    const ao = TYPE_ORDER[a.item_type] ?? 6;
+    const bo = TYPE_ORDER[b.item_type] ?? 6;
+    if (ao !== bo) return ao - bo;
+    return (a.description ?? "").localeCompare(b.description ?? "");
+  });
+
+  const titleRow  = ["BizDocs — Reorder Rules", "", "", "", "", "", "", "", ""];
+  const noteRow   = [
+    "Fill in Reorder Point, Reorder Qty and Lead Time for each item. Preferred Vendor Code must match your Parties master. Leave blank to skip an item.",
+    "", "", "", "", "", "", "", "",
+  ];
+  const headerRow = [
+    "Item Code", "Description", "Item Type", "Unit",
+    "Reorder Point", "Reorder Qty", "Lead Time Days", "Preferred Vendor Code", "Notes",
+  ];
+  const dataRows = items.map((item: any) => [
+    item.item_code ?? "",
+    item.description ?? "",
+    item.item_type ?? "",
+    item.unit ?? "",
+    "", "", "", "", "",
+  ]);
+
+  const aoa = [titleRow, noteRow, headerRow, ...dataRows];
+  const wb  = (XLSX as any).utils.book_new();
+  const ws  = (XLSX as any).utils.aoa_to_sheet(aoa);
+
+  ws["!merges"] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: 8 } },
+  ];
+  ws["!freeze"] = { xSplit: 0, ySplit: 3 };
+  ws["!cols"] = [
+    { wch: 16 }, { wch: 34 }, { wch: 14 }, { wch: 8 },
+    { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 22 }, { wch: 22 },
+  ];
+  ws["!rows"] = [{ hpt: 26 }, { hpt: 36 }, { hpt: 18 }];
+
+  const titleStyle = {
+    fill: { patternType: "solid", fgColor: { rgb: "1E3A5F" } },
+    font: { bold: true, sz: 13, color: { rgb: "FFFFFF" } },
+    alignment: { horizontal: "center", vertical: "center" },
+  };
+  const noteStyle = {
+    fill: { patternType: "solid", fgColor: { rgb: "FFF3CD" } },
+    font: { italic: true, sz: 10, color: { rgb: "856404" } },
+    alignment: { horizontal: "left", vertical: "center", wrapText: true },
+  };
+  const hdrGrey = {
+    fill: { patternType: "solid", fgColor: { rgb: "374151" } },
+    font: { bold: true, sz: 10, color: { rgb: "FFFFFF" } },
+    alignment: { horizontal: "center" },
+    border: { bottom: { style: "medium", color: { rgb: "000000" } } },
+  };
+  const hdrYellow = {
+    fill: { patternType: "solid", fgColor: { rgb: "7C4D00" } },
+    font: { bold: true, sz: 10, color: { rgb: "FFFFFF" } },
+    alignment: { horizontal: "center" },
+    border: { bottom: { style: "medium", color: { rgb: "000000" } } },
+  };
+  const hdrWhite = {
+    fill: { patternType: "solid", fgColor: { rgb: "374151" } },
+    font: { bold: true, sz: 10, color: { rgb: "FFFFFF" } },
+    alignment: { horizontal: "center" },
+    border: { bottom: { style: "medium", color: { rgb: "000000" } } },
+  };
+  const greyCell = {
+    fill: { patternType: "solid", fgColor: { rgb: "F3F4F6" } },
+    font: { sz: 10 },
+    border: {
+      top: { style: "thin", color: { rgb: "D1D5DB" } },
+      bottom: { style: "thin", color: { rgb: "D1D5DB" } },
+      left: { style: "thin", color: { rgb: "D1D5DB" } },
+      right: { style: "thin", color: { rgb: "D1D5DB" } },
+    },
+  };
+  const yellowCell = {
+    fill: { patternType: "solid", fgColor: { rgb: "FEFCE8" } },
+    font: { sz: 10 },
+    border: {
+      top: { style: "thin", color: { rgb: "D1D5DB" } },
+      bottom: { style: "thin", color: { rgb: "D1D5DB" } },
+      left: { style: "thin", color: { rgb: "D1D5DB" } },
+      right: { style: "thin", color: { rgb: "D1D5DB" } },
+    },
+  };
+  const whiteCell = {
+    font: { sz: 10 },
+    border: {
+      top: { style: "thin", color: { rgb: "E5E7EB" } },
+      bottom: { style: "thin", color: { rgb: "E5E7EB" } },
+      left: { style: "thin", color: { rgb: "E5E7EB" } },
+      right: { style: "thin", color: { rgb: "E5E7EB" } },
+    },
+  };
+
+  const cols = ["A","B","C","D","E","F","G","H","I"];
+
+  if (ws["A1"]) ws["A1"].s = titleStyle;
+  if (ws["A2"]) ws["A2"].s = noteStyle;
+  cols.forEach((col, i) => {
+    const ref = `${col}3`;
+    if (ws[ref]) ws[ref].s = i < 4 ? hdrGrey : i < 8 ? hdrYellow : hdrWhite;
+  });
+  for (let r = 0; r < items.length; r++) {
+    const excelRow = r + 4;
+    cols.forEach((col, c) => {
+      const ref = `${col}${excelRow}`;
+      if (!ws[ref]) ws[ref] = { v: "", t: "s" };
+      ws[ref].s = c < 4 ? greyCell : c < 8 ? yellowCell : whiteCell;
+    });
+  }
+
+  (XLSX as any).utils.book_append_sheet(wb, ws, "Reorder Rules");
+  (XLSX as any).writeFile(wb, "Reorder_Rules_Template.xlsx");
 }
 
 const PARTY_HEADERS = ["Party Name *", "Party Type (vendor/customer/both) *", "Contact Person", "Address Line 1", "City", "State", "PIN Code", "Phone 1", "Email", "GSTIN", "PAN", "Payment Terms", "Notes"];
@@ -1368,15 +1502,329 @@ function ImportTab({
   );
 }
 
+// ── Reorder Rules Import Tab ──────────────────────────────────────────────
+
+function ReorderRulesTab() {
+  const { toast } = useToast();
+  const { addJob, jobs } = useImportQueue();
+  const queryClient = useQueryClient();
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const [rows, setRows] = useState<Record<string, string>[]>([]);
+  const [validRows, setValidRows] = useState<Record<string, string>[]>([]);
+  const [validRowNums, setValidRowNums] = useState<number[]>([]);
+  const [errorRows, setErrorRows] = useState<Set<number>>(new Set());
+  const [errorMessages, setErrorMessages] = useState<Map<number, string>>(new Map());
+  const [errors, setErrors] = useState<string[]>([]);
+  const [result, setResult] = useState<{
+    imported: number; updated: number; skipped: number; vendorNotFound: number;
+  } | null>(null);
+  const [mappingSummary, setMappingSummary] = useState<ColumnMappingSummary | null>(null);
+  const [columnWarnings, setColumnWarnings] = useState<string[]>([]);
+  const [skipReasons, setSkipReasons] = useState<SkipReason[]>([]);
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!currentJobId) return;
+    const job = jobs.find((j) => j.id === currentJobId);
+    if (!job) return;
+    if (job.status === "completed" || job.status === "failed") setCurrentJobId(null);
+  }, [jobs, currentJobId]);
+
+  const clearAll = () => {
+    setRows([]); setValidRows([]); setValidRowNums([]); setErrors([]);
+    setErrorRows(new Set()); setErrorMessages(new Map()); setResult(null);
+    setMappingSummary(null); setColumnWarnings([]); setSkipReasons([]);
+  };
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const { rows: raw, rowNums: rawRowNums, skipped: parsedSkips } = await parseExcelSmart(file, REORDER_FIELD_MAP);
+
+      if (raw.length === 0) {
+        toast({ title: "No data found", description: "The file is empty or contains only column headers.", variant: "destructive" });
+        e.target.value = "";
+        return;
+      }
+
+      const headers = Object.keys(raw[0]);
+      const colMap = resolveColumns(headers, REORDER_FIELD_MAP);
+      const summary = buildMappingSummary(headers, colMap, REORDER_FIELD_MAP, ["item_code", "reorder_point", "reorder_qty"]);
+      setMappingSummary(summary);
+      setColumnWarnings(summary.missingRequired.map((f) => `"${fieldDisplayName(f)}" column not found`));
+
+      const parsed = raw.map((r) => extractRow(r, headers, colMap));
+
+      const newErrorRows = new Set<number>();
+      const newErrorMessages = new Map<number, string>();
+      const newErrors: string[] = [];
+      const newValidRows: Record<string, string>[] = [];
+      const newValidRowNums: number[] = [];
+      const newSkipReasons: SkipReason[] = [...parsedSkips];
+
+      parsed.forEach((row, i) => {
+        const excelRow = rawRowNums[i] ?? (i + 2);
+        const code = row["item_code"]?.trim() || "";
+        const rpStr = row["reorder_point"]?.trim() || "";
+        const rqStr = row["reorder_qty"]?.trim() || "";
+
+        if (!rpStr && !rqStr) {
+          newSkipReasons.push({ row: excelRow, value: code, reason: "Both Reorder Point and Qty blank — skipped" });
+          return;
+        }
+        if (!code) {
+          const msg = "Item Code is required";
+          newErrorRows.add(i); newErrorMessages.set(i, msg);
+          newErrors.push(`Row ${excelRow}: ${msg}`);
+          newSkipReasons.push({ row: excelRow, value: "", reason: msg });
+          return;
+        }
+        if (rpStr && (isNaN(parseFloat(rpStr)) || parseFloat(rpStr) < 0)) {
+          const msg = "Reorder Point must be a positive number";
+          newErrorRows.add(i); newErrorMessages.set(i, msg);
+          newErrors.push(`Row ${excelRow} (${code}): ${msg}`);
+          newSkipReasons.push({ row: excelRow, value: code, reason: msg });
+          return;
+        }
+        if (rqStr && (isNaN(parseFloat(rqStr)) || parseFloat(rqStr) < 0)) {
+          const msg = "Reorder Qty must be a positive number";
+          newErrorRows.add(i); newErrorMessages.set(i, msg);
+          newErrors.push(`Row ${excelRow} (${code}): ${msg}`);
+          newSkipReasons.push({ row: excelRow, value: code, reason: msg });
+          return;
+        }
+        newValidRows.push(row);
+        newValidRowNums.push(excelRow);
+      });
+
+      setRows(parsed); setValidRows(newValidRows); setValidRowNums(newValidRowNums);
+      setErrorRows(newErrorRows); setErrorMessages(newErrorMessages);
+      setErrors(newErrors); setSkipReasons(newSkipReasons); setResult(null);
+    } catch (err: any) {
+      toast({ title: "Failed to parse file", description: err.message, variant: "destructive" });
+    }
+    e.target.value = "";
+  };
+
+  const handleImport = () => {
+    if (validRows.length === 0) return;
+    const rowsToImport = validRows;
+    const rowNumsToImport = validRowNums;
+    const parseSkips = skipReasons.filter((s) => s.reason.includes("blank"));
+    setRows([]); setValidRows([]); setValidRowNums([]);
+    setErrorRows(new Set()); setErrorMessages(new Map());
+
+    // Mutable counters shared between batchFn and onComplete via closure
+    let importedNew = 0, updatedCount = 0, vendorNotFound = 0;
+
+    const batchFn: BatchImportFn = async (bRows, bRowNums, onProgress) => {
+      const companyId = await getCompanyId();
+
+      const { data: itemsRaw } = await supabase
+        .from("items")
+        .select("id, item_code")
+        .eq("company_id", companyId)
+        .eq("status", "active");
+      const codeToId = new Map<string, string>(
+        (itemsRaw ?? []).map((i: any) => [String(i.item_code).toLowerCase(), String(i.id)])
+      );
+
+      const { data: partiesRaw } = await (supabase as any)
+        .from("parties")
+        .select("id, name")
+        .eq("company_id", companyId);
+      const vendorByName = new Map<string, string>();
+      for (const p of (partiesRaw ?? [])) vendorByName.set(String(p.name).toLowerCase(), p.id);
+
+      const { data: existingRules } = await (supabase as any)
+        .from("reorder_rules")
+        .select("id, item_id")
+        .eq("company_id", companyId);
+      const existingByItemId = new Map<string, string>();
+      for (const r of (existingRules ?? [])) existingByItemId.set(r.item_id, r.id);
+
+      let skipped = 0;
+      const errors: string[] = [];
+      const skipReasons: SkipReason[] = [];
+      const total = bRows.length;
+
+      for (let i = 0; i < bRows.length; i++) {
+        const row = bRows[i];
+        const excelRow = bRowNums[i] ?? (i + 2);
+        const code = row["item_code"]?.trim() || "";
+        const itemId = codeToId.get(code.toLowerCase());
+
+        if (!itemId) {
+          skipped++;
+          errors.push(`Row ${excelRow} (${code}): Item Code not found in Items master`);
+          skipReasons.push({ row: excelRow, value: code, reason: `Item Code '${code}' not found` });
+          if (total > 0) onProgress?.(Math.round(((i + 1) / total) * 100));
+          continue;
+        }
+
+        const reorderPoint = parseFloat(row["reorder_point"] || "0") || 0;
+        const reorderQty = parseFloat(row["reorder_qty"] || "0") || 0;
+        const ltStr = row["lead_time_days"]?.trim();
+        const leadTimeDays = ltStr ? (Math.max(1, parseInt(ltStr) || 7)) : 7;
+
+        let preferred_vendor_id: string | null = null;
+        const vendorCode = row["preferred_vendor_code"]?.trim();
+        if (vendorCode) {
+          const vid = vendorByName.get(vendorCode.toLowerCase());
+          if (vid) {
+            preferred_vendor_id = vid;
+          } else {
+            vendorNotFound++;
+          }
+        }
+
+        const ruleData: any = {
+          company_id: companyId,
+          item_id: itemId,
+          reorder_point: reorderPoint,
+          reorder_qty: reorderQty,
+          lead_time_days: leadTimeDays,
+          preferred_vendor_id,
+          notes: row["notes"] || null,
+          is_active: true,
+          updated_at: new Date().toISOString(),
+        };
+
+        try {
+          const existingId = existingByItemId.get(itemId);
+          if (existingId) {
+            const { error } = await (supabase as any).from("reorder_rules").update(ruleData).eq("id", existingId);
+            if (error) throw error;
+            updatedCount++;
+          } else {
+            const { error } = await (supabase as any).from("reorder_rules").insert(ruleData);
+            if (error) throw error;
+            importedNew++;
+          }
+          await (supabase as any).from("items").update({ min_stock: reorderPoint }).eq("id", itemId);
+        } catch (err: any) {
+          skipped++;
+          errors.push(`Row ${excelRow} (${code}): ${err?.message ?? "DB error"}`);
+          skipReasons.push({ row: excelRow, value: code, reason: `DB error: ${err?.message ?? "unknown"}` });
+        }
+
+        if (total > 0) onProgress?.(Math.round(((i + 1) / total) * 100));
+      }
+
+      return { imported: importedNew + updatedCount, skipped, errors, skipReasons };
+    };
+
+    const id = addJob("Reorder Rules", rowsToImport, rowNumsToImport, batchFn, {
+      onComplete: (res) => {
+        setResult({ imported: importedNew, updated: updatedCount, skipped: res.skipped, vendorNotFound });
+        setSkipReasons([...parseSkips, ...res.skipReasons]);
+        queryClient.invalidateQueries({ queryKey: ["reorder-rules"] });
+        queryClient.invalidateQueries({ queryKey: ["stock_status"] });
+        queryClient.invalidateQueries({ queryKey: ["count", "reorder_rules"] });
+        queryClient.invalidateQueries({ queryKey: ["items"] });
+      },
+    });
+    setCurrentJobId(id);
+    toast({ title: "Import started — you can keep working" });
+  };
+
+  return (
+    <div className="space-y-4">
+      {result && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg p-3">
+            <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
+            <span className="text-sm text-green-800 font-medium">
+              {result.imported} new · {result.updated} updated · {result.skipped} skipped
+              {result.vendorNotFound > 0 && ` · ${result.vendorNotFound} vendor code${result.vendorNotFound !== 1 ? "s" : ""} not found (rules imported without vendor)`}
+            </span>
+          </div>
+          <SkipReasonsPanel reasons={skipReasons} />
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-3">
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={downloadReorderRulesTemplate}>
+          <Download className="h-4 w-4" /> Download Template
+        </Button>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => fileRef.current?.click()}>
+          <Upload className="h-4 w-4" /> Choose Excel File
+        </Button>
+        <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xls,.csv" className="hidden" onChange={handleFile} />
+        {validRows.length > 0 && (
+          <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white" onClick={handleImport}>
+            Import {validRows.length} Row{validRows.length !== 1 ? "s" : ""}
+          </Button>
+        )}
+        {rows.length > 0 && <Button size="sm" variant="ghost" onClick={clearAll}>Clear</Button>}
+      </div>
+
+      {rows.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-green-50 border border-green-200 text-green-800 text-xs font-medium">
+            <CheckCircle className="h-3 w-3" /> {validRows.length} ready to import
+          </span>
+          {errorRows.size > 0 && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-50 border border-red-200 text-red-800 text-xs font-medium">
+              <XCircle className="h-3 w-3" /> {errorRows.size} errors — will be skipped
+            </span>
+          )}
+        </div>
+      )}
+
+      {errors.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1">
+          <div className="flex items-center gap-1.5 text-amber-800 text-xs font-semibold">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            {errors.length} validation issue(s) — these rows will be skipped
+          </div>
+          {errors.slice(0, 5).map((e, i) => <p key={i} className="text-xs text-amber-700 pl-5">{e}</p>)}
+          {errors.length > 5 && <p className="text-xs text-amber-600 pl-5">…and {errors.length - 5} more</p>}
+        </div>
+      )}
+
+      {mappingSummary && rows.length > 0 && (
+        <MappingSummaryBar summary={mappingSummary} columnWarnings={columnWarnings} />
+      )}
+
+      {rows.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-slate-700">Preview — {rows.length} rows</p>
+          <PreviewTableWithErrors rows={rows.slice(0, 20)} errorRows={errorRows} errorMessages={errorMessages} />
+          {rows.length > 20 && <p className="text-xs text-muted-foreground">Showing first 20 of {rows.length} rows</p>}
+        </div>
+      )}
+
+      {rows.length === 0 && !result && (
+        <div className="border-2 border-dashed border-border rounded-xl py-12 text-center">
+          <Table className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground font-medium">Upload an Excel file to preview and import Reorder Rules</p>
+          <p className="text-xs text-muted-foreground mt-1">Download the template above to get started</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Page ──────────────────────────────────────────────────────────────
 
-type ClearTarget = { type: "parties" | "items" | "bom" | "stock"; noun: string; count: number };
+type ClearTarget = { type: "parties" | "items" | "bom" | "stock" | "reorder_rules"; noun: string; count: number };
 
 export default function DataImport() {
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState("parties");
+  const [activeTab, setActiveTab] = useState((location.state as any)?.tab ?? "parties");
+
+  useEffect(() => {
+    if ((location.state as any)?.tab) {
+      setActiveTab((location.state as any).tab);
+      window.history.replaceState({}, "");
+    }
+  }, [location.state]);
   const [clearTarget, setClearTarget] = useState<ClearTarget | null>(null);
   const [clearLoading, setClearLoading] = useState(false);
 
@@ -1416,6 +1864,15 @@ export default function DataImport() {
     },
   });
 
+  const { data: reorderRulesCount = 0, refetch: refetchReorderRulesCount } = useQuery({
+    queryKey: ["count", "reorder_rules"],
+    queryFn: async () => {
+      const companyId = await getCompanyId();
+      const { count } = await (supabase as any).from("reorder_rules").select("id", { count: "exact", head: true }).eq("company_id", companyId);
+      return count ?? 0;
+    },
+  });
+
   const doClear = async () => {
     if (!clearTarget) return;
     setClearLoading(true);
@@ -1426,6 +1883,7 @@ export default function DataImport() {
         items: "clear_all_items",
         bom: "clear_all_bom_lines",
         stock: "clear_opening_stock",
+        reorder_rules: "clear_all_reorder_rules",
       };
       const { data, error } = await (supabase as any).rpc(rpcMap[clearTarget.type], { p_company_id: companyId });
       if (error) throw error;
@@ -1433,7 +1891,8 @@ export default function DataImport() {
       if (clearTarget.type === "parties") { queryClient.invalidateQueries({ queryKey: ["parties"] }); refetchPartiesCount(); }
       else if (clearTarget.type === "items") { queryClient.invalidateQueries({ queryKey: ["items"] }); refetchItemsCount(); }
       else if (clearTarget.type === "bom") { queryClient.invalidateQueries({ queryKey: ["bom-lines"] }); refetchBomCount(); }
-      else { queryClient.invalidateQueries({ queryKey: ["items"] }); queryClient.invalidateQueries({ queryKey: ["stock_status"] }); refetchStockCount(); }
+      else if (clearTarget.type === "stock") { queryClient.invalidateQueries({ queryKey: ["items"] }); queryClient.invalidateQueries({ queryKey: ["stock_status"] }); refetchStockCount(); }
+      else { queryClient.invalidateQueries({ queryKey: ["reorder-rules"] }); queryClient.invalidateQueries({ queryKey: ["stock_status"] }); refetchReorderRulesCount(); }
       toast({ title: `All ${count} ${clearTarget.noun} cleared successfully` });
       setClearTarget(null);
     } catch (err: any) {
@@ -1833,6 +2292,7 @@ export default function DataImport() {
           { value: "items", label: "Items" },
           { value: "bom", label: "Bill of Materials" },
           { value: "stock", label: "Opening Stock" },
+          { value: "reorder_rules", label: "Reorder Rules" },
         ]}
         value={activeTab}
         onChange={setActiveTab}
@@ -1950,6 +2410,24 @@ export default function DataImport() {
             }}
             onDownloadTemplate={downloadOpeningStockTemplate}
           />
+        </div>
+      )}
+
+      {activeTab === "reorder_rules" && (
+        <div className="paper-card mt-4">
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="font-semibold text-slate-900">Import Reorder Rules</h2>
+            {reorderRulesCount > 0 && (
+              <Button variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50 gap-1.5"
+                onClick={() => setClearTarget({ type: "reorder_rules", noun: "reorder rules", count: reorderRulesCount })}>
+                <Trash2 className="h-3.5 w-3.5" /> Clear All ({reorderRulesCount})
+              </Button>
+            )}
+          </div>
+          <p className="text-sm text-muted-foreground mb-4">
+            Set reorder points, reorder quantities and lead times for each item. Updates items' minimum stock level for Stock Register alerts.
+          </p>
+          <ReorderRulesTab />
         </div>
       )}
 

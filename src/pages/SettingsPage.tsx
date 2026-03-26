@@ -54,7 +54,7 @@ export default function SettingsPage() {
       iconBg: "bg-green-50",
       iconColor: "text-green-600",
       title: "Data Import",
-      description: "Import items, parties, BOM and opening stock from Excel templates",
+      description: "Import items, parties, BOM, opening stock and reorder rules from Excel templates",
       action: () => navigate("/settings/import"),
     },
     {

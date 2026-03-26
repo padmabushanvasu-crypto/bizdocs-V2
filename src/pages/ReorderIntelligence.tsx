@@ -8,6 +8,7 @@ import {
   Download,
   ShoppingCart,
   CheckCircle2,
+  Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -137,6 +138,15 @@ export default function ReorderIntelligence() {
           >
             <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
             Refresh
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate("/settings/import", { state: { tab: "reorder_rules" } })}
+            className="gap-1.5"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Import Rules
           </Button>
           <Button variant="outline" size="sm" onClick={handleExport} className="gap-1.5">
             <Download className="h-3.5 w-3.5" />
