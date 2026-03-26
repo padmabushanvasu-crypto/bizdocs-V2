@@ -7,10 +7,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   fetchDeliveryChallan,
   cancelDeliveryChallan,
   fetchDCReturns,
+  recordJobWorkDCReturn,
 } from "@/lib/delivery-challans-api";
 import { formatCurrency, formatNumber, amountInWords } from "@/lib/gst-utils";
 import { DocumentHeader } from "@/components/DocumentHeader";
@@ -49,6 +52,11 @@ export default function DeliveryChallanDetail() {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [isDuplicate, setIsDuplicate] = useState(false);
+  const [jwReturnOpen, setJwReturnOpen] = useState(false);
+  const [jwReturnQtyAccepted, setJwReturnQtyAccepted] = useState(0);
+  const [jwReturnQtyRejected, setJwReturnQtyRejected] = useState(0);
+  const [jwReturnReason, setJwReturnReason] = useState("");
+  const [jwReturnSaving, setJwReturnSaving] = useState(false);
 
   const { data: dc, isLoading } = useQuery({
     queryKey: ["delivery-challan", id],
@@ -122,11 +130,15 @@ export default function DeliveryChallanDetail() {
               <Edit className="h-3.5 w-3.5 mr-1" /> Edit
             </Button>
           )}
-          {isReturnable && ["issued", "partially_returned"].includes(dc.status) && (
+          {isReturnable && ["issued", "partially_returned"].includes(dc.status) && (dc as any).job_work_id ? (
+            <Button size="sm" onClick={() => setJwReturnOpen(true)}>
+              <RotateCcw className="h-3.5 w-3.5 mr-1" /> Record Return
+            </Button>
+          ) : isReturnable && ["issued", "partially_returned"].includes(dc.status) ? (
             <Button size="sm" onClick={() => navigate(`/delivery-challans/${id}/record-return`)}>
               <RotateCcw className="h-3.5 w-3.5 mr-1" /> Record Return
             </Button>
-          )}
+          ) : null}
           {!["cancelled", "fully_returned"].includes(dc.status) && (
             <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => setCancelOpen(true)}>
               <X className="h-3.5 w-3.5 mr-1" /> Cancel
@@ -201,6 +213,17 @@ export default function DeliveryChallanDetail() {
             </div>
             <div className="border-t border-border pt-3 space-y-1.5 text-sm">
               <p className="text-xs font-semibold text-slate-500 mb-2">Reference Details</p>
+              {(dc as any).job_work_number && (
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Job Work Ref</span>
+                  <button
+                    onClick={() => navigate(`/job-works/${(dc as any).job_work_id}`)}
+                    className="font-mono text-primary hover:underline text-sm"
+                  >
+                    {(dc as any).job_work_number}
+                  </button>
+                </div>
+              )}
               {(dc as any).lo_number && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">L.O. No</span>
@@ -389,9 +412,15 @@ export default function DeliveryChallanDetail() {
           <div className="flex items-center justify-between border-b border-border pb-2 mb-4">
             <h3 className="text-xs font-semibold text-slate-500">Return History</h3>
             {["issued", "partially_returned"].includes(dc.status) && (
-              <Button size="sm" variant="outline" onClick={() => navigate(`/delivery-challans/${id}/record-return`)}>
-                <RotateCcw className="h-3.5 w-3.5 mr-1" /> Record Return
-              </Button>
+              (dc as any).job_work_id ? (
+                <Button size="sm" variant="outline" onClick={() => setJwReturnOpen(true)}>
+                  <RotateCcw className="h-3.5 w-3.5 mr-1" /> Record Return
+                </Button>
+              ) : (
+                <Button size="sm" variant="outline" onClick={() => navigate(`/delivery-challans/${id}/record-return`)}>
+                  <RotateCcw className="h-3.5 w-3.5 mr-1" /> Record Return
+                </Button>
+              )
             )}
           </div>
           {(returns ?? []).length === 0 ? (
@@ -423,6 +452,84 @@ export default function DeliveryChallanDetail() {
       <div className="print:hidden">
         <AuditTimeline documentId={id!} />
       </div>
+
+      {/* Job Work Return Dialog */}
+      <Dialog open={jwReturnOpen} onOpenChange={(o) => { if (!o) { setJwReturnOpen(false); setJwReturnReason(""); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Record Job Work Return</DialogTitle>
+            <DialogDescription>
+              Enter received quantities for {(dc as any).job_work_number ?? dc.dc_number}. Accepted qty will be moved back to stock.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Qty Accepted</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={jwReturnQtyAccepted || ""}
+                  onChange={(e) => setJwReturnQtyAccepted(Number(e.target.value) || 0)}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label>Qty Rejected</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={jwReturnQtyRejected || ""}
+                  onChange={(e) => setJwReturnQtyRejected(Number(e.target.value) || 0)}
+                  className="mt-1"
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Rejection Reason</Label>
+              <Textarea
+                value={jwReturnReason}
+                onChange={(e) => setJwReturnReason(e.target.value)}
+                placeholder="Optional — note why units were rejected"
+                rows={2}
+                className="mt-1"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setJwReturnOpen(false)}>Cancel</Button>
+            <Button
+              disabled={jwReturnSaving || (jwReturnQtyAccepted === 0 && jwReturnQtyRejected === 0)}
+              onClick={async () => {
+                setJwReturnSaving(true);
+                try {
+                  const firstItem = dc.line_items?.[0];
+                  await recordJobWorkDCReturn(id!, {
+                    qty_accepted: jwReturnQtyAccepted,
+                    qty_rejected: jwReturnQtyRejected,
+                    rejection_reason: jwReturnReason,
+                    item_code: firstItem?.item_code ?? null,
+                    item_description: firstItem?.description ?? null,
+                  });
+                  queryClient.invalidateQueries({ queryKey: ["delivery-challan", id] });
+                  queryClient.invalidateQueries({ queryKey: ["dc-stats"] });
+                  setJwReturnOpen(false);
+                  toast({
+                    title: "Return recorded",
+                    description: `${jwReturnQtyAccepted} units moved back to stock`,
+                  });
+                } catch (err: any) {
+                  toast({ title: "Error", description: err.message, variant: "destructive" });
+                } finally {
+                  setJwReturnSaving(false);
+                }
+              }}
+            >
+              {jwReturnSaving ? "Recording…" : "Confirm Return"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Cancel Dialog */}
       <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>

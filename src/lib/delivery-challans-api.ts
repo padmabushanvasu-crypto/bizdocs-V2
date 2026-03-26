@@ -55,6 +55,8 @@ export interface DeliveryChallan {
   vehicle_number?: string | null;
   driver_name?: string | null;
   lo_number?: string | null;
+  job_work_id?: string | null;
+  job_work_number?: string | null;
   approx_value?: number | null;
   sub_total?: number;
   cgst_amount?: number;
@@ -152,7 +154,9 @@ export async function createDeliveryChallan({ dc, lineItems }: CreateDCData) {
     return_due_date: dc.return_due_date, nature_of_job_work: dc.nature_of_job_work,
     total_items: dc.total_items, total_qty: dc.total_qty, status: dc.status, issued_at: dc.issued_at,
     vehicle_number: dc.vehicle_number || null, driver_name: dc.driver_name || null,
-    lo_number: dc.lo_number || null, approx_value: dc.approx_value || null,
+    lo_number: dc.lo_number || null,
+    job_work_id: dc.job_work_id || null, job_work_number: dc.job_work_number || null,
+    approx_value: dc.approx_value || null,
     sub_total: dc.sub_total || 0, cgst_amount: dc.cgst_amount || 0, sgst_amount: dc.sgst_amount || 0,
     igst_amount: dc.igst_amount || 0, total_gst: dc.total_gst || 0, grand_total: dc.grand_total || 0,
     gst_rate: dc.gst_rate || 18, po_reference: dc.po_reference || null, po_date: dc.po_date || null,
@@ -189,7 +193,9 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
     return_due_date: dc.return_due_date, nature_of_job_work: dc.nature_of_job_work,
     total_items: dc.total_items, total_qty: dc.total_qty, status: dc.status, issued_at: dc.issued_at,
     vehicle_number: dc.vehicle_number || null, driver_name: dc.driver_name || null,
-    lo_number: dc.lo_number || null, approx_value: dc.approx_value || null,
+    lo_number: dc.lo_number || null,
+    job_work_id: dc.job_work_id || null, job_work_number: dc.job_work_number || null,
+    approx_value: dc.approx_value || null,
     sub_total: dc.sub_total || 0, cgst_amount: dc.cgst_amount || 0, sgst_amount: dc.sgst_amount || 0,
     igst_amount: dc.igst_amount || 0, total_gst: dc.total_gst || 0, grand_total: dc.grand_total || 0,
     gst_rate: dc.gst_rate || 18, po_reference: dc.po_reference || null, po_date: dc.po_date || null,
@@ -380,6 +386,88 @@ export async function fetchDCStats() {
 export async function softDeleteDeliveryChallan(id: string) {
   const { error } = await supabase.from("delivery_challans").update({ status: "deleted" } as any).eq("id", id);
   if (error) throw error;
+}
+
+export async function fetchDCsForJobWork(jobWorkId: string): Promise<DeliveryChallan[]> {
+  const { data, error } = await (supabase as any)
+    .from("delivery_challans")
+    .select("*")
+    .eq("job_work_id", jobWorkId)
+    .order("dc_date", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as DeliveryChallan[];
+}
+
+export async function recordJobWorkDCReturn(
+  dcId: string,
+  data: {
+    qty_accepted: number;
+    qty_rejected: number;
+    rejection_reason: string;
+    item_code: string | null;
+    item_description: string | null;
+  }
+) {
+  const companyId = await getCompanyId();
+  const today = new Date().toISOString().split("T")[0];
+
+  // Get DC number for ledger reference
+  const { data: dcHeader } = await supabase.from("delivery_challans").select("dc_number").eq("id", dcId).single();
+  const dcNumber = (dcHeader as any)?.dc_number ?? "";
+
+  // Mark DC as fully returned
+  await (supabase as any).from("delivery_challans").update({ status: "fully_returned" }).eq("id", dcId);
+
+  // Look up the job card step linked to this DC via outward_dc_id
+  const { data: step } = await (supabase as any)
+    .from("job_card_steps")
+    .select("id")
+    .eq("outward_dc_id", dcId)
+    .maybeSingle();
+
+  if (step) {
+    await (supabase as any).from("job_card_steps").update({
+      status: "done",
+      qty_returned: data.qty_accepted + data.qty_rejected,
+      qty_accepted: data.qty_accepted,
+      qty_rejected: data.qty_rejected,
+      rejection_reason: data.rejection_reason || null,
+      completed_at: new Date().toISOString(),
+    }).eq("id", step.id);
+  }
+
+  // Add accepted qty back to stock
+  if (data.qty_accepted > 0 && data.item_code) {
+    const { data: itemRecord } = await supabase
+      .from("items")
+      .select("id, item_code, description, current_stock")
+      .eq("item_code", data.item_code)
+      .eq("company_id", companyId)
+      .maybeSingle();
+
+    if (itemRecord) {
+      const rec = itemRecord as any;
+      const newStock = (rec.current_stock ?? 0) + data.qty_accepted;
+      await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
+      await addStockLedgerEntry({
+        item_id: rec.id,
+        item_code: rec.item_code,
+        item_description: rec.description ?? data.item_description ?? "",
+        transaction_date: today,
+        transaction_type: "job_work_return",
+        qty_in: data.qty_accepted,
+        qty_out: 0,
+        balance_qty: newStock,
+        unit_cost: 0,
+        total_value: 0,
+        reference_type: "delivery_challan",
+        reference_id: dcId,
+        reference_number: dcNumber,
+        notes: `Job work return: ${dcNumber}`,
+        created_by: null,
+      });
+    }
+  }
 }
 
 export async function fetchProcessSuggestions(): Promise<string[]> {

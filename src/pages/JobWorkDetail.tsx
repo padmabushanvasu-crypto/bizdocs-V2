@@ -19,6 +19,7 @@ import {
   TrendingDown,
   TrendingUp,
   Package,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -53,6 +54,7 @@ import {
   type StockMovement,
 } from "@/lib/job-works-api";
 import { fetchGrnsForJobCard, type GRN } from "@/lib/grn-api";
+import { fetchDCsForJobWork, type DeliveryChallan } from "@/lib/delivery-challans-api";
 import { AddStepDialog } from "@/components/AddStepDialog";
 import { RecordReturnDialog } from "@/components/RecordReturnDialog";
 import { AuditTimeline } from "@/components/AuditTimeline";
@@ -318,6 +320,12 @@ export default function JobWorkDetail() {
     enabled: !!id,
   });
 
+  const { data: linkedDCs = [] } = useQuery<DeliveryChallan[]>({
+    queryKey: ["job-work-dcs", id],
+    queryFn: () => fetchDCsForJobWork(id!),
+    enabled: !!id,
+  });
+
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["job-work", id] });
     queryClient.invalidateQueries({ queryKey: ["job-work-summary", id] });
@@ -462,6 +470,34 @@ export default function JobWorkDetail() {
     }
   };
 
+  const handleRaiseDC = () => {
+    const activeExternalStep = steps.find(
+      (s) => s.step_type === "external" && s.status !== "done"
+    );
+    navigate("/delivery-challans/new", {
+      state: {
+        prefill: {
+          job_work_id: id,
+          job_work_number: jc.jc_number,
+          party_id: activeExternalStep?.vendor_id ?? null,
+          party_name: activeExternalStep?.vendor_name ?? null,
+          dc_type: "returnable",
+          line_items: steps
+            .filter((s) => s.step_type === "external")
+            .map((s) => ({
+              item_id: jc.item_id,
+              item_code: jc.item_code,
+              description: jc.item_description,
+              quantity: s.qty_sent ?? jc.quantity_original,
+              unit: s.unit ?? jc.unit,
+              nature_of_process: s.name,
+              drawing_number: jc.drawing_number,
+            })),
+        },
+      },
+    });
+  };
+
   const handleOpenComplete = () => {
     if (openExternalSteps.length > 0) {
       const s = openExternalSteps[0];
@@ -576,7 +612,17 @@ export default function JobWorkDetail() {
         </div>
 
         {/* Action buttons */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          {!isCompleted && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-blue-300 text-blue-700 hover:bg-blue-50"
+              onClick={handleRaiseDC}
+            >
+              <Truck className="h-4 w-4 mr-1" /> Raise DC
+            </Button>
+          )}
           {!isCompleted && (
             <Button
               size="sm"
@@ -824,6 +870,68 @@ export default function JobWorkDetail() {
                     </td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Linked Delivery Challans */}
+      <div className="space-y-2">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+          <FileText className="h-4 w-4" /> Delivery Challans
+        </h2>
+        {linkedDCs.length === 0 ? (
+          <div className="paper-card text-center py-6 text-sm text-muted-foreground">
+            No delivery challans linked to this work order yet
+          </div>
+        ) : (
+          <div className="paper-card !p-0 overflow-x-auto">
+            <table className="w-full data-table text-sm">
+              <thead>
+                <tr>
+                  <th>DC Number</th>
+                  <th>Date</th>
+                  <th>Vendor</th>
+                  <th className="text-right">Qty Sent</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {linkedDCs.map((dc) => {
+                  const today = new Date().toISOString().split("T")[0];
+                  const isOverdue =
+                    dc.return_due_date &&
+                    dc.return_due_date < today &&
+                    !["fully_returned", "cancelled"].includes(dc.status);
+                  const totalQtySent = (dc.line_items ?? []).reduce(
+                    (s, li) => s + (li.quantity || 0),
+                    0
+                  );
+                  return (
+                    <tr
+                      key={dc.id}
+                      className="cursor-pointer hover:bg-muted/40"
+                      onClick={() => navigate(`/delivery-challans/${dc.id}`)}
+                    >
+                      <td className="font-mono text-primary hover:underline">{dc.dc_number}</td>
+                      <td className="text-xs text-muted-foreground">
+                        {new Date(dc.dc_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                      </td>
+                      <td>{dc.party_name ?? "—"}</td>
+                      <td className="text-right font-mono tabular-nums">{totalQtySent || dc.total_qty}</td>
+                      <td>
+                        {isOverdue ? (
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-100">Overdue</span>
+                        ) : dc.status === "fully_returned" ? (
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-100">Returned</span>
+                        ) : (
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100">Pending Return</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

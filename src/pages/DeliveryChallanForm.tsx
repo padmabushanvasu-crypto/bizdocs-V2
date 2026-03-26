@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, ChevronDown, Info, ChevronLeft } from "lucide-react";
 import { ItemSuggest } from "@/components/ItemSuggest";
@@ -25,6 +25,7 @@ import {
   issueDeliveryChallan,
   type DCLineItem,
 } from "@/lib/delivery-challans-api";
+import { fetchOpenJobWorks, fetchJobWork } from "@/lib/job-works-api";
 import { formatCurrency, amountInWords } from "@/lib/gst-utils";
 import { getGSTType, calculateLineTax, round2, type GSTType } from "@/lib/tax-utils";
 
@@ -70,6 +71,7 @@ export default function DeliveryChallanForm() {
   const { id } = useParams();
   const isEdit = !!id;
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -90,6 +92,10 @@ export default function DeliveryChallanForm() {
   const [savedDCId, setSavedDCId] = useState<string | null>(null);
   const [vehicleNumber, setVehicleNumber] = useState("");
   const [loNumber, setLoNumber] = useState("");
+  const [jobWorkId, setJobWorkId] = useState<string | null>(null);
+  const [jobWorkNumber, setJobWorkNumber] = useState("");
+  const [jobWorkOpen, setJobWorkOpen] = useState(false);
+  const [prefillBanner, setPrefillBanner] = useState("");
   const [approxValue, setApproxValue] = useState<number | undefined>();
   const [poReference, setPoReference] = useState("");
   const [poDate, setPoDate] = useState<Date | undefined>();
@@ -116,6 +122,11 @@ export default function DeliveryChallanForm() {
     enabled: !isEdit,
   });
 
+  const { data: openJobWorks = [] } = useQuery({
+    queryKey: ["open-job-works"],
+    queryFn: fetchOpenJobWorks,
+  });
+
   const { data: existingDC } = useQuery({
     queryKey: ["delivery-challan", id],
     queryFn: () => fetchDeliveryChallan(id!),
@@ -138,6 +149,8 @@ export default function DeliveryChallanForm() {
       setNatureOfJobWork(existingDC.nature_of_job_work || "");
       setVehicleNumber(existingDC.vehicle_number || "");
       setLoNumber(existingDC.lo_number || "");
+      setJobWorkId(existingDC.job_work_id || null);
+      setJobWorkNumber(existingDC.job_work_number || "");
       setApproxValue(existingDC.approx_value ?? undefined);
       setPoReference(existingDC.po_reference || "");
       setGstRate(existingDC.gst_rate || 18);
@@ -152,6 +165,73 @@ export default function DeliveryChallanForm() {
       }
     }
   }, [existingDC, parties]);
+
+  // Prefill from Raise DC navigation state
+  useEffect(() => {
+    const prefill = (location.state as any)?.prefill;
+    if (!prefill || isEdit || parties.length === 0) return;
+
+    if (prefill.dc_type) setDcType(prefill.dc_type);
+    if (prefill.job_work_id) setJobWorkId(prefill.job_work_id);
+    if (prefill.job_work_number) {
+      setJobWorkNumber(prefill.job_work_number);
+      setPrefillBanner(`Pre-filled from Job Work ${prefill.job_work_number} — review and confirm before saving`);
+    }
+    if (prefill.party_id) {
+      setPartyId(prefill.party_id);
+      const p = parties.find((p) => p.id === prefill.party_id);
+      if (p) setSelectedParty(p);
+    }
+    if (prefill.line_items?.length) {
+      const items: DCLineItem[] = (prefill.line_items as any[]).map((li, idx) => ({
+        serial_number: idx + 1,
+        item_code: li.item_code || "",
+        description: li.description || "",
+        drawing_number: li.drawing_number || "",
+        unit: li.unit || "NOS",
+        quantity: li.quantity || 0,
+        rate: 0,
+        amount: 0,
+        nature_of_process: li.nature_of_process || "",
+        qty_kgs: undefined,
+        qty_sft: undefined,
+      }));
+      setLineItems(items);
+    }
+  }, [location.state, parties, isEdit]);
+
+  const handleJobWorkSelect = async (jw: { id: string; jc_number: string; item_code: string | null; item_description: string | null }) => {
+    setJobWorkId(jw.id);
+    setJobWorkNumber(jw.jc_number);
+    setJobWorkOpen(false);
+    setDcType("returnable");
+    try {
+      const full = await fetchJobWork(jw.id);
+      const activeStep = full.steps.find((s) => s.step_type === "external" && s.status !== "done");
+      if (activeStep?.vendor_id) {
+        const p = parties.find((p) => p.id === activeStep.vendor_id);
+        if (p) { setPartyId(p.id); setSelectedParty(p); }
+      }
+      const extSteps = full.steps.filter((s) => s.step_type === "external");
+      if (extSteps.length > 0) {
+        setLineItems(extSteps.map((s, idx) => ({
+          serial_number: idx + 1,
+          item_code: full.item_code || "",
+          description: full.item_description || "",
+          drawing_number: full.drawing_number || "",
+          unit: s.unit || full.unit || "NOS",
+          quantity: s.qty_sent || 0,
+          rate: 0,
+          amount: 0,
+          nature_of_process: s.name || "",
+          qty_kgs: undefined,
+          qty_sft: undefined,
+        })));
+      }
+    } catch {
+      // just set the JW reference, don't fail
+    }
+  };
 
   const handlePartySelect = (party: Party) => {
     setPartyId(party.id);
@@ -228,7 +308,9 @@ export default function DeliveryChallanForm() {
         cancellation_reason: null,
         vehicle_number: vehicleNumber || null,
         driver_name: null,
-        lo_number: loNumber || null,
+        lo_number: null,
+        job_work_id: jobWorkId || null,
+        job_work_number: jobWorkNumber || null,
         approx_value: approxValue ?? null,
         sub_total: subTotal,
         cgst_amount: taxResult.cgst,
@@ -370,6 +452,13 @@ export default function DeliveryChallanForm() {
         </div>
       )}
 
+      {prefillBanner && (
+        <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          <Info className="h-4 w-4 mt-0.5 shrink-0 text-blue-500" />
+          <span>{prefillBanner}</span>
+        </div>
+      )}
+
       {/* Header Section */}
       <div className="paper-card space-y-6">
         <h2 className="text-sm font-medium text-slate-700 border-b border-border pb-2">Consignee & DC Details</h2>
@@ -453,8 +542,44 @@ export default function DeliveryChallanForm() {
                 <Input value={vehicleNumber} onChange={(e) => setVehicleNumber(e.target.value)} className="mt-1" placeholder="e.g., MH-01-AB-1234" />
               </div>
               <div>
-                <Label className="text-sm font-medium text-slate-700">L.O. No / Works Order Ref</Label>
-                <Input value={loNumber} onChange={(e) => setLoNumber(e.target.value)} className="mt-1" placeholder="Works order / job order no." />
+                <Label className="text-sm font-medium text-slate-700">Job Work Reference</Label>
+                <Popover open={jobWorkOpen} onOpenChange={setJobWorkOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" role="combobox" className="w-full justify-between mt-1 font-normal text-sm h-9">
+                      {jobWorkNumber || "Link to Job Work..."}
+                      <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-full p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search job works..." />
+                      <CommandList>
+                        <CommandEmpty>No open job works found.</CommandEmpty>
+                        <CommandGroup>
+                          {openJobWorks.map((jw) => (
+                            <CommandItem key={jw.id} value={jw.jc_number} onSelect={() => handleJobWorkSelect(jw)}>
+                              <div>
+                                <p className="font-mono font-medium text-sm">{jw.jc_number}</p>
+                                {jw.item_description && (
+                                  <p className="text-xs text-muted-foreground">{jw.item_code ? `${jw.item_code} — ` : ""}{jw.item_description}</p>
+                                )}
+                              </div>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                {jobWorkId && (
+                  <button
+                    type="button"
+                    onClick={() => { setJobWorkId(null); setJobWorkNumber(""); }}
+                    className="text-[10px] text-muted-foreground hover:text-destructive mt-0.5"
+                  >
+                    Clear
+                  </button>
+                )}
               </div>
             </div>
 
