@@ -11,7 +11,7 @@ import { getCompanyId } from "@/lib/auth-helpers";
 import {
   resolveColumns, extractRow, buildMappingSummary,
   normalizePartyType, normalizeItemType, normaliseHeader, fieldDisplayName,
-  PARTY_FIELD_MAP, ITEM_FIELD_MAP, BOM_FIELD_MAP, STOCK_FIELD_MAP,
+  PARTY_FIELD_MAP, ITEM_FIELD_MAP, BOM_FIELD_MAP, STOCK_FIELD_MAP, VENDOR_SHEET_FIELD_MAP,
   type ColumnMappingSummary, type SkipReason,
 } from "@/lib/import-utils";
 import { useImportQueue, type BatchImportFn } from "@/lib/import-queue";
@@ -145,59 +145,87 @@ async function downloadBOMTemplate() {
   const XLSX = await import("xlsx-js-style");
   const wb = (XLSX as any).utils.book_new();
 
-  const headers = [
-    "Finished Item Code *", "Component Code *", "Quantity *", "Unit", "Scrap Factor %", "Variant Name", "Notes",
-    "Vendor 1 Code", "Vendor 1 Process", "Vendor 1 Lead Days",
-    "Vendor 2 Code", "Vendor 2 Process", "Vendor 2 Lead Days",
-    "Vendor 3 Code", "Vendor 3 Process", "Vendor 3 Lead Days",
+  // ── Sheet 1: BOM Lines ──
+  const bomHeaders = [
+    "Finished Item Code *", "Finished Item Description", "Component Code *",
+    "Component Description", "Quantity Per Unit *", "Unit", "BOM Level", "Notes"
   ];
-  const noteRow = [
-    "", "", "", "", "", "", "",
-    "Vendor codes must match existing parties in your Parties master", "", "",
-    "", "", "", "", "", "",
-  ];
+  const noteRow = ["Add vendor information on the Vendors sheet (no limit on vendors per component)", "", "", "", "", "", "", ""];
   const examples = [
-    ["PROD-001", "COMP-A", "2", "NOS", "5", "", "Main component", "VEND-001", "Machining", "7", "", "", "", "", "", ""],
-    ["PROD-001", "COMP-B", "1", "KG", "0", "Variant-1", "Optional variant", "VEND-002", "Heat Treatment", "14", "VEND-003", "Plating", "10", "", "", ""],
-    ["PROD-002", "COMP-A", "4", "NOS", "2", "", "Sub-assembly use", "", "", "", "", "", "", "", "", ""],
+    ["PROD-001", "Main Product", "COMP-A", "Steel Bracket", "2", "NOS", "1", "Main structural component"],
+    ["PROD-001", "Main Product", "COMP-B", "Copper Wire", "0.5", "KG", "1", ""],
+    ["PROD-002", "Sub Assembly", "COMP-A", "Steel Bracket", "4", "NOS", "2", "Used in sub-assembly"],
   ];
-
-  const aoa = [headers, noteRow, ...examples];
-  const ws = (XLSX as any).utils.aoa_to_sheet(aoa);
+  const aoa1 = [bomHeaders, noteRow, ...examples];
+  const ws1 = (XLSX as any).utils.aoa_to_sheet(aoa1);
 
   const BOLD_HEADER: Record<string, unknown> = { font: { bold: true, color: { rgb: "FFFFFF" }, sz: 10 }, fill: { fgColor: { rgb: "2D3282" } }, alignment: { horizontal: "center" } };
-  const VENDOR_HEADER: Record<string, unknown> = { font: { bold: true, color: { rgb: "1E40AF" }, sz: 10 }, fill: { fgColor: { rgb: "DBEAFE" } }, alignment: { horizontal: "center" } };
-  const NOTE_STYLE: Record<string, unknown> = { font: { italic: true, sz: 9, color: { rgb: "1E40AF" } }, fill: { fgColor: { rgb: "EFF6FF" } } };
+  const NOTE_STYLE: Record<string, unknown> = { font: { italic: true, sz: 9, color: { rgb: "374151" } }, fill: { fgColor: { rgb: "FEF9C3" } } };
   const EXAMPLE_STYLE: Record<string, unknown> = { fill: { fgColor: { rgb: "F3F4F6" } }, font: { sz: 10 } };
-  const VENDOR_EXAMPLE: Record<string, unknown> = { fill: { fgColor: { rgb: "EFF6FF" } }, font: { sz: 10 } };
 
-  const VENDOR_START = 7; // 0-based index of "Vendor 1 Code"
-
-  headers.forEach((_h, i) => {
+  bomHeaders.forEach((_h, i) => {
     const cell = (XLSX as any).utils.encode_cell({ r: 0, c: i });
-    if (ws[cell]) ws[cell].s = i >= VENDOR_START ? VENDOR_HEADER : BOLD_HEADER;
+    if (ws1[cell]) ws1[cell].s = BOLD_HEADER;
   });
-
-  // Note row
-  headers.forEach((_h, i) => {
+  bomHeaders.forEach((_h, i) => {
     const cell = (XLSX as any).utils.encode_cell({ r: 1, c: i });
-    if (ws[cell]) ws[cell].s = i >= VENDOR_START ? NOTE_STYLE : { fill: { fgColor: { rgb: "F3F4F6" } } };
+    if (!ws1[cell]) ws1[cell] = { v: i === 0 ? noteRow[0] : "", t: "s" };
+    ws1[cell].s = NOTE_STYLE;
   });
-
-  // Example rows
-  for (let r = 2; r < aoa.length; r++) {
-    headers.forEach((_h, c) => {
+  for (let r = 2; r < aoa1.length; r++) {
+    bomHeaders.forEach((_h, c) => {
       const cell = (XLSX as any).utils.encode_cell({ r, c });
-      if (!ws[cell]) ws[cell] = { v: "", t: "s" };
-      ws[cell].s = c >= VENDOR_START ? VENDOR_EXAMPLE : EXAMPLE_STYLE;
+      if (!ws1[cell]) ws1[cell] = { v: "", t: "s" };
+      ws1[cell].s = EXAMPLE_STYLE;
     });
   }
+  ws1["!cols"] = bomHeaders.map((h) => ({ wch: Math.max(h.length + 2, 18) }));
+  ws1["!rows"] = [{ hpt: 20 }, { hpt: 32 }, { hpt: 16 }, { hpt: 16 }, { hpt: 16 }];
+  ws1["!freeze"] = { xSplit: 0, ySplit: 2 };
+  (XLSX as any).utils.book_append_sheet(wb, ws1, "BOM Lines");
 
-  ws["!cols"] = headers.map((h, i) => ({ wch: i >= VENDOR_START ? 18 : Math.max(h.length + 2, 16) }));
-  ws["!rows"] = [{ hpt: 20 }, { hpt: 28 }, { hpt: 16 }, { hpt: 16 }, { hpt: 16 }];
-  ws["!freeze"] = { xSplit: 0, ySplit: 1 };
+  // ── Sheet 2: Vendors ──
+  const vendorHeaders = [
+    "Component Code *", "Vendor Code *", "Process Name", "Lead Time Days", "Preference Order", "Notes"
+  ];
+  const vendorInstructionRow = [
+    "Add one row per vendor per component. Component Code must match Sheet 1. Vendor Code must match your Parties master. Preference Order: 1 = preferred, 2 = second choice.",
+    "", "", "", "", ""
+  ];
+  const vendorExamples = [
+    ["COMP-A", "VEND-001", "CNC Machining", "7", "1", "Primary machining vendor"],
+    ["COMP-A", "VEND-002", "CNC Machining", "10", "2", "Backup vendor"],
+    ["COMP-B", "VEND-003", "Wire Drawing", "14", "1", ""],
+  ];
+  const aoa2 = [vendorHeaders, vendorInstructionRow, ...vendorExamples];
+  const ws2 = (XLSX as any).utils.aoa_to_sheet(aoa2);
 
-  (XLSX as any).utils.book_append_sheet(wb, ws, "BOM Import");
+  const NAVY_HEADER: Record<string, unknown> = { font: { bold: true, color: { rgb: "FFFFFF" }, sz: 10 }, fill: { fgColor: { rgb: "1E3A5F" } }, alignment: { horizontal: "center" } };
+  const AMBER_INSTRUCTION: Record<string, unknown> = { font: { italic: true, sz: 9, color: { rgb: "92400E" } }, fill: { fgColor: { rgb: "FEF3C7" } }, alignment: { wrapText: true } };
+  const VENDOR_EXAMPLE: Record<string, unknown> = { fill: { fgColor: { rgb: "EFF6FF" } }, font: { sz: 10 } };
+
+  vendorHeaders.forEach((_h, i) => {
+    const cell = (XLSX as any).utils.encode_cell({ r: 0, c: i });
+    if (ws2[cell]) ws2[cell].s = NAVY_HEADER;
+  });
+  vendorHeaders.forEach((_h, i) => {
+    const cell = (XLSX as any).utils.encode_cell({ r: 1, c: i });
+    if (!ws2[cell]) ws2[cell] = { v: i === 0 ? vendorInstructionRow[0] : "", t: "s" };
+    ws2[cell].s = AMBER_INSTRUCTION;
+  });
+  for (let r = 2; r < aoa2.length; r++) {
+    vendorHeaders.forEach((_h, c) => {
+      const cell = (XLSX as any).utils.encode_cell({ r, c });
+      if (!ws2[cell]) ws2[cell] = { v: "", t: "s" };
+      ws2[cell].s = VENDOR_EXAMPLE;
+    });
+  }
+  ws2["!cols"] = vendorHeaders.map((h) => ({ wch: Math.max(h.length + 2, 18) }));
+  ws2["!rows"] = [{ hpt: 20 }, { hpt: 40 }, { hpt: 16 }, { hpt: 16 }, { hpt: 16 }];
+  ws2["!freeze"] = { xSplit: 0, ySplit: 2 };
+  ws2["!merges"] = [{ s: { r: 1, c: 0 }, e: { r: 1, c: 5 } }];
+  (XLSX as any).utils.book_append_sheet(wb, ws2, "Vendors");
+
   (XLSX as any).writeFile(wb, "BOM_Import_Template.xlsx");
 }
 
@@ -523,6 +551,8 @@ function BOMImportTab() {
   const [skipReasons, setSkipReasons] = useState<SkipReason[]>([]);
   // FIX 6: track the queued job
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+  const [vendorSheetRows, setVendorSheetRows] = useState<Record<string, string>[]>([]);
+  const [vendorCount, setVendorCount] = useState(0);
 
   // FIX 6: watch for job completion
   useEffect(() => {
@@ -541,7 +571,48 @@ function BOMImportTab() {
     setRows([]); setValidRows([]); setValidRowNums([]); setErrors([]);
     setErrorRows(new Set()); setErrorMessages(new Map()); setResult(null);
     setMappingSummary(null); setColumnWarnings([]); setSkipReasons([]);
+    setVendorSheetRows([]); setVendorCount(0);
   };
+
+  async function parseNamedSheet(file: File, sheetName: string, fieldMap: Record<string, string[]>): Promise<Record<string, string>[]> {
+    const XLSX = await import("xlsx-js-style");
+    const buffer = await file.arrayBuffer();
+    const wb = (XLSX as any).read(new Uint8Array(buffer), { type: "array", raw: false });
+    const normalizedNames = wb.SheetNames.map((n: string) => n.toLowerCase());
+    const idx = normalizedNames.indexOf(sheetName.toLowerCase());
+    if (idx === -1) return [];
+    const ws = wb.Sheets[wb.SheetNames[idx]];
+    const allRows = (XLSX as any).utils.sheet_to_json(ws, { header: 1, defval: "", raw: false }) as string[][];
+    if (allRows.length < 2) return [];
+    const allAliases = Object.values(fieldMap).flat().map(normaliseHeader).filter((a: string) => a.length >= 3);
+    let headerIdx = 0;
+    let bestScore = -1;
+    for (let i = 0; i < Math.min(5, allRows.length); i++) {
+      let score = 0;
+      for (const cell of allRows[i]) {
+        const norm = normaliseHeader(String(cell));
+        if (allAliases.some((a: string) => norm === a || norm.includes(a) || a.includes(norm))) score++;
+      }
+      if (score > bestScore) { bestScore = score; headerIdx = i; }
+    }
+    const headers = allRows[headerIdx].map((c: string) => String(c).trim());
+    const colMap = resolveColumns(headers, fieldMap);
+    const result: Record<string, string>[] = [];
+    for (let i = headerIdx + 1; i < allRows.length; i++) {
+      const row = allRows[i];
+      const mapped: Record<string, string> = {};
+      let hasData = false;
+      headers.forEach((header, idx) => {
+        const val = String(row[idx] ?? "").trim();
+        if (header) { mapped[header] = val; if (val) hasData = true; }
+      });
+      if (hasData) {
+        const extracted = extractRow(mapped, headers, colMap);
+        if (extracted.component_code || extracted.vendor_code) result.push(extracted);
+      }
+    }
+    return result;
+  }
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -643,6 +714,18 @@ function BOMImportTab() {
     } catch (err: any) {
       toast({ title: "Failed to parse file", description: err.message, variant: "destructive" });
       setValidating(false);
+    }
+    // Check for Vendors sheet
+    try {
+      const file2 = e.target.files?.[0];
+      if (file2) {
+        const vendorRows = await parseNamedSheet(file2, "vendors", VENDOR_SHEET_FIELD_MAP);
+        setVendorSheetRows(vendorRows);
+        setVendorCount(vendorRows.length);
+      }
+    } catch {
+      setVendorSheetRows([]);
+      setVendorCount(0);
     }
     e.target.value = "";
   };
@@ -863,7 +946,62 @@ function BOMImportTab() {
     }
 
     queryClient.invalidateQueries({ queryKey: ["bom-lines"] });
-    return { imported, skipped, errors, skipReasons };
+
+    // Process vendor sheet rows (if any) — adds vendors to ALL BOM lines containing the component
+    let vendorMappingsCount = 0;
+    if (vendorSheetRows.length > 0) {
+      // Build childId → all lineIds map
+      const childToLineIds = new Map<string, string[]>();
+      for (const [key, lineId] of insertedLineIds) {
+        const childId = key.split(":")[1];
+        if (childId) {
+          const arr = childToLineIds.get(childId) ?? [];
+          arr.push(lineId);
+          childToLineIds.set(childId, arr);
+        }
+      }
+      for (const [key, lineId] of bomLineMap) {
+        const childId = key.split(":")[1];
+        if (childId) {
+          const arr = childToLineIds.get(childId) ?? [];
+          if (!arr.includes(lineId)) { arr.push(lineId); childToLineIds.set(childId, arr); }
+        }
+      }
+
+      for (const vRow of vendorSheetRows) {
+        const compCode = vRow["component_code"]?.trim() ?? "";
+        const vendCode = vRow["vendor_code"]?.trim() ?? "";
+        if (!compCode || !vendCode) continue;
+        const childId = codeToId.get(compCode.toLowerCase()) ?? drawingToId.get(compCode.toLowerCase());
+        if (!childId) continue;
+        const found = partyCodeToVendor.get(vendCode.toLowerCase());
+        if (!found) {
+          skipReasons.push({ row: 0, value: vendCode, reason: `Vendor code '${vendCode}' not found in Parties master` });
+          continue;
+        }
+        const lineIds = childToLineIds.get(childId) ?? [];
+        const prefOrder = parseInt(vRow["preference_order"] || "1", 10) || 1;
+        for (const lineId of lineIds) {
+          try {
+            await (supabase as any).from("bom_line_vendors").insert({
+              company_id: companyId,
+              bom_line_id: lineId,
+              vendor_id: found.id,
+              vendor_name: found.name,
+              vendor_code: vendCode,
+              notes: vRow["process_name"]?.trim() || vRow["notes"]?.trim() || null,
+              lead_time_days: parseInt(vRow["lead_time_days"] || "7", 10) || 7,
+              currency: "INR",
+              is_preferred: prefOrder === 1,
+              preference_order: prefOrder,
+            });
+            vendorMappingsCount++;
+          } catch { /* non-fatal */ }
+        }
+      }
+    }
+
+    return { imported, skipped, errors, skipReasons, vendorMappings: vendorMappingsCount } as any;
   };
 
   // FIX 6: queue the import instead of awaiting directly
@@ -892,7 +1030,8 @@ function BOMImportTab() {
           <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg p-3">
             <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
             <span className="text-sm text-green-800 font-medium">
-              {result.imported} imported · {result.skipped} skipped
+              {result.imported} BOM lines imported · {result.skipped} skipped
+              {(result as any).vendorMappings > 0 && ` · ${(result as any).vendorMappings} vendor mappings created`}
             </span>
           </div>
           <SkipReasonsPanel reasons={skipReasons} />
@@ -938,6 +1077,13 @@ function BOMImportTab() {
       )}
       {rows.length > 0 && validating && (
         <p className="text-xs text-muted-foreground">Validating item codes…</p>
+      )}
+
+      {vendorCount > 0 && (
+        <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-purple-50 border border-purple-200 text-xs text-purple-800">
+          <Users className="h-3 w-3 shrink-0" />
+          {vendorCount} vendor row{vendorCount !== 1 ? "s" : ""} detected from Vendors sheet — will be imported after BOM lines
+        </div>
       )}
 
       {/* Validation Error List */}

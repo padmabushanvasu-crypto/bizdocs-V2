@@ -131,6 +131,8 @@ export interface WhereUsedResult {
   variant_name: string | null;
   bom_level: number;
   path: string[];
+  bom_line_id: string;
+  parent_current_stock: number;
 }
 
 export interface BomVariantCompare {
@@ -276,9 +278,11 @@ export async function fetchBomLines(
   parentItemId: string,
   variantId?: string | null
 ): Promise<BomLine[]> {
+  const companyId = await getCompanyId();
   let query = (supabase as any)
     .from("bom_lines")
     .select("*")
+    .eq("company_id", companyId)
     .eq("parent_item_id", parentItemId)
     .order("created_at", { ascending: true });
 
@@ -402,6 +406,7 @@ export interface BomLineVendor {
   is_preferred: boolean;
   preference_order: number;
   notes: string | null;
+  vendor_type?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -414,7 +419,14 @@ export async function fetchBomLineVendors(bomLineId: string): Promise<BomLineVen
     .order("preference_order", { ascending: true })
     .order("created_at", { ascending: true });
   if (error) return [];
-  return (data ?? []) as BomLineVendor[];
+  const vendors = (data ?? []) as any[];
+  const vendorIds = [...new Set(vendors.map((v: any) => v.vendor_id).filter(Boolean) as string[])];
+  if (vendorIds.length > 0) {
+    const { data: partyData } = await (supabase as any).from("parties").select("id, vendor_type").in("id", vendorIds);
+    const typeMap = new Map(((partyData ?? []) as any[]).map((p: any) => [p.id as string, p.vendor_type as string | null]));
+    return vendors.map((v: any) => ({ ...v, vendor_type: v.vendor_id ? (typeMap.get(v.vendor_id) ?? null) : null })) as BomLineVendor[];
+  }
+  return vendors as BomLineVendor[];
 }
 
 export async function fetchBomLineVendorsBatch(lineIds: string[]): Promise<BomLineVendor[]> {
@@ -426,7 +438,14 @@ export async function fetchBomLineVendorsBatch(lineIds: string[]): Promise<BomLi
     .order("preference_order", { ascending: true })
     .order("created_at", { ascending: true });
   if (error) return [];
-  return (data ?? []) as BomLineVendor[];
+  const vendors = (data ?? []) as any[];
+  const vendorIds = [...new Set(vendors.map((v: any) => v.vendor_id).filter(Boolean) as string[])];
+  if (vendorIds.length > 0) {
+    const { data: partyData } = await (supabase as any).from("parties").select("id, vendor_type").in("id", vendorIds);
+    const typeMap = new Map(((partyData ?? []) as any[]).map((p: any) => [p.id as string, p.vendor_type as string | null]));
+    return vendors.map((v: any) => ({ ...v, vendor_type: v.vendor_id ? (typeMap.get(v.vendor_id) ?? null) : null })) as BomLineVendor[];
+  }
+  return vendors as BomLineVendor[];
 }
 
 export async function addBomLineVendor(data: {
@@ -815,7 +834,7 @@ export async function fetchWhereUsed(itemId: string): Promise<WhereUsedResult[]>
 
   const { data: parentItems } = await (supabase as any)
     .from("items")
-    .select("id, item_code, description, item_type")
+    .select("id, item_code, description, item_type, current_stock")
     .in("id", parentIds);
 
   const parentMap = new Map(((parentItems ?? []) as any[]).map((i: any) => [i.id, i]));
@@ -842,6 +861,8 @@ export async function fetchWhereUsed(itemId: string): Promise<WhereUsedResult[]>
       variant_name: line.variant_id ? (variantMap.get(line.variant_id) ?? null) : null,
       bom_level: line.bom_level ?? 1,
       path: [parent?.description ?? "—"],
+      bom_line_id: line.id as string,
+      parent_current_stock: parent?.current_stock ?? 0,
     };
   });
 }

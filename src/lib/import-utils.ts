@@ -613,6 +613,15 @@ export const BOM_FIELD_MAP: Record<string, string[]> = {
   vendor3_lead_days: ["vendor 3 lead days"],
 };
 
+export const VENDOR_SHEET_FIELD_MAP: Record<string, string[]> = {
+  component_code: ["component code", "child item code", "component", "part code"],
+  vendor_code: ["vendor code", "vendor", "party code", "vendor party code"],
+  process_name: ["process name", "process", "nature of process", "job work process"],
+  lead_time_days: ["lead time days", "lead time", "lead days", "turnaround days"],
+  preference_order: ["preference order", "preference", "priority", "rank", "order"],
+  notes: ["notes", "remarks"],
+};
+
 export const STOCK_FIELD_MAP: Record<string, string[]> = {
   item_code: ["item code", "code", "sku", "part number", "part no"],
   current_stock: ["opening stock qty", "opening stock", "current stock", "stock qty", "opening qty", "quantity", "qty"],

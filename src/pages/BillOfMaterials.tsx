@@ -40,6 +40,8 @@ import { fetchItems, type Item } from "@/lib/items-api";
 import { formatCurrency } from "@/lib/gst-utils";
 import { exportToExcel } from "@/lib/export-utils";
 import { format } from "date-fns";
+import { supabase } from "@/integrations/supabase/client";
+import { getCompanyId } from "@/lib/auth-helpers";
 
 function ordinal(n: number): string {
   if (n === 1) return "1st";
@@ -405,7 +407,7 @@ export default function BillOfMaterials() {
 
   const variantFilter = selectedVariantId === "" ? null : selectedVariantId;
 
-  const { data: bomLines = [], isLoading: bomLoading, refetch: refetchLines } = useQuery({
+  const { data: bomLines = [], isLoading: bomLoading, isError: bomError, error: bomQueryError, refetch: refetchLines } = useQuery({
     queryKey: ["bom-lines-v2", selectedItem?.id, selectedVariantId],
     queryFn: () => fetchBomLines(selectedItem!.id, variantFilter),
     enabled: !!selectedItem,
@@ -438,6 +440,28 @@ export default function BillOfMaterials() {
     enabled: !!whereUsedTarget && activeTab === "where-used",
     staleTime: 30000,
   });
+
+  const whereUsedLineIds = useMemo(() => whereUsed.map((r) => r.bom_line_id).filter(Boolean), [whereUsed]);
+  const { data: whereUsedVendors = [] } = useQuery<BomLineVendor[]>({
+    queryKey: ["where-used-vendors", whereUsedLineIds],
+    queryFn: () => fetchBomLineVendorsBatch(whereUsedLineIds),
+    enabled: whereUsedLineIds.length > 0 && activeTab === "where-used",
+    staleTime: 30000,
+  });
+  const whereUsedVendorsByLine = useMemo(() => {
+    const map = new Map<string, BomLineVendor[]>();
+    for (const v of whereUsedVendors) {
+      const arr = map.get(v.bom_line_id) ?? [];
+      arr.push(v);
+      map.set(v.bom_line_id, arr);
+    }
+    return map;
+  }, [whereUsedVendors]);
+
+  const whereUsedComponentStock = useMemo(() => {
+    const item = allItems.find((i) => i.id === whereUsedTarget);
+    return item?.current_stock ?? 0;
+  }, [allItems, whereUsedTarget]);
 
   const { data: compareResult, isLoading: comparing } = useQuery({
     queryKey: ["bom-compare", selectedItem?.id, compareV1, compareV2],
@@ -523,6 +547,23 @@ export default function BillOfMaterials() {
     enabled: vendorDialogOpen || stepDialogOpen,
   });
   const vendorParties: Party[] = vendorPartiesData?.data ?? [];
+
+  const { data: processNameSuggestions = [] } = useQuery<string[]>({
+    queryKey: ["bom-process-names", selectedItem?.id],
+    queryFn: async () => {
+      const companyId = await getCompanyId();
+      const [{ data: vNotes }, { data: sNames }] = await Promise.all([
+        (supabase as any).from("bom_line_vendors").select("notes").eq("company_id", companyId).not("notes", "is", null),
+        (supabase as any).from("bom_process_steps").select("process_name").eq("company_id", companyId),
+      ]);
+      const names = new Set<string>();
+      for (const v of (vNotes ?? []) as any[]) if ((v.notes as string)?.trim()) names.add((v.notes as string).trim());
+      for (const s of (sNames ?? []) as any[]) if ((s.process_name as string)?.trim()) names.add((s.process_name as string).trim());
+      return [...names].sort();
+    },
+    enabled: vendorDialogOpen,
+    staleTime: 60000,
+  });
 
   // ── Cost chart data ──────────────────────────────────────────────────────────
   const chartData = useMemo(() => {
@@ -1216,14 +1257,23 @@ export default function BillOfMaterials() {
                     </div>
 
                     {bomLoading ? (
-                      <div className="flex justify-center py-10">
-                        <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
+                      <div className="p-5 space-y-2">
+                        {[...Array(4)].map((_, i) => (
+                          <div key={i} className="h-9 rounded bg-slate-100 animate-pulse" />
+                        ))}
+                      </div>
+                    ) : bomError ? (
+                      <div className="py-10 text-center px-5">
+                        <AlertTriangle className="h-7 w-7 text-red-400 mx-auto mb-2" />
+                        <p className="text-sm font-medium text-red-600">Failed to load BOM</p>
+                        <p className="text-xs text-slate-400 mt-1">{(bomQueryError as any)?.message ?? "Unknown error"}</p>
+                        <button onClick={() => refetchLines()} className="mt-2 text-xs text-blue-600 hover:underline">Retry</button>
                       </div>
                     ) : bomLines.length === 0 ? (
                       <div className="py-12 text-center">
                         <GitFork className="h-8 w-8 text-slate-200 mx-auto mb-3" />
-                        <p className="text-sm text-slate-500 font-medium">No components defined</p>
-                        <p className="text-xs text-slate-400 mt-1">Click "Add Component" to start</p>
+                        <p className="text-sm text-slate-600 font-medium">No components added yet</p>
+                        <p className="text-xs text-slate-400 mt-1">Click "Add Component" to start building the BOM for this item</p>
                       </div>
                     ) : (
                       <div className="overflow-x-auto flex-1">
@@ -1314,12 +1364,22 @@ export default function BillOfMaterials() {
                                           {line.child_item_description ?? "—"}
                                         </span>
                                         <div className="flex flex-wrap gap-1">
-                                          {lineVendors.length > 0 && (
-                                            <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
-                                              <Users className="h-2.5 w-2.5" />
-                                              {lineVendors.length} vendor{lineVendors.length !== 1 ? "s" : ""}
-                                            </span>
-                                          )}
+                                          {(() => {
+                                            const preferredV = lineVendors.find((v) => v.is_preferred) ?? lineVendors[0];
+                                            if (lineVendors.length === 0) {
+                                              return (
+                                                <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200">
+                                                  <Users className="h-2.5 w-2.5" /> No vendors
+                                                </span>
+                                              );
+                                            }
+                                            return (
+                                              <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
+                                                <Users className="h-2.5 w-2.5" />
+                                                {lineVendors.length} vendor{lineVendors.length !== 1 ? "s" : ""}{preferredV ? ` · ${preferredV.vendor_name}` : ""}
+                                              </span>
+                                            );
+                                          })()}
                                           {lineSteps.length > 0 && (
                                             <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
                                               <ListOrdered className="h-2.5 w-2.5" />
@@ -1469,6 +1529,7 @@ export default function BillOfMaterials() {
                                                   <tr className="text-left text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
                                                     <th className="pb-1.5 pr-3 font-semibold w-6">Pref.</th>
                                                     <th className="pb-1.5 pr-4 font-semibold">Vendor</th>
+                                                    <th className="pb-1.5 pr-4 font-semibold">Type</th>
                                                     <th className="pb-1.5 pr-4 font-semibold">Process</th>
                                                     <th className="pb-1.5 pr-4 font-semibold text-right">Lead Time</th>
                                                     <th className="pb-1.5 pr-4 font-semibold text-right">Unit Cost</th>
@@ -1495,6 +1556,17 @@ export default function BillOfMaterials() {
                                                         {v.vendor_code && (
                                                           <span className="ml-1 text-slate-400 font-mono">({v.vendor_code})</span>
                                                         )}
+                                                      </td>
+                                                      <td className="py-1.5 pr-4">
+                                                        {v.vendor_type ? (
+                                                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                                                            v.vendor_type === "raw_material_supplier" ? "bg-teal-50 text-teal-700 border-teal-200" :
+                                                            v.vendor_type === "processor" ? "bg-purple-50 text-purple-700 border-purple-200" :
+                                                            "bg-slate-100 text-slate-500 border-slate-200"
+                                                          }`}>
+                                                            {v.vendor_type === "raw_material_supplier" ? "RAW MAT" : v.vendor_type === "processor" ? "PROCESSOR" : "BOTH"}
+                                                          </span>
+                                                        ) : "—"}
                                                       </td>
                                                       <td className="py-1.5 pr-4 text-slate-600">
                                                         {v.notes ?? "—"}
@@ -2017,6 +2089,8 @@ export default function BillOfMaterials() {
                               <th>Unit</th>
                               <th>Variant</th>
                               <th className="text-right">BOM Level</th>
+                              <th className="text-right">Coverage</th>
+                              <th>Top Vendors</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -2038,6 +2112,26 @@ export default function BillOfMaterials() {
                                 </td>
                                 <td className="text-right text-xs text-muted-foreground">
                                   L{r.bom_level}
+                                </td>
+                                <td className="text-right">
+                                  {r.quantity_used > 0 ? (
+                                    <span className={`text-xs font-medium ${Math.floor(whereUsedComponentStock / r.quantity_used) > 0 ? "text-green-600" : "text-red-600"}`}>
+                                      {Math.floor(whereUsedComponentStock / r.quantity_used)} units
+                                    </span>
+                                  ) : "—"}
+                                </td>
+                                <td className="text-xs text-slate-600">
+                                  {(() => {
+                                    const lineVendors = r.bom_line_id ? (whereUsedVendorsByLine.get(r.bom_line_id) ?? []) : [];
+                                    if (!lineVendors.length) return <span className="text-slate-400">No vendors</span>;
+                                    const preferred = lineVendors.find((v) => v.is_preferred) ?? lineVendors[0];
+                                    return (
+                                      <span>
+                                        {preferred.vendor_name}
+                                        {lineVendors.length > 1 && <span className="text-slate-400 ml-1">+{lineVendors.length - 1}</span>}
+                                      </span>
+                                    );
+                                  })()}
                                 </td>
                               </tr>
                             ))}
@@ -3031,10 +3125,18 @@ export default function BillOfMaterials() {
             <div className="space-y-1.5">
               <Label>Process Name</Label>
               <Input
+                list="bom-process-suggestions"
                 value={vendorForm.notes}
                 onChange={(e) => setVendorForm((f) => ({ ...f, notes: e.target.value }))}
                 placeholder="e.g. Nickel Plating, CNC Machining"
               />
+              {processNameSuggestions.length > 0 && (
+                <datalist id="bom-process-suggestions">
+                  {processNameSuggestions.map((name) => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -3059,6 +3161,13 @@ export default function BillOfMaterials() {
                 />
               </div>
             </div>
+
+            {!editingVendor && vendorDialogLine && (vendorsByLine.get(vendorDialogLine.id) ?? []).length === 0 && (
+              <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                <Star className="h-3.5 w-3.5 mt-0.5 shrink-0 text-amber-500" />
+                <span>This will be set as the preferred vendor since it is the first vendor for this component.</span>
+              </div>
+            )}
 
             <div className="flex items-center gap-2">
               <Checkbox
