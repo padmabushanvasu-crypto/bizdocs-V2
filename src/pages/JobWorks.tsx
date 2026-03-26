@@ -297,7 +297,7 @@ export default function JobWorks() {
           <PopoverTrigger asChild>
             <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
               {selectedItem
-                ? `${selectedItem.item_code} — ${selectedItem.description}`
+                ? `${selectedItem.drawing_revision || selectedItem.item_code} — ${selectedItem.description}`
                 : "Select item (optional)..."}
               <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
             </Button>
@@ -311,7 +311,7 @@ export default function JobWorks() {
                   {items.map((item) => (
                     <CommandItem
                       key={item.id}
-                      value={`${item.item_code} ${item.description}`}
+                      value={`${item.drawing_revision ?? ""} ${item.item_code} ${item.description}`}
                       onSelect={() => {
                         setSelectedItem(item);
                         setForm((f) => ({ ...f, unit: item.unit ?? "NOS" }));
@@ -319,7 +319,12 @@ export default function JobWorks() {
                       }}
                     >
                       <div>
-                        <p className="font-mono text-xs font-medium">{item.item_code}</p>
+                        <p className="font-mono text-xs font-medium text-blue-600">
+                          {item.drawing_revision || item.item_code}
+                        </p>
+                        {item.drawing_revision && (
+                          <p className="font-mono text-[10px] text-slate-400">{item.item_code}</p>
+                        )}
                         <p className="text-sm">{item.description}</p>
                       </div>
                     </CommandItem>

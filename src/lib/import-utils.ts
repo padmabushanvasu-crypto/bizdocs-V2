@@ -580,6 +580,7 @@ export const PARTY_FIELD_MAP: Record<string, string[]> = {
 };
 
 export const ITEM_FIELD_MAP: Record<string, string[]> = {
+  drawing_revision: ["drawing revision", "drawing number", "drawing no", "dwg no", "dwg number", "dwg rev", "drawing rev", "revision", "drg no", "drg number"],
   item_code: ["item code", "code", "sku", "part number", "part no"],
   description: ["description", "item name", "name", "part description", "item description"],
   item_type: ["item type", "type", "category"],
@@ -588,7 +589,7 @@ export const ITEM_FIELD_MAP: Record<string, string[]> = {
   gst_rate: ["gst rate %", "gst rate", "tax rate"],
   min_stock: ["min stock", "minimum stock", "reorder level", "minimum qty"],
   notes: ["notes", "remarks", "comments"],
-  drawing_number: ["drawing number", "drawing no", "dwg no", "dwg number"],
+  drawing_number: ["drawing number (alt)", "alt drawing", "drawing ref"],
   standard_cost: ["standard cost", "std cost"],
   purchase_price: ["default purchase price", "purchase price", "buy price"],
   sale_price: ["default sale price", "sale price", "selling price"],
@@ -596,7 +597,9 @@ export const ITEM_FIELD_MAP: Record<string, string[]> = {
 
 export const BOM_FIELD_MAP: Record<string, string[]> = {
   finished_item_code: ["finished item code", "parent item code", "parent code", "finished item", "parent item"],
+  finished_item_drawing: ["finished drawing", "parent drawing", "parent drawing no", "finished drawing no", "parent drg"],
   component_code: ["component code", "child item code", "child code", "child item"],
+  component_drawing: ["component drawing", "child drawing", "child drawing no", "component drawing no", "child drg"],
   quantity: ["quantity per unit", "quantity", "qty", "quantity required", "bom qty"],
   unit: ["unit", "uom"],
   scrap_factor: ["scrap factor %", "scrap factor", "scrap %", "waste %"],
@@ -623,6 +626,7 @@ export const VENDOR_SHEET_FIELD_MAP: Record<string, string[]> = {
 };
 
 export const STOCK_FIELD_MAP: Record<string, string[]> = {
+  drawing_revision: ["drawing revision", "drawing number", "drawing no", "dwg no", "dwg number", "dwg rev", "drg no"],
   item_code: ["item code", "code", "sku", "part number", "part no"],
   current_stock: ["opening stock qty", "opening stock", "current stock", "stock qty", "opening qty", "quantity", "qty"],
   standard_cost: ["cost per unit ₹", "cost per unit", "cost/unit", "standard cost", "unit cost", "cost"],
@@ -630,6 +634,7 @@ export const STOCK_FIELD_MAP: Record<string, string[]> = {
 };
 
 export const REORDER_FIELD_MAP: Record<string, string[]> = {
+  drawing_revision: ["drawing revision", "drawing number", "drawing no", "dwg no", "dwg number", "dwg rev", "drg no"],
   item_code: ["item code", "code", "sku", "part number"],
   reorder_point: ["reorder point", "minimum stock", "min stock", "reorder level", "reorder trigger", "minimum level"],
   reorder_qty: ["reorder quantity", "reorder qty", "order quantity", "order qty", "quantity to order"],
@@ -665,8 +670,11 @@ export const FIELD_DISPLAY_NAMES: Record<string, string> = {
   hsn_sac_code: "HSN/SAC Code",
   gst_rate: "GST Rate",
   min_stock: "Min Stock",
-  drawing_number: "Drawing Number",
+  drawing_revision: "Drawing Number",
+  drawing_number: "Drawing Number (Alt)",
   standard_cost: "Standard Cost",
+  finished_item_drawing: "Finished Item Drawing",
+  component_drawing: "Component Drawing",
   purchase_price: "Purchase Price",
   sale_price: "Sale Price",
   finished_item_code: "Finished Item Code",

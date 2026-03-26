@@ -183,7 +183,7 @@ export default function DispatchNoteDetail() {
             <thead>
               <tr>
                 <th className="w-10">#</th>
-                <th>Item Code</th>
+                <th>Drawing No.</th>
                 <th>Description</th>
                 <th>Unit</th>
                 <th className="text-right">Qty</th>
@@ -196,7 +196,7 @@ export default function DispatchNoteDetail() {
               {items.map((item: any) => (
                 <tr key={item.serial_number}>
                   <td className="font-mono text-muted-foreground">{item.serial_number}</td>
-                  <td className="font-mono text-sm">{item.item_code || "—"}</td>
+                  <td className="font-mono text-sm font-semibold text-blue-700">{item.drawing_number || item.item_code || "—"}</td>
                   <td className="font-medium">{item.description}</td>
                   <td className="text-muted-foreground">{item.unit || "NOS"}</td>
                   <td className="text-right font-mono tabular-nums">{item.quantity}</td>

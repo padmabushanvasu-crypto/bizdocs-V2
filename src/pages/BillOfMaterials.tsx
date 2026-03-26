@@ -104,14 +104,16 @@ function TreeRow({
             ) : (
               <span className="h-4 w-4 shrink-0 inline-block border-l border-b border-slate-200 ml-0.5" />
             )}
-            <span className="font-mono text-xs text-blue-600 font-medium">{node.item_code}</span>
+            <span className="font-mono text-xs text-blue-600 font-medium">
+              {node.drawing_number || node.item_code}
+            </span>
             {node.is_critical && (
               <span className="text-[10px] bg-red-100 text-red-700 px-1 py-0.5 rounded font-semibold">
                 CRIT
               </span>
             )}
             {node.drawing_number && (
-              <span className="text-[10px] text-slate-400 font-mono">{node.drawing_number}</span>
+              <span className="text-[10px] text-slate-400 font-mono">{node.item_code}</span>
             )}
           </div>
         </td>
@@ -972,6 +974,7 @@ export default function BillOfMaterials() {
           sheetName: "BOM Explosion",
           columns: [
             { key: "level",            label: "Level",       type: "number", width: 8  },
+            { key: "drawing_number",   label: "Drawing No",  type: "text",   width: 18 },
             { key: "item_code",        label: "Item Code",   type: "text",   width: 16 },
             { key: "item_description", label: "Description", type: "text",   width: 30 },
             { key: "item_type",        label: "Type",        type: "text",   width: 14 },
@@ -980,7 +983,6 @@ export default function BillOfMaterials() {
             { key: "unit_cost",        label: "Unit Cost",   type: "currency",width: 14 },
             { key: "total_cost",       label: "Total Cost",  type: "currency",width: 14 },
             { key: "current_stock",    label: "Stock",       type: "number", width: 10 },
-            { key: "drawing_number",   label: "Drawing No",  type: "text",   width: 14 },
           ],
           data: rows,
         },
@@ -1042,7 +1044,7 @@ export default function BillOfMaterials() {
               BILL OF MATERIALS — VISUAL TREE
             </h1>
             <p style={{ marginBottom: 2 }}>
-              <strong>Item:</strong> {selectedItem?.item_code} — {selectedItem?.description}
+              <strong>Item:</strong> {selectedItem?.drawing_revision || selectedItem?.item_code} — {selectedItem?.description}
             </p>
             <p style={{ marginBottom: 2 }}>
               <strong>Build Quantity:</strong> {treeQty} unit(s)
@@ -1105,7 +1107,7 @@ export default function BillOfMaterials() {
               BILL OF MATERIALS
             </h1>
             <p style={{ marginBottom: 2 }}>
-              <strong>Item:</strong> {selectedItem?.item_code} — {selectedItem?.description}
+              <strong>Item:</strong> {selectedItem?.drawing_revision || selectedItem?.item_code} — {selectedItem?.description}
             </p>
             {selectedVariantId && bomVariants.find((v) => v.id === selectedVariantId) && (
               <p style={{ marginBottom: 2 }}>
@@ -1123,7 +1125,7 @@ export default function BillOfMaterials() {
               <thead>
                 <tr>
                   <th>Lvl</th>
-                  <th>Item Code</th>
+                  <th>Drawing No.</th>
                   <th>Description</th>
                   <th>Type</th>
                   <th>Qty</th>
@@ -1137,7 +1139,7 @@ export default function BillOfMaterials() {
                 {printRows.map((row) => (
                   <tr key={row.id}>
                     <td>{row.level}</td>
-                    <td style={{ fontFamily: "monospace" }}>{row.item_code}</td>
+                    <td style={{ fontFamily: "monospace" }}>{row.drawing_number || row.item_code}</td>
                     <td style={{ paddingLeft: (row.level - 1) * 12 }}>{row.item_description}</td>
                     <td>{row.item_type?.replace(/_/g, " ")}</td>
                     <td style={{ textAlign: "right" }}>{row.effective_qty.toFixed(3)}</td>

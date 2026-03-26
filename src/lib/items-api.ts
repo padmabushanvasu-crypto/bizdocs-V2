@@ -89,9 +89,53 @@ export async function fetchItem(id: string) {
   return data as Item;
 }
 
+async function generateItemCode(companyId: string, drawingNumber: string | null | undefined): Promise<string> {
+  if (drawingNumber?.trim()) {
+    const base = drawingNumber
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9\-\.]/g, "")
+      .slice(0, 30);
+    if (base) {
+      // Check if base code is free
+      const { count } = await supabase
+        .from("items")
+        .select("id", { count: "exact", head: true })
+        .eq("company_id", companyId)
+        .eq("item_code", base);
+      if ((count ?? 0) === 0) return base;
+      // Try suffixes -01 through -99
+      for (let i = 1; i <= 99; i++) {
+        const candidate = `${base.slice(0, 27)}-${String(i).padStart(2, "0")}`;
+        const { count: c2 } = await supabase
+          .from("items")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .eq("item_code", candidate);
+        if ((c2 ?? 0) === 0) return candidate;
+      }
+    }
+  }
+  // Fallback: ITEM-NNNN sequence
+  const { count } = await supabase
+    .from("items")
+    .select("id", { count: "exact", head: true })
+    .eq("company_id", companyId)
+    .ilike("item_code", "ITEM-%");
+  const seq = String((count ?? 0) + 1).padStart(4, "0");
+  return `ITEM-${seq}`;
+}
+
 export async function createItem(item: Partial<Item>) {
   const companyId = await getCompanyId();
-  const { data, error } = await supabase.from("items").insert({ ...item, company_id: companyId } as any).select().single();
+  const itemCode = item.item_code?.trim()
+    ? item.item_code.trim()
+    : await generateItemCode(companyId, item.drawing_revision ?? item.drawing_number);
+  const { data, error } = await supabase
+    .from("items")
+    .insert({ ...item, item_code: itemCode, company_id: companyId } as any)
+    .select()
+    .single();
   if (error) throw error;
   return data as Item;
 }

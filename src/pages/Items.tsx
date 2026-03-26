@@ -167,8 +167,8 @@ export default function Items() {
   };
 
   const handleSave = () => {
-    if (!form.item_code.trim() || !form.description.trim()) {
-      toast({ title: "Code and description are required", variant: "destructive" });
+    if (!form.description.trim()) {
+      toast({ title: "Description is required", variant: "destructive" });
       return;
     }
     saveMutation.mutate();
@@ -183,8 +183,10 @@ export default function Items() {
       const d = row.data;
       try {
         await createItem({
-          item_code: d["Item Code"] || `ITEM-${Date.now()}`,
+          // item_code left blank → auto-generated from drawing_revision in createItem
+          item_code: d["Item Code"] || undefined,
           description: d["Description"],
+          drawing_revision: d["Drawing Number"] || d["Drawing Revision"] || null,
           drawing_number: d["Drawing Number"] || null,
           item_type: (d["Item Type"] || "finished_good").toLowerCase().replace(/ /g, "_"),
           unit: d["Default Unit"] || "NOS",
@@ -284,7 +286,7 @@ export default function Items() {
                     }
                   </button>
                 </th>
-                <th>Code</th><th>Description</th><th>Drawing</th><th>Type</th>
+                <th>Drawing No.</th><th>Code</th><th>Description</th><th>Type</th>
                 <th>Unit</th><th>HSN</th><th className="text-right">Min Stock</th>
                 <th className="text-right">GST%</th><th className="w-20">Actions</th>
               </tr>
@@ -303,28 +305,21 @@ export default function Items() {
                         : <Square className="h-4 w-4 text-slate-300 mx-auto" />
                       }
                     </td>
-                    <td className="font-mono text-xs font-medium text-foreground">{item.item_code}</td>
-                    <td className="font-medium">{item.description}</td>
                     <td onClick={(e) => e.stopPropagation()}>
                       {item.drawing_revision ? (
-                        <div>
-                          <button
-                            className="font-mono text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors"
-                            onClick={() => setFilters((f) => ({ ...f, search: item.drawing_revision! }))}
-                            title="Click to filter by this drawing number"
-                          >
-                            {item.drawing_revision}
-                          </button>
-                          {item.drawing_number && (
-                            <span className="font-mono text-[10px] text-slate-400 ml-1 block">
-                              {item.drawing_number}
-                            </span>
-                          )}
-                        </div>
+                        <button
+                          className="font-mono text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                          onClick={() => setFilters((f) => ({ ...f, search: item.drawing_revision! }))}
+                          title="Click to filter by this drawing number"
+                        >
+                          {item.drawing_revision}
+                        </button>
                       ) : item.drawing_number ? (
                         <span className="font-mono text-xs text-slate-400">{item.drawing_number}</span>
-                      ) : "—"}
+                      ) : <span className="text-muted-foreground">—</span>}
                     </td>
+                    <td className="font-mono text-xs text-slate-400">{item.item_code}</td>
+                    <td className="font-medium">{item.description}</td>
                     <td>
                       <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${TYPE_BADGE[item.item_type] || "bg-slate-100 text-slate-600"}`}>
                         {typeLabel[item.item_type] || item.item_type}
@@ -371,10 +366,28 @@ export default function Items() {
             </TabsList>
 
             <TabsContent value="general" className="space-y-3 mt-3">
+              <div className="space-y-1.5">
+                <Label>Drawing Number (Primary ID)</Label>
+                <Input
+                  value={form.drawing_revision}
+                  onChange={(e) => setForm((f) => ({ ...f, drawing_revision: e.target.value }))}
+                  placeholder="e.g. DWG-FCA-001"
+                  className="font-mono text-base"
+                />
+                <p className="text-xs text-muted-foreground">This is the primary identifier used across all documents. Item code will be auto-generated from this if left blank.</p>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label>Item Code *</Label>
-                  <Input value={form.item_code} onChange={(e) => setForm((f) => ({ ...f, item_code: e.target.value }))} placeholder="e.g. ITM-001" className="font-mono" />
+                  <Label>Item Code (auto-generated if blank)</Label>
+                  <Input
+                    value={form.item_code}
+                    onChange={(e) => setForm((f) => ({ ...f, item_code: e.target.value }))}
+                    placeholder={form.drawing_revision ? form.drawing_revision.toUpperCase().replace(/[^A-Z0-9\-\.]/g, "").slice(0, 30) || "Auto" : "Auto"}
+                    className="font-mono"
+                  />
+                  {!form.item_code.trim() && form.drawing_revision.trim() && !editingItem && (
+                    <p className="text-xs text-blue-600">Will be generated as: {form.drawing_revision.trim().toUpperCase().replace(/[^A-Z0-9\-\.]/g, "").slice(0, 30)}</p>
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   <Label>Item Type *</Label>
@@ -388,14 +401,10 @@ export default function Items() {
                 <Label>Description *</Label>
                 <Input value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Item description" />
               </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="space-y-1.5 col-span-1">
-                  <Label>Drawing Number</Label>
-                  <Input value={form.drawing_number} onChange={(e) => setForm((f) => ({ ...f, drawing_number: e.target.value }))} placeholder="e.g. DWG-FCA-001" className="font-mono" />
-                </div>
+              <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label>Drawing Revision</Label>
-                  <Input value={form.drawing_revision} onChange={(e) => setForm((f) => ({ ...f, drawing_revision: e.target.value }))} placeholder="e.g. Rev.A" className="font-mono" />
+                  <Label>Drawing Number (Alt / Detail)</Label>
+                  <Input value={form.drawing_number} onChange={(e) => setForm((f) => ({ ...f, drawing_number: e.target.value }))} placeholder="e.g. DWG-FCA-001-A" className="font-mono" />
                 </div>
                 <div className="space-y-1.5">
                   <Label>HSN/SAC Code</Label>

@@ -240,30 +240,28 @@ async function downloadOpeningStockTemplate() {
     .eq("status", "active")
     .order("description", { ascending: true });
 
-  const TYPE_ORDER: Record<string, number> = {
-    raw_material: 0, component: 1, bought_out: 2,
-    sub_assembly: 3, finished_good: 4, consumable: 5,
-  };
-
   const items = (itemsRaw ?? []).slice().sort((a: any, b: any) => {
-    const ao = TYPE_ORDER[a.item_type] ?? 6;
-    const bo = TYPE_ORDER[b.item_type] ?? 6;
-    if (ao !== bo) return ao - bo;
-    return (a.description ?? "").localeCompare(b.description ?? "");
+    const ad = (a.drawing_revision ?? "").trim();
+    const bd = (b.drawing_revision ?? "").trim();
+    // Items with no drawing number go to the end
+    if (!ad && bd) return 1;
+    if (ad && !bd) return -1;
+    return ad.localeCompare(bd);
   });
 
-  const titleRow  = ["BizDocs — Opening Stock", "", "", "", "", "", "", ""];
-  const noteRow   = ["Fill in columns F and G only. Do not edit other columns.", "", "", "", "", "", "", ""];
-  const headerRow = ["Item Code", "Description", "Drawing Number", "Item Type", "Unit", "Opening Stock Qty", "Cost Per Unit ₹", "Notes"];
+  const titleRow  = ["BizDocs — Opening Stock", "", "", "", "", "", "", "", ""];
+  const noteRow   = ["Fill in columns G and H only. Do not edit other columns.", "", "", "", "", "", "", "", ""];
+  const headerRow = ["Drawing Number", "Item Code", "Description", "Item Type", "Unit", "Current Stock", "Opening Stock Qty *", "Cost Per Unit ₹", "Notes"];
   const dataRows  = items.map((item: any) => [
+    item.drawing_revision ?? "",
     item.item_code ?? "",
     item.description ?? "",
-    item.drawing_revision ?? "",
     item.item_type ?? "",
     item.unit ?? "",
-    "",   // F: client fills
+    item.current_stock ?? 0,  // F: read-only reference
     "",   // G: client fills
-    "",   // H: optional notes
+    "",   // H: client fills
+    "",   // I: optional notes
   ]);
 
   const aoa = [titleRow, noteRow, headerRow, ...dataRows];
@@ -272,8 +270,8 @@ async function downloadOpeningStockTemplate() {
 
   // Merges
   ws["!merges"] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 7 } },
-    { s: { r: 1, c: 0 }, e: { r: 1, c: 7 } },
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: 8 } },
   ];
 
   // Freeze top 3 rows
@@ -281,14 +279,15 @@ async function downloadOpeningStockTemplate() {
 
   // Column widths
   ws["!cols"] = [
-    { wch: 16 }, // A
-    { wch: 34 }, // B
-    { wch: 16 }, // C
-    { wch: 14 }, // D
-    { wch: 8  }, // E
-    { wch: 20 }, // F
-    { wch: 18 }, // G
-    { wch: 22 }, // H
+    { wch: 18 }, // A: Drawing Number
+    { wch: 16 }, // B: Item Code
+    { wch: 32 }, // C: Description
+    { wch: 14 }, // D: Item Type
+    { wch: 8  }, // E: Unit
+    { wch: 14 }, // F: Current Stock (ref)
+    { wch: 20 }, // G: Opening Stock Qty *
+    { wch: 18 }, // H: Cost Per Unit ₹
+    { wch: 22 }, // I: Notes
   ];
 
   // Row heights
@@ -347,16 +346,16 @@ async function downloadOpeningStockTemplate() {
     },
   };
 
-  const cols = ["A", "B", "C", "D", "E", "F", "G", "H"];
+  const cols = ["A", "B", "C", "D", "E", "F", "G", "H", "I"];
 
   // Row 1: title (only A1 for the merged cell)
   if (ws["A1"]) ws["A1"].s = titleStyle;
   // Row 2: note
   if (ws["A2"]) ws["A2"].s = noteStyle;
-  // Row 3: headers
+  // Row 3: headers — A-F grey (read-only), G-H yellow (editable), I grey (notes)
   cols.forEach((col, i) => {
     const ref = `${col}3`;
-    if (ws[ref]) ws[ref].s = i < 5 ? hdrGrey : hdrYellow;
+    if (ws[ref]) ws[ref].s = i < 6 ? hdrGrey : i < 8 ? hdrYellow : hdrGrey;
   });
   // Data rows
   for (let r = 0; r < items.length; r++) {
@@ -364,7 +363,7 @@ async function downloadOpeningStockTemplate() {
     cols.forEach((col, c) => {
       const ref = `${col}${excelRow}`;
       if (!ws[ref]) ws[ref] = { v: "", t: "s" };
-      ws[ref].s = c < 5 ? greyCell : c < 7 ? yellowCell : whiteCell;
+      ws[ref].s = c < 6 ? greyCell : c < 8 ? yellowCell : whiteCell;
     });
   }
 
@@ -378,33 +377,30 @@ async function downloadReorderRulesTemplate() {
 
   const { data: itemsRaw } = await supabase
     .from("items")
-    .select("item_code, description, item_type, unit")
+    .select("item_code, description, drawing_revision, item_type, unit")
     .eq("company_id", companyId)
     .eq("status", "active")
-    .order("description", { ascending: true });
-
-  const TYPE_ORDER: Record<string, number> = {
-    raw_material: 0, bought_out: 1, component: 2,
-    sub_assembly: 3, finished_good: 4, consumable: 5,
-  };
+    .order("drawing_revision", { ascending: true, nullsFirst: false });
 
   const items = (itemsRaw ?? []).slice().sort((a: any, b: any) => {
-    const ao = TYPE_ORDER[a.item_type] ?? 6;
-    const bo = TYPE_ORDER[b.item_type] ?? 6;
-    if (ao !== bo) return ao - bo;
-    return (a.description ?? "").localeCompare(b.description ?? "");
+    const ad = (a.drawing_revision ?? "").trim();
+    const bd = (b.drawing_revision ?? "").trim();
+    if (!ad && bd) return 1;
+    if (ad && !bd) return -1;
+    return ad.localeCompare(bd);
   });
 
-  const titleRow  = ["BizDocs — Reorder Rules", "", "", "", "", "", "", "", ""];
+  const titleRow  = ["BizDocs — Reorder Rules", "", "", "", "", "", "", "", "", ""];
   const noteRow   = [
     "Fill in Reorder Point, Reorder Qty and Lead Time for each item. Preferred Vendor Code must match your Parties master. Leave blank to skip an item.",
-    "", "", "", "", "", "", "", "",
+    "", "", "", "", "", "", "", "", "",
   ];
   const headerRow = [
-    "Item Code", "Description", "Item Type", "Unit",
+    "Drawing Number", "Item Code", "Description", "Item Type", "Unit",
     "Reorder Point", "Reorder Qty", "Lead Time Days", "Preferred Vendor Code", "Notes",
   ];
   const dataRows = items.map((item: any) => [
+    item.drawing_revision ?? "",
     item.item_code ?? "",
     item.description ?? "",
     item.item_type ?? "",
@@ -417,13 +413,21 @@ async function downloadReorderRulesTemplate() {
   const ws  = (XLSX as any).utils.aoa_to_sheet(aoa);
 
   ws["!merges"] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
-    { s: { r: 1, c: 0 }, e: { r: 1, c: 8 } },
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 9 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: 9 } },
   ];
   ws["!freeze"] = { xSplit: 0, ySplit: 3 };
   ws["!cols"] = [
-    { wch: 16 }, { wch: 34 }, { wch: 14 }, { wch: 8 },
-    { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 22 }, { wch: 22 },
+    { wch: 18 }, // A: Drawing Number
+    { wch: 16 }, // B: Item Code
+    { wch: 32 }, // C: Description
+    { wch: 14 }, // D: Item Type
+    { wch: 8  }, // E: Unit
+    { wch: 16 }, // F: Reorder Point
+    { wch: 14 }, // G: Reorder Qty
+    { wch: 16 }, // H: Lead Time Days
+    { wch: 22 }, // I: Preferred Vendor Code
+    { wch: 22 }, // J: Notes
   ];
   ws["!rows"] = [{ hpt: 26 }, { hpt: 36 }, { hpt: 18 }];
 
@@ -485,20 +489,21 @@ async function downloadReorderRulesTemplate() {
     },
   };
 
-  const cols = ["A","B","C","D","E","F","G","H","I"];
+  const cols = ["A","B","C","D","E","F","G","H","I","J"];
 
   if (ws["A1"]) ws["A1"].s = titleStyle;
   if (ws["A2"]) ws["A2"].s = noteStyle;
+  // A-E grey (read-only), F-I yellow (editable), J white (notes)
   cols.forEach((col, i) => {
     const ref = `${col}3`;
-    if (ws[ref]) ws[ref].s = i < 4 ? hdrGrey : i < 8 ? hdrYellow : hdrWhite;
+    if (ws[ref]) ws[ref].s = i < 5 ? hdrGrey : i < 9 ? hdrYellow : hdrWhite;
   });
   for (let r = 0; r < items.length; r++) {
     const excelRow = r + 4;
     cols.forEach((col, c) => {
       const ref = `${col}${excelRow}`;
       if (!ws[ref]) ws[ref] = { v: "", t: "s" };
-      ws[ref].s = c < 4 ? greyCell : c < 8 ? yellowCell : whiteCell;
+      ws[ref].s = c < 5 ? greyCell : c < 9 ? yellowCell : whiteCell;
     });
   }
 
@@ -1551,7 +1556,7 @@ function ReorderRulesTab() {
 
       const headers = Object.keys(raw[0]);
       const colMap = resolveColumns(headers, REORDER_FIELD_MAP);
-      const summary = buildMappingSummary(headers, colMap, REORDER_FIELD_MAP, ["item_code", "reorder_point", "reorder_qty"]);
+      const summary = buildMappingSummary(headers, colMap, REORDER_FIELD_MAP, ["reorder_point", "reorder_qty"]);
       setMappingSummary(summary);
       setColumnWarnings(summary.missingRequired.map((f) => `"${fieldDisplayName(f)}" column not found`));
 
@@ -1567,15 +1572,17 @@ function ReorderRulesTab() {
       parsed.forEach((row, i) => {
         const excelRow = rawRowNums[i] ?? (i + 2);
         const code = row["item_code"]?.trim() || "";
+        const drawing = row["drawing_revision"]?.trim() || "";
         const rpStr = row["reorder_point"]?.trim() || "";
         const rqStr = row["reorder_qty"]?.trim() || "";
+        const ref = drawing || code;
 
         if (!rpStr && !rqStr) {
-          newSkipReasons.push({ row: excelRow, value: code, reason: "Both Reorder Point and Qty blank — skipped" });
+          newSkipReasons.push({ row: excelRow, value: ref, reason: "Both Reorder Point and Qty blank — skipped" });
           return;
         }
-        if (!code) {
-          const msg = "Item Code is required";
+        if (!code && !drawing) {
+          const msg = "Item Code or Drawing Number is required";
           newErrorRows.add(i); newErrorMessages.set(i, msg);
           newErrors.push(`Row ${excelRow}: ${msg}`);
           newSkipReasons.push({ row: excelRow, value: "", reason: msg });
@@ -1624,12 +1631,16 @@ function ReorderRulesTab() {
 
       const { data: itemsRaw } = await supabase
         .from("items")
-        .select("id, item_code")
+        .select("id, item_code, drawing_revision")
         .eq("company_id", companyId)
         .eq("status", "active");
       const codeToId = new Map<string, string>(
         (itemsRaw ?? []).map((i: any) => [String(i.item_code).toLowerCase(), String(i.id)])
       );
+      const drawingToId = new Map<string, string>();
+      for (const i of (itemsRaw ?? [])) {
+        if ((i as any).drawing_revision) drawingToId.set(String((i as any).drawing_revision).toLowerCase(), String(i.id));
+      }
 
       const { data: partiesRaw } = await (supabase as any)
         .from("parties")
@@ -1654,12 +1665,14 @@ function ReorderRulesTab() {
         const row = bRows[i];
         const excelRow = bRowNums[i] ?? (i + 2);
         const code = row["item_code"]?.trim() || "";
-        const itemId = codeToId.get(code.toLowerCase());
+        const drawing = row["drawing_revision"]?.trim() || "";
+        const ref = drawing || code;
+        const itemId = (drawing ? drawingToId.get(drawing.toLowerCase()) : undefined) ?? (code ? codeToId.get(code.toLowerCase()) : undefined);
 
         if (!itemId) {
           skipped++;
-          errors.push(`Row ${excelRow} (${code}): Item Code not found in Items master`);
-          skipReasons.push({ row: excelRow, value: code, reason: `Item Code '${code}' not found` });
+          errors.push(`Row ${excelRow} (${ref}): Item not found in Items master`);
+          skipReasons.push({ row: excelRow, value: ref, reason: `Item '${ref}' not found` });
           if (total > 0) onProgress?.(Math.round(((i + 1) / total) * 100));
           continue;
         }
@@ -1706,8 +1719,8 @@ function ReorderRulesTab() {
           await (supabase as any).from("items").update({ min_stock: reorderPoint }).eq("id", itemId);
         } catch (err: any) {
           skipped++;
-          errors.push(`Row ${excelRow} (${code}): ${err?.message ?? "DB error"}`);
-          skipReasons.push({ row: excelRow, value: code, reason: `DB error: ${err?.message ?? "unknown"}` });
+          errors.push(`Row ${excelRow} (${ref}): ${err?.message ?? "DB error"}`);
+          skipReasons.push({ row: excelRow, value: ref, reason: `DB error: ${err?.message ?? "unknown"}` });
         }
 
         if (total > 0) onProgress?.(Math.round(((i + 1) / total) * 100));
@@ -2200,11 +2213,14 @@ export default function DataImport() {
   const handleStockImport: BatchImportFn = async (rows, rowNums) => {
     const companyId = await getCompanyId();
 
-    // Pre-fetch all items in one query
-    const codes = rows.map((r) => r["item_code"]?.trim()).filter(Boolean);
+    // Pre-fetch all items — support lookup by item_code or drawing_revision
     const { data: itemsData } = await supabase
-      .from("items").select("id, item_code").eq("company_id", companyId).in("item_code", codes);
-    const codeToId = new Map<string, string>((itemsData ?? []).map((i: any) => [i.item_code, i.id]));
+      .from("items").select("id, item_code, drawing_revision").eq("company_id", companyId);
+    const codeToId = new Map<string, string>((itemsData ?? []).map((i: any) => [String(i.item_code).toLowerCase(), i.id]));
+    const drawingToId = new Map<string, string>();
+    for (const i of (itemsData ?? [])) {
+      if ((i as any).drawing_revision) drawingToId.set(String((i as any).drawing_revision).toLowerCase(), (i as any).id);
+    }
 
     let skipped = 0;
     const errors: string[] = [];
@@ -2215,24 +2231,28 @@ export default function DataImport() {
       const row = rows[i];
       const excelRow = rowNums[i] ?? (i + 2);
       const code = row["item_code"]?.trim();
+      const drawing = row["drawing_revision"]?.trim();
       const qty = parseFloat(row["current_stock"] || "");
-      if (!code) {
+      if (!code && !drawing) {
         skipped++;
-        errors.push(`Row ${excelRow}: Item Code was blank or missing`);
-        skipReasons.push({ row: excelRow, value: "", reason: "Item Code was blank or missing" });
+        errors.push(`Row ${excelRow}: Item Code or Drawing Number was blank or missing`);
+        skipReasons.push({ row: excelRow, value: "", reason: "Item Code or Drawing Number was blank or missing" });
         continue;
       }
       if (isNaN(qty)) {
+        const ref = drawing || code || "";
         skipped++;
-        errors.push(`Row ${excelRow} (${code}): Opening Stock Qty is not a valid number`);
-        skipReasons.push({ row: excelRow, value: code, reason: "Opening Stock Qty is not a valid number" });
+        errors.push(`Row ${excelRow} (${ref}): Opening Stock Qty is not a valid number`);
+        skipReasons.push({ row: excelRow, value: ref, reason: "Opening Stock Qty is not a valid number" });
         continue;
       }
-      const itemId = codeToId.get(code);
+      // Try drawing_revision first, then item_code
+      const itemId = (drawing ? drawingToId.get(drawing.toLowerCase()) : undefined) ?? (code ? codeToId.get(code.toLowerCase()) : undefined);
+      const ref = drawing || code || "";
       if (!itemId) {
         skipped++;
-        errors.push(`Row ${excelRow} (${code}): Item Code '${code}' not found in Items master`);
-        skipReasons.push({ row: excelRow, value: code, reason: `Item Code '${code}' not found in Items master` });
+        errors.push(`Row ${excelRow} (${ref}): Item not found in Items master`);
+        skipReasons.push({ row: excelRow, value: ref, reason: `Item '${ref}' not found in Items master` });
         continue;
       }
       const costPerUnit = parseFloat(row["standard_cost"] || "");
@@ -2400,7 +2420,7 @@ export default function DataImport() {
             templateHeaders={STOCK_HEADERS}
             templateSheetName="Opening Stock"
             fieldMap={STOCK_FIELD_MAP}
-            requiredFields={["item_code", "current_stock"]}
+            requiredFields={["current_stock"]}
             primaryKeyField="item_code"
             onImport={handleStockImport}
             validate={(row) => {

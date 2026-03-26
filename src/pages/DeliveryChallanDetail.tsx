@@ -281,8 +281,7 @@ export default function DeliveryChallanDetail() {
             <thead>
               <tr>
                 <th className="w-10">#</th>
-                {hasDrawingNumber && <th className="min-w-[110px]">Drawing No.</th>}
-                <th>Item Code</th>
+                <th className="min-w-[110px]">Drawing No.</th>
                 <th>Description</th>
                 {hasNatureOfProcess && <th>Nature of Process</th>}
                 <th>Unit</th>
@@ -298,12 +297,9 @@ export default function DeliveryChallanDetail() {
               {items.map((item) => (
                 <tr key={item.serial_number}>
                   <td className="font-mono text-muted-foreground">{item.serial_number}</td>
-                  {hasDrawingNumber && (
-                    <td className="font-mono text-sm font-semibold text-blue-700">
-                      {item.drawing_number || "—"}
-                    </td>
-                  )}
-                  <td className="font-mono text-sm">{item.item_code || "—"}</td>
+                  <td className="font-mono text-sm font-semibold text-blue-700">
+                    {item.drawing_number || item.item_code || "—"}
+                  </td>
                   <td className="font-medium">{item.description}</td>
                   {hasNatureOfProcess && <td className="text-sm">{(item as any).nature_of_process || "—"}</td>}
                   <td className="text-muted-foreground">{item.unit || "NOS"}</td>

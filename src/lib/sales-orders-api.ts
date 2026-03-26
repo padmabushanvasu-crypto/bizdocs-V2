@@ -59,6 +59,7 @@ export interface DnLineItem {
   id?: string;
   serial_number: number;
   item_code?: string;
+  drawing_number?: string;
   description: string;
   unit: string;
   quantity: number;

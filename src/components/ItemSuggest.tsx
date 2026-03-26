@@ -131,11 +131,11 @@ export function ItemSuggest({
                 }}
                 onMouseEnter={() => setActiveIndex(idx)}
               >
-                {/* Row 1: code + description + type badge + unit */}
+                {/* Row 1: drawing number (primary) + description + type badge + unit */}
                 <div className="flex items-center gap-2 min-w-0">
-                  {item.item_code && (
+                  {(item.drawing_revision || item.drawing_number) && (
                     <span className="font-mono text-sm font-semibold text-blue-600 shrink-0">
-                      {item.item_code}
+                      {item.drawing_revision ?? item.drawing_number}
                     </span>
                   )}
                   <span className="font-bold text-foreground truncate flex-1">
@@ -152,6 +152,13 @@ export function ItemSuggest({
                     )}
                   </div>
                 </div>
+                {/* Row 2: item code in small grey if no drawing number shown */}
+                {!(item.drawing_revision || item.drawing_number) && item.item_code && (
+                  <p className="text-xs text-muted-foreground font-mono mt-0.5">{item.item_code}</p>
+                )}
+                {(item.drawing_revision || item.drawing_number) && item.item_code && (
+                  <p className="text-xs text-slate-400 font-mono mt-0.5">{item.item_code}</p>
+                )}
               </button>
             ))}
           </div>,
