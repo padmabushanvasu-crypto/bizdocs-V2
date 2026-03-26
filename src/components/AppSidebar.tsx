@@ -33,6 +33,7 @@ import {
   PanelLeftClose,
   Wrench,
   Database,
+  Factory,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -134,7 +135,7 @@ const startHereNav: NavItem[] = [
 
 const dailyWorkNav: NavItem[] = [
   { title: "Job Works", url: "/job-works", icon: Activity },
-  { title: "Assembly Orders", url: "/assembly-orders", icon: Layers },
+  { title: "Production", url: "/assembly-orders", icon: Factory },
 ];
 
 const purchasingNav: NavItem[] = [

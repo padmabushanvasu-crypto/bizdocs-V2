@@ -42,7 +42,7 @@ export interface FatCertificate {
   customer_po_ref: string | null;
   assembly_order_id: string | null;
   assembly_order_number: string | null;
-  status: "pending" | "passed" | "failed" | "conditional";
+  status: "draft" | "pending" | "passed" | "failed" | "conditional";
   overall_result: "pass" | "fail" | "conditional" | null;
   tested_by: string | null;
   witnessed_by: string | null;
@@ -84,7 +84,7 @@ export interface SerialNumberRecord {
   item_code: string | null;
   item_description: string | null;
   assembly_order_id: string | null;
-  status: "in_stock" | "dispatched" | "under_warranty" | "scrapped";
+  status: "in_production" | "in_stock" | "dispatched" | "under_warranty" | "scrapped" | "cancelled";
   invoice_id: string | null;
   invoice_number: string | null;
   customer_name: string | null;
@@ -178,6 +178,7 @@ export async function createFatCertificate(data: {
   witnessed_by?: string | null;
   test_date?: string | null;
   notes?: string | null;
+  status?: "draft" | "pending";
 }): Promise<FatCertificate> {
   const companyId = await getCompanyId();
   const { data: cert, error } = await (supabase as any)
@@ -198,7 +199,7 @@ export async function createFatCertificate(data: {
       customer_po_ref: data.customer_po_ref ?? null,
       assembly_order_id: data.assembly_order_id ?? null,
       assembly_order_number: data.assembly_order_number ?? null,
-      status: "pending",
+      status: data.status ?? "pending",
       tested_by: data.tested_by ?? null,
       witnessed_by: data.witnessed_by ?? null,
       test_date: data.test_date ?? null,
@@ -287,8 +288,8 @@ export async function deleteFatCertificate(id: string): Promise<void> {
     .eq("id", id)
     .single();
 
-  if (!cert || cert.status !== "pending") {
-    throw new Error("Only pending FAT certificates can be deleted.");
+  if (!cert || (cert.status !== "pending" && cert.status !== "draft")) {
+    throw new Error("Only pending or draft FAT certificates can be deleted.");
   }
   await (supabase as any).from("fat_test_results").delete().eq("fat_certificate_id", id);
   const { error } = await (supabase as any).from("fat_certificates").delete().eq("id", id);
@@ -432,9 +433,10 @@ export async function fetchFatStats() {
   const { data, error } = await (supabase as any)
     .from("fat_certificates")
     .select("id, status");
-  if (error) return { pending: 0, passed: 0, failed: 0, conditional: 0 };
+  if (error) return { draft: 0, pending: 0, passed: 0, failed: 0, conditional: 0 };
   const all = (data ?? []) as any[];
   return {
+    draft: all.filter((f) => f.status === "draft").length,
     pending: all.filter((f) => f.status === "pending").length,
     passed: all.filter((f) => f.status === "passed").length,
     failed: all.filter((f) => f.status === "failed").length,
@@ -451,9 +453,10 @@ export async function fetchSerialStats() {
   const { data, error } = await (supabase as any)
     .from("serial_numbers")
     .select("id, status, fat_completed, warranty_expiry");
-  if (error) return { inStock: 0, dispatched: 0, underWarranty: 0, expiringSoon: 0, fatPending: 0 };
+  if (error) return { inProduction: 0, inStock: 0, dispatched: 0, underWarranty: 0, expiringSoon: 0, fatPending: 0 };
   const all = (data ?? []) as any[];
   return {
+    inProduction: all.filter((s) => s.status === "in_production").length,
     inStock: all.filter((s) => s.status === "in_stock").length,
     dispatched: all.filter((s) => s.status === "dispatched").length,
     underWarranty: all.filter(

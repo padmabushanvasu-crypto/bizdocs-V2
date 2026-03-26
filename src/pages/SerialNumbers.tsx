@@ -23,16 +23,20 @@ import { MetricCard } from "@/components/MetricCard";
 import { format } from "date-fns";
 
 const statusClass: Record<string, string> = {
+  in_production: "bg-amber-50 text-amber-700 border border-amber-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
   in_stock: "bg-blue-50 text-blue-700 border border-blue-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
   dispatched: "bg-green-50 text-green-700 border border-green-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
   under_warranty: "bg-teal-50 text-teal-700 border border-teal-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
   scrapped: "bg-red-50 text-red-700 border border-red-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
+  cancelled: "bg-slate-100 text-slate-500 border border-slate-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
 };
 const statusLabels: Record<string, string> = {
+  in_production: "In Production",
   in_stock: "In Stock",
   dispatched: "Dispatched",
   under_warranty: "Under Warranty",
   scrapped: "Scrapped",
+  cancelled: "Cancelled",
 };
 
 function FatBadge({ fatCompleted }: { fatCompleted: boolean }) {
@@ -148,7 +152,13 @@ export default function SerialNumbers() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <MetricCard
+          title="In Production"
+          value={String(stats?.inProduction ?? "—")}
+          icon={Hash}
+          className={(stats?.inProduction ?? 0) > 0 ? "border-l-4 border-l-amber-500 bg-amber-50/30" : "border-l-4 border-l-slate-200"}
+        />
         <MetricCard
           title="In Stock"
           value={String(stats?.inStock ?? "—")}
@@ -192,10 +202,12 @@ export default function SerialNumbers() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="in_production">In Production</SelectItem>
             <SelectItem value="in_stock">In Stock</SelectItem>
             <SelectItem value="dispatched">Dispatched</SelectItem>
             <SelectItem value="under_warranty">Under Warranty</SelectItem>
             <SelectItem value="scrapped">Scrapped</SelectItem>
+            <SelectItem value="cancelled">Cancelled</SelectItem>
           </SelectContent>
         </Select>
       </div>

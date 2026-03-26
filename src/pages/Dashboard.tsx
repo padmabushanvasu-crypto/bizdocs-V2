@@ -6,7 +6,7 @@ import { formatCurrency } from "@/lib/gst-utils";
 import { fetchWipSummary } from "@/lib/job-works-api";
 import { fetchAssemblyOrderStats } from "@/lib/assembly-orders-api";
 import { fetchFatStats } from "@/lib/fat-api";
-import { fetchReorderAlerts } from "@/lib/reorder-api";
+import { fetchReorderAlerts, fetchProductionAlertCount } from "@/lib/reorder-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { fetchAllAuditLog, type AuditEntry } from "@/lib/audit-api";
 import { supabase } from "@/integrations/supabase/client";
@@ -246,6 +246,12 @@ export default function Dashboard() {
     staleTime: STALE,
     refetchInterval: STALE,
   });
+  const { data: productionRequired = 0 } = useQuery({
+    queryKey: ["production-alert-count-db"],
+    queryFn: fetchProductionAlertCount,
+    staleTime: STALE,
+    refetchInterval: STALE,
+  });
 
   // Derived alert counts
   const overdueDCReturns  = dashData?.overdueDCCount ?? 0;
@@ -256,7 +262,7 @@ export default function Dashboard() {
   const uninvoicedUnits   = readyToShip.length;
   const readyToAssemble   = aoStats?.draft ?? 0;
 
-  const totalAlerts = overdueDCReturns + jobWorksOverdue + zeroStockItems + reorderAlertCount + fatPending + uninvoicedUnits;
+  const totalAlerts = overdueDCReturns + jobWorksOverdue + zeroStockItems + reorderAlertCount + fatPending + uninvoicedUnits + productionRequired;
   const allClear = totalAlerts === 0;
 
   // Company info
@@ -349,11 +355,11 @@ export default function Dashboard() {
                   body: "Use this when goods are physically leaving the factory — for job work (returnable) or delivery to a customer (non-returnable).",
                 },
                 {
-                  label: "New Assembly Order",
+                  label: "Start Production",
                   route: "/assembly-orders",
                   state: { openNew: true },
-                  title: "Assembly Order",
-                  body: "Use this when all required components are in stock and you are ready to build a sub-assembly or finished OLTC. The BOM loads all components automatically.",
+                  title: "Start Production Run",
+                  body: "Use this when finished goods stock falls below minimum levels. Serial numbers are generated immediately at the start of the run and FAT certificates are pre-created as drafts.",
                 },
                 {
                   label: "Record FAT",
@@ -436,6 +442,9 @@ export default function Dashboard() {
             )}
             {uninvoicedUnits > 0 && (
               <AlertPill label="Ready to Invoice"   count={uninvoicedUnits}  colour="amber" onClick={() => navigate("/fat-certificates")} />
+            )}
+            {productionRequired > 0 && (
+              <AlertPill label="Production Required" count={productionRequired} colour="amber" onClick={() => navigate("/reorder-intelligence")} />
             )}
             {readyToAssemble > 0 && (
               <AlertPill label="Ready to Assemble"  count={readyToAssemble}  colour="green" onClick={() => navigate("/assembly-orders")} />

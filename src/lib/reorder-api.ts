@@ -541,3 +541,49 @@ export async function fetchScrapStats(): Promise<ScrapStats> {
     net_loss: total_value - recovered,
   };
 }
+
+// ============================================================
+// Production Alerts (finished goods below min_finished_stock)
+// ============================================================
+
+export interface ProductionAlert {
+  item_id: string;
+  item_code: string | null;
+  item_description: string | null;
+  item_unit: string | null;
+  current_stock: number;
+  min_finished_stock: number;
+  production_batch_size: number;
+  shortage: number;
+}
+
+export async function fetchProductionAlerts(): Promise<ProductionAlert[]> {
+  const companyId = await getCompanyId();
+  const { data, error } = await (supabase as any)
+    .from("items")
+    .select("id, item_code, description, unit, current_stock, min_finished_stock, production_batch_size")
+    .eq("company_id", companyId)
+    .eq("item_type", "finished_good")
+    .eq("status", "active")
+    .gt("min_finished_stock", 0);
+
+  if (error) return [];
+
+  return ((data ?? []) as any[])
+    .filter((item: any) => (item.current_stock ?? 0) < (item.min_finished_stock ?? 0))
+    .map((item: any) => ({
+      item_id: item.id,
+      item_code: item.item_code ?? null,
+      item_description: item.description ?? null,
+      item_unit: item.unit ?? null,
+      current_stock: item.current_stock ?? 0,
+      min_finished_stock: item.min_finished_stock ?? 0,
+      production_batch_size: item.production_batch_size ?? 1,
+      shortage: (item.min_finished_stock ?? 0) - (item.current_stock ?? 0),
+    }));
+}
+
+export async function fetchProductionAlertCount(): Promise<number> {
+  const alerts = await fetchProductionAlerts();
+  return alerts.length;
+}

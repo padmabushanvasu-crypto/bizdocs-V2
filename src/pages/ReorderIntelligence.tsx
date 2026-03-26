@@ -10,11 +10,12 @@ import {
   CheckCircle2,
   Upload,
   ChevronLeft,
+  Factory,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { fetchReorderAlerts, type ReorderAlert } from "@/lib/reorder-api";
+import { fetchReorderAlerts, fetchProductionAlerts, type ReorderAlert, type ProductionAlert } from "@/lib/reorder-api";
 import { exportToExcel } from "@/lib/export-utils";
 import { format } from "date-fns";
 
@@ -64,6 +65,12 @@ export default function ReorderIntelligence() {
   const { data: alerts = [], isLoading, dataUpdatedAt, refetch, isFetching } = useQuery({
     queryKey: ["reorder-alerts"],
     queryFn: fetchReorderAlerts,
+    staleTime: 60000,
+  });
+
+  const { data: productionAlerts = [] } = useQuery({
+    queryKey: ["production-alerts"],
+    queryFn: fetchProductionAlerts,
     staleTime: 60000,
   });
 
@@ -384,6 +391,73 @@ export default function ReorderIntelligence() {
       <p className="text-xs text-muted-foreground text-center">
         Consumption based on 90-day rolling average from stock ledger · Reorder points from custom rules or item min stock
       </p>
+
+      {/* ── Production Required ── */}
+      {productionAlerts.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Factory className="h-4 w-4 text-amber-600" />
+            <h2 className="text-sm font-semibold text-foreground">Production Required</h2>
+            <span className="bg-amber-100 text-amber-800 text-[11px] font-bold px-2 py-0.5 rounded-full border border-amber-200">
+              {productionAlerts.length}
+            </span>
+            <span className="text-xs text-muted-foreground">— Finished goods below minimum stock level</span>
+          </div>
+          <div className="paper-card !p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full data-table text-sm">
+                <thead>
+                  <tr>
+                    <th>Item Code</th>
+                    <th>Description</th>
+                    <th className="text-right">Current Stock</th>
+                    <th className="text-right">Min Finished Stock</th>
+                    <th className="text-right">Shortage</th>
+                    <th className="text-right">Batch Size</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {productionAlerts.map((pa) => (
+                    <tr key={pa.item_id} className="bg-amber-50/40 hover:bg-amber-50 transition-colors">
+                      <td className="font-mono text-xs font-medium">{pa.item_code ?? "—"}</td>
+                      <td>
+                        <p className="font-medium leading-tight truncate max-w-[200px]">{pa.item_description ?? "—"}</p>
+                      </td>
+                      <td className="text-right font-mono tabular-nums text-destructive font-bold">
+                        {pa.current_stock} {pa.item_unit}
+                      </td>
+                      <td className="text-right font-mono tabular-nums text-muted-foreground">
+                        {pa.min_finished_stock}
+                      </td>
+                      <td className="text-right font-mono tabular-nums text-amber-700 font-semibold">
+                        {pa.shortage}
+                      </td>
+                      <td className="text-right font-mono tabular-nums text-muted-foreground">
+                        {pa.production_batch_size}
+                      </td>
+                      <td>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs gap-1 whitespace-nowrap"
+                          onClick={() =>
+                            navigate("/assembly-orders", {
+                              state: { openNew: true, item_id: pa.item_id },
+                            })
+                          }
+                        >
+                          <Factory className="h-3 w-3" /> Start Production
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

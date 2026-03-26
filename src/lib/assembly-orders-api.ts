@@ -25,6 +25,10 @@ export interface AssemblyOrder {
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+  production_trigger?: "manual" | "stock_alert" | "reorder" | null;
+  serial_numbers_generated?: boolean;
+  fat_drafts_created?: boolean;
+  backflushed?: boolean;
 }
 
 export interface AssemblyOrderLine {
@@ -73,7 +77,7 @@ export interface SerialNumber {
   item_code: string | null;
   item_description: string | null;
   assembly_order_id: string | null;
-  status: "in_stock" | "dispatched" | "under_warranty" | "scrapped";
+  status: "in_production" | "in_stock" | "dispatched" | "under_warranty" | "scrapped" | "cancelled";
   invoice_id: string | null;
   invoice_number: string | null;
   customer_name: string | null;
@@ -531,6 +535,261 @@ export async function confirmAssemblyOrder(
     cost_per_unit: Math.round(costPerUnit * 100) / 100,
     total_cost: Math.round(totalCost * 100) / 100,
     serial_numbers_created: serialNumbers?.length ?? 0,
+  }).catch(console.error);
+}
+
+/**
+ * startProductionRun — pull-based production entry point.
+ * 1. Create AO immediately in 'in_progress' status
+ * 2. Populate BOM lines
+ * 3. Generate serial_numbers with status='in_production'
+ * 4. Create draft FAT certificates for each serial
+ * 5. Mark serial_numbers_generated=true, fat_drafts_created=true
+ */
+export async function startProductionRun(data: {
+  item_id: string;
+  item_code: string | null;
+  item_description: string | null;
+  quantity_to_build: number;
+  variant_id?: string | null;
+  notes?: string | null;
+  work_order_ref?: string | null;
+}): Promise<AssemblyOrder> {
+  const companyId = await getCompanyId();
+
+  // Insert AO directly as in_progress
+  const { data: ao, error } = await (supabase as any)
+    .from("assembly_orders")
+    .insert({
+      company_id: companyId,
+      ao_number: "",
+      ao_date: new Date().toISOString().split("T")[0],
+      item_id: data.item_id,
+      item_code: data.item_code ?? null,
+      item_description: data.item_description ?? null,
+      quantity_to_build: data.quantity_to_build,
+      quantity_built: 0,
+      status: "in_progress",
+      notes: data.notes ?? null,
+      work_order_ref: data.work_order_ref ?? null,
+      production_trigger: "manual",
+      serial_numbers_generated: false,
+      fat_drafts_created: false,
+      backflushed: false,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+
+  let created = ao as AssemblyOrder;
+
+  // Fallback ao_number if trigger didn't set it
+  if (!created.ao_number) {
+    const aoNumber = await getNextDocNumber("assembly_orders", "ao_number", companyId, "ao_prefix");
+    await (supabase as any).from("assembly_orders").update({ ao_number: aoNumber }).eq("id", created.id);
+    created = { ...created, ao_number: aoNumber };
+  }
+
+  // Populate BOM lines
+  await _populateAOLinesFromBom(
+    created.id,
+    companyId,
+    data.item_id,
+    data.quantity_to_build,
+    data.variant_id ?? null
+  );
+
+  // Generate serial numbers (status='in_production')
+  const today = new Date();
+  const yymmdd = today.toISOString().slice(2, 10).replace(/-/g, "");
+  const snInserts = Array.from({ length: data.quantity_to_build }, (_, i) => ({
+    company_id: companyId,
+    serial_number: `${created.ao_number}/${String(i + 1).padStart(2, "0")}`,
+    item_id: data.item_id,
+    item_code: data.item_code ?? null,
+    item_description: data.item_description ?? null,
+    assembly_order_id: created.id,
+    status: "in_production",
+    warranty_months: 12,
+    fat_completed: false,
+  }));
+
+  const { data: insertedSNs, error: snError } = await (supabase as any)
+    .from("serial_numbers")
+    .insert(snInserts)
+    .select();
+  if (snError) throw snError;
+
+  // Create draft FAT certificates for each serial
+  const serialRows = (insertedSNs ?? []) as any[];
+  for (const sn of serialRows) {
+    // Generate FAT number
+    const fatNumber = await getNextDocNumber("fat_certificates", "fat_number", companyId, "fat_prefix");
+    const { error: fatError } = await (supabase as any)
+      .from("fat_certificates")
+      .insert({
+        company_id: companyId,
+        fat_number: fatNumber || "",
+        fat_date: new Date().toISOString().split("T")[0],
+        serial_number_id: sn.id,
+        serial_number: sn.serial_number,
+        item_id: data.item_id,
+        item_code: data.item_code ?? null,
+        item_description: data.item_description ?? null,
+        assembly_order_id: created.id,
+        assembly_order_number: created.ao_number,
+        status: "draft",
+      });
+    if (fatError) console.error("FAT draft create error:", fatError);
+  }
+
+  // Mark serial_numbers_generated and fat_drafts_created
+  await (supabase as any)
+    .from("assembly_orders")
+    .update({ serial_numbers_generated: true, fat_drafts_created: true, updated_at: new Date().toISOString() })
+    .eq("id", created.id);
+  created = { ...created, serial_numbers_generated: true, fat_drafts_created: true };
+
+  logAudit("assembly_order", created.id, "Production Run Started", {
+    summary: `${created.ao_number} — ${created.item_description ?? created.item_code} × ${created.quantity_to_build} | ${serialRows.length} serials generated`,
+    ao_number: created.ao_number,
+    quantity_to_build: created.quantity_to_build,
+    serials_generated: serialRows.length,
+  }).catch(console.error);
+
+  return created;
+}
+
+/**
+ * completeProductionRun — backflush components and finalize a pull-based production run.
+ * 1. Deduct consumed_qty from each component's stock
+ * 2. Add quantity_to_build to parent item stock
+ * 3. Update serial_numbers from 'in_production' → 'in_stock'
+ * 4. Update draft FAT certificates → 'pending'
+ * 5. Mark AO completed with backflushed=true
+ */
+export async function completeProductionRun(id: string): Promise<void> {
+  const companyId = await getCompanyId();
+  const { data: { user } } = await supabase.auth.getUser();
+  const userId = user?.id ?? null;
+
+  const ao = await fetchAssemblyOrder(id);
+  if (!ao.item_id) throw new Error("Production run has no item linked");
+
+  const today = new Date().toISOString().split("T")[0];
+  const quantityBuilt = ao.quantity_to_build;
+
+  // 1. Deduct component stock
+  let totalCost = 0;
+  for (const line of ao.lines) {
+    if (!line.item_id || line.consumed_qty <= 0) continue;
+
+    const { data: compItem } = await (supabase as any)
+      .from("items")
+      .select("current_stock, standard_cost")
+      .eq("id", line.item_id)
+      .single();
+
+    const currentStock = (compItem as any)?.current_stock ?? 0;
+    const unitCost = (compItem as any)?.standard_cost ?? line.unit_cost;
+    const newStock = Math.max(0, currentStock - line.consumed_qty);
+    const lineTotal = line.consumed_qty * unitCost;
+    totalCost += lineTotal;
+
+    await (supabase as any).from("items").update({ current_stock: newStock }).eq("id", line.item_id);
+
+    await (supabase as any).from("stock_ledger").insert({
+      company_id: companyId,
+      item_id: line.item_id,
+      item_code: line.item_code,
+      item_description: line.item_description,
+      transaction_date: today,
+      transaction_type: "assembly_consumption",
+      qty_in: 0,
+      qty_out: line.consumed_qty,
+      balance_qty: newStock,
+      unit_cost: unitCost,
+      total_value: lineTotal,
+      reference_type: "assembly_order",
+      reference_id: ao.id,
+      reference_number: ao.ao_number,
+      notes: `Consumed in ${ao.ao_number}`,
+      created_by: userId,
+    });
+  }
+
+  // 2. Add to parent item stock
+  const { data: parentItem } = await (supabase as any)
+    .from("items")
+    .select("current_stock, standard_cost")
+    .eq("id", ao.item_id)
+    .single();
+
+  const parentCurrentStock = (parentItem as any)?.current_stock ?? 0;
+  const parentCurrentCost = (parentItem as any)?.standard_cost ?? 0;
+  const newParentStock = parentCurrentStock + quantityBuilt;
+  const costPerUnit = quantityBuilt > 0 ? totalCost / quantityBuilt : 0;
+  const newAvgCost =
+    newParentStock > 0
+      ? (parentCurrentStock * parentCurrentCost + quantityBuilt * costPerUnit) / newParentStock
+      : costPerUnit;
+
+  await (supabase as any)
+    .from("items")
+    .update({ current_stock: newParentStock, standard_cost: Math.round(newAvgCost * 100) / 100 })
+    .eq("id", ao.item_id);
+
+  await (supabase as any).from("stock_ledger").insert({
+    company_id: companyId,
+    item_id: ao.item_id,
+    item_code: ao.item_code,
+    item_description: ao.item_description,
+    transaction_date: today,
+    transaction_type: "assembly_output",
+    qty_in: quantityBuilt,
+    qty_out: 0,
+    balance_qty: newParentStock,
+    unit_cost: costPerUnit,
+    total_value: totalCost,
+    reference_type: "assembly_order",
+    reference_id: ao.id,
+    reference_number: ao.ao_number,
+    notes: `Produced by ${ao.ao_number}`,
+    created_by: userId,
+  });
+
+  // 3. Move serial numbers from 'in_production' → 'in_stock'
+  await (supabase as any)
+    .from("serial_numbers")
+    .update({ status: "in_stock", updated_at: new Date().toISOString() })
+    .eq("assembly_order_id", id)
+    .eq("status", "in_production");
+
+  // 4. Move draft FAT certificates → 'pending'
+  await (supabase as any)
+    .from("fat_certificates")
+    .update({ status: "pending", updated_at: new Date().toISOString() })
+    .eq("assembly_order_id", id)
+    .eq("status", "draft");
+
+  // 5. Mark AO completed
+  await (supabase as any)
+    .from("assembly_orders")
+    .update({
+      status: "completed",
+      quantity_built: quantityBuilt,
+      backflushed: true,
+      completed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+
+  const summary = `Production run completed — built ${quantityBuilt} unit(s) of ${ao.item_description ?? ao.item_code} at ₹${Math.round(costPerUnit).toLocaleString("en-IN")}/unit`;
+  logAudit("assembly_order", id, "Production Run Completed", {
+    summary,
+    quantity_built: quantityBuilt,
+    cost_per_unit: Math.round(costPerUnit * 100) / 100,
+    total_cost: Math.round(totalCost * 100) / 100,
   }).catch(console.error);
 }
 

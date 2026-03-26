@@ -25,6 +25,8 @@ export interface Item {
   standard_cost: number;
   min_stock_override: number | null;
   parent_item_id: string | null;
+  min_finished_stock: number;
+  production_batch_size: number;
 }
 
 export interface StockStatusRow {

@@ -393,7 +393,7 @@ export default function WipRegister() {
           {/* Section header */}
           <div className="flex items-center gap-2">
             <Layers className="h-4 w-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold text-foreground">Sub-Assembly WIP</h2>
+            <h2 className="text-sm font-semibold text-foreground">Production Runs</h2>
             <span className="bg-slate-100 text-slate-700 text-[11px] font-bold px-2 py-0.5 rounded-full border border-slate-200">
               {aoRows.length}
             </span>
@@ -419,9 +419,10 @@ export default function WipRegister() {
               <table className="w-full data-table">
                 <thead>
                   <tr>
-                    <th>AO Number</th>
+                    <th>Run #</th>
                     <th>Item Being Built</th>
                     <th className="text-right">Qty to Build</th>
+                    <th className="text-right">Serials</th>
                     <th>Work Order Ref</th>
                     <th>Planned Date</th>
                     <th className="text-right">Days in Progress</th>
@@ -432,26 +433,26 @@ export default function WipRegister() {
                 <tbody>
                   {aoLoading ? (
                     <tr>
-                      <td colSpan={8} className="text-center py-10 text-muted-foreground">
-                        Loading assembly orders…
+                      <td colSpan={9} className="text-center py-10 text-muted-foreground">
+                        Loading production runs…
                       </td>
                     </tr>
                   ) : filteredAo.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="text-center py-10">
+                      <td colSpan={9} className="text-center py-10">
                         {aoRows.length === 0 ? (
                           <div className="flex flex-col items-center gap-2 text-muted-foreground">
                             <Layers className="h-8 w-8 opacity-30" />
-                            <p>No assembly orders in progress.</p>
+                            <p>No production runs in progress.</p>
                             <Link
                               to="/assembly-orders"
                               className="text-primary text-sm flex items-center gap-1 hover:underline"
                             >
-                              Go to Assembly Orders <ArrowRight className="h-3.5 w-3.5" />
+                              Go to Production <ArrowRight className="h-3.5 w-3.5" />
                             </Link>
                           </div>
                         ) : (
-                          <span className="text-muted-foreground">No assembly orders match current search.</span>
+                          <span className="text-muted-foreground">No production runs match current search.</span>
                         )}
                       </td>
                     </tr>
@@ -475,6 +476,15 @@ export default function WipRegister() {
                         </td>
                         <td className="text-right font-mono tabular-nums text-sm">
                           {ao.quantity_to_build}
+                        </td>
+                        <td className="text-right">
+                          {(ao as any).serial_numbers_generated ? (
+                            <span className="text-xs font-mono text-amber-700 font-medium">
+                              {ao.quantity_to_build}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">—</span>
+                          )}
                         </td>
                         <td className="font-mono text-sm text-muted-foreground">
                           {ao.work_order_ref ?? "—"}

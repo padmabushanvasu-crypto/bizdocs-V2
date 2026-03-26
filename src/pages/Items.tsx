@@ -43,6 +43,7 @@ const emptyItem = {
   item_code: "", description: "", drawing_number: "", drawing_revision: "", item_type: "raw_material",
   unit: "NOS", hsn_sac_code: "", gst_rate: 18,
   min_stock: 0, notes: "", standard_cost: 0,
+  min_finished_stock: 0, production_batch_size: 1,
 };
 
 export default function Items() {
@@ -162,6 +163,8 @@ export default function Items() {
       unit: item.unit, hsn_sac_code: item.hsn_sac_code || "",
       gst_rate: item.gst_rate, min_stock: item.min_stock, notes: item.notes || "",
       standard_cost: item.standard_cost ?? 0,
+      min_finished_stock: (item as any).min_finished_stock ?? 0,
+      production_batch_size: (item as any).production_batch_size ?? 1,
     });
     setFormOpen(true);
   };
@@ -363,6 +366,9 @@ export default function Items() {
             <TabsList className="w-full">
               <TabsTrigger value="general" className="flex-1">General</TabsTrigger>
               <TabsTrigger value="costing" className="flex-1">Costing &amp; Stock</TabsTrigger>
+              {form.item_type === "finished_good" && (
+                <TabsTrigger value="production" className="flex-1">Production</TabsTrigger>
+              )}
             </TabsList>
 
             <TabsContent value="general" className="space-y-3 mt-3">
@@ -451,6 +457,38 @@ export default function Items() {
                 <p className="text-xs text-muted-foreground">Internal cost used for margin calculations and assembly costing.</p>
               </div>
             </TabsContent>
+
+            {form.item_type === "finished_good" && (
+              <TabsContent value="production" className="space-y-3 mt-3">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
+                  Production settings trigger alerts when finished goods stock falls below the minimum. The system uses batch size to suggest how many units to build.
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label>Min Finished Stock</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={(form as any).min_finished_stock || ""}
+                      onChange={(e) => setForm((f) => ({ ...f, min_finished_stock: parseFloat(e.target.value) || 0 } as any))}
+                      placeholder="0"
+                    />
+                    <p className="text-xs text-muted-foreground">Alert triggered when stock falls below this level.</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Production Batch Size</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={(form as any).production_batch_size || ""}
+                      onChange={(e) => setForm((f) => ({ ...f, production_batch_size: parseFloat(e.target.value) || 1 } as any))}
+                      placeholder="1"
+                    />
+                    <p className="text-xs text-muted-foreground">Default quantity per production run.</p>
+                  </div>
+                </div>
+              </TabsContent>
+            )}
           </Tabs>
           <DialogFooter>
             <Button variant="outline" onClick={() => setFormOpen(false)}>Cancel</Button>

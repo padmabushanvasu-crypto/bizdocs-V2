@@ -1,12 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
-import { Layers, Plus, Search, Eye, ChevronDown, Package } from "lucide-react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { Factory, Plus, Search, Eye, ChevronDown, CheckCircle2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -15,7 +14,8 @@ import { useToast } from "@/hooks/use-toast";
 import {
   fetchAssemblyOrders,
   fetchAssemblyOrderStats,
-  createAssemblyOrder,
+  startProductionRun,
+  loadBomForItem,
   type AssemblyOrderFilters,
 } from "@/lib/assembly-orders-api";
 import { fetchItems, type Item } from "@/lib/items-api";
@@ -36,15 +36,9 @@ const statusLabels: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
-const emptyForm = {
-  quantity_to_build: 1,
-  notes: "",
-  planned_date: "",
-  work_order_ref: "",
-};
-
 export default function AssemblyOrders() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -59,7 +53,15 @@ export default function AssemblyOrders() {
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [itemOpen, setItemOpen] = useState(false);
   const [selectedVariantId, setSelectedVariantId] = useState<string>("");
-  const [form, setForm] = useState(emptyForm);
+  const [quantity, setQuantity] = useState<number>(1);
+  const [notes, setNotes] = useState("");
+
+  // Open dialog automatically if navigated with openNew state
+  useEffect(() => {
+    if ((location.state as any)?.openNew) {
+      setNewOpen(true);
+    }
+  }, [location.state]);
 
   const { data: stats } = useQuery({
     queryKey: ["ao-stats"],
@@ -71,9 +73,10 @@ export default function AssemblyOrders() {
     queryFn: () => fetchAssemblyOrders(filters),
   });
 
+  // Only fetch finished_good items for production
   const { data: itemsData } = useQuery({
-    queryKey: ["items-all-ao"],
-    queryFn: () => fetchItems({ status: "active", pageSize: 500 }),
+    queryKey: ["items-finished-goods"],
+    queryFn: () => fetchItems({ status: "active", type: "finished_good", pageSize: 500 }),
     enabled: newOpen,
   });
   const items = itemsData?.data ?? [];
@@ -84,26 +87,36 @@ export default function AssemblyOrders() {
     enabled: newOpen && !!selectedItem,
   });
 
-  const createMutation = useMutation({
+  const { data: bomLines = [] } = useQuery({
+    queryKey: ["bom-preview", selectedItem?.id, quantity],
+    queryFn: () => loadBomForItem(selectedItem!.id, quantity),
+    enabled: newOpen && !!selectedItem,
+  });
+
+  const startMutation = useMutation({
     mutationFn: () =>
-      createAssemblyOrder({
-        item_id: selectedItem?.id ?? undefined,
-        item_code: selectedItem?.item_code ?? undefined,
-        item_description: selectedItem?.description ?? undefined,
-        quantity_to_build: form.quantity_to_build,
-        notes: form.notes || undefined,
-        planned_date: form.planned_date || undefined,
-        work_order_ref: form.work_order_ref || undefined,
+      startProductionRun({
+        item_id: selectedItem!.id,
+        item_code: selectedItem!.item_code ?? null,
+        item_description: selectedItem!.description ?? null,
+        quantity_to_build: quantity,
         variant_id: selectedVariantId || null,
+        notes: notes || null,
       }),
     onSuccess: (ao) => {
       queryClient.invalidateQueries({ queryKey: ["assembly-orders"] });
       queryClient.invalidateQueries({ queryKey: ["ao-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["serial-numbers"] });
+      queryClient.invalidateQueries({ queryKey: ["fat-certificates"] });
       setNewOpen(false);
       setSelectedItem(null);
       setSelectedVariantId("");
-      setForm(emptyForm);
-      toast({ title: "Assembly Order created", description: `${ao.ao_number} is ready.` });
+      setQuantity(1);
+      setNotes("");
+      toast({
+        title: "Production run started",
+        description: `${ao.ao_number} — ${quantity} serial number${quantity !== 1 ? "s" : ""} generated`,
+      });
       navigate(`/assembly-orders/${ao.id}`);
     },
     onError: (err: any) => {
@@ -111,15 +124,26 @@ export default function AssemblyOrders() {
     },
   });
 
-  const handleCreate = () => {
-    if (!form.quantity_to_build || form.quantity_to_build <= 0) {
+  const handleStart = () => {
+    if (!selectedItem) {
+      toast({ title: "Select an item to build", variant: "destructive" });
+      return;
+    }
+    if (!quantity || quantity <= 0) {
       toast({ title: "Quantity must be greater than 0", variant: "destructive" });
       return;
     }
-    createMutation.mutate();
+    startMutation.mutate();
   };
 
   const aos = data?.data ?? [];
+
+  const resetDialog = () => {
+    setSelectedItem(null);
+    setSelectedVariantId("");
+    setQuantity(1);
+    setNotes("");
+  };
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -127,32 +151,32 @@ export default function AssemblyOrders() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-            <Layers className="h-5 w-5 text-blue-600" /> Assembly Orders
+            <Factory className="h-5 w-5 text-blue-600" /> Production
           </h1>
-          <p className="text-sm text-slate-500 mt-1">Build sub-assemblies and finished goods from components</p>
+          <p className="text-sm text-slate-500 mt-1">Build finished goods from components — serial numbers generated at start</p>
         </div>
         <Button onClick={() => setNewOpen(true)} className="flex-shrink-0 active:scale-[0.98] transition-transform">
-          <Plus className="h-4 w-4 mr-1" /> New Assembly Order
+          <Plus className="h-4 w-4 mr-1" /> Start Production Run
         </Button>
       </div>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <MetricCard
-          title="Active"
+          title="Active Runs"
           value={String(stats?.active ?? 0)}
-          icon={Layers}
+          icon={Factory}
           className={stats?.active ? "border-blue-200" : ""}
         />
         <MetricCard
           title="Completed This Month"
           value={String(stats?.completedThisMonth ?? 0)}
-          icon={Layers}
+          icon={CheckCircle2}
         />
         <MetricCard
           title="Draft"
           value={String(stats?.draft ?? 0)}
-          icon={Layers}
+          icon={Factory}
         />
       </div>
 
@@ -161,7 +185,7 @@ export default function AssemblyOrders() {
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search AO#, item..."
+            placeholder="Search run#, item..."
             className="pl-9"
             value={filters.search}
             onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value, page: 1 }))}
@@ -176,9 +200,9 @@ export default function AssemblyOrders() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="draft">Draft</SelectItem>
             <SelectItem value="in_progress">In Progress</SelectItem>
             <SelectItem value="completed">Completed</SelectItem>
+            <SelectItem value="draft">Draft</SelectItem>
             <SelectItem value="cancelled">Cancelled</SelectItem>
           </SelectContent>
         </Select>
@@ -190,12 +214,12 @@ export default function AssemblyOrders() {
           <table className="w-full data-table">
             <thead>
               <tr>
-                <th>AO Number</th>
+                <th>Run #</th>
                 <th>Item to Build</th>
-                <th className="text-right">Qty to Build</th>
-                <th className="text-right">Qty Built</th>
+                <th className="text-right">Qty</th>
+                <th className="text-right">Built</th>
                 <th>Status</th>
-                <th>Created</th>
+                <th>Started</th>
                 <th className="w-16">Actions</th>
               </tr>
             </thead>
@@ -209,10 +233,13 @@ export default function AssemblyOrders() {
                   <td colSpan={7}>
                     <div className="flex flex-col items-center justify-center py-16 text-center">
                       <div className="h-16 w-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
-                        <Package className="h-8 w-8 text-slate-400" />
+                        <Factory className="h-8 w-8 text-slate-400" />
                       </div>
-                      <h3 className="text-base font-semibold text-slate-900 mb-1">No assembly orders yet</h3>
-                      <p className="text-sm text-slate-500 mb-6 max-w-xs">Create an assembly order to build finished goods from your raw material components.</p>
+                      <h3 className="text-base font-semibold text-slate-900 mb-1">No production runs yet</h3>
+                      <p className="text-sm text-slate-500 mb-6 max-w-xs">Start a production run to build finished goods. Serial numbers are generated automatically at the start.</p>
+                      <Button onClick={() => setNewOpen(true)}>
+                        <Plus className="h-4 w-4 mr-1" /> Start Production Run
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -289,25 +316,22 @@ export default function AssemblyOrders() {
         </div>
       )}
 
-      {/* New Assembly Order Dialog */}
+      {/* Start Production Run Dialog */}
       <Dialog
         open={newOpen}
         onOpenChange={(v) => {
           setNewOpen(v);
-          if (!v) {
-            setSelectedItem(null);
-            setSelectedVariantId("");
-            setForm(emptyForm);
-          }
+          if (!v) resetDialog();
         }}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>New Assembly Order</DialogTitle>
+            <DialogTitle>Start Production Run</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-4">
+            {/* Item selector — finished_good only */}
             <div className="space-y-1.5">
-              <Label>Item to Build *</Label>
+              <Label>Finished Good to Build *</Label>
               <Popover open={itemOpen} onOpenChange={setItemOpen}>
                 <PopoverTrigger asChild>
                   <Button
@@ -317,7 +341,7 @@ export default function AssemblyOrders() {
                   >
                     {selectedItem
                       ? `${selectedItem.item_code} — ${selectedItem.description}`
-                      : "Select item..."}
+                      : "Select finished good..."}
                     <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
@@ -325,7 +349,7 @@ export default function AssemblyOrders() {
                   <Command>
                     <CommandInput placeholder="Search items..." />
                     <CommandList>
-                      <CommandEmpty>No item found.</CommandEmpty>
+                      <CommandEmpty>No finished good found. Add finished goods in Items master.</CommandEmpty>
                       <CommandGroup>
                         {items.map((item) => (
                           <CommandItem
@@ -333,6 +357,7 @@ export default function AssemblyOrders() {
                             value={`${item.item_code} ${item.description}`}
                             onSelect={() => {
                               setSelectedItem(item);
+                              setQuantity((item as any).production_batch_size || 1);
                               setSelectedVariantId("");
                               setItemOpen(false);
                             }}
@@ -340,8 +365,11 @@ export default function AssemblyOrders() {
                             <div>
                               <p className="font-mono text-xs font-medium">{item.item_code}</p>
                               <p className="text-sm">{item.description}</p>
-                              <p className="text-xs text-muted-foreground capitalize">
-                                {item.item_type?.replace(/_/g, " ")}
+                              <p className="text-xs text-muted-foreground">
+                                Stock: {item.current_stock} {item.unit}
+                                {(item as any).min_finished_stock > 0 && (
+                                  <> · Min: {(item as any).min_finished_stock}</>
+                                )}
                               </p>
                             </div>
                           </CommandItem>
@@ -351,14 +379,9 @@ export default function AssemblyOrders() {
                   </Command>
                 </PopoverContent>
               </Popover>
-              {selectedItem && (
-                <p className="text-xs text-muted-foreground">
-                  Standard cost: ₹{(selectedItem.standard_cost ?? 0).toLocaleString("en-IN")} ·
-                  Stock: {selectedItem.current_stock} {selectedItem.unit}
-                </p>
-              )}
             </div>
 
+            {/* Variant selector */}
             {selectedItem && variants.length > 0 && (
               <div className="space-y-1.5">
                 <Label>BOM Variant</Label>
@@ -380,52 +403,88 @@ export default function AssemblyOrders() {
               </div>
             )}
 
+            {/* Quantity */}
             <div className="space-y-1.5">
               <Label>Quantity to Build *</Label>
               <Input
                 type="number"
                 min={1}
-                value={form.quantity_to_build || ""}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, quantity_to_build: parseFloat(e.target.value) || 0 }))
-                }
+                value={quantity || ""}
+                onChange={(e) => setQuantity(parseFloat(e.target.value) || 0)}
               />
+              <p className="text-xs text-muted-foreground">
+                {quantity} serial number{quantity !== 1 ? "s" : ""} and draft FAT certificate{quantity !== 1 ? "s" : ""} will be generated automatically.
+              </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Planned Date</Label>
-                <Input
-                  type="date"
-                  value={form.planned_date}
-                  onChange={(e) => setForm((f) => ({ ...f, planned_date: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Work Order / Ref No</Label>
-                <Input
-                  value={form.work_order_ref}
-                  onChange={(e) => setForm((f) => ({ ...f, work_order_ref: e.target.value }))}
-                  placeholder="Optional"
-                />
-              </div>
-            </div>
-
+            {/* Notes */}
             <div className="space-y-1.5">
               <Label>Notes</Label>
-              <Textarea
-                rows={2}
-                value={form.notes}
-                onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+              <Input
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
                 placeholder="Optional"
               />
             </div>
 
-            {selectedItem && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <p className="text-xs text-blue-700 font-medium">
-                  BOM lines for this item will be auto-loaded from your Bill of Materials.
-                </p>
+            {/* Component availability preview */}
+            {selectedItem && bomLines.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Component Availability</p>
+                <div className="border border-slate-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-medium text-slate-600">Component</th>
+                        <th className="text-right px-3 py-2 font-medium text-slate-600">Required</th>
+                        <th className="text-right px-3 py-2 font-medium text-slate-600">In Stock</th>
+                        <th className="text-center px-3 py-2 font-medium text-slate-600">OK?</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bomLines.map((bl) => {
+                        const reqQty = (bl as any).required_qty_total ?? bl.quantity * quantity;
+                        const avail = (bl as any).child_current_stock ?? 0;
+                        const ok = avail >= reqQty;
+                        return (
+                          <tr key={bl.id} className={!ok ? "bg-red-50/50" : ""}>
+                            <td className="px-3 py-1.5">
+                              <p className="font-medium">{bl.child_item_code ?? bl.child_item_id}</p>
+                              {bl.child_item_description && (
+                                <p className="text-muted-foreground truncate max-w-[160px]">{bl.child_item_description}</p>
+                              )}
+                            </td>
+                            <td className="px-3 py-1.5 text-right font-mono">{reqQty} {bl.child_unit ?? bl.unit}</td>
+                            <td className={`px-3 py-1.5 text-right font-mono ${!ok ? "text-destructive font-semibold" : "text-emerald-600"}`}>
+                              {avail}
+                            </td>
+                            <td className="px-3 py-1.5 text-center">
+                              {ok ? (
+                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 mx-auto" />
+                              ) : (
+                                <AlertTriangle className="h-3.5 w-3.5 text-destructive mx-auto" />
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {bomLines.some((bl) => {
+                  const reqQty = (bl as any).required_qty_total ?? bl.quantity * quantity;
+                  return ((bl as any).child_current_stock ?? 0) < reqQty;
+                }) && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    Some components are short. You can still start the run — stock will be checked at Mark Complete.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {selectedItem && bomLines.length === 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700">
+                No BOM found for this item. Add BOM lines in Bill of Materials before starting production.
               </div>
             )}
           </div>
@@ -434,15 +493,13 @@ export default function AssemblyOrders() {
               variant="outline"
               onClick={() => {
                 setNewOpen(false);
-                setSelectedItem(null);
-                setSelectedVariantId("");
-                setForm(emptyForm);
+                resetDialog();
               }}
             >
               Cancel
             </Button>
-            <Button onClick={handleCreate} disabled={createMutation.isPending || !selectedItem}>
-              Create Assembly Order
+            <Button onClick={handleStart} disabled={startMutation.isPending || !selectedItem}>
+              {startMutation.isPending ? "Starting…" : "Start Production Run"}
             </Button>
           </DialogFooter>
         </DialogContent>

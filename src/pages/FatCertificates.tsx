@@ -10,12 +10,14 @@ import { MetricCard } from "@/components/MetricCard";
 import { format } from "date-fns";
 
 const statusClass: Record<string, string> = {
+  draft: "bg-slate-100 text-slate-600 border border-slate-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
   pending: "bg-amber-50 text-amber-700 border border-amber-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
   passed: "bg-green-50 text-green-700 border border-green-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
   failed: "bg-red-50 text-red-700 border border-red-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
   conditional: "bg-blue-50 text-blue-700 border border-blue-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
 };
 const statusLabels: Record<string, string> = {
+  draft: "Draft",
   pending: "Pending",
   passed: "Passed",
   failed: "Failed",
@@ -94,6 +96,7 @@ export default function FatCertificates() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="draft">Draft</SelectItem>
             <SelectItem value="pending">Pending</SelectItem>
             <SelectItem value="passed">Passed</SelectItem>
             <SelectItem value="failed">Failed</SelectItem>
@@ -176,7 +179,7 @@ export default function FatCertificates() {
                       className="h-7 text-xs"
                       onClick={(e) => { e.stopPropagation(); navigate(`/fat-certificates/${cert.id}`); }}
                     >
-                      {cert.status === "pending" ? "Enter Results" : "View"}
+                      {cert.status === "pending" ? "Enter Results" : cert.status === "draft" ? "View Draft" : "View"}
                     </Button>
                   </td>
                 </tr>
