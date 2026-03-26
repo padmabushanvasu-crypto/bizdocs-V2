@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { Activity, CheckCircle2 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatCurrency } from "@/lib/gst-utils";
 import { fetchWipSummary } from "@/lib/job-works-api";
 import { fetchAssemblyOrderStats } from "@/lib/assembly-orders-api";
@@ -306,39 +307,88 @@ export default function Dashboard() {
 
             {/* 7 quick action buttons — production flow order */}
             <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 lg:mx-0 lg:px-0 lg:overflow-x-visible lg:flex-wrap lg:justify-end">
-              {([
-                { label: "Raise PO",           route: "/purchase-orders/new",  state: undefined, primary: true  },
-                { label: "Record GRN",         route: "/grn/new",              state: undefined, primary: false },
-                { label: "New Job Work",       route: "/job-works",            state: { openNew: true }, primary: false },
-                { label: "New DC",             route: "/delivery-challans/new",state: undefined, primary: false },
-                { label: "New Assembly Order", route: "/assembly-orders",      state: { openNew: true }, primary: false },
-                { label: "Record FAT",         route: "/fat-certificates",     state: undefined, primary: false },
-                { label: "Raise Invoice",      route: "/invoices/new",         state: undefined, primary: false },
-              ] as const).map((btn) =>
-                btn.primary ? (
+
+              <Tooltip delayDuration={400}>
+                <TooltipTrigger asChild>
                   <button
-                    key={btn.label}
                     className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white transition-colors shrink-0"
                     style={{ backgroundColor: "#2563EB" }}
                     onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#1D4ED8")}
                     onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#2563EB")}
-                    onClick={() => navigate(btn.route, { state: btn.state })}
+                    onClick={() => navigate("/purchase-orders/new")}
                   >
-                    {btn.label}
+                    Raise PO
                   </button>
-                ) : (
-                  <button
-                    key={btn.label}
-                    className="rounded-xl px-3 py-2 text-sm text-slate-300 transition-colors shrink-0"
-                    style={{ backgroundColor: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.10)" }}
-                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.12)")}
-                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.07)")}
-                    onClick={() => navigate(btn.route, { state: btn.state })}
-                  >
-                    {btn.label}
-                  </button>
-                )
-              )}
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-[280px]">
+                  <p className="font-semibold">Purchase Order</p>
+                  <p className="text-xs mt-1">Use this when stock falls below reorder point. Buy raw materials or bought-out items from a vendor. Raise before material arrives so you can record a GRN.</p>
+                </TooltipContent>
+              </Tooltip>
+
+              {([
+                {
+                  label: "Record GRN",
+                  route: "/grn/new",
+                  state: undefined as any,
+                  title: "GRN — Goods Receipt",
+                  body: "Use this when purchased materials arrive at the factory. Link to the original PO and record accepted vs rejected quantities. Stock updates automatically.",
+                },
+                {
+                  label: "New Job Work",
+                  route: "/job-works",
+                  state: { openNew: true },
+                  title: "Job Work",
+                  body: "Use this when sending a component to a vendor for external processing — CNC machining, plating, welding. One Job Work per component per batch.",
+                },
+                {
+                  label: "New DC",
+                  route: "/delivery-challans/new",
+                  state: undefined as any,
+                  title: "Delivery Challan",
+                  body: "Use this when goods are physically leaving the factory — for job work (returnable) or delivery to a customer (non-returnable).",
+                },
+                {
+                  label: "New Assembly Order",
+                  route: "/assembly-orders",
+                  state: { openNew: true },
+                  title: "Assembly Order",
+                  body: "Use this when all required components are in stock and you are ready to build a sub-assembly or finished OLTC. The BOM loads all components automatically.",
+                },
+                {
+                  label: "Record FAT",
+                  route: "/fat-certificates",
+                  state: undefined as any,
+                  title: "FAT Certificate",
+                  body: "Use this when testing a finished OLTC unit. Record all 12 IEC test results and mark pass or fail. A unit cannot be invoiced without a passed FAT.",
+                },
+                {
+                  label: "Raise Invoice",
+                  route: "/invoices/new",
+                  state: undefined as any,
+                  title: "Invoice",
+                  body: "Use this to bill a customer after goods are assembled, FAT-passed and ready to dispatch. Only FAT-passed serial numbers appear in the dropdown.",
+                },
+              ].map((btn) => (
+                <Tooltip key={btn.label} delayDuration={400}>
+                  <TooltipTrigger asChild>
+                    <button
+                      className="rounded-xl px-3 py-2 text-sm text-slate-300 transition-colors shrink-0"
+                      style={{ backgroundColor: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.10)" }}
+                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.12)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.07)")}
+                      onClick={() => navigate(btn.route, { state: btn.state })}
+                    >
+                      {btn.label}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-[280px]">
+                    <p className="font-semibold">{btn.title}</p>
+                    <p className="text-xs mt-1">{btn.body}</p>
+                  </TooltipContent>
+                </Tooltip>
+              )))}
+
             </div>
           </div>
         </div>
