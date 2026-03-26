@@ -121,7 +121,7 @@ export async function issueInvoice(id: string) {
 
     const { data: itemRecord } = await supabase
       .from("items")
-      .select("id, item_code, description, current_stock")
+      .select("id, item_code, description, current_stock, stock_finished_goods")
       .eq("drawing_revision", line.drawing_number)
       .eq("company_id", companyId)
       .maybeSingle();
@@ -129,7 +129,8 @@ export async function issueInvoice(id: string) {
     if (!itemRecord) continue;
     const rec = itemRecord as any;
     const newStock = Math.max(0, (rec.current_stock ?? 0) - qty);
-    await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
+    const newFinishedGoods = Math.max(0, (rec.stock_finished_goods ?? 0) - qty);
+    await supabase.from("items").update({ current_stock: newStock, stock_finished_goods: newFinishedGoods } as any).eq("id", rec.id);
     await addStockLedgerEntry({
       item_id: rec.id,
       item_code: rec.item_code,
@@ -146,6 +147,8 @@ export async function issueInvoice(id: string) {
       reference_number: (invoice as any).invoice_number,
       notes: `Invoice dispatch: ${(invoice as any).invoice_number}`,
       created_by: null,
+      from_state: "finished_goods",
+      to_state: null,
     });
   }
 }

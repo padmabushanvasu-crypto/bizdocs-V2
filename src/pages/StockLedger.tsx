@@ -46,6 +46,12 @@ export default function StockLedger() {
     pageSize: 50,
   });
 
+  const STATE_LABELS: Record<string, { label: string; cls: string }> = {
+    raw_material:    { label: "Raw Mat",   cls: "bg-slate-100 text-slate-600" },
+    wip:             { label: "WIP",       cls: "bg-amber-100 text-amber-700" },
+    finished_goods:  { label: "Finished",  cls: "bg-green-100 text-green-700" },
+  };
+
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [itemOpen, setItemOpen] = useState(false);
   const [dateFrom, setDateFrom] = useState("");
@@ -176,6 +182,22 @@ export default function StockLedger() {
           </SelectContent>
         </Select>
 
+        {/* Stock state filter */}
+        <Select
+          value={filters.stock_state ?? "all"}
+          onValueChange={(v) => setFilters((f) => ({ ...f, stock_state: v === "all" ? undefined : v, page: 1 }))}
+        >
+          <SelectTrigger className="w-[160px]">
+            <SelectValue placeholder="Stock state" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All States</SelectItem>
+            <SelectItem value="raw_material">Raw Material</SelectItem>
+            <SelectItem value="wip">WIP</SelectItem>
+            <SelectItem value="finished_goods">Finished Goods</SelectItem>
+          </SelectContent>
+        </Select>
+
         {/* Date range */}
         <div className="flex items-center gap-1">
           <Input
@@ -195,7 +217,7 @@ export default function StockLedger() {
           />
         </div>
 
-        {(selectedItem || filters.transaction_type || dateFrom || dateTo) && (
+        {(selectedItem || filters.transaction_type || dateFrom || dateTo || filters.stock_state) && (
           <Button
             variant="ghost"
             size="sm"
@@ -222,6 +244,8 @@ export default function StockLedger() {
                 <th>Description</th>
                 <th>Type</th>
                 <th>Reference</th>
+                <th>From State</th>
+                <th>To State</th>
                 <th className="text-right">Qty In</th>
                 <th className="text-right">Qty Out</th>
                 <th className="text-right">Balance</th>
@@ -232,11 +256,11 @@ export default function StockLedger() {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={10} className="text-center py-8 text-muted-foreground">Loading...</td>
+                  <td colSpan={12} className="text-center py-8 text-muted-foreground">Loading...</td>
                 </tr>
               ) : entries.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="text-center py-12">
+                  <td colSpan={12} className="text-center py-12">
                     <BookOpen className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
                     <p className="text-muted-foreground font-medium">No stock movements recorded yet</p>
                     <p className="text-sm text-muted-foreground">
@@ -279,6 +303,20 @@ export default function StockLedger() {
                             {entry.reference_number ?? "—"}
                           </span>
                         )}
+                      </td>
+                      <td>
+                        {(entry as any).from_state ? (
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${STATE_LABELS[(entry as any).from_state]?.cls ?? "bg-slate-100 text-slate-600"}`}>
+                            {STATE_LABELS[(entry as any).from_state]?.label ?? (entry as any).from_state}
+                          </span>
+                        ) : <span className="text-muted-foreground text-xs">—</span>}
+                      </td>
+                      <td>
+                        {(entry as any).to_state ? (
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${STATE_LABELS[(entry as any).to_state]?.cls ?? "bg-slate-100 text-slate-600"}`}>
+                            {STATE_LABELS[(entry as any).to_state]?.label ?? (entry as any).to_state}
+                          </span>
+                        ) : <span className="text-muted-foreground text-xs">—</span>}
                       </td>
                       <td className="text-right font-mono tabular-nums text-sm">
                         {entry.qty_in > 0 ? (

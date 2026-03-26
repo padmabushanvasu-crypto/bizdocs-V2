@@ -361,15 +361,17 @@ export async function completeJobWork(
   if (outcome === "stock" && (jc as any)?.item_id && ((jc as any)?.quantity_accepted ?? 0) > 0) {
     const { data: item } = await (supabase as any)
       .from("items")
-      .select("current_stock, item_code, description, standard_cost")
+      .select("current_stock, stock_wip, stock_finished_goods, item_code, description, standard_cost")
       .eq("id", (jc as any).item_id)
       .single();
     if (item) {
       const qtyAccepted = (jc as any).quantity_accepted;
-      const newStock = ((item as any).current_stock ?? 0) + qtyAccepted;
+      const currentStock = (item as any).current_stock ?? 0;
+      const newWip = Math.max(0, ((item as any).stock_wip ?? 0) - qtyAccepted);
+      const newFg = ((item as any).stock_finished_goods ?? 0) + qtyAccepted;
       await (supabase as any)
         .from("items")
-        .update({ current_stock: newStock })
+        .update({ stock_wip: newWip, stock_finished_goods: newFg })
         .eq("id", (jc as any).item_id);
 
       const companyId = await getCompanyId();
@@ -384,7 +386,7 @@ export async function completeJobWork(
         transaction_type: "job_card_return",
         qty_in: qtyAccepted,
         qty_out: 0,
-        balance_qty: newStock,
+        balance_qty: currentStock,
         unit_cost: (item as any)?.standard_cost ?? 0,
         total_value: qtyAccepted * ((item as any)?.standard_cost ?? 0),
         reference_type: "job_card",
@@ -392,6 +394,8 @@ export async function completeJobWork(
         reference_number: (jc as any)?.jc_number ?? null,
         notes: `Returned to stock from ${(jc as any)?.jc_number ?? "work order"}`,
         created_by: user?.id ?? null,
+        from_state: "wip",
+        to_state: "finished_goods",
       }).catch(console.error);
     }
   }
@@ -511,17 +515,18 @@ export async function issueJobCardMaterial(jobCardId: string): Promise<void> {
   // Fetch current stock and cost
   const { data: item } = await (supabase as any)
     .from("items")
-    .select("current_stock, standard_cost, item_code, description")
+    .select("current_stock, stock_raw_material, stock_wip, standard_cost, item_code, description")
     .eq("id", itemId)
     .single();
 
   const currentStock = (item as any)?.current_stock ?? 0;
-  const newStock = Math.max(0, currentStock - qty);
+  const newRawMat = Math.max(0, ((item as any)?.stock_raw_material ?? 0) - qty);
+  const newWip = ((item as any)?.stock_wip ?? 0) + qty;
 
-  // Deduct stock
+  // Move stock state: raw_material → wip (current_stock unchanged)
   await (supabase as any)
     .from("items")
-    .update({ current_stock: newStock })
+    .update({ stock_raw_material: newRawMat, stock_wip: newWip })
     .eq("id", itemId);
 
   // Write stock_ledger entry
@@ -534,7 +539,7 @@ export async function issueJobCardMaterial(jobCardId: string): Promise<void> {
     transaction_type: "job_card_issue",
     qty_in: 0,
     qty_out: qty,
-    balance_qty: newStock,
+    balance_qty: currentStock,
     unit_cost: (item as any)?.standard_cost ?? 0,
     total_value: qty * ((item as any)?.standard_cost ?? 0),
     reference_type: "job_card",
@@ -542,6 +547,8 @@ export async function issueJobCardMaterial(jobCardId: string): Promise<void> {
     reference_number: (jc as any)?.jc_number ?? null,
     notes: `Issued for ${(jc as any)?.jc_number ?? "work order"}`,
     created_by: userId,
+    from_state: "raw_material",
+    to_state: "wip",
   });
 
   logAudit("job_card", jobCardId, "Material Issued", {

@@ -15,6 +15,9 @@ export interface Item {
   gst_rate: number;
   min_stock: number;
   current_stock: number;
+  stock_raw_material: number;
+  stock_wip: number;
+  stock_finished_goods: number;
   notes: string | null;
   status: string;
   created_at: string;
@@ -31,6 +34,9 @@ export interface StockStatusRow {
   unit: string;
   item_type: string;
   current_stock: number;
+  stock_raw_material: number;
+  stock_wip: number;
+  stock_finished_goods: number;
   min_stock: number;
   min_stock_override: number | null;
   standard_cost: number;

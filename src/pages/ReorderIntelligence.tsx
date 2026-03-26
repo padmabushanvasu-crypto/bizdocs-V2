@@ -231,7 +231,8 @@ export default function ReorderIntelligence() {
                 <th>Item Code</th>
                 <th>Description</th>
                 <th>Type</th>
-                <th className="text-right">Current Stock</th>
+                <th className="text-right">Raw Stock</th>
+                <th className="text-right">Total Stock</th>
                 <th className="text-right">Min Stock</th>
                 <th className="text-right">Reorder Pt.</th>
                 <th className="text-right">Days Left</th>
@@ -246,7 +247,7 @@ export default function ReorderIntelligence() {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={13} className="text-center py-12">
+                  <td colSpan={14} className="text-center py-12">
                     <div className="flex flex-col items-center gap-2 text-muted-foreground">
                       <RefreshCw className="h-6 w-6 animate-spin opacity-40" />
                       <p>Computing reorder alerts…</p>
@@ -256,7 +257,7 @@ export default function ReorderIntelligence() {
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="text-center py-12">
+                  <td colSpan={14} className="text-center py-12">
                     {alerts.length === 0 ? (
                       <div className="flex flex-col items-center gap-2">
                         <CheckCircle2 className="h-8 w-8 text-emerald-500 opacity-60" />
@@ -298,6 +299,9 @@ export default function ReorderIntelligence() {
                         </span>
                       </td>
                       <td className={`text-right font-mono tabular-nums ${stockColor}`}>
+                        {alert.raw_stock} {alert.item_unit}
+                      </td>
+                      <td className="text-right font-mono tabular-nums text-muted-foreground">
                         {alert.current_stock} {alert.item_unit}
                       </td>
                       <td className="text-right font-mono tabular-nums text-muted-foreground">

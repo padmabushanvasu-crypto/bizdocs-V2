@@ -98,6 +98,7 @@ export interface StockLedgerEntry {
     | "grn_receipt"
     | "job_card_issue"
     | "job_card_return"
+    | "job_work_return"
     | "assembly_consumption"
     | "assembly_output"
     | "invoice_dispatch"
@@ -117,6 +118,8 @@ export interface StockLedgerEntry {
   notes: string | null;
   created_by: string | null;
   created_at: string;
+  from_state?: string | null;
+  to_state?: string | null;
 }
 
 export interface AssemblyOrderFilters {
@@ -131,6 +134,7 @@ export interface StockLedgerFilters {
   transaction_type?: string;
   date_from?: string;
   date_to?: string;
+  stock_state?: string;
   page?: number;
   pageSize?: number;
 }
@@ -644,7 +648,7 @@ export async function deleteBomLine(id: string): Promise<void> {
 // ============================================================
 
 export async function fetchStockLedger(filters: StockLedgerFilters = {}) {
-  const { item_id, transaction_type, date_from, date_to, page = 1, pageSize = 50 } = filters;
+  const { item_id, transaction_type, date_from, date_to, stock_state, page = 1, pageSize = 50 } = filters;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
@@ -660,6 +664,11 @@ export async function fetchStockLedger(filters: StockLedgerFilters = {}) {
     query = query.eq("transaction_type", transaction_type);
   if (date_from) query = query.gte("transaction_date", date_from);
   if (date_to) query = query.lte("transaction_date", date_to);
+  if (stock_state && stock_state !== "all") {
+    if (stock_state === "in") query = query.not("to_state", "is", null);
+    else if (stock_state === "out") query = query.not("from_state", "is", null);
+    else query = query.or(`from_state.eq.${stock_state},to_state.eq.${stock_state}`);
+  }
 
   const { data, error, count } = await query;
   if (error) throw error;

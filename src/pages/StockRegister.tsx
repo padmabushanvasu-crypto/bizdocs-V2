@@ -94,6 +94,16 @@ function InlineEditCell({
   );
 }
 
+type TypeTab = "all" | "raw_material" | "component" | "finished_good" | "bought_out";
+
+const TYPE_TABS: { value: TypeTab; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "raw_material", label: "Raw Materials" },
+  { value: "component", label: "Components" },
+  { value: "finished_good", label: "Finished Goods" },
+  { value: "bought_out", label: "Bought-Out" },
+];
+
 export default function StockRegister() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -104,8 +114,15 @@ export default function StockRegister() {
   });
 
   const [statusFilter, setStatusFilter] = useState<"all" | "green" | "amber" | "red">("all");
+  const [typeTab, setTypeTab] = useState<TypeTab>("all");
 
-  const filtered = statusFilter === "all" ? rows : rows.filter((r) => r.stock_status === statusFilter);
+  const filtered = rows
+    .filter((r) => statusFilter === "all" || r.stock_status === statusFilter)
+    .filter((r) => {
+      if (typeTab === "all") return true;
+      if (typeTab === "component") return r.item_type === "component" || r.item_type === "sub_assembly";
+      return r.item_type === typeTab;
+    });
 
   const counts = {
     green: rows.filter((r) => r.stock_status === "green").length,
@@ -164,6 +181,23 @@ export default function StockRegister() {
         })}
       </div>
 
+      {/* Type tab bar */}
+      <div className="flex gap-1 border-b border-slate-200">
+        {TYPE_TABS.map((tab) => (
+          <button
+            key={tab.value}
+            onClick={() => setTypeTab(tab.value)}
+            className={`px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
+              typeTab === tab.value
+                ? "border-b-2 border-blue-600 text-blue-600"
+                : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       <div className="paper-card !p-0">
         <div className="overflow-x-auto">
           <table className="w-full data-table">
@@ -172,7 +206,10 @@ export default function StockRegister() {
                 <th>Code</th>
                 <th>Description</th>
                 <th>Unit</th>
-                <th className="text-right">Current Stock</th>
+                <th className="text-right">Raw Mat</th>
+                <th className="text-right">WIP</th>
+                <th className="text-right">Finished</th>
+                <th className="text-right">Total</th>
                 <th className="text-right">Min Stock</th>
                 <th className="text-right">Min Override</th>
                 <th className="text-right">Effective Min</th>
@@ -182,9 +219,9 @@ export default function StockRegister() {
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={9} className="text-center py-8 text-muted-foreground">Loading...</td></tr>
+                <tr><td colSpan={12} className="text-center py-8 text-muted-foreground">Loading...</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={9} className="text-center py-8 text-muted-foreground">No items found.</td></tr>
+                <tr><td colSpan={12} className="text-center py-8 text-muted-foreground">No items found.</td></tr>
               ) : (
                 filtered.map((row) => (
                   <tr
@@ -194,7 +231,22 @@ export default function StockRegister() {
                     <td className="font-mono text-xs font-medium text-foreground">{row.item_code}</td>
                     <td className="font-medium">{row.description}</td>
                     <td className="text-muted-foreground">{row.unit}</td>
-                    <td className="text-right font-mono tabular-nums">{row.current_stock}</td>
+                    <td className="text-right font-mono tabular-nums text-slate-600">
+                      {(row.stock_raw_material ?? 0) > 0 ? (
+                        <span className="px-1.5 py-0.5 rounded text-xs bg-slate-100 text-slate-600">{row.stock_raw_material ?? 0}</span>
+                      ) : <span className="text-muted-foreground text-xs">—</span>}
+                    </td>
+                    <td className="text-right font-mono tabular-nums text-amber-700">
+                      {(row.stock_wip ?? 0) > 0 ? (
+                        <span className="px-1.5 py-0.5 rounded text-xs bg-amber-100 text-amber-700">{row.stock_wip ?? 0}</span>
+                      ) : <span className="text-muted-foreground text-xs">—</span>}
+                    </td>
+                    <td className="text-right font-mono tabular-nums text-green-700">
+                      {(row.stock_finished_goods ?? 0) > 0 ? (
+                        <span className="px-1.5 py-0.5 rounded text-xs bg-green-100 text-green-700">{row.stock_finished_goods ?? 0}</span>
+                      ) : <span className="text-muted-foreground text-xs">—</span>}
+                    </td>
+                    <td className="text-right font-mono tabular-nums font-semibold">{row.current_stock}</td>
                     <td className="text-right font-mono tabular-nums text-muted-foreground">{row.min_stock}</td>
                     <td className="text-right">
                       <InlineEditCell

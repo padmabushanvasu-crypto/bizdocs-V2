@@ -33,6 +33,7 @@ export interface ReorderAlert {
   item_type: string;
   item_unit: string;
   current_stock: number;
+  raw_stock: number;
   min_stock: number;
   reorder_point: number;
   reorder_qty: number;
@@ -137,7 +138,7 @@ export async function fetchReorderAlerts(): Promise<ReorderAlert[]> {
   // 2. Fetch items that might need reordering (min_stock > 0 OR has a rule)
   let itemsQuery = (supabase as any)
     .from("items")
-    .select("id, item_code, description, item_type, unit, current_stock, min_stock, standard_cost")
+    .select("id, item_code, description, item_type, unit, current_stock, stock_raw_material, min_stock, standard_cost")
     .eq("status", "active");
 
   if (ruleItemIds.length > 0) {
@@ -197,28 +198,32 @@ export async function fetchReorderAlerts(): Promise<ReorderAlert[]> {
     const preferredVendorName: string | null = preferredVendorId ? (vendorMap[preferredVendorId] ?? null) : null;
 
     const currentStock: number = Number(item.current_stock) || 0;
+    const rawStock: number = Number(item.stock_raw_material) || 0;
     const minStock: number = Number(item.min_stock) || 0;
+    // For raw material / bought-out items, use stock_raw_material for alert calculation
+    const useRawStock = item.item_type === "raw_material" || item.item_type === "bought_out";
+    const alertStock: number = useRawStock ? rawStock : currentStock;
 
     if (reorderPoint <= 0 && minStock <= 0) continue;
 
     const totalConsumption: number = consumptionMap[item.id] || 0;
     const consumptionRatePerDay: number = totalConsumption / 90;
     const daysOfStockRemaining: number =
-      consumptionRatePerDay > 0 ? Math.floor(currentStock / consumptionRatePerDay) : 999;
+      consumptionRatePerDay > 0 ? Math.floor(alertStock / consumptionRatePerDay) : 999;
 
     const openAOReq: number = aoRequirements[item.id] || 0;
     const rawRecommended: number = Math.max(
       reorderQty,
-      Math.max(0, consumptionRatePerDay * leadTimeDays - currentStock + openAOReq)
+      Math.max(0, consumptionRatePerDay * leadTimeDays - alertStock + openAOReq)
     );
     const recommendedOrderQty: number = Math.ceil(rawRecommended);
 
     let alertLevel: "critical" | "warning" | "watch" | null = null;
-    if (currentStock <= minStock) {
+    if (alertStock <= minStock) {
       alertLevel = "critical";
-    } else if (reorderPoint > 0 && currentStock <= reorderPoint) {
+    } else if (reorderPoint > 0 && alertStock <= reorderPoint) {
       alertLevel = "warning";
-    } else if (reorderPoint > 0 && currentStock <= reorderPoint * 1.2) {
+    } else if (reorderPoint > 0 && alertStock <= reorderPoint * 1.2) {
       alertLevel = "watch";
     }
 
@@ -231,6 +236,7 @@ export async function fetchReorderAlerts(): Promise<ReorderAlert[]> {
       item_type: item.item_type,
       item_unit: item.unit || "NOS",
       current_stock: currentStock,
+      raw_stock: rawStock,
       min_stock: minStock,
       reorder_point: reorderPoint,
       reorder_qty: reorderQty,

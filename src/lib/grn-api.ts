@@ -157,7 +157,7 @@ export async function recordGRNAndUpdatePO(grnData: CreateGRNData) {
     if (item.accepted_quantity > 0 && item.drawing_number) {
       const { data: itemRecord } = await supabase
         .from("items")
-        .select("id, item_code, description, current_stock")
+        .select("id, item_code, description, current_stock, stock_raw_material")
         .eq("drawing_revision", item.drawing_number)
         .eq("company_id", companyId)
         .maybeSingle();
@@ -165,7 +165,8 @@ export async function recordGRNAndUpdatePO(grnData: CreateGRNData) {
       if (itemRecord) {
         const rec = itemRecord as any;
         const newStock = (rec.current_stock ?? 0) + item.accepted_quantity;
-        await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
+        const newRawMat = (rec.stock_raw_material ?? 0) + item.accepted_quantity;
+        await supabase.from("items").update({ current_stock: newStock, stock_raw_material: newRawMat } as any).eq("id", rec.id);
         await addStockLedgerEntry({
           item_id: rec.id,
           item_code: rec.item_code,
@@ -182,6 +183,8 @@ export async function recordGRNAndUpdatePO(grnData: CreateGRNData) {
           reference_number: grn.grn_number,
           notes: `GRN receipt: ${grn.grn_number}`,
           created_by: null,
+          from_state: null,
+          to_state: "raw_material",
         });
       }
     }
