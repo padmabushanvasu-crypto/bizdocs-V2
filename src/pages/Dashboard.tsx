@@ -1,123 +1,118 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import {
-  FileText, Truck, ShoppingCart,
-  Activity, Factory, Clock, Layers, ShoppingBag,
-  CheckCircle2,
-} from "lucide-react";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Activity, CheckCircle2 } from "lucide-react";
 import { formatCurrency } from "@/lib/gst-utils";
-import { fetchWipSummary, fetchWipRegister } from "@/lib/job-works-api";
+import { fetchWipSummary } from "@/lib/job-works-api";
 import { fetchAssemblyOrderStats } from "@/lib/assembly-orders-api";
 import { fetchFatStats } from "@/lib/fat-api";
-import { fetchRecentSalesOrders } from "@/lib/sales-orders-api";
-import { fetchReorderSummary, fetchReorderAlerts } from "@/lib/reorder-api";
+import { fetchReorderAlerts } from "@/lib/reorder-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
+import { fetchAllAuditLog, type AuditEntry } from "@/lib/audit-api";
 import { supabase } from "@/integrations/supabase/client";
-import { format, startOfMonth, addMonths } from "date-fns";
+import { format } from "date-fns";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface RecentDoc {
-  type: "INV" | "DC" | "PO";
-  number: string | null;
-  party: string | null;
-  amount: number | null;
-  status: string | null;
-  updated_at: string;
-  route: string;
+interface DashboardData {
+  thisMonthRevenue: number;
+  fyRevenue: number;
+  overdueInvoiceCount: number;
+  openPOValue: number;
+  overdueDCCount: number;
+  rawMaterialCount: number;
+  componentCount: number;
+  finishedGoodCount: number;
+  zeroStockCount: number;
+}
+
+interface ReadyToShipRow {
+  id: string;
+  serial_number: string;
+  item_code: string | null;
+  item_description: string | null;
+  fat_completed_at: string | null;
+  created_at: string;
 }
 
 // ─── Data fetching ───────────────────────────────────────────────────────────
 
-async function fetchAnalytics() {
+async function fetchDashboardData(): Promise<DashboardData> {
   const now = new Date();
-  const startStr = format(startOfMonth(now), "yyyy-MM-dd");
-  const endStr = format(now, "yyyy-MM-dd");
-  const today = format(now, "yyyy-MM-dd");
+  const todayStr = format(now, "yyyy-MM-dd");
+  const monthStart = format(new Date(now.getFullYear(), now.getMonth(), 1), "yyyy-MM-dd");
+  const fyYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+  const fyStart = format(new Date(fyYear, 3, 1), "yyyy-MM-dd");
 
-  const [invsRes, openPOsRes, openDCsRes, recentInvsRes, recentDCsRes, recentPOsRes] =
-    await Promise.all([
-      supabase
-        .from("invoices")
-        .select("cgst_amount, sgst_amount, igst_amount, total_gst")
-        .gte("invoice_date", startStr)
-        .lte("invoice_date", endStr)
-        .neq("status", "cancelled"),
-      supabase
-        .from("purchase_orders")
-        .select("id, po_number, vendor_name, po_date, status, grand_total")
-        .in("status", ["issued", "partially_received"])
-        .order("po_date", { ascending: false })
-        .limit(4),
-      supabase
-        .from("delivery_challans")
-        .select("id, dc_number, party_name, dc_date, return_due_date, status")
-        .eq("status", "issued")
-        .order("dc_date", { ascending: false })
-        .limit(4),
-      supabase
-        .from("invoices")
-        .select("id, invoice_number, customer_name, grand_total, status, updated_at")
-        .neq("status", "cancelled")
-        .order("updated_at", { ascending: false })
-        .limit(5),
-      supabase
-        .from("delivery_challans")
-        .select("id, dc_number, party_name, grand_total, status, updated_at")
-        .neq("status", "cancelled")
-        .order("updated_at", { ascending: false })
-        .limit(5),
-      supabase
-        .from("purchase_orders")
-        .select("id, po_number, vendor_name, grand_total, status, updated_at")
-        .neq("status", "cancelled")
-        .order("updated_at", { ascending: false })
-        .limit(5),
-    ]);
+  const [invsRes, openPOsRes, openDCsRes, itemsRes] = await Promise.all([
+    supabase
+      .from("invoices")
+      .select("grand_total, invoice_date, due_date, status")
+      .gte("invoice_date", fyStart)
+      .neq("status", "cancelled"),
+    supabase
+      .from("purchase_orders")
+      .select("grand_total")
+      .in("status", ["issued", "partially_received"]),
+    supabase
+      .from("delivery_challans")
+      .select("dc_type, return_due_date")
+      .eq("status", "issued"),
+    supabase
+      .from("items")
+      .select("item_type, current_stock")
+      .eq("is_active", true),
+  ]);
 
-  const invoices = invsRes.data ?? [];
-  const openPOs = openPOsRes.data ?? [];
-  const openDCs = openDCsRes.data ?? [];
+  const invoices = (invsRes.data ?? []) as any[];
+  const openPOs  = (openPOsRes.data ?? []) as any[];
+  const openDCs  = (openDCsRes.data ?? []) as any[];
+  const items    = (itemsRes.data ?? []) as any[];
 
-  const gstCGST = invoices.reduce((s, i) => s + (i.cgst_amount ?? 0), 0);
-  const gstSGST = invoices.reduce((s, i) => s + (i.sgst_amount ?? 0), 0);
-  const gstIGST = invoices.reduce((s, i) => s + (i.igst_amount ?? 0), 0);
-  const gstTotal = gstCGST + gstSGST + gstIGST;
+  const thisMonthRevenue = invoices
+    .filter((i) => i.invoice_date >= monthStart)
+    .reduce((s, i) => s + (i.grand_total ?? 0), 0);
+  const fyRevenue = invoices.reduce((s, i) => s + (i.grand_total ?? 0), 0);
+  const overdueInvoiceCount = invoices.filter(
+    (i) => i.due_date && i.due_date < todayStr && i.status !== "paid" && i.status !== "cancelled"
+  ).length;
+  const openPOValue = openPOs.reduce((s, p) => s + (p.grand_total ?? 0), 0);
+  const overdueDCCount = openDCs.filter(
+    (dc) => dc.dc_type === "returnable" && dc.return_due_date && dc.return_due_date < todayStr
+  ).length;
 
-  const recentDocs: RecentDoc[] = [
-    ...(recentInvsRes.data ?? []).map((d) => ({
-      type: "INV" as const,
-      number: d.invoice_number,
-      party: d.customer_name,
-      amount: d.grand_total,
-      status: d.status,
-      updated_at: d.updated_at,
-      route: `/invoices/${d.id}`,
-    })),
-    ...(recentDCsRes.data ?? []).map((d) => ({
-      type: "DC" as const,
-      number: d.dc_number,
-      party: d.party_name,
-      amount: d.grand_total,
-      status: d.status,
-      updated_at: d.updated_at,
-      route: `/delivery-challans/${d.id}`,
-    })),
-    ...(recentPOsRes.data ?? []).map((d) => ({
-      type: "PO" as const,
-      number: d.po_number,
-      party: d.vendor_name,
-      amount: d.grand_total,
-      status: d.status,
-      updated_at: d.updated_at,
-      route: `/purchase-orders/${d.id}`,
-    })),
-  ]
-    .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-    .slice(0, 8);
+  const rawMaterialCount = items.filter(
+    (i) => i.item_type === "raw_material" && (i.current_stock ?? 0) > 0
+  ).length;
+  const componentCount = items.filter(
+    (i) => (i.item_type === "component" || i.item_type === "sub_assembly") && (i.current_stock ?? 0) > 0
+  ).length;
+  const finishedGoodCount = items.filter(
+    (i) => i.item_type === "finished_good" && (i.current_stock ?? 0) > 0
+  ).length;
+  const zeroStockCount = items.filter((i) => (i.current_stock ?? 0) === 0).length;
 
-  return { gstCGST, gstSGST, gstIGST, gstTotal, openPOs, openDCs, recentDocs, today };
+  return {
+    thisMonthRevenue, fyRevenue, overdueInvoiceCount,
+    openPOValue, overdueDCCount,
+    rawMaterialCount, componentCount, finishedGoodCount, zeroStockCount,
+  };
+}
+
+async function fetchReadyToShip(): Promise<ReadyToShipRow[]> {
+  const { data, error } = await supabase
+    .from("serial_numbers")
+    .select("id, serial_number, item_code, item_description, fat_completed_at, created_at")
+    .eq("fat_completed", true)
+    .is("invoice_id", null)
+    .eq("status", "in_stock")
+    .order("fat_completed_at", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as ReadyToShipRow[];
+}
+
+async function fetchRecentActivity(): Promise<AuditEntry[]> {
+  const { data } = await fetchAllAuditLog({ pageSize: 10, page: 1 });
+  return data;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -132,108 +127,144 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-function daysOut(dateStr: string): number {
-  return Math.max(0, Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000));
+function daysSince(dateStr: string | null): number {
+  if (!dateStr) return 0;
+  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
 }
 
-const typeTag: Record<string, { label: string; cls: string }> = {
-  INV: { label: "INV", cls: "bg-emerald-100 text-emerald-800" },
-  DC:  { label: "DC",  cls: "bg-amber-100 text-amber-800" },
-  PO:  { label: "PO",  cls: "bg-blue-100 text-blue-800" },
+const DOC_TAGS: Record<string, { cls: string; label: string }> = {
+  invoice:          { cls: "bg-emerald-100 text-emerald-800", label: "INV" },
+  delivery_challan: { cls: "bg-amber-100 text-amber-800",    label: "DC"  },
+  purchase_order:   { cls: "bg-blue-100 text-blue-800",      label: "PO"  },
+  job_work:         { cls: "bg-violet-100 text-violet-800",  label: "JW"  },
+  assembly_order:   { cls: "bg-cyan-100 text-cyan-800",      label: "AO"  },
+  fat_certificate:  { cls: "bg-rose-100 text-rose-800",      label: "FAT" },
+  grn:              { cls: "bg-teal-100 text-teal-800",      label: "GRN" },
 };
 
-// Badge shown inside dark panels — green if zero, red if non-zero
-function StatBadge({ count }: { count: number | undefined }) {
-  if (count === undefined) return null;
-  if (count === 0) {
-    return (
-      <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-green-500/12 text-green-400 border border-green-500/20 flex items-center gap-1">
-        <CheckCircle2 className="h-3 w-3" /> clear
-      </span>
-    );
-  }
+function docTag(type: string) {
+  return DOC_TAGS[type] ?? { cls: "bg-slate-100 text-slate-700", label: type.slice(0, 3).toUpperCase() };
+}
+
+// ─── Small components ─────────────────────────────────────────────────────────
+
+function AlertPill({
+  label, count, colour, onClick,
+}: {
+  label: string;
+  count: number;
+  colour: "red" | "amber" | "green";
+  onClick?: () => void;
+}) {
+  const s = {
+    red:   { wrap: "bg-red-50 border-red-200 text-red-700",     dot: "bg-red-500",   badge: "bg-red-100 text-red-800"   },
+    amber: { wrap: "bg-amber-50 border-amber-200 text-amber-700", dot: "bg-amber-500", badge: "bg-amber-100 text-amber-800" },
+    green: { wrap: "bg-green-50 border-green-200 text-green-700", dot: "bg-green-500", badge: "bg-green-100 text-green-800" },
+  }[colour];
   return (
-    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-500/15 text-red-400">
-      {count}
-    </span>
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium hover:opacity-80 shrink-0 transition-opacity ${s.wrap}`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${s.dot}`} />
+      {label}
+      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ml-0.5 ${s.badge}`}>{count}</span>
+    </button>
   );
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
+function LightStatRow({
+  label, value, highlight, onClick,
+}: {
+  label: string;
+  value: React.ReactNode;
+  highlight?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <div
+      className={`flex items-center justify-between py-2 border-b border-slate-100 last:border-0 ${onClick ? "cursor-pointer hover:bg-slate-50 -mx-4 px-4 transition-colors" : ""}`}
+      onClick={onClick}
+    >
+      <span className="text-sm text-slate-600">{label}</span>
+      <span className={`text-sm font-semibold tabular-nums font-mono ${highlight ? "text-red-600" : "text-slate-900"}`}>{value}</span>
+    </div>
+  );
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
   const navigate = useNavigate();
-
-  const { data: analytics } = useQuery({
-    queryKey: ["dashboard-analytics-v2"],
-    queryFn: fetchAnalytics,
-    refetchInterval: 60000,
-  });
-
-  const { data: wipSummary } = useQuery({
-    queryKey: ["wip-summary-dashboard"],
-    queryFn: fetchWipSummary,
-    refetchInterval: 60000,
-  });
-
-  const { data: wipRows = [] } = useQuery({
-    queryKey: ["wip-register-dashboard"],
-    queryFn: () => fetchWipRegister({}),
-    refetchInterval: 30000,
-  });
-  const activeJCs = wipRows.slice(0, 6);
-
-  const { data: aoStats } = useQuery({
-    queryKey: ["ao-stats-dashboard"],
-    queryFn: fetchAssemblyOrderStats,
-    refetchInterval: 60000,
-  });
-
-  const { data: fatStats } = useQuery({
-    queryKey: ["fat-stats-dashboard"],
-    queryFn: fetchFatStats,
-    refetchInterval: 60000,
-  });
-
-  const { data: recentSOs = [] } = useQuery({
-    queryKey: ["recent-sales-orders-dashboard"],
-    queryFn: () => fetchRecentSalesOrders(4),
-    refetchInterval: 60000,
-  });
-
-  const { data: reorderSummary } = useQuery({
-    queryKey: ["reorder-summary-dashboard"],
-    queryFn: fetchReorderSummary,
-    refetchInterval: 60000,
-  });
+  const STALE = 5 * 60 * 1000;
 
   const { data: companySettings } = useQuery({
-    queryKey: ["company-settings-dashboard"],
+    queryKey: ["company-settings-db"],
     queryFn: fetchCompanySettings,
-    staleTime: 300000,
+    staleTime: Infinity,
   });
-
+  const { data: wipSummary } = useQuery({
+    queryKey: ["wip-summary-db"],
+    queryFn: fetchWipSummary,
+    staleTime: STALE,
+    refetchInterval: STALE,
+  });
+  const { data: aoStats } = useQuery({
+    queryKey: ["ao-stats-db"],
+    queryFn: fetchAssemblyOrderStats,
+    staleTime: STALE,
+    refetchInterval: STALE,
+  });
+  const { data: fatStats } = useQuery({
+    queryKey: ["fat-stats-db"],
+    queryFn: fetchFatStats,
+    staleTime: STALE,
+    refetchInterval: STALE,
+  });
   const { data: reorderAlerts = [] } = useQuery({
-    queryKey: ["dashboard-reorder-alerts"],
+    queryKey: ["reorder-alerts-db"],
     queryFn: fetchReorderAlerts,
-    staleTime: 5 * 60 * 1000,
+    staleTime: STALE,
+    refetchInterval: STALE,
+  });
+  const { data: dashData } = useQuery({
+    queryKey: ["dashboard-data-v3"],
+    queryFn: fetchDashboardData,
+    staleTime: STALE,
+    refetchInterval: STALE,
+  });
+  const { data: readyToShip = [] } = useQuery({
+    queryKey: ["ready-to-ship-db"],
+    queryFn: fetchReadyToShip,
+    staleTime: STALE,
+    refetchInterval: STALE,
+  });
+  const { data: recentActivity = [] } = useQuery({
+    queryKey: ["recent-activity-db"],
+    queryFn: fetchRecentActivity,
+    staleTime: STALE,
+    refetchInterval: STALE,
   });
 
-  const criticalCount = reorderAlerts.filter((a) => a.alert_level === "critical").length;
+  // Derived alert counts
+  const overdueDCReturns  = dashData?.overdueDCCount ?? 0;
+  const jobWorksOverdue   = wipSummary?.overdueReturns ?? 0;
+  const zeroStockItems    = dashData?.zeroStockCount ?? 0;
+  const reorderAlertCount = reorderAlerts.length;
+  const fatPending        = fatStats?.pending ?? 0;
+  const uninvoicedUnits   = readyToShip.length;
+  const readyToAssemble   = aoStats?.draft ?? 0;
 
+  const totalAlerts = overdueDCReturns + jobWorksOverdue + zeroStockItems + reorderAlertCount + fatPending + uninvoicedUnits;
+  const allClear = totalAlerts === 0;
+
+  // Company info
   const hour = new Date().getHours();
-  const greetingWord = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   const todayStr = format(new Date(), "EEEE, d MMMM yyyy");
   const companyName = companySettings?.company_name ?? "BizDocs";
 
-  // Critical alert count for the header pill
-  const overdueReturns = wipSummary?.overdueReturns ?? 0;
-  const fatPending = fatStats?.pending ?? 0;
-  const reorderCritical = reorderSummary?.critical ?? 0;
-  const totalAlerts = overdueReturns + fatPending + reorderCritical;
-  const allClear = totalAlerts === 0;
-
-  // GSTR-3B due date: 20th of the current month if today < 20, else 20th of next month
+  // GSTR-3B due date
   const _now = new Date();
   const gstr3bDue = new Date(_now.getFullYear(), _now.getMonth(), 20);
   if (_now.getDate() >= 20) gstr3bDue.setMonth(gstr3bDue.getMonth() + 1);
@@ -243,750 +274,274 @@ export default function Dashboard() {
   return (
     <div className="flex flex-col min-h-screen">
 
-      {/* ── ZONE 1: DARK TOP SECTION ─────────────────────────────────────── */}
-      <div
-        className="px-4 pt-5 pb-7 lg:px-7 lg:pt-6 lg:pb-8"
-        style={{ backgroundColor: "#0F172A" }}
-      >
-        {/* Header row — stacks on mobile, side-by-side on desktop */}
+      {/* ── ZONE 1: DARK TOP ────────────────────────────────────────── */}
+      <div className="px-4 pt-5 pb-7 lg:px-7 lg:pt-6 lg:pb-8" style={{ backgroundColor: "#0F172A" }}>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between lg:gap-4">
 
           {/* Company info */}
           <div>
-            <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-1">
-              {greetingWord}
-            </p>
+            <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-1">{greeting}</p>
             <h1 className="text-lg lg:text-xl font-bold text-slate-100 tracking-tight">{companyName}</h1>
             <p className="text-xs text-slate-600 mt-0.5">{todayStr}</p>
           </div>
 
           {/* Alert pill + action buttons */}
           <div className="flex flex-col gap-2 lg:items-end">
-            {/* Alert pill */}
             {allClear ? (
-              <span className="self-start flex items-center gap-1.5 text-xs font-medium text-green-400 px-3 py-1 rounded-full border w-fit"
-                style={{ backgroundColor: "rgba(34,197,94,0.08)", borderColor: "rgba(34,197,94,0.2)" }}>
-                <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
-                All clear
+              <span
+                className="self-start flex items-center gap-1.5 text-xs font-medium text-green-400 px-3 py-1 rounded-full border w-fit"
+                style={{ backgroundColor: "rgba(34,197,94,0.08)", borderColor: "rgba(34,197,94,0.2)" }}
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-green-400" /> All clear
               </span>
             ) : (
-              <span className="self-start flex items-center gap-1.5 text-xs font-medium text-red-400 px-3 py-1 rounded-full border w-fit"
-                style={{ backgroundColor: "rgba(239,68,68,0.08)", borderColor: "rgba(239,68,68,0.2)" }}>
-                <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
+              <span
+                className="self-start flex items-center gap-1.5 text-xs font-medium text-red-400 px-3 py-1 rounded-full border w-fit"
+                style={{ backgroundColor: "rgba(239,68,68,0.08)", borderColor: "rgba(239,68,68,0.2)" }}
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-red-400 animate-pulse" />
                 {totalAlerts} alert{totalAlerts !== 1 ? "s" : ""}
               </span>
             )}
 
-            {/* Buttons — horizontally scrollable on mobile, wrapping on desktop */}
+            {/* 7 quick action buttons — production flow order */}
             <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 lg:mx-0 lg:px-0 lg:overflow-x-visible lg:flex-wrap lg:justify-end">
-              <Tooltip delayDuration={400}>
-                <TooltipTrigger asChild>
+              {([
+                { label: "Raise PO",           route: "/purchase-orders/new",  state: undefined, primary: true  },
+                { label: "Record GRN",         route: "/grn/new",              state: undefined, primary: false },
+                { label: "New Job Work",       route: "/job-works",            state: { openNew: true }, primary: false },
+                { label: "New DC",             route: "/delivery-challans/new",state: undefined, primary: false },
+                { label: "New Assembly Order", route: "/assembly-orders",      state: { openNew: true }, primary: false },
+                { label: "Record FAT",         route: "/fat-certificates",     state: undefined, primary: false },
+                { label: "Raise Invoice",      route: "/invoices/new",         state: undefined, primary: false },
+              ] as const).map((btn) =>
+                btn.primary ? (
                   <button
+                    key={btn.label}
                     className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white transition-colors shrink-0"
                     style={{ backgroundColor: "#2563EB" }}
-                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#1D4ED8")}
-                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = "#2563EB")}
-                    onClick={() => navigate("/job-works", { state: { openNew: true } })}
+                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#1D4ED8")}
+                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#2563EB")}
+                    onClick={() => navigate(btn.route, { state: btn.state })}
                   >
-                    <Activity className="h-3.5 w-3.5" />
-                    New Job Work
+                    {btn.label}
                   </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" className="max-w-[280px]">
-                  <p className="font-bold">Job Work</p>
-                  <p className="font-normal mt-0.5">Use this when you are sending a component out for job work — CNC machining, plating, welding, or any external process. One Job Work per component per batch.</p>
-                </TooltipContent>
-              </Tooltip>
-              {[
-                {
-                  label: "Sales Order",
-                  route: "/sales-orders/new",
-                  tooltipTitle: "Sales Order",
-                  tooltipBody: "Use this when a customer places an order. Record their PO number, product, quantity and delivery date before starting production.",
-                },
-                {
-                  label: "Dispatch Note",
-                  route: "/dispatch-notes/new",
-                  tooltipTitle: "Dispatch Note",
-                  tooltipBody: "Use this when goods are physically leaving the factory for a customer delivery. Has vehicle number, driver, LR number and packing list.",
-                },
-                {
-                  label: "Assembly Order",
-                  route: "/assembly-orders",
-                  state: { openNew: true },
-                  tooltipTitle: "Assembly Order",
-                  tooltipBody: "Use this when you are ready to build a sub-assembly or finished OLTC from components already in stock. The BOM loads all required components automatically.",
-                },
-                {
-                  label: "GRN",
-                  route: "/grn/new",
-                  tooltipTitle: "GRN — Goods Receipt",
-                  tooltipBody: "Use this when purchased materials arrive at the factory. Link it to the original PO and record accepted vs rejected quantities. Stock updates automatically.",
-                },
-                {
-                  label: "PO",
-                  route: "/purchase-orders/new",
-                  tooltipTitle: "Purchase Order",
-                  tooltipBody: "Use this when buying raw materials or bought-out items from a vendor. Raise a PO before the material arrives so you can record a GRN against it.",
-                },
-                {
-                  label: "DC",
-                  route: "/delivery-challans/new",
-                  tooltipTitle: "Delivery Challan",
-                  tooltipBody: "Use this when goods are physically leaving the factory — either for job work (returnable) or for delivery to a customer (non-returnable).",
-                },
-                {
-                  label: "Invoice",
-                  route: "/invoices/new",
-                  tooltipTitle: "Invoice",
-                  tooltipBody: "Use this to bill a customer after goods are assembled, FAT-passed, and ready to dispatch.",
-                },
-              ].map((btn) => (
-                <Tooltip key={btn.label} delayDuration={400}>
-                  <TooltipTrigger asChild>
-                    <button
-                      className="rounded-xl px-3 py-2 text-sm text-slate-300 transition-colors shrink-0"
-                      style={{ backgroundColor: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.10)" }}
-                      onMouseEnter={e => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.12)")}
-                      onMouseLeave={e => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.07)")}
-                      onClick={() => navigate(btn.route, { state: (btn as any).state })}
-                    >
-                      {btn.label}
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-[280px]">
-                    <p className="font-bold">{btn.tooltipTitle}</p>
-                    <p className="font-normal mt-0.5">{btn.tooltipBody}</p>
-                  </TooltipContent>
-                </Tooltip>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Three stat panels — single column on mobile, 3-col on desktop */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mt-5">
-
-          {/* Panel 1 — Production */}
-          <div
-            className="rounded-xl p-4 lg:p-5"
-            style={{ backgroundColor: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}
-          >
-            <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-4">
-              Production
-            </p>
-            <div>
-              <div className="flex items-center justify-between py-2.5">
-                <span className="text-sm text-slate-400">Job Works</span>
-                <span className="text-xl font-bold text-slate-100 font-mono tabular-nums">
-                  {wipSummary?.atVendor !== undefined ? activeJCs.length : "—"}
-                </span>
-              </div>
-              <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }} />
-              <div className="flex items-center justify-between py-2.5">
-                <span className="text-sm text-slate-400">Assembly Orders</span>
-                <span className="text-xl font-bold text-slate-100 font-mono tabular-nums">
-                  {aoStats?.active ?? "—"}
-                </span>
-              </div>
-              <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }} />
-              <div className="flex items-center justify-between py-2.5">
-                <span className="text-sm text-slate-400">FAT Pending</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-xl font-bold text-slate-100 font-mono tabular-nums">
-                    {fatStats ? fatStats.pending : "—"}
-                  </span>
-                  <StatBadge count={fatStats?.pending} />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Panel 2 — Purchasing & Stock */}
-          <div
-            className="rounded-xl p-4 lg:p-5"
-            style={{ backgroundColor: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}
-          >
-            <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-4">
-              Purchasing & Stock
-            </p>
-            <div>
-              <div className="flex items-center justify-between py-2.5 cursor-pointer group" onClick={() => navigate("/wip-register?location=at_vendor")}>
-                <span className="text-sm text-slate-400 group-hover:text-slate-300 transition-colors">At Vendors</span>
-                <span className="text-xl font-bold text-slate-100 font-mono tabular-nums">
-                  {wipSummary?.atVendor ?? "—"}
-                </span>
-              </div>
-              <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }} />
-              <div className="flex items-center justify-between py-2.5 cursor-pointer group" onClick={() => navigate("/wip-register?overdue=true")}>
-                <span className="text-sm text-slate-400 group-hover:text-slate-300 transition-colors">Overdue Returns</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-xl font-bold text-slate-100 font-mono tabular-nums">
-                    {wipSummary ? wipSummary.overdueReturns : "—"}
-                  </span>
-                  <StatBadge count={wipSummary?.overdueReturns} />
-                </div>
-              </div>
-              <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }} />
-              <div className="flex items-center justify-between py-2.5">
-                <span className="text-sm text-slate-400">Reorder Alerts</span>
-                {reorderAlerts.length === 0 ? (
-                  <span style={{ fontSize: "10px", color: "#22C55E" }}>all healthy ✓</span>
                 ) : (
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <span style={{ fontSize: "10px", fontWeight: 600, padding: "1px 8px", borderRadius: "9999px", backgroundColor: "rgba(239,68,68,0.15)", color: "#FCA5A5" }}>
-                      {reorderAlerts.length}
-                    </span>
-                    <span style={{ fontSize: "10px", color: "#EF4444" }}>↓ see below</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Panel 3 — GST This Month */}
-          <div
-            className="rounded-xl p-4 lg:p-5"
-            style={{
-              background: "linear-gradient(135deg, rgba(37,99,235,0.25), rgba(29,78,216,0.15))",
-              border: "1px solid rgba(37,99,235,0.35)",
-            }}
-          >
-            <p className="text-[10px] text-blue-400 uppercase tracking-widest font-semibold mb-2">
-              GST This Month
-            </p>
-            <p className="text-3xl lg:text-4xl font-extrabold text-slate-100 tracking-tight mb-4 font-mono tabular-nums">
-              {formatCurrency(analytics?.gstTotal ?? 0)}
-            </p>
-            <div className="space-y-2">
-              {[
-                { label: "CGST", value: analytics?.gstCGST ?? 0, dot: "bg-blue-500" },
-                { label: "SGST", value: analytics?.gstSGST ?? 0, dot: "bg-emerald-500" },
-                { label: "IGST", value: analytics?.gstIGST ?? 0, dot: "bg-violet-500" },
-              ].map((item) => (
-                <div key={item.label} className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className={`h-2 w-2 rounded-full ${item.dot}`} />
-                    <span className="text-xs text-blue-300/70">{item.label}</span>
-                  </div>
-                  <span className="text-sm text-slate-200 font-medium font-mono tabular-nums">
-                    {formatCurrency(item.value)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-        </div>
-
-        {/* Reorder Alerts Widget — only shown when alerts exist */}
-        {reorderAlerts.length > 0 && (
-          <div
-            style={{
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: "12px",
-              padding: "16px",
-              marginTop: "12px",
-            }}
-          >
-            {/* Header row */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <span
-                  className={criticalCount > 0 ? "animate-pulse" : ""}
-                  style={{
-                    height: "6px",
-                    width: "6px",
-                    borderRadius: "50%",
-                    flexShrink: 0,
-                    backgroundColor: criticalCount > 0 ? "#EF4444" : "#F59E0B",
-                    display: "inline-block",
-                  }}
-                />
-                <span style={{ fontSize: "10px", color: "#CBD5E1", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 600 }}>
-                  Reorder Alerts
-                </span>
-                <span
-                  style={{
-                    fontSize: "10px",
-                    fontWeight: 600,
-                    padding: "1px 8px",
-                    borderRadius: "9999px",
-                    backgroundColor: criticalCount > 0 ? "rgba(239,68,68,0.15)" : "rgba(245,158,11,0.15)",
-                    color: criticalCount > 0 ? "#FCA5A5" : "#FCD34D",
-                  }}
-                >
-                  {reorderAlerts.length}
-                </span>
-              </div>
-              <button
-                style={{ fontSize: "12px", color: "#60A5FA", background: "none", border: "none", cursor: "pointer" }}
-                onClick={() => navigate("/reorder-intelligence")}
-              >
-                See all {reorderAlerts.length} →
-              </button>
-            </div>
-
-            {/* Items list */}
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "6px",
-                maxHeight: "198px",
-                overflowY: reorderAlerts.length > 3 ? "auto" : "visible",
-                paddingRight: reorderAlerts.length > 3 ? "4px" : "0",
-              }}
-            >
-              {reorderAlerts.map((alert) => {
-                const isCritical = alert.alert_level === "critical";
-                return (
-                  <div
-                    key={alert.item_id}
-                    style={{
-                      background: isCritical ? "rgba(239,68,68,0.08)" : "rgba(245,158,11,0.08)",
-                      border: `1px solid ${isCritical ? "rgba(239,68,68,0.2)" : "rgba(245,158,11,0.2)"}`,
-                      borderRadius: "8px",
-                      padding: "9px 12px",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: "8px",
-                    }}
+                  <button
+                    key={btn.label}
+                    className="rounded-xl px-3 py-2 text-sm text-slate-300 transition-colors shrink-0"
+                    style={{ backgroundColor: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.10)" }}
+                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.12)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.07)")}
+                    onClick={() => navigate(btn.route, { state: btn.state })}
                   >
-                    {/* Item info */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p
-                        style={{
-                          fontSize: "12px",
-                          fontWeight: 600,
-                          color: isCritical ? "#FCA5A5" : "#FCD34D",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          margin: 0,
-                        }}
-                      >
-                        {alert.item_description}
-                      </p>
-                      <p style={{ fontSize: "11px", color: "#64748B", margin: 0 }}>
-                        Stock: {alert.current_stock} · Min: {alert.min_stock}
-                      </p>
-                    </div>
-
-                    {/* Status badge */}
-                    <span
-                      style={{
-                        fontSize: "9px",
-                        fontWeight: 700,
-                        textTransform: "uppercase",
-                        padding: "2px 7px",
-                        borderRadius: "9999px",
-                        flexShrink: 0,
-                        backgroundColor: isCritical ? "rgba(239,68,68,0.2)" : "rgba(245,158,11,0.2)",
-                        color: isCritical ? "#FCA5A5" : "#FCD34D",
-                      }}
-                    >
-                      {isCritical ? "Critical" : "Warning"}
-                    </span>
-
-                    {/* Raise PO button */}
-                    <button
-                      style={{
-                        background: "rgba(37,99,235,0.15)",
-                        border: "1px solid rgba(37,99,235,0.3)",
-                        borderRadius: "6px",
-                        padding: "4px 10px",
-                        fontSize: "11px",
-                        color: "#60A5FA",
-                        flexShrink: 0,
-                        cursor: "pointer",
-                      }}
-                      onClick={() =>
-                        navigate("/purchase-orders/new", {
-                          state: {
-                            vendor_id: alert.preferred_vendor_id,
-                            items: [{ item_id: alert.item_id, description: alert.item_description, qty: alert.recommended_order_qty }],
-                          },
-                        })
-                      }
-                    >
-                      Raise PO
-                    </button>
-                  </div>
-                );
-              })}
+                    {btn.label}
+                  </button>
+                )
+              )}
             </div>
-
-            {/* Scroll hint */}
-            {reorderAlerts.length > 3 && (
-              <p style={{ textAlign: "center", color: "#475569", fontSize: "10px", marginTop: "6px" }}>
-                Scroll to see all {reorderAlerts.length} alerts
-              </p>
-            )}
           </div>
-        )}
-
+        </div>
       </div>
 
-      {/* ── ZONE 2: LIGHT CONTENT AREA ───────────────────────────────────── */}
-      <div className="flex-1 px-4 py-4 lg:px-7 lg:py-5" style={{ backgroundColor: "#F1F5F9" }}>
+      {/* ── ZONE 2: LIGHT CONTENT ───────────────────────────────────── */}
+      <div className="flex-1 px-4 py-4 lg:px-7 lg:py-5 space-y-4" style={{ backgroundColor: "#F1F5F9" }}>
 
-        {/* GSTR-3B due reminder */}
+        {/* GSTR-3B banner */}
         <button
           onClick={() => navigate("/gst-reports")}
-          className="w-full flex items-center justify-between gap-3 mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-left hover:bg-amber-100 transition-colors"
+          className="w-full flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-left hover:bg-amber-100 transition-colors"
         >
           <div className="flex items-center gap-2 min-w-0">
             <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" />
-            <span className="text-xs font-medium text-amber-800 truncate">
-              GSTR-3B due on {gstr3bDueLabel}
-            </span>
+            <span className="text-xs font-medium text-amber-800 truncate">GSTR-3B due on {gstr3bDueLabel}</span>
           </div>
-          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${
-            gstr3bDaysLeft <= 5
-              ? "bg-red-100 text-red-700"
-              : "bg-amber-100 text-amber-700"
-          }`}>
+          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${gstr3bDaysLeft <= 5 ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>
             {gstr3bDaysLeft} day{gstr3bDaysLeft !== 1 ? "s" : ""} left
           </span>
         </button>
 
-        {/* Single column on mobile, two-column on desktop */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
+        {/* ── Section 1: Critical Alerts ───────────────────────────── */}
+        {allClear ? (
+          <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-green-50 border border-green-200">
+            <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+            <p className="text-sm font-medium text-green-800">All systems go — no alerts requiring attention.</p>
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {overdueDCReturns > 0 && (
+              <AlertPill label="Overdue DC Returns" count={overdueDCReturns} colour="red"   onClick={() => navigate("/delivery-challans")} />
+            )}
+            {jobWorksOverdue > 0 && (
+              <AlertPill label="Job Works Overdue"  count={jobWorksOverdue}  colour="red"   onClick={() => navigate("/wip-register?overdue=true")} />
+            )}
+            {zeroStockItems > 0 && (
+              <AlertPill label="Zero Stock Items"   count={zeroStockItems}   colour="red"   onClick={() => navigate("/stock-register")} />
+            )}
+            {reorderAlertCount > 0 && (
+              <AlertPill label="Reorder Alerts"     count={reorderAlertCount} colour="amber" onClick={() => navigate("/reorder-intelligence")} />
+            )}
+            {fatPending > 0 && (
+              <AlertPill label="FAT Pending"        count={fatPending}       colour="amber" onClick={() => navigate("/fat-certificates")} />
+            )}
+            {uninvoicedUnits > 0 && (
+              <AlertPill label="Ready to Invoice"   count={uninvoicedUnits}  colour="amber" onClick={() => navigate("/fat-certificates")} />
+            )}
+            {readyToAssemble > 0 && (
+              <AlertPill label="Ready to Assemble"  count={readyToAssemble}  colour="green" onClick={() => navigate("/assembly-orders")} />
+            )}
+          </div>
+        )}
 
-          {/* ── LEFT COLUMN ─────────────────────────────────────────────── */}
-          <div className="flex flex-col gap-3 min-w-0">
+        {/* ── Section 2: Three-column stats grid ───────────────────── */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
-            {/* Card: Active Job Works */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 lg:p-5">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                  <h2 className="font-semibold text-slate-900">Active Job Works</h2>
-                  {activeJCs.length > 0 && (
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
-                      {activeJCs.length}
-                    </span>
-                  )}
-                </div>
-                <button
-                  className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors"
-                  onClick={() => navigate("/job-works")}
-                >
-                  View all →
-                </button>
-              </div>
-
-              {activeJCs.length === 0 ? (
-                <p className="text-sm text-slate-400 text-center py-6">
-                  No active work orders — factory floor is clear
-                </p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full data-table">
-                    <thead>
-                      <tr>
-                        <th>JW #</th>
-                        <th>Component</th>
-                        <th>Location</th>
-                        <th className="text-right">Qty</th>
-                        <th className="text-right">Cost</th>
-                        <th className="text-right">Days</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {activeJCs.map((row) => (
-                        <tr
-                          key={row.id}
-                          className="cursor-pointer"
-                          onClick={() => navigate(`/job-works/${row.id}`)}
-                        >
-                          <td>
-                            <span className="font-mono text-blue-600 font-medium text-sm">{row.jc_number}</span>
-                          </td>
-                          <td>
-                            <p className="font-medium text-sm text-slate-800 truncate max-w-[160px]">
-                              {row.item_description ?? row.item_code ?? "—"}
-                            </p>
-                            {row.item_code && row.item_description && (
-                              <p className="text-xs text-slate-400 font-mono">{row.item_code}</p>
-                            )}
-                          </td>
-                          <td>
-                            {row.current_location === "at_vendor" ? (
-                              <div className="flex items-center gap-1.5">
-                                <Truck className="h-3.5 w-3.5 text-blue-500 shrink-0" />
-                                <span className="text-sm text-blue-600 font-medium truncate max-w-[120px]">
-                                  {row.current_vendor_name ?? "Vendor"}
-                                </span>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-1.5">
-                                <Factory className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                                <span className="text-sm text-slate-500">In House</span>
-                              </div>
-                            )}
-                          </td>
-                          <td className="text-right font-mono tabular-nums text-sm text-slate-700">
-                            {row.quantity_accepted}
-                            <span className="text-slate-400">/{row.quantity_original}</span>
-                          </td>
-                          <td className="text-right font-mono tabular-nums text-sm font-medium text-slate-900">
-                            {formatCurrency(row.total_cost)}
-                          </td>
-                          <td className="text-right">
-                            <div className="flex items-center justify-end gap-1 text-sm text-slate-500">
-                              <Clock className="h-3.5 w-3.5" />
-                              {row.days_active}d
-                            </div>
-                          </td>
-                          <td>
-                            {row.status === "on_hold" ? (
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
-                                On Hold
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
-                                <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
-                                In Progress
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+          {/* Production card */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 lg:p-5">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Production</p>
+              <button className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors" onClick={() => navigate("/job-works")}>
+                View →
+              </button>
             </div>
-
-            {/* Card row: Purchase Orders + Sales Orders — 1 col on mobile, 2 on sm+ */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-
-              {/* Purchase Orders */}
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <ShoppingCart className="h-4 w-4 text-slate-400" />
-                    <h3 className="font-semibold text-slate-900 text-sm">Purchase Orders</h3>
-                  </div>
-                  <button
-                    className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors"
-                    onClick={() => navigate("/purchase-orders")}
-                  >
-                    View all →
-                  </button>
-                </div>
-                <div className="divide-y divide-slate-100">
-                  {!analytics?.openPOs?.length ? (
-                    <p className="text-sm text-slate-400 py-4 text-center">No open purchase orders</p>
-                  ) : (
-                    analytics.openPOs.map((po) => (
-                      <div
-                        key={po.id}
-                        className="flex items-center justify-between py-2.5 hover:bg-slate-50 -mx-1 px-1 rounded cursor-pointer transition-colors"
-                        onClick={() => navigate(`/purchase-orders/${po.id}`)}
-                      >
-                        <div className="min-w-0">
-                          <p className="font-mono text-blue-600 font-medium text-sm truncate">{po.po_number}</p>
-                          <p className="text-xs text-slate-400 truncate">{po.vendor_name ?? "—"}</p>
-                        </div>
-                        <span className="text-xs text-slate-400 font-mono ml-2 shrink-0">
-                          {po.grand_total ? formatCurrency(po.grand_total) : "—"}
-                        </span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              {/* Sales Orders */}
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <ShoppingBag className="h-4 w-4 text-slate-400" />
-                    <h3 className="font-semibold text-slate-900 text-sm">Sales Orders</h3>
-                  </div>
-                  <button
-                    className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors"
-                    onClick={() => navigate("/sales-orders")}
-                  >
-                    View all →
-                  </button>
-                </div>
-                <div className="divide-y divide-slate-100">
-                  {recentSOs.length === 0 ? (
-                    <p className="text-sm text-slate-400 py-4 text-center">No confirmed sales orders</p>
-                  ) : (
-                    recentSOs.map((so: any) => (
-                      <div
-                        key={so.id}
-                        className="flex items-center justify-between py-2.5 hover:bg-slate-50 -mx-1 px-1 rounded cursor-pointer transition-colors"
-                        onClick={() => navigate(`/sales-orders/${so.id}`)}
-                      >
-                        <div className="min-w-0">
-                          <p className="font-mono text-blue-600 font-medium text-sm truncate">{so.so_number}</p>
-                          <p className="text-xs text-slate-400 truncate">{so.customer_name ?? "—"}</p>
-                        </div>
-                        <span className="text-xs text-slate-400 font-mono ml-2 shrink-0">
-                          {so.grand_total ? formatCurrency(so.grand_total) : "—"}
-                        </span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Card: Delivery Challans Out */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Truck className="h-4 w-4 text-slate-400" />
-                  <h3 className="font-semibold text-slate-900 text-sm">Delivery Challans Out</h3>
-                  {(analytics?.openDCs?.length ?? 0) > 0 && (
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100">
-                      {analytics!.openDCs.length}
-                    </span>
-                  )}
-                </div>
-                <button
-                  className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors"
-                  onClick={() => navigate("/delivery-challans")}
-                >
-                  View all →
-                </button>
-              </div>
-              <div className="divide-y divide-slate-100">
-                {!analytics?.openDCs?.length ? (
-                  <p className="text-sm text-slate-400 py-4 text-center">No delivery challans currently out</p>
-                ) : (
-                  analytics.openDCs.map((dc) => {
-                    const isOverdue = dc.return_due_date != null && dc.return_due_date < (analytics.today ?? "");
-                    const out = daysOut(dc.dc_date);
-                    return (
-                      <div
-                        key={dc.id}
-                        className={`flex items-center gap-3 py-2.5 hover:bg-slate-50 -mx-1 px-1 rounded cursor-pointer transition-colors ${isOverdue ? "bg-amber-50/60" : ""}`}
-                        onClick={() => navigate(`/delivery-challans/${dc.id}`)}
-                      >
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-blue-600 font-medium text-sm">{dc.dc_number}</span>
-                            <span className="text-slate-500 text-sm truncate">{dc.party_name ?? "—"}</span>
-                          </div>
-                          <p className="text-xs text-slate-400 mt-0.5">
-                            {dc.return_due_date
-                              ? `Due ${format(new Date(dc.return_due_date), "dd MMM yyyy")}`
-                              : `Issued ${format(new Date(dc.dc_date), "dd MMM yyyy")}`}
-                          </p>
-                        </div>
-                        <span className={`text-xs font-medium tabular-nums whitespace-nowrap shrink-0 ${isOverdue ? "text-amber-700 font-semibold" : "text-slate-400"}`}>
-                          {out}d out{isOverdue ? " ⚠" : ""}
-                        </span>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
+            <div className="divide-y divide-slate-100 mt-2">
+              <LightStatRow label="Active Job Works"   value={wipSummary?.atVendor ?? "—"}         onClick={() => navigate("/job-works")} />
+              <LightStatRow label="Overdue Returns"    value={wipSummary?.overdueReturns ?? "—"}    highlight={(wipSummary?.overdueReturns ?? 0) > 0} onClick={() => navigate("/wip-register?overdue=true")} />
+              <LightStatRow label="Assembly Orders"    value={aoStats?.active ?? "—"}               onClick={() => navigate("/assembly-orders")} />
+              <LightStatRow label="FAT Pending"        value={fatStats?.pending ?? "—"}             highlight={(fatStats?.pending ?? 0) > 0} onClick={() => navigate("/fat-certificates")} />
             </div>
           </div>
 
-          {/* ── RIGHT COLUMN — full width on mobile, 320px fixed on desktop ── */}
-          <div className="flex flex-col gap-3 w-full lg:w-[320px] lg:shrink-0">
-
-            {/* Card: Recent Activity */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 lg:p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <Activity className="h-4 w-4 text-slate-400" />
-                <h3 className="font-semibold text-slate-900">Recent Activity</h3>
-              </div>
-              <div className="divide-y divide-slate-100">
-                {!analytics?.recentDocs?.length ? (
-                  <p className="text-sm text-slate-400 py-4 text-center">No recent activity</p>
-                ) : (
-                  analytics.recentDocs.map((doc, i) => {
-                    const tag = typeTag[doc.type];
-                    return (
-                      <div
-                        key={i}
-                        className="flex items-center gap-3 py-3 hover:bg-slate-50 -mx-2 px-2 rounded cursor-pointer transition-colors group"
-                        onClick={() => navigate(doc.route)}
-                      >
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${tag.cls}`}>
-                          {tag.label}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-800 truncate">
-                            {doc.number ?? "—"}
-                            {doc.amount ? (
-                              <span className="text-slate-400 font-normal ml-1.5 font-mono text-xs">
-                                {formatCurrency(doc.amount)}
-                              </span>
-                            ) : null}
-                          </p>
-                          <p className="text-xs text-slate-400 truncate">{doc.party ?? "—"}</p>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className="text-xs text-slate-400">{timeAgo(doc.updated_at)}</p>
-                          <p className="text-[10px] text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                            View
-                          </p>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
+          {/* Stock card */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 lg:p-5">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Stock</p>
+              <button className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors" onClick={() => navigate("/stock-register")}>
+                View →
+              </button>
             </div>
-
-            {/* Card: Assembly Orders quick stat */}
-            <div
-              className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 cursor-pointer hover:shadow-md transition-shadow"
-              onClick={() => navigate("/assembly-orders")}
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <Layers className="h-4 w-4 text-slate-400" />
-                    <h3 className="font-semibold text-slate-900 text-sm">Assembly Orders</h3>
-                  </div>
-                  <p className="text-3xl font-bold text-slate-900 font-mono tabular-nums">
-                    {aoStats?.active ?? "—"}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">active orders</p>
-                </div>
-                <span className="text-xs text-blue-600 font-medium">View all →</span>
-              </div>
+            <div className="divide-y divide-slate-100">
+              <LightStatRow label="Raw Materials (in stock)"  value={dashData?.rawMaterialCount  ?? "—"} onClick={() => navigate("/stock-register?type=raw_material")} />
+              <LightStatRow label="Components (in stock)"     value={dashData?.componentCount    ?? "—"} onClick={() => navigate("/stock-register?type=component")} />
+              <LightStatRow label="Finished Goods (in stock)" value={dashData?.finishedGoodCount ?? "—"} onClick={() => navigate("/stock-register?type=finished_good")} />
+              <LightStatRow label="Reorder Alerts"            value={reorderAlertCount}           highlight={reorderAlertCount > 0} onClick={() => navigate("/reorder-intelligence")} />
+              <LightStatRow label="Zero Stock Items"          value={dashData?.zeroStockCount ?? "—"} highlight={(dashData?.zeroStockCount ?? 0) > 0} onClick={() => navigate("/stock-register")} />
             </div>
-
-            {/* Card: FAT Certificates */}
-            <div
-              className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 cursor-pointer hover:shadow-md transition-shadow"
-              onClick={() => navigate("/fat-certificates")}
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <FileText className="h-4 w-4 text-slate-400" />
-                    <h3 className="font-semibold text-slate-900 text-sm">FAT Pending</h3>
-                  </div>
-                  <p className={`text-3xl font-bold font-mono tabular-nums ${(fatStats?.pending ?? 0) > 0 ? "text-red-600" : "text-slate-900"}`}>
-                    {fatStats ? fatStats.pending : "—"}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">
-                    {(fatStats?.pending ?? 0) === 0 ? "all FATs complete" : "awaiting test results"}
-                  </p>
-                </div>
-                <span className="text-xs text-blue-600 font-medium">View all →</span>
-              </div>
-            </div>
-
           </div>
+
+          {/* Financials card */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 lg:p-5">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Financials</p>
+              <button className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors" onClick={() => navigate("/invoices")}>
+                View →
+              </button>
+            </div>
+            <p className="text-2xl font-extrabold text-slate-900 tracking-tight my-2 font-mono tabular-nums">
+              {formatCurrency(dashData?.thisMonthRevenue ?? 0)}
+            </p>
+            <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-3">This month's revenue</p>
+            <div className="divide-y divide-slate-100">
+              <LightStatRow label="Overdue Invoices" value={dashData?.overdueInvoiceCount ?? "—"} highlight={(dashData?.overdueInvoiceCount ?? 0) > 0} onClick={() => navigate("/invoices")} />
+              <LightStatRow label="Open PO Value"    value={formatCurrency(dashData?.openPOValue ?? 0)} onClick={() => navigate("/purchase-orders")} />
+              <LightStatRow label="FY Revenue"       value={formatCurrency(dashData?.fyRevenue ?? 0)} />
+            </div>
+          </div>
+
         </div>
+
+        {/* ── Section 3: Finished Goods Ready to Ship ──────────────── */}
+        {readyToShip.length > 0 && (
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+            <div className="flex items-center justify-between px-4 lg:px-5 py-3.5 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                <h2 className="font-semibold text-slate-900 text-sm">Finished Goods — Ready to Ship</h2>
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">
+                  {readyToShip.length}
+                </span>
+              </div>
+              <button
+                className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors"
+                onClick={() => navigate("/fat-certificates")}
+              >
+                View all →
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full data-table">
+                <thead>
+                  <tr>
+                    <th>Serial #</th>
+                    <th>Item Code</th>
+                    <th>Description</th>
+                    <th className="text-right">Age</th>
+                    <th className="w-36">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {readyToShip.map((sn) => {
+                    const age = daysSince(sn.fat_completed_at ?? sn.created_at);
+                    return (
+                      <tr key={sn.id} className={age > 30 ? "bg-amber-50/50" : ""}>
+                        <td className="font-mono text-sm font-semibold text-slate-800">{sn.serial_number}</td>
+                        <td className="font-mono text-xs text-slate-500">{sn.item_code ?? "—"}</td>
+                        <td className="text-sm text-slate-700">{sn.item_description ?? "—"}</td>
+                        <td className="text-right">
+                          <span className={`text-sm font-mono tabular-nums ${age > 30 ? "text-amber-700 font-semibold" : "text-slate-600"}`}>
+                            {age}d
+                          </span>
+                        </td>
+                        <td>
+                          <button
+                            className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors"
+                            onClick={() => navigate("/invoices/new", { state: { serial_number_id: sn.id } })}
+                          >
+                            Raise Invoice →
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ── Section 4: Recent Activity Feed ──────────────────────── */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 lg:p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Activity className="h-4 w-4 text-slate-400" />
+            <h3 className="font-semibold text-slate-900">Recent Activity</h3>
+          </div>
+          {recentActivity.length === 0 ? (
+            <p className="text-sm text-slate-400 text-center py-6">No recent activity</p>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {recentActivity.map((entry) => {
+                const tag = docTag(entry.document_type);
+                const docNumber = entry.details?.number ?? entry.details?.doc_number ?? null;
+                return (
+                  <div key={entry.id} className="flex items-start gap-3 py-2.5">
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded mt-0.5 shrink-0 ${tag.cls}`}>
+                      {tag.label}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-slate-800">
+                        <span className="font-medium capitalize">{entry.action.replace(/_/g, " ")}</span>
+                        {docNumber && <span className="text-slate-400 ml-1">· {docNumber}</span>}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-0.5 truncate">{entry.user_name ?? "System"}</p>
+                    </div>
+                    <span className="text-xs text-slate-400 shrink-0 mt-0.5">{timeAgo(entry.created_at)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
       </div>
     </div>
   );
