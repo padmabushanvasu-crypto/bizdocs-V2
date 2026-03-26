@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Building2, Users, Package, GitBranch, Database, FileText,
+  Building2, Users, Package, GitFork, Database, FileText,
   Truck, ShoppingCart, ShoppingBag, Layers, CheckCircle2,
   Factory, Hash, BookOpen, ClipboardList, ArrowRight,
   ChevronLeft, Search, Wrench, AlertTriangle, Trash2,
@@ -36,9 +36,9 @@ const SETUP_STEPS: SetupStep[] = [
     stepNum: 1,
     title: "Set up your Company Profile",
     description:
-      "Add your company name, address, GSTIN, PAN and logo.",
+      "Add your company name, address, GSTIN, state code and PAN. Upload your company logo.",
     whyMatters:
-      "Your GSTIN and address appear on every invoice, PO and DC. Wrong details = invalid GST documents.",
+      "Your GSTIN, state code and address print on every document. Your logo makes documents look professional. Wrong details = invalid GST documents.",
     timeNeeded: "5 minutes — do this first, before anything else",
     tag: "Do this once",
     tagOnce: true,
@@ -46,18 +46,34 @@ const SETUP_STEPS: SetupStep[] = [
     route: "/settings/company",
   },
   {
+    icon: FileText,
+    iconBg: "bg-blue-50",
+    iconColor: "text-blue-600",
+    stepNum: 2,
+    title: "Configure Document Settings",
+    description:
+      "Set your document number prefixes (INV-, PO-, DC-), starting numbers, financial year and standard payment terms. Add your bank account details for invoices.",
+    whyMatters:
+      "Document numbers auto-generate from here. Bank details auto-fill on every invoice. Do this before you raise your first document.",
+    timeNeeded: "10 minutes",
+    tag: "Do this once — update each financial year",
+    tagOnce: false,
+    buttonLabel: "Go to Document Settings →",
+    route: "/settings/documents",
+  },
+  {
     icon: Users,
     iconBg: "bg-green-50",
     iconColor: "text-green-600",
-    stepNum: 2,
-    title: "Add Vendors and Customers (Parties)",
+    stepNum: 3,
+    title: "Add Your Parties",
     description:
-      "Add all vendors you buy from and customers you sell to. Include their GSTIN — it auto-fills state code.",
+      "Add every vendor you buy from and every customer you sell to. Include their GSTIN — the system auto-calculates CGST/SGST vs IGST based on state codes.",
     whyMatters:
-      "Every PO, DC and Invoice pulls from here. If a party is missing you cannot raise a document for them.",
+      "Every PO, DC and Invoice pulls party details from here. If a party is missing you cannot raise a document for them.",
     timeNeeded:
-      "15–30 minutes depending on how many parties you have. Use the Excel import to save time.",
-    tag: "Do this once — add new parties as needed",
+      "20–30 minutes. Use the Excel import to add many parties at once.",
+    tag: "Do once — add new parties as needed",
     tagOnce: true,
     buttonLabel: "Go to Parties →",
     route: "/parties",
@@ -66,32 +82,32 @@ const SETUP_STEPS: SetupStep[] = [
     icon: Package,
     iconBg: "bg-amber-50",
     iconColor: "text-amber-600",
-    stepNum: 3,
-    title: "Add Items (Parts Catalogue)",
+    stepNum: 4,
+    title: "Add Your Items",
     description:
-      "Add every raw material, component, bought-out item, sub-assembly and finished product. Set drawing numbers, HSN codes, units and minimum stock levels.",
+      "Add every raw material, component, sub-assembly and finished product. Set HSN codes, units, drawing numbers and minimum raw-material stock levels.",
     whyMatters:
-      "Every Job Work, PO, DC, Production Run and Invoice uses items from here. Missing items = cannot create documents.",
+      "Every document and Production Run uses items from this catalogue. Missing items = blocked workflows.",
     timeNeeded:
       "30–60 minutes. Download the Items template from Data Import, fill it in Excel, upload in one go.",
-    tag: "Do this once — add new items as needed",
+    tag: "Do once — add new items as needed",
     tagOnce: true,
     buttonLabel: "Go to Items →",
     route: "/items",
   },
   {
-    icon: GitBranch,
+    icon: GitFork,
     iconBg: "bg-purple-50",
     iconColor: "text-purple-600",
-    stepNum: 4,
-    title: "Build Bills of Materials (BOM)",
+    stepNum: 5,
+    title: "Build Your Bills of Materials",
     description:
-      "For each sub-assembly and finished product define what goes into it — components, bought-outs and quantities. Set up variants for different product ratings (315 KVA, 500 KVA etc.).",
+      "For each finished product and sub-assembly, define what goes into it — every component, its quantity and its source vendor with a preferred vendor ranking.",
     whyMatters:
-      "Production Runs use the BOM to automatically load components. Without a BOM you have to manually enter every component every time you build something.",
+      "Production Runs use the BOM to auto-load components and suggest vendors. Without a BOM every production run is manual.",
     timeNeeded:
-      "1–2 hours for a typical OLTC product range. Done once per product.",
-    tag: "Do this once per product",
+      "1–2 hours for a typical product range. Done once per product.",
+    tag: "Do once per product",
     tagOnce: true,
     buttonLabel: "Go to Bill of Materials →",
     route: "/bill-of-materials",
@@ -100,13 +116,13 @@ const SETUP_STEPS: SetupStep[] = [
     icon: Factory,
     iconBg: "bg-purple-50",
     iconColor: "text-purple-600",
-    stepNum: 5,
+    stepNum: 6,
     title: "Configure Production Settings",
     description:
-      "For each finished product (e.g. OLTC 315 KVA), set a Minimum Finished Stock level and a Production Batch Size. When finished goods stock falls below the minimum, the system automatically alerts you to start a production run.",
+      "For each finished product set a Minimum Finished Stock and a Production Batch Size on the Items page.",
     whyMatters:
-      "Without this, the system cannot tell you when to build more finished goods. This is the pull trigger for your entire assembly process.",
-    timeNeeded: "15 minutes — one setting per product",
+      "This is the pull trigger for your entire assembly process. When finished goods fall below the minimum, the system alerts you automatically.",
+    timeNeeded: "15 minutes — one setting per finished product",
     tag: "Do this once",
     tagOnce: true,
     buttonLabel: "Go to Items →",
@@ -116,12 +132,12 @@ const SETUP_STEPS: SetupStep[] = [
     icon: Database,
     iconBg: "bg-teal-50",
     iconColor: "text-teal-600",
-    stepNum: 6,
+    stepNum: 7,
     title: "Enter Opening Stock",
     description:
-      "Download the pre-filled template from Data Import. It already has all your items listed. Fill in current quantities and costs and upload.",
+      "Download the pre-filled template from Data Import — it lists every item. Fill in current quantities and unit costs and upload.",
     whyMatters:
-      "Without opening stock the system thinks you have zero of everything. Reorder alerts, production availability checks and stock reports will all be wrong.",
+      "Without opening stock the system thinks you have zero of everything. Reorder alerts, production checks and all stock reports will be wrong until this is done.",
     timeNeeded:
       "30 minutes — the template is pre-filled, you only enter quantities and costs.",
     tag: "Do this once at go-live",
@@ -130,20 +146,20 @@ const SETUP_STEPS: SetupStep[] = [
     route: "/settings/import",
   },
   {
-    icon: FileText,
-    iconBg: "bg-slate-100",
-    iconColor: "text-slate-600",
-    stepNum: 7,
-    title: "Configure Document Settings",
+    icon: BarChart2,
+    iconBg: "bg-amber-50",
+    iconColor: "text-amber-600",
+    stepNum: 8,
+    title: "Set Reorder Rules",
     description:
-      "Set your invoice prefix, PO prefix, financial year and document number starting points. Add your bank details and standard payment terms.",
+      "Go to Reorder Intelligence → Manage Rules. For every raw material and component, set a reorder point (when to buy) and a reorder quantity (how much to buy).",
     whyMatters:
-      "Document numbers auto-generate from here. Bank details auto-fill on every invoice. Getting this right saves time on every document you ever create.",
-    timeNeeded: "10 minutes",
-    tag: "Do this once — update at the start of each financial year",
-    tagOnce: false,
-    buttonLabel: "Go to Document Settings →",
-    route: "/settings/documents",
+      "Reorder Intelligence watches stock levels 24/7. Without rules it cannot alert you when materials run low.",
+    timeNeeded: "30–45 minutes — one rule per stocked item",
+    tag: "Do once — review quarterly",
+    tagOnce: true,
+    buttonLabel: "Go to Reorder Intelligence →",
+    route: "/reorder-intelligence",
   },
 ];
 
@@ -684,20 +700,17 @@ export default function HowToUse() {
 
         <TabsContent value="getting-started" className="mt-6">
           <div className="mb-5 rounded-xl bg-blue-50 border border-blue-200 px-4 py-3 flex items-start gap-3">
-            <RefreshCw className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+            <CheckCircle2 className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-semibold text-blue-900">Pull-Based Manufacturing</p>
+              <p className="text-sm font-semibold text-blue-900">Complete these steps in order before going live.</p>
               <p className="text-sm text-blue-800 mt-0.5">
-                This system uses <strong>pull-based manufacturing</strong> — purchasing and production are triggered by stock levels and reorder alerts, not by customer orders. You build to stock and sell from stock. Minimum stock levels (set on each item) are the engine that drives all buying and making decisions.
-              </p>
-              <p className="text-sm text-blue-800 mt-2">
-                Production is triggered the same way as purchasing — by stock falling below a minimum level. Set a <strong>Minimum Finished Stock</strong> on each finished good item and the system will alert you when it is time to build more.
+                Steps 1–8 are one-time setup — after that the system runs itself.
               </p>
             </div>
           </div>
           <div className="mb-5">
             <h2 className="text-base font-semibold text-slate-900">
-              Setup Order — do these in sequence when you first start
+              Setup checklist — follow this order when you first start
             </h2>
             <p className="text-sm text-slate-500 mt-0.5">
               Each step depends on the one before it. Follow the order and
