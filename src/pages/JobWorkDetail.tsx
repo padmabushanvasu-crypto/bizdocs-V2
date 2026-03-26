@@ -36,22 +36,22 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
-  fetchJobCard,
-  fetchJobCardSummary,
-  updateJobCardStep,
-  deleteJobCardStep,
-  createJobCardStep,
+  fetchJobWork,
+  fetchJobWorkSummary,
+  updateJobWorkStep,
+  deleteJobWorkStep,
+  createJobWorkStep,
   recordStepReturn,
-  completeJobCard,
-  updateJobCardStatus,
+  completeJobWork,
+  updateJobWorkStatus,
   fetchItemCurrentStock,
   fetchItemUnit,
-  issueJobCardMaterial,
-  fetchJobCardStockMovements,
-  type JobCardStep,
+  issueJobWorkMaterial,
+  fetchJobWorkStockMovements,
+  type JobWorkStep,
   type RecordReturnData,
   type StockMovement,
-} from "@/lib/job-cards-api";
+} from "@/lib/job-works-api";
 import { fetchGrnsForJobCard, type GRN } from "@/lib/grn-api";
 import { AddStepDialog } from "@/components/AddStepDialog";
 import { RecordReturnDialog } from "@/components/RecordReturnDialog";
@@ -64,7 +64,7 @@ function fmt(n: number | null | undefined, prefix = "₹") {
   return `${prefix}${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }
 
-function statusBadge(status: JobCardStep["status"]) {
+function statusBadge(status: JobWorkStep["status"]) {
   if (status === "done")
     return (
       <Badge className="status-completed text-xs">
@@ -84,7 +84,7 @@ function statusBadge(status: JobCardStep["status"]) {
   );
 }
 
-function inspectionBadge(result: JobCardStep["inspection_result"]) {
+function inspectionBadge(result: JobWorkStep["inspection_result"]) {
   if (!result) return null;
   if (result === "accepted")
     return <Badge className="status-completed text-xs">Accepted</Badge>;
@@ -93,7 +93,7 @@ function inspectionBadge(result: JobCardStep["inspection_result"]) {
   return <Badge className="status-overdue text-xs">Rejected</Badge>;
 }
 
-function stepCost(step: JobCardStep): number {
+function stepCost(step: JobWorkStep): number {
   if (step.step_type === "internal") {
     return (step.labour_cost ?? 0) + (step.material_cost ?? 0) + (step.additional_cost ?? 0);
   }
@@ -108,11 +108,11 @@ function stepCost(step: JobCardStep): number {
 // ─── Step card ──────────────────────────────────────────────────────────────
 
 interface StepCardProps {
-  step: JobCardStep;
+  step: JobWorkStep;
   readOnly?: boolean;
-  onEdit: (step: JobCardStep) => void;
-  onDelete: (step: JobCardStep) => void;
-  onRecordReturn: (step: JobCardStep) => void;
+  onEdit: (step: JobWorkStep) => void;
+  onDelete: (step: JobWorkStep) => void;
+  onRecordReturn: (step: JobWorkStep) => void;
 }
 
 function StepCard({ step, readOnly, onEdit, onDelete, onRecordReturn }: StepCardProps) {
@@ -261,15 +261,15 @@ function StepCard({ step, readOnly, onEdit, onDelete, onRecordReturn }: StepCard
 
 // ─── Main page ───────────────────────────────────────────────────────────────
 
-export default function JobCardDetail() {
+export default function JobWorkDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const [addStepOpen, setAddStepOpen] = useState(false);
-  const [editingStep, setEditingStep] = useState<JobCardStep | null>(null);
-  const [returnStep, setReturnStep] = useState<JobCardStep | null>(null);
+  const [editingStep, setEditingStep] = useState<JobWorkStep | null>(null);
+  const [returnStep, setReturnStep] = useState<JobWorkStep | null>(null);
   const [isStepSaving, setIsStepSaving] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
 
@@ -283,14 +283,14 @@ export default function JobCardDetail() {
   const [issuingMaterial, setIssuingMaterial] = useState(false);
 
   const { data: jc, isLoading } = useQuery({
-    queryKey: ["job-card", id],
-    queryFn: () => fetchJobCard(id!),
+    queryKey: ["job-work", id],
+    queryFn: () => fetchJobWork(id!),
     enabled: !!id,
   });
 
   const { data: summary } = useQuery({
-    queryKey: ["job-card-summary", id],
-    queryFn: () => fetchJobCardSummary(id!),
+    queryKey: ["job-work-summary", id],
+    queryFn: () => fetchJobWorkSummary(id!),
     enabled: !!id,
   });
 
@@ -307,26 +307,26 @@ export default function JobCardDetail() {
   });
 
   const { data: stockMovements = [] } = useQuery<StockMovement[]>({
-    queryKey: ["job-card-stock-movements", id],
-    queryFn: () => fetchJobCardStockMovements(id!),
+    queryKey: ["job-work-stock-movements", id],
+    queryFn: () => fetchJobWorkStockMovements(id!),
     enabled: !!id,
   });
 
   const { data: linkedGRNs = [] } = useQuery<GRN[]>({
-    queryKey: ["job-card-grns", id],
+    queryKey: ["job-work-grns", id],
     queryFn: () => fetchGrnsForJobCard(id!),
     enabled: !!id,
   });
 
   const invalidateAll = () => {
-    queryClient.invalidateQueries({ queryKey: ["job-card", id] });
-    queryClient.invalidateQueries({ queryKey: ["job-card-summary", id] });
-    queryClient.invalidateQueries({ queryKey: ["job-cards"] });
-    queryClient.invalidateQueries({ queryKey: ["jc-stats"] });
+    queryClient.invalidateQueries({ queryKey: ["job-work", id] });
+    queryClient.invalidateQueries({ queryKey: ["job-work-summary", id] });
+    queryClient.invalidateQueries({ queryKey: ["job-works"] });
+    queryClient.invalidateQueries({ queryKey: ["jw-stats"] });
   };
 
   const deleteMutation = useMutation({
-    mutationFn: (stepId: string) => deleteJobCardStep(stepId),
+    mutationFn: (stepId: string) => deleteJobWorkStep(stepId),
     onSuccess: () => {
       invalidateAll();
       toast({ title: "Step deleted" });
@@ -336,7 +336,7 @@ export default function JobCardDetail() {
   });
 
   const completeMutation = useMutation({
-    mutationFn: () => completeJobCard(id!, completionOutcome, completionNote || undefined),
+    mutationFn: () => completeJobWork(id!, completionOutcome, completionNote || undefined),
     onSuccess: () => {
       invalidateAll();
       queryClient.invalidateQueries({ queryKey: ["stock-status"] });
@@ -348,7 +348,7 @@ export default function JobCardDetail() {
   });
 
   const holdMutation = useMutation({
-    mutationFn: (status: "in_progress" | "on_hold") => updateJobCardStatus(id!, status),
+    mutationFn: (status: "in_progress" | "on_hold") => updateJobWorkStatus(id!, status),
     onSuccess: () => {
       invalidateAll();
       toast({ title: "Status updated" });
@@ -383,14 +383,14 @@ export default function JobCardDetail() {
     ? totalCost - (jc.standard_cost ?? 0) * jc.quantity_original
     : null;
 
-  const handleSaveStep = async (data: Partial<JobCardStep>) => {
+  const handleSaveStep = async (data: Partial<JobWorkStep>) => {
     setIsStepSaving(true);
     try {
       if (editingStep) {
-        await updateJobCardStep(editingStep.id, data);
+        await updateJobWorkStep(editingStep.id, data);
         toast({ title: "Step updated" });
       } else {
-        await createJobCardStep({ ...data, job_card_id: id! });
+        await createJobWorkStep({ ...data, job_card_id: id! });
         toast({ title: "Step added" });
       }
       invalidateAll();
@@ -403,7 +403,7 @@ export default function JobCardDetail() {
     }
   };
 
-  const handleEditStep = (step: JobCardStep) => {
+  const handleEditStep = (step: JobWorkStep) => {
     setEditingStep(step);
     setAddStepOpen(true);
   };
@@ -427,7 +427,7 @@ export default function JobCardDetail() {
     try {
       await recordStepReturn(returnStep.id, data);
       if (autoNext === "send_back") {
-        await createJobCardStep({
+        await createJobWorkStep({
           job_card_id: id!,
           step_type: "external",
           name: `${returnStep.name} (Re-send)`,
@@ -437,7 +437,7 @@ export default function JobCardDetail() {
           status: "pending",
         } as any);
       } else if (autoNext === "rework_inhouse") {
-        await createJobCardStep({
+        await createJobWorkStep({
           job_card_id: id!,
           step_type: "internal",
           name: `${returnStep.name} (In-House Rework)`,
@@ -456,7 +456,7 @@ export default function JobCardDetail() {
     }
   };
 
-  const handleDeleteStep = (step: JobCardStep) => {
+  const handleDeleteStep = (step: JobWorkStep) => {
     if (confirm(`Delete step "${step.name}"?`)) {
       deleteMutation.mutate(step.id);
     }
@@ -514,7 +514,7 @@ export default function JobCardDetail() {
       )}
 
       <button
-        onClick={() => navigate("/job-cards")}
+        onClick={() => navigate("/job-works")}
         className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 transition-colors mb-3"
       >
         <ChevronLeft className="h-4 w-4" />
@@ -956,8 +956,8 @@ export default function JobCardDetail() {
               onClick={async () => {
                 setIssuingMaterial(true);
                 try {
-                  await issueJobCardMaterial(id!);
-                  queryClient.invalidateQueries({ queryKey: ["job-card-stock-movements", id] });
+                  await issueJobWorkMaterial(id!);
+                  queryClient.invalidateQueries({ queryKey: ["job-work-stock-movements", id] });
                   queryClient.invalidateQueries({ queryKey: ["item-stock-for-completion", jc.item_id] });
                   setMaterialIssueOpen(false);
                   holdMutation.mutate("in_progress");

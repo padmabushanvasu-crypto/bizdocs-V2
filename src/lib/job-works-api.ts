@@ -19,7 +19,7 @@ export interface StageTemplate {
   updated_at: string;
 }
 
-export interface JobCard {
+export interface JobWork {
   id: string;
   company_id: string;
   jc_number: string;
@@ -51,7 +51,7 @@ export interface JobCard {
   updated_at: string;
 }
 
-export interface JobCardSummary extends JobCard {
+export interface JobWorkSummary extends JobWork {
   total_step_cost: number;
   total_cost: number;
   cost_per_unit: number | null;
@@ -60,7 +60,7 @@ export interface JobCardSummary extends JobCard {
   completed_steps: number;
 }
 
-export interface JobCardStep {
+export interface JobWorkStep {
   id: string;
   company_id: string;
   job_card_id: string;
@@ -105,7 +105,7 @@ export interface JobCardStep {
   updated_at: string;
 }
 
-export interface JobCardFilters {
+export interface JobWorkFilters {
   search?: string;
   status?: string;
   location?: string;
@@ -170,14 +170,14 @@ export interface WipSummary {
 export async function getNextJCNumber(): Promise<string> {
   const companyId = await getCompanyId();
   const { getNextDocNumber } = await import("@/lib/doc-number-utils");
-  return getNextDocNumber("job_cards", "jc_number", companyId, "jc_prefix");
+  return getNextDocNumber("job_cards", "jc_number", companyId, "jw_prefix");
 }
 
 // ============================================================
 // Job Cards
 // ============================================================
 
-export async function fetchOpenJobCards(): Promise<Pick<JobCard, "id" | "jc_number" | "item_code" | "item_description">[]> {
+export async function fetchOpenJobWorks(): Promise<Pick<JobWork, "id" | "jc_number" | "item_code" | "item_description">[]> {
   const { data, error } = await (supabase as any)
     .from("job_cards")
     .select("id, jc_number, item_code, item_description")
@@ -188,7 +188,7 @@ export async function fetchOpenJobCards(): Promise<Pick<JobCard, "id" | "jc_numb
   return (data ?? []) as any[];
 }
 
-export async function fetchJobCards(filters: JobCardFilters = {}) {
+export async function fetchJobWorks(filters: JobWorkFilters = {}) {
   const { search, status = "all", location = "all", item_id, page = 1, pageSize = 20 } = filters;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
@@ -221,10 +221,10 @@ export async function fetchJobCards(filters: JobCardFilters = {}) {
 
   const { data, error, count } = await query;
   if (error) throw error;
-  return { data: (data ?? []) as JobCardSummary[], count: count ?? 0 };
+  return { data: (data ?? []) as JobWorkSummary[], count: count ?? 0 };
 }
 
-export async function fetchJobCard(id: string): Promise<JobCard & { steps: JobCardStep[] }> {
+export async function fetchJobWork(id: string): Promise<JobWork & { steps: JobWorkStep[] }> {
   const [jcRes, stepsRes] = await Promise.all([
     (supabase as any).from("job_cards").select("*").eq("id", id).single(),
     (supabase as any)
@@ -235,22 +235,22 @@ export async function fetchJobCard(id: string): Promise<JobCard & { steps: JobCa
   ]);
   if (jcRes.error) throw jcRes.error;
   if (stepsRes.error) throw stepsRes.error;
-  return { ...(jcRes.data as JobCard), steps: (stepsRes.data ?? []) as JobCardStep[] };
+  return { ...(jcRes.data as JobWork), steps: (stepsRes.data ?? []) as JobWorkStep[] };
 }
 
-export async function fetchJobCardSummary(id: string): Promise<JobCardSummary> {
+export async function fetchJobWorkSummary(id: string): Promise<JobWorkSummary> {
   const { data, error } = await (supabase as any)
     .from("job_card_summary")
     .select("*")
     .eq("id", id)
     .single();
   if (error) throw error;
-  return data as JobCardSummary;
+  return data as JobWorkSummary;
 }
 
-export async function createJobCard(
-  data: Partial<JobCard> & { item_id?: string }
-): Promise<JobCard> {
+export async function createJobWork(
+  data: Partial<JobWork> & { item_id?: string }
+): Promise<JobWork> {
   const companyId = await getCompanyId();
 
   let standardCost = data.standard_cost ?? 0;
@@ -298,7 +298,7 @@ export async function createJobCard(
     .single();
   if (error) throw error;
 
-  const created = jc as JobCard;
+  const created = jc as JobWork;
   const createdSummary = [
     created.jc_number,
     created.item_code,
@@ -319,10 +319,10 @@ export async function createJobCard(
     initial_cost: created.initial_cost,
   }).catch(console.error);
 
-  return jc as JobCard;
+  return jc as JobWork;
 }
 
-export async function updateJobCard(id: string, data: Partial<JobCard>): Promise<JobCard> {
+export async function updateJobWork(id: string, data: Partial<JobWork>): Promise<JobWork> {
   const { data: jc, error } = await (supabase as any)
     .from("job_cards")
     .update(data)
@@ -330,15 +330,15 @@ export async function updateJobCard(id: string, data: Partial<JobCard>): Promise
     .select()
     .single();
   if (error) throw error;
-  return jc as JobCard;
+  return jc as JobWork;
 }
 
-export async function deleteJobCard(id: string): Promise<void> {
+export async function deleteJobWork(id: string): Promise<void> {
   const { error } = await (supabase as any).from("job_cards").delete().eq("id", id);
   if (error) throw error;
 }
 
-export async function completeJobCard(
+export async function completeJobWork(
   id: string,
   outcome: "stock" | "assembly" | "customer",
   outcomeNote?: string
@@ -571,19 +571,19 @@ export async function fetchJobCardStats() {
 // Job Card Steps
 // ============================================================
 
-export async function fetchJobCardSteps(jobCardId: string): Promise<JobCardStep[]> {
+export async function fetchJobWorkSteps(jobCardId: string): Promise<JobWorkStep[]> {
   const { data, error } = await (supabase as any)
     .from("job_card_steps")
     .select("*")
     .eq("job_card_id", jobCardId)
     .order("step_number", { ascending: true });
   if (error) throw error;
-  return (data ?? []) as JobCardStep[];
+  return (data ?? []) as JobWorkStep[];
 }
 
-export async function createJobCardStep(
-  data: Partial<JobCardStep> & { job_card_id: string }
-): Promise<JobCardStep> {
+export async function createJobWorkStep(
+  data: Partial<JobWorkStep> & { job_card_id: string }
+): Promise<JobWorkStep> {
   const companyId = await getCompanyId();
 
   const { data: existing } = await (supabase as any)
@@ -663,13 +663,13 @@ export async function createJobCardStep(
     }).catch(console.error);
   }
 
-  return step as JobCardStep;
+  return step as JobWorkStep;
 }
 
-export async function updateJobCardStep(
+export async function updateJobWorkStep(
   id: string,
-  data: Partial<JobCardStep>
-): Promise<JobCardStep> {
+  data: Partial<JobWorkStep>
+): Promise<JobWorkStep> {
   const { data: step, error } = await (supabase as any)
     .from("job_card_steps")
     .update(data)
@@ -684,10 +684,10 @@ export async function updateJobCardStep(
     step_name: (step as any).name,
   }).catch(console.error);
 
-  return step as JobCardStep;
+  return step as JobWorkStep;
 }
 
-export async function deleteJobCardStep(id: string): Promise<void> {
+export async function deleteJobWorkStep(id: string): Promise<void> {
   // Fetch step info before deleting for audit
   const { data: step } = await (supabase as any)
     .from("job_card_steps")
@@ -722,7 +722,7 @@ export interface RecordReturnData {
 export async function recordStepReturn(
   stepId: string,
   returnData: RecordReturnData
-): Promise<JobCardStep> {
+): Promise<JobWorkStep> {
   // 1. Update the step
   const { data: step, error: stepErr } = await (supabase as any)
     .from("job_card_steps")
@@ -799,7 +799,7 @@ export async function recordStepReturn(
     rejection_reason: returnData.rejection_reason ?? null,
   }).catch(console.error);
 
-  return step as JobCardStep;
+  return step as JobWorkStep;
 }
 
 // ============================================================
@@ -935,7 +935,7 @@ export interface VendorScorecard {
   last_used_at: string | null;
 }
 
-export interface VendorJobWorkStep extends JobCardStep {
+export interface VendorJobWorkStep extends JobWorkStep {
   jc_number: string;
   item_code: string | null;
   item_description: string | null;
@@ -972,7 +972,7 @@ export async function fetchVendorJobWorkSteps(vendorId: string): Promise<VendorJ
     .eq("step_type", "external")
     .order("created_at", { ascending: false });
   if (error) throw error;
-  const stepsData = (steps ?? []) as JobCardStep[];
+  const stepsData = (steps ?? []) as JobWorkStep[];
   if (stepsData.length === 0) return [];
 
   const jcIds = [...new Set(stepsData.map((s) => s.job_card_id))];
@@ -990,7 +990,7 @@ export async function fetchVendorJobWorkSteps(vendorId: string): Promise<VendorJ
   })) as VendorJobWorkStep[];
 }
 
-export async function bulkDeleteJobCards(ids: string[]): Promise<void> {
+export async function bulkDeleteJobWorks(ids: string[]): Promise<void> {
   const { error } = await (supabase as any).from("job_cards").delete().in("id", ids);
   if (error) throw error;
   logAudit("job_card", ids[0], "Bulk Deleted", { count: ids.length, ids }).catch(console.error);

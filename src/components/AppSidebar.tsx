@@ -37,7 +37,7 @@ import {
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { fetchWipSummary } from "@/lib/job-cards-api";
+import { fetchWipSummary } from "@/lib/job-works-api";
 import { fetchFatStats, fetchSerialStats } from "@/lib/fat-api";
 import { fetchReorderSummary } from "@/lib/reorder-api";
 import {
@@ -65,7 +65,7 @@ const RAIL_MODE_KEY = "bizdocs_sidebar_mode";
 
 const GROUP_PATHS: Record<string, string[]> = {
   "Start Here":           ["/", "/open-items"],
-  "Daily Work":           ["/job-cards", "/assembly-orders", "/wip-register"],
+  "Daily Work":           ["/job-works", "/assembly-orders", "/wip-register"],
   "Purchasing":           ["/purchase-orders", "/grn"],
   "Dispatch & Billing":   ["/sales-orders", "/dispatch-notes", "/delivery-challans", "/invoices", "/receipts"],
   "Master Data":          ["/parties", "/items", "/bill-of-materials", "/stock-register"],
@@ -133,7 +133,7 @@ const startHereNav: NavItem[] = [
 ];
 
 const dailyWorkNav: NavItem[] = [
-  { title: "Work Orders", url: "/job-cards", icon: Activity },
+  { title: "Job Works", url: "/job-works", icon: Activity },
   { title: "Assembly Orders", url: "/assembly-orders", icon: Layers },
 ];
 

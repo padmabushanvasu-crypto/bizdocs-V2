@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
-import { fetchStageTemplates, type JobCardStep } from "@/lib/job-cards-api";
+import { fetchStageTemplates, type JobWorkStep } from "@/lib/job-works-api";
 import { fetchParties } from "@/lib/parties-api";
 
 const UNIT_OPTIONS = ["NOS", "KG", "KGS", "MTR", "SFT", "SET", "PAIR", "LOT"];
@@ -19,8 +19,8 @@ const UNIT_OPTIONS = ["NOS", "KG", "KGS", "MTR", "SFT", "SET", "PAIR", "LOT"];
 interface AddStepDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  editingStep?: JobCardStep | null;
-  onSave: (step: Partial<JobCardStep>) => void;
+  editingStep?: JobWorkStep | null;
+  onSave: (step: Partial<JobWorkStep>) => void;
   isSaving?: boolean;
   itemUnit?: string;
 }

@@ -37,7 +37,7 @@ const DOC_TYPE_URL: Record<string, (id: string) => string> = {
   delivery_challan: (id) => `/delivery-challans/${id}`,
   invoice: (id) => `/invoices/${id}`,
   grn: (id) => `/grn/${id}`,
-  job_card: (id) => `/job-cards/${id}`,
+  job_card: (id) => `/job-works/${id}`,
   assembly_order: (id) => `/assembly-orders/${id}`,
   fat_certificate: (id) => `/fat-certificates/${id}`,
   sales_order: (id) => `/sales-orders/${id}`,

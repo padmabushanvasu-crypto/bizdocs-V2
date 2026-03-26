@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Star, AlertTriangle, Eye, Download, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { fetchVendorScorecards, type VendorScorecard } from "@/lib/job-cards-api";
+import { fetchVendorScorecards, type VendorScorecard } from "@/lib/job-works-api";
 import { formatCurrency } from "@/lib/gst-utils";
 import { exportToExcel } from "@/lib/export-utils";
 import { format } from "date-fns";

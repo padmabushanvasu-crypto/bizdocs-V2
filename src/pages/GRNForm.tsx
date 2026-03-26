@@ -21,7 +21,7 @@ import {
   recordGRNAndUpdatePO,
   type GRNLineItem,
 } from "@/lib/grn-api";
-import { fetchOpenJobCards } from "@/lib/job-cards-api";
+import { fetchOpenJobWorks } from "@/lib/job-works-api";
 
 const REJECTION_REASONS = ["Damaged", "Wrong Spec", "Wrong Quantity", "Poor Quality", "Other"];
 
@@ -59,7 +59,7 @@ export default function GRNForm() {
   // Fetch open job cards for WO link
   const { data: openJobCards } = useQuery({
     queryKey: ["open-job-cards-for-grn"],
-    queryFn: fetchOpenJobCards,
+    queryFn: fetchOpenJobWorks,
   });
 
   // Next GRN number

@@ -14,15 +14,15 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { MetricCard } from "@/components/MetricCard";
 import { useToast } from "@/hooks/use-toast";
 import {
-  fetchJobCards,
-  fetchJobCardStats,
-  createJobCard,
-  createJobCardStep,
-  deleteJobCard,
-  bulkDeleteJobCards,
+  fetchJobWorks,
+  fetchJobWorkStats,
+  createJobWork,
+  createJobWorkStep,
+  deleteJobWork,
+  bulkDeleteJobWorks,
   getNextJCNumber,
-  type JobCardFilters,
-} from "@/lib/job-cards-api";
+  type JobWorkFilters,
+} from "@/lib/job-works-api";
 import { fetchProcessRouteForItem } from "@/lib/bom-api";
 import { fetchItems, type Item } from "@/lib/items-api";
 import { formatCurrency } from "@/lib/gst-utils";
@@ -70,13 +70,13 @@ const emptyForm = {
   notes: "",
 };
 
-export default function JobCards() {
+export default function JobWorks() {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const [filters, setFilters] = useState<JobCardFilters>({
+  const [filters, setFilters] = useState<JobWorkFilters>({
     search: "",
     status: "all",
     location: "all",
@@ -108,13 +108,13 @@ export default function JobCards() {
   }, [location.state]);
 
   const { data: stats } = useQuery({
-    queryKey: ["jc-stats"],
-    queryFn: fetchJobCardStats,
+    queryKey: ["jw-stats"],
+    queryFn: fetchJobWorkStats,
   });
 
   const { data, isLoading } = useQuery({
-    queryKey: ["job-cards", filters],
-    queryFn: () => fetchJobCards(filters),
+    queryKey: ["job-works", filters],
+    queryFn: () => fetchJobWorks(filters),
   });
 
   const { data: nextJCNumber } = useQuery({
@@ -148,7 +148,7 @@ export default function JobCards() {
   const createMutation = useMutation({
     mutationFn: async () => {
       const trackingMode = selectedItem?.item_type === "finished_good" ? "single" : "batch";
-      const jc = await createJobCard({
+      const jc = await createJobWork({
         jc_number: nextJCNumber!,
         item_id: selectedItem?.id ?? undefined,
         item_code: selectedItem?.item_code ?? undefined,
@@ -186,8 +186,8 @@ export default function JobCards() {
       return { jc, stepsCreated };
     },
     onSuccess: ({ jc, stepsCreated }) => {
-      queryClient.invalidateQueries({ queryKey: ["job-cards"] });
-      queryClient.invalidateQueries({ queryKey: ["jc-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["job-works"] });
+      queryClient.invalidateQueries({ queryKey: ["jw-stats"] });
       setNewOpen(false);
       setSelectedItem(null);
       setForm(emptyForm);
@@ -197,7 +197,7 @@ export default function JobCards() {
           ? `${jc.jc_number} created with ${stepsCreated} process step${stepsCreated !== 1 ? "s" : ""} auto-loaded from BOM.`
           : `${jc.jc_number} is now active.`,
       });
-      navigate(`/job-cards/${jc.id}`);
+      navigate(`/job-works/${jc.id}`);
     },
     onError: (err: any) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -205,10 +205,10 @@ export default function JobCards() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => deleteJobCard(id),
+    mutationFn: (id: string) => deleteJobWork(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["job-cards"] });
-      queryClient.invalidateQueries({ queryKey: ["jc-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["job-works"] });
+      queryClient.invalidateQueries({ queryKey: ["jw-stats"] });
       toast({ title: "Work Order deleted" });
     },
     onError: (err: any) => {
@@ -232,10 +232,10 @@ export default function JobCards() {
   };
 
   const bulkDeleteMutation = useMutation({
-    mutationFn: (ids: string[]) => bulkDeleteJobCards(ids),
+    mutationFn: (ids: string[]) => bulkDeleteJobWorks(ids),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["job-cards"] });
-      queryClient.invalidateQueries({ queryKey: ["jc-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["job-works"] });
+      queryClient.invalidateQueries({ queryKey: ["jw-stats"] });
       const count = selected.size;
       setSelected(new Set());
       toast({ title: `${count} job card(s) deleted` });
@@ -578,7 +578,7 @@ export default function JobCards() {
                     <tr
                       key={jc.id}
                       className={`hover:bg-muted/50 cursor-pointer transition-colors ${selected.has(jc.id) ? "bg-blue-50/60" : ""}`}
-                      onClick={() => navigate(`/job-cards/${jc.id}`)}
+                      onClick={() => navigate(`/job-works/${jc.id}`)}
                     >
                       <td onClick={(e) => { e.stopPropagation(); toggleSelect(jc.id); }}>
                         {selected.has(jc.id)
@@ -679,7 +679,7 @@ export default function JobCards() {
                             variant="ghost"
                             size="icon"
                             className="h-7 w-7"
-                            onClick={() => navigate(`/job-cards/${jc.id}`)}
+                            onClick={() => navigate(`/job-works/${jc.id}`)}
                           >
                             <Eye className="h-3.5 w-3.5" />
                           </Button>

@@ -15,7 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/SegmentedControl";
-import { fetchWipRegister, type WipEntry } from "@/lib/job-cards-api";
+import { fetchWipRegister, type WipEntry } from "@/lib/job-works-api";
 import {
   fetchInProgressAOsWithLines,
   type AssemblyOrderWithLines,
@@ -299,7 +299,7 @@ export default function WipRegister() {
                         <tr
                           key={row.id}
                           className={`cursor-pointer transition-colors ${rowBg}`}
-                          onClick={() => navigate(`/job-cards/${row.id}`)}
+                          onClick={() => navigate(`/job-works/${row.id}`)}
                         >
                           <td className="font-mono text-xs font-medium text-foreground">
                             {row.jc_number}

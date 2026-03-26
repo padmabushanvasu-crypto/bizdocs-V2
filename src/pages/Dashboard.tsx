@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatCurrency } from "@/lib/gst-utils";
-import { fetchWipSummary, fetchWipRegister } from "@/lib/job-cards-api";
+import { fetchWipSummary, fetchWipRegister } from "@/lib/job-works-api";
 import { fetchAssemblyOrderStats } from "@/lib/assembly-orders-api";
 import { fetchFatStats } from "@/lib/fat-api";
 import { fetchRecentSalesOrders } from "@/lib/sales-orders-api";
@@ -279,7 +279,7 @@ export default function Dashboard() {
                     style={{ backgroundColor: "#2563EB" }}
                     onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#1D4ED8")}
                     onMouseLeave={e => (e.currentTarget.style.backgroundColor = "#2563EB")}
-                    onClick={() => navigate("/job-cards", { state: { openNew: true } })}
+                    onClick={() => navigate("/job-works", { state: { openNew: true } })}
                   >
                     <Activity className="h-3.5 w-3.5" />
                     New Work Order
@@ -645,7 +645,7 @@ export default function Dashboard() {
                 </div>
                 <button
                   className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors"
-                  onClick={() => navigate("/job-cards")}
+                  onClick={() => navigate("/job-works")}
                 >
                   View all →
                 </button>
@@ -674,7 +674,7 @@ export default function Dashboard() {
                         <tr
                           key={row.id}
                           className="cursor-pointer"
-                          onClick={() => navigate(`/job-cards/${row.id}`)}
+                          onClick={() => navigate(`/job-works/${row.id}`)}
                         >
                           <td>
                             <span className="font-mono text-blue-600 font-medium text-sm">{row.jc_number}</span>

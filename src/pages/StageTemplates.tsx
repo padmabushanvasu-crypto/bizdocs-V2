@@ -14,7 +14,7 @@ import {
   updateStageTemplate,
   deleteStageTemplate,
   type StageTemplate,
-} from "@/lib/job-cards-api";
+} from "@/lib/job-works-api";
 
 const CATEGORIES = ["Manufacturing", "Logistics", "Quality", "Packaging", "Other"] as const;
 

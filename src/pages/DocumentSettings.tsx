@@ -26,7 +26,7 @@ const DOC_SERIES = [
   { prefixKey: "po_prefix",      dsType: "purchase_order",   label: "Purchase Order",    defaultPrefix: "PO"  },
   { prefixKey: "dc_prefix",      dsType: "delivery_challan", label: "Delivery Challan",  defaultPrefix: "DC"  },
   { prefixKey: "grn_prefix",     dsType: "grn",              label: "GRN",               defaultPrefix: "GRN" },
-  { prefixKey: "jc_prefix",      dsType: "job_card",         label: "Work Order",        defaultPrefix: "WO"  },
+  { prefixKey: "jw_prefix",      dsType: "job_card",         label: "Job Work",          defaultPrefix: "JW"  },
   { prefixKey: "ao_prefix",      dsType: "assembly_order",   label: "Assembly Order",    defaultPrefix: "AO"  },
   { prefixKey: "so_prefix",      dsType: "sales_order",      label: "Sales Order",       defaultPrefix: "SO"  },
   { prefixKey: "dn_prefix",      dsType: "dispatch_note",    label: "Dispatch Note",     defaultPrefix: "DN"  },

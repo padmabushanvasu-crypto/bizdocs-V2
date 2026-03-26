@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fetchParty } from "@/lib/parties-api";
 import { getStateByName } from "@/lib/indian-states";
-import { fetchVendorScorecard, fetchVendorJobWorkSteps } from "@/lib/job-cards-api";
+import { fetchVendorScorecard, fetchVendorJobWorkSteps } from "@/lib/job-works-api";
 import { formatCurrency } from "@/lib/gst-utils";
 import { format } from "date-fns";
 
@@ -308,7 +308,7 @@ export default function PartyDetail() {
                               ? "bg-red-50/50"
                               : ""
                           }`}
-                          onClick={() => navigate(`/job-cards/${step.job_card_id}`)}
+                          onClick={() => navigate(`/job-works/${step.job_card_id}`)}
                         >
                           <td className="font-mono text-xs font-medium text-blue-600">{step.jc_number}</td>
                           <td>

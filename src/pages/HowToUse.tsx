@@ -257,7 +257,7 @@ const FLOW_ROWS: FlowRow[] = [
     pillHover: "hover:bg-amber-100",
     arrowColor: "text-amber-400",
     steps: [
-      { label: "Work Order", route: "/job-cards" },
+      { label: "Job Work", route: "/job-works" },
       { label: "Delivery Challan (Out)", route: "/delivery-challans/new" },
       { label: "Material Returns" },
       { label: "Complete Work Order" },

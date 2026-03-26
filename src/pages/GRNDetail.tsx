@@ -129,7 +129,7 @@ export default function GRNDetail() {
                 <p className="text-xs text-muted-foreground">Work Order</p>
                 <button
                   className="font-mono text-sm text-primary hover:underline"
-                  onClick={() => navigate(`/job-cards/${grn.job_card_id}`)}
+                  onClick={() => navigate(`/job-works/${grn.job_card_id}`)}
                 >
                   {grn.job_card_number}
                 </button>

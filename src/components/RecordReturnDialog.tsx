@@ -5,12 +5,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { type JobCardStep, type RecordReturnData } from "@/lib/job-cards-api";
+import { type JobWorkStep, type RecordReturnData } from "@/lib/job-works-api";
 
 interface RecordReturnDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  step: JobCardStep;
+  step: JobWorkStep;
   onSave: (data: RecordReturnData, autoNextStep?: "send_back" | "rework_inhouse") => void;
   isSaving?: boolean;
 }

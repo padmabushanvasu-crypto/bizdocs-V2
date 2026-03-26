@@ -30,7 +30,7 @@ const MORE_GROUPS = [
   {
     label: "Daily Work",
     items: [
-      { label: "Work Orders", to: "/job-cards", icon: Activity },
+      { label: "Job Works", to: "/job-works", icon: Activity },
       { label: "Assembly Orders", to: "/assembly-orders", icon: Layers },
       { label: "WIP Register", to: "/wip-register", icon: BookOpen },
     ],
@@ -73,13 +73,13 @@ const CREATE_TYPES = [
   { label: "Delivery Challan", to: "/delivery-challans/new", icon: Truck },
   { label: "GRN", to: "/grn/new", icon: PackageCheck },
   { label: "Dispatch Note", to: "/dispatch-notes/new", icon: Send },
-  { label: "Work Order", to: "/job-cards", icon: Activity },
+  { label: "Job Work", to: "/job-works", icon: Activity },
   { label: "Assembly Order", to: "/assembly-orders", icon: Layers },
 ];
 
 const MAIN_TABS = [
   { label: "Home", icon: LayoutDashboard, to: "/" },
-  { label: "Work Orders", icon: Activity, to: "/job-cards" },
+  { label: "Job Works", icon: Activity, to: "/job-works" },
   { label: "Items", icon: Package, to: "/items" },
 ];
 

@@ -34,7 +34,7 @@ const ROUTE_MAP: Record<string, string> = {
   delivery_challan: "/delivery-challans",
   invoice: "/invoices",
   grn: "/grn",
-  job_card: "/job-cards",
+  job_card: "/job-works",
 };
 
 export default function StockLedger() {

@@ -33,8 +33,8 @@ import PaymentReceipts from "@/pages/PaymentReceipts";
 import MoreMenu from "@/pages/MoreMenu";
 import CompanySettings from "@/pages/CompanySettings";
 import SettingsPage from "@/pages/SettingsPage";
-import JobCards from "@/pages/JobCards";
-import JobCardDetail from "@/pages/JobCardDetail";
+import JobWorks from "@/pages/JobWorks";
+import JobWorkDetail from "@/pages/JobWorkDetail";
 import StageTemplates from "@/pages/StageTemplates";
 import WipRegister from "@/pages/WipRegister";
 import VendorScorecards from "@/pages/VendorScorecards";
@@ -104,8 +104,8 @@ const App = () => (
               <Route path="/grn/new" element={<GRNForm />} />
               <Route path="/grn/:id" element={<GRNDetail />} />
               <Route path="/receipts" element={<PaymentReceipts />} />
-              <Route path="/job-cards" element={<JobCards />} />
-              <Route path="/job-cards/:id" element={<JobCardDetail />} />
+              <Route path="/job-works" element={<JobWorks />} />
+              <Route path="/job-works/:id" element={<JobWorkDetail />} />
               <Route path="/wip-register" element={<WipRegister />} />
               <Route path="/vendor-scorecards" element={<VendorScorecards />} />
               <Route path="/gst-reports" element={<GstReports />} />
