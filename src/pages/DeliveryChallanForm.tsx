@@ -720,30 +720,28 @@ export default function DeliveryChallanForm() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full min-w-[900px]">
             <thead>
-              <tr className="bg-secondary text-muted-foreground text-xs uppercase tracking-wider">
-                <th className="px-3 py-2 text-left w-8">#</th>
-                <th className="px-3 py-2 text-left min-w-[100px]">Job Work</th>
-                <th className="px-3 py-2 text-left min-w-[120px]">Drawing No.</th>
-                <th className="px-3 py-2 text-left min-w-[110px]">Item Code</th>
-                <th className="px-3 py-2 text-left min-w-[200px]">Description</th>
-                <th className="px-3 py-2 text-left min-w-[180px]">Nature of Process</th>
-                <th className="px-3 py-2 text-left min-w-[80px]">Unit</th>
-                <th className="px-3 py-2 text-right min-w-[80px]">Qty</th>
-                <th className="px-3 py-2 text-right min-w-[80px]">KGS</th>
-                <th className="px-3 py-2 text-right min-w-[80px]">SFT</th>
-                <th className="px-3 py-2 text-right min-w-[100px]">Rate (₹)</th>
-                <th className="px-3 py-2 text-right min-w-[100px]">Amount (₹)</th>
-                <th className="px-3 py-2 text-left min-w-[100px]">Remarks</th>
-                <th className="px-3 py-2 w-8"></th>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="px-3 py-2 text-left w-8 text-xs font-medium text-slate-400 uppercase tracking-wider">#</th>
+                <th className="px-3 py-2 text-left w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Job Work</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Item / Description</th>
+                <th className="px-3 py-2 text-left w-32 text-xs font-medium text-slate-400 uppercase tracking-wider">Drawing No</th>
+                <th className="px-3 py-2 text-left w-48 text-xs font-medium text-slate-400 uppercase tracking-wider">Nature of Process</th>
+                <th className="px-3 py-2 text-right w-20 text-xs font-medium text-slate-400 uppercase tracking-wider">Qty</th>
+                <th className="px-3 py-2 text-right w-20 text-xs font-medium text-slate-400 uppercase tracking-wider">KGS</th>
+                <th className="px-3 py-2 text-right w-20 text-xs font-medium text-slate-400 uppercase tracking-wider">SFT</th>
+                <th className="px-3 py-2 text-left w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Unit</th>
+                <th className="px-3 py-2 text-right w-28 text-xs font-medium text-slate-400 uppercase tracking-wider">Rate ₹</th>
+                <th className="px-3 py-2 text-right w-28 text-xs font-medium text-slate-400 uppercase tracking-wider">Amount ₹</th>
+                <th className="w-10"></th>
               </tr>
             </thead>
             <tbody>
               {lineItems.map((item, index) => (
-                <tr key={index} className="border-t border-border">
-                  <td className="px-3 py-2 text-muted-foreground font-mono text-sm">{item.serial_number}</td>
-                  <td className="px-3 py-2">
+                <tr key={index} className="group border-b border-slate-100 hover:bg-slate-50/50">
+                  <td className="px-3 py-2 text-muted-foreground font-mono text-sm w-8">{item.serial_number}</td>
+                  <td className="px-3 py-2 w-24">
                     {item.job_work_number ? (
                       <span className="inline-flex items-center gap-1 text-xs font-medium font-mono px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
                         {item.job_work_number}
@@ -752,111 +750,103 @@ export default function DeliveryChallanForm() {
                       <span className="text-xs text-muted-foreground">—</span>
                     )}
                   </td>
-                  <td className="px-3 py-2">
-                    <Input
-                      value={item.drawing_number || ""}
-                      onChange={(e) => updateLineItem(index, "drawing_number", e.target.value)}
-                      placeholder="e.g. 230086"
-                      className="h-8 text-sm font-mono w-full"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
+                  <td className="px-1 py-1">
                     <ItemSuggest
-                      value={item.item_code || ""}
-                      onChange={(v) => updateLineItem(index, "item_code", v)}
+                      value={item.description}
+                      onChange={(v) => updateLineItem(index, "description", v)}
                       onSelect={(selectedItem) => {
                         updateLineItem(index, "item_code", selectedItem.item_code);
                         updateLineItem(index, "description", selectedItem.description);
                         updateLineItem(index, "unit", selectedItem.unit || "NOS");
                         updateLineItem(index, "rate", selectedItem.sale_price || 0);
                         updateLineItem(index, "drawing_number", selectedItem.drawing_revision || selectedItem.drawing_number || "");
-                        // Recalculate amount
                         setLineItems((items) => {
                           const updated = [...items];
                           updated[index].amount = Math.round((updated[index].quantity || 0) * (selectedItem.sale_price || 0) * 100) / 100;
                           return updated;
                         });
                       }}
-                      placeholder="Code"
-                      className="h-8 text-sm font-mono"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <Input
-                      value={item.description}
-                      onChange={(e) => updateLineItem(index, "description", e.target.value)}
                       placeholder="Item description"
                       className="h-8 text-sm w-full"
                     />
                   </td>
-                  <td className="px-3 py-2">
-                    <Input
+                  <td className="p-0 w-32">
+                    <input
+                      type="text"
+                      value={item.drawing_number || ""}
+                      onChange={(e) => updateLineItem(index, "drawing_number", e.target.value)}
+                      placeholder="e.g. 230086"
+                      className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm font-mono"
+                    />
+                  </td>
+                  <td className="p-0 w-48">
+                    <input
+                      type="text"
                       value={item.nature_of_process || ""}
                       onChange={(e) => updateLineItem(index, "nature_of_process", e.target.value)}
-                      placeholder="e.g. Nickel Plating, CNC Machining & Return"
-                      className="h-8 text-sm w-full"
+                      placeholder="e.g. Nickel Plating"
+                      className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm"
                     />
                   </td>
-                  <td className="px-3 py-2">
-                    <Input
-                      value={item.unit || "NOS"}
-                      onChange={(e) => updateLineItem(index, "unit", e.target.value)}
-                      className="h-8 text-sm w-full"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <Input
+                  <td className="p-0 w-20">
+                    <input
                       type="number"
                       value={item.quantity || ""}
                       onChange={(e) => updateLineItem(index, "quantity", Number(e.target.value))}
-                      className="h-8 text-sm text-right font-mono w-full"
+                      className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm text-right font-mono tabular-nums"
                     />
                   </td>
-                  <td className="px-3 py-2">
-                    <Input
+                  <td className="p-0 w-20">
+                    <input
                       type="number"
                       step="0.001"
                       value={item.qty_kgs ?? ""}
                       onChange={(e) => updateLineItem(index, "qty_kgs", e.target.value ? Number(e.target.value) : undefined)}
-                      className="h-8 text-sm text-right font-mono w-full"
                       placeholder="—"
+                      className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm text-right font-mono tabular-nums placeholder:text-slate-300"
                     />
                   </td>
-                  <td className="px-3 py-2">
-                    <Input
+                  <td className="p-0 w-20">
+                    <input
                       type="number"
                       step="0.01"
                       value={item.qty_sft ?? ""}
                       onChange={(e) => updateLineItem(index, "qty_sft", e.target.value ? Number(e.target.value) : undefined)}
-                      className="h-8 text-sm text-right font-mono w-full"
                       placeholder="—"
+                      className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm text-right font-mono tabular-nums placeholder:text-slate-300"
                     />
                   </td>
-                  <td className="px-3 py-2">
-                    <Input
+                  <td className="p-0 w-24">
+                    <input
+                      type="text"
+                      value={item.unit || "NOS"}
+                      onChange={(e) => updateLineItem(index, "unit", e.target.value)}
+                      className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm"
+                    />
+                  </td>
+                  <td className="p-0 w-28">
+                    <input
                       type="number"
                       step="0.01"
                       value={item.rate || ""}
                       onChange={(e) => updateLineItem(index, "rate", Number(e.target.value))}
-                      className="h-8 text-sm text-right font-mono w-full"
+                      className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm text-right font-mono tabular-nums"
                     />
                   </td>
-                  <td className="px-3 py-2 text-right font-mono text-sm tabular-nums font-medium">
-                    {formatCurrency(item.amount || 0)}
+                  <td className="px-3 py-2 w-28 bg-slate-50 text-right text-sm font-medium text-slate-700 font-mono tabular-nums">
+                    {item.amount
+                      ? `₹${new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(item.amount)}`
+                      : "—"}
                   </td>
-                  <td className="px-3 py-2">
-                    <Input
-                      value={item.remarks || ""}
-                      onChange={(e) => updateLineItem(index, "remarks", e.target.value)}
-                      placeholder="Remarks"
-                      className="h-8 text-sm w-full"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
+                  <td className="px-2 w-10">
                     {lineItems.length > 1 && (
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeLineItem(index)}>
+                      <button
+                        type="button"
+                        onClick={() => removeLineItem(index)}
+                        className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-opacity p-1 rounded"
+                      >
                         <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      </button>
                     )}
                   </td>
                 </tr>
@@ -867,9 +857,9 @@ export default function DeliveryChallanForm() {
 
         <button
           onClick={addLineItem}
-          className="w-full py-3 border-t border-dashed border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors flex items-center justify-center gap-1"
+          className="w-full h-10 border-t border-dashed border-border text-sm text-muted-foreground hover:text-foreground hover:bg-slate-50 transition-colors flex items-center justify-center gap-1"
         >
-          <Plus className="h-4 w-4" /> Add Item
+          <Plus className="h-4 w-4" /> Add Line Item
         </button>
       </div>
 

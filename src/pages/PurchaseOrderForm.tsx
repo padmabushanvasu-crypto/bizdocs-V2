@@ -480,25 +480,25 @@ export default function PurchaseOrderForm() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full min-w-[800px]">
             <thead>
-              <tr className="bg-secondary text-muted-foreground text-xs uppercase tracking-wider">
-                <th className="px-3 py-2 text-left w-10">#</th>
-                <th className="px-3 py-2 text-left min-w-[200px]">Description</th>
-                <th className="px-3 py-2 text-left min-w-[100px]">Drawing No.</th>
-                <th className="px-3 py-2 text-right min-w-[80px]">Qty</th>
-                <th className="px-3 py-2 text-left min-w-[80px]">Unit</th>
-                <th className="px-3 py-2 text-right min-w-[110px]">Unit Price (₹)</th>
-                <th className="px-3 py-2 text-left min-w-[120px]">Delivery Date</th>
-                <th className="px-3 py-2 text-right min-w-[110px]">Amount (₹)</th>
-                <th className="px-3 py-2 w-10"></th>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="px-3 py-2 text-left w-8 text-xs font-medium text-slate-400 uppercase tracking-wider">#</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Description</th>
+                <th className="px-3 py-2 text-left w-32 text-xs font-medium text-slate-400 uppercase tracking-wider">Drawing No</th>
+                <th className="px-3 py-2 text-right w-20 text-xs font-medium text-slate-400 uppercase tracking-wider">Qty</th>
+                <th className="px-3 py-2 text-left w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Unit</th>
+                <th className="px-3 py-2 text-right w-28 text-xs font-medium text-slate-400 uppercase tracking-wider">Unit Price ₹</th>
+                <th className="px-3 py-2 text-left w-36 text-xs font-medium text-slate-400 uppercase tracking-wider">Delivery Date</th>
+                <th className="px-3 py-2 text-right w-28 text-xs font-medium text-slate-400 uppercase tracking-wider">Amount ₹</th>
+                <th className="w-10"></th>
               </tr>
             </thead>
             <tbody>
               {lineItems.map((item, index) => (
-                <tr key={index} className="border-t border-border">
-                  <td className="px-3 py-2 text-sm text-muted-foreground font-mono">{item.serial_number}</td>
-                  <td className="px-3 py-2">
+                <tr key={index} className="group border-b border-slate-100 hover:bg-slate-50/50">
+                  <td className="px-3 py-2 text-sm text-muted-foreground font-mono w-8">{item.serial_number}</td>
+                  <td className="px-1 py-1">
                     <ItemSuggest
                       value={item.description}
                       onChange={(v) => updateLineItem(index, "description", v)}
@@ -511,28 +511,29 @@ export default function PurchaseOrderForm() {
                         if (selectedItem.hsn_sac_code) updateLineItem(index, "hsn_sac_code", selectedItem.hsn_sac_code);
                       }}
                       placeholder="Type to search items..."
-                      className="h-8 text-sm"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <Input
-                      value={item.drawing_number || ""}
-                      onChange={(e) => updateLineItem(index, "drawing_number", e.target.value)}
                       className="h-8 text-sm w-full"
                     />
                   </td>
-                  <td className="px-3 py-2">
-                    <Input
+                  <td className="p-0 w-32">
+                    <input
+                      type="text"
+                      value={item.drawing_number || ""}
+                      onChange={(e) => updateLineItem(index, "drawing_number", e.target.value)}
+                      className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm font-mono"
+                    />
+                  </td>
+                  <td className="p-0 w-20">
+                    <input
                       type="number"
                       value={item.quantity || ""}
                       onChange={(e) => updateLineItem(index, "quantity", Number(e.target.value))}
-                      className="h-8 text-sm text-right w-full"
                       step="any"
+                      className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm text-right font-mono tabular-nums"
                     />
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-1 py-1 w-24">
                     <Select value={item.unit} onValueChange={(v) => updateLineItem(index, "unit", v)}>
-                      <SelectTrigger className="h-8 text-sm">
+                      <SelectTrigger className="h-8 text-sm border-slate-200">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -542,31 +543,37 @@ export default function PurchaseOrderForm() {
                       </SelectContent>
                     </Select>
                   </td>
-                  <td className="px-3 py-2">
-                    <Input
+                  <td className="p-0 w-28">
+                    <input
                       type="number"
                       value={item.unit_price || ""}
                       onChange={(e) => updateLineItem(index, "unit_price", Number(e.target.value))}
-                      className="h-8 text-sm text-right w-full"
                       step="any"
+                      className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm text-right font-mono tabular-nums"
                     />
                   </td>
-                  <td className="px-3 py-2">
-                    <Input
+                  <td className="p-0 w-36">
+                    <input
                       type="date"
                       value={item.delivery_date || ""}
                       onChange={(e) => updateLineItem(index, "delivery_date", e.target.value)}
-                      className="h-8 text-sm w-full"
+                      className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm"
                     />
                   </td>
-                  <td className="px-3 py-2 text-right font-mono text-sm tabular-nums">
-                    {formatNumber(item.line_total || 0)}
+                  <td className="px-3 py-2 w-28 bg-slate-50 text-right text-sm font-medium text-slate-700 font-mono tabular-nums">
+                    {item.line_total
+                      ? `₹${new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(item.line_total)}`
+                      : "—"}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-2 w-10">
                     {lineItems.length > 1 && (
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => removeLineItem(index)}>
+                      <button
+                        type="button"
+                        onClick={() => removeLineItem(index)}
+                        className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-opacity p-1 rounded"
+                      >
                         <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      </button>
                     )}
                   </td>
                 </tr>
@@ -576,9 +583,9 @@ export default function PurchaseOrderForm() {
         </div>
         <button
           onClick={addLineItem}
-          className="w-full py-3 border-t border-dashed border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors flex items-center justify-center gap-1"
+          className="w-full h-10 border-t border-dashed border-border text-sm text-muted-foreground hover:text-foreground hover:bg-slate-50 transition-colors flex items-center justify-center gap-1"
         >
-          <Plus className="h-4 w-4" /> Add Item
+          <Plus className="h-4 w-4" /> Add Line Item
         </button>
       </div>
 

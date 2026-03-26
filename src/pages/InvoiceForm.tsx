@@ -551,27 +551,27 @@ export default function InvoiceForm() {
         </div>
 
         <div className="paper-card !p-0 overflow-x-auto">
-          <table className="w-full data-table">
+          <table className="w-full min-w-[1000px]">
             <thead>
-              <tr>
-                <th className="w-8">#</th>
-                <th className="min-w-[200px]">Description</th>
-                <th className="min-w-[90px]">HSN/SAC</th>
-                <th className="min-w-[80px] text-right">Qty</th>
-                <th className="min-w-[80px]">Unit</th>
-                <th className="min-w-[100px] text-right">Price (₹)</th>
-                <th className="min-w-[80px] text-right">Disc %</th>
-                <th className="min-w-[80px]">GST %</th>
-                <th className="min-w-[100px] text-right">Taxable</th>
-                <th className="min-w-[100px] text-right">Amount</th>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="px-3 py-2 text-left w-8 text-xs font-medium text-slate-400 uppercase tracking-wider">#</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Description</th>
+                <th className="px-3 py-2 text-left w-32 text-xs font-medium text-slate-400 uppercase tracking-wider">Drawing No</th>
+                <th className="px-3 py-2 text-left w-28 text-xs font-medium text-slate-400 uppercase tracking-wider">HSN/SAC</th>
+                <th className="px-3 py-2 text-right w-20 text-xs font-medium text-slate-400 uppercase tracking-wider">Qty</th>
+                <th className="px-3 py-2 text-left w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Unit</th>
+                <th className="px-3 py-2 text-right w-28 text-xs font-medium text-slate-400 uppercase tracking-wider">Unit Price ₹</th>
+                <th className="px-3 py-2 text-right w-20 text-xs font-medium text-slate-400 uppercase tracking-wider">Disc %</th>
+                <th className="px-3 py-2 text-left w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">GST %</th>
+                <th className="px-3 py-2 text-right w-28 text-xs font-medium text-slate-400 uppercase tracking-wider">Amount ₹</th>
                 <th className="w-10"></th>
               </tr>
             </thead>
             <tbody>
               {lineItems.map((li, i) => (
-                <tr key={i}>
-                  <td className="text-muted-foreground text-center">{li.serial_number}</td>
-                  <td>
+                <tr key={i} className="group border-b border-slate-100 hover:bg-slate-50/50">
+                  <td className="px-3 py-2 text-muted-foreground font-mono text-sm w-8">{li.serial_number}</td>
+                  <td className="px-1 py-1">
                     <ItemSuggest
                       value={li.description}
                       onChange={(v) => updateLineItem(i, "description", v)}
@@ -584,38 +584,77 @@ export default function InvoiceForm() {
                         updateLineItem(i, "drawing_number", item.drawing_revision || "");
                       }}
                       placeholder="Type to search items..."
-                      className="min-w-[200px]"
-                    />
-                    <Input
-                      value={li.drawing_number || ""}
-                      onChange={(e) => updateLineItem(i, "drawing_number", e.target.value)}
-                      placeholder="Drawing No (optional)"
-                      className="mt-1 h-7 text-xs text-muted-foreground"
+                      className="h-8 text-sm w-full"
                     />
                   </td>
-                  <td><Input value={li.hsn_sac_code || ""} onChange={(e) => updateLineItem(i, "hsn_sac_code", e.target.value)} placeholder="HSN" className="w-full" /></td>
-                  <td><Input type="number" value={li.quantity || ""} onChange={(e) => updateLineItem(i, "quantity", parseFloat(e.target.value) || 0)} className="w-full text-right" /></td>
-                  <td>
+                  <td className="p-0 w-32">
+                    <input
+                      type="text"
+                      value={li.drawing_number || ""}
+                      onChange={(e) => updateLineItem(i, "drawing_number", e.target.value)}
+                      placeholder="Drawing No"
+                      className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm font-mono"
+                    />
+                  </td>
+                  <td className="p-0 w-28">
+                    <input
+                      type="text"
+                      value={li.hsn_sac_code || ""}
+                      onChange={(e) => updateLineItem(i, "hsn_sac_code", e.target.value)}
+                      placeholder="HSN"
+                      className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm font-mono"
+                    />
+                  </td>
+                  <td className="p-0 w-20">
+                    <input
+                      type="number"
+                      value={li.quantity || ""}
+                      onChange={(e) => updateLineItem(i, "quantity", parseFloat(e.target.value) || 0)}
+                      className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm text-right font-mono tabular-nums"
+                    />
+                  </td>
+                  <td className="px-1 py-1 w-24">
                     <Select value={li.unit} onValueChange={(v) => updateLineItem(i, "unit", v)}>
-                      <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="h-8 text-sm border-slate-200"><SelectValue /></SelectTrigger>
                       <SelectContent>{UNITS.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}</SelectContent>
                     </Select>
                   </td>
-                  <td><Input type="number" value={li.unit_price || ""} onChange={(e) => updateLineItem(i, "unit_price", parseFloat(e.target.value) || 0)} className="w-full text-right" /></td>
-                  <td><Input type="number" value={li.discount_percent || ""} onChange={(e) => updateLineItem(i, "discount_percent", parseFloat(e.target.value) || 0)} className="w-full text-right" /></td>
-                  <td>
+                  <td className="p-0 w-28">
+                    <input
+                      type="number"
+                      value={li.unit_price || ""}
+                      onChange={(e) => updateLineItem(i, "unit_price", parseFloat(e.target.value) || 0)}
+                      className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm text-right font-mono tabular-nums"
+                    />
+                  </td>
+                  <td className="p-0 w-20">
+                    <input
+                      type="number"
+                      value={li.discount_percent || ""}
+                      onChange={(e) => updateLineItem(i, "discount_percent", parseFloat(e.target.value) || 0)}
+                      className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm text-right font-mono tabular-nums"
+                    />
+                  </td>
+                  <td className="px-1 py-1 w-24">
                     <Select value={String(li.gst_rate)} onValueChange={(v) => updateLineItem(i, "gst_rate", parseFloat(v))}>
-                      <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="h-8 text-sm border-slate-200"><SelectValue /></SelectTrigger>
                       <SelectContent>{GST_RATES.map((r) => <SelectItem key={r} value={String(r)}>{r}%</SelectItem>)}</SelectContent>
                     </Select>
                   </td>
-                  <td className="text-right font-mono tabular-nums text-sm">{formatNumber(li.taxable_amount)}</td>
-                  <td className="text-right font-mono tabular-nums text-sm font-semibold">{formatNumber(li.line_total)}</td>
-                  <td>
+                  <td className="px-3 py-2 w-28 bg-slate-50 text-right text-sm font-medium text-slate-700 font-mono tabular-nums">
+                    {li.line_total
+                      ? `₹${new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(li.line_total)}`
+                      : "—"}
+                  </td>
+                  <td className="px-2 w-10">
                     {lineItems.length > 1 && (
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => removeLineItem(i)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                      <button
+                        type="button"
+                        onClick={() => removeLineItem(i)}
+                        className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-opacity p-1 rounded"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                     )}
                   </td>
                 </tr>
@@ -624,9 +663,12 @@ export default function InvoiceForm() {
           </table>
         </div>
 
-        <Button variant="outline" className="w-full border-dashed" onClick={addLineItem}>
-          <Plus className="h-4 w-4 mr-1" /> Add Item
-        </Button>
+        <button
+          onClick={addLineItem}
+          className="w-full h-10 border border-dashed border-border rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-slate-50 transition-colors flex items-center justify-center gap-1"
+        >
+          <Plus className="h-4 w-4" /> Add Line Item
+        </button>
       </div>
 
       {/* Footer: GST info + Totals */}
