@@ -491,7 +491,10 @@ export default function DeliveryChallanDetail() {
       {isReturnable && (
         <div className="paper-card print:hidden">
           <div className="flex items-center justify-between border-b border-border pb-2 mb-4">
-            <h3 className="text-xs font-semibold text-slate-500">Return History</h3>
+            <div>
+              <h3 className="text-xs font-semibold text-slate-500">Return History</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">Records material physically returned by the job worker. To send goods back to a <em>vendor</em>, raise a new DC with type "Return to Vendor".</p>
+            </div>
             {["issued", "partially_returned"].includes(dc.status) && !hasPerLineJW && (
               (dc as any).job_work_id ? (
                 <Button size="sm" variant="outline" onClick={() => setJwReturnOpen(true)}>

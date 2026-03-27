@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, AlertTriangle, PackageCheck, ChevronLeft } from "lucide-react";
+import { ChevronDown, AlertTriangle, PackageCheck, ChevronLeft, Info, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -21,7 +21,6 @@ import {
   recordGRNAndUpdatePO,
   type GRNLineItem,
 } from "@/lib/grn-api";
-import { fetchOpenJobWorks } from "@/lib/job-works-api";
 
 const REJECTION_REASONS = ["Damaged", "Wrong Spec", "Wrong Quantity", "Poor Quality", "Other"];
 
@@ -43,8 +42,8 @@ export default function GRNForm() {
   const [lrReference, setLrReference] = useState("");
   const [receivedBy, setReceivedBy] = useState("");
   const [notes, setNotes] = useState("");
-  const [selectedJobCard, setSelectedJobCard] = useState<any>(null);
-  const [jcOpen, setJcOpen] = useState(false);
+  const [transporterName, setTransporterName] = useState("");
+  const [vendorName, setVendorName] = useState("");
   const [lineItems, setLineItems] = useState<GRNLineItem[]>([]);
   const [successDialogOpen, setSuccessDialogOpen] = useState(false);
   const [savedGRNId, setSavedGRNId] = useState<string | null>(null);
@@ -54,12 +53,6 @@ export default function GRNForm() {
   const { data: openPOs } = useQuery({
     queryKey: ["open-pos-for-grn"],
     queryFn: fetchOpenPOs,
-  });
-
-  // Fetch open job cards for WO link
-  const { data: openJobCards } = useQuery({
-    queryKey: ["open-job-cards-for-grn"],
-    queryFn: fetchOpenJobWorks,
   });
 
   // Next GRN number
@@ -113,13 +106,35 @@ export default function GRNForm() {
     setLineItems(items);
   };
 
+  const addManualItem = () => {
+    setLineItems((prev) => [
+      ...prev,
+      {
+        serial_number: prev.length + 1,
+        description: "",
+        drawing_number: "",
+        unit: "NOS",
+        po_quantity: 0,
+        previously_received: 0,
+        pending_quantity: 0,
+        receiving_now: 0,
+        accepted_quantity: 0,
+        rejected_quantity: 0,
+        rejection_reason: "",
+        remarks: "",
+      },
+    ]);
+  };
+
   const updateLineItem = (index: number, field: keyof GRNLineItem, value: any) => {
     setLineItems((items) => {
       const updated = [...items];
       const row = { ...updated[index] };
 
       if (field === "receiving_now") {
-        const v = Math.min(Math.max(0, Number(value)), row.pending_quantity);
+        const v = row.po_line_item_id
+          ? Math.min(Math.max(0, Number(value)), row.pending_quantity)
+          : Math.max(0, Number(value));
         row.receiving_now = v;
         row.accepted_quantity = v; // Default accepted = receiving
         row.rejected_quantity = 0;
@@ -157,9 +172,10 @@ export default function GRNForm() {
         po_id: selectedPO?.id || null,
         po_number: selectedPO?.po_number || null,
         vendor_id: selectedPO?.vendor_id || null,
-        vendor_name: selectedPO?.vendor_name || null,
+        vendor_name: selectedPO?.vendor_name || vendorName || null,
         vendor_invoice_number: vendorInvoiceNumber || null,
         vendor_invoice_date: vendorInvoiceDate ? format(vendorInvoiceDate, "yyyy-MM-dd") : null,
+        transporter_name: transporterName || null,
         vehicle_number: vehicleNumber || null,
         lr_reference: lrReference || null,
         received_by: receivedBy || null,
@@ -170,8 +186,6 @@ export default function GRNForm() {
         status,
         recorded_at: status === "recorded" ? new Date().toISOString() : null,
         verified_at: null,
-        job_card_id: selectedJobCard?.id || null,
-        job_card_number: selectedJobCard?.jc_number || null,
       };
 
       const items = lineItems
@@ -209,10 +223,6 @@ export default function GRNForm() {
   });
 
   const handleSave = (status: string) => {
-    if (!selectedPO) {
-      toast({ title: "PO required", description: "Please select a purchase order.", variant: "destructive" });
-      return;
-    }
     if (!hasItems) {
       toast({ title: "No items", description: "Enter receiving quantities for at least one item.", variant: "destructive" });
       return;
@@ -231,7 +241,17 @@ export default function GRNForm() {
       </button>
       <div>
         <h1 className="text-xl font-display font-bold text-foreground">New Goods Receipt Note</h1>
-        <p className="text-sm text-muted-foreground">Record incoming material against a purchase order</p>
+        <p className="text-sm text-muted-foreground">Record incoming material received from a vendor</p>
+      </div>
+
+      {/* Guidance Banner */}
+      <div className="flex gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+        <Info className="h-4 w-4 mt-0.5 shrink-0 text-blue-600" />
+        <div className="space-y-1">
+          <p className="font-medium">GRN records materials received from vendors.</p>
+          <p>Link to a Purchase Order to pre-fill pending items — or leave blank and add items manually for unplanned receipts.</p>
+          <p>To return materials to a vendor, use a <a href="/delivery-challans" className="font-medium underline underline-offset-2 hover:text-blue-900">Delivery Challan</a> with type "Return to Vendor".</p>
+        </div>
       </div>
 
       {/* Header Section */}
@@ -240,7 +260,7 @@ export default function GRNForm() {
           {/* Left Column */}
           <div className="space-y-4">
             <div>
-              <Label className="text-sm font-medium text-slate-700">Linked Purchase Order *</Label>
+              <Label className="text-sm font-medium text-slate-700">Linked Purchase Order <span className="font-normal text-muted-foreground">(optional)</span></Label>
               <Popover open={poOpen} onOpenChange={setPOOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" role="combobox" className="w-full justify-between mt-1 font-normal">
@@ -271,7 +291,16 @@ export default function GRNForm() {
                   </Command>
                 </PopoverContent>
               </Popover>
+              <p className="text-xs text-muted-foreground mt-1">Leave blank for unplanned receipts — you can add items manually below</p>
             </div>
+
+            {/* Vendor name when no PO */}
+            {!selectedPO && (
+              <div>
+                <Label className="text-sm font-medium text-slate-700">Vendor Name</Label>
+                <Input value={vendorName} onChange={(e) => setVendorName(e.target.value)} className="mt-1" placeholder="e.g., ABC Traders" />
+              </div>
+            )}
 
             {/* PO Summary Card */}
             {selectedPO && (
@@ -305,40 +334,8 @@ export default function GRNForm() {
             </div>
 
             <div>
-              <Label className="text-sm font-medium text-slate-700">Link to Job Work (optional)</Label>
-              <Popover open={jcOpen} onOpenChange={setJcOpen}>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" role="combobox" className="w-full justify-between mt-1 font-normal">
-                    {selectedJobCard
-                      ? `${selectedJobCard.jc_number} — ${selectedJobCard.item_description ?? selectedJobCard.item_code ?? ""}`
-                      : "Select Job Work..."}
-                    <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-full p-0" align="start">
-                  <Command>
-                    <CommandInput placeholder="Search job work..." />
-                    <CommandList>
-                      <CommandEmpty>No open job works found.</CommandEmpty>
-                      <CommandGroup>
-                        {(openJobCards ?? []).map((jc: any) => (
-                          <CommandItem
-                            key={jc.id}
-                            value={`${jc.jc_number} ${jc.item_description ?? ""} ${jc.item_code ?? ""}`}
-                            onSelect={() => { setSelectedJobCard(jc); setJcOpen(false); }}
-                          >
-                            <div>
-                              <p className="font-mono font-medium">{jc.jc_number}</p>
-                              <p className="text-xs text-muted-foreground">{jc.item_description ?? jc.item_code}</p>
-                            </div>
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-              <p className="text-xs text-muted-foreground mt-1">Link this GRN to a Job Work if these materials are for a specific job</p>
+              <Label className="text-sm font-medium text-slate-700">Transporter Name</Label>
+              <Input value={transporterName} onChange={(e) => setTransporterName(e.target.value)} className="mt-1" placeholder="e.g., Blue Dart, Self" />
             </div>
 
             <div>
@@ -368,19 +365,22 @@ export default function GRNForm() {
               </Popover>
             </div>
 
-            <div>
-              <Label className="text-sm font-medium text-slate-700">Vehicle Number</Label>
-              <Input value={vehicleNumber} onChange={(e) => setVehicleNumber(e.target.value)} className="mt-1" placeholder="e.g., TN 01 AB 1234" />
-            </div>
-
-            <div>
-              <Label className="text-sm font-medium text-slate-700">LR / Transporter Ref</Label>
-              <Input value={lrReference} onChange={(e) => setLrReference(e.target.value)} className="mt-1" placeholder="Optional" />
-            </div>
-
-            <div>
-              <Label className="text-sm font-medium text-slate-700">Received By</Label>
-              <Input value={receivedBy} onChange={(e) => setReceivedBy(e.target.value)} className="mt-1" placeholder="Name of person" />
+            <div className="pt-2 border-t border-border">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Transport & Receipt</p>
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-sm font-medium text-slate-700">Vehicle Number</Label>
+                  <Input value={vehicleNumber} onChange={(e) => setVehicleNumber(e.target.value)} className="mt-1" placeholder="e.g., TN 01 AB 1234" />
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-slate-700">LR / Consignment Ref</Label>
+                  <Input value={lrReference} onChange={(e) => setLrReference(e.target.value)} className="mt-1" placeholder="Optional" />
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-slate-700">Received By</Label>
+                  <Input value={receivedBy} onChange={(e) => setReceivedBy(e.target.value)} className="mt-1" placeholder="Name of person" />
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -389,10 +389,15 @@ export default function GRNForm() {
       {/* Line Items */}
       {lineItems.length > 0 && (
         <div className="paper-card !p-0">
-          <div className="px-4 md:px-6 py-3 border-b border-border">
+          <div className="px-4 md:px-6 py-3 border-b border-border flex items-center justify-between">
             <h2 className="text-sm uppercase text-muted-foreground font-bold tracking-wider">
-              Pending Items from PO {selectedPO?.po_number}
+              {selectedPO ? `Pending Items from PO ${selectedPO.po_number}` : "Items Received"}
             </h2>
+            {!selectedPO && (
+              <Button variant="outline" size="sm" onClick={addManualItem}>
+                <Plus className="h-3.5 w-3.5 mr-1" /> Add Row
+              </Button>
+            )}
           </div>
 
           <div className="overflow-x-auto">
@@ -414,8 +419,16 @@ export default function GRNForm() {
               <tbody>
                 {lineItems.map((item, index) => (
                   <tr key={index} className="border-t border-border">
-                    <td className="px-3 py-2 text-sm font-medium">{item.description}</td>
-                    <td className="px-3 py-2 text-sm font-mono text-muted-foreground">{item.drawing_number || "—"}</td>
+                    <td className="px-3 py-2 text-sm font-medium">
+                      {item.po_line_item_id
+                        ? item.description
+                        : <Input value={item.description} onChange={(e) => updateLineItem(index, "description", e.target.value)} className="h-8 text-sm" placeholder="Description" />}
+                    </td>
+                    <td className="px-3 py-2 text-sm font-mono text-muted-foreground">
+                      {item.po_line_item_id
+                        ? (item.drawing_number || "—")
+                        : <Input value={item.drawing_number || ""} onChange={(e) => updateLineItem(index, "drawing_number", e.target.value)} className="h-8 text-sm font-mono" placeholder="Optional" />}
+                    </td>
                     <td className="px-3 py-2 text-right text-sm font-mono tabular-nums text-muted-foreground">{item.po_quantity}</td>
                     <td className="px-3 py-2 text-right text-sm font-mono tabular-nums text-muted-foreground">{item.previously_received}</td>
                     <td className="px-3 py-2 text-right text-sm font-mono tabular-nums font-medium text-amber-600">{item.pending_quantity}</td>
@@ -507,8 +520,11 @@ export default function GRNForm() {
       {lineItems.length === 0 && !selectedPO && (
         <div className="paper-card text-center py-12">
           <PackageCheck className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
-          <p className="text-muted-foreground font-medium">Select a Purchase Order to begin</p>
-          <p className="text-sm text-muted-foreground">GRN items will be pre-filled from the PO</p>
+          <p className="text-muted-foreground font-medium">No items yet</p>
+          <p className="text-sm text-muted-foreground mb-4">Select a Purchase Order above to pre-fill items, or add manually</p>
+          <Button variant="outline" onClick={addManualItem}>
+            <Plus className="h-4 w-4 mr-1" /> Add Item Manually
+          </Button>
         </div>
       )}
 

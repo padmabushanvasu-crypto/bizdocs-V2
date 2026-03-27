@@ -124,15 +124,10 @@ export default function GRNDetail() {
                 </button>
               </div>
             )}
-            {grn.job_card_number && (
+            {grn.transporter_name && (
               <div className="md:text-right">
-                <p className="text-xs text-muted-foreground">Job Work</p>
-                <button
-                  className="font-mono text-sm text-primary hover:underline"
-                  onClick={() => navigate(`/job-works/${grn.job_card_id}`)}
-                >
-                  {grn.job_card_number}
-                </button>
+                <p className="text-xs text-muted-foreground">Transporter</p>
+                <p>{grn.transporter_name}</p>
               </div>
             )}
             {grn.vehicle_number && (

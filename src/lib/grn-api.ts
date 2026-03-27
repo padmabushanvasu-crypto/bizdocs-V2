@@ -30,6 +30,7 @@ export interface GRN {
   vendor_name: string | null;
   vendor_invoice_number: string | null;
   vendor_invoice_date: string | null;
+  transporter_name: string | null;
   vehicle_number: string | null;
   lr_reference: string | null;
   received_by: string | null;
@@ -43,8 +44,6 @@ export interface GRN {
   created_at: string;
   updated_at: string;
   line_items?: GRNLineItem[];
-  job_card_id?: string | null;
-  job_card_number?: string | null;
 }
 
 export interface GRNFilters {
@@ -110,12 +109,11 @@ export async function createGRN({ grn, lineItems }: CreateGRNData) {
     po_id: grn.po_id || null, po_number: grn.po_number || null,
     vendor_id: grn.vendor_id || null, vendor_name: grn.vendor_name || null,
     vendor_invoice_number: grn.vendor_invoice_number || null, vendor_invoice_date: grn.vendor_invoice_date || null,
+    transporter_name: grn.transporter_name || null,
     vehicle_number: grn.vehicle_number || null, lr_reference: grn.lr_reference || null,
     received_by: grn.received_by || null, notes: grn.notes || null,
     total_received: grn.total_received, total_accepted: grn.total_accepted, total_rejected: grn.total_rejected,
     status: grn.status, recorded_at: grn.recorded_at,
-    job_card_id: grn.job_card_id ?? null,
-    job_card_number: grn.job_card_number ?? null,
   } as any).select().single();
   if (error) throw error;
 
