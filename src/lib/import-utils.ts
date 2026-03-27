@@ -711,3 +711,103 @@ export function fieldDisplayName(field: string): string {
     field.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())
   );
 }
+
+// ── Smart Excel parser (shared — used by DataImport and BackgroundImportDialog) ──
+
+export function isHintRow(primaryCell: string): boolean {
+  const lower = primaryCell.toLowerCase().trim();
+  if (!lower) return false;
+  const HINT_PHRASES = [
+    "e.g.", "example", "required", "optional", "code of", "full ",
+    "company legal", "vendor / customer", "raw_material /", "drawing number or",
+    "enter", "fill",
+  ];
+  if (lower.length > 80) return true;
+  if (/ \/ /.test(primaryCell)) return true;
+  if (HINT_PHRASES.some((p) => lower.includes(p))) return true;
+  return false;
+}
+
+export async function parseExcelSmart(
+  file: File,
+  fieldMap: Record<string, string[]>
+): Promise<{ rows: Record<string, string>[]; rowNums: number[]; skipped: SkipReason[] }> {
+  const buffer = await file.arrayBuffer();
+  const wb = (XLSX as any).read(new Uint8Array(buffer), { type: "array", raw: false });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const allRows = (XLSX as any).utils.sheet_to_json(ws, {
+    header: 1, defval: "", raw: false,
+  }) as string[][];
+
+  if (allRows.length === 0) return { rows: [], rowNums: [], skipped: [] };
+
+  const allAliases = Object.values(fieldMap).flat().map(normaliseHeader).filter((a) => a.length >= 3);
+
+  const scanLimit = Math.min(10, allRows.length);
+  let headerRowIdx = 0;
+  let bestScore = -1;
+  for (let i = 0; i < scanLimit; i++) {
+    let score = 0;
+    for (const cell of allRows[i]) {
+      const norm = normaliseHeader(String(cell));
+      if (norm.length < 2) continue;
+      if (allAliases.some((a) => norm === a || norm.includes(a) || a.includes(norm))) score++;
+    }
+    if (score > bestScore) { bestScore = score; headerRowIdx = i; }
+  }
+
+  const headers = allRows[headerRowIdx].map((c) => String(c).trim());
+  const colMap = resolveColumns(headers, fieldMap);
+  const primaryKeyColIdx = Object.keys(colMap).length > 0 ? Object.values(colMap)[0] : 0;
+
+  const SKIP_PHRASES = [
+    "required field", "example data", "how to use", "instructions",
+    "sample only", "do not change", "delete this row",
+  ];
+
+  const rows: Record<string, string>[] = [];
+  const rowNums: number[] = [];
+  const skipped: SkipReason[] = [];
+
+  for (let i = headerRowIdx + 1; i < allRows.length; i++) {
+    const row = allRows[i];
+    const excelRowNum = i + 1;
+    const positionAfterHeader = i - headerRowIdx - 1;
+    const primaryCell = String(row[primaryKeyColIdx] ?? "").trim();
+
+    const rowText = row.map((c) => String(c)).join(" ").toLowerCase();
+    if (SKIP_PHRASES.some((p) => rowText.includes(p))) {
+      skipped.push({ row: excelRowNum, value: primaryCell, reason: "Example data row — skipped automatically" });
+      continue;
+    }
+
+    if (positionAfterHeader < 5) {
+      const anyCellIsHint =
+        isHintRow(primaryCell) ||
+        row.some((c) => {
+          const s = String(c).trim();
+          return / \/ /.test(s) || s.split("/").length - 1 > 2;
+        });
+      if (anyCellIsHint) {
+        skipped.push({ row: excelRowNum, value: primaryCell, reason: "Instruction row — skipped automatically" });
+        continue;
+      }
+    }
+
+    const mapped: Record<string, string> = {};
+    let hasData = false;
+    headers.forEach((header, idx) => {
+      const val = String(row[idx] ?? "").trim();
+      if (header) {
+        mapped[header] = val;
+        if (val) hasData = true;
+      }
+    });
+    if (hasData) {
+      rows.push(mapped);
+      rowNums.push(excelRowNum);
+    }
+  }
+
+  return { rows, rowNums, skipped };
+}

@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
 import type { Tables, TablesInsert, TablesUpdate } from "@/integrations/supabase/types";
+import { normalizePartyType, type SkipReason } from "@/lib/import-utils";
 
 export type VendorType = "raw_material_supplier" | "processor" | "both";
 
@@ -141,4 +142,125 @@ export async function bulkDeleteParties(ids: string[]): Promise<{ deleted: numbe
     }
   }
   return { deleted, deactivated, errors };
+}
+
+// ── Bulk import batch function (shared by DataImport and BackgroundImportDialog) ──
+
+export async function importPartiesBatch(
+  rows: Record<string, string>[],
+  rowNums: number[],
+  onProgress?: (pct: number) => void
+): Promise<{ imported: number; skipped: number; errors: string[]; skipReasons: SkipReason[]; updated?: number }> {
+  const companyId = await getCompanyId();
+
+  const { data: existingParties } = await (supabase as any)
+    .from("parties").select("id, name, gstin").eq("company_id", companyId);
+  const byName = new Map<string, string>(
+    (existingParties ?? []).map((p: any) => [p.name?.toLowerCase().trim(), p.id as string])
+  );
+  const byGstin = new Map<string, string>(
+    (existingParties ?? []).filter((p: any) => p.gstin?.trim())
+      .map((p: any) => [p.gstin.trim().toLowerCase(), p.id as string])
+  );
+
+  let imported = 0;
+  let newCount = 0;
+  let updatedCount = 0;
+  let skipped = 0;
+  const errors: string[] = [];
+  const skipReasons: SkipReason[] = [];
+  const toInsert: any[] = [];
+  const toUpdate: any[] = [];
+  const nameToRow = new Map<string, number>();
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const excelRow = rowNums[i] ?? (i + 2);
+    const name = row["name"]?.trim();
+    if (!name) {
+      skipped++;
+      errors.push(`Row ${excelRow}: Party Name was blank`);
+      skipReasons.push({ row: excelRow, value: "", reason: "Party Name was blank" });
+      continue;
+    }
+    nameToRow.set(name.toLowerCase(), excelRow);
+    const gstin = row["gstin"] || null;
+    const state_code = row["state_code"] || (gstin && gstin.length >= 2 ? gstin.substring(0, 2) : null);
+    const partyData: any = {
+      company_id: companyId, name,
+      party_type: normalizePartyType(row["party_type"] || ""),
+      contact_person: row["contact_person"] || null,
+      address_line1: row["address_line1"] || null,
+      city: row["city"] || null,
+      state: row["state"] || null,
+      pin_code: row["pin_code"] || null,
+      phone1: row["phone1"] || null,
+      email1: row["email1"] || null,
+      gstin, pan: row["pan"] || null,
+      payment_terms: row["payment_terms"] || null,
+      notes: row["notes"] || null,
+      state_code,
+    };
+    const existingId = byName.get(name.toLowerCase()) ??
+      (gstin ? byGstin.get(gstin.toLowerCase()) ?? null : null);
+    if (existingId) toUpdate.push({ id: existingId, ...partyData });
+    else toInsert.push(partyData);
+  }
+
+  const totalOps = toInsert.length + toUpdate.length;
+
+  if (toInsert.length > 0) {
+    try {
+      for (let i = 0; i < toInsert.length; i += 200) {
+        const chunk = toInsert.slice(i, i + 200);
+        const { error } = await (supabase as any).from("parties").insert(chunk);
+        if (error) throw error;
+        imported += chunk.length; newCount += chunk.length;
+        if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
+      }
+    } catch {
+      for (const party of toInsert) {
+        try {
+          const { error } = await (supabase as any).from("parties").insert(party);
+          if (error) throw error;
+          imported++; newCount++;
+          if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
+        } catch (err: any) {
+          skipped++;
+          const isDup = err?.code === "23505" || String(err?.message ?? "").toLowerCase().includes("duplicate");
+          const reason = isDup ? "Duplicate already exists" : `DB error: ${err?.message ?? "unknown"}`;
+          const rowNum = nameToRow.get(party.name?.toLowerCase()) ?? 0;
+          errors.push(`Row ${rowNum} (${party.name}): ${reason}`);
+          skipReasons.push({ row: rowNum, value: party.name, reason });
+        }
+      }
+    }
+  }
+
+  for (let i = 0; i < toUpdate.length; i += 100) {
+    const chunk = toUpdate.slice(i, i + 100);
+    try {
+      const { error } = await (supabase as any).from("parties").upsert(chunk, { onConflict: "id" });
+      if (error) throw error;
+      imported += chunk.length; updatedCount += chunk.length;
+    } catch {
+      for (const party of chunk) {
+        const { id, ...rest } = party;
+        try {
+          const { error } = await (supabase as any).from("parties").update(rest).eq("id", id);
+          if (error) throw error;
+          imported++; updatedCount++;
+        } catch (err: any) {
+          skipped++;
+          const rowNum = nameToRow.get(rest.name?.toLowerCase()) ?? 0;
+          const reason = `DB error: ${err?.message ?? "unknown"}`;
+          errors.push(`Row ${rowNum} (${rest.name}): ${reason}`);
+          skipReasons.push({ row: rowNum, value: rest.name, reason });
+        }
+      }
+    }
+    if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
+  }
+
+  return { imported, skipped, errors, skipReasons, updated: updatedCount };
 }

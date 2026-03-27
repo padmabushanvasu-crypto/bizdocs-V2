@@ -4,7 +4,7 @@ import {
   GitFork, Plus, Trash2, Search, ChevronDown, ChevronRight, ChevronUp,
   Pencil, RefreshCw, Download, Printer, CheckCircle2, Star,
   AlertTriangle, AlertCircle, BarChart3, Users, X, Square, CheckSquare,
-  ListOrdered, ArrowUp, ArrowDown, ZoomIn, ZoomOut,
+  ListOrdered, ArrowUp, ArrowDown, ZoomIn, ZoomOut, Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,8 +33,11 @@ import {
   explodeBom, calculateBomCost, fetchWhereUsed, compareBomVariants,
   fetchBomLineVendorsBatch, addBomLineVendor, updateBomLineVendor, removeBomLineVendor, swapBomLineVendorOrder,
   fetchBomProcessStepsBatch, addBomProcessStep, updateBomProcessStep, deleteBomProcessStep, reorderBomProcessSteps,
+  importBomBatch,
   type BomLine, type BomVariant, type BomNode, type BomLineVendor, type BomProcessStep,
 } from "@/lib/bom-api";
+import BackgroundImportDialog from "@/components/BackgroundImportDialog";
+import { BOM_FIELD_MAP } from "@/lib/import-utils";
 import { fetchParties, type Party } from "@/lib/parties-api";
 import { fetchItems, type Item } from "@/lib/items-api";
 import { formatCurrency } from "@/lib/gst-utils";
@@ -372,6 +375,7 @@ export default function BillOfMaterials() {
   const [treeCollapsedNodes, setTreeCollapsedNodes] = useState<Set<string>>(new Set());
 
   // ── Dialogs ─────────────────────────────────────────────────────────────────
+  const [importBomOpen, setImportBomOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [editLine, setEditLine] = useState<BomLine | null>(null);
   const [newVariantOpen, setNewVariantOpen] = useState(false);
@@ -1167,17 +1171,33 @@ export default function BillOfMaterials() {
       {/* ── Main UI (hidden when printing) ─────────────────────────────────── */}
       <div className="bom-no-print">
         {/* Header */}
-        <div className="flex items-start gap-3">
-          <div className="h-10 w-10 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center shrink-0">
-            <GitFork className="h-5 w-5 text-indigo-600" />
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="h-10 w-10 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center shrink-0">
+              <GitFork className="h-5 w-5 text-indigo-600" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Bill of Materials</h1>
+              <p className="text-sm text-slate-500 mt-0.5">
+                Define product structure, manage variants, and analyse costs
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Bill of Materials</h1>
-            <p className="text-sm text-slate-500 mt-0.5">
-              Define product structure, manage variants, and analyse costs
-            </p>
-          </div>
+          <Button variant="outline" size="sm" className="gap-1.5 shrink-0" onClick={() => setImportBomOpen(true)}>
+            <Upload className="h-4 w-4" /> Import BOM
+          </Button>
         </div>
+
+        <BackgroundImportDialog
+          open={importBomOpen}
+          onOpenChange={setImportBomOpen}
+          title="Import BOM"
+          entityName="BOM lines"
+          fieldMap={BOM_FIELD_MAP}
+          requiredFields={["finished_item_code", "component_code"]}
+          batchFn={importBomBatch}
+          invalidateKeys={[["bom-lines"]]}
+        />
 
         {/* Two-panel layout */}
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4 mt-4">

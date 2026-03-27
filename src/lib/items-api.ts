@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
+import { normalizeItemType, normalizeUnit, type SkipReason } from "@/lib/import-utils";
 
 export interface Item {
   id: string;
@@ -208,6 +209,176 @@ export async function bulkDeleteItems(ids: string[]): Promise<{ deleted: number;
     }
   }
   return { deleted, deactivated, errors };
+}
+
+// ── Bulk import batch function (shared by DataImport and BackgroundImportDialog) ──
+
+export async function importItemsBatch(
+  rows: Record<string, string>[],
+  rowNums: number[],
+  onProgress?: (pct: number) => void
+): Promise<{ imported: number; skipped: number; errors: string[]; skipReasons: SkipReason[]; updated?: number }> {
+  const companyId = await getCompanyId();
+
+  const { data: existingItems } = await supabase
+    .from("items").select("id, item_code, drawing_revision").eq("company_id", companyId);
+
+  const byCode = new Map<string, string>(
+    (existingItems ?? []).filter((i: any) => i.item_code)
+      .map((i: any) => [(i.item_code as string).toLowerCase(), i.id as string])
+  );
+  const byDrawing = new Map<string, { id: string; item_code: string }>(
+    (existingItems ?? []).filter((i: any) => i.drawing_revision)
+      .map((i: any) => [(i.drawing_revision as string).toLowerCase(), { id: i.id as string, item_code: i.item_code as string }])
+  );
+
+  let imported = 0;
+  let newCount = 0;
+  let updatedCount = 0;
+  let skipped = 0;
+  let autoCodeIndex = 1;
+  const errors: string[] = [];
+  const skipReasons: SkipReason[] = [];
+  const toInsert: any[] = [];
+  const toUpdate: any[] = [];
+  const codeToRow = new Map<string, number>();
+
+  const VALID_TYPES = ["raw_material", "component", "sub_assembly", "bought_out", "finished_good", "consumable", "job_work", "service"];
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const excelRow = rowNums[i] ?? (i + 2);
+    const code = row["item_code"]?.trim() || "";
+    const drawingNum = row["drawing_revision"]?.trim() || "";
+    const desc = row["description"]?.trim() || "";
+    const displayKey = code || drawingNum || "";
+
+    if (!desc) {
+      skipped++;
+      errors.push(`Row ${excelRow}${displayKey ? ` (${displayKey})` : ""}: Description was blank`);
+      skipReasons.push({ row: excelRow, value: displayKey, reason: "Description was blank" });
+      continue;
+    }
+
+    let existingId: string | null = null;
+    let resolvedCode = code;
+
+    if (code) {
+      existingId = byCode.get(code.toLowerCase()) ?? null;
+    } else if (drawingNum) {
+      const match = byDrawing.get(drawingNum.toLowerCase());
+      if (match) { existingId = match.id; resolvedCode = match.item_code || drawingNum; }
+      else resolvedCode = drawingNum;
+    } else {
+      const words = desc.trim().split(/\s+/).slice(0, 3)
+        .map((w) => w.toUpperCase().replace(/[^A-Z0-9]/g, "")).filter(Boolean);
+      resolvedCode = `${words.join("-")}-${String(autoCodeIndex).padStart(4, "0")}`;
+      autoCodeIndex++;
+      existingId = byCode.get(resolvedCode.toLowerCase()) ?? null;
+    }
+
+    const itemData: any = {
+      company_id: companyId,
+      item_code: resolvedCode || null,
+      description: desc,
+      item_type: normalizeItemType(row["item_type"] || ""),
+      unit: normalizeUnit(row["unit"] || "NOS"),
+      hsn_sac_code: row["hsn_sac_code"] || null,
+      sale_price: parseFloat(row["sale_price"] || "0") || 0,
+      purchase_price: parseFloat(row["purchase_price"] || "0") || 0,
+      gst_rate: parseFloat(row["gst_rate"] || "18") || 18,
+      min_stock: parseFloat(row["min_stock"] || "0") || 0,
+      notes: row["notes"] || null,
+      drawing_number: drawingNum || null,
+      drawing_revision: drawingNum || null,
+      standard_cost: parseFloat(row["standard_cost"] || "0") || 0,
+    };
+
+    if (resolvedCode) codeToRow.set(resolvedCode.toLowerCase(), excelRow);
+
+    if (existingId) toUpdate.push({ id: existingId, ...itemData });
+    else toInsert.push(itemData);
+  }
+
+  const totalOps = toInsert.length + toUpdate.length;
+
+  // Bulk insert new items in chunks of 200
+  if (toInsert.length > 0) {
+    const bulkInsert = async (items: any[]) => {
+      for (let i = 0; i < items.length; i += 200) {
+        const chunk = items.slice(i, i + 200);
+        const { error } = await supabase.from("items").insert(chunk);
+        if (error) throw error;
+        imported += chunk.length;
+        newCount += chunk.length;
+        if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
+      }
+    };
+    try {
+      await bulkInsert(toInsert);
+    } catch {
+      const validInsert = toInsert.filter((item) => VALID_TYPES.includes(item.item_type));
+      const invalidInsert = toInsert.filter((item) => !VALID_TYPES.includes(item.item_type));
+      for (const item of invalidInsert) {
+        skipped++;
+        const rowNum = codeToRow.get((item.item_code || "").toLowerCase()) ?? 0;
+        const reason = `Item Type not recognised: "${item.item_type}"`;
+        errors.push(`Row ${rowNum} (${item.item_code || item.description}): ${reason}`);
+        skipReasons.push({ row: rowNum, value: item.item_code || "", reason });
+      }
+      if (validInsert.length > 0) {
+        try {
+          imported = 0; newCount = 0;
+          await bulkInsert(validInsert);
+        } catch {
+          imported = 0; newCount = 0;
+          for (const itemData of validInsert) {
+            try {
+              const { error } = await supabase.from("items").insert(itemData);
+              if (error) throw error;
+              imported++; newCount++;
+            } catch (err: any) {
+              skipped++;
+              const isDup = err?.code === "23505" || String(err?.message ?? "").toLowerCase().includes("duplicate");
+              const reason = isDup ? "Duplicate already exists" : `DB error: ${err?.message ?? "unknown"}`;
+              const rowNum = codeToRow.get((itemData.item_code || "").toLowerCase()) ?? 0;
+              errors.push(`Row ${rowNum} (${itemData.item_code || itemData.description}): ${reason}`);
+              skipReasons.push({ row: rowNum, value: itemData.item_code || "", reason });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Bulk upsert updates in chunks of 100
+  for (let i = 0; i < toUpdate.length; i += 100) {
+    const chunk = toUpdate.slice(i, i + 100);
+    try {
+      const { error } = await supabase.from("items").upsert(chunk, { onConflict: "id" });
+      if (error) throw error;
+      imported += chunk.length;
+      updatedCount += chunk.length;
+    } catch {
+      for (const itemData of chunk) {
+        const { id, ...rest } = itemData;
+        try {
+          const { error } = await supabase.from("items").update(rest).eq("id", id);
+          if (error) throw error;
+          imported++; updatedCount++;
+        } catch (err: any) {
+          skipped++;
+          const rowNum = codeToRow.get((rest.item_code || "").toLowerCase()) ?? 0;
+          const reason = `DB error: ${err?.message ?? "unknown"}`;
+          errors.push(`Row ${rowNum} (${rest.item_code || rest.description}): ${reason}`);
+          skipReasons.push({ row: rowNum, value: rest.item_code || "", reason });
+        }
+      }
+    }
+    if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
+  }
+
+  return { imported, skipped, errors, skipReasons, updated: updatedCount };
 }
 
 export async function updateMinStockOverride(id: string, value: number | null) {

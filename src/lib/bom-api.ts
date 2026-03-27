@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId } from "@/lib/auth-helpers";
+import type { SkipReason } from "@/lib/import-utils";
 
 // ============================================================
 // Interfaces
@@ -1094,4 +1095,152 @@ export async function fetchProcessRouteForItem(
     if (lineSteps.length > 0) return lineSteps;
   }
   return [];
+}
+
+// ── Bulk BOM import batch function (shared by DataImport and BackgroundImportDialog) ──
+// Note: vendor sheet support is handled by the full BOMImportTab in DataImport.tsx.
+// This function handles BOM lines only.
+
+export async function importBomBatch(
+  rows: Record<string, string>[],
+  rowNums: number[],
+  onProgress?: (pct: number) => void
+): Promise<{ imported: number; skipped: number; errors: string[]; skipReasons: SkipReason[] }> {
+  const companyId = await getCompanyId();
+
+  const { data: allItems } = await supabase
+    .from("items").select("id, item_code, drawing_revision").eq("company_id", companyId);
+  const codeToId = new Map<string, string>();
+  const drawingToId = new Map<string, string>();
+  for (const item of (allItems ?? []) as any[]) {
+    if (item.item_code) codeToId.set((item.item_code as string).toLowerCase(), item.id as string);
+    if (item.drawing_revision) drawingToId.set((item.drawing_revision as string).toLowerCase(), item.id as string);
+  }
+
+  let skipped = 0;
+  const errors: string[] = [];
+  const skipReasons: SkipReason[] = [];
+
+  type ResolvedRow = {
+    parentId: string; childId: string; qty: number; unit: string;
+    scrapFactor: number; notes: string | null; variantName: string | null; excelRow: number;
+  };
+  const resolvedRows: ResolvedRow[] = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const excelRow = rowNums[i] ?? (i + 2);
+    const parentCode = (row["finished_item_code"] || row["finished_item_drawing"] || "").trim();
+    const childCode = (row["component_code"] || row["component_drawing"] || "").trim();
+    const qty = parseFloat(row["quantity"] || "0") || 0;
+
+    const parentId = codeToId.get(parentCode.toLowerCase()) ?? drawingToId.get(parentCode.toLowerCase());
+    const childId = codeToId.get(childCode.toLowerCase()) ?? drawingToId.get(childCode.toLowerCase());
+
+    if (!parentId || !childId) {
+      skipped++;
+      const missingCode = !parentId ? parentCode : childCode;
+      skipReasons.push({ row: excelRow, value: parentCode, reason: `Item '${missingCode}' not found — import items first` });
+      continue;
+    }
+    resolvedRows.push({
+      parentId, childId, qty, unit: row["unit"]?.trim() || "NOS",
+      scrapFactor: parseFloat(row["scrap_factor"] || "0") || 0,
+      notes: row["notes"]?.trim() || null,
+      variantName: row["variant_name"]?.trim() || null,
+      excelRow,
+    });
+  }
+
+  if (resolvedRows.length === 0) return { imported: 0, skipped, errors, skipReasons };
+
+  const [{ data: existingVariants }, { data: existingBomLines }] = await Promise.all([
+    (supabase as any).from("bom_variants").select("id, parent_item_id, variant_name").eq("company_id", companyId),
+    (supabase as any).from("bom_lines").select("id, parent_item_id, child_item_id").eq("company_id", companyId),
+  ]);
+
+  const variantMap = new Map<string, string>(
+    (existingVariants ?? []).map((v: any) => [`${v.parent_item_id}:${v.variant_name}`, v.id as string])
+  );
+  const bomLineMap = new Map<string, string>(
+    (existingBomLines ?? []).map((b: any) => [`${b.parent_item_id}:${b.child_item_id}`, b.id as string])
+  );
+
+  // Insert new variants
+  const newVariantsNeeded = new Map<string, { parent_item_id: string; variant_name: string }>();
+  for (const r of resolvedRows) {
+    if (r.variantName) {
+      const key = `${r.parentId}:${r.variantName}`;
+      if (!variantMap.has(key)) newVariantsNeeded.set(key, { parent_item_id: r.parentId, variant_name: r.variantName });
+    }
+  }
+  if (newVariantsNeeded.size > 0) {
+    const toInsertVariants = [...newVariantsNeeded.values()].map((v) => ({ ...v, company_id: companyId }));
+    const { data: insertedVariants } = await (supabase as any)
+      .from("bom_variants").insert(toInsertVariants).select("id, parent_item_id, variant_name");
+    for (const v of (insertedVariants ?? []) as any[]) {
+      variantMap.set(`${v.parent_item_id}:${v.variant_name}`, v.id as string);
+    }
+  }
+
+  const toInsert: any[] = [];
+  const toUpdate: { id: string; payload: any }[] = [];
+  for (const r of resolvedRows) {
+    const variantId = r.variantName ? (variantMap.get(`${r.parentId}:${r.variantName}`) ?? null) : null;
+    const payload: any = {
+      company_id: companyId, parent_item_id: r.parentId, child_item_id: r.childId,
+      quantity: r.qty, unit: r.unit, scrap_factor: r.scrapFactor, notes: r.notes,
+    };
+    if (variantId) payload.variant_id = variantId;
+    const existingId = bomLineMap.get(`${r.parentId}:${r.childId}`);
+    if (existingId) toUpdate.push({ id: existingId, payload });
+    else toInsert.push(payload);
+  }
+
+  let imported = 0;
+  const totalOps = toInsert.length + toUpdate.length;
+
+  if (toInsert.length > 0) {
+    try {
+      const { error } = await (supabase as any).from("bom_lines").insert(toInsert);
+      if (error) throw error;
+      imported += toInsert.length;
+    } catch {
+      for (const payload of toInsert) {
+        try {
+          const { error } = await (supabase as any).from("bom_lines").insert(payload);
+          if (error) throw error;
+          imported++;
+        } catch (err: any) {
+          skipped++;
+          skipReasons.push({ row: 0, value: "", reason: `DB error: ${err?.message ?? "unknown"}` });
+        }
+      }
+    }
+    if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
+  }
+
+  for (let i = 0; i < toUpdate.length; i += 100) {
+    const chunk = toUpdate.slice(i, i + 100);
+    try {
+      const upsertPayloads = chunk.map((r) => ({ id: r.id, ...r.payload }));
+      const { error } = await (supabase as any).from("bom_lines").upsert(upsertPayloads, { onConflict: "id" });
+      if (error) throw error;
+      imported += chunk.length;
+    } catch {
+      for (const line of chunk) {
+        try {
+          const { error } = await (supabase as any).from("bom_lines").update(line.payload).eq("id", line.id);
+          if (error) throw error;
+          imported++;
+        } catch (err: any) {
+          skipped++;
+          skipReasons.push({ row: 0, value: "", reason: `DB error: ${err?.message ?? "unknown"}` });
+        }
+      }
+    }
+    if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
+  }
+
+  return { imported, skipped, errors, skipReasons };
 }

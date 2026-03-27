@@ -10,13 +10,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { fetchParties, deactivateParty, createParty, bulkDeleteParties, type PartiesFilters, type VendorType } from "@/lib/parties-api";
+import { fetchParties, deactivateParty, bulkDeleteParties, importPartiesBatch, type PartiesFilters, type VendorType } from "@/lib/parties-api";
 import { useToast } from "@/hooks/use-toast";
-import ImportDialog from "@/components/ImportDialog";
-import { PARTIES_IMPORT_CONFIG, type ValidatedRow } from "@/lib/import-utils";
+import BackgroundImportDialog from "@/components/BackgroundImportDialog";
+import { PARTIES_IMPORT_CONFIG, PARTY_FIELD_MAP } from "@/lib/import-utils";
 import { exportToExcel, PARTIES_EXPORT_COLS } from "@/lib/export-utils";
-import { validateGSTIN } from "@/lib/indian-states";
-import { INDIAN_STATES } from "@/lib/indian-states";
 
 const typeFilters = [
   { label: "All", value: "all" as const },
@@ -142,51 +140,6 @@ export default function PartiesList() {
 
   const allSelected = parties.length > 0 && selected.size === parties.length;
 
-  const existingPartyNames = (data?.data ?? []).map((p) => p.name);
-
-  const handleImport = async (rows: ValidatedRow[]) => {
-    let imported = 0, warnings = 0;
-    const dupeNames = new Set(existingPartyNames.map((n) => n.toLowerCase()));
-
-    for (const row of rows) {
-      const d = row.data;
-      const name = d["Company Name"];
-      if (dupeNames.has(name.toLowerCase())) continue;
-
-      const gstResult = d["GSTIN"] ? validateGSTIN(d["GSTIN"]) : null;
-      const stateFromGstin = gstResult?.stateCode;
-      const stateEntry = d["State"] ? INDIAN_STATES.find((s) => s.name.toLowerCase() === d["State"].toLowerCase()) : null;
-
-      try {
-        await createParty({
-          name,
-          party_type: (d["Party Type"] || "both").toLowerCase(),
-          contact_person: d["Contact Person"] || null,
-          address_line1: d["Address Line 1"] || null,
-          address_line2: d["Address Line 2"] || null,
-          address_line3: d["Address Line 3"] || null,
-          city: d["City"] || null,
-          state: d["State"] || null,
-          state_code: stateFromGstin || stateEntry?.code || null,
-          pin_code: d["PIN Code"] || null,
-          phone1: d["Phone 1"] || null,
-          phone2: d["Phone 2"] || null,
-          email1: d["Email"] || null,
-          gstin: d["GSTIN"] || null,
-          pan: d["PAN"] || null,
-          payment_terms: d["Payment Terms"] || null,
-          credit_limit: d["Credit Limit"] ? parseFloat(d["Credit Limit"]) : null,
-          notes: d["Notes"] || null,
-        } as any);
-        imported++;
-        if (row.status === "warning") warnings++;
-      } catch {
-        // skip failed rows
-      }
-    }
-    queryClient.invalidateQueries({ queryKey: ["parties"] });
-    return { imported, warnings, skipped: rows.length - imported };
-  };
 
   const updateFilter = (key: keyof PartiesFilters, value: string | number) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -440,12 +393,16 @@ export default function PartiesList() {
         </div>
       )}
 
-      <ImportDialog
+      <BackgroundImportDialog
         open={importOpen}
         onOpenChange={setImportOpen}
-        config={PARTIES_IMPORT_CONFIG}
-        onImport={handleImport}
-        existingNames={existingPartyNames}
+        title="Import Parties"
+        entityName="parties"
+        fieldMap={PARTY_FIELD_MAP}
+        requiredFields={["name"]}
+        importConfig={PARTIES_IMPORT_CONFIG}
+        batchFn={importPartiesBatch}
+        invalidateKeys={[["parties"]]}
       />
     </div>
   );
