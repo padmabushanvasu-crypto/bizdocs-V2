@@ -10,9 +10,8 @@ import {
   Package,
   Receipt,
   Settings,
-  ClipboardList,
-  BarChart3,
   BarChart2,
+  BarChart3,
   Activity,
   AlertTriangle,
   Star,
@@ -22,24 +21,23 @@ import {
   BookOpen,
   Hash,
   ClipboardCheck,
-  Shield,
   ShoppingBag,
   ChevronRight,
   ChevronDown,
   TrendingDown,
-  Settings2,
   Trash2,
   PanelLeft,
   PanelLeftClose,
   Wrench,
-  Database,
   Factory,
+  Search,
+  Send,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { fetchWipSummary } from "@/lib/job-works-api";
-import { fetchFatStats, fetchSerialStats } from "@/lib/fat-api";
+import { fetchFatStats } from "@/lib/fat-api";
 import { fetchReorderSummary } from "@/lib/reorder-api";
 import {
   SidebarGroup,
@@ -49,6 +47,11 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -57,57 +60,118 @@ type NavItem = {
   url: string;
   icon: React.ComponentType<any>;
   badge?: number;
+  badgeColor?: "red" | "amber";
 };
+
+// ── Tooltip content ───────────────────────────────────────────────────────────
+
+const TOOLTIP_TEXT: Record<string, string> = {
+  "Dashboard":
+    "Your daily overview — alerts, production status, financial snapshot and quick actions.",
+  "Job Works":
+    "Track components sent to vendors for processing — CNC, plating, welding. One Job Work per component per batch.",
+  "Production":
+    "Start and complete production runs for finished goods. Serial numbers and FAT drafts are created automatically.",
+  "WIP Register":
+    "Live view of everything currently in progress — components at vendors and production runs being built.",
+  "Delivery Challans":
+    "The gate pass for goods leaving the factory. Returnable for job work, non-returnable for customer deliveries.",
+  "Purchase Orders":
+    "Raise a formal buy request to a vendor. Triggered when stock falls below reorder point.",
+  "GRN":
+    "Record goods arriving from a vendor. Links to the original PO. Stock updates automatically when saved.",
+  "Invoices":
+    "Raise a GST tax invoice to a customer. Only FAT-passed units can be invoiced.",
+  "Receipts":
+    "Record payment received from a customer against an invoice. Updates outstanding balance.",
+  "Sales Orders":
+    "Record a customer's order. In this system, sales orders are raised after goods are already in stock.",
+  "Dispatch Notes":
+    "The document that travels with the delivery truck. Has vehicle number, driver, LR number and packing list.",
+  "Stock Register":
+    "See current stock of every item — raw materials, components and finished goods. Red means below minimum, green means healthy.",
+  "Stock Ledger":
+    "The permanent record of every stock movement ever made — receipts, issues, returns, assembly. Full audit trail.",
+  "Reorder Alerts":
+    "Items that need to be purchased or produced now. The starting point of the pull cycle — check this every morning.",
+  "Scrap Register":
+    "Record rejected or scrapped material. Tracks the cost of poor quality and reduces stock automatically.",
+  "Serial Numbers":
+    "Every finished OLTC unit has a unique serial number. Tracks the unit from production through FAT, invoice, dispatch and warranty.",
+  "FAT Certificates":
+    "Factory Acceptance Test records. Every unit must pass FAT before it can be invoiced. 12 IEC standard tests per unit.",
+  "GST Reports":
+    "Download GSTR-1, GSTR-2 and GSTR-3B for filing. One click per report.",
+  "Vendor Scorecards":
+    "Automatic performance report per vendor — rejection rate, on-time delivery, turnaround time. Use in vendor review meetings.",
+  "Parties":
+    "All vendors and customers. Set up once — auto-fills on every PO, DC and invoice.",
+  "Items":
+    "Every raw material, component and finished product. The parts catalogue for the factory.",
+  "Bill of Materials":
+    "The recipe for every product — what components go in, how many, and which vendors make them.",
+  "Settings":
+    "Company profile, document settings, data import, notifications and more.",
+};
+
+// ── Search items (all pages) ──────────────────────────────────────────────────
+
+const ALL_SEARCH_ITEMS: { title: string; url: string }[] = [
+  { title: "Dashboard", url: "/" },
+  { title: "Job Works", url: "/job-works" },
+  { title: "Production", url: "/assembly-orders" },
+  { title: "WIP Register", url: "/wip-register" },
+  { title: "Delivery Challans", url: "/delivery-challans" },
+  { title: "Purchase Orders", url: "/purchase-orders" },
+  { title: "GRN", url: "/grn" },
+  { title: "Invoices", url: "/invoices" },
+  { title: "Receipts", url: "/receipts" },
+  { title: "Sales Orders", url: "/sales-orders" },
+  { title: "Dispatch Notes", url: "/dispatch-notes" },
+  { title: "Stock Register", url: "/stock-register" },
+  { title: "Stock Ledger", url: "/stock-ledger" },
+  { title: "Reorder Alerts", url: "/reorder-intelligence" },
+  { title: "Scrap Register", url: "/scrap-register" },
+  { title: "Serial Numbers", url: "/serial-numbers" },
+  { title: "FAT Certificates", url: "/fat-certificates" },
+  { title: "GST Reports", url: "/gst-reports" },
+  { title: "Vendor Scorecards", url: "/vendor-scorecards" },
+  { title: "Parties", url: "/parties" },
+  { title: "Items", url: "/items" },
+  { title: "Bill of Materials", url: "/bill-of-materials" },
+  { title: "Settings", url: "/settings" },
+];
 
 // ── Group definitions ─────────────────────────────────────────────────────────
 
-const STORAGE_KEY = "bizdocs_sidebar_state";
+const STORAGE_KEY = "bizdocs_sidebar_state_v2";
 const RAIL_MODE_KEY = "bizdocs_sidebar_mode";
 
 const GROUP_PATHS: Record<string, string[]> = {
-  "Start Here":           ["/", "/open-items"],
-  "Daily Work":           ["/job-works", "/assembly-orders", "/wip-register"],
-  "Purchasing":           ["/purchase-orders", "/grn"],
-  "Dispatch & Billing":   ["/sales-orders", "/dispatch-notes", "/delivery-challans", "/invoices", "/receipts"],
-  "Master Data":          ["/parties", "/items", "/bill-of-materials", "/stock-register"],
-  "Reports":              ["/gst-reports", "/vendor-scorecards", "/stock-ledger", "/reorder-intelligence", "/reorder-rules", "/scrap-register"],
-  "Quality & Compliance": ["/serial-numbers", "/fat-certificates", "/warranty-tracker"],
-  "Settings":             ["/settings"],
+  "Daily Work":     ["/", "/job-works", "/assembly-orders", "/wip-register", "/delivery-challans"],
+  "Purchasing":     ["/purchase-orders", "/grn"],
+  "Billing":        ["/invoices", "/receipts", "/sales-orders", "/dispatch-notes"],
+  "Inventory":      ["/stock-register", "/stock-ledger", "/reorder-intelligence", "/scrap-register", "/serial-numbers", "/fat-certificates"],
+  "Reports & More": ["/gst-reports", "/vendor-scorecards", "/parties", "/items", "/bill-of-materials", "/settings"],
 };
 
 const DEFAULTS: Record<string, boolean> = {
-  "Start Here":           true,
-  "Daily Work":           true,
-  "Purchasing":           false,
-  "Dispatch & Billing":   false,
-  "Master Data":          false,
-  "Reports":              false,
-  "Quality & Compliance": false,
-  "Settings":             false,
+  "Daily Work":     true,
+  "Purchasing":     false,
+  "Billing":        false,
+  "Inventory":      false,
+  "Reports & More": false,
 };
 
-// Group icons for rail mode
 const GROUP_ICONS: Record<string, React.ComponentType<any>> = {
-  "Start Here":           LayoutDashboard,
-  "Daily Work":           Wrench,
-  "Purchasing":           ShoppingCart,
-  "Dispatch & Billing":   Truck,
-  "Master Data":          Database,
-  "Reports":              BarChart2,
-  "Quality & Compliance": Shield,
-  "Settings":             Settings,
+  "Daily Work":     Wrench,
+  "Purchasing":     ShoppingCart,
+  "Billing":        FileText,
+  "Inventory":      Layers,
+  "Reports & More": BarChart2,
 };
 
-const ALL_GROUP_NAMES = [
-  "Start Here",
-  "Daily Work",
-  "Purchasing",
-  "Dispatch & Billing",
-  "Master Data",
-  "Reports",
-  "Quality & Compliance",
-  "Settings",
-];
+const ALL_GROUP_NAMES = ["Daily Work", "Purchasing", "Billing", "Inventory", "Reports & More"];
 
 function loadGroupState(): Record<string, boolean> {
   try {
@@ -128,59 +192,90 @@ function getActiveGroupForPath(pathname: string): string | null {
 
 // ── Static nav arrays ─────────────────────────────────────────────────────────
 
-const startHereNav: NavItem[] = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard },
-  { title: "Open Items", url: "/open-items", icon: ClipboardList },
-];
-
-const dailyWorkNav: NavItem[] = [
-  { title: "Job Works", url: "/job-works", icon: Activity },
-  { title: "Production", url: "/assembly-orders", icon: Factory },
-];
-
 const purchasingNav: NavItem[] = [
   { title: "Purchase Orders", url: "/purchase-orders", icon: ShoppingCart },
   { title: "GRN", url: "/grn", icon: PackageCheck },
 ];
 
-const dispatchBillingNav: NavItem[] = [
-  { title: "Sales Orders", url: "/sales-orders", icon: ShoppingBag },
-  { title: "Dispatch Notes", url: "/dispatch-notes", icon: Truck },
-  { title: "Delivery Challans", url: "/delivery-challans", icon: Truck },
+const billingNav: NavItem[] = [
   { title: "Invoices", url: "/invoices", icon: FileText },
   { title: "Receipts", url: "/receipts", icon: Receipt },
+  { title: "Sales Orders", url: "/sales-orders", icon: ShoppingBag },
+  { title: "Dispatch Notes", url: "/dispatch-notes", icon: Send },
 ];
 
-const masterDataNav: NavItem[] = [
-  { title: "Parties", url: "/parties", icon: Users },
-  { title: "Items", url: "/items", icon: Package },
-  { title: "Bill of Materials", url: "/bill-of-materials", icon: GitFork },
-  { title: "Stock Register", url: "/stock-register", icon: BarChart3 },
-];
+// ── NavItemWithTooltip ────────────────────────────────────────────────────────
 
-const settingsNav: NavItem[] = [
-  { title: "Settings", url: "/settings", icon: Settings },
-];
+function NavItemWithTooltip({
+  item,
+  isActiveFn,
+}: {
+  item: NavItem;
+  isActiveFn: (path: string) => boolean;
+}) {
+  const active = isActiveFn(item.url);
+  const tooltip = TOOLTIP_TEXT[item.title];
+  const badgeClass =
+    item.badgeColor === "amber"
+      ? "bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none"
+      : "bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none";
 
-// ── NavGroup (collapsible, badge-aware) ──────────────────────────────────────
+  const link = (
+    <SidebarMenuButton asChild isActive={active}>
+      <NavLink
+        to={item.url}
+        end={item.url === "/"}
+        className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+        activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
+      >
+        <item.icon className="h-4 w-4 shrink-0" />
+        {item.badge != null && item.badge > 0 ? (
+          <span className="flex-1 flex items-center justify-between">
+            {item.title}
+            <span className={badgeClass}>{item.badge}</span>
+          </span>
+        ) : (
+          <span>{item.title}</span>
+        )}
+      </NavLink>
+    </SidebarMenuButton>
+  );
+
+  if (!tooltip) {
+    return <SidebarMenuItem>{link}</SidebarMenuItem>;
+  }
+
+  return (
+    <SidebarMenuItem>
+      <Tooltip delayDuration={600}>
+        <TooltipTrigger asChild>{link}</TooltipTrigger>
+        <TooltipContent side="right" className="max-w-[220px] text-xs leading-relaxed">
+          {tooltip}
+        </TooltipContent>
+      </Tooltip>
+    </SidebarMenuItem>
+  );
+}
+
+// ── NavGroup ──────────────────────────────────────────────────────────────────
 
 function NavGroup({
   label,
   items,
-  isActive,
+  isActiveFn,
   open,
   onToggle,
 }: {
   label: string;
   items: NavItem[];
-  isActive: (path: string) => boolean;
+  isActiveFn: (path: string) => boolean;
   open: boolean;
   onToggle: () => void;
 }) {
   return (
     <SidebarGroup>
       <SidebarGroupLabel
-        className="text-slate-500 text-[10px] uppercase tracking-widest font-semibold cursor-pointer flex items-center justify-between hover:text-slate-300 transition-colors select-none"
+        className="text-white/40 text-[10px] font-semibold tracking-widest uppercase cursor-pointer flex items-center justify-between hover:text-white/70 transition-colors select-none"
         onClick={onToggle}
       >
         {label}
@@ -190,36 +285,18 @@ function NavGroup({
           <ChevronRight className="h-3 w-3 shrink-0 opacity-70" />
         )}
       </SidebarGroupLabel>
-      {open && (
+      <div
+        className="overflow-hidden transition-all duration-200"
+        style={{ maxHeight: open ? 1000 : 0 }}
+      >
         <SidebarGroupContent>
           <SidebarMenu>
             {items.map((item) => (
-              <SidebarMenuItem key={item.title}>
-                <SidebarMenuButton asChild isActive={isActive(item.url)}>
-                  <NavLink
-                    to={item.url}
-                    end={item.url === "/"}
-                    className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                    activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
-                  >
-                    <item.icon className="h-4 w-4 shrink-0" />
-                    {item.badge != null && item.badge > 0 ? (
-                      <span className="flex-1 flex items-center justify-between">
-                        {item.title}
-                        <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
-                          {item.badge}
-                        </span>
-                      </span>
-                    ) : (
-                      <span>{item.title}</span>
-                    )}
-                  </NavLink>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              <NavItemWithTooltip key={item.url} item={item} isActiveFn={isActiveFn} />
             ))}
           </SidebarMenu>
         </SidebarGroupContent>
-      )}
+      </div>
     </SidebarGroup>
   );
 }
@@ -237,6 +314,28 @@ export function AppSidebar() {
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
   const [flyoutY, setFlyoutY] = useState(0);
   const closeTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  // Search
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
+
+  // Close search on click outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setSearchOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Clear search on navigation
+  useEffect(() => {
+    setSearchQuery("");
+    setSearchOpen(false);
+  }, [location.pathname]);
 
   // Persist rail mode
   useEffect(() => {
@@ -274,7 +373,9 @@ export function AppSidebar() {
 
   const isGroupActive = (groupName: string) => {
     const paths = GROUP_PATHS[groupName] ?? [];
-    return paths.some((p) => p === "/" ? location.pathname === "/" : location.pathname.startsWith(p));
+    return paths.some((p) =>
+      p === "/" ? location.pathname === "/" : location.pathname.startsWith(p)
+    );
   };
 
   // Rail mode hover handlers
@@ -308,12 +409,6 @@ export function AppSidebar() {
     refetchInterval: 60000,
   });
 
-  const { data: serialStats } = useQuery({
-    queryKey: ["serial-stats-sidebar"],
-    queryFn: fetchSerialStats,
-    refetchInterval: 60000,
-  });
-
   const { data: reorderSummary } = useQuery({
     queryKey: ["reorder-summary-sidebar"],
     queryFn: async () => {
@@ -326,11 +421,27 @@ export function AppSidebar() {
     refetchInterval: 120000,
   });
 
-  // Build dynamic reportsNav with badge
   const reorderCritical = reorderSummary?.critical ?? 0;
-  const reportsNav: NavItem[] = [
-    { title: "GST Reports", url: "/gst-reports", icon: FileSpreadsheet },
-    { title: "Vendor Scorecards", url: "/vendor-scorecards", icon: Star },
+
+  // Dynamic nav arrays (badges computed from live data)
+  const dailyWorkNav: NavItem[] = [
+    { title: "Dashboard", url: "/", icon: LayoutDashboard },
+    { title: "Job Works", url: "/job-works", icon: Activity },
+    { title: "Production", url: "/assembly-orders", icon: Factory },
+    {
+      title: "WIP Register",
+      url: "/wip-register",
+      icon: AlertTriangle,
+      badge:
+        wipSummary?.overdueReturns && wipSummary.overdueReturns > 0
+          ? wipSummary.overdueReturns
+          : undefined,
+    },
+    { title: "Delivery Challans", url: "/delivery-challans", icon: Truck },
+  ];
+
+  const inventoryNav: NavItem[] = [
+    { title: "Stock Register", url: "/stock-register", icon: BarChart3 },
     { title: "Stock Ledger", url: "/stock-ledger", icon: BookOpen },
     {
       title: "Reorder Alerts",
@@ -338,32 +449,47 @@ export function AppSidebar() {
       icon: TrendingDown,
       badge: reorderCritical > 0 ? reorderCritical : undefined,
     },
-    { title: "Reorder Rules", url: "/reorder-rules", icon: Settings2 },
     { title: "Scrap Register", url: "/scrap-register", icon: Trash2 },
+    { title: "Serial Numbers", url: "/serial-numbers", icon: Hash },
+    {
+      title: "FAT Certificates",
+      url: "/fat-certificates",
+      icon: ClipboardCheck,
+      badge:
+        fatStats?.pending && fatStats.pending > 0 ? fatStats.pending : undefined,
+      badgeColor: "amber",
+    },
+  ];
+
+  const reportsModeNav: NavItem[] = [
+    { title: "GST Reports", url: "/gst-reports", icon: FileSpreadsheet },
+    { title: "Vendor Scorecards", url: "/vendor-scorecards", icon: Star },
+    { title: "Parties", url: "/parties", icon: Users },
+    { title: "Items", url: "/items", icon: Package },
+    { title: "Bill of Materials", url: "/bill-of-materials", icon: GitFork },
+    { title: "Settings", url: "/settings", icon: Settings },
   ];
 
   // Group items map for rail flyout
   const GROUP_ITEMS_MAP: Record<string, NavItem[]> = {
-    "Start Here": startHereNav,
-    "Daily Work": [
-      ...dailyWorkNav,
-      { title: "WIP Register", url: "/wip-register", icon: AlertTriangle, badge: wipSummary?.overdueReturns },
-    ],
-    "Purchasing": purchasingNav,
-    "Dispatch & Billing": dispatchBillingNav,
-    "Master Data": masterDataNav,
-    "Reports": reportsNav,
-    "Quality & Compliance": [
-      { title: "Serial Numbers", url: "/serial-numbers", icon: Hash },
-      { title: "FAT Certificates", url: "/fat-certificates", icon: ClipboardCheck, badge: fatStats?.pending },
-      { title: "Warranty Tracker", url: "/warranty-tracker", icon: Shield, badge: serialStats?.expiringSoon },
-    ],
-    "Settings": settingsNav,
+    "Daily Work":     dailyWorkNav,
+    "Purchasing":     purchasingNav,
+    "Billing":        billingNav,
+    "Inventory":      inventoryNav,
+    "Reports & More": reportsModeNav,
   };
+
+  // Search filtering
+  const searchResults =
+    searchQuery.trim().length > 0
+      ? ALL_SEARCH_ITEMS.filter((item) =>
+          item.title.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+      : [];
 
   return (
     <>
-      {/* ── Plain div sidebar — no shadcn Sidebar component ── */}
+      {/* ── Sidebar ── */}
       <div
         data-rail={String(railMode)}
         style={{
@@ -390,40 +516,111 @@ export function AppSidebar() {
           }}
         >
           {!railMode && (
-            <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => navigate('/')}>
+            <div
+              className="flex items-center gap-2.5 cursor-pointer"
+              onClick={() => navigate("/")}
+            >
               <div
                 className="h-8 w-8 flex items-center justify-center shrink-0"
                 style={{
-                  background: 'linear-gradient(135deg, #1D4ED8, #2563EB)',
-                  borderRadius: '8px',
-                  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.15)',
+                  background: "linear-gradient(135deg, #1D4ED8, #2563EB)",
+                  borderRadius: "8px",
+                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.15)",
                 }}
               >
                 <LayoutDashboard className="h-[18px] w-[18px] text-white" />
               </div>
-              <span className="font-bold text-lg text-white" style={{ letterSpacing: '-0.3px' }}>BizDocs</span>
+              <span
+                className="font-bold text-lg text-white"
+                style={{ letterSpacing: "-0.3px" }}
+              >
+                BizDocs
+              </span>
             </div>
           )}
           {railMode && (
             <div
               className="h-8 w-8 flex items-center justify-center cursor-pointer shrink-0"
               style={{
-                background: 'linear-gradient(135deg, #1D4ED8, #2563EB)',
-                borderRadius: '8px',
-                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.15)',
+                background: "linear-gradient(135deg, #1D4ED8, #2563EB)",
+                borderRadius: "8px",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.15)",
               }}
-              onClick={() => navigate('/')}
+              onClick={() => navigate("/")}
             >
               <LayoutDashboard className="h-[18px] w-[18px] text-white" />
             </div>
           )}
         </div>
 
+        {/* Search bar — full mode only */}
+        {!railMode && (
+          <div className="px-3 pb-2 flex-shrink-0 relative" ref={searchRef}>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-white/40 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setSearchOpen(true);
+                }}
+                onFocus={() => setSearchOpen(true)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setSearchQuery("");
+                    setSearchOpen(false);
+                    (e.target as HTMLInputElement).blur();
+                  }
+                }}
+                placeholder="Jump to..."
+                className="w-full h-8 pl-8 pr-3 text-sm bg-white/10 border border-white/20 rounded-lg text-white placeholder:text-white/40 outline-none focus:bg-white/20 focus:border-white/40 transition-colors"
+              />
+            </div>
+            {/* Search dropdown */}
+            {searchOpen && searchQuery.trim().length > 0 && (
+              <div
+                className="absolute left-3 right-3 top-full mt-1 z-50 rounded-lg overflow-hidden shadow-lg"
+                style={{
+                  background: "#0f1623",
+                  border: "1px solid rgba(100,116,139,0.4)",
+                }}
+              >
+                {searchResults.length === 0 ? (
+                  <p className="text-xs text-slate-400 px-3 py-2.5">No pages found</p>
+                ) : (
+                  searchResults.map((item) => (
+                    <button
+                      key={item.url}
+                      onClick={() => {
+                        navigate(item.url);
+                        setSearchQuery("");
+                        setSearchOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-white/10 transition-colors text-left"
+                    >
+                      {item.title}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Scrollable content */}
         <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
           {railMode ? (
             /* Rail mode: one icon per group */
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "8px 0", gap: 2 }}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                padding: "8px 0",
+                gap: 2,
+              }}
+            >
               {ALL_GROUP_NAMES.map((groupName) => {
                 const GroupIcon = GROUP_ICONS[groupName] ?? LayoutDashboard;
                 const active = isGroupActive(groupName);
@@ -460,176 +657,39 @@ export function AppSidebar() {
             /* Full mode: collapsible nav groups */
             <div>
               <NavGroup
-                label="Start Here"
-                items={startHereNav}
-                isActive={isActive}
-                open={groupOpen["Start Here"]}
-                onToggle={() => toggleGroup("Start Here")}
+                label="Daily Work"
+                items={dailyWorkNav}
+                isActiveFn={isActive}
+                open={groupOpen["Daily Work"]}
+                onToggle={() => toggleGroup("Daily Work")}
               />
-
-              {/* Daily Work — inline with WIP badge */}
-              <SidebarGroup>
-                <SidebarGroupLabel
-                  className="text-slate-500 text-[10px] uppercase tracking-widest font-semibold cursor-pointer flex items-center justify-between hover:text-slate-300 transition-colors select-none"
-                  onClick={() => toggleGroup("Daily Work")}
-                >
-                  Daily Work
-                  {groupOpen["Daily Work"] ? (
-                    <ChevronDown className="h-3 w-3 shrink-0 opacity-70" />
-                  ) : (
-                    <ChevronRight className="h-3 w-3 shrink-0 opacity-70" />
-                  )}
-                </SidebarGroupLabel>
-                {groupOpen["Daily Work"] && (
-                  <SidebarGroupContent>
-                    <SidebarMenu>
-                      {dailyWorkNav.map((item) => (
-                        <SidebarMenuItem key={item.title}>
-                          <SidebarMenuButton asChild isActive={isActive(item.url)}>
-                            <NavLink
-                              to={item.url}
-                              className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                              activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
-                            >
-                              <item.icon className="h-4 w-4 shrink-0" />
-                              <span>{item.title}</span>
-                            </NavLink>
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      ))}
-                      {/* WIP Register with overdue badge */}
-                      <SidebarMenuItem>
-                        <SidebarMenuButton asChild isActive={isActive("/wip-register")}>
-                          <NavLink
-                            to="/wip-register"
-                            className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                            activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
-                          >
-                            <AlertTriangle className="h-4 w-4 shrink-0" />
-                            <span className="flex-1 flex items-center justify-between">
-                              WIP Register
-                              {wipSummary && wipSummary.overdueReturns > 0 && (
-                                <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
-                                  {wipSummary.overdueReturns}
-                                </span>
-                              )}
-                            </span>
-                          </NavLink>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    </SidebarMenu>
-                  </SidebarGroupContent>
-                )}
-              </SidebarGroup>
-
               <NavGroup
                 label="Purchasing"
                 items={purchasingNav}
-                isActive={isActive}
+                isActiveFn={isActive}
                 open={groupOpen["Purchasing"]}
                 onToggle={() => toggleGroup("Purchasing")}
               />
               <NavGroup
-                label="Dispatch & Billing"
-                items={dispatchBillingNav}
-                isActive={isActive}
-                open={groupOpen["Dispatch & Billing"]}
-                onToggle={() => toggleGroup("Dispatch & Billing")}
+                label="Billing"
+                items={billingNav}
+                isActiveFn={isActive}
+                open={groupOpen["Billing"]}
+                onToggle={() => toggleGroup("Billing")}
               />
               <NavGroup
-                label="Master Data"
-                items={masterDataNav}
-                isActive={isActive}
-                open={groupOpen["Master Data"]}
-                onToggle={() => toggleGroup("Master Data")}
+                label="Inventory"
+                items={inventoryNav}
+                isActiveFn={isActive}
+                open={groupOpen["Inventory"]}
+                onToggle={() => toggleGroup("Inventory")}
               />
               <NavGroup
-                label="Reports"
-                items={reportsNav}
-                isActive={isActive}
-                open={groupOpen["Reports"]}
-                onToggle={() => toggleGroup("Reports")}
-              />
-
-              {/* Quality & Compliance — inline with FAT + Warranty badges */}
-              <SidebarGroup>
-                <SidebarGroupLabel
-                  className="text-slate-500 text-[10px] uppercase tracking-widest font-semibold cursor-pointer flex items-center justify-between hover:text-slate-300 transition-colors select-none"
-                  onClick={() => toggleGroup("Quality & Compliance")}
-                >
-                  Quality &amp; Compliance
-                  {groupOpen["Quality & Compliance"] ? (
-                    <ChevronDown className="h-3 w-3 shrink-0 opacity-70" />
-                  ) : (
-                    <ChevronRight className="h-3 w-3 shrink-0 opacity-70" />
-                  )}
-                </SidebarGroupLabel>
-                {groupOpen["Quality & Compliance"] && (
-                  <SidebarGroupContent>
-                    <SidebarMenu>
-                      <SidebarMenuItem>
-                        <SidebarMenuButton asChild isActive={isActive("/serial-numbers")}>
-                          <NavLink
-                            to="/serial-numbers"
-                            className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                            activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
-                          >
-                            <Hash className="h-4 w-4 shrink-0" />
-                            <span>Serial Numbers</span>
-                          </NavLink>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                      {/* FAT Certificates with pending badge */}
-                      <SidebarMenuItem>
-                        <SidebarMenuButton asChild isActive={isActive("/fat-certificates")}>
-                          <NavLink
-                            to="/fat-certificates"
-                            className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                            activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
-                          >
-                            <ClipboardCheck className="h-4 w-4 shrink-0" />
-                            <span className="flex-1 flex items-center justify-between">
-                              FAT Certificates
-                              {fatStats && fatStats.pending > 0 && (
-                                <span className="ml-auto bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
-                                  {fatStats.pending}
-                                </span>
-                              )}
-                            </span>
-                          </NavLink>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                      {/* Warranty Tracker with expiring soon badge */}
-                      <SidebarMenuItem>
-                        <SidebarMenuButton asChild isActive={isActive("/warranty-tracker")}>
-                          <NavLink
-                            to="/warranty-tracker"
-                            className="text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                            activeClassName="text-white bg-blue-900/40 border-l-[3px] border-blue-500"
-                          >
-                            <Shield className="h-4 w-4 shrink-0" />
-                            <span className="flex-1 flex items-center justify-between">
-                              Warranty Tracker
-                              {serialStats && serialStats.expiringSoon > 0 && (
-                                <span className="ml-auto bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
-                                  {serialStats.expiringSoon}
-                                </span>
-                              )}
-                            </span>
-                          </NavLink>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    </SidebarMenu>
-                  </SidebarGroupContent>
-                )}
-              </SidebarGroup>
-
-              <NavGroup
-                label="Settings"
-                items={settingsNav}
-                isActive={isActive}
-                open={groupOpen["Settings"]}
-                onToggle={() => toggleGroup("Settings")}
+                label="Reports & More"
+                items={reportsModeNav}
+                isActiveFn={isActive}
+                open={groupOpen["Reports & More"]}
+                onToggle={() => toggleGroup("Reports & More")}
               />
             </div>
           )}
@@ -664,50 +724,68 @@ export function AppSidebar() {
       </div>
 
       {/* Rail mode flyout — rendered into document.body via portal */}
-      {railMode && hoveredGroup && createPortal(
-        <div
-          style={{
-            position: "fixed",
-            left: 52,
-            top: flyoutY,
-            zIndex: 9999,
-            minWidth: 210,
-            maxHeight: "70vh",
-            overflowY: "auto",
-            background: "#0f1623",
-            border: "1px solid rgba(100,116,139,0.5)",
-            borderRadius: "0 12px 12px 0",
-            boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-          }}
-          onMouseEnter={handleFlyoutEnter}
-          onMouseLeave={handleFlyoutLeave}
-        >
-          <p style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 600, padding: "12px 12px 6px", color: "#94a3b8", borderBottom: "1px solid rgba(100,116,139,0.3)" }}>
-            {hoveredGroup}
-          </p>
-          <div style={{ padding: "4px 0" }}>
-            {(GROUP_ITEMS_MAP[hoveredGroup] ?? []).map((item) => (
-              <NavLink
-                key={item.url}
-                to={item.url}
-                end={item.url === "/"}
-                onClick={() => setHoveredGroup(null)}
-                className="flex items-center gap-2.5 px-3 py-2 text-sm text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                activeClassName="text-white bg-blue-900/50"
-              >
-                <item.icon className="h-4 w-4 shrink-0" />
-                <span className="flex-1">{item.title}</span>
-                {item.badge != null && item.badge > 0 && (
-                  <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
-                    {item.badge}
-                  </span>
-                )}
-              </NavLink>
-            ))}
-          </div>
-        </div>,
-        document.body
-      )}
+      {railMode &&
+        hoveredGroup &&
+        createPortal(
+          <div
+            style={{
+              position: "fixed",
+              left: 52,
+              top: flyoutY,
+              zIndex: 9999,
+              minWidth: 210,
+              maxHeight: "70vh",
+              overflowY: "auto",
+              background: "#0f1623",
+              border: "1px solid rgba(100,116,139,0.5)",
+              borderRadius: "0 12px 12px 0",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+            }}
+            onMouseEnter={handleFlyoutEnter}
+            onMouseLeave={handleFlyoutLeave}
+          >
+            <p
+              style={{
+                fontSize: 10,
+                textTransform: "uppercase",
+                letterSpacing: "0.1em",
+                fontWeight: 600,
+                padding: "12px 12px 6px",
+                color: "#94a3b8",
+                borderBottom: "1px solid rgba(100,116,139,0.3)",
+              }}
+            >
+              {hoveredGroup}
+            </p>
+            <div style={{ padding: "4px 0" }}>
+              {(GROUP_ITEMS_MAP[hoveredGroup] ?? []).map((item) => (
+                <NavLink
+                  key={item.url}
+                  to={item.url}
+                  end={item.url === "/"}
+                  onClick={() => setHoveredGroup(null)}
+                  className="flex items-center gap-2.5 px-3 py-2 text-sm text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                  activeClassName="text-white bg-blue-900/50"
+                >
+                  <item.icon className="h-4 w-4 shrink-0" />
+                  <span className="flex-1">{item.title}</span>
+                  {item.badge != null && item.badge > 0 && (
+                    <span
+                      className={
+                        item.badgeColor === "amber"
+                          ? "bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none"
+                          : "bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none"
+                      }
+                    >
+                      {item.badge}
+                    </span>
+                  )}
+                </NavLink>
+              ))}
+            </div>
+          </div>,
+          document.body
+        )}
     </>
   );
 }

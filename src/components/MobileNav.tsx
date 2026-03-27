@@ -12,7 +12,6 @@ import {
   Truck,
   Receipt,
   Settings,
-  Layers,
   ShoppingBag,
   BookOpen,
   Plus,
@@ -20,6 +19,12 @@ import {
   Send,
   X,
   Factory,
+  TrendingDown,
+  Trash2,
+  Hash,
+  ClipboardCheck,
+  FileSpreadsheet,
+  Star,
 } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -34,6 +39,7 @@ const MORE_GROUPS = [
       { label: "Job Works", to: "/job-works", icon: Activity },
       { label: "Production", to: "/assembly-orders", icon: Factory },
       { label: "WIP Register", to: "/wip-register", icon: BookOpen },
+      { label: "Delivery Challans", to: "/delivery-challans", icon: Truck },
     ],
   },
   {
@@ -44,24 +50,33 @@ const MORE_GROUPS = [
     ],
   },
   {
-    label: "Dispatch & Billing",
+    label: "Billing",
     items: [
-      { label: "Sales Orders", to: "/sales-orders", icon: ShoppingBag },
-      { label: "Delivery Challans", to: "/delivery-challans", icon: Truck },
+      { label: "Invoices", to: "/invoices", icon: FileText },
       { label: "Receipts", to: "/receipts", icon: Receipt },
+      { label: "Sales Orders", to: "/sales-orders", icon: ShoppingBag },
+      { label: "Dispatch Notes", to: "/dispatch-notes", icon: Send },
     ],
   },
   {
-    label: "Master Data",
+    label: "Inventory",
     items: [
-      { label: "Parties", to: "/parties", icon: Users },
-      { label: "Bill of Materials", to: "/bill-of-materials", icon: GitFork },
       { label: "Stock Register", to: "/stock-register", icon: BarChart3 },
+      { label: "Stock Ledger", to: "/stock-ledger", icon: BookOpen },
+      { label: "Reorder Alerts", to: "/reorder-intelligence", icon: TrendingDown },
+      { label: "Scrap Register", to: "/scrap-register", icon: Trash2 },
+      { label: "Serial Numbers", to: "/serial-numbers", icon: Hash },
+      { label: "FAT Certificates", to: "/fat-certificates", icon: ClipboardCheck },
     ],
   },
   {
-    label: "Settings",
+    label: "Reports & More",
     items: [
+      { label: "GST Reports", to: "/gst-reports", icon: FileSpreadsheet },
+      { label: "Vendor Scorecards", to: "/vendor-scorecards", icon: Star },
+      { label: "Parties", to: "/parties", icon: Users },
+      { label: "Items", to: "/items", icon: Package },
+      { label: "Bill of Materials", to: "/bill-of-materials", icon: GitFork },
       { label: "Settings", to: "/settings", icon: Settings },
     ],
   },
