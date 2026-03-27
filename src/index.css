@@ -240,7 +240,79 @@
   }
 
   @page {
-    margin: 15mm;
+    margin: 10mm;
     size: A4 portrait;
+  }
+
+  /* ── Document print wrapper ─────────────────────────── */
+  .po-print-wrapper {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Remove horizontal scroll on table wrappers */
+  .overflow-x-auto {
+    overflow: visible !important;
+  }
+
+  /* Tighter section spacing */
+  .po-section {
+    margin-bottom: 3mm !important;
+    padding-top: 2mm !important;
+  }
+
+  /* Compact body font */
+  body {
+    font-size: 9pt !important;
+  }
+
+  /* ── Line items table ───────────────────────────────── */
+  .po-line-items-table {
+    table-layout: fixed !important;
+    width: 100% !important;
+  }
+
+  /* Dark navy header on the print line items table */
+  .po-line-items-table thead tr {
+    background-color: #1E3A5F !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .po-line-items-table thead th {
+    color: white !important;
+    font-size: 8pt !important;
+    padding: 2mm 1.5mm !important;
+  }
+
+  /* Tighter data cells */
+  .po-line-items-table tbody td {
+    font-size: 8pt !important;
+    padding: 1.5mm 1.5mm !important;
+    vertical-align: top;
+    word-break: break-word;
+    white-space: normal;
+  }
+
+  /* Alternating rows */
+  .po-line-items-table tbody tr:nth-child(even) {
+    background-color: #F8FAFC !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* ── Footer stays with content ──────────────────────── */
+  .po-footer {
+    page-break-before: avoid;
+    page-break-inside: avoid;
+    break-before: avoid;
+    break-inside: avoid;
+  }
+
+  /* ── Print-preview-active simulates print on screen ── */
+  .print-preview-active {
+    max-width: 190mm !important;
+    margin: 0 auto !important;
+    font-size: 9pt !important;
+    line-height: 1.3 !important;
   }
 }

@@ -157,17 +157,46 @@ export default function DeliveryChallanDetail() {
       </div>
 
       {/* Document Preview */}
-      <div className="paper-card space-y-6">
-        {/* Header */}
-        <DocumentHeader />
-        <div className="text-center border-b border-border pb-4 relative">
-          <h2 className="text-lg font-display font-bold text-primary uppercase tracking-wider">
-            Delivery Challan
-          </h2>
-          <p className="text-xs text-muted-foreground mt-1">[{typeLabels[dc.dc_type] || dc.dc_type}]</p>
-          <span className="absolute top-0 right-0 text-xs font-bold border border-current px-2 py-0.5 rounded tracking-widest">
-            {isDuplicate ? "DUPLICATE" : "ORIGINAL"}
-          </span>
+      <div className="paper-card space-y-4 po-print-wrapper">
+        {/* ── SCREEN header ── */}
+        <div className="print:hidden">
+          <DocumentHeader />
+          <div className="text-center border-b border-border pb-4 relative">
+            <h2 className="text-lg font-display font-bold text-primary uppercase tracking-wider">
+              Delivery Challan
+            </h2>
+            <p className="text-xs text-muted-foreground mt-1">[{typeLabels[dc.dc_type] || dc.dc_type}]</p>
+            <span className="absolute top-0 right-0 text-xs font-bold border border-current px-2 py-0.5 rounded tracking-widest">
+              {isDuplicate ? "DUPLICATE" : "ORIGINAL"}
+            </span>
+          </div>
+        </div>
+
+        {/* ── PRINT: compact 2-col header ── */}
+        <div className="hidden print:block po-section" style={{ borderBottom: '0.5pt solid #CBD5E1', paddingBottom: '4mm' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+            <div style={{ flex: '0 0 58%' }}>
+              {companySettings?.logo_url && (
+                <img src={companySettings.logo_url} alt="Logo" style={{ height: '32px', marginBottom: '3px', objectFit: 'contain' }} />
+              )}
+              <div style={{ fontWeight: '700', fontSize: '11pt', lineHeight: 1.2 }}>{companySettings?.company_name}</div>
+              <div style={{ fontSize: '8pt', color: '#475569', lineHeight: 1.4 }}>
+                {[companySettings?.address_line1, companySettings?.address_line2, [companySettings?.city, companySettings?.state].filter(Boolean).join(', '), companySettings?.pin_code ? `PIN ${companySettings.pin_code}` : ''].filter(Boolean).join(', ')}
+              </div>
+              {companySettings?.gstin && <div style={{ fontSize: '8pt', fontFamily: 'monospace' }}>GSTIN: {companySettings.gstin}</div>}
+              {companySettings?.phone && <div style={{ fontSize: '8pt', color: '#475569' }}>Ph: {companySettings.phone}</div>}
+            </div>
+            <div style={{ flex: '0 0 42%', textAlign: 'right' }}>
+              <div style={{ fontWeight: '700', fontSize: '13pt', color: '#1E3A5F', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Delivery Challan</div>
+              <div style={{ fontSize: '8pt', color: '#64748b' }}>[{typeLabels[dc.dc_type] || dc.dc_type}]</div>
+              <div style={{ fontWeight: '700', fontSize: '9pt' }}>DC No: {dc.dc_number}</div>
+              <div style={{ fontSize: '9pt' }}>Date: {new Date(dc.dc_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
+              {dc.vehicle_number && <div style={{ fontSize: '9pt' }}>Vehicle: {dc.vehicle_number}</div>}
+              <div style={{ fontSize: '8pt', fontWeight: '700', border: '1pt solid currentColor', display: 'inline-block', padding: '1px 6px', marginTop: '2px' }}>
+                {isDuplicate ? "DUPLICATE" : "ORIGINAL"}
+              </div>
+            </div>
+          </div>
         </div>
 
         <EditableSection
@@ -285,8 +314,8 @@ export default function DeliveryChallanDetail() {
         </div>
 
         {/* Line Items Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full data-table">
+        <div className="overflow-x-auto po-section">
+          <table className="w-full data-table po-line-items-table">
             <thead>
               <tr>
                 <th className="w-10">#</th>
@@ -423,7 +452,7 @@ export default function DeliveryChallanDetail() {
         )}
 
         {/* Signature Block */}
-        <div className="grid grid-cols-3 gap-6 border-t border-border pt-6 text-center text-sm">
+        <div className="grid grid-cols-3 gap-6 border-t border-border pt-4 text-center text-sm po-footer">
           <div>
             <p className="text-muted-foreground mb-12">{dc.prepared_by || ""}</p>
             <div className="border-t border-border pt-1">

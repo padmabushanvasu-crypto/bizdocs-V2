@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { FileText, Edit, Copy, X, ShoppingCart, Clock, CheckCircle2, AlertCircle, Package, Trash2, ChevronLeft, IndianRupee } from "lucide-react";
+import { FileText, Edit, Copy, X, ShoppingCart, Clock, CheckCircle2, AlertCircle, Package, Trash2, ChevronLeft, IndianRupee, Eye, EyeOff } from "lucide-react";
 import { EditableSection } from "@/components/EditableSection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
+import { fetchCompanySettings } from "@/lib/settings-api";
 import {
   fetchPurchaseOrder,
   cancelPurchaseOrder,
@@ -51,6 +52,7 @@ export default function PurchaseOrderDetail() {
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split("T")[0]);
   const [paymentReference, setPaymentReference] = useState("");
   const [paymentNotes, setPaymentNotes] = useState("");
+  const [printPreview, setPrintPreview] = useState(false);
 
   const { data: po, isLoading } = useQuery({
     queryKey: ["purchase-order", id],
@@ -62,6 +64,12 @@ export default function PurchaseOrderDetail() {
     queryKey: ["grns-for-po", id],
     queryFn: () => fetchGRNsForPO(id!),
     enabled: !!id,
+  });
+
+  const { data: company } = useQuery({
+    queryKey: ["company-settings"],
+    queryFn: fetchCompanySettings,
+    staleTime: 5 * 60 * 1000,
   });
 
   const cancelMutation = useMutation({
@@ -151,6 +159,9 @@ export default function PurchaseOrderDetail() {
           <span className={statusClass[po.status] || "status-draft"}>{statusLabels[po.status]}</span>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => setPrintPreview((p) => !p)}>
+            {printPreview ? <><EyeOff className="h-3.5 w-3.5 mr-1" /> Exit Preview</> : <><Eye className="h-3.5 w-3.5 mr-1" /> Preview Print</>}
+          </Button>
           <DocumentActions documentNumber={po.po_number} documentType="Purchase Order" documentData={po as Record<string, unknown>} />
           {po.status === "draft" && (
             <>
@@ -205,84 +216,138 @@ export default function PurchaseOrderDetail() {
       </div>
 
       {/* Document Preview */}
-      <div className="paper-card space-y-6">
-        <DocumentHeader />
-        <div className="text-center border-b border-border pb-4">
-          <h2 className="text-lg font-display font-bold text-primary uppercase tracking-wider">Purchase Order</h2>
+      <div className={`paper-card space-y-4 po-print-wrapper${printPreview ? " print-preview-active" : ""}`}>
+
+        {/* ── SCREEN: standard header ── */}
+        <div className="print:hidden">
+          <DocumentHeader />
+          <div className="text-center border-b border-border pb-3">
+            <h2 className="text-lg font-display font-bold text-primary uppercase tracking-wider">Purchase Order</h2>
+          </div>
         </div>
 
-        {/* Vendor & PO Details */}
-        <EditableSection
-          editable={po.status === "draft" || po.status === "issued"}
-          onEdit={() => navigate(`/purchase-orders/${id}/edit`)}
-          label="Click to edit"
-          className="p-4 -mx-4"
-        >
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <p className="text-xs font-semibold text-slate-500 mb-1">To</p>
-              <p className="font-medium text-foreground">{po.vendor_name}</p>
-              {po.vendor_address && <p className="text-sm text-muted-foreground">{po.vendor_address}</p>}
-              {po.vendor_gstin && <p className="text-sm font-mono">GSTIN: {po.vendor_gstin}</p>}
-              {po.vendor_phone && <p className="text-sm text-muted-foreground">Ph: {po.vendor_phone}</p>}
-            </div>
-            <div className="text-left md:text-right space-y-1">
-              <div className="flex md:justify-end gap-4">
-                <div>
-                  <p className="text-xs text-muted-foreground">PO No.</p>
-                  <p className="font-mono font-medium">{po.po_number}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Date</p>
-                  <p>{new Date(po.po_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</p>
-                </div>
+        {/* ── PRINT: compact 2-col header ── */}
+        <div className="hidden print:block po-section" style={{ borderBottom: '0.5pt solid #CBD5E1', paddingBottom: '4mm' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+            {/* Left: Company info */}
+            <div style={{ flex: '0 0 58%' }}>
+              {company?.logo_url && (
+                <img src={company.logo_url} alt="Logo" style={{ height: '32px', marginBottom: '3px', objectFit: 'contain' }} />
+              )}
+              <div style={{ fontWeight: '700', fontSize: '11pt', lineHeight: 1.2 }}>{company?.company_name}</div>
+              <div style={{ fontSize: '8pt', color: '#475569', lineHeight: 1.4 }}>
+                {[company?.address_line1, company?.address_line2, [company?.city, company?.state].filter(Boolean).join(', '), company?.pin_code ? `PIN ${company.pin_code}` : ''].filter(Boolean).join(', ')}
               </div>
-              {po.reference_number && (
-                <div className="md:text-right">
-                  <p className="text-xs text-muted-foreground">Reference</p>
-                  <p className="text-sm">{po.reference_number}</p>
-                </div>
-              )}
-              {po.payment_terms && (
-                <div className="md:text-right">
-                  <p className="text-xs text-muted-foreground">Payment Terms</p>
-                  <p className="text-sm">{po.payment_terms}</p>
-                </div>
-              )}
+              {company?.gstin && <div style={{ fontSize: '8pt', fontFamily: 'monospace' }}>GSTIN: {company.gstin}</div>}
+              {company?.phone && <div style={{ fontSize: '8pt', color: '#475569' }}>Ph: {company.phone}</div>}
+              {company?.email && <div style={{ fontSize: '8pt', color: '#475569' }}>{company.email}</div>}
+            </div>
+            {/* Right: PO title + details */}
+            <div style={{ flex: '0 0 42%', textAlign: 'right' }}>
+              <div style={{ fontWeight: '700', fontSize: '13pt', color: '#1E3A5F', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Purchase Order</div>
+              <div style={{ fontWeight: '700', fontSize: '9pt' }}>PO No: {po.po_number}</div>
+              <div style={{ fontSize: '9pt' }}>Date: {new Date(po.po_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
+              {po.payment_terms && <div style={{ fontSize: '9pt' }}>Terms: {po.payment_terms}</div>}
+              {po.reference_number && <div style={{ fontSize: '9pt' }}>Ref: {po.reference_number}</div>}
             </div>
           </div>
-        </EditableSection>
+        </div>
 
-        {/* Delivery Address */}
-        {po.delivery_address && (
-          <div className="border-t border-border pt-4">
-            <p className="text-xs font-semibold text-slate-500 mb-1">Deliver To</p>
-            <p className="text-sm whitespace-pre-line">{po.delivery_address}</p>
-            {(po.delivery_contact_person || po.delivery_contact_phone) && (
-              <p className="text-sm text-muted-foreground mt-0.5">
-                Contact:{" "}
-                {[po.delivery_contact_person, po.delivery_contact_phone]
-                  .filter(Boolean)
-                  .join(" — ")}
-              </p>
+        {/* ── SCREEN: Vendor & PO Details ── */}
+        <div className="print:hidden">
+          <EditableSection
+            editable={po.status === "draft" || po.status === "issued"}
+            onEdit={() => navigate(`/purchase-orders/${id}/edit`)}
+            label="Click to edit"
+            className="p-4 -mx-4"
+          >
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <p className="text-xs font-semibold text-slate-500 mb-1">To</p>
+                <p className="font-medium text-foreground">{po.vendor_name}</p>
+                {po.vendor_address && <p className="text-sm text-muted-foreground">{po.vendor_address}</p>}
+                {po.vendor_gstin && <p className="text-sm font-mono">GSTIN: {po.vendor_gstin}</p>}
+                {po.vendor_phone && <p className="text-sm text-muted-foreground">Ph: {po.vendor_phone}</p>}
+              </div>
+              <div className="text-left md:text-right space-y-1">
+                <div className="flex md:justify-end gap-4">
+                  <div>
+                    <p className="text-xs text-muted-foreground">PO No.</p>
+                    <p className="font-mono font-medium">{po.po_number}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Date</p>
+                    <p>{new Date(po.po_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</p>
+                  </div>
+                </div>
+                {po.reference_number && (
+                  <div className="md:text-right">
+                    <p className="text-xs text-muted-foreground">Reference</p>
+                    <p className="text-sm">{po.reference_number}</p>
+                  </div>
+                )}
+                {po.payment_terms && (
+                  <div className="md:text-right">
+                    <p className="text-xs text-muted-foreground">Payment Terms</p>
+                    <p className="text-sm">{po.payment_terms}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </EditableSection>
+          {po.delivery_address && (
+            <div className="border-t border-border pt-3 mt-3">
+              <p className="text-xs font-semibold text-slate-500 mb-1">Deliver To</p>
+              <p className="text-sm whitespace-pre-line">{po.delivery_address}</p>
+              {(po.delivery_contact_person || po.delivery_contact_phone) && (
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Contact:{" "}
+                  {[po.delivery_contact_person, po.delivery_contact_phone].filter(Boolean).join(" — ")}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── PRINT: Vendor + Delivery 2-col ── */}
+        <div className="hidden print:block po-section" style={{ borderBottom: '0.5pt solid #E2E8F0', paddingBottom: '3mm' }}>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <div style={{ flex: '1', borderRight: po.delivery_address ? '0.5pt solid #E2E8F0' : undefined, paddingRight: po.delivery_address ? '8px' : undefined }}>
+              <div style={{ fontSize: '7pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>Vendor / Bill To</div>
+              <div style={{ fontWeight: '600', fontSize: '9pt' }}>{po.vendor_name}</div>
+              {po.vendor_address && <div style={{ fontSize: '8pt', color: '#475569' }}>{po.vendor_address}</div>}
+              {po.vendor_gstin && <div style={{ fontSize: '8pt', fontFamily: 'monospace' }}>GSTIN: {po.vendor_gstin}</div>}
+              {po.vendor_phone && <div style={{ fontSize: '8pt', color: '#475569' }}>Ph: {po.vendor_phone}</div>}
+            </div>
+            {po.delivery_address && (
+              <div style={{ flex: '1', paddingLeft: '8px' }}>
+                <div style={{ fontSize: '7pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>Deliver To</div>
+                <div style={{ fontSize: '8pt', whiteSpace: 'pre-line' }}>{po.delivery_address}</div>
+                {(po.delivery_contact_person || po.delivery_contact_phone) && (
+                  <div style={{ fontSize: '7pt', color: '#64748b' }}>
+                    Contact: {[po.delivery_contact_person, po.delivery_contact_phone].filter(Boolean).join(" — ")}
+                  </div>
+                )}
+              </div>
             )}
           </div>
-        )}
+        </div>
 
-        {/* Line Items */}
-        <div className="overflow-x-auto">
-          <table className="w-full data-table">
+        {/* ── Line Items (shared screen + print) ── */}
+        <div className="overflow-x-auto po-section">
+          <table className="w-full data-table po-line-items-table">
             <thead>
               <tr>
-                <th className="w-10">#</th>
-                <th>Description</th>
-                <th>Drawing No.</th>
-                <th className="text-right">Qty</th>
-                <th className="text-right">Rcvd</th>
-                <th className="text-right">Pending</th>
-                <th>Unit</th>
-                <th className="text-right">Unit Price</th>
-                <th className="text-right">Amount</th>
+                <th style={{ width: '5%' }}>#</th>
+                <th style={{ width: '36%' }}>Description</th>
+                {/* Drawing No: visible on screen, hidden in print (shown inline in description) */}
+                <th className="print:hidden" style={{ width: '12%' }}>Drawing No.</th>
+                <th className="text-right print:hidden" style={{ width: '7%' }}>Rcvd</th>
+                <th className="text-right print:hidden" style={{ width: '7%' }}>Pending</th>
+                <th className="text-right" style={{ width: '8%' }}>Qty</th>
+                <th style={{ width: '7%' }}>Unit</th>
+                <th className="text-right" style={{ width: '17%' }}>Unit Price</th>
+                <th className="text-right" style={{ width: '20%' }}>Amount</th>
               </tr>
             </thead>
             <tbody>
@@ -292,23 +357,31 @@ export default function PurchaseOrderDetail() {
                 return (
                   <tr key={item.serial_number}>
                     <td className="font-mono text-muted-foreground">{item.serial_number}</td>
-                    <td className="font-medium">{item.description}</td>
-                    <td className="font-mono text-sm">{item.drawing_number || "—"}</td>
-                    <td className="text-right font-mono tabular-nums">{item.quantity}</td>
-                    <td className="text-right font-mono tabular-nums">
+                    <td className="font-medium">
+                      {item.description}
+                      {/* Drawing No. shown inline below description only in print */}
+                      {item.drawing_number && (
+                        <div className="hidden print:block" style={{ fontSize: '7pt', color: '#64748b', marginTop: '1px' }}>
+                          Dwg: {item.drawing_number}
+                        </div>
+                      )}
+                    </td>
+                    <td className="font-mono text-sm print:hidden">{item.drawing_number || "—"}</td>
+                    <td className="text-right font-mono tabular-nums print:hidden">
                       {received > 0 ? (
                         <span className="text-emerald-600">{received}</span>
                       ) : (
                         <span className="text-muted-foreground">0</span>
                       )}
                     </td>
-                    <td className="text-right font-mono tabular-nums">
+                    <td className="text-right font-mono tabular-nums print:hidden">
                       {pending > 0 ? (
                         <span className="text-amber-600 font-medium">{pending}</span>
                       ) : (
                         <span className="text-emerald-600">✓</span>
                       )}
                     </td>
+                    <td className="text-right font-mono tabular-nums">{item.quantity}</td>
                     <td>{item.unit}</td>
                     <td className="text-right font-mono tabular-nums">{formatCurrency(item.unit_price)}</td>
                     <td className="text-right font-mono tabular-nums">{formatCurrency(item.line_total)}</td>
@@ -319,7 +392,7 @@ export default function PurchaseOrderDetail() {
           </table>
         </div>
 
-        {/* Totals */}
+        {/* ── Totals (shared screen + print) ── */}
         <div className="flex justify-end">
           <div className="w-full max-w-xs space-y-1.5 text-sm">
             <div className="flex justify-between">
@@ -332,10 +405,13 @@ export default function PurchaseOrderDetail() {
                 <span className="font-mono tabular-nums">{formatCurrency(c.amount)}</span>
               </div>
             ))}
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Taxable Value</span>
-              <span className="font-mono tabular-nums">{formatCurrency(po.taxable_value)}</span>
-            </div>
+            {/* Only show Taxable Value when it differs from Sub Total (i.e. there are charges or discounts) */}
+            {Math.abs((po.taxable_value || 0) - (po.sub_total || 0)) > 0.005 && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Taxable Value</span>
+                <span className="font-mono tabular-nums">{formatCurrency(po.taxable_value)}</span>
+              </div>
+            )}
             <div className="border-t border-border my-1" />
             {isSameState ? (
               <>
@@ -364,15 +440,59 @@ export default function PurchaseOrderDetail() {
         </div>
 
         {po.special_instructions && (
-          <div>
+          <div className="po-section">
             <p className="text-xs font-semibold text-slate-500 mb-1">Special Instructions</p>
             <p className="text-sm">{po.special_instructions}</p>
           </div>
         )}
 
-        <div className="border-t border-border pt-4">
+        {/* ── SCREEN: simple signature ── */}
+        <div className="border-t border-border pt-4 print:hidden">
           <div className="flex justify-start">
             <DocumentSignature label="Authorised Signatory" showCompanyName />
+          </div>
+        </div>
+
+        {/* ── PRINT: 3-col footer (T&C | Bank | Signature) ── */}
+        <div className="hidden print:block po-footer" style={{ borderTop: '0.5pt solid #CBD5E1', paddingTop: '4mm', marginTop: '4mm' }}>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            {/* T&C */}
+            <div style={{ flex: '1' }}>
+              <div style={{ fontSize: '7pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>Terms &amp; Conditions</div>
+              {company?.default_terms_conditions && (
+                <div style={{ fontSize: '7pt', color: '#475569', lineHeight: 1.4, maxHeight: '18mm', overflow: 'hidden' }}>
+                  {company.default_terms_conditions}
+                </div>
+              )}
+              {!company?.default_terms_conditions && (
+                <div style={{ fontSize: '7pt', color: '#94a3b8' }}>
+                  1. Payment due as per agreed terms.<br />
+                  2. Goods to be delivered as per PO specifications.<br />
+                  3. Invoice must reference this PO number.
+                </div>
+              )}
+            </div>
+            {/* Bank Details */}
+            <div style={{ flex: '1' }}>
+              <div style={{ fontSize: '7pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>Bank Details</div>
+              {company?.bank_name ? (
+                <>
+                  <div style={{ fontSize: '7pt' }}>{company.bank_name}</div>
+                  {company.bank_account && <div style={{ fontSize: '7pt' }}>A/C: {company.bank_account}</div>}
+                  {company.bank_ifsc && <div style={{ fontSize: '7pt' }}>IFSC: {company.bank_ifsc}</div>}
+                  {company.bank_branch && <div style={{ fontSize: '7pt' }}>Branch: {company.bank_branch}</div>}
+                </>
+              ) : (
+                <div style={{ fontSize: '7pt', color: '#94a3b8' }}>—</div>
+              )}
+            </div>
+            {/* Authorised Signatory */}
+            <div style={{ flex: '1', textAlign: 'center' }}>
+              <div style={{ fontSize: '7pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>Authorised Signatory</div>
+              <div style={{ fontSize: '8pt', color: '#475569' }}>for {company?.company_name}</div>
+              <div style={{ borderBottom: '0.5pt solid #94a3b8', marginTop: '16mm', marginBottom: '2mm', marginLeft: '8mm', marginRight: '8mm' }} />
+              <div style={{ fontSize: '7pt', color: '#64748b' }}>Signature</div>
+            </div>
           </div>
         </div>
       </div>

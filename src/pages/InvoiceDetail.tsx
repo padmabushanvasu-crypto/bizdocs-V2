@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { fetchInvoice, fetchInvoicePayments, cancelInvoice, recordPayment, getNextReceiptNumber } from "@/lib/invoices-api";
+import { fetchCompanySettings } from "@/lib/settings-api";
 import { formatCurrency, amountInWords } from "@/lib/gst-utils";
 import { format } from "date-fns";
 import { DocumentHeader } from "@/components/DocumentHeader";
@@ -54,6 +55,12 @@ export default function InvoiceDetail() {
     queryKey: ["invoice", id],
     queryFn: () => fetchInvoice(id!),
     enabled: !!id,
+  });
+
+  const { data: company } = useQuery({
+    queryKey: ["company-settings"],
+    queryFn: fetchCompanySettings,
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data: payments } = useQuery({
@@ -121,6 +128,9 @@ export default function InvoiceDetail() {
     setPayNotes("");
     setPaymentOpen(true);
   };
+
+  // Auto-condensing: detect empty columns to hide in print
+  const allDiscountsZero = items.every((li: any) => !li.discount_percent || li.discount_percent === 0);
 
   // GST breakdown by rate
   const gstByRate: Record<number, { taxable: number; cgst: number; sgst: number; igst: number }> = {};
@@ -191,9 +201,38 @@ export default function InvoiceDetail() {
       )}
 
       {/* Document preview */}
-      <div className="paper-card space-y-6">
-        <DocumentHeader />
-        <div className="text-center font-bold text-lg uppercase tracking-wide text-foreground">TAX INVOICE</div>
+      <div className="paper-card space-y-4 po-print-wrapper">
+        {/* ── SCREEN header ── */}
+        <div className="print:hidden">
+          <DocumentHeader />
+          <div className="text-center font-bold text-lg uppercase tracking-wide text-foreground border-b border-border pb-3">TAX INVOICE</div>
+        </div>
+
+        {/* ── PRINT: compact 2-col header ── */}
+        <div className="hidden print:block po-section" style={{ borderBottom: '0.5pt solid #CBD5E1', paddingBottom: '4mm' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+            <div style={{ flex: '0 0 58%' }}>
+              {company?.logo_url && (
+                <img src={company.logo_url} alt="Logo" style={{ height: '32px', marginBottom: '3px', objectFit: 'contain' }} />
+              )}
+              <div style={{ fontWeight: '700', fontSize: '11pt', lineHeight: 1.2 }}>{company?.company_name}</div>
+              <div style={{ fontSize: '8pt', color: '#475569', lineHeight: 1.4 }}>
+                {[company?.address_line1, company?.address_line2, [company?.city, company?.state].filter(Boolean).join(', '), company?.pin_code ? `PIN ${company.pin_code}` : ''].filter(Boolean).join(', ')}
+              </div>
+              {company?.gstin && <div style={{ fontSize: '8pt', fontFamily: 'monospace' }}>GSTIN: {company.gstin}</div>}
+              {company?.phone && <div style={{ fontSize: '8pt', color: '#475569' }}>Ph: {company.phone}</div>}
+            </div>
+            <div style={{ flex: '0 0 42%', textAlign: 'right' }}>
+              <div style={{ fontWeight: '700', fontSize: '13pt', color: '#1E3A5F', letterSpacing: '0.04em' }}>TAX INVOICE</div>
+              <div style={{ fontWeight: '700', fontSize: '9pt' }}>Invoice No: {inv.invoice_number}</div>
+              <div style={{ fontSize: '9pt' }}>Date: {inv.invoice_date}</div>
+              {inv.due_date && <div style={{ fontSize: '9pt' }}>Due: {inv.due_date}</div>}
+              {inv.payment_terms && <div style={{ fontSize: '9pt' }}>Terms: {inv.payment_terms}</div>}
+              {inv.place_of_supply && <div style={{ fontSize: '9pt' }}>Place of Supply: {inv.place_of_supply}</div>}
+              {inv.customer_po_reference && <div style={{ fontSize: '9pt' }}>PO Ref: {inv.customer_po_reference}</div>}
+            </div>
+          </div>
+        </div>
 
         <EditableSection
           editable={inv.status === "draft"}
@@ -221,20 +260,21 @@ export default function InvoiceDetail() {
         </EditableSection>
 
         {/* Line items */}
-        <div className="overflow-x-auto">
-          <table className="w-full data-table">
+        <div className="overflow-x-auto po-section">
+          <table className="w-full data-table po-line-items-table">
             <thead>
               <tr>
-                <th>#</th>
-                <th>Description</th>
-                <th>HSN/SAC</th>
-                <th className="text-right">Qty</th>
-                <th>Unit</th>
-                <th className="text-right">Rate</th>
-                <th className="text-right">Disc%</th>
-                <th className="text-right">Taxable</th>
-                <th className="text-right">GST%</th>
-                <th className="text-right">Amount</th>
+                <th style={{ width: '4%' }}>#</th>
+                <th style={{ width: allDiscountsZero ? '28%' : '24%' }}>Description</th>
+                <th style={{ width: '8%' }}>HSN/SAC</th>
+                <th className="text-right" style={{ width: '6%' }}>Qty</th>
+                <th style={{ width: '5%' }}>Unit</th>
+                <th className="text-right" style={{ width: '12%' }}>Rate</th>
+                {/* Hide Disc% column in print when all zero */}
+                <th className={`text-right${allDiscountsZero ? " print:hidden" : ""}`} style={{ width: allDiscountsZero ? undefined : '7%' }}>Disc%</th>
+                <th className="text-right" style={{ width: allDiscountsZero ? '14%' : '12%' }}>Taxable</th>
+                <th className="text-right" style={{ width: '6%' }}>GST%</th>
+                <th className="text-right" style={{ width: allDiscountsZero ? '17%' : '14%' }}>Amount</th>
               </tr>
             </thead>
             <tbody>
@@ -249,7 +289,9 @@ export default function InvoiceDetail() {
                   <td className="text-right font-mono tabular-nums">{li.quantity}</td>
                   <td>{li.unit}</td>
                   <td className="text-right font-mono tabular-nums">{formatCurrency(li.unit_price)}</td>
-                  <td className="text-right">{li.discount_percent > 0 ? `${li.discount_percent}%` : "—"}</td>
+                  <td className={`text-right${allDiscountsZero ? " print:hidden" : ""}`}>
+                    {li.discount_percent > 0 ? `${li.discount_percent}%` : "—"}
+                  </td>
                   <td className="text-right font-mono tabular-nums">{formatCurrency(li.taxable_amount)}</td>
                   <td className="text-right">{li.gst_rate}%</td>
                   <td className="text-right font-mono tabular-nums font-semibold">{formatCurrency(li.line_total)}</td>
@@ -315,7 +357,7 @@ export default function InvoiceDetail() {
         )}
 
         {/* Signature Block */}
-        <div className="border-t border-border pt-4">
+        <div className="border-t border-border pt-4 po-footer">
           <div className="flex justify-end">
             <DocumentSignature label="Authorised Signatory" showCompanyName />
           </div>
