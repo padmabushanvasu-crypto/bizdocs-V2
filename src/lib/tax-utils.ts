@@ -3,6 +3,86 @@
 
 export type GSTType = 'igst' | 'cgst_sgst' | 'exempt';
 
+/** GST state code → display name map (all 38 Indian states/UTs). */
+export const INDIA_STATE_CODES: Record<string, string> = {
+  "01": "Jammu and Kashmir",
+  "02": "Himachal Pradesh",
+  "03": "Punjab",
+  "04": "Chandigarh",
+  "05": "Uttarakhand",
+  "06": "Haryana",
+  "07": "Delhi",
+  "08": "Rajasthan",
+  "09": "Uttar Pradesh",
+  "10": "Bihar",
+  "11": "Sikkim",
+  "12": "Arunachal Pradesh",
+  "13": "Nagaland",
+  "14": "Manipur",
+  "15": "Mizoram",
+  "16": "Tripura",
+  "17": "Meghalaya",
+  "18": "Assam",
+  "19": "West Bengal",
+  "20": "Jharkhand",
+  "21": "Odisha",
+  "22": "Chhattisgarh",
+  "23": "Madhya Pradesh",
+  "24": "Gujarat",
+  "25": "Daman and Diu",
+  "26": "Dadra and Nagar Haveli and Daman and Diu",
+  "27": "Maharashtra",
+  "28": "Andhra Pradesh",
+  "29": "Karnataka",
+  "30": "Goa",
+  "31": "Lakshadweep",
+  "32": "Kerala",
+  "33": "Tamil Nadu",
+  "34": "Puducherry",
+  "35": "Andaman and Nicobar Islands",
+  "36": "Telangana",
+  "37": "Andhra Pradesh",
+  "38": "Ladakh",
+  "97": "Other Territory",
+  "99": "Other Country",
+};
+
+/** Extract the 2-digit state code from the first two digits of a GSTIN. */
+export function extractStateCodeFromGSTIN(gstin: string | null | undefined): string | null {
+  if (!gstin) return null;
+  const m = String(gstin).match(/^(\d{2})/);
+  return m ? m[1] : null;
+}
+
+/** Return the display name for a 2-digit state code. Returns the raw value if unrecognised. */
+export function getStateName(code: string | null | undefined): string {
+  if (!code) return "Unknown";
+  const cleaned = String(code).trim();
+  return INDIA_STATE_CODES[cleaned] ?? cleaned;
+}
+
+/**
+ * Normalise a raw state_code value that may be a full state name or already a 2-digit code.
+ * Falls back to extracting from GSTIN when the stored value is unusable.
+ */
+export function resolveStateCode(
+  rawCode: string | null | undefined,
+  gstin?: string | null,
+): string {
+  if (rawCode) {
+    const cleaned = String(rawCode).trim();
+    if (/^\d{2}$/.test(cleaned)) return cleaned;
+    // Full state name stored — look it up
+    const entry = Object.entries(INDIA_STATE_CODES).find(
+      ([, name]) => name.toLowerCase() === cleaned.toLowerCase(),
+    );
+    if (entry) return entry[0];
+  }
+  // Fallback: derive from company GSTIN
+  if (gstin) return extractStateCodeFromGSTIN(gstin) ?? "";
+  return "";
+}
+
 export function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
@@ -108,7 +188,8 @@ export function calculateDocumentTotals(
 
 /**
  * Fetch company state code from Supabase.
- * Pass the supabase client so this util stays import-free.
+ * Priority 1: explicit state_code (handles full names like "Tamil Nadu" → "33").
+ * Priority 2: first 2 digits of company GSTIN.
  */
 export async function getCompanyStateCode(
   supabase: any,
@@ -116,10 +197,12 @@ export async function getCompanyStateCode(
 ): Promise<string | null> {
   const { data } = await supabase
     .from('company_settings')
-    .select('state_code')
+    .select('state_code, gstin')
     .eq('company_id', companyId)
     .single();
-  return data?.state_code ?? null;
+  if (!data) return null;
+  const resolved = resolveStateCode(data.state_code, data.gstin);
+  return resolved || null;
 }
 
 /** Number-only formatting (no currency symbol) for internal display. */

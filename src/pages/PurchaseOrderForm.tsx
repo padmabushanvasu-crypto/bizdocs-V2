@@ -27,7 +27,7 @@ import {
   type POLineItem,
 } from "@/lib/purchase-orders-api";
 import { formatCurrency, formatNumber, amountInWords } from "@/lib/gst-utils";
-import { getGSTType, calculateLineTax, round2, type GSTType } from "@/lib/tax-utils";
+import { getGSTType, calculateLineTax, round2, resolveStateCode, getStateName, type GSTType } from "@/lib/tax-utils";
 
 const UNITS = ["NOS", "KG", "MTR", "SFT", "SET", "ROLL", "SHEET", "LITRE", "BOX"];
 const PAYMENT_TERMS = ["Immediate", "7 Days", "15 Days", "30 Days", "45 Days", "60 Days", "Custom"];
@@ -85,7 +85,7 @@ export default function PurchaseOrderForm() {
     queryFn: fetchCompanySettings,
     staleTime: 5 * 60 * 1000,
   });
-  const COMPANY_STATE_CODE = companySettings?.state_code || "";
+  const COMPANY_STATE_CODE = resolveStateCode(companySettings?.state_code, companySettings?.gstin);
 
   const companyDeliveryAddress = useMemo(() => {
     if (!companySettings) return "";
@@ -643,15 +643,23 @@ export default function PurchaseOrderForm() {
         {/* GST Info */}
         <div className="paper-card space-y-2">
           <h3 className="text-sm font-medium text-slate-700 border-b border-border pb-2">GST Information</h3>
+          {!COMPANY_STATE_CODE && (
+            <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold">
+              <Info className="h-3 w-3 shrink-0" /> Company state not set —{" "}
+              <button type="button" className="underline hover:no-underline" onClick={() => navigate("/settings/company")}>
+                set it in Settings
+              </button>
+            </div>
+          )}
           {selectedVendor ? (
             <>
               <p className="text-sm">
                 <span className="text-muted-foreground">Vendor:</span>{" "}
-                <span className="font-medium">{selectedVendor.state || "N/A"} ({selectedVendor.state_code || "??"})</span>
+                <span className="font-medium">{getStateName(selectedVendor.state_code) || selectedVendor.state || "N/A"} ({selectedVendor.state_code || "??"})</span>
               </p>
               <p className="text-sm">
                 <span className="text-muted-foreground">Your Company:</span>{" "}
-                <span className="font-medium">{companySettings?.state || "N/A"} ({COMPANY_STATE_CODE || "?"})</span>
+                <span className="font-medium">{getStateName(COMPANY_STATE_CODE) || companySettings?.state || "N/A"} ({COMPANY_STATE_CODE || "?"})</span>
               </p>
               {gstType === 'cgst_sgst' ? (
                 <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold mt-1">
@@ -659,7 +667,7 @@ export default function PurchaseOrderForm() {
                 </div>
               ) : !selectedVendor.state_code ? (
                 <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold mt-1">
-                  <Info className="h-3 w-3 shrink-0" /> State unknown — defaulting to IGST
+                  <Info className="h-3 w-3 shrink-0" /> Vendor state unknown — defaulting to IGST
                 </div>
               ) : (
                 <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold mt-1">

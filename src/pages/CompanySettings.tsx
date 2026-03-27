@@ -5,18 +5,11 @@ import { ArrowLeft, Save, Building2, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { fetchCompanySettings, saveCompanySettings } from "@/lib/settings-api";
 import { supabase } from "@/integrations/supabase/client";
-
-const INDIAN_STATES = [
-  "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh",
-  "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka",
-  "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram",
-  "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu",
-  "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal",
-  "Delhi", "Jammu and Kashmir", "Ladakh", "Puducherry",
-];
+import { INDIA_STATE_CODES, extractStateCodeFromGSTIN, resolveStateCode } from "@/lib/tax-utils";
 
 function validateGSTIN(gstin: string): boolean {
   if (!gstin) return true; // optional
@@ -35,6 +28,7 @@ export default function CompanySettings() {
     address_line3: "",
     city: "",
     state: "",
+    state_code: "",
     pin_code: "",
     gstin: "",
     pan: "",
@@ -50,6 +44,7 @@ export default function CompanySettings() {
   const [logoPreview, setLogoPreview] = useState<string>("");
   const [uploading, setUploading] = useState(false);
   const [gstinError, setGstinError] = useState("");
+  const [stateAutoDetected, setStateAutoDetected] = useState(false);
 
   const { data: existing } = useQuery({
     queryKey: ["company-settings"],
@@ -58,13 +53,15 @@ export default function CompanySettings() {
 
   useEffect(() => {
     if (existing) {
+      const resolvedCode = resolveStateCode(existing.state_code, existing.gstin);
       setForm({
         company_name: existing.company_name ?? "",
         address_line1: existing.address_line1 ?? "",
         address_line2: existing.address_line2 ?? "",
         address_line3: (existing as any).address_line3 ?? "",
         city: existing.city ?? "",
-        state: existing.state ?? "",
+        state: existing.state ?? (resolvedCode ? INDIA_STATE_CODES[resolvedCode] ?? "" : ""),
+        state_code: resolvedCode,
         pin_code: existing.pin_code ?? "",
         gstin: existing.gstin ?? "",
         pan: existing.pan ?? "",
@@ -78,6 +75,43 @@ export default function CompanySettings() {
       if (existing.logo_url) setLogoPreview(existing.logo_url);
     }
   }, [existing]);
+
+  // One-time silent migration: fix "Tamil Nadu" → "33" in state_code column.
+  // Also auto-fills state_code from GSTIN when state_code is blank.
+  useEffect(() => {
+    if (!existing) return;
+    const code = existing.state_code;
+    const gstin = existing.gstin;
+    if (code && /^\d{2}$/.test(String(code).trim())) return; // already correct
+    let correctedCode: string | null = null;
+    if (code) {
+      const entry = Object.entries(INDIA_STATE_CODES).find(
+        ([, name]) => name.toLowerCase() === String(code).trim().toLowerCase(),
+      );
+      if (entry) correctedCode = entry[0];
+    }
+    if (!correctedCode && gstin) correctedCode = extractStateCodeFromGSTIN(gstin);
+    if (correctedCode) {
+      saveCompanySettings({ state_code: correctedCode } as any).then(() => {
+        queryClient.invalidateQueries({ queryKey: ["company-settings"] });
+      });
+    }
+  }, [existing]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-detect state from GSTIN when state_code is not yet set.
+  useEffect(() => {
+    if (form.gstin && form.gstin.length >= 2 && !form.state_code) {
+      const detected = extractStateCodeFromGSTIN(form.gstin);
+      if (detected) {
+        setForm((f) => ({
+          ...f,
+          state_code: detected,
+          state: f.state || (INDIA_STATE_CODES[detected] ?? ""),
+        }));
+        setStateAutoDetected(true);
+      }
+    }
+  }, [form.gstin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -109,6 +143,7 @@ export default function CompanySettings() {
         address_line2: form.address_line2 || null,
         city: form.city || null,
         state: form.state || null,
+        state_code: form.state_code || null,
         pin_code: form.pin_code || null,
         gstin: form.gstin || null,
         pan: form.pan || null,
@@ -226,10 +261,30 @@ export default function CompanySettings() {
           </div>
           <div className="space-y-1.5">
             <Label>State</Label>
-            <Input value={form.state} onChange={set("state")} placeholder="Maharashtra" list="states-list" />
-            <datalist id="states-list">
-              {INDIAN_STATES.map((s) => <option key={s} value={s} />)}
-            </datalist>
+            <Select
+              value={form.state_code}
+              onValueChange={(code) => {
+                const name = INDIA_STATE_CODES[code] ?? "";
+                setForm((f) => ({ ...f, state_code: code, state: name }));
+                setStateAutoDetected(false);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select state..." />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(INDIA_STATE_CODES)
+                  .sort(([, a], [, b]) => a.localeCompare(b))
+                  .map(([code, name]) => (
+                    <SelectItem key={code} value={code}>
+                      {name} ({code})
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            {stateAutoDetected && (
+              <p className="text-xs text-emerald-600">State code auto-detected from GSTIN</p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label>PIN Code</Label>

@@ -28,7 +28,7 @@ import {
   type InvoiceLineItem,
 } from "@/lib/invoices-api";
 import { formatCurrency, formatNumber, amountInWords } from "@/lib/gst-utils";
-import { getGSTType, calculateLineTax, round2, type GSTType } from "@/lib/tax-utils";
+import { getGSTType, calculateLineTax, round2, resolveStateCode, getStateName, type GSTType } from "@/lib/tax-utils";
 import { fetchSerialNumbers, assignSerialToInvoice } from "@/lib/fat-api";
 
 const UNITS = ["NOS", "KG", "MTR", "SFT", "SET", "ROLL", "SHEET", "LITRE", "BOX"];
@@ -112,7 +112,7 @@ export default function InvoiceForm() {
     queryFn: fetchCompanySettings,
     staleTime: 5 * 60 * 1000,
   });
-  const COMPANY_STATE_CODE = companySettings?.state_code || "";
+  const COMPANY_STATE_CODE = resolveStateCode(companySettings?.state_code, companySettings?.gstin);
 
   const { data: customers } = useQuery({
     queryKey: ["customers-for-invoice"],
@@ -676,17 +676,25 @@ export default function InvoiceForm() {
         {/* GST Info */}
         <div className="bg-secondary/50 border border-border rounded-md p-4 text-sm space-y-2">
           <Label className="text-sm font-medium text-slate-700">GST Information</Label>
+          {!COMPANY_STATE_CODE && (
+            <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold">
+              Company state not set —{" "}
+              <button type="button" className="underline hover:no-underline ml-1" onClick={() => navigate("/settings/company")}>
+                set it in Settings
+              </button>
+            </div>
+          )}
           {selectedCustomer ? (
             <>
-              <div>Customer: {selectedCustomer.state || "Unknown"} ({placeOfSupply || selectedCustomer.state_code || "?"})</div>
-              <div>Your Company: {companySettings?.state || "N/A"} ({COMPANY_STATE_CODE || "?"})</div>
+              <div>Customer: {getStateName(placeOfSupply || selectedCustomer.state_code) || selectedCustomer.state || "Unknown"} ({placeOfSupply || selectedCustomer.state_code || "?"})</div>
+              <div>Your Company: {getStateName(COMPANY_STATE_CODE) || companySettings?.state || "N/A"} ({COMPANY_STATE_CODE || "?"})</div>
               {gstType === 'cgst_sgst' ? (
                 <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold mt-1">
                   Intra-state — CGST + SGST
                 </div>
-              ) : !selectedCustomer.state_code ? (
+              ) : !(placeOfSupply || selectedCustomer.state_code) ? (
                 <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold mt-1">
-                  State unknown — defaulting to IGST
+                  Customer state unknown — defaulting to IGST
                 </div>
               ) : (
                 <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold mt-1">

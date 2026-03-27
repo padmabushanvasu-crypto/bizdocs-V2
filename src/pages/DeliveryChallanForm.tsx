@@ -29,7 +29,7 @@ import {
 } from "@/lib/delivery-challans-api";
 import { fetchOpenJobWorks, fetchJobWork } from "@/lib/job-works-api";
 import { formatCurrency, amountInWords } from "@/lib/gst-utils";
-import { getGSTType, calculateLineTax, round2, type GSTType } from "@/lib/tax-utils";
+import { getGSTType, calculateLineTax, round2, resolveStateCode, type GSTType } from "@/lib/tax-utils";
 
 const RETURNABLE_SUBTYPES = [
   { value: "returnable", label: "Standard Returnable" },
@@ -334,8 +334,8 @@ export default function DeliveryChallanForm() {
 
   // GST type — derive from company state vs party state. Never assume intra-state.
   const gstType = useMemo<GSTType>(
-    () => getGSTType(company?.state_code, selectedParty?.state_code),
-    [company?.state_code, selectedParty?.state_code],
+    () => getGSTType(resolveStateCode(company?.state_code, company?.gstin), selectedParty?.state_code),
+    [company?.state_code, company?.gstin, selectedParty?.state_code],
   );
 
   const taxResult = useMemo(
