@@ -116,6 +116,16 @@ export default function StockRegister() {
   const [statusFilter, setStatusFilter] = useState<"all" | "green" | "amber" | "red">("all");
   const [typeTab, setTypeTab] = useState<TypeTab>("all");
 
+  // DEBUG: log active tab and row counts to diagnose bought-out items not appearing
+  // If bought_out count is 0 even though items exist in the items table, the stock_status VIEW
+  // in Supabase likely has a WHERE item_type IN (...) clause that excludes 'bought_out'.
+  // SQL fix (run in Supabase SQL editor):
+  //   DROP VIEW IF EXISTS stock_status;
+  //   CREATE VIEW stock_status AS SELECT ... FROM items WHERE status = 'active';
+  //   (remove the item_type filter from the WHERE clause, or add 'bought_out' to the IN list)
+  // eslint-disable-next-line no-console
+  console.log('Tab:', typeTab, 'Rows:', rows.length, 'bought_out in data:', rows.filter(r => r.item_type === 'bought_out').length);
+
   const filtered = rows
     .filter((r) => statusFilter === "all" || r.stock_status === statusFilter)
     .filter((r) => {

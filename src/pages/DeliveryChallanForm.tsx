@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, ChevronDown, Info, ChevronLeft } from "lucide-react";
+import { Plus, Trash2, ChevronDown, Info, ChevronLeft, Loader2 } from "lucide-react";
 import { ItemSuggest } from "@/components/ItemSuggest";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -137,7 +137,7 @@ export default function DeliveryChallanForm() {
     queryFn: fetchOpenJobWorks,
   });
 
-  const { data: openJWsForDC = [] } = useQuery<OpenJobWorkDCItem[]>({
+  const { data: openJWsForDC = [], isLoading: isJWsLoading, isError: isJWsError } = useQuery<OpenJobWorkDCItem[]>({
     queryKey: ["open-jws-for-dc"],
     queryFn: () => fetchOpenJobWorksForDC(),
     enabled: jwPickerOpen,
@@ -417,7 +417,8 @@ export default function DeliveryChallanForm() {
       }
     },
     onError: (err: any) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      console.error('[DC] save error:', err);
+      toast({ title: "Error saving DC", description: err.message, variant: "destructive" });
     },
   });
 
@@ -999,9 +1000,18 @@ export default function DeliveryChallanForm() {
             )}
           </div>
           <div className="overflow-y-auto flex-1 border rounded-lg">
-            {openJWsForDC.length === 0 ? (
+            {isJWsLoading ? (
+              <div className="flex flex-col items-center justify-center py-12 gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+                Loading job works...
+              </div>
+            ) : isJWsError ? (
+              <div className="text-center py-10 text-sm text-destructive">
+                Failed to load job works. Please close and try again.
+              </div>
+            ) : openJWsForDC.length === 0 ? (
               <div className="text-center py-10 text-sm text-muted-foreground">
-                No open job works with pending external steps.
+                No open job works found.
               </div>
             ) : (
               <table className="w-full text-sm min-w-[700px]">

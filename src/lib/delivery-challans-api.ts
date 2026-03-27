@@ -226,6 +226,7 @@ export async function createDeliveryChallan({ dc, lineItems }: CreateDCData) {
       job_work_id: item.job_work_id || null,
       job_work_number: item.job_work_number || null,
       job_work_step_id: item.job_work_step_id || null,
+      return_status: item.return_status || 'pending',
     }));
     const { error: itemsError } = await supabase.from("dc_line_items").insert(itemsToInsert as any);
     if (itemsError) throw itemsError;
@@ -268,6 +269,7 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
       job_work_id: item.job_work_id || null,
       job_work_number: item.job_work_number || null,
       job_work_step_id: item.job_work_step_id || null,
+      return_status: item.return_status || 'pending',
     }));
     const { error: itemsError } = await supabase.from("dc_line_items").insert(itemsToInsert as any);
     if (itemsError) throw itemsError;

@@ -476,7 +476,7 @@ export default function PurchaseOrderForm() {
               <Label className="text-sm font-medium text-slate-700">Delivery Address</Label>
               {!isEdit && deliveryAddressAutoFilled && deliveryAddress === companyDeliveryAddress && (
                 <div className="flex items-center justify-between mt-1 mb-1 rounded-md bg-blue-50 border border-blue-200 px-3 py-1.5 text-xs text-blue-700">
-                  <span>Auto-filled from your company address · Edit if delivering to a different location</span>
+                  <span>Auto-filled from company address · Edit if delivering elsewhere</span>
                 </div>
               )}
               {!isEdit && deliveryAddressAutoFilled && deliveryAddress !== companyDeliveryAddress && companyDeliveryAddress && (
