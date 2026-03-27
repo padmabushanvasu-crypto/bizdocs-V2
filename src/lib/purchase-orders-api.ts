@@ -229,17 +229,41 @@ export async function updatePOPayment(
   data: { amount_paid: number; payment_date: string; payment_reference?: string; payment_notes?: string },
   grandTotal: number
 ) {
-  const paymentStatus =
-    data.amount_paid >= grandTotal ? "paid" : data.amount_paid > 0 ? "partial" : "unpaid";
+  const amount = Math.max(0, data.amount_paid ?? 0);
+  // Explicit order avoids 'paid' when both amount and total are 0
+  const paymentStatus: "unpaid" | "partial" | "paid" =
+    amount <= 0 ? "unpaid" : amount >= grandTotal ? "paid" : "partial";
+
   const { error } = await supabase
     .from("purchase_orders")
     .update({
-      amount_paid: data.amount_paid,
+      amount_paid: amount,
       payment_date: data.payment_date,
       payment_reference: data.payment_reference || null,
       payment_notes: data.payment_notes || null,
       payment_status: paymentStatus,
     } as any)
     .eq("id", id);
-  if (error) throw error;
+
+  if (error) {
+    // Schema cache miss means the payment columns don't exist yet.
+    // Run the migration SQL in Supabase SQL Editor then re-try:
+    //   ALTER TABLE purchase_orders
+    //     ADD COLUMN IF NOT EXISTS payment_status  TEXT CHECK (payment_status IN ('unpaid','partial','paid')) DEFAULT 'unpaid',
+    //     ADD COLUMN IF NOT EXISTS amount_paid     NUMERIC(14,2) DEFAULT 0,
+    //     ADD COLUMN IF NOT EXISTS payment_date    DATE,
+    //     ADD COLUMN IF NOT EXISTS payment_reference TEXT,
+    //     ADD COLUMN IF NOT EXISTS payment_notes   TEXT;
+    //   NOTIFY pgrst, 'reload schema';
+    if (
+      error.message?.includes("schema cache") ||
+      error.message?.includes("amount_paid") ||
+      error.message?.includes("payment_status")
+    ) {
+      throw new Error(
+        "Payment columns missing from database. Run the payment migration SQL in Supabase, then refresh."
+      );
+    }
+    throw error;
+  }
 }

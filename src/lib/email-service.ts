@@ -303,3 +303,316 @@ export function formatDocumentText(
       return [SEP, `${documentType}: ${d.doc_number ?? ""}`, SEP].join("\n");
   }
 }
+
+// ── Professional WhatsApp sharing message ────────────────────────────────────
+// Uses *bold* markers (rendered by WhatsApp). Falls back to plain formatDocumentText
+// for document types without a custom template.
+export function formatWhatsAppMessage(
+  documentType: string,
+  doc: Record<string, unknown>,
+  companyName?: string
+): string {
+  const d = doc as AnyDoc;
+  const items: AnyDoc[] = d.line_items ?? [];
+  const sign = companyName ? `\nFor ${companyName}` : "";
+  const details = formatDocumentText(documentType, doc, companyName);
+
+  switch (documentType) {
+    case "Purchase Order": {
+      const gstType = (d.cgst_amount ?? 0) > 0 ? "CGST+SGST" : "IGST";
+      const firstDelivery = items.map((i) => i.delivery_date).filter(Boolean).sort()[0] as string | undefined;
+      const deliveryLine = firstDelivery
+        ? `Delivery Expected: ${fmtDate(firstDelivery)}`
+        : d.payment_terms
+        ? `Terms: ${d.payment_terms}`
+        : "";
+      const intro = d.vendor_name ? `Dear ${d.vendor_name},\n\n` : "";
+      return (
+        `${intro}Please find our *Purchase Order ${d.po_number}* dated ${fmtDate(d.po_date)}.` +
+        `\n\nItems: ${items.length} line item${items.length !== 1 ? "s" : ""}` +
+        `\nTotal Value: ${fmtAmt(d.grand_total)} (${gstType})` +
+        (deliveryLine ? `\n${deliveryLine}` : "") +
+        `\n\nPlease confirm receipt and expected delivery date.` +
+        sign +
+        `\n\n${details}`
+      );
+    }
+    case "Delivery Challan": {
+      const party = (d.party_name || d.vendor_name) as string | undefined;
+      const intro = party ? `Dear ${party},\n\n` : "";
+      return (
+        `${intro}Please find details of Delivery Challan *${d.dc_number}* dated ${fmtDate(d.dc_date)} accompanying the goods dispatched today.` +
+        `\n\nItems: ${items.length} item${items.length !== 1 ? "s" : ""}` +
+        (d.return_due_date ? `\nReturn Before: ${fmtDate(d.return_due_date)}` : "") +
+        `\n\nKindly acknowledge receipt.` +
+        sign +
+        `\n\n${details}`
+      );
+    }
+    case "Tax Invoice": {
+      const intro = d.customer_name ? `Dear ${d.customer_name},\n\n` : "";
+      return (
+        `${intro}Please find *Invoice ${d.invoice_number}* dated ${fmtDate(d.invoice_date)} for your kind payment.` +
+        `\n\nAmount Due: ${fmtAmt(d.grand_total)}` +
+        (d.payment_terms ? `\nPayment Terms: ${d.payment_terms}` : "") +
+        (d.due_date ? `\nDue Date: ${fmtDate(d.due_date)}` : "") +
+        `\n\nKindly arrange payment at the earliest.` +
+        sign +
+        `\n\n${details}`
+      );
+    }
+    default:
+      return details;
+  }
+}
+
+// ── Email subject line ────────────────────────────────────────────────────────
+// Format: "Company Name — Document Type Number — DD Mon YYYY"
+export function formatEmailSubject(
+  documentType: string,
+  doc: Record<string, unknown>,
+  companyName?: string
+): string {
+  const d = doc as AnyDoc;
+  const prefix = companyName ? `${companyName} — ` : "";
+  let number = "";
+  let date = "";
+  switch (documentType) {
+    case "Purchase Order":     number = (d.po_number ?? "") as string;      date = fmtDate(d.po_date); break;
+    case "Delivery Challan":   number = (d.dc_number ?? "") as string;      date = fmtDate(d.dc_date); break;
+    case "Tax Invoice":        number = (d.invoice_number ?? "") as string;  date = fmtDate(d.invoice_date); break;
+    case "Sales Order":        number = (d.so_number ?? "") as string;      date = fmtDate(d.so_date); break;
+    case "Goods Receipt Note": number = (d.grn_number ?? "") as string;     date = fmtDate(d.grn_date); break;
+    default:                   number = (d.doc_number ?? "") as string;
+  }
+  const parts = [documentType, number].filter(Boolean).join(" ");
+  return `${prefix}${parts}${date ? ` — ${date}` : ""}`;
+}
+
+// ── HTML document summary (new-tab print-to-PDF) ─────────────────────────────
+// TODO: For automatic PDF attachment, integrate a service like Puppeteer (via
+// Supabase Edge Function) or use the @react-pdf/renderer library.
+// Current approach: browser print to PDF (open in new tab → Ctrl+P → Save as PDF).
+
+function _esc(s?: string | null): string {
+  if (!s) return "";
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\n/g, "<br>");
+}
+
+function _fmtNum(n?: number | null): string {
+  if (n == null) return "—";
+  return "₹" + Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 });
+}
+
+const _HTML_CSS = `
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,Helvetica,sans-serif;font-size:10.5pt;color:#1e293b;padding:20px;max-width:720px;margin:0 auto;line-height:1.4}
+  .hd{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:8px;border-bottom:2px solid #1E3A5F;margin-bottom:10px}
+  .co{font-size:13pt;font-weight:700;color:#1E3A5F}
+  .dt{font-size:12pt;font-weight:700;color:#1E3A5F;text-align:right;text-transform:uppercase;letter-spacing:.05em}
+  .dm{font-size:9pt;color:#64748b;text-align:right}
+  .pts{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px;padding:8px;background:#f8fafc;border:1px solid #e2e8f0}
+  .lbl{font-size:7.5pt;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:2px}
+  .pn{font-weight:600;font-size:10pt}
+  .pd{font-size:9pt;color:#475569}
+  table{width:100%;border-collapse:collapse;margin-bottom:10px;font-size:9.5pt}
+  thead tr{background:#1E3A5F;color:#fff}
+  th{padding:5px 7px;font-size:8pt;text-align:left}
+  th.r,td.r{text-align:right}
+  td{padding:4px 7px;border-bottom:1px solid #e2e8f0}
+  tr:nth-child(even) td{background:#f8fafc}
+  .tls{display:flex;justify-content:flex-end;margin-bottom:10px}
+  .ti{width:240px}
+  .tr{display:flex;justify-content:space-between;font-size:9.5pt;padding:1.5px 0}
+  .tr.g{font-weight:700;font-size:11pt;border-top:1.5px solid #1E3A5F;padding-top:4px;margin-top:2px}
+  .sec{margin-bottom:8px;font-size:9pt}
+  .ft{margin-top:14px;border-top:1px solid #cbd5e1;padding-top:8px;display:flex;justify-content:flex-end}
+  .sig{text-align:center;width:150px}
+  .sl{border-top:1px solid #94a3b8;margin-top:20px;margin-bottom:3px}
+  .slbl{font-size:7.5pt;color:#64748b}
+  @media print{body{padding:0;max-width:100%}@page{margin:12mm;size:A4 portrait}}
+`;
+
+function _htmlWrap(title: string, body: string): string {
+  return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>${_esc(title)}</title><style>${_HTML_CSS}</style></head>
+<body>${body}</body></html>`;
+}
+
+function _htmlFooter(companyName?: string): string {
+  return `<div class="ft"><div class="sig"><div class="sl"></div><div class="slbl">Authorised Signatory${companyName ? `<br>for ${_esc(companyName)}` : ""}</div></div></div>`;
+}
+
+export function generateHTMLSummary(
+  documentType: string,
+  doc: Record<string, unknown>,
+  companyName?: string
+): string {
+  const d = doc as AnyDoc;
+  const title = formatEmailSubject(documentType, doc, companyName);
+  const coDiv = `<div class="co">${_esc(companyName) || "&nbsp;"}</div>`;
+
+  if (documentType === "Purchase Order") {
+    const items: AnyDoc[] = d.line_items ?? [];
+    const gstRows = (d.cgst_amount ?? 0) > 0
+      ? `<div class="tr"><span>CGST @ ${(d.gst_rate ?? 18) / 2}%</span><span>${_fmtNum(d.cgst_amount)}</span></div>` +
+        `<div class="tr"><span>SGST @ ${(d.gst_rate ?? 18) / 2}%</span><span>${_fmtNum(d.sgst_amount)}</span></div>`
+      : (d.igst_amount ?? 0) > 0
+      ? `<div class="tr"><span>IGST @ ${d.gst_rate ?? 18}%</span><span>${_fmtNum(d.igst_amount)}</span></div>`
+      : "";
+
+    const body =
+      `<div class="hd"><div>${coDiv}</div><div>` +
+        `<div class="dt">Purchase Order</div>` +
+        `<div class="dm"><strong>PO No: ${_esc(d.po_number)}</strong></div>` +
+        `<div class="dm">Date: ${fmtDate(d.po_date)}</div>` +
+        (d.payment_terms ? `<div class="dm">Terms: ${_esc(d.payment_terms)}</div>` : "") +
+        (d.reference_number ? `<div class="dm">Ref: ${_esc(d.reference_number)}</div>` : "") +
+      `</div></div>` +
+      `<div class="pts"><div><div class="lbl">Vendor / Bill To</div>` +
+        `<div class="pn">${_esc(d.vendor_name)}</div>` +
+        (d.vendor_address ? `<div class="pd">${_esc(d.vendor_address)}</div>` : "") +
+        (d.vendor_gstin ? `<div class="pd" style="font-family:monospace">GSTIN: ${_esc(d.vendor_gstin)}</div>` : "") +
+      `</div>` +
+      (d.delivery_address
+        ? `<div><div class="lbl">Deliver To</div><div class="pd">${_esc(d.delivery_address)}</div></div>`
+        : "") +
+      `</div>` +
+      `<table><thead><tr>` +
+        `<th style="width:4%">#</th><th style="width:40%">Description</th>` +
+        `<th class="r" style="width:9%">Qty</th><th style="width:7%">Unit</th>` +
+        `<th class="r" style="width:17%">Unit Price</th><th class="r" style="width:23%">Amount</th>` +
+      `</tr></thead><tbody>` +
+      items.map((it, i) =>
+        `<tr><td>${i + 1}</td>` +
+        `<td><strong>${_esc(it.description)}</strong>` +
+          (it.drawing_number ? `<br><span style="font-family:monospace;font-size:8pt;color:#64748b">${_esc(it.drawing_number)}</span>` : "") +
+          (it.hsn_sac_code ? `<br><span style="font-size:8pt;color:#64748b">HSN: ${_esc(it.hsn_sac_code)}</span>` : "") +
+        `</td>` +
+        `<td class="r">${it.quantity}</td><td>${_esc(it.unit) || "NOS"}</td>` +
+        `<td class="r">${_fmtNum(it.unit_price)}</td><td class="r">${_fmtNum(it.line_total)}</td></tr>`
+      ).join("") +
+      `</tbody></table>` +
+      `<div class="tls"><div class="ti">` +
+        `<div class="tr"><span>Sub Total</span><span>${_fmtNum(d.sub_total)}</span></div>` +
+        gstRows +
+        `<div class="tr g"><span>Grand Total</span><span>${_fmtNum(d.grand_total)}</span></div>` +
+      `</div></div>` +
+      (d.special_instructions ? `<div class="sec"><div class="lbl">Special Instructions</div>${_esc(d.special_instructions)}</div>` : "") +
+      _htmlFooter(companyName);
+    return _htmlWrap(title, body);
+  }
+
+  if (documentType === "Tax Invoice") {
+    const items: AnyDoc[] = d.line_items ?? [];
+    let totalCgst = 0, totalSgst = 0, totalIgst = 0;
+    items.forEach((li) => { totalCgst += li.cgst ?? 0; totalSgst += li.sgst ?? 0; totalIgst += li.igst ?? 0; });
+    const gstRows = totalCgst > 0
+      ? `<div class="tr"><span>CGST</span><span>${_fmtNum(totalCgst)}</span></div>` +
+        `<div class="tr"><span>SGST</span><span>${_fmtNum(totalSgst)}</span></div>`
+      : totalIgst > 0
+      ? `<div class="tr"><span>IGST</span><span>${_fmtNum(totalIgst)}</span></div>`
+      : "";
+
+    const body =
+      `<div class="hd"><div>${coDiv}</div><div>` +
+        `<div class="dt">Tax Invoice</div>` +
+        `<div class="dm"><strong>Invoice No: ${_esc(d.invoice_number)}</strong></div>` +
+        `<div class="dm">Date: ${fmtDate(d.invoice_date)}</div>` +
+        (d.due_date ? `<div class="dm">Due: ${fmtDate(d.due_date)}</div>` : "") +
+      `</div></div>` +
+      `<div class="pts"><div><div class="lbl">Bill To</div>` +
+        `<div class="pn">${_esc(d.customer_name)}</div>` +
+        (d.customer_address ? `<div class="pd">${_esc(d.customer_address)}</div>` : "") +
+        (d.customer_gstin ? `<div class="pd" style="font-family:monospace">GSTIN: ${_esc(d.customer_gstin)}</div>` : "") +
+      `</div>` +
+      (d.customer_po_reference
+        ? `<div><div class="lbl">Customer PO Ref</div><div class="pd">${_esc(d.customer_po_reference)}</div></div>`
+        : "") +
+      `</div>` +
+      `<table><thead><tr>` +
+        `<th style="width:4%">#</th><th style="width:40%">Description</th>` +
+        `<th class="r" style="width:8%">Qty</th><th style="width:7%">Unit</th>` +
+        `<th class="r" style="width:14%">Rate</th><th class="r" style="width:8%">GST%</th><th class="r" style="width:19%">Amount</th>` +
+      `</tr></thead><tbody>` +
+      items.map((it, i) =>
+        `<tr><td>${i + 1}</td>` +
+        `<td><strong>${_esc(it.description)}</strong>` +
+          (it.hsn_sac_code ? `<br><span style="font-size:8pt;color:#64748b">HSN: ${_esc(it.hsn_sac_code)}</span>` : "") +
+        `</td>` +
+        `<td class="r">${it.quantity}</td><td>${_esc(it.unit) || "NOS"}</td>` +
+        `<td class="r">${_fmtNum(it.unit_price)}</td><td class="r">${it.gst_rate ?? 0}%</td><td class="r">${_fmtNum(it.amount)}</td></tr>`
+      ).join("") +
+      `</tbody></table>` +
+      `<div class="tls"><div class="ti">` +
+        `<div class="tr"><span>Taxable Value</span><span>${_fmtNum(d.taxable_value)}</span></div>` +
+        gstRows +
+        `<div class="tr g"><span>Grand Total</span><span>${_fmtNum(d.grand_total)}</span></div>` +
+      `</div></div>` +
+      (d.payment_terms ? `<div class="sec"><div class="lbl">Payment Terms</div>${_esc(d.payment_terms)}</div>` : "") +
+      (d.bank_name
+        ? `<div class="sec"><div class="lbl">Bank Details</div>${_esc(d.bank_name)}` +
+            (d.bank_account_number ? ` · A/c: ${_esc(d.bank_account_number)}` : "") +
+            (d.bank_ifsc ? ` · IFSC: ${_esc(d.bank_ifsc)}` : "") +
+          `</div>`
+        : "") +
+      _htmlFooter(companyName);
+    return _htmlWrap(title, body);
+  }
+
+  if (documentType === "Delivery Challan") {
+    const items: AnyDoc[] = d.line_items ?? [];
+    const typeLabel = DC_TYPE_LABELS[d.dc_type] ?? d.dc_type ?? "";
+    const approxVal = d.approx_value ?? d.grand_total;
+
+    const body =
+      `<div class="hd"><div>${coDiv}</div><div>` +
+        `<div class="dt">Delivery Challan</div>` +
+        `<div class="dm"><strong>DC No: ${_esc(d.dc_number)}</strong></div>` +
+        `<div class="dm">Date: ${fmtDate(d.dc_date)}</div>` +
+        (typeLabel ? `<div class="dm">Type: ${_esc(typeLabel)}</div>` : "") +
+      `</div></div>` +
+      `<div class="pts"><div><div class="lbl">To</div>` +
+        `<div class="pn">${_esc(d.party_name)}</div>` +
+        (d.party_address ? `<div class="pd">${_esc(d.party_address)}</div>` : "") +
+      `</div>` +
+      (d.return_due_date
+        ? `<div><div class="lbl">Return Due</div><div class="pd">${fmtDate(d.return_due_date)}</div></div>`
+        : "") +
+      `</div>` +
+      `<table><thead><tr>` +
+        `<th style="width:4%">#</th><th style="width:38%">Description</th>` +
+        `<th style="width:13%">Drawing</th><th class="r" style="width:10%">Qty</th>` +
+        `<th style="width:7%">Unit</th><th style="width:28%">Process</th>` +
+      `</tr></thead><tbody>` +
+      items.map((it, i) =>
+        `<tr><td>${i + 1}</td>` +
+        `<td><strong>${_esc(it.description)}</strong></td>` +
+        `<td style="font-family:monospace;font-size:8.5pt">${_esc(it.drawing_number) || "—"}</td>` +
+        `<td class="r">${it.quantity ?? it.qty_nos ?? ""}</td>` +
+        `<td>${_esc(it.unit) || "NOS"}</td>` +
+        `<td>${_esc(it.nature_of_process) || "—"}</td></tr>`
+      ).join("") +
+      `</tbody></table>` +
+      (approxVal
+        ? `<div class="tls"><div class="ti"><div class="tr"><span>Approx. Value</span><span>${_fmtNum(approxVal)}</span></div></div></div>`
+        : "") +
+      (JOB_WORK_TYPES.has(d.dc_type)
+        ? `<div style="text-align:center;font-size:8.5pt;font-weight:700;color:#64748b;padding:4px;border:1px solid #e2e8f0;margin-bottom:8px">NOT FOR SALE — JOB WORK ONLY</div>`
+        : "") +
+      _htmlFooter(companyName);
+    return _htmlWrap(title, body);
+  }
+
+  // Fallback: pre-formatted plain text
+  const text = formatDocumentText(documentType, doc, companyName);
+  const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const body =
+    `<div class="hd"><div>${coDiv}</div><div><div class="dt">${_esc(documentType)}</div></div></div>` +
+    `<pre style="font-family:'Courier New',monospace;font-size:9pt;white-space:pre-wrap;background:#f8fafc;border:1px solid #e2e8f0;padding:12px">${escaped}</pre>`;
+  return _htmlWrap(title, body);
+}
