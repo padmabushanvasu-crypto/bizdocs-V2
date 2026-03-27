@@ -10,7 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId } from "@/lib/auth-helpers";
 import {
   resolveColumns, extractRow, buildMappingSummary,
-  normalizePartyType, normalizeItemType, normaliseHeader, fieldDisplayName,
+  normalizePartyType, normalizeItemType, normalizeUnit, normaliseHeader, fieldDisplayName,
   PARTY_FIELD_MAP, ITEM_FIELD_MAP, BOM_FIELD_MAP, STOCK_FIELD_MAP, VENDOR_SHEET_FIELD_MAP, REORDER_FIELD_MAP,
   type ColumnMappingSummary, type SkipReason,
 } from "@/lib/import-utils";
@@ -1303,7 +1303,7 @@ function ImportTab({
   const [validRowNums, setValidRowNums] = useState<number[]>([]);
   const [errorRows, setErrorRows] = useState<Set<number>>(new Set());
   const [errors, setErrors] = useState<string[]>([]);
-  const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
+  const [result, setResult] = useState<{ imported: number; skipped: number; updated?: number } | null>(null);
   const [mappingSummary, setMappingSummary] = useState<ColumnMappingSummary | null>(null);
   const [columnWarnings, setColumnWarnings] = useState<string[]>([]);
   const [skipReasons, setSkipReasons] = useState<SkipReason[]>([]);
@@ -1395,7 +1395,7 @@ function ImportTab({
 
     const id = addJob(title, rowsToImport, rowNumsToImport, onImport, {
       onComplete: (res) => {
-        setResult({ imported: res.imported, skipped: res.skipped });
+        setResult({ imported: res.imported, skipped: res.skipped, updated: res.updated });
         setSkipReasons([...parseSkips, ...res.skipReasons]);
         // Invalidate queries once — after the full job finishes, not per batch
         invalidateOnComplete?.forEach((queryKey) =>
@@ -1415,7 +1415,9 @@ function ImportTab({
           <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg p-3">
             <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
             <span className="text-sm text-green-800 font-medium">
-              {result.imported} imported, {result.skipped} skipped
+              {result.updated != null
+                ? `${result.imported} new · ${result.updated} updated · ${result.skipped} skipped`
+                : `${result.imported} imported · ${result.skipped} skipped`}
             </span>
           </div>
           <SkipReasonsPanel reasons={skipReasons} />
@@ -1923,14 +1925,19 @@ export default function DataImport() {
   const handlePartyImport: BatchImportFn = async (rows, rowNums, onProgress) => {
     const companyId = await getCompanyId();
 
-    // Pre-fetch all existing parties in one query
+    // Pre-fetch all existing parties in one query — include gstin for secondary lookup
     const { data: existingParties } = await (supabase as any)
-      .from("parties").select("id, name").eq("company_id", companyId);
+      .from("parties").select("id, name, gstin").eq("company_id", companyId);
     const byName = new Map<string, string>(
       (existingParties ?? []).map((p: any) => [p.name?.toLowerCase().trim(), p.id as string])
     );
+    const byGstin = new Map<string, string>(
+      (existingParties ?? []).filter((p: any) => p.gstin?.trim()).map((p: any) => [p.gstin.trim().toLowerCase(), p.id as string])
+    );
 
     let skipped = 0;
+    let newCount = 0;
+    let updatedCount = 0;
     const errors: string[] = [];
     const skipReasons: SkipReason[] = [];
     const toInsert: any[] = [];
@@ -1966,7 +1973,9 @@ export default function DataImport() {
         notes: row["notes"] || null,
         state_code,
       };
-      const existingId = byName.get(name.toLowerCase());
+      // Match by name first, then by GSTIN if name not found
+      const existingId = byName.get(name.toLowerCase()) ??
+        (gstin ? byGstin.get(gstin.toLowerCase()) ?? null : null);
       if (existingId) {
         toUpdate.push({ id: existingId, ...partyData });
       } else {
@@ -1984,6 +1993,7 @@ export default function DataImport() {
           const { error } = await (supabase as any).from("parties").insert(chunk);
           if (error) throw error;
           imported += chunk.length;
+          newCount += chunk.length;
           if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
         }
       } catch {
@@ -1992,12 +2002,12 @@ export default function DataImport() {
             const { error } = await (supabase as any).from("parties").insert(party);
             if (error) throw error;
             imported++;
+            newCount++;
             if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
           } catch (err: any) {
             skipped++;
             const isDup = err?.code === "23505" || String(err?.message ?? "").toLowerCase().includes("duplicate") || String(err?.message ?? "").toLowerCase().includes("unique");
             const reason = isDup ? "Duplicate already exists" : `DB error: ${err?.message ?? "unknown"}`;
-            // FIX 2: include Row N in fallback error
             const rowNum = nameToRow.get(party.name?.toLowerCase()) ?? 0;
             errors.push(`Row ${rowNum} (${party.name}): ${reason}`);
             skipReasons.push({ row: rowNum, value: party.name, reason });
@@ -2012,6 +2022,7 @@ export default function DataImport() {
         const { error } = await (supabase as any).from("parties").upsert(chunk, { onConflict: "id" });
         if (error) throw error;
         imported += chunk.length;
+        updatedCount += chunk.length;
       } catch {
         for (const party of chunk) {
           const { id, ...rest } = party;
@@ -2019,6 +2030,7 @@ export default function DataImport() {
             const { error } = await (supabase as any).from("parties").update(rest).eq("id", id);
             if (error) throw error;
             imported++;
+            updatedCount++;
           } catch (err: any) {
             skipped++;
             const rowNum = nameToRow.get(rest.name?.toLowerCase()) ?? 0;
@@ -2031,7 +2043,7 @@ export default function DataImport() {
       if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
     }
 
-    return { imported, skipped, errors, skipReasons };
+    return { imported, skipped, errors, skipReasons, updated: updatedCount };
   };
 
   const handleItemImport: BatchImportFn = async (rows, rowNums, onProgress) => {
@@ -2051,6 +2063,8 @@ export default function DataImport() {
     );
 
     let skipped = 0;
+    let newCount = 0;
+    let updatedCount = 0;
     const errors: string[] = [];
     const skipReasons: SkipReason[] = [];
     const toInsert: any[] = [];
@@ -2100,7 +2114,7 @@ export default function DataImport() {
         item_code: resolvedCode || null,
         description: desc,
         item_type: normalizeItemType(row["item_type"] || ""),
-        unit: row["unit"] || "NOS",
+        unit: normalizeUnit(row["unit"] || "NOS"),
         hsn_sac_code: row["hsn_sac_code"] || null,
         sale_price: parseFloat(row["sale_price"] || "0") || 0,
         purchase_price: parseFloat(row["purchase_price"] || "0") || 0,
@@ -2134,6 +2148,7 @@ export default function DataImport() {
           const { error } = await supabase.from("items").insert(chunk);
           if (error) throw error;
           imported += chunk.length;
+          newCount += chunk.length;
           if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
         }
       };
@@ -2146,7 +2161,6 @@ export default function DataImport() {
         const invalidInsert = toInsert.filter((item) => !VALID_TYPES.includes(item.item_type));
         for (const item of invalidInsert) {
           skipped++;
-          // FIX 2: include Row N in item_type error
           const rowNum = codeToRow.get((item.item_code || "").toLowerCase()) ?? 0;
           const reason = `Item Type value not recognised: "${item.item_type}"`;
           errors.push(`Row ${rowNum} (${item.item_code || item.description}): ${reason}`);
@@ -2155,20 +2169,22 @@ export default function DataImport() {
         if (validInsert.length > 0) {
           try {
             imported = 0;
+            newCount = 0;
             await bulkInsert(validInsert);
           } catch {
             // Row-by-row fallback
             imported = 0;
+            newCount = 0;
             for (const itemData of validInsert) {
               try {
                 const { error } = await supabase.from("items").insert(itemData);
                 if (error) throw error;
                 imported++;
+                newCount++;
               } catch (err: any) {
                 skipped++;
                 const isDup = err?.code === "23505" || String(err?.message ?? "").toLowerCase().includes("duplicate") || String(err?.message ?? "").toLowerCase().includes("unique");
                 const reason = isDup ? "Duplicate already exists" : `DB error: ${err?.message ?? "unknown"}`;
-                // FIX 2: include Row N
                 const rowNum = codeToRow.get((itemData.item_code || "").toLowerCase()) ?? 0;
                 errors.push(`Row ${rowNum} (${itemData.item_code || itemData.description}): ${reason}`);
                 skipReasons.push({ row: rowNum, value: itemData.item_code || "", reason });
@@ -2186,6 +2202,7 @@ export default function DataImport() {
         const { error } = await supabase.from("items").upsert(chunk, { onConflict: "id" });
         if (error) throw error;
         imported += chunk.length;
+        updatedCount += chunk.length;
       } catch {
         for (const itemData of chunk) {
           const { id, ...rest } = itemData;
@@ -2193,6 +2210,7 @@ export default function DataImport() {
             const { error } = await supabase.from("items").update(rest).eq("id", id);
             if (error) throw error;
             imported++;
+            updatedCount++;
           } catch (err: any) {
             skipped++;
             const rowNum = codeToRow.get((rest.item_code || "").toLowerCase()) ?? 0;
@@ -2205,7 +2223,7 @@ export default function DataImport() {
       if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
     }
 
-    return { imported, skipped, errors, skipReasons };
+    return { imported, skipped, errors, skipReasons, updated: updatedCount };
   };
 
   const handleStockImport: BatchImportFn = async (rows, rowNums) => {

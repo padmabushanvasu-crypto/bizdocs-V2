@@ -45,6 +45,7 @@ export type BatchImportFn = (
   skipped: number;
   errors: string[];
   skipReasons: SkipReason[];
+  updated?: number;
 }>;
 
 interface AddJobCallbacks {
@@ -53,6 +54,7 @@ interface AddJobCallbacks {
     skipped: number;
     errors: string[];
     skipReasons: SkipReason[];
+    updated?: number;
   }) => void;
 }
 
@@ -164,6 +166,7 @@ export function ImportQueueProvider({ children }: { children: ReactNode }) {
       updateJob(job.id, { status: "running" });
 
       let totalImported = 0;
+      let totalUpdated = 0;
       const allErrors: string[] = [];
       const allSkipped: SkipReason[] = [];
 
@@ -177,6 +180,7 @@ export function ImportQueueProvider({ children }: { children: ReactNode }) {
         try {
           const res = await job.processBatch!(batchRows, batchNums);
           totalImported += res.imported;
+          if (res.updated) totalUpdated += res.updated;
           allErrors.push(...res.errors);
           allSkipped.push(...res.skipReasons);
         } catch (err: any) {
@@ -207,6 +211,7 @@ export function ImportQueueProvider({ children }: { children: ReactNode }) {
         skipped: allSkipped.length,
         errors: allErrors,
         skipReasons: allSkipped,
+        ...(totalUpdated > 0 ? { updated: totalUpdated } : {}),
       };
       job.callbacks?.onComplete?.(callbackResult);
 

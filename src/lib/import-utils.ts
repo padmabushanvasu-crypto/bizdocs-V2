@@ -528,11 +528,28 @@ export function buildMappingSummary(
 }
 
 export function normalizePartyType(raw: string): string {
-  const v = raw.toLowerCase().trim();
-  if (["vendor", "supplier", "v"].includes(v)) return "vendor";
-  if (["customer", "client", "buyer", "c"].includes(v)) return "customer";
-  if (["both", "b"].includes(v)) return "both";
+  const v = raw.toLowerCase().replace(/[^a-z]/g, "");
+  if (["vendor", "supplier", "vend", "sup", "seller", "v", "s"].includes(v)) return "vendor";
+  if (["customer", "client", "buyer", "cust", "c"].includes(v)) return "customer";
+  if (["both", "b", "vc", "cv", "vendorcustomer", "customervendor"].includes(v)) return "both";
   return "vendor";
+}
+
+export function normalizeUnit(raw: string): string {
+  const v = raw.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (["NOS", "NO", "NR", "PCS", "PC", "PIECES", "PIECE", "NUMBERS", "NUMBER", "EA", "EACH", "UNIT", "UNITS", "UN", "NUM"].includes(v)) return "NOS";
+  if (["KGS", "KG", "KILO", "KILOS", "KILOGRAM", "KILOGRAMS", "KGM"].includes(v)) return "KGS";
+  if (["MTR", "M", "MT", "METER", "METERS", "METRE", "METRES", "RM", "RMT", "RMR"].includes(v)) return "MTR";
+  if (["SFT", "SF", "SQFT", "SQFEET", "SQUAREFEET", "SQUAREFOOT"].includes(v)) return "SFT";
+  if (["SET", "SETS"].includes(v)) return "SET";
+  if (["LTR", "L", "LT", "LITRE", "LITRES", "LITER", "LITERS", "LTS"].includes(v)) return "LTR";
+  if (["BOX", "BOXES", "BX", "PKT", "PACKET", "PACKETS"].includes(v)) return "BOX";
+  if (["ROLL", "ROLLS", "RL", "RLL"].includes(v)) return "ROLL";
+  if (["SHEET", "SHEETS", "SH", "SHT"].includes(v)) return "SHEET";
+  if (["COIL", "COILS", "CL"].includes(v)) return "COIL";
+  if (["PAIR", "PAIRS", "PR"].includes(v)) return "PAIR";
+  if (["LOT", "LOTS"].includes(v)) return "LOT";
+  return raw.trim().toUpperCase() || "NOS";
 }
 
 const VALID_ITEM_TYPES = [
@@ -543,20 +560,19 @@ const VALID_ITEM_TYPES = [
 export function normalizeItemType(raw: string): string {
   // Guard: hint/instruction values like "raw_material / component / sub_assembly ..."
   if (/ \/ /.test(raw) || raw.split("/").length - 1 > 1) return "component";
-  // Normalise: replace underscores with spaces FIRST so "bought_out" → "bought out",
-  // then strip remaining non-alpha characters and collapse whitespace.
-  const v = raw.toLowerCase().trim().replace(/_/g, " ").replace(/[^a-z ]/g, "").replace(/\s+/g, " ").trim();
-  if (["raw material", "rm"].includes(v)) return "raw_material";
-  if (["component", "comp"].includes(v)) return "component";
-  if (["sub assembly", "sa"].includes(v)) return "sub_assembly";
-  if (["bought out", "bo"].includes(v)) return "bought_out";
-  if (["finished good", "fg", "finished goods"].includes(v)) return "finished_good";
-  if (v === "consumable") return "consumable";
-  if (["job work", "jw"].includes(v)) return "job_work";
-  if (v === "service") return "service";
-  // Unrecognised value — convert spaces back to underscores and pass through as-is
-  // rather than silently substituting "component".
-  return v.replace(/ /g, "_") || "component";
+  // Strip to lowercase alphanumeric only, then match against all known aliases
+  const v = raw.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (["rawmaterial", "rawmat", "rmat", "rm"].includes(v)) return "raw_material";
+  if (["component", "comp", "cmp"].includes(v)) return "component";
+  if (["subassembly", "subassy", "subasm", "sa"].includes(v)) return "sub_assembly";
+  if (["boughtout", "boughtoutpart", "bop", "bo"].includes(v)) return "bought_out";
+  if (["finishedgood", "finishedgoods", "finishedproduct", "finprod", "fg", "fp"].includes(v)) return "finished_good";
+  if (["consumable", "consum", "cons"].includes(v)) return "consumable";
+  if (["jobwork", "jw"].includes(v)) return "job_work";
+  if (["service", "svc", "srv"].includes(v)) return "service";
+  // Fallback: convert to underscore form rather than silently substituting
+  const withUnderscores = raw.toLowerCase().trim().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
+  return withUnderscores || "component";
 }
 
 export const PARTY_FIELD_MAP: Record<string, string[]> = {

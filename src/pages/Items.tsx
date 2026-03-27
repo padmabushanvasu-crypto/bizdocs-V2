@@ -10,9 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { fetchItems, createItem, updateItem, deleteItem, bulkDeleteItems, type Item, type ItemFilters } from "@/lib/items-api";
-import { formatCurrency } from "@/lib/gst-utils";
-import ImportDialog from "@/components/ImportDialog";
-import { ITEMS_IMPORT_CONFIG, type ValidatedRow } from "@/lib/import-utils";
+import ItemsImportDialog from "@/components/ItemsImportDialog";
 import { exportToExcel, ITEMS_EXPORT_COLS } from "@/lib/export-utils";
 
 const ITEM_TYPES = [
@@ -180,35 +178,6 @@ export default function Items() {
   const typeLabel = ITEM_TYPES.reduce((a, t) => ({ ...a, [t.value]: t.label }), {} as Record<string, string>);
   const allSelected = items.length > 0 && selected.size === items.length;
 
-  const handleImportItems = async (rows: ValidatedRow[]) => {
-    let imported = 0, warnings = 0;
-    for (const row of rows) {
-      const d = row.data;
-      try {
-        await createItem({
-          // item_code left blank → auto-generated from drawing_revision in createItem
-          item_code: d["Item Code"] || undefined,
-          description: d["Description"],
-          drawing_revision: d["Drawing Number"] || d["Drawing Revision"] || null,
-          drawing_number: d["Drawing Number"] || null,
-          item_type: (d["Item Type"] || "finished_good").toLowerCase().replace(/ /g, "_"),
-          unit: d["Default Unit"] || "NOS",
-          purchase_price: d["Default Purchase Price"] ? parseFloat(d["Default Purchase Price"]) : 0,
-          sale_price: d["Default Sale Price"] ? parseFloat(d["Default Sale Price"]) : 0,
-          gst_rate: d["Default GST Rate"] ? parseFloat(d["Default GST Rate"]) : 18,
-          hsn_sac_code: d["HSN/SAC Code"] || null,
-          notes: d["Notes"] || null,
-        } as any);
-        imported++;
-        if (row.status === "warning") warnings++;
-      } catch {
-        // skip
-      }
-    }
-    queryClient.invalidateQueries({ queryKey: ["items"] });
-    return { imported, warnings, skipped: rows.length - imported };
-  };
-
   return (
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex items-start justify-between gap-3">
@@ -246,6 +215,12 @@ export default function Items() {
             {ITEM_TYPES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
           </SelectContent>
         </Select>
+        {(filters.search || (filters.type && filters.type !== "all")) && (
+          <Button variant="ghost" size="sm" className="text-muted-foreground"
+            onClick={() => setFilters((f) => ({ ...f, search: "", type: "all" }))}>
+            <X className="h-3.5 w-3.5 mr-1" /> Clear filters
+          </Button>
+        )}
       </div>
 
       {/* Bulk action toolbar */}
@@ -498,12 +473,7 @@ export default function Items() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <ImportDialog
-        open={importOpen}
-        onOpenChange={setImportOpen}
-        config={ITEMS_IMPORT_CONFIG}
-        onImport={handleImportItems}
-      />
+      <ItemsImportDialog open={importOpen} onOpenChange={setImportOpen} />
     </div>
   );
 }
