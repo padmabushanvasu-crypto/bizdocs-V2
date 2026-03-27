@@ -115,7 +115,10 @@ export async function createGRN({ grn, lineItems }: CreateGRNData) {
     total_received: grn.total_received, total_accepted: grn.total_accepted, total_rejected: grn.total_rejected,
     status: grn.status, recorded_at: grn.recorded_at,
   } as any).select().single();
-  if (error) throw error;
+  if (error) {
+    console.error("[GRN] create error:", error);
+    throw error;
+  }
 
   if (lineItems.length > 0) {
     const itemsToInsert = lineItems.map((item) => ({

@@ -67,7 +67,10 @@ export async function getNextInvoiceNumber(): Promise<string> {
 export async function createInvoice(invoice: Record<string, any>, lineItems: InvoiceLineItem[]) {
   const companyId = await getCompanyId();
   const { data: inv, error: invErr } = await supabase.from("invoices").insert({ ...invoice, company_id: companyId } as any).select().single();
-  if (invErr) throw invErr;
+  if (invErr) {
+    console.error("[Invoice] create error:", invErr);
+    throw invErr;
+  }
   if (lineItems.length > 0) {
     const items = lineItems.map((li) => ({
       company_id: companyId,
@@ -79,7 +82,10 @@ export async function createInvoice(invoice: Record<string, any>, lineItems: Inv
       cgst: li.cgst, sgst: li.sgst, igst: li.igst, line_total: li.line_total,
     }));
     const { error: liErr } = await supabase.from("invoice_line_items").insert(items as any);
-    if (liErr) throw liErr;
+    if (liErr) {
+      console.error("[Invoice] line items insert error:", liErr);
+      throw liErr;
+    }
   }
   return inv;
 }

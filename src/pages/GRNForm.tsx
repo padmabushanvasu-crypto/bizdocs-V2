@@ -136,12 +136,16 @@ export default function GRNForm() {
           ? Math.min(Math.max(0, Number(value)), row.pending_quantity)
           : Math.max(0, Number(value));
         row.receiving_now = v;
-        row.accepted_quantity = v; // Default accepted = receiving
+        row.accepted_quantity = v; // Default all accepted
         row.rejected_quantity = 0;
       } else if (field === "accepted_quantity") {
         const v = Math.min(Math.max(0, Number(value)), row.receiving_now);
         row.accepted_quantity = v;
-        row.rejected_quantity = row.receiving_now - v;
+        row.rejected_quantity = Math.max(0, row.receiving_now - v);
+      } else if (field === "rejected_quantity") {
+        const v = Math.min(Math.max(0, Number(value)), row.receiving_now);
+        row.rejected_quantity = v;
+        row.accepted_quantity = Math.max(0, row.receiving_now - v);
       } else {
         (row as any)[field] = value;
       }
@@ -409,9 +413,12 @@ export default function GRNForm() {
                   <th className="px-3 py-2 text-right w-[70px]">PO Qty</th>
                   <th className="px-3 py-2 text-right w-[70px]">Prev Rcvd</th>
                   <th className="px-3 py-2 text-right w-[70px]">Pending</th>
-                  <th className="px-3 py-2 text-right w-[90px]">Receiving *</th>
+                  <th className="px-3 py-2 text-right w-[100px]">
+                    <div>Qty Arriving Today</div>
+                    <div className="font-normal normal-case text-[10px] text-muted-foreground tracking-normal">Enter how many arrived in this delivery</div>
+                  </th>
                   <th className="px-3 py-2 text-right w-[80px]">Accepted</th>
-                  <th className="px-3 py-2 text-right w-[70px]">Rejected</th>
+                  <th className="px-3 py-2 text-right w-[80px]">Rejected</th>
                   <th className="px-3 py-2 text-left w-[120px]">Reason</th>
                   <th className="px-3 py-2 text-left w-[60px]">Unit</th>
                 </tr>
@@ -453,12 +460,19 @@ export default function GRNForm() {
                         disabled={item.receiving_now === 0}
                       />
                     </td>
-                    <td className="px-3 py-2 text-right text-sm font-mono tabular-nums">
-                      {item.rejected_quantity > 0 ? (
-                        <span className="text-destructive font-medium">{item.rejected_quantity}</span>
-                      ) : (
-                        <span className="text-muted-foreground">0</span>
-                      )}
+                    <td className="px-3 py-2">
+                      <Input
+                        type="number"
+                        min={0}
+                        max={item.receiving_now}
+                        value={item.rejected_quantity || ""}
+                        onChange={(e) => updateLineItem(index, "rejected_quantity", e.target.value)}
+                        className={cn(
+                          "h-8 text-sm text-right font-mono w-full",
+                          item.rejected_quantity > 0 && "border-destructive text-destructive"
+                        )}
+                        disabled={item.receiving_now === 0}
+                      />
                     </td>
                     <td className="px-3 py-2">
                       {item.rejected_quantity > 0 ? (

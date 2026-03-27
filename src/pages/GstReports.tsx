@@ -104,7 +104,7 @@ async function buildGstr1Data(start: string, end: string, companyStateCode: stri
   if (invIds.length > 0) {
     const { data: li } = await (supabase as any)
       .from("invoice_line_items")
-      .select("invoice_id, hsn_sac_code, description, unit, quantity, gst_rate, taxable_amount, cgst_amount, sgst_amount, igst_amount, line_total")
+      .select("invoice_id, hsn_sac_code, description, unit, quantity, gst_rate, taxable_amount, cgst, sgst, igst, line_total")
       .in("invoice_id", invIds);
     lineItems = li ?? [];
   }
@@ -185,9 +185,9 @@ async function buildGstr1Data(start: string, end: string, companyStateCode: stri
     hsnRow.total_quantity += li.quantity ?? 0;
     hsnRow.total_value += round2(li.line_total ?? 0);
     hsnRow.taxable_value += taxable;
-    hsnRow.integrated_tax += round2(li.igst_amount ?? 0);
-    hsnRow.central_tax += round2(li.cgst_amount ?? 0);
-    hsnRow.state_ut_tax += round2(li.sgst_amount ?? 0);
+    hsnRow.integrated_tax += round2(li.igst ?? 0);
+    hsnRow.central_tax += round2(li.cgst ?? 0);
+    hsnRow.state_ut_tax += round2(li.sgst ?? 0);
 
     // Nil / Zero-rated
     if (rate === 0 && taxable > 0) {
@@ -218,33 +218,38 @@ async function buildGstr1Data(start: string, end: string, companyStateCode: stri
 }
 
 async function buildGstr2Data(start: string, end: string, companyStateCode: string) {
-  // Use purchase orders as the base source (they have the complete GST data)
+  // Only include POs that have at least one GRN (goods actually received)
+  // Use GRN date range so ITC aligns with actual receipt, not order date
+  const { data: grns } = await (supabase as any)
+    .from("grns")
+    .select("po_id, vendor_invoice_number, vendor_invoice_date")
+    .gte("grn_date", start)
+    .lte("grn_date", end)
+    .not("status", "in", "(cancelled,deleted,draft)");
+
+  const grnData = (grns ?? []) as any[];
+  const receivedPoIds = [...new Set(grnData.map((g: any) => g.po_id).filter(Boolean))] as string[];
+  if (receivedPoIds.length === 0) return [];
+
+  // Fetch PO headers for the received POs
   const { data: pos } = await supabase
     .from("purchase_orders")
     .select("id, po_number, po_date, vendor_name, vendor_gstin, vendor_state_code, grand_total")
-    .gte("po_date", start)
-    .lte("po_date", end)
+    .in("id", receivedPoIds)
     .not("status", "in", "(cancelled,deleted)")
     .order("po_date", { ascending: true });
 
   const poData = (pos ?? []) as any[];
   const poIds = poData.map((p) => p.id);
 
-  // Fetch the vendor_invoice_number from linked GRNs (best effort)
+  // Build vendor_invoice_number from linked GRNs
   const grnInvMap = new Map<string, { invoice_number: string; invoice_date: string }>();
-  if (poIds.length > 0) {
-    const { data: grns } = await (supabase as any)
-      .from("grns")
-      .select("po_id, vendor_invoice_number, vendor_invoice_date")
-      .in("po_id", poIds)
-      .not("status", "in", "(cancelled,deleted)");
-    for (const g of (grns ?? []) as any[]) {
-      if (g.po_id && g.vendor_invoice_number) {
-        grnInvMap.set(g.po_id, {
-          invoice_number: g.vendor_invoice_number,
-          invoice_date: g.vendor_invoice_date || "",
-        });
-      }
+  for (const g of grnData) {
+    if (g.po_id && g.vendor_invoice_number) {
+      grnInvMap.set(g.po_id, {
+        invoice_number: g.vendor_invoice_number,
+        invoice_date: g.vendor_invoice_date || "",
+      });
     }
   }
 
@@ -334,7 +339,7 @@ async function buildHsnData(start: string, end: string) {
 
   const { data: li } = await (supabase as any)
     .from("invoice_line_items")
-    .select("hsn_sac_code, description, unit, quantity, taxable_amount, cgst_amount, sgst_amount, igst_amount, line_total")
+    .select("hsn_sac_code, description, unit, quantity, taxable_amount, cgst, sgst, igst, line_total")
     .in("invoice_id", invIds);
 
   const hsnMap = new Map<string, any>();
@@ -358,9 +363,9 @@ async function buildHsnData(start: string, end: string) {
     r.total_quantity += row.quantity ?? 0;
     r.total_value += round2(row.line_total ?? 0);
     r.taxable_value += round2(row.taxable_amount ?? 0);
-    r.integrated_tax += round2(row.igst_amount ?? 0);
-    r.central_tax += round2(row.cgst_amount ?? 0);
-    r.state_ut_tax += round2(row.sgst_amount ?? 0);
+    r.integrated_tax += round2(row.igst ?? 0);
+    r.central_tax += round2(row.cgst ?? 0);
+    r.state_ut_tax += round2(row.sgst ?? 0);
   }
 
   return [...hsnMap.values()].map((r) => ({
@@ -442,7 +447,7 @@ async function buildGstr3bData(start: string, end: string): Promise<Gstr3bData> 
   if (invIds.length > 0) {
     const { data: li } = await (supabase as any)
       .from("invoice_line_items")
-      .select("gst_rate, taxable_amount, igst_amount, cgst_amount, sgst_amount")
+      .select("gst_rate, taxable_amount, igst, cgst, sgst")
       .in("invoice_id", invIds);
     lineItems = li ?? [];
   }
@@ -455,9 +460,9 @@ async function buildGstr3bData(start: string, end: string): Promise<Gstr3bData> 
       exempt_val += tv;
     } else {
       taxable_val += tv;
-      igst += li.igst_amount ?? 0;
-      cgst += li.cgst_amount ?? 0;
-      sgst += li.sgst_amount ?? 0;
+      igst += li.igst ?? 0;
+      cgst += li.cgst ?? 0;
+      sgst += li.sgst ?? 0;
     }
   }
 

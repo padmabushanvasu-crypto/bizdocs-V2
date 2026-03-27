@@ -122,7 +122,7 @@ export async function createPurchaseOrder({ po, lineItems }: CreatePOData) {
     .insert({
       company_id: companyId,
       po_number: po.po_number, po_date: po.po_date,
-      vendor_id: po.vendor_id, vendor_name: po.vendor_name, vendor_address: po.vendor_address,
+      vendor_id: po.vendor_id || null, vendor_name: po.vendor_name, vendor_address: po.vendor_address,
       vendor_gstin: po.vendor_gstin, vendor_state_code: po.vendor_state_code, vendor_phone: po.vendor_phone,
       reference_number: po.reference_number, payment_terms: po.payment_terms,
       delivery_address: po.delivery_address,
@@ -136,7 +136,10 @@ export async function createPurchaseOrder({ po, lineItems }: CreatePOData) {
       status: po.status, issued_at: po.issued_at,
     } as any)
     .select().single();
-  if (error) throw error;
+  if (error) {
+    console.error("[PO] create error:", error);
+    throw error;
+  }
 
   if (lineItems.length > 0) {
     const itemsToInsert = lineItems.map((item) => ({
@@ -147,7 +150,10 @@ export async function createPurchaseOrder({ po, lineItems }: CreatePOData) {
       line_total: item.line_total, gst_rate: item.gst_rate, hsn_sac_code: item.hsn_sac_code || null,
     }));
     const { error: itemsError } = await supabase.from("po_line_items").insert(itemsToInsert as any);
-    if (itemsError) throw itemsError;
+    if (itemsError) {
+      console.error("[PO] line items insert error:", itemsError);
+      throw itemsError;
+    }
   }
   return newPO as unknown as PurchaseOrder;
 }

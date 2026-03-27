@@ -63,7 +63,6 @@ export interface DeliveryChallan {
   updated_at: string;
   vehicle_number?: string | null;
   driver_name?: string | null;
-  lo_number?: string | null;
   job_work_id?: string | null;
   job_work_number?: string | null;
   approx_value?: number | null;
@@ -192,26 +191,34 @@ interface CreateDCData {
 
 export async function createDeliveryChallan({ dc, lineItems }: CreateDCData) {
   const companyId = await getCompanyId();
-  const { data: newDC, error } = await supabase.from("delivery_challans").insert({
-    company_id: companyId,
-    dc_number: dc.dc_number, dc_date: dc.dc_date, dc_type: dc.dc_type,
-    party_id: dc.party_id, party_name: dc.party_name, party_address: dc.party_address,
-    party_gstin: dc.party_gstin, party_state_code: dc.party_state_code, party_phone: dc.party_phone,
-    reference_number: dc.reference_number, approximate_value: dc.approximate_value,
-    special_instructions: dc.special_instructions, internal_remarks: dc.internal_remarks,
-    return_due_date: dc.return_due_date, nature_of_job_work: dc.nature_of_job_work,
-    total_items: dc.total_items, total_qty: dc.total_qty, status: dc.status, issued_at: dc.issued_at,
-    vehicle_number: dc.vehicle_number || null, driver_name: dc.driver_name || null,
-    lo_number: dc.lo_number || null,
-    job_work_id: dc.job_work_id || null, job_work_number: dc.job_work_number || null,
-    approx_value: dc.approx_value || null,
-    sub_total: dc.sub_total || 0, cgst_amount: dc.cgst_amount || 0, sgst_amount: dc.sgst_amount || 0,
-    igst_amount: dc.igst_amount || 0, total_gst: dc.total_gst || 0, grand_total: dc.grand_total || 0,
-    gst_rate: dc.gst_rate || 18, po_reference: dc.po_reference || null, po_date: dc.po_date || null,
-    challan_category: dc.challan_category || "supply_on_approval",
-    prepared_by: dc.prepared_by || null, checked_by: dc.checked_by || null,
-  } as any).select().single();
-  if (error) throw error;
+  let newDC: any;
+  try {
+    const { data, error } = await supabase.from("delivery_challans").insert({
+      company_id: companyId,
+      dc_number: dc.dc_number, dc_date: dc.dc_date, dc_type: dc.dc_type,
+      party_id: dc.party_id || null, party_name: dc.party_name, party_address: dc.party_address,
+      party_gstin: dc.party_gstin, party_state_code: dc.party_state_code, party_phone: dc.party_phone,
+      reference_number: dc.reference_number, approximate_value: dc.approximate_value,
+      special_instructions: dc.special_instructions, internal_remarks: dc.internal_remarks,
+      return_due_date: dc.return_due_date, nature_of_job_work: dc.nature_of_job_work,
+      total_items: dc.total_items, total_qty: dc.total_qty, status: dc.status, issued_at: dc.issued_at,
+      vehicle_number: dc.vehicle_number || null, driver_name: dc.driver_name || null,
+      approx_value: dc.approx_value || null,
+      sub_total: dc.sub_total || 0, cgst_amount: dc.cgst_amount || 0, sgst_amount: dc.sgst_amount || 0,
+      igst_amount: dc.igst_amount || 0, total_gst: dc.total_gst || 0, grand_total: dc.grand_total || 0,
+      gst_rate: dc.gst_rate || 18, po_reference: dc.po_reference || null, po_date: dc.po_date || null,
+      challan_category: dc.challan_category || "supply_on_approval",
+      prepared_by: dc.prepared_by || null, checked_by: dc.checked_by || null,
+    } as any).select().single();
+    if (error) {
+      console.error("[DC] create error:", error);
+      throw error;
+    }
+    newDC = data;
+  } catch (err) {
+    console.error("[DC] createDeliveryChallan failed:", err);
+    throw err;
+  }
 
   if (lineItems.length > 0) {
     const itemsToInsert = lineItems.map((item) => ({
@@ -245,8 +252,6 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
     return_due_date: dc.return_due_date, nature_of_job_work: dc.nature_of_job_work,
     total_items: dc.total_items, total_qty: dc.total_qty, status: dc.status, issued_at: dc.issued_at,
     vehicle_number: dc.vehicle_number || null, driver_name: dc.driver_name || null,
-    lo_number: dc.lo_number || null,
-    job_work_id: dc.job_work_id || null, job_work_number: dc.job_work_number || null,
     approx_value: dc.approx_value || null,
     sub_total: dc.sub_total || 0, cgst_amount: dc.cgst_amount || 0, sgst_amount: dc.sgst_amount || 0,
     igst_amount: dc.igst_amount || 0, total_gst: dc.total_gst || 0, grand_total: dc.grand_total || 0,
@@ -254,7 +259,10 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
     challan_category: dc.challan_category || "supply_on_approval",
     prepared_by: dc.prepared_by || null, checked_by: dc.checked_by || null,
   } as any).eq("id", id);
-  if (error) throw error;
+  if (error) {
+    console.error("[DC] update error:", error);
+    throw error;
+  }
   await supabase.from("dc_line_items").delete().eq("dc_id", id);
   if (lineItems.length > 0) {
     const itemsToInsert = lineItems.map((item) => ({
