@@ -4,6 +4,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import { createElement } from "react";
@@ -19,11 +20,18 @@ const BATCH_SIZE = 50;
 export interface ImportJob {
   id: string;
   type: string;
+  // Runtime fields — stored in state but NOT persisted to localStorage
+  // (functions can't be JSON-serialised; rows are too large to persist)
+  rows?: Record<string, string>[];
+  rowNums?: number[];
+  processBatch?: BatchImportFn;
+  callbacks?: AddJobCallbacks;
+  // Persisted fields
   status: "queued" | "running" | "completed" | "failed";
   progress: number;   // rows processed so far
   total: number;      // total rows submitted
   errors: string[];
-  skipped: SkipReason[];     // FIX 4: renamed from skipReasons → skipped
+  skipped: SkipReason[];
   completed: number;  // rows successfully imported
   startedAt: string;  // ISO date string
 }
@@ -77,7 +85,7 @@ function loadPersistedJobs(): ImportJob[] {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return [];
     const parsed: ImportJob[] = JSON.parse(raw);
-    // FIX 4: Mark any running/queued jobs from last session as failed
+    // Mark any running/queued jobs from last session as failed
     // (page was refreshed mid-import)
     return parsed
       .filter((j) => j.status === "running" || j.status === "queued")
@@ -102,7 +110,12 @@ function persistJobs(jobs: ImportJob[]): void {
     if (active.length === 0) {
       localStorage.removeItem(LS_KEY);
     } else {
-      localStorage.setItem(LS_KEY, JSON.stringify(active));
+      // Strip non-serialisable/large fields before persisting
+      const toSave = active.map(
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        ({ rows, rowNums, processBatch, callbacks, ...rest }) => rest
+      );
+      localStorage.setItem(LS_KEY, JSON.stringify(toSave));
     }
   } catch {
     // Ignore QuotaExceededError
@@ -114,6 +127,14 @@ function persistJobs(jobs: ImportJob[]): void {
 export function ImportQueueProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<ImportJob[]>(() => loadPersistedJobs());
   const { toast } = useToast();
+
+  // Keep a ref to the latest jobs array so processNextJob can read it
+  // without capturing stale state in its closure
+  const jobsRef = useRef<ImportJob[]>(jobs);
+  jobsRef.current = jobs;
+
+  // Guard: only one job runs at a time
+  const processingRef = useRef(false);
 
   useEffect(() => {
     persistJobs(jobs);
@@ -129,6 +150,104 @@ export function ImportQueueProvider({ children }: { children: ReactNode }) {
     setJobs((prev) => prev.filter((j) => j.status !== "completed"));
   }, []);
 
+  // ── Processing loop — lives in the Provider so it survives navigation ──
+
+  const processNextJob = useCallback(async () => {
+    if (processingRef.current) return;
+    processingRef.current = true;
+
+    try {
+      // Read latest jobs from ref (avoids stale closure over jobs state)
+      const job = jobsRef.current.find((j) => j.status === "queued");
+      if (!job) return;
+
+      updateJob(job.id, { status: "running" });
+
+      let totalImported = 0;
+      const allErrors: string[] = [];
+      const allSkipped: SkipReason[] = [];
+
+      const rows = job.rows ?? [];
+      const rowNums = job.rowNums ?? [];
+
+      for (let offset = 0; offset < rows.length; offset += BATCH_SIZE) {
+        const batchRows = rows.slice(offset, offset + BATCH_SIZE);
+        const batchNums = rowNums.slice(offset, offset + BATCH_SIZE);
+
+        try {
+          const res = await job.processBatch!(batchRows, batchNums);
+          totalImported += res.imported;
+          allErrors.push(...res.errors);
+          allSkipped.push(...res.skipReasons);
+        } catch (err: any) {
+          allErrors.push(err?.message ?? "Unknown error");
+        }
+
+        const done = Math.min(offset + BATCH_SIZE, rows.length);
+        updateJob(job.id, {
+          progress: done,
+          completed: totalImported,
+          errors: [...allErrors],
+          skipped: [...allSkipped],
+        });
+
+        // Yield to browser between batches so the UI stays responsive
+        await new Promise<void>((r) => setTimeout(r, 10));
+      }
+
+      updateJob(job.id, {
+        status: "completed",
+        completed: totalImported,
+        progress: rows.length,
+      });
+
+      // Fire the onComplete callback (e.g. to update page UI or invalidate queries)
+      const callbackResult = {
+        imported: totalImported,
+        skipped: allSkipped.length,
+        errors: allErrors,
+        skipReasons: allSkipped,
+      };
+      job.callbacks?.onComplete?.(callbackResult);
+
+      // Show completion toast — fires on every page since Provider is always mounted
+      toast({
+        title: `${job.type} import complete`,
+        description: `${totalImported} of ${rows.length} rows imported successfully`,
+      });
+
+    } catch (err: any) {
+      // Mark the running job as failed
+      const runningJob = jobsRef.current.find((j) => j.status === "running");
+      if (runningJob) {
+        updateJob(runningJob.id, {
+          status: "failed",
+          errors: [err?.message ?? "Unknown error"],
+        });
+        toast({
+          title: `${runningJob.type} import failed`,
+          description: err?.message ?? "Unknown error",
+          variant: "destructive",
+        });
+      }
+    } finally {
+      processingRef.current = false;
+      // No recursive setTimeout needed — the useEffect below restarts the
+      // loop whenever jobs state changes (e.g. after updateJob marks a job
+      // completed, or when a new job is added)
+    }
+  }, [updateJob, toast]); // stable — reads jobs via jobsRef, not state
+
+  // Start processing whenever a queued job appears
+  useEffect(() => {
+    const hasQueued = jobs.some((j) => j.status === "queued");
+    if (hasQueued && !processingRef.current) {
+      processNextJob();
+    }
+  }, [jobs, processNextJob]);
+
+  // ── addJob — just enqueues; the useEffect above starts processing ──
+
   const addJob = useCallback(
     (
       type: string,
@@ -141,6 +260,10 @@ export function ImportQueueProvider({ children }: { children: ReactNode }) {
       const job: ImportJob = {
         id,
         type,
+        rows,
+        rowNums,
+        processBatch: importFn,
+        callbacks,
         status: "queued",
         progress: 0,
         total: rows.length,
@@ -150,64 +273,9 @@ export function ImportQueueProvider({ children }: { children: ReactNode }) {
         startedAt: new Date().toISOString(),
       };
       setJobs((prev) => [...prev, job]);
-
-      // Run asynchronously — intentionally not awaited so caller doesn't block
-      void (async () => {
-        updateJob(id, { status: "running" });
-
-        let totalImported = 0;
-        let totalSkipped = 0;
-        const allErrors: string[] = [];
-        const allSkipped: SkipReason[] = [];
-
-        try {
-          for (let offset = 0; offset < rows.length; offset += BATCH_SIZE) {
-            const batchRows = rows.slice(offset, offset + BATCH_SIZE);
-            const batchNums = rowNums.slice(offset, offset + BATCH_SIZE);
-
-            const res = await importFn(batchRows, batchNums);
-            totalImported += res.imported;
-            totalSkipped += res.skipped;
-            allErrors.push(...res.errors);
-            allSkipped.push(...res.skipReasons);
-
-            const progress = Math.min(offset + batchRows.length, rows.length);
-            updateJob(id, {
-              progress,
-              completed: totalImported,
-              errors: [...allErrors],
-              skipped: [...allSkipped],
-            });
-
-            // Yield to the UI thread between batches
-            await new Promise<void>((r) => setTimeout(r, 0));
-          }
-
-          updateJob(id, { status: "completed" });
-
-          const result = {
-            imported: totalImported,
-            skipped: totalSkipped,
-            errors: allErrors,
-            skipReasons: allSkipped,
-          };
-
-          callbacks?.onComplete?.(result);
-        } catch (err: any) {
-          updateJob(id, {
-            status: "failed",
-            errors: [...allErrors, err?.message ?? "Unknown error"],
-          });
-          toast({
-            title: `Import failed — ${err?.message ?? "unknown error"}`,
-            variant: "destructive",
-          });
-        }
-      })();
-
       return id;
     },
-    [updateJob, toast]
+    []
   );
 
   return createElement(

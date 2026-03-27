@@ -693,18 +693,15 @@ function BOMImportTab() {
   const [vendorSheetRows, setVendorSheetRows] = useState<Record<string, string>[]>([]);
   const [vendorCount, setVendorCount] = useState(0);
 
-  // FIX 6: watch for job completion
+  // Clear job tracking when done (Provider handles the completion toast)
   useEffect(() => {
     if (!currentJobId) return;
     const job = jobs.find((j) => j.id === currentJobId);
     if (!job) return;
-    if (job.status === "completed") {
-      toast({ title: `✓ ${job.completed} BOM lines imported` });
-      setCurrentJobId(null);
-    } else if (job.status === "failed") {
+    if (job.status === "completed" || job.status === "failed") {
       setCurrentJobId(null);
     }
-  }, [jobs, currentJobId, toast]);
+  }, [jobs, currentJobId]);
 
   const clearAll = () => {
     setRows([]); setValidRows([]); setValidRowNums([]); setErrors([]);
@@ -1084,8 +1081,6 @@ function BOMImportTab() {
       }
     }
 
-    queryClient.invalidateQueries({ queryKey: ["bom-lines"] });
-
     // Process vendor sheet rows (if any) — adds vendors to ALL BOM lines containing the component
     let vendorMappingsCount = 0;
     if (vendorSheetRows.length > 0) {
@@ -1151,13 +1146,13 @@ function BOMImportTab() {
     const parseSkips = skipReasons.filter((s) => s.reason.includes("skipped automatically"));
     setRows([]); setValidRows([]); setValidRowNums([]);
 
-    const id = addJob("BOM lines", rowsToImport, rowNumsToImport, bomImportFn, {
+    addJob("BOM lines", rowsToImport, rowNumsToImport, bomImportFn, {
       onComplete: (res) => {
         setResult({ imported: res.imported, skipped: res.skipped });
         setSkipReasons([...parseSkips, ...res.skipReasons]);
+        queryClient.invalidateQueries({ queryKey: ["bom-lines"] });
       },
     });
-    setCurrentJobId(id);
     toast({ title: "Import started — you can keep working" });
   };
 
@@ -1284,6 +1279,7 @@ function ImportTab({
   onImport,
   validate,
   onDownloadTemplate,
+  invalidateOnComplete,
 }: {
   title: string;
   icon: React.ComponentType<any>;
@@ -1295,9 +1291,12 @@ function ImportTab({
   onImport: BatchImportFn;
   validate?: (row: Record<string, string>, i: number) => string | null;
   onDownloadTemplate?: () => void | Promise<void>;
+  /** Query keys to invalidate after the job completes (e.g. [["parties"], ["items"]]) */
+  invalidateOnComplete?: string[][];
 }) {
   const { toast } = useToast();
   const { addJob, jobs } = useImportQueue();
+  const queryClient = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [validRows, setValidRows] = useState<Record<string, string>[]>([]);
@@ -1316,13 +1315,10 @@ function ImportTab({
     if (!currentJobId) return;
     const job = jobs.find((j) => j.id === currentJobId);
     if (!job) return;
-    if (job.status === "completed") {
-      toast({ title: `✓ ${job.completed} ${title} imported` });
-      setCurrentJobId(null);
-    } else if (job.status === "failed") {
+    if (job.status === "completed" || job.status === "failed") {
       setCurrentJobId(null);
     }
-  }, [jobs, currentJobId, title, toast]);
+  }, [jobs, currentJobId]);
 
   const clearAll = () => {
     setRows([]); setValidRows([]); setValidRowNums([]); setErrorRows(new Set()); setErrors([]); setResult(null);
@@ -1401,6 +1397,10 @@ function ImportTab({
       onComplete: (res) => {
         setResult({ imported: res.imported, skipped: res.skipped });
         setSkipReasons([...parseSkips, ...res.skipReasons]);
+        // Invalidate queries once — after the full job finishes, not per batch
+        invalidateOnComplete?.forEach((queryKey) =>
+          queryClient.invalidateQueries({ queryKey })
+        );
       },
     });
     setCurrentJobId(id);
@@ -2031,7 +2031,6 @@ export default function DataImport() {
       if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
     }
 
-    queryClient.invalidateQueries({ queryKey: ["parties"] });
     return { imported, skipped, errors, skipReasons };
   };
 
@@ -2206,7 +2205,6 @@ export default function DataImport() {
       if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
     }
 
-    queryClient.invalidateQueries({ queryKey: ["items"] });
     return { imported, skipped, errors, skipReasons };
   };
 
@@ -2285,8 +2283,6 @@ export default function DataImport() {
       }
     }
 
-    queryClient.invalidateQueries({ queryKey: ["items"] });
-    queryClient.invalidateQueries({ queryKey: ["stock_status"] });
     return { imported, skipped, errors, skipReasons };
   };
 
@@ -2341,6 +2337,7 @@ export default function DataImport() {
             requiredFields={["name"]}
             primaryKeyField="name"
             onImport={handlePartyImport}
+            invalidateOnComplete={[["parties"]]}
             validate={(row) => {
               if (!row["name"]?.trim()) return "Party Name is required";
               return null;
@@ -2372,6 +2369,7 @@ export default function DataImport() {
             requiredFields={["description", "item_type", "unit"]}
             primaryKeyField="drawing_number"
             onImport={handleItemImport}
+            invalidateOnComplete={[["items"]]}
             validate={(row) => {
               if (!row["description"]?.trim()) return "Description is required";
               return null;
@@ -2423,6 +2421,7 @@ export default function DataImport() {
             requiredFields={["current_stock"]}
             primaryKeyField="item_code"
             onImport={handleStockImport}
+            invalidateOnComplete={[["items"], ["stock_status"]]}
             validate={(row) => {
               if (!row["item_code"]?.trim()) return "Item Code is required";
               if (isNaN(parseFloat(row["current_stock"] || ""))) return "Quantity must be a number";
