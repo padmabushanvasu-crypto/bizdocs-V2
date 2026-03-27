@@ -1,6 +1,6 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FileSpreadsheet, Download, Info, Eye, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { FileSpreadsheet, Download, Info, Eye, X, ChevronLeft, ChevronRight, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -11,6 +11,7 @@ import { exportMultiSheet, formatDateGST } from "@/lib/export-utils";
 import * as XLSX from "xlsx-js-style";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { format, startOfMonth, endOfMonth, subMonths, startOfQuarter, endOfQuarter } from "date-fns";
+import { cn } from "@/lib/utils";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1207,9 +1208,104 @@ export default function GstReports() {
     });
   };
 
+  // ── Drag-to-reorder report cards ─────────────────────────────────────────
+
+  const REPORT_IDS = ["gstr1", "gstr2", "hsn", "itc", "eway", "jobwork", "gstr3b"] as const;
+  type ReportId = typeof REPORT_IDS[number];
+
+  const [reportOrder, setReportOrder] = useState<ReportId[]>(() => {
+    try {
+      const saved = localStorage.getItem("bizdocs_gst_report_order");
+      if (saved) {
+        const arr = JSON.parse(saved) as string[];
+        if (Array.isArray(arr) && arr.length === REPORT_IDS.length && REPORT_IDS.every((id) => arr.includes(id))) {
+          return arr as ReportId[];
+        }
+      }
+    } catch { /* ignore */ }
+    return [...REPORT_IDS];
+  });
+
+  const [dragId, setDragId] = useState<ReportId | null>(null);
+  const [dragOverId, setDragOverId] = useState<ReportId | null>(null);
+
+  const handleDragStart = (id: ReportId) => setDragId(id);
+  const handleDragOver = (e: React.DragEvent, id: ReportId) => { e.preventDefault(); setDragOverId(id); };
+  const handleDrop = (targetId: ReportId) => {
+    if (!dragId || dragId === targetId) return;
+    const newOrder = [...reportOrder];
+    const fromIdx = newOrder.indexOf(dragId);
+    const toIdx = newOrder.indexOf(targetId);
+    newOrder.splice(fromIdx, 1);
+    newOrder.splice(toIdx, 0, dragId);
+    setReportOrder(newOrder);
+    localStorage.setItem("bizdocs_gst_report_order", JSON.stringify(newOrder));
+    setDragId(null);
+    setDragOverId(null);
+  };
+  const handleDragEnd = () => { setDragId(null); setDragOverId(null); };
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   const cardIcon = <FileSpreadsheet className="h-4 w-4 text-blue-600" />;
+
+  const reportCards: Record<ReportId, JSX.Element> = {
+    gstr1: (
+      <ReportCard
+        icon={cardIcon}
+        title="GSTR-1 (Outward Supplies)"
+        description="4-sheet portal-format file: B2B invoices, B2C Large, HSN Summary, Nil/Exempt. One row per invoice per rate."
+        onDownload={downloadGstr1}
+        onPreview={previewGstr1}
+      />
+    ),
+    gstr2: (
+      <ReportCard
+        icon={cardIcon}
+        title="GSTR-2 / ITC (Inward Supplies)"
+        description="B2B purchase register with all 19 portal columns: supplier GSTIN, invoice details, rate-wise ITC breakup."
+        onDownload={downloadGstr2}
+        onPreview={previewGstr2}
+      />
+    ),
+    hsn: (
+      <ReportCard
+        icon={cardIcon}
+        title="HSN Summary"
+        description="Standalone HSN summary with quantity, total value, taxable value, IGST, CGST, SGST and Cess."
+        onDownload={downloadHsn}
+        onPreview={previewHsn}
+      />
+    ),
+    itc: (
+      <ReportCard
+        icon={cardIcon}
+        title="ITC Register (GRN-based)"
+        description="Input tax credit register built from received GRNs. Shows vendor invoice details and ITC amounts per receipt."
+        onDownload={downloadItc}
+        onPreview={previewItc}
+      />
+    ),
+    eway: (
+      <ReportCard
+        icon={cardIcon}
+        title="E-way Bill Data"
+        description="DC data formatted for e-way bill reference. Includes HSN, vehicle number, party GSTIN and values."
+        onDownload={downloadEway}
+        onPreview={previewEway}
+      />
+    ),
+    jobwork: (
+      <ReportCard
+        icon={cardIcon}
+        title="Job Work Register (Section 143)"
+        description="All returnable DC components sent for job work — quantity sent, returned, pending, and days outstanding."
+        onDownload={downloadJobWork}
+        onPreview={previewJobWork}
+      />
+    ),
+    gstr3b: <Gstr3bCard companyStateCode={companyStateCode} companyName={companyName} />,
+  };
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -1228,6 +1324,7 @@ export default function GstReports() {
         <p className="text-sm text-slate-500 mt-1">
           GST portal-compliant Excel files · FY {fyYear ?? "—"} · State: {companyStateCode || "—"}
         </p>
+        <p className="text-xs text-slate-400 mt-1">Drag cards to reorder — your preference is saved</p>
       </div>
 
       <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-lg p-4 text-blue-800 text-sm">
@@ -1239,49 +1336,29 @@ export default function GstReports() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <ReportCard
-          icon={cardIcon}
-          title="GSTR-1 (Outward Supplies)"
-          description="4-sheet portal-format file: B2B invoices, B2C Large, HSN Summary, Nil/Exempt. One row per invoice per rate."
-          onDownload={downloadGstr1}
-          onPreview={previewGstr1}
-        />
-        <ReportCard
-          icon={cardIcon}
-          title="GSTR-2 / ITC (Inward Supplies)"
-          description="B2B purchase register with all 19 portal columns: supplier GSTIN, invoice details, rate-wise ITC breakup."
-          onDownload={downloadGstr2}
-          onPreview={previewGstr2}
-        />
-        <ReportCard
-          icon={cardIcon}
-          title="HSN Summary"
-          description="Standalone HSN summary with quantity, total value, taxable value, IGST, CGST, SGST and Cess."
-          onDownload={downloadHsn}
-          onPreview={previewHsn}
-        />
-        <ReportCard
-          icon={cardIcon}
-          title="ITC Register (GRN-based)"
-          description="Input tax credit register built from received GRNs. Shows vendor invoice details and ITC amounts per receipt."
-          onDownload={downloadItc}
-          onPreview={previewItc}
-        />
-        <ReportCard
-          icon={cardIcon}
-          title="E-way Bill Data"
-          description="DC data formatted for e-way bill reference. Includes HSN, vehicle number, party GSTIN and values."
-          onDownload={downloadEway}
-          onPreview={previewEway}
-        />
-        <ReportCard
-          icon={cardIcon}
-          title="Job Work Register (Section 143)"
-          description="All returnable DC components sent for job work — quantity sent, returned, pending, and days outstanding."
-          onDownload={downloadJobWork}
-          onPreview={previewJobWork}
-        />
-        <Gstr3bCard companyStateCode={companyStateCode} companyName={companyName} />
+        {reportOrder.map((id) => (
+          <div
+            key={id}
+            draggable
+            onDragStart={() => handleDragStart(id)}
+            onDragOver={(e) => handleDragOver(e, id)}
+            onDrop={() => handleDrop(id)}
+            onDragEnd={handleDragEnd}
+            className={cn(
+              "relative",
+              dragId === id && "opacity-50",
+              dragOverId === id && dragId !== id && "outline outline-2 outline-dashed outline-blue-400 rounded-xl bg-blue-50/30"
+            )}
+          >
+            <div
+              className="absolute top-3 right-3 z-10 cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 select-none"
+              title="Drag to reorder"
+            >
+              <GripVertical className="h-4 w-4" />
+            </div>
+            {reportCards[id]}
+          </div>
+        ))}
       </div>
     </div>
   );

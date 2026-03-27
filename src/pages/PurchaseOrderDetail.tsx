@@ -253,6 +253,22 @@ export default function PurchaseOrderDetail() {
           </div>
         </EditableSection>
 
+        {/* Delivery Address */}
+        {po.delivery_address && (
+          <div className="border-t border-border pt-4">
+            <p className="text-xs font-semibold text-slate-500 mb-1">Deliver To</p>
+            <p className="text-sm whitespace-pre-line">{po.delivery_address}</p>
+            {(po.delivery_contact_person || po.delivery_contact_phone) && (
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Contact:{" "}
+                {[po.delivery_contact_person, po.delivery_contact_phone]
+                  .filter(Boolean)
+                  .join(" — ")}
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Line Items */}
         <div className="overflow-x-auto">
           <table className="w-full data-table">

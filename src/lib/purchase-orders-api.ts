@@ -29,6 +29,8 @@ export interface PurchaseOrder {
   reference_number: string | null;
   payment_terms: string | null;
   delivery_address: string | null;
+  delivery_contact_person: string | null;
+  delivery_contact_phone: string | null;
   special_instructions: string | null;
   internal_remarks: string | null;
   sub_total: number;
@@ -123,7 +125,10 @@ export async function createPurchaseOrder({ po, lineItems }: CreatePOData) {
       vendor_id: po.vendor_id, vendor_name: po.vendor_name, vendor_address: po.vendor_address,
       vendor_gstin: po.vendor_gstin, vendor_state_code: po.vendor_state_code, vendor_phone: po.vendor_phone,
       reference_number: po.reference_number, payment_terms: po.payment_terms,
-      delivery_address: po.delivery_address, special_instructions: po.special_instructions,
+      delivery_address: po.delivery_address,
+        delivery_contact_person: po.delivery_contact_person,
+        delivery_contact_phone: po.delivery_contact_phone,
+        special_instructions: po.special_instructions,
       internal_remarks: po.internal_remarks, sub_total: po.sub_total,
       additional_charges: po.additional_charges as any, taxable_value: po.taxable_value,
       igst_amount: po.igst_amount, cgst_amount: po.cgst_amount, sgst_amount: po.sgst_amount,
@@ -154,7 +159,10 @@ export async function updatePurchaseOrder(id: string, { po, lineItems }: CreateP
     vendor_id: po.vendor_id, vendor_name: po.vendor_name, vendor_address: po.vendor_address,
     vendor_gstin: po.vendor_gstin, vendor_state_code: po.vendor_state_code, vendor_phone: po.vendor_phone,
     reference_number: po.reference_number, payment_terms: po.payment_terms,
-    delivery_address: po.delivery_address, special_instructions: po.special_instructions,
+    delivery_address: po.delivery_address,
+    delivery_contact_person: po.delivery_contact_person,
+    delivery_contact_phone: po.delivery_contact_phone,
+    special_instructions: po.special_instructions,
     internal_remarks: po.internal_remarks, sub_total: po.sub_total,
     additional_charges: po.additional_charges as any, taxable_value: po.taxable_value,
     igst_amount: po.igst_amount, cgst_amount: po.cgst_amount, sgst_amount: po.sgst_amount,

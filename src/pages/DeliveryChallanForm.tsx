@@ -111,6 +111,7 @@ export default function DeliveryChallanForm() {
   const [jwPickerOpen, setJwPickerOpen] = useState(false);
   const [jwPickerSelected, setJwPickerSelected] = useState<Set<string>>(new Set());
   const [jwPickerSearch, setJwPickerSearch] = useState("");
+  const [jwVendorFilterOwn, setJwVendorFilterOwn] = useState(true);
 
   // Fetch data
   const { data: partiesData } = useQuery({
@@ -270,8 +271,7 @@ export default function DeliveryChallanForm() {
     } else if (selectedParty) {
       const mismatch = selectedRows.some((r) => r.vendor_id && r.vendor_id !== selectedParty.id);
       if (mismatch) {
-        toast({ title: "Vendor mismatch", description: "Selected job works have different vendors. Update the party first.", variant: "destructive" });
-        return;
+        toast({ title: "Vendor mismatch warning", description: "Some selected job works are for a different vendor. Review before issuing.", variant: "destructive" });
       }
     }
 
@@ -728,9 +728,9 @@ export default function DeliveryChallanForm() {
                 <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Item / Description</th>
                 <th className="px-3 py-2 text-left w-32 text-xs font-medium text-slate-400 uppercase tracking-wider">Drawing No</th>
                 <th className="px-3 py-2 text-left w-48 text-xs font-medium text-slate-400 uppercase tracking-wider">Nature of Process</th>
-                <th className="px-3 py-2 text-right w-20 text-xs font-medium text-slate-400 uppercase tracking-wider">Qty</th>
-                <th className="px-3 py-2 text-right w-20 text-xs font-medium text-slate-400 uppercase tracking-wider">KGS</th>
-                <th className="px-3 py-2 text-right w-20 text-xs font-medium text-slate-400 uppercase tracking-wider">SFT</th>
+                <th className="px-3 py-2 text-right w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Qty</th>
+                <th className="px-3 py-2 text-right w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">KGS</th>
+                <th className="px-3 py-2 text-right w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">SFT</th>
                 <th className="px-3 py-2 text-left w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Unit</th>
                 <th className="px-3 py-2 text-right w-28 text-xs font-medium text-slate-400 uppercase tracking-wider">Rate ₹</th>
                 <th className="px-3 py-2 text-right w-28 text-xs font-medium text-slate-400 uppercase tracking-wider">Amount ₹</th>
@@ -788,7 +788,7 @@ export default function DeliveryChallanForm() {
                       className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm"
                     />
                   </td>
-                  <td className="p-0 w-20">
+                  <td className="p-0 w-24">
                     <input
                       type="number"
                       value={item.quantity || ""}
@@ -796,7 +796,7 @@ export default function DeliveryChallanForm() {
                       className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm text-right font-mono tabular-nums"
                     />
                   </td>
-                  <td className="p-0 w-20">
+                  <td className="p-0 w-24">
                     <input
                       type="number"
                       step="0.001"
@@ -806,7 +806,7 @@ export default function DeliveryChallanForm() {
                       className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm text-right font-mono tabular-nums placeholder:text-slate-300"
                     />
                   </td>
-                  <td className="p-0 w-20">
+                  <td className="p-0 w-24">
                     <input
                       type="number"
                       step="0.01"
@@ -968,21 +968,35 @@ export default function DeliveryChallanForm() {
 
       {/* Add from Job Works picker */}
       <Dialog open={jwPickerOpen} onOpenChange={(o) => { setJwPickerOpen(o); if (!o) { setJwPickerSelected(new Set()); setJwPickerSearch(""); } }}>
-        <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
+        <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Add from Job Works</DialogTitle>
+            <DialogTitle>Select Job Works to add to this DC</DialogTitle>
             <DialogDescription>
-              Select external steps to add as line items. Vendor must match the selected party.
+              Select external steps to add as line items.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex gap-2 mb-3">
+          <div className="flex items-center gap-3">
             <input
               type="text"
-              placeholder="Search JW number, item, process..."
+              placeholder="Search by drawing number, item or vendor..."
               value={jwPickerSearch}
               onChange={(e) => setJwPickerSearch(e.target.value)}
-              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="flex h-9 flex-1 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
+            {selectedParty && (
+              <button
+                type="button"
+                onClick={() => setJwVendorFilterOwn((v) => !v)}
+                className={cn(
+                  "shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors whitespace-nowrap",
+                  jwVendorFilterOwn
+                    ? "bg-blue-600 text-white border-blue-600"
+                    : "border-border text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {jwVendorFilterOwn ? "This vendor only" : "All vendors"}
+              </button>
+            )}
           </div>
           <div className="overflow-y-auto flex-1 border rounded-lg">
             {openJWsForDC.length === 0 ? (
@@ -990,7 +1004,7 @@ export default function DeliveryChallanForm() {
                 No open job works with pending external steps.
               </div>
             ) : (
-              <table className="w-full text-sm">
+              <table className="w-full text-sm min-w-[700px]">
                 <thead className="bg-secondary sticky top-0">
                   <tr className="text-xs uppercase text-muted-foreground">
                     <th className="px-3 py-2 text-left w-8">
@@ -998,8 +1012,9 @@ export default function DeliveryChallanForm() {
                         type="checkbox"
                         onChange={(e) => {
                           const filtered = openJWsForDC.filter((r) => {
+                            if (selectedParty && jwVendorFilterOwn && r.vendor_id && r.vendor_id !== selectedParty.id) return false;
                             const q = jwPickerSearch.toLowerCase();
-                            return !q || r.jc_number.toLowerCase().includes(q) || (r.item_description ?? "").toLowerCase().includes(q) || r.step_name.toLowerCase().includes(q);
+                            return !q || r.jc_number.toLowerCase().includes(q) || (r.item_description ?? "").toLowerCase().includes(q) || r.step_name.toLowerCase().includes(q) || (r.drawing_revision ?? "").toLowerCase().includes(q) || (r.vendor_name ?? "").toLowerCase().includes(q);
                           });
                           setJwPickerSelected(e.target.checked ? new Set(filtered.map((r) => r.step_id)) : new Set());
                         }}
@@ -1012,38 +1027,75 @@ export default function DeliveryChallanForm() {
                     <th className="px-3 py-2 text-right">Qty</th>
                     <th className="px-3 py-2 text-left">Unit</th>
                     <th className="px-3 py-2 text-left">Vendor</th>
-                    <th className="px-3 py-2 text-left">Nature of Process</th>
+                    <th className="px-3 py-2 text-left">Process</th>
+                    <th className="px-3 py-2 text-left">Due Date</th>
+                    <th className="px-3 py-2 text-left">Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {openJWsForDC
                     .filter((r) => {
+                      if (selectedParty && jwVendorFilterOwn && r.vendor_id && r.vendor_id !== selectedParty.id) return false;
                       const q = jwPickerSearch.toLowerCase();
-                      return !q || r.jc_number.toLowerCase().includes(q) || (r.item_description ?? "").toLowerCase().includes(q) || r.step_name.toLowerCase().includes(q) || (r.vendor_name ?? "").toLowerCase().includes(q);
+                      return !q || r.jc_number.toLowerCase().includes(q) || (r.item_description ?? "").toLowerCase().includes(q) || r.step_name.toLowerCase().includes(q) || (r.drawing_revision ?? "").toLowerCase().includes(q) || (r.vendor_name ?? "").toLowerCase().includes(q);
                     })
-                    .map((r) => (
-                      <tr
-                        key={r.step_id}
-                        className={cn("border-t border-border cursor-pointer hover:bg-muted/40", jwPickerSelected.has(r.step_id) && "bg-blue-50")}
-                        onClick={() => setJwPickerSelected((prev) => { const n = new Set(prev); n.has(r.step_id) ? n.delete(r.step_id) : n.add(r.step_id); return n; })}
-                      >
-                        <td className="px-3 py-2">
-                          <input type="checkbox" checked={jwPickerSelected.has(r.step_id)} onChange={() => {}} />
-                        </td>
-                        <td className="px-3 py-2 font-mono font-medium text-blue-700">{r.jc_number}</td>
-                        <td className="px-3 py-2 font-mono text-blue-600">{r.drawing_revision || r.drawing_number || "—"}</td>
-                        <td className="px-3 py-2 text-muted-foreground truncate max-w-[160px]">{r.item_description || "—"}</td>
-                        <td className="px-3 py-2 text-right font-mono tabular-nums">{r.step_qty_sent ?? r.quantity_original}</td>
-                        <td className="px-3 py-2 text-muted-foreground">{r.step_unit || r.unit || "NOS"}</td>
-                        <td className="px-3 py-2 text-sm">{r.vendor_name || "—"}</td>
-                        <td className="px-3 py-2 text-sm text-muted-foreground">{r.step_name}</td>
-                      </tr>
-                    ))}
+                    .map((r) => {
+                      const isVendorMismatch = !!(selectedParty && r.vendor_id && r.vendor_id !== selectedParty.id);
+                      const isOverdue = r.return_before_date ? new Date(r.return_before_date) < new Date() : false;
+                      return (
+                        <tr
+                          key={r.step_id}
+                          className={cn(
+                            "border-t border-border cursor-pointer hover:bg-muted/40 transition-colors",
+                            jwPickerSelected.has(r.step_id) && "bg-blue-50 border-l-2 border-l-blue-500",
+                            isVendorMismatch && "opacity-75"
+                          )}
+                          onClick={() => setJwPickerSelected((prev) => { const n = new Set(prev); n.has(r.step_id) ? n.delete(r.step_id) : n.add(r.step_id); return n; })}
+                        >
+                          <td className="px-3 py-2">
+                            <input type="checkbox" checked={jwPickerSelected.has(r.step_id)} onChange={() => {}} />
+                          </td>
+                          <td className="px-3 py-2 font-mono font-medium text-blue-700">{r.jc_number}</td>
+                          <td className="px-3 py-2 font-mono text-xs text-slate-600">{r.drawing_revision || r.drawing_number || "—"}</td>
+                          <td className="px-3 py-2 text-muted-foreground text-xs max-w-[160px] truncate" title={r.item_description ?? ""}>{r.item_description || "—"}</td>
+                          <td className="px-3 py-2 text-right font-mono tabular-nums text-sm">{r.step_qty_sent ?? r.quantity_original}</td>
+                          <td className="px-3 py-2 text-xs text-muted-foreground">{r.step_unit || r.unit || "NOS"}</td>
+                          <td className="px-3 py-2 text-xs">
+                            {isVendorMismatch ? (
+                              <span className="text-amber-600 flex items-center gap-1">
+                                <Info className="h-3 w-3 shrink-0" /> {r.vendor_name || "—"}
+                              </span>
+                            ) : (r.vendor_name || "—")}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-muted-foreground">{r.step_name}</td>
+                          <td className="px-3 py-2 text-xs">
+                            {r.return_before_date ? (
+                              <span className={isOverdue ? "text-red-600 font-medium" : "text-slate-600"}>
+                                {format(new Date(r.return_before_date), "dd MMM yy")}
+                              </span>
+                            ) : <span className="text-muted-foreground">—</span>}
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className={cn(
+                              "inline-flex text-[10px] font-semibold px-1.5 py-0.5 rounded-full border",
+                              isOverdue ? "bg-red-50 text-red-700 border-red-200" :
+                              r.jc_status === "in_progress" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                              "bg-slate-100 text-slate-600 border-slate-200"
+                            )}>
+                              {isOverdue ? "Overdue" : r.jc_status === "in_progress" ? "In Progress" : "Draft"}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             )}
           </div>
           <DialogFooter className="mt-3">
+            <span className="text-sm text-muted-foreground mr-auto">
+              {jwPickerSelected.size > 0 ? `${jwPickerSelected.size} job work${jwPickerSelected.size !== 1 ? "s" : ""} selected` : "None selected"}
+            </span>
             <Button variant="outline" onClick={() => setJwPickerOpen(false)}>Cancel</Button>
             <Button
               disabled={jwPickerSelected.size === 0}

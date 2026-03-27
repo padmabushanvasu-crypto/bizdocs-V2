@@ -68,6 +68,9 @@ export default function PurchaseOrderForm() {
   const [paymentTerms, setPaymentTerms] = useState("");
   const [customPaymentTerms, setCustomPaymentTerms] = useState("");
   const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [deliveryContactPerson, setDeliveryContactPerson] = useState("");
+  const [deliveryContactPhone, setDeliveryContactPhone] = useState("");
+  const [deliveryAddressAutoFilled, setDeliveryAddressAutoFilled] = useState(false);
   const [specialInstructions, setSpecialInstructions] = useState("");
   const [internalRemarks, setInternalRemarks] = useState("");
   const [lineItems, setLineItems] = useState<POLineItem[]>([emptyLineItem(1)]);
@@ -83,6 +86,17 @@ export default function PurchaseOrderForm() {
     staleTime: 5 * 60 * 1000,
   });
   const COMPANY_STATE_CODE = companySettings?.state_code || "";
+
+  const companyDeliveryAddress = useMemo(() => {
+    if (!companySettings) return "";
+    return [
+      companySettings.address_line1,
+      companySettings.address_line2,
+      companySettings.city,
+      companySettings.state,
+      companySettings.pin_code,
+    ].filter(Boolean).join(", ");
+  }, [companySettings]);
 
   // Fetch vendors
   const { data: vendorsData } = useQuery({
@@ -117,6 +131,8 @@ export default function PurchaseOrderForm() {
       setReferenceNumber(existingPO.reference_number || "");
       setPaymentTerms(existingPO.payment_terms || "");
       setDeliveryAddress(existingPO.delivery_address || "");
+      setDeliveryContactPerson((existingPO as any).delivery_contact_person || "");
+      setDeliveryContactPhone((existingPO as any).delivery_contact_phone || "");
       setSpecialInstructions(existingPO.special_instructions || "");
       setInternalRemarks(existingPO.internal_remarks || "");
       setGstRate(existingPO.gst_rate || 18);
@@ -158,6 +174,13 @@ export default function PurchaseOrderForm() {
     }
     setPrefillApplied(true);
   }, [isEdit, prefillState, prefillApplied, vendors]);
+
+  useEffect(() => {
+    if (!isEdit && !deliveryAddressAutoFilled && companyDeliveryAddress) {
+      setDeliveryAddress(companyDeliveryAddress);
+      setDeliveryAddressAutoFilled(true);
+    }
+  }, [isEdit, deliveryAddressAutoFilled, companyDeliveryAddress]);
 
   const handleVendorSelect = (vendor: Party) => {
     setVendorId(vendor.id);
@@ -237,6 +260,8 @@ export default function PurchaseOrderForm() {
         reference_number: referenceNumber || null,
         payment_terms: paymentTerms === "Custom" ? customPaymentTerms : paymentTerms || null,
         delivery_address: deliveryAddress || null,
+        delivery_contact_person: deliveryContactPerson || null,
+        delivery_contact_phone: deliveryContactPhone || null,
         special_instructions: specialInstructions || null,
         internal_remarks: internalRemarks || null,
         sub_total: subTotal,
@@ -449,7 +474,31 @@ export default function PurchaseOrderForm() {
 
             <div>
               <Label className="text-sm font-medium text-slate-700">Delivery Address</Label>
-              <Textarea value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} className="mt-1" rows={2} placeholder="Defaults to company address" />
+              {!isEdit && deliveryAddressAutoFilled && deliveryAddress === companyDeliveryAddress && (
+                <div className="flex items-center justify-between mt-1 mb-1 rounded-md bg-blue-50 border border-blue-200 px-3 py-1.5 text-xs text-blue-700">
+                  <span>Auto-filled from your company address · Edit if delivering to a different location</span>
+                </div>
+              )}
+              {!isEdit && deliveryAddressAutoFilled && deliveryAddress !== companyDeliveryAddress && companyDeliveryAddress && (
+                <button
+                  type="button"
+                  onClick={() => setDeliveryAddress(companyDeliveryAddress)}
+                  className="text-[10px] text-blue-600 hover:underline mt-1 mb-1 block"
+                >
+                  Reset to company address
+                </button>
+              )}
+              <Textarea value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} className="mt-1" rows={2} placeholder="Delivery address" />
+              <div className="grid grid-cols-2 gap-3 mt-2">
+                <div>
+                  <Label className="text-xs font-medium text-slate-600">Contact Person</Label>
+                  <Input value={deliveryContactPerson} onChange={(e) => setDeliveryContactPerson(e.target.value)} className="mt-1 h-8 text-sm" placeholder="Name" />
+                </div>
+                <div>
+                  <Label className="text-xs font-medium text-slate-600">Contact Phone</Label>
+                  <Input value={deliveryContactPhone} onChange={(e) => setDeliveryContactPhone(e.target.value)} className="mt-1 h-8 text-sm" placeholder="Phone" />
+                </div>
+              </div>
             </div>
           </div>
         </div>

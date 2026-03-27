@@ -130,6 +130,14 @@ export default function StockRegister() {
     red: rows.filter((r) => r.stock_status === "red").length,
   };
 
+  const tabCounts: Record<TypeTab, number> = {
+    all: rows.length,
+    raw_material: rows.filter((r) => r.item_type === "raw_material").length,
+    component: rows.filter((r) => r.item_type === "component" || r.item_type === "sub_assembly").length,
+    finished_good: rows.filter((r) => r.item_type === "finished_good").length,
+    bought_out: rows.filter((r) => r.item_type === "bought_out").length,
+  };
+
   const handleCreatePO = (row: StockStatusRow) => {
     navigate(`/purchase-orders/new?item_id=${row.id}`);
   };
@@ -208,6 +216,11 @@ export default function StockRegister() {
             }`}
           >
             {tab.label}
+            {tabCounts[tab.value] > 0 && (
+              <span className="ml-1.5 text-[10px] font-semibold bg-slate-200 text-slate-600 rounded-full px-1.5 py-0.5 tabular-nums">
+                {tabCounts[tab.value]}
+              </span>
+            )}
           </button>
         ))}
       </div>
