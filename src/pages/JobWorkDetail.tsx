@@ -481,6 +481,7 @@ const { data: linkedDCs = [] } = useQuery<DeliveryChallan[]>({
           party_id: activeExternalStep?.vendor_id ?? null,
           party_name: activeExternalStep?.vendor_name ?? null,
           dc_type: "returnable",
+          return_before_date: activeExternalStep?.expected_return_date ?? null,
           line_items: steps
             .filter((s) => s.step_type === "external")
             .map((s) => ({
@@ -491,6 +492,7 @@ const { data: linkedDCs = [] } = useQuery<DeliveryChallan[]>({
               unit: s.unit ?? jc.unit,
               nature_of_process: s.name,
               drawing_number: jc.drawing_revision || jc.drawing_number,
+              rate: s.job_work_charges ?? 0,
               job_work_id: id,
               job_work_number: jc.jc_number,
               job_work_step_id: s.id,

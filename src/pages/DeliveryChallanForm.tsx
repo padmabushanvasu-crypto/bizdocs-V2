@@ -203,6 +203,7 @@ export default function DeliveryChallanForm() {
       const p = parties.find((p) => p.id === prefill.party_id);
       if (p) setSelectedParty(p);
     }
+    if (prefill.return_before_date) setReturnDueDate(new Date(prefill.return_before_date));
     if (prefill.line_items?.length) {
       const items: DCLineItem[] = (prefill.line_items as any[]).map((li, idx) => ({
         serial_number: idx + 1,
@@ -211,8 +212,8 @@ export default function DeliveryChallanForm() {
         drawing_number: li.drawing_number || "",
         unit: li.unit || "NOS",
         quantity: li.quantity || 0,
-        rate: 0,
-        amount: 0,
+        rate: li.rate || 0,
+        amount: Math.round((li.quantity || 0) * (li.rate || 0) * 100) / 100,
         nature_of_process: li.nature_of_process || "",
         qty_kgs: undefined,
         qty_sft: undefined,
@@ -279,22 +280,26 @@ export default function DeliveryChallanForm() {
       }
     }
 
-    const newItems: DCLineItem[] = selectedRows.map((r, idx) => ({
-      serial_number: lineItems.filter((i) => i.description.trim()).length + idx + 1,
-      item_code: r.item_code || "",
-      description: r.item_description || "",
-      drawing_number: r.drawing_revision || r.drawing_number || "",
-      unit: r.step_unit || r.unit || "NOS",
-      quantity: r.step_qty_sent ?? r.quantity_original,
-      rate: 0,
-      amount: 0,
-      nature_of_process: r.step_name || "",
-      qty_kgs: undefined,
-      qty_sft: undefined,
-      job_work_id: r.jc_id,
-      job_work_number: r.jc_number,
-      job_work_step_id: r.step_id,
-    }));
+    const newItems: DCLineItem[] = selectedRows.map((r, idx) => {
+      const qty = r.step_qty_sent ?? r.quantity_original;
+      const rate = r.job_work_charges ?? 0;
+      return {
+        serial_number: lineItems.filter((i) => i.description.trim()).length + idx + 1,
+        item_code: r.item_code || "",
+        description: r.item_description || "",
+        drawing_number: r.drawing_revision || r.drawing_number || "",
+        unit: r.step_unit || r.unit || "NOS",
+        quantity: qty,
+        rate,
+        amount: Math.round(qty * rate * 100) / 100,
+        nature_of_process: r.step_name || "",
+        qty_kgs: undefined,
+        qty_sft: undefined,
+        job_work_id: r.jc_id,
+        job_work_number: r.jc_number,
+        job_work_step_id: r.step_id,
+      };
+    });
 
     // Append (clearing blank placeholder if it's the only item)
     const existingFilled = lineItems.filter((i) => i.description.trim());

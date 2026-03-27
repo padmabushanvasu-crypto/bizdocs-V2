@@ -118,6 +118,8 @@ export interface OpenJobWorkDCItem {
   vendor_name: string | null;
   jc_status: string;
   return_before_date: string | null;
+  job_work_charges: number | null;
+  expected_return_date: string | null;
 }
 
 export interface DCLineItemWithDC {
@@ -514,7 +516,7 @@ export async function fetchOpenJobWorksForDC(vendorId?: string | null): Promise<
   const jcIds = jcData.map((jc: any) => jc.id);
   const { data: steps, error: stepsErr } = await (supabase as any)
     .from("job_card_steps")
-    .select("id, job_card_id, name, qty_sent, unit, vendor_id, vendor_name")
+    .select("id, job_card_id, name, qty_sent, unit, vendor_id, vendor_name, job_work_charges, expected_return_date")
     .in("job_card_id", jcIds)
     .eq("step_type", "external")
     .neq("status", "done")
@@ -543,6 +545,8 @@ export async function fetchOpenJobWorksForDC(vendorId?: string | null): Promise<
         vendor_name: s.vendor_name ?? null,
         jc_status: jc?.status ?? "in_progress",
         return_before_date: jc?.return_before_date ?? null,
+        job_work_charges: s.job_work_charges ?? null,
+        expected_return_date: s.expected_return_date ?? null,
       };
     });
 }

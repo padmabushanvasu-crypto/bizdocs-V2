@@ -25,6 +25,7 @@ import {
 } from "@/lib/job-works-api";
 import { fetchProcessRouteForItem } from "@/lib/bom-api";
 import { fetchItems, type Item } from "@/lib/items-api";
+import { fetchParties, type Party } from "@/lib/parties-api";
 import { formatCurrency } from "@/lib/gst-utils";
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId } from "@/lib/auth-helpers";
@@ -91,6 +92,13 @@ export default function JobWorks() {
   const [form, setForm] = useState(emptyForm);
   const [prefillData, setPrefillData] = useState<{ item_id: string; item_code: string; item_description: string; quantity: number } | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+
+  // Processing details (optional — for auto-creating an external step)
+  const [processorOpen, setProcessorOpen] = useState(false);
+  const [selectedProcessor, setSelectedProcessor] = useState<Party | null>(null);
+  const [procNatureOfProcess, setProcNatureOfProcess] = useState("");
+  const [procReturnDays, setProcReturnDays] = useState("");
+  const [procCharges, setProcCharges] = useState("");
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
@@ -160,6 +168,19 @@ export default function JobWorks() {
     enabled: !!selectedItem?.id,
   });
 
+  const { data: processorsData } = useQuery({
+    queryKey: ["processors-list"],
+    queryFn: async () => {
+      const [proc, both] = await Promise.all([
+        fetchParties({ type: "vendor", vendor_type: "processor", pageSize: 500 }),
+        fetchParties({ type: "vendor", vendor_type: "both", pageSize: 500 }),
+      ]);
+      return [...(proc.data ?? []), ...(both.data ?? [])].sort((a, b) => a.name.localeCompare(b.name));
+    },
+    enabled: newOpen,
+  });
+  const processors = processorsData ?? [];
+
   const createMutation = useMutation({
     mutationFn: async () => {
       const trackingMode = selectedItem?.item_type === "finished_good" ? "single" : "batch";
@@ -182,7 +203,29 @@ export default function JobWorks() {
       });
 
       let stepsCreated = 0;
-      if (selectedItem?.id) {
+
+      // If processing details entered, create an external step first
+      if (procNatureOfProcess || selectedProcessor) {
+        const returnDays = parseInt(procReturnDays) || 0;
+        const expectedReturnDate = returnDays > 0
+          ? new Date(Date.now() + returnDays * 86400000).toISOString().split("T")[0]
+          : undefined;
+        await createJobWorkStep({
+          job_card_id: jc.id,
+          step_number: 1,
+          step_type: "external",
+          name: procNatureOfProcess || "External Processing",
+          vendor_id: selectedProcessor?.id ?? undefined,
+          vendor_name: selectedProcessor?.name ?? undefined,
+          expected_return_date: expectedReturnDate,
+          job_work_charges: parseFloat(procCharges) || 0,
+          qty_sent: form.quantity_original,
+          unit: form.unit,
+          status: "pending",
+        });
+        stepsCreated++;
+      } else if (selectedItem?.id) {
+        // Auto-load from BOM process route
         const processSteps = await fetchProcessRouteForItem(selectedItem.id).catch(() => []);
         for (const step of processSteps) {
           await createJobWorkStep({
@@ -205,6 +248,10 @@ export default function JobWorks() {
       queryClient.invalidateQueries({ queryKey: ["jw-stats"] });
       setNewOpen(false);
       setSelectedItem(null);
+      setSelectedProcessor(null);
+      setProcNatureOfProcess("");
+      setProcReturnDays("");
+      setProcCharges("");
       setForm(emptyForm);
       toast({
         title: "Job Work created",
@@ -444,6 +491,88 @@ export default function JobWorks() {
           onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
           placeholder="Optional notes"
         />
+      </div>
+
+      {/* Processing Details */}
+      <div className="space-y-3 rounded-lg border border-dashed border-slate-300 p-3">
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Processing Details (optional)</p>
+        <p className="text-xs text-slate-400 -mt-2">Fill these in to create a ready-to-dispatch DC immediately after saving.</p>
+
+        <div className="space-y-1.5">
+          <Label>Processing Vendor</Label>
+          <Popover open={processorOpen} onOpenChange={setProcessorOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
+                {selectedProcessor ? selectedProcessor.name : "Select vendor (optional)..."}
+                <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-full p-0" align="start">
+              <Command>
+                <CommandInput placeholder="Search processors..." />
+                <CommandList>
+                  <CommandEmpty>No processor found.</CommandEmpty>
+                  <CommandGroup>
+                    {processors.map((p) => (
+                      <CommandItem
+                        key={p.id}
+                        value={p.name}
+                        onSelect={() => { setSelectedProcessor(p); setProcessorOpen(false); }}
+                      >
+                        <div>
+                          <p className="text-sm font-medium">{p.name}</p>
+                          {p.city && <p className="text-xs text-slate-400">{p.city}</p>}
+                        </div>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+          {selectedProcessor && (
+            <button
+              type="button"
+              className="text-xs text-slate-400 hover:text-destructive"
+              onClick={() => setSelectedProcessor(null)}
+            >
+              Clear vendor
+            </button>
+          )}
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Nature of Process</Label>
+          <Input
+            value={procNatureOfProcess}
+            onChange={(e) => setProcNatureOfProcess(e.target.value)}
+            placeholder="e.g. CNC Turning, Nickel Plating, Welding"
+          />
+          <p className="text-xs text-slate-400">This will appear on the Delivery Challan line item.</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label>Expected Return (days)</Label>
+            <Input
+              type="number"
+              min={1}
+              value={procReturnDays}
+              onChange={(e) => setProcReturnDays(e.target.value)}
+              placeholder="e.g. 7"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Job Work Charges (₹/pc)</Label>
+            <Input
+              type="number"
+              min={0}
+              value={procCharges}
+              onChange={(e) => setProcCharges(e.target.value)}
+              placeholder="Rate per piece"
+            />
+          </div>
+        </div>
       </div>
     </>
   );
