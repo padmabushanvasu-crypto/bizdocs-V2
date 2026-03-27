@@ -929,11 +929,25 @@ export interface VendorScorecard {
   city: string | null;
   phone1: string | null;
   gstin: string | null;
+  vendor_type: "raw_material_supplier" | "processor" | "both" | null;
+  // GRN (raw material receipt) quality metrics
+  grn_count: number;
+  grn_qty_received: number;
+  grn_qty_accepted: number;
+  grn_qty_rejected: number;
+  grn_rejection_rate_pct: number | null;
+  // DC (job work out) quality metrics
+  dc_count: number;
+  dc_qty_sent: number;
+  dc_qty_accepted: number;
+  dc_qty_rejected: number;
+  dc_rejection_rate_pct: number | null;
+  // Job card steps (legacy) metrics
   total_steps: number;
   total_qty_sent: number;
   total_qty_accepted: number;
   total_qty_rejected: number;
-  rejection_rate_pct: number;
+  rejection_rate_pct: number | null;
   avg_turnaround_days: number | null;
   on_time_rate_pct: number | null;
   overdue_steps: number;

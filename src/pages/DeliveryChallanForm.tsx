@@ -137,12 +137,16 @@ export default function DeliveryChallanForm() {
     queryFn: fetchOpenJobWorks,
   });
 
-  const { data: openJWsForDC = [], isLoading: isJWsLoading, isError: isJWsError } = useQuery<OpenJobWorkDCItem[]>({
+  const { data: openJWsForDC = [], isLoading: isJWsLoading, isError: isJWsError, refetch: refetchJWsForDC } = useQuery<OpenJobWorkDCItem[]>({
     queryKey: ["open-jws-for-dc"],
     queryFn: () => fetchOpenJobWorksForDC(),
     enabled: jwPickerOpen,
     staleTime: 0,
   });
+
+  useEffect(() => {
+    if (jwPickerOpen) refetchJWsForDC();
+  }, [jwPickerOpen]);
 
   const { data: existingDC } = useQuery({
     queryKey: ["delivery-challan", id],
@@ -1028,7 +1032,11 @@ export default function DeliveryChallanForm() {
                           });
                           setJwPickerSelected(e.target.checked ? new Set(filtered.map((r) => r.step_id)) : new Set());
                         }}
-                        checked={jwPickerSelected.size > 0 && openJWsForDC.every((r) => jwPickerSelected.has(r.step_id))}
+                        checked={jwPickerSelected.size > 0 && openJWsForDC.filter((r) => {
+                            if (selectedParty && jwVendorFilterOwn && r.vendor_id && r.vendor_id !== selectedParty.id) return false;
+                            const q = jwPickerSearch.toLowerCase();
+                            return !q || r.jc_number.toLowerCase().includes(q) || (r.item_description ?? "").toLowerCase().includes(q) || r.step_name.toLowerCase().includes(q) || (r.drawing_revision ?? "").toLowerCase().includes(q) || (r.vendor_name ?? "").toLowerCase().includes(q);
+                          }).every((r) => jwPickerSelected.has(r.step_id))}
                       />
                     </th>
                     <th className="px-3 py-2 text-left">JW Number</th>
@@ -1062,8 +1070,12 @@ export default function DeliveryChallanForm() {
                           )}
                           onClick={() => setJwPickerSelected((prev) => { const n = new Set(prev); n.has(r.step_id) ? n.delete(r.step_id) : n.add(r.step_id); return n; })}
                         >
-                          <td className="px-3 py-2">
-                            <input type="checkbox" checked={jwPickerSelected.has(r.step_id)} onChange={() => {}} />
+                          <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={jwPickerSelected.has(r.step_id)}
+                              onChange={() => setJwPickerSelected((prev) => { const n = new Set(prev); n.has(r.step_id) ? n.delete(r.step_id) : n.add(r.step_id); return n; })}
+                            />
                           </td>
                           <td className="px-3 py-2 font-mono font-medium text-blue-700">{r.jc_number}</td>
                           <td className="px-3 py-2 font-mono text-xs text-slate-600">{r.drawing_revision || r.drawing_number || "—"}</td>

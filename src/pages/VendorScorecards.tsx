@@ -9,6 +9,23 @@ import { formatCurrency } from "@/lib/gst-utils";
 import { exportToExcel } from "@/lib/export-utils";
 import { format } from "date-fns";
 
+function DataSourceBadge({ row }: { row: VendorScorecard }) {
+  const tags: { label: string; className: string }[] = [];
+  if (row.grn_count > 0) tags.push({ label: "GRN", className: "bg-blue-100 text-blue-700 border border-blue-200" });
+  if (row.dc_count > 0) tags.push({ label: "DC", className: "bg-purple-100 text-purple-700 border border-purple-200" });
+  if (row.total_steps > 0) tags.push({ label: "JW", className: "bg-slate-100 text-slate-600 border border-slate-200" });
+  if (tags.length === 0) return <span className="text-muted-foreground text-xs">—</span>;
+  return (
+    <div className="flex gap-1 flex-wrap">
+      {tags.map((t) => (
+        <span key={t.label} className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium ${t.className}`}>
+          {t.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function RatingBadge({ rating }: { rating: VendorScorecard["performance_rating"] }) {
   if (rating === "reliable") {
     return (
@@ -84,7 +101,7 @@ export default function VendorScorecards() {
     return rows.filter((r) => r.vendor_name.toLowerCase().includes(q));
   }, [rows, search]);
 
-  const withSteps = rows.filter((r) => r.total_steps > 0);
+  const withSteps = rows.filter((r) => r.total_steps > 0 || r.grn_count > 0 || r.dc_count > 0);
   const needReview = rows.filter((r) => r.performance_rating === "review").length;
   const onWatch = rows.filter((r) => r.performance_rating === "watch").length;
 
@@ -94,11 +111,19 @@ export default function VendorScorecards() {
       [
         { key: "vendor_name", label: "Vendor Name", type: "text", width: 24 },
         { key: "city", label: "City", type: "text", width: 14 },
-        { key: "total_steps", label: "Total Steps", type: "number", width: 12 },
-        { key: "total_qty_sent", label: "Qty Sent", type: "number", width: 10 },
-        { key: "total_qty_accepted", label: "Qty Accepted", type: "number", width: 12 },
-        { key: "total_qty_rejected", label: "Qty Rejected", type: "number", width: 12 },
-        { key: "rejection_rate_pct", label: "Rejection %", type: "number", width: 12 },
+        { key: "vendor_type", label: "Vendor Type", type: "text", width: 16 },
+        { key: "grn_count", label: "GRN Count", type: "number", width: 10 },
+        { key: "grn_qty_received", label: "GRN Qty Received", type: "number", width: 14 },
+        { key: "grn_qty_accepted", label: "GRN Qty Accepted", type: "number", width: 14 },
+        { key: "grn_qty_rejected", label: "GRN Qty Rejected", type: "number", width: 14 },
+        { key: "grn_rejection_rate_pct", label: "GRN Rejection %", type: "number", width: 14 },
+        { key: "dc_count", label: "DC Count", type: "number", width: 10 },
+        { key: "dc_qty_sent", label: "DC Qty Sent", type: "number", width: 12 },
+        { key: "dc_qty_accepted", label: "DC Qty Accepted", type: "number", width: 14 },
+        { key: "dc_qty_rejected", label: "DC Qty Rejected", type: "number", width: 14 },
+        { key: "dc_rejection_rate_pct", label: "DC Rejection %", type: "number", width: 14 },
+        { key: "total_steps", label: "JW Steps", type: "number", width: 10 },
+        { key: "rejection_rate_pct", label: "JW Rejection %", type: "number", width: 14 },
         { key: "avg_turnaround_days", label: "Avg Turnaround (days)", type: "number", width: 18 },
         { key: "on_time_rate_pct", label: "On-Time %", type: "number", width: 12 },
         { key: "overdue_steps", label: "Overdue Now", type: "number", width: 12 },
@@ -127,7 +152,7 @@ export default function VendorScorecards() {
             <Star className="h-5 w-5 text-amber-500" />
             Vendor Scorecards
           </h1>
-          <p className="text-sm text-slate-500 mt-1">Job work performance tracking</p>
+          <p className="text-sm text-slate-500 mt-1">Performance tracking across GRN receipts, DC job work, and job card steps</p>
         </div>
         <Button variant="outline" size="sm" className="gap-1.5 flex-shrink-0" onClick={handleExport}>
           <Download className="h-3.5 w-3.5" /> Export
@@ -139,7 +164,7 @@ export default function VendorScorecards() {
         <div className="paper-card">
           <p className="text-xs font-semibold text-slate-500">Total Vendors</p>
           <p className="text-2xl font-bold font-mono mt-1">{withSteps.length}</p>
-          <p className="text-xs text-muted-foreground mt-0.5">with job work history</p>
+          <p className="text-xs text-muted-foreground mt-0.5">with GRN, DC, or job work history</p>
         </div>
         <div className={`paper-card ${needReview > 0 ? "border-l-4 border-l-red-500" : ""}`}>
           <div className="flex items-center gap-1.5">
@@ -177,11 +202,11 @@ export default function VendorScorecards() {
               <tr>
                 <th>Vendor</th>
                 <th>City</th>
-                <th className="text-right">Steps</th>
-                <th className="text-right">Sent</th>
-                <th className="text-right">Accepted</th>
-                <th className="text-right">Rejected</th>
-                <th className="text-right">Rejection %</th>
+                <th>Source</th>
+                <th className="text-right">GRN Rej%</th>
+                <th className="text-right">DC Rej%</th>
+                <th className="text-right">JW Steps</th>
+                <th className="text-right">JW Rej%</th>
                 <th className="text-right">Avg Days</th>
                 <th className="text-right">On-Time %</th>
                 <th className="text-right">Overdue</th>
@@ -221,16 +246,27 @@ export default function VendorScorecards() {
                       {row.gstin && (
                         <p className="text-xs text-muted-foreground font-mono">{row.gstin}</p>
                       )}
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {[
+                          row.grn_count > 0 && `${row.grn_count} GRN${row.grn_count !== 1 ? "s" : ""}`,
+                          row.dc_count > 0 && `${row.dc_count} DC${row.dc_count !== 1 ? "s" : ""}`,
+                          row.total_steps > 0 && `${row.total_steps} JW step${row.total_steps !== 1 ? "s" : ""}`,
+                        ].filter(Boolean).join(" · ")}
+                      </p>
                     </td>
                     <td className="text-sm text-muted-foreground">{row.city ?? "—"}</td>
+                    <td><DataSourceBadge row={row} /></td>
+                    <td className="text-right">
+                      <RatePct value={row.grn_rejection_rate_pct != null ? Number(row.grn_rejection_rate_pct) : null} greenBelow={3} redAbove={5} />
+                    </td>
+                    <td className="text-right">
+                      <RatePct value={row.dc_rejection_rate_pct != null ? Number(row.dc_rejection_rate_pct) : null} greenBelow={3} redAbove={5} />
+                    </td>
                     <td className="text-right font-mono tabular-nums text-sm">
                       {row.total_steps > 0 ? row.total_steps : <span className="text-muted-foreground">—</span>}
                     </td>
-                    <td className="text-right font-mono tabular-nums text-sm">{Number(row.total_qty_sent)}</td>
-                    <td className="text-right font-mono tabular-nums text-sm text-green-700">{Number(row.total_qty_accepted)}</td>
-                    <td className="text-right font-mono tabular-nums text-sm text-red-600">{Number(row.total_qty_rejected)}</td>
                     <td className="text-right">
-                      <RatePct value={Number(row.rejection_rate_pct)} greenBelow={3} redAbove={5} />
+                      <RatePct value={row.rejection_rate_pct != null ? Number(row.rejection_rate_pct) : null} greenBelow={3} redAbove={5} />
                     </td>
                     <td className="text-right font-mono tabular-nums text-sm text-muted-foreground">
                       {row.avg_turnaround_days != null ? `${row.avg_turnaround_days}d` : "—"}
@@ -268,7 +304,7 @@ export default function VendorScorecards() {
       </div>
 
       <p className="text-xs text-muted-foreground text-center">
-        Click any row to view vendor details · Rating: Reliable &lt;3% rejection &amp; &gt;85% on-time · Watch: &lt;5% &amp; &gt;70% · Review: exceeds thresholds
+        Click any row to view vendor details · GRN = goods receipt quality · DC = job work out quality · JW = job card steps (legacy) · Rating uses worst-case rejection across all sources
       </p>
     </div>
   );
