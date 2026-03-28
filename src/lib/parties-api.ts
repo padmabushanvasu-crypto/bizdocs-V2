@@ -113,8 +113,47 @@ export async function deactivateParty(id: string) {
   return updateParty(id, { status: "inactive" });
 }
 
-export async function deleteParty(id: string) {
-  return deactivateParty(id);
+export async function deleteParty(id: string): Promise<{ deleted: boolean; deactivated: boolean }> {
+  const [
+    { count: poCount },
+    { count: dcCount },
+    { count: soCount },
+    { count: invoiceCount },
+    { count: receiptCount },
+  ] = await Promise.all([
+    (supabase as any).from("purchase_orders").select("id", { count: "exact", head: true }).eq("vendor_id", id),
+    (supabase as any).from("delivery_challans").select("id", { count: "exact", head: true }).eq("party_id", id),
+    (supabase as any).from("sales_orders").select("id", { count: "exact", head: true }).eq("customer_id", id),
+    (supabase as any).from("invoices").select("id", { count: "exact", head: true }).eq("customer_id", id),
+    (supabase as any).from("receipts").select("id", { count: "exact", head: true }).eq("party_id", id),
+  ]);
+  const hasRefs =
+    (poCount ?? 0) > 0 ||
+    (dcCount ?? 0) > 0 ||
+    (soCount ?? 0) > 0 ||
+    (invoiceCount ?? 0) > 0 ||
+    (receiptCount ?? 0) > 0;
+  if (hasRefs) {
+    await updateParty(id, { status: "inactive" });
+    return { deleted: false, deactivated: true };
+  }
+  const { error } = await (supabase as any).from("parties").delete().eq("id", id);
+  if (error) {
+    console.error("[deleteParty] error:", error);
+    throw new Error(error.message ?? JSON.stringify(error));
+  }
+  return { deleted: true, deactivated: false };
+}
+
+export async function deleteAllParties(): Promise<{ deleted: number; deactivated: number; errors: number }> {
+  const companyId = await getCompanyId();
+  const { data: allParties } = await (supabase as any)
+    .from("parties")
+    .select("id")
+    .eq("company_id", companyId);
+  const ids = (allParties ?? []).map((p: any) => p.id as string);
+  if (ids.length === 0) return { deleted: 0, deactivated: 0, errors: 0 };
+  return bulkDeleteParties(ids);
 }
 
 export async function bulkUpdatePartyStatus(ids: string[], status: string) {
@@ -168,6 +207,8 @@ export async function importPartiesBatch(
   onProgress?: (pct: number) => void
 ): Promise<{ imported: number; skipped: number; errors: string[]; skipReasons: SkipReason[]; updated?: number }> {
   const companyId = await getCompanyId();
+  if (!companyId) throw new Error("Company ID is missing — cannot import without company context");
+  console.log("[importPartiesBatch] start:", { companyId, rowCount: rows.length, firstRow: rows[0] });
 
   const { data: existingParties } = await (supabase as any)
     .from("parties").select("id, name, gstin").eq("company_id", companyId);

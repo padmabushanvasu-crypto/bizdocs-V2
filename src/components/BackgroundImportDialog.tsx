@@ -112,9 +112,17 @@ export default function BackgroundImportDialog({
 
     addJob(title, pendingRows, pendingRowNums, batchFn, {
       onComplete: () => {
-        invalidateKeys?.forEach((queryKey) =>
-          queryClient.invalidateQueries({ queryKey })
-        );
+        // Invalidate by predicate so all query-key variants (e.g. with filters)
+        // are covered, regardless of how many extra segments the key has.
+        invalidateKeys?.forEach((queryKey) => {
+          const root = queryKey[0];
+          if (root) {
+            queryClient.invalidateQueries({
+              predicate: (query) =>
+                Array.isArray(query.queryKey) && query.queryKey[0] === root,
+            });
+          }
+        });
       },
     });
 

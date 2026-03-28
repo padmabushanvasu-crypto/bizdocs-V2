@@ -240,6 +240,8 @@ export async function importItemsBatch(
   onProgress?: (pct: number) => void
 ): Promise<{ imported: number; skipped: number; errors: string[]; skipReasons: SkipReason[]; updated?: number }> {
   const companyId = await getCompanyId();
+  if (!companyId) throw new Error("Company ID is missing — cannot import without company context");
+  console.log("[importItemsBatch] start:", { companyId, rowCount: rows.length, firstRow: rows[0] });
 
   const { data: existingItems } = await supabase
     .from("items").select("id, item_code, drawing_revision").eq("company_id", companyId);

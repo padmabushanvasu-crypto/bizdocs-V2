@@ -10,7 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { fetchParties, deactivateParty, bulkDeleteParties, importPartiesBatch, type PartiesFilters, type VendorType } from "@/lib/parties-api";
+import { fetchParties, deactivateParty, deleteParty, deleteAllParties, bulkDeleteParties, importPartiesBatch, type PartiesFilters, type VendorType } from "@/lib/parties-api";
 import { useToast } from "@/hooks/use-toast";
 import BackgroundImportDialog from "@/components/BackgroundImportDialog";
 import { PARTIES_IMPORT_CONFIG, PARTY_FIELD_MAP } from "@/lib/import-utils";
@@ -124,6 +124,37 @@ export default function PartiesList() {
     },
   });
 
+  const deletePartyMutation = useMutation({
+    mutationFn: (id: string) => deleteParty(id),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["parties"] });
+      if (result.deactivated) {
+        toast({ title: "Party marked inactive", description: "This party has existing transactions and cannot be fully deleted." });
+      } else {
+        toast({ title: "Party deleted" });
+      }
+    },
+    onError: (err: any) => {
+      console.error("[PartiesList] deleteParty error:", err);
+      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const deleteAllMutation = useMutation({
+    mutationFn: () => deleteAllParties(),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["parties"] });
+      const parts: string[] = [];
+      if (result.deleted > 0) parts.push(`${result.deleted} deleted`);
+      if (result.deactivated > 0) parts.push(`${result.deactivated} deactivated (have transactions)`);
+      toast({ title: parts.join(", ") || "No parties to delete" });
+    },
+    onError: (err: any) => {
+      console.error("[PartiesList] deleteAll error:", err);
+      toast({ title: "Delete all failed", description: err.message, variant: "destructive" });
+    },
+  });
+
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -163,6 +194,18 @@ export default function PartiesList() {
           </Button>
           <Button variant="outline" onClick={() => setImportOpen(true)}>
             <Upload className="h-4 w-4 mr-1" /> Import
+          </Button>
+          <Button
+            variant="outline"
+            className="border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
+            disabled={parties.length === 0 || deleteAllMutation.isPending}
+            onClick={() => {
+              if (confirm(`Delete all ${totalCount} parties? Parties with transaction history will be marked inactive instead. This cannot be undone.`)) {
+                deleteAllMutation.mutate();
+              }
+            }}
+          >
+            <Trash2 className="h-4 w-4 mr-1" /> Clear All
           </Button>
           <Button onClick={() => navigate("/parties/new")} className="active:scale-[0.98] transition-transform">
             <Plus className="h-4 w-4 mr-1" /> Add New Party
@@ -362,6 +405,19 @@ export default function PartiesList() {
                           onClick={() => navigate(`/parties/${party.id}`)}
                         >
                           <Eye className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50"
+                          disabled={deletePartyMutation.isPending}
+                          onClick={() => {
+                            if (confirm(`Delete "${party.name}"? Parties with existing transactions will be marked inactive instead.`)) {
+                              deletePartyMutation.mutate(party.id);
+                            }
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
