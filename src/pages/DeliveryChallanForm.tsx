@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, ChevronDown, Info, ChevronLeft, Loader2 } from "lucide-react";
+import { Plus, Trash2, ChevronDown, Info, ChevronLeft, Loader2, AlertCircle } from "lucide-react";
 import { ItemSuggest } from "@/components/ItemSuggest";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -137,11 +137,12 @@ export default function DeliveryChallanForm() {
     queryFn: fetchOpenJobWorks,
   });
 
-  const { data: openJWsForDC = [], isLoading: isJWsLoading, isError: isJWsError, refetch: refetchJWsForDC } = useQuery<OpenJobWorkDCItem[]>({
+  const { data: openJWsForDC = [], isLoading: isJWsLoading, isError: isJWsError, error: jwsError, refetch: refetchJWsForDC } = useQuery<OpenJobWorkDCItem[]>({
     queryKey: ["open-jws-for-dc"],
     queryFn: () => fetchOpenJobWorksForDC(),
     enabled: jwPickerOpen,
     staleTime: 0,
+    retry: 1,
   });
 
   useEffect(() => {
@@ -1015,8 +1016,18 @@ export default function DeliveryChallanForm() {
                 Loading job works...
               </div>
             ) : isJWsError ? (
-              <div className="text-center py-10 text-sm text-destructive">
-                Failed to load job works. Please close and try again.
+              <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
+                <AlertCircle className="h-7 w-7 text-destructive" />
+                <p className="text-sm font-medium text-destructive">Failed to load job works</p>
+                {(jwsError as any)?.message && (
+                  <p className="text-xs text-muted-foreground max-w-xs">{(jwsError as any).message}</p>
+                )}
+                <button
+                  onClick={() => refetchJWsForDC()}
+                  className="mt-1 text-xs text-blue-600 underline hover:text-blue-800"
+                >
+                  Try again
+                </button>
               </div>
             ) : openJWsForDC.length === 0 ? (
               <div className="text-center py-10 text-sm text-muted-foreground">

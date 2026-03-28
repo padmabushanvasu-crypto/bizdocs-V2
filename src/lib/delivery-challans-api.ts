@@ -502,14 +502,18 @@ export async function fetchDCsForJobWork(jobWorkId: string): Promise<DeliveryCha
 
 export async function fetchOpenJobWorksForDC(vendorId?: string | null): Promise<OpenJobWorkDCItem[]> {
   const companyId = await getCompanyId();
+
   const { data: jcs, error: jcErr } = await (supabase as any)
     .from("job_cards")
-    .select("id, jc_number, item_code, item_description, drawing_revision, drawing_number, quantity_original, unit, status, return_before_date")
+    .select("id, jc_number, item_code, item_description, drawing_revision, drawing_number, quantity_original, unit, status")
     .eq("company_id", companyId)
     .in("status", ["in_progress", "on_hold"])
     .order("jc_number", { ascending: false })
     .limit(300);
-  if (jcErr) throw jcErr;
+  if (jcErr) {
+    console.error("[fetchOpenJobWorksForDC] job_cards query error:", jcErr);
+    throw jcErr;
+  }
   const jcData = (jcs ?? []) as any[];
   if (jcData.length === 0) return [];
 
@@ -521,7 +525,10 @@ export async function fetchOpenJobWorksForDC(vendorId?: string | null): Promise<
     .eq("step_type", "external")
     .neq("status", "done")
     .order("step_number", { ascending: true });
-  if (stepsErr) throw stepsErr;
+  if (stepsErr) {
+    console.error("[fetchOpenJobWorksForDC] job_card_steps query error:", stepsErr);
+    throw stepsErr;
+  }
 
   const jcMap = new Map(jcData.map((jc: any) => [jc.id, jc]));
   return ((steps ?? []) as any[])
@@ -544,7 +551,7 @@ export async function fetchOpenJobWorksForDC(vendorId?: string | null): Promise<
         vendor_id: s.vendor_id ?? null,
         vendor_name: s.vendor_name ?? null,
         jc_status: jc?.status ?? "in_progress",
-        return_before_date: jc?.return_before_date ?? null,
+        return_before_date: s.expected_return_date ?? null,
         job_work_charges: s.job_work_charges ?? null,
         expected_return_date: s.expected_return_date ?? null,
       };
