@@ -61,7 +61,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
     supabase
       .from("items")
       .select("item_type, current_stock")
-      .eq("is_active", true),
+      .eq("status", "active"),
   ]);
 
   const invoices = (invsRes.data ?? []) as any[];
