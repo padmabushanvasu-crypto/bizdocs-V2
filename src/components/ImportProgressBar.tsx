@@ -8,24 +8,42 @@ export function ImportProgressBar({ jobs }: { jobs: ImportJob[] }) {
     (j) => j.status === "queued" || j.status === "running"
   );
   const completedJobs = jobs.filter((j) => j.status === "completed");
+  const failedJobs = jobs.filter((j) => j.status === "failed");
 
-  // Track which completed job IDs have been auto-hidden
+  // Track which terminal job IDs have been auto-hidden
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
 
-  const completedKey = completedJobs.map((j) => j.id).join(",");
+  const terminalKey = [...completedJobs, ...failedJobs].map((j) => j.id).join(",");
   useEffect(() => {
-    if (completedJobs.length === 0) return;
-    const ids = completedJobs.map((j) => j.id);
+    const terminalIds = [...completedJobs, ...failedJobs].map((j) => j.id);
+    if (terminalIds.length === 0) return;
+    // Failed jobs stay visible longer so the user can read the error
+    const duration = failedJobs.length > 0 ? 10000 : 5000;
     const timer = setTimeout(() => {
-      setHiddenIds((prev) => new Set([...prev, ...ids]));
-    }, 5000);
+      setHiddenIds((prev) => new Set([...prev, ...terminalIds]));
+    }, duration);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [completedKey]);
+  }, [terminalKey]);
 
   const visibleCompleted = completedJobs.filter((j) => !hiddenIds.has(j.id));
+  const visibleFailed = failedJobs.filter((j) => !hiddenIds.has(j.id));
 
-  if (activeJobs.length === 0 && visibleCompleted.length === 0) return null;
+  if (activeJobs.length === 0 && visibleCompleted.length === 0 && visibleFailed.length === 0) return null;
+
+  // ── Failed state (red, auto-hides after 10s) ──────────────────────────────
+  if (activeJobs.length === 0 && visibleFailed.length > 0) {
+    const last = visibleFailed[visibleFailed.length - 1];
+    const errorMsg = last.errors[0] || "Unknown error";
+    return (
+      <div className="fixed bottom-16 md:bottom-0 left-0 right-0 z-50 bg-red-600 text-white text-sm shadow-lg">
+        <div className="flex items-center px-4 py-2 max-w-4xl mx-auto gap-2">
+          <span className="font-semibold shrink-0">✕ {last.type} import failed:</span>
+          <span className="truncate">{errorMsg}</span>
+        </div>
+      </div>
+    );
+  }
 
   // ── Completed state (green, auto-hides after 5s) ──────────────────────────
   if (activeJobs.length === 0 && visibleCompleted.length > 0) {

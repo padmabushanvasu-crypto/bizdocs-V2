@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { fetchItems, createItem, updateItem, deleteItem, bulkDeleteItems, type Item, type ItemFilters } from "@/lib/items-api";
 import ItemsImportDialog from "@/components/ItemsImportDialog";
 import { exportToExcel, ITEMS_EXPORT_COLS } from "@/lib/export-utils";
@@ -46,6 +47,7 @@ const emptyItem = {
 
 export default function Items() {
   const { toast } = useToast();
+  const { companyId } = useAuth();
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<ItemFilters>({ search: "", type: "all", status: "active" });
   const [formOpen, setFormOpen] = useState(false);
@@ -66,6 +68,7 @@ export default function Items() {
     initialPageParam: 1,
     getNextPageParam: (lastPage, allPages) =>
       lastPage.data.length === 100 ? allPages.length + 1 : undefined,
+    enabled: !!companyId,
   });
 
   const items = data?.pages.flatMap((p) => p.data) ?? [];

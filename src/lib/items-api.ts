@@ -239,9 +239,11 @@ export async function importItemsBatch(
   rowNums: number[],
   onProgress?: (pct: number) => void
 ): Promise<{ imported: number; skipped: number; errors: string[]; skipReasons: SkipReason[]; updated?: number }> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error("Import failed: session expired. Please sign out and sign in again.");
   const companyId = await getCompanyId();
-  if (!companyId) throw new Error("Company ID is missing — cannot import without company context");
-  console.log("[importItemsBatch] start:", { companyId, rowCount: rows.length, firstRow: rows[0] });
+  if (!companyId) throw new Error("Import failed: company ID is missing. Please complete company setup.");
+  console.log("[importItemsBatch] start:", { companyId, userId: session.user.id, rowCount: rows.length, firstRow: rows[0] });
 
   const { data: existingItems } = await supabase
     .from("items").select("id, item_code, drawing_revision").eq("company_id", companyId);

@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { fetchParties, deactivateParty, deleteParty, deleteAllParties, bulkDeleteParties, importPartiesBatch, type PartiesFilters, type VendorType } from "@/lib/parties-api";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import BackgroundImportDialog from "@/components/BackgroundImportDialog";
 import { PARTIES_IMPORT_CONFIG, PARTY_FIELD_MAP } from "@/lib/import-utils";
 import { exportToExcel, PARTIES_EXPORT_COLS } from "@/lib/export-utils";
@@ -58,6 +59,7 @@ export default function PartiesList() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { companyId } = useAuth();
   const [importOpen, setImportOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState<PartiesFilters>({
@@ -80,6 +82,7 @@ export default function PartiesList() {
     initialPageParam: 1,
     getNextPageParam: (lastPage, allPages) =>
       lastPage.data.length === 100 ? allPages.length + 1 : undefined,
+    enabled: !!companyId,
   });
 
   const parties = data?.pages.flatMap((p) => p.data) ?? [];

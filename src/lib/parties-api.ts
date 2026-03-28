@@ -206,9 +206,11 @@ export async function importPartiesBatch(
   rowNums: number[],
   onProgress?: (pct: number) => void
 ): Promise<{ imported: number; skipped: number; errors: string[]; skipReasons: SkipReason[]; updated?: number }> {
+  const { data: { session } } = await (supabase as any).auth.getSession();
+  if (!session) throw new Error("Import failed: session expired. Please sign out and sign in again.");
   const companyId = await getCompanyId();
-  if (!companyId) throw new Error("Company ID is missing — cannot import without company context");
-  console.log("[importPartiesBatch] start:", { companyId, rowCount: rows.length, firstRow: rows[0] });
+  if (!companyId) throw new Error("Import failed: company ID is missing. Please complete company setup.");
+  console.log("[importPartiesBatch] start:", { companyId, userId: session.user.id, rowCount: rows.length, firstRow: rows[0] });
 
   const { data: existingParties } = await (supabase as any)
     .from("parties").select("id, name, gstin").eq("company_id", companyId);

@@ -1274,8 +1274,22 @@ function ImportTab({
   };
 
   // FIX 6: queue the import instead of awaiting directly
-  const handleImport = () => {
+  const handleImport = async () => {
     if (validRows.length === 0) return;
+
+    // Verify session before queueing
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      toast({ title: "Session expired", description: "Please sign out and sign in again before importing.", variant: "destructive" });
+      return;
+    }
+    try {
+      await getCompanyId();
+    } catch {
+      toast({ title: "Company not found", description: "Please complete company setup before importing.", variant: "destructive" });
+      return;
+    }
+
     const rowsToImport = validRows;
     const rowNumsToImport = validRowNums;
     const parseSkips = skipReasons.filter((s) => s.reason.includes("skipped automatically"));

@@ -10,6 +10,8 @@ import {
   type ImportConfig, type SkipReason,
 } from "@/lib/import-utils";
 import { useImportQueue, type BatchImportFn } from "@/lib/import-queue";
+import { supabase } from "@/integrations/supabase/client";
+import { getCompanyId } from "@/lib/auth-helpers";
 
 interface BackgroundImportDialogProps {
   open: boolean;
@@ -107,8 +109,31 @@ export default function BackgroundImportDialog({
     }
   };
 
-  const handleImport = () => {
+  const handleImport = async () => {
     if (!pendingRows || !pendingRowNums || pendingRows.length === 0) return;
+
+    // Verify session is active before queueing
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      toast({
+        title: "Session expired",
+        description: "Please sign out and sign in again before importing.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Verify company context is available
+    try {
+      await getCompanyId();
+    } catch {
+      toast({
+        title: "Company not found",
+        description: "Please complete company setup before importing.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     addJob(title, pendingRows, pendingRowNums, batchFn, {
       onComplete: () => {
