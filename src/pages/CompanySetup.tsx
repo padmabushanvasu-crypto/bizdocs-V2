@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { setCompanyId } from "@/lib/auth-helpers";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +18,7 @@ export default function CompanySetup() {
   const { toast } = useToast();
   const { user, companyId, loading: authLoading, refreshProfile } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [companyName, setCompanyName] = useState("");
@@ -55,15 +57,32 @@ export default function CompanySetup() {
         _phone: phone || null,
       });
       if (rpcError) throw rpcError;
+
+      // Assert the known-good company ID immediately so no subsequent code can wipe it.
       setCompanyId(newCompanyId);
+      localStorage.setItem("bizdocs_company_setup_done", "true");
+
+      // Attempt a profile refresh, but re-assert afterwards.
+      // loadProfile may temporarily clear these flags if the DB hasn't yet
+      // reflected the new company_id on the profile row (replication lag),
+      // causing the repair branch to call clearCompanyId / removeItem.
       await refreshProfile();
+
+      // Re-assert: the RPC already confirmed success, so we own this state.
+      setCompanyId(newCompanyId);
+      localStorage.setItem("bizdocs_company_setup_done", "true");
+
       toast({ title: "Company set up successfully!" });
-      navigate("/");
+      setLoading(false);
+      setRedirecting(true);
+
+      // Small yield so React can flush the state update above before navigation.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      navigate("/", { replace: true });
     } catch (err: any) {
       const msg = err.message || "Something went wrong during setup.";
       setError(msg);
       toast({ title: "Setup failed", description: msg, variant: "destructive" });
-    } finally {
       setLoading(false);
     }
   };
@@ -121,8 +140,12 @@ export default function CompanySetup() {
               <Label htmlFor="phone">Phone</Label>
               <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91 98000 00000" />
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Setting up…" : error ? "Try Again" : "Continue to Dashboard"}
+            <Button type="submit" className="w-full" disabled={loading || redirecting}>
+              {redirecting ? (
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Redirecting…</>
+              ) : loading ? (
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Setting up…</>
+              ) : error ? "Try Again" : "Continue to Dashboard"}
             </Button>
             <p className="text-xs text-center text-muted-foreground">You can update these details later in Settings</p>
           </form>
