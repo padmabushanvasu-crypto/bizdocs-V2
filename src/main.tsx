@@ -21,14 +21,13 @@ Sentry.init({
   // Do not send PII like IP addresses
   sendDefaultPii: false,
 
+  // Session replay sample rates — must be at top level, not inside replayIntegration
+  replaysSessionSampleRate: 0.1,
+  replaysOnErrorSampleRate: 1.0,
+
   integrations: [
     Sentry.browserTracingIntegration(),
-    Sentry.replayIntegration({
-      // Record 10% of sessions normally
-      sessionSampleRate: 0.1,
-      // Record 100% of sessions with errors
-      errorSampleRate: 1.0,
-    }),
+    Sentry.replayIntegration(),
   ],
 });
 
