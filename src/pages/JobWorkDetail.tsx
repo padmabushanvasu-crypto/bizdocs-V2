@@ -615,13 +615,13 @@ const { data: linkedDCs = [] } = useQuery<DeliveryChallan[]>({
         {/* Row 3: Item name + drawing (full width, no constraint) */}
         {jc.item_description && (
           <div className="space-y-0.5">
-            <p className="text-sm text-muted-foreground">
-              {jc.item_code && <span className="font-mono mr-1">{jc.item_code}</span>}
+            <p className="text-base font-medium text-slate-800 break-words w-full">
+              {jc.item_code && <span className="font-mono mr-1 text-slate-500">{jc.item_code}</span>}
               {jc.item_description}
             </p>
             {(jc.drawing_revision || jc.drawing_number) && (
-              <p className="text-xs">
-                <span className="text-slate-400">Drawing: </span>
+              <p className="text-sm text-slate-500">
+                Drawing:{" "}
                 <span className="font-mono font-semibold text-slate-700">
                   {jc.drawing_revision ?? jc.drawing_number}
                 </span>
@@ -643,19 +643,19 @@ const { data: linkedDCs = [] } = useQuery<DeliveryChallan[]>({
           </p>
         )}
 
-        {/* Cost summary — one horizontal line */}
-        <div className="flex items-baseline gap-2">
-          <span className="text-2xl font-bold font-mono text-foreground">{fmt(totalCost)}</span>
-          <span className="text-sm text-muted-foreground">total cost</span>
+        {/* Cost summary — single horizontal line, never stacks */}
+        <div className="flex items-center gap-3 text-sm text-slate-600 mt-1">
+          <span className="font-bold font-mono text-slate-900 whitespace-nowrap">{fmt(totalCost)}</span>
+          <span className="whitespace-nowrap">total cost</span>
           {costPerUnit != null && (
-            <span className="text-sm text-muted-foreground whitespace-nowrap">· {fmt(costPerUnit)} / unit</span>
+            <span className="whitespace-nowrap">· {fmt(costPerUnit)} / unit</span>
           )}
         </div>
       </div>
 
       {/* Action bar: Raise DC + hint */}
       {!isCompleted && (
-        <div className="flex items-center gap-3 rounded-lg bg-slate-50 border border-slate-200 px-4 py-2.5">
+        <div className="flex items-center gap-3 rounded-lg bg-slate-50 border border-slate-200 p-3 mt-3">
           <Button
             size="sm"
             variant="outline"
@@ -664,7 +664,7 @@ const { data: linkedDCs = [] } = useQuery<DeliveryChallan[]>({
           >
             <Truck className="h-4 w-4 mr-1" /> Raise DC
           </Button>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-slate-500 italic">
             DC sends goods to vendor · Record return on the DC once received back
           </p>
         </div>
