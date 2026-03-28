@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from "react";
 import { Session, User } from "@supabase/supabase-js";
+import * as Sentry from "@sentry/react";
 import { supabase } from "@/integrations/supabase/client";
 import { setCompanyId, clearCompanyId } from "@/lib/auth-helpers";
 
@@ -129,6 +130,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           clearCompanyId();
           localStorage.removeItem("bizdocs_company_setup_done");
         }
+        // Set Sentry user context so error reports show which user was affected
+        Sentry.setUser({ id: user.id, email: user.email ?? undefined });
       }
     } catch (err) {
       console.error("[BizDocs auth] Failed to load profile:", err);
@@ -171,6 +174,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearCompanyId();
     localStorage.removeItem("bizdocs_company_setup_done");
     setProfile(null);
+    Sentry.setUser(null);
     await supabase.auth.signOut();
   };
 
