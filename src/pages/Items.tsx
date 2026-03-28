@@ -87,10 +87,17 @@ export default function Items() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      // Normalize optional text fields — send null, not empty string
       const payload = {
         ...form,
+        drawing_number: form.drawing_number || null,
+        drawing_revision: form.drawing_revision || null,
+        hsn_sac_code: form.hsn_sac_code || null,
+        notes: form.notes || null,
         standard_cost: form.standard_cost || 0,
-        min_stock_override: null,
+        // min_stock_override intentionally omitted — never set by this form;
+        // sending explicit null overwrites any value set via other means and
+        // fails if PostgREST schema cache hasn't refreshed since the migration.
       };
       if (editingItem) {
         return updateItem(editingItem.id, payload as any);
@@ -103,6 +110,7 @@ export default function Items() {
       toast({ title: editingItem ? "Item updated" : "Item created" });
     },
     onError: (err: any) => {
+      console.error("[Items] save error:", err);
       toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });

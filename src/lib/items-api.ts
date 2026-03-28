@@ -134,19 +134,40 @@ export async function createItem(item: Partial<Item>) {
   const itemCode = item.item_code?.trim()
     ? item.item_code.trim()
     : await generateItemCode(companyId, item.drawing_revision ?? item.drawing_number);
-  const { data, error } = await supabase
-    .from("items")
-    .insert({ ...item, item_code: itemCode, company_id: companyId } as any)
-    .select()
-    .single();
-  if (error) throw error;
-  return data as Item;
+  try {
+    const { data, error } = await (supabase as any)
+      .from("items")
+      .insert({ ...item, item_code: itemCode, company_id: companyId })
+      .select()
+      .single();
+    if (error) {
+      console.error("[createItem] error:", error);
+      throw new Error(error.message ?? JSON.stringify(error));
+    }
+    return data as Item;
+  } catch (err: any) {
+    console.error("[createItem] caught:", err);
+    throw err;
+  }
 }
 
 export async function updateItem(id: string, item: Partial<Item>) {
-  const { data, error } = await supabase.from("items").update(item as any).eq("id", id).select().single();
-  if (error) throw error;
-  return data as Item;
+  try {
+    const { data, error } = await (supabase as any)
+      .from("items")
+      .update(item)
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) {
+      console.error("[updateItem] error:", error);
+      throw new Error(error.message ?? JSON.stringify(error));
+    }
+    return data as Item;
+  } catch (err: any) {
+    console.error("[updateItem] caught:", err);
+    throw err;
+  }
 }
 
 export async function deleteItem(id: string) {

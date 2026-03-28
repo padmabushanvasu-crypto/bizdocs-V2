@@ -219,6 +219,7 @@ export default function SalesOrderForm() {
       }
     },
     onError: (err: any) => {
+      console.error("[SalesOrderForm] save error:", err);
       toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });

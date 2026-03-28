@@ -104,6 +104,7 @@ export default function FatCertificateDetail() {
       toast({ title: "Progress saved" });
     },
     onError: (err: any) => {
+      console.error("[FatCertificateDetail] save error:", err);
       toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });
@@ -139,6 +140,7 @@ export default function FatCertificateDetail() {
       toast({ title: "FAT Certificate completed", description: `Result: ${overallResult?.toUpperCase()}` });
     },
     onError: (err: any) => {
+      console.error("[FatCertificateDetail] complete error:", err);
       toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });

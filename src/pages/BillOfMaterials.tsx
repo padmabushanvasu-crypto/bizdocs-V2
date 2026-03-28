@@ -663,7 +663,7 @@ export default function BillOfMaterials() {
       setLineForm({ ...emptyLineForm });
       toast({ title: "Component added to BOM" });
     },
-    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err: any) => { console.error("[BOM] createLine error:", err); toast({ title: "Error", description: err.message, variant: "destructive" }); },
   });
 
   const updateLineMutation = useMutation({
@@ -676,7 +676,7 @@ export default function BillOfMaterials() {
       setEditLine(null);
       toast({ title: "BOM line updated" });
     },
-    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err: any) => { console.error("[BOM] updateLine error:", err); toast({ title: "Error", description: err.message, variant: "destructive" }); },
   });
 
   const deleteLineMutation = useMutation({
@@ -686,7 +686,7 @@ export default function BillOfMaterials() {
       queryClient.invalidateQueries({ queryKey: ["bom-explosion", selectedItem?.id] });
       toast({ title: "Component removed" });
     },
-    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err: any) => { console.error("[BOM] deleteLine error:", err); toast({ title: "Error", description: err.message, variant: "destructive" }); },
   });
 
   const bulkDeleteLinesMutation = useMutation({
@@ -698,7 +698,7 @@ export default function BillOfMaterials() {
       setDeleteLinesConfirmOpen(false);
       toast({ title: `${ids.length} component${ids.length !== 1 ? "s" : ""} removed` });
     },
-    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err: any) => { console.error("[BOM] bulkDeleteLines error:", err); toast({ title: "Error", description: err.message, variant: "destructive" }); },
   });
 
   // ── Mutations: Variants ──────────────────────────────────────────────────────
@@ -729,7 +729,7 @@ export default function BillOfMaterials() {
       setSelectedVariantId(created.id);
       toast({ title: "Variant created", description: created.variant_name });
     },
-    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err: any) => { console.error("[BOM] createVariant error:", err); toast({ title: "Error", description: err.message, variant: "destructive" }); },
   });
 
   const updateVariantMutation = useMutation({
@@ -740,7 +740,7 @@ export default function BillOfMaterials() {
       setEditVariant(null);
       toast({ title: "Variant updated" });
     },
-    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err: any) => { console.error("[BOM] updateVariant error:", err); toast({ title: "Error", description: err.message, variant: "destructive" }); },
   });
 
   const deleteVariantMutation = useMutation({
@@ -2874,7 +2874,13 @@ export default function BillOfMaterials() {
               Cancel
             </Button>
             <Button
-              onClick={() => createLineMutation.mutate()}
+              onClick={() => {
+                if (!lineForm.quantity || lineForm.quantity <= 0) {
+                  toast({ title: "Quantity must be greater than 0", variant: "destructive" });
+                  return;
+                }
+                createLineMutation.mutate();
+              }}
               disabled={createLineMutation.isPending || !selectedChild}
             >
               <CheckCircle2 className="h-4 w-4 mr-1" /> Add to BOM

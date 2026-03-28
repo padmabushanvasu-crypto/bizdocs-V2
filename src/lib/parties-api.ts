@@ -73,24 +73,40 @@ export async function fetchParty(id: string) {
 
 export async function createParty(party: PartyInsert) {
   const companyId = await getCompanyId();
-  const { data, error } = await supabase
-    .from("parties")
-    .insert({ ...party, company_id: companyId } as any)
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
+  try {
+    const { data, error } = await (supabase as any)
+      .from("parties")
+      .insert({ ...party, company_id: companyId })
+      .select()
+      .single();
+    if (error) {
+      console.error("[createParty] error:", error);
+      throw new Error(error.message ?? JSON.stringify(error));
+    }
+    return data;
+  } catch (err: any) {
+    console.error("[createParty] caught:", err);
+    throw err;
+  }
 }
 
 export async function updateParty(id: string, party: PartyUpdate) {
-  const { data, error } = await supabase
-    .from("parties")
-    .update(party)
-    .eq("id", id)
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
+  try {
+    const { data, error } = await (supabase as any)
+      .from("parties")
+      .update(party)
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) {
+      console.error("[updateParty] error:", error);
+      throw new Error(error.message ?? JSON.stringify(error));
+    }
+    return data;
+  } catch (err: any) {
+    console.error("[updateParty] caught:", err);
+    throw err;
+  }
 }
 
 export async function deactivateParty(id: string) {

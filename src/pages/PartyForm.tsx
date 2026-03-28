@@ -198,6 +198,7 @@ export default function PartyForm() {
       toast({ title: `Party ${isEdit ? "updated" : "saved"} successfully` });
       navigate(`/parties/${result.id}`);
     } catch (err: any) {
+      console.error("[PartyForm] save error:", err);
       toast({ title: err.message || "Failed to save party", variant: "destructive" });
     } finally {
       setSaving(false);

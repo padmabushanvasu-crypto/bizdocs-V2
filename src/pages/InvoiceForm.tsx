@@ -387,6 +387,7 @@ export default function InvoiceForm() {
       }
     },
     onError: (err: any) => {
+      console.error("[InvoiceForm] save error:", err);
       toast({ title: "Error saving invoice", description: err.message, variant: "destructive" });
     },
   });

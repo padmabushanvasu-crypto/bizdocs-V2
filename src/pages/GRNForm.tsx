@@ -222,6 +222,7 @@ export default function GRNForm() {
       }
     },
     onError: (err: any) => {
+      console.error("[GRNForm] save error:", err);
       toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });

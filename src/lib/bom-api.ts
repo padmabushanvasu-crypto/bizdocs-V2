@@ -344,28 +344,36 @@ export async function createBomLine(data: {
   lead_time_days?: number;
 }): Promise<BomLine> {
   const companyId = await getCompanyId();
-  const { data: bl, error } = await (supabase as any)
-    .from("bom_lines")
-    .insert({
-      company_id: companyId,
-      parent_item_id: data.parent_item_id,
-      child_item_id: data.child_item_id,
-      quantity: data.quantity,
-      unit: data.unit ?? null,
-      bom_level: data.bom_level ?? 1,
-      notes: data.notes ?? null,
-      variant_id: data.variant_id ?? null,
-      is_critical: data.is_critical ?? false,
-      scrap_factor: data.scrap_factor ?? 0,
-      reference_designator: data.reference_designator ?? null,
-      drawing_number: data.drawing_number ?? null,
-      make_or_buy: data.make_or_buy ?? "make",
-      lead_time_days: data.lead_time_days ?? 0,
-    })
-    .select()
-    .single();
-  if (error) throw error;
-  return bl as BomLine;
+  try {
+    const { data: bl, error } = await (supabase as any)
+      .from("bom_lines")
+      .insert({
+        company_id: companyId,
+        parent_item_id: data.parent_item_id,
+        child_item_id: data.child_item_id,
+        quantity: data.quantity,
+        unit: data.unit ?? null,
+        bom_level: data.bom_level ?? 1,
+        notes: data.notes ?? null,
+        variant_id: data.variant_id ?? null,
+        is_critical: data.is_critical ?? false,
+        scrap_factor: data.scrap_factor ?? 0,
+        reference_designator: data.reference_designator ?? null,
+        drawing_number: data.drawing_number ?? null,
+        make_or_buy: data.make_or_buy ?? "make",
+        lead_time_days: data.lead_time_days ?? 0,
+      })
+      .select()
+      .single();
+    if (error) {
+      console.error("[createBomLine] error:", error);
+      throw new Error(error.message ?? JSON.stringify(error));
+    }
+    return bl as BomLine;
+  } catch (err: any) {
+    console.error("[createBomLine] caught:", err);
+    throw err;
+  }
 }
 
 export async function updateBomLine(id: string, data: Partial<BomLine>): Promise<BomLine> {

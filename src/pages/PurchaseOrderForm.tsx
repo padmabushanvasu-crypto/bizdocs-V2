@@ -305,6 +305,7 @@ export default function PurchaseOrderForm() {
       }
     },
     onError: (err: any) => {
+      console.error("[PurchaseOrderForm] save error:", err);
       toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });
