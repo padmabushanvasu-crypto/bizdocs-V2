@@ -200,19 +200,19 @@ export default function VendorScorecards() {
           <table className="w-full data-table">
             <thead>
               <tr>
-                <th>Vendor</th>
-                <th>City</th>
-                <th>Source</th>
-                <th className="text-right">GRN Rej%</th>
-                <th className="text-right">DC Rej%</th>
-                <th className="text-right">JW Steps</th>
-                <th className="text-right">JW Rej%</th>
-                <th className="text-right">Avg Days</th>
-                <th className="text-right">On-Time %</th>
-                <th className="text-right">Overdue</th>
-                <th className="text-right">Total Charges</th>
-                <th>Rating</th>
-                <th className="text-right">Last Used</th>
+                <th className="text-left min-w-[180px] px-3 py-2">Vendor</th>
+                <th className="text-left min-w-[100px] px-3 py-2">City</th>
+                <th className="text-left min-w-[80px] px-3 py-2">Source</th>
+                <th className="text-right min-w-[80px] px-3 py-2">GRN Rej%</th>
+                <th className="text-right min-w-[80px] px-3 py-2">DC Rej%</th>
+                <th className="text-right min-w-[80px] px-3 py-2">JW Steps</th>
+                <th className="text-right min-w-[80px] px-3 py-2">JW Rej%</th>
+                <th className="text-right min-w-[80px] px-3 py-2">Avg Days</th>
+                <th className="text-right min-w-[80px] px-3 py-2">On-Time %</th>
+                <th className="text-right min-w-[80px] px-3 py-2">Overdue</th>
+                <th className="text-right min-w-[100px] px-3 py-2">Total Charges</th>
+                <th className="text-center min-w-[90px] px-3 py-2">Rating</th>
+                <th className="text-right min-w-[100px] px-3 py-2">Last Used</th>
               </tr>
             </thead>
             <tbody>
@@ -241,7 +241,7 @@ export default function VendorScorecards() {
                     }`}
                     onClick={() => navigate(`/parties/${row.vendor_id}`)}
                   >
-                    <td>
+                    <td className="text-left px-3 py-2">
                       <p className="font-medium text-sm">{row.vendor_name}</p>
                       {row.gstin && (
                         <p className="text-xs text-muted-foreground font-mono">{row.gstin}</p>
@@ -254,27 +254,27 @@ export default function VendorScorecards() {
                         ].filter(Boolean).join(" · ")}
                       </p>
                     </td>
-                    <td className="text-sm text-muted-foreground">{row.city ?? "—"}</td>
-                    <td><DataSourceBadge row={row} /></td>
-                    <td className="text-right">
+                    <td className="text-left px-3 py-2 text-sm text-muted-foreground">{row.city ?? "—"}</td>
+                    <td className="text-left px-3 py-2"><DataSourceBadge row={row} /></td>
+                    <td className="text-right px-3 py-2">
                       <RatePct value={row.grn_rejection_rate_pct != null ? Number(row.grn_rejection_rate_pct) : null} greenBelow={3} redAbove={5} />
                     </td>
-                    <td className="text-right">
+                    <td className="text-right px-3 py-2">
                       <RatePct value={row.dc_rejection_rate_pct != null ? Number(row.dc_rejection_rate_pct) : null} greenBelow={3} redAbove={5} />
                     </td>
-                    <td className="text-right font-mono tabular-nums text-sm">
+                    <td className="text-right px-3 py-2 font-mono tabular-nums text-sm">
                       {row.total_steps > 0 ? row.total_steps : <span className="text-muted-foreground">—</span>}
                     </td>
-                    <td className="text-right">
+                    <td className="text-right px-3 py-2">
                       <RatePct value={row.rejection_rate_pct != null ? Number(row.rejection_rate_pct) : null} greenBelow={3} redAbove={5} />
                     </td>
-                    <td className="text-right font-mono tabular-nums text-sm text-muted-foreground">
+                    <td className="text-right px-3 py-2 font-mono tabular-nums text-sm text-muted-foreground">
                       {row.avg_turnaround_days != null ? `${row.avg_turnaround_days}d` : "—"}
                     </td>
-                    <td className="text-right">
+                    <td className="text-right px-3 py-2">
                       <OnTimePct value={row.on_time_rate_pct != null ? Number(row.on_time_rate_pct) : null} />
                     </td>
-                    <td className="text-right">
+                    <td className="text-right px-3 py-2">
                       {Number(row.overdue_steps) > 0 ? (
                         <span className="inline-flex items-center gap-1 text-red-600 font-semibold text-sm">
                           <AlertTriangle className="h-3.5 w-3.5" />
@@ -284,13 +284,13 @@ export default function VendorScorecards() {
                         <span className="text-muted-foreground text-sm">—</span>
                       )}
                     </td>
-                    <td className="text-right font-mono tabular-nums text-sm font-medium">
+                    <td className="text-right px-3 py-2 font-mono tabular-nums text-sm font-medium">
                       {formatCurrency(Number(row.total_charges))}
                     </td>
-                    <td>
+                    <td className="text-center px-3 py-2">
                       <RatingBadge rating={row.performance_rating} />
                     </td>
-                    <td className="text-right text-sm text-muted-foreground">
+                    <td className="text-right px-3 py-2 text-sm text-muted-foreground">
                       {row.last_used_at
                         ? format(new Date(row.last_used_at), "dd MMM yyyy")
                         : "—"}
