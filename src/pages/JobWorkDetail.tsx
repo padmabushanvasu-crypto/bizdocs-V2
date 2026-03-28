@@ -562,8 +562,9 @@ const { data: linkedDCs = [] } = useQuery<DeliveryChallan[]>({
       </button>
 
       {/* header */}
-      <div className="flex items-start gap-3">
-        <div className="flex-1 min-w-0">
+      <div className="space-y-2">
+        {/* Row 2: JW number + status badge (left) | On Hold + Complete JC (right) */}
+        <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold text-slate-900 font-mono">{jc.jc_number}</h1>
             {jc.status === "completed" && (
@@ -576,97 +577,98 @@ const { data: linkedDCs = [] } = useQuery<DeliveryChallan[]>({
               <Badge variant="outline" className="text-xs">In Progress</Badge>
             )}
           </div>
-          {jc.item_description && (
-            <div className="mt-1 space-y-0.5">
-              <p className="text-sm text-muted-foreground">
-                {jc.item_code && <span className="font-mono mr-1">{jc.item_code}</span>}
-                {jc.item_description}
-              </p>
-              {(jc.drawing_revision || jc.drawing_number) && (
-                <p className="text-xs">
-                  <span className="text-slate-400">Drawing: </span>
-                  <span className="font-mono font-semibold text-slate-700">
-                    {jc.drawing_revision ?? jc.drawing_number}
-                  </span>
-                  {jc.drawing_revision && jc.drawing_number && jc.drawing_number !== jc.drawing_revision && (
-                    <span className="font-mono text-slate-400 ml-1">({jc.drawing_number})</span>
-                  )}
-                </p>
-              )}
-              {(jc as any).item_type && (
-                <p className="text-xs text-slate-400">
-                  Type: <span className="capitalize">{String((jc as any).item_type).replace(/_/g, " ")}</span>
-                </p>
-              )}
+          {!isCompleted && (
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  if (jc.status === "on_hold") {
+                    if (jc.item_id) {
+                      setMaterialIssueOpen(true);
+                    } else {
+                      holdMutation.mutate("in_progress");
+                    }
+                  } else {
+                    holdMutation.mutate("on_hold");
+                  }
+                }}
+                disabled={holdMutation.isPending}
+              >
+                {jc.status === "on_hold" ? (
+                  <>
+                    <Play className="h-4 w-4 mr-1" /> Resume
+                  </>
+                ) : (
+                  <>
+                    <Pause className="h-4 w-4 mr-1" /> On Hold
+                  </>
+                )}
+              </Button>
+              <Button size="sm" onClick={handleOpenComplete}>
+                <CheckCircle2 className="h-4 w-4 mr-1" /> Complete JC
+              </Button>
             </div>
           )}
-          {jc.batch_ref && (
-            <p className="text-xs text-muted-foreground">
-              {jc.tracking_mode === "batch" ? "Batch" : "Serial"}: {jc.batch_ref}
-            </p>
-          )}
-          {/* Running total — prominent */}
-          <div className="flex items-baseline gap-2 mt-1.5">
-            <span className="text-2xl font-bold font-mono text-foreground">{fmt(totalCost)}</span>
-            <span className="text-sm text-muted-foreground">total cost</span>
-            {costPerUnit != null && (
-              <span className="text-sm text-muted-foreground">· {fmt(costPerUnit)} / unit</span>
-            )}
-          </div>
         </div>
 
-        {/* Action buttons */}
-        <div className="flex items-center gap-2 shrink-0 flex-wrap">
-          {!isCompleted && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="border-blue-300 text-blue-700 hover:bg-blue-50"
-              onClick={handleRaiseDC}
-            >
-              <Truck className="h-4 w-4 mr-1" /> Raise DC
-            </Button>
-          )}
-          {!isCompleted && (
-            <p className="text-xs text-muted-foreground italic self-center hidden md:block">
-              DC sends goods to vendor · Record return on the DC once received back
+        {/* Row 3: Item name + drawing (full width, no constraint) */}
+        {jc.item_description && (
+          <div className="space-y-0.5">
+            <p className="text-sm text-muted-foreground">
+              {jc.item_code && <span className="font-mono mr-1">{jc.item_code}</span>}
+              {jc.item_description}
             </p>
-          )}
-          {!isCompleted && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                if (jc.status === "on_hold") {
-                  if (jc.item_id) {
-                    setMaterialIssueOpen(true);
-                  } else {
-                    holdMutation.mutate("in_progress");
-                  }
-                } else {
-                  holdMutation.mutate("on_hold");
-                }
-              }}
-              disabled={holdMutation.isPending}
-            >
-              {jc.status === "on_hold" ? (
-                <>
-                  <Play className="h-4 w-4 mr-1" /> Resume
-                </>
-              ) : (
-                <>
-                  <Pause className="h-4 w-4 mr-1" /> On Hold
-                </>
-              )}
-            </Button>
-          )}
-          {!isCompleted && (
-            <Button size="sm" onClick={handleOpenComplete}>
-              <CheckCircle2 className="h-4 w-4 mr-1" /> Complete JC
-            </Button>
+            {(jc.drawing_revision || jc.drawing_number) && (
+              <p className="text-xs">
+                <span className="text-slate-400">Drawing: </span>
+                <span className="font-mono font-semibold text-slate-700">
+                  {jc.drawing_revision ?? jc.drawing_number}
+                </span>
+                {jc.drawing_revision && jc.drawing_number && jc.drawing_number !== jc.drawing_revision && (
+                  <span className="font-mono text-slate-400 ml-1">({jc.drawing_number})</span>
+                )}
+              </p>
+            )}
+            {(jc as any).item_type && (
+              <p className="text-xs text-slate-400">
+                Type: <span className="capitalize">{String((jc as any).item_type).replace(/_/g, " ")}</span>
+              </p>
+            )}
+          </div>
+        )}
+        {jc.batch_ref && (
+          <p className="text-xs text-muted-foreground">
+            {jc.tracking_mode === "batch" ? "Batch" : "Serial"}: {jc.batch_ref}
+          </p>
+        )}
+
+        {/* Cost summary — one horizontal line */}
+        <div className="flex items-baseline gap-2">
+          <span className="text-2xl font-bold font-mono text-foreground">{fmt(totalCost)}</span>
+          <span className="text-sm text-muted-foreground">total cost</span>
+          {costPerUnit != null && (
+            <span className="text-sm text-muted-foreground whitespace-nowrap">· {fmt(costPerUnit)} / unit</span>
           )}
         </div>
       </div>
+
+      {/* Action bar: Raise DC + hint */}
+      {!isCompleted && (
+        <div className="flex items-center gap-3 rounded-lg bg-slate-50 border border-slate-200 px-4 py-2.5">
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-blue-300 text-blue-700 hover:bg-blue-50 shrink-0"
+            onClick={handleRaiseDC}
+          >
+            <Truck className="h-4 w-4 mr-1" /> Raise DC
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            DC sends goods to vendor · Record return on the DC once received back
+          </p>
+        </div>
+      )}
 
       {/* location banner */}
       {jc.current_location === "at_vendor" ? (
