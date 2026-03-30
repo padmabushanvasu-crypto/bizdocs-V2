@@ -40,6 +40,20 @@ export default function CompanySetup() {
     setStateCode(s?.code ?? "");
   };
 
+  const handleGstinChange = (val: string) => {
+    const upper = val.toUpperCase();
+    setGstin(upper);
+    // Auto-derive state from first 2 digits of GSTIN if no state manually selected
+    if (upper.length >= 2 && !state) {
+      const code = upper.substring(0, 2);
+      const matched = INDIAN_STATES.find((st) => st.code === code);
+      if (matched) {
+        setState(matched.name);
+        setStateCode(matched.code);
+      }
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!companyName.trim()) {
@@ -49,14 +63,26 @@ export default function CompanySetup() {
     setLoading(true);
     setError(null);
     try {
-      const { data: newCompanyId, error: rpcError } = await supabase.rpc("setup_company" as any, {
+      // Derive state_code from GSTIN if still missing (belt-and-suspenders)
+      const resolvedStateCode = stateCode || (gstin.length >= 2 ? gstin.substring(0, 2) : null) || null;
+      const resolvedState = state || (resolvedStateCode ? (INDIAN_STATES.find((s) => s.code === resolvedStateCode)?.name ?? null) : null);
+
+      const params = {
         _company_name: companyName.trim(),
         _gstin: gstin || null,
-        _state: state || null,
-        _state_code: stateCode || null,
+        _state: resolvedState,
+        _state_code: resolvedStateCode,
         _phone: phone || null,
-      });
-      if (rpcError) throw rpcError;
+      };
+      console.log("[setup_company] params:", params);
+
+      const result = await supabase.rpc("setup_company" as any, params);
+      console.log("[setup_company] result:", result);
+      if (result.error) {
+        console.error("[setup_company] error:", result.error);
+        throw result.error;
+      }
+      const newCompanyId = result.data;
 
       // Assert the known-good company ID immediately so no subsequent code can wipe it.
       setCompanyId(newCompanyId);
@@ -80,6 +106,7 @@ export default function CompanySetup() {
       await new Promise((resolve) => setTimeout(resolve, 300));
       navigate("/", { replace: true });
     } catch (err: any) {
+      console.error("[setup_company] caught:", err);
       const msg = err.message || "Something went wrong during setup.";
       setError(msg);
       toast({ title: "Setup failed", description: msg, variant: "destructive" });
@@ -123,7 +150,7 @@ export default function CompanySetup() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="gstin">GSTIN</Label>
-              <Input id="gstin" value={gstin} onChange={(e) => setGstin(e.target.value.toUpperCase())} placeholder="29AABCT1332L1ZX" maxLength={15} />
+              <Input id="gstin" value={gstin} onChange={(e) => handleGstinChange(e.target.value)} placeholder="29AABCT1332L1ZX" maxLength={15} />
             </div>
             <div className="space-y-2">
               <Label>State</Label>
