@@ -13,7 +13,6 @@ import {
   fetchDeliveryChallan,
   cancelDeliveryChallan,
   fetchDCReturns,
-  recordLineItemReturn,
   recordEnhancedReturn,
   fetchBomStagesForItemDC,
   fetchComponentProcessingLog,
@@ -79,13 +78,6 @@ export default function DeliveryChallanDetail() {
   const [retReworkVendorId, setRetReworkVendorId] = useState<string | null>(null);
   const [retReworkVendorName, setRetReworkVendorName] = useState('');
   const [retSaving, setRetSaving] = useState(false);
-  // Keep old state for backward compat with old dialog (will be removed)
-  const [lineReturnId, setLineReturnId] = useState<string | null>(null);
-  const [lineReturnItem, setLineReturnItem] = useState<any>(null);
-  const [lineReturnQtyReceived, setLineReturnQtyReceived] = useState(0);
-  const [lineReturnQtyAccepted, setLineReturnQtyAccepted] = useState(0);
-  const [lineReturnReason, setLineReturnReason] = useState("");
-  const [lineReturnSaving, setLineReturnSaving] = useState(false);
 
   const { data: dc, isLoading } = useQuery({
     queryKey: ["delivery-challan", id],
@@ -126,13 +118,17 @@ export default function DeliveryChallanDetail() {
     setReturnBomStages([]);
     setReturnProcessingLog(null);
 
-    const itemIdHint = lineItem.item_id ?? null;
+    let itemIdHint: string | null = lineItem.item_id ?? null;
+    if (!itemIdHint && lineItem.item_code) {
+      const { data: itemRow } = await (supabase as any).from('items').select('id').eq('item_code', lineItem.item_code).maybeSingle();
+      itemIdHint = itemRow?.id ?? null;
+    }
     if (itemIdHint) {
       const [stages, log] = await Promise.all([
         fetchBomStagesForItemDC(itemIdHint),
         (async () => {
           const { data: dcRow } = await (supabase as any).from('delivery_challans').select('company_id').eq('id', id!).single();
-          if (dcRow?.company_id) return fetchComponentProcessingLog(dcRow.company_id, itemIdHint);
+          if (dcRow?.company_id) return fetchComponentProcessingLog(dcRow.company_id, itemIdHint!);
           return null;
         })(),
       ]);

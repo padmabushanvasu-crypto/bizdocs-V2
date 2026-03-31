@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, AlertTriangle, PackageCheck, ChevronLeft, Info, Plus } from "lucide-react";
@@ -101,6 +101,7 @@ export default function GRNForm() {
           rejected_quantity: 0,
           rejection_reason: "",
           remarks: "",
+          rejection_action: null,
         };
       });
     setLineItems(items);
@@ -122,6 +123,7 @@ export default function GRNForm() {
         rejected_quantity: 0,
         rejection_reason: "",
         remarks: "",
+        rejection_action: null,
       },
     ]);
   };
@@ -426,7 +428,8 @@ export default function GRNForm() {
               </thead>
               <tbody>
                 {lineItems.map((item, index) => (
-                  <tr key={index} className="border-t border-border">
+                  <React.Fragment key={index}>
+                  <tr className="border-t border-border">
                     <td className="px-3 py-2 text-sm font-medium">
                       {item.po_line_item_id
                         ? item.description
@@ -493,36 +496,41 @@ export default function GRNForm() {
                       ) : (
                         <span className="text-muted-foreground text-sm">—</span>
                       )}
-                      {item.rejected_quantity > 0 && (
-                        <div className="bg-red-50 border border-red-100 rounded p-2 mt-1 space-y-2">
-                          <p className="text-xs font-medium text-red-700">What to do with {item.rejected_quantity} rejected units?</p>
-                          <div className="space-y-1">
+                    </td>
+                    <td className="px-3 py-2 text-sm text-muted-foreground">{item.unit}</td>
+                  </tr>
+                  {item.rejected_quantity > 0 && (
+                    <tr className="bg-red-50 border-t border-red-100">
+                      <td colSpan={10} className="px-4 py-2">
+                        <div className="flex flex-wrap items-center gap-4">
+                          <p className="text-xs font-medium text-red-700">What to do with {item.rejected_quantity} rejected unit{item.rejected_quantity > 1 ? 's' : ''}?</p>
+                          <div className="flex flex-wrap gap-4">
                             {[
                               { value: 'return_to_supplier', label: 'Return to supplier' },
-                              { value: 'replacement_requested', label: 'Request replacement from supplier' },
-                              { value: 'scrap', label: 'Scrap at our end' },
+                              { value: 'replacement_requested', label: 'Request replacement' },
+                              { value: 'scrap', label: 'Scrap' },
                               { value: 'hold', label: 'Hold for inspection' },
                             ].map(opt => (
-                              <label key={opt.value} className="flex items-center gap-2 text-xs cursor-pointer">
+                              <label key={opt.value} className="flex items-center gap-1.5 text-xs cursor-pointer">
                                 <input
                                   type="radio"
                                   name={`rejection_action_${index}`}
                                   value={opt.value}
-                                  checked={(item as any).rejection_action === opt.value}
-                                  onChange={() => updateLineItem(index, 'rejection_action' as any, opt.value)}
+                                  checked={item.rejection_action === opt.value}
+                                  onChange={() => updateLineItem(index, 'rejection_action', opt.value)}
                                 />
                                 {opt.label}
                               </label>
                             ))}
                           </div>
-                          {(item as any).rejection_action === 'replacement_requested' && (
-                            <p className="text-xs text-muted-foreground">A replacement GRN will be expected. Record it when the replacement arrives.</p>
+                          {item.rejection_action === 'replacement_requested' && (
+                            <p className="text-xs text-muted-foreground italic">A replacement GRN will be expected when the replacement arrives.</p>
                           )}
                         </div>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-sm text-muted-foreground">{item.unit}</td>
-                  </tr>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
