@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { BarChart3, ShoppingCart, Check, X, Shield, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { fetchStockStatus, updateMinStockOverride, type StockStatusRow } from "@/lib/items-api";
 import { useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
 
 function StatusBadge({ status }: { status: StockStatusRow["stock_status"] }) {
   const map = {
@@ -112,6 +113,26 @@ export default function StockRegister() {
     queryKey: ["stock_status"],
     queryFn: fetchStockStatus,
   });
+
+  const { data: processingLogs = [] } = useQuery({
+    queryKey: ['component-processing-logs'],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from('component_processing_log')
+        .select('*')
+        .order('updated_at', { ascending: false });
+      if (error) return [];
+      return data ?? [];
+    },
+    staleTime: 30000,
+  });
+  const processingLogByItemId = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const log of processingLogs as any[]) {
+      if (!map.has(log.item_id)) map.set(log.item_id, log);
+    }
+    return map;
+  }, [processingLogs]);
 
   const [statusFilter, setStatusFilter] = useState<"all" | "green" | "amber" | "red">("all");
   const [typeTab, setTypeTab] = useState<TypeTab>("all");
@@ -238,14 +259,15 @@ export default function StockRegister() {
                 <th className="text-right">Min Override</th>
                 <th className="text-right">Effective Min</th>
                 <th>Status</th>
+                <th>Processing Status</th>
                 <th className="w-44">Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={12} className="text-center py-8 text-muted-foreground">Loading...</td></tr>
+                <tr><td colSpan={13} className="text-center py-8 text-muted-foreground">Loading...</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={12} className="text-center py-8 text-muted-foreground">No items found.</td></tr>
+                <tr><td colSpan={13} className="text-center py-8 text-muted-foreground">No items found.</td></tr>
               ) : (
                 filtered.map((row) => (
                   <tr
@@ -281,6 +303,50 @@ export default function StockRegister() {
                     </td>
                     <td className="text-right font-mono tabular-nums font-medium">{row.effective_min_stock}</td>
                     <td><StatusBadge status={row.stock_status} /></td>
+                    <td>
+                      {(() => {
+                        const log = processingLogByItemId.get(row.id);
+                        if (!log) return null;
+                        const status = log.current_status as string;
+                        if (status === 'finished_goods') return (
+                          <div className="flex items-center gap-1">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200">All stages complete</span>
+                            <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 ml-1"
+                              onClick={async () => {
+                                const qty = Math.min(row.stock_wip ?? 0, log.accepted_qty - (row.stock_finished_goods ?? 0));
+                                if (qty <= 0) return;
+                                await (supabase as any).from('items').update({ stock_wip: Math.max(0, (row.stock_wip ?? 0) - qty), stock_finished_goods: (row.stock_finished_goods ?? 0) + qty }).eq('id', row.id);
+                                queryClient.invalidateQueries({ queryKey: ['stock_status'] });
+                                toast({ title: 'Moved to finished goods', description: `${qty} units moved` });
+                              }}>
+                              Move to FG
+                            </Button>
+                          </div>
+                        );
+                        if (status === 'at_vendor' || status === 'rework_at_vendor') return (
+                          <div className="flex items-center gap-1">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${status === 'rework_at_vendor' ? 'bg-orange-100 text-orange-800 border border-orange-200' : 'bg-amber-100 text-amber-800 border border-amber-200'}`}>
+                              {status === 'rework_at_vendor' ? 'Rework at vendor' : `At vendor — Stage ${log.current_stage} of ${log.total_stages}`}
+                            </span>
+                            {log.last_dc_id && (
+                              <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2" onClick={() => navigate(`/delivery-challans/${log.last_dc_id}`)}>View DC</Button>
+                            )}
+                          </div>
+                        );
+                        if (status === 'stage_complete') return (
+                          <div className="flex items-center gap-1">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
+                              Stage {log.current_stage} complete — Stage {log.current_stage + 1} pending
+                            </span>
+                            <Button size="sm" variant="outline" className="h-6 text-[10px] px-2"
+                              onClick={() => navigate('/delivery-challans/new', { state: { prefill: { dc_type: 'job_work_out', line_items: [{ item_code: row.item_code, description: row.description, drawing_number: row.item_code, quantity: log.accepted_qty - (row.stock_finished_goods ?? 0) }] } } })}>
+                              Raise DC
+                            </Button>
+                          </div>
+                        );
+                        return null;
+                      })()}
+                    </td>
                     <td>
                       <div className="flex flex-wrap gap-1">
                         {(row.stock_status === "amber" || row.stock_status === "red") &&

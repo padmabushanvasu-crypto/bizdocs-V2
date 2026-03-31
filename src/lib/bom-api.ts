@@ -46,6 +46,8 @@ export interface BomLine {
   child_standard_cost?: number;
   child_unit?: string | null;
   child_drawing_revision?: string | null;
+  has_processing_stages?: boolean;
+  processing_stages?: BomProcessingStage[];
 }
 
 export interface BomProcessStep {
@@ -60,6 +62,19 @@ export interface BomProcessStep {
   lead_time_days: number;
   notes: string | null;
   created_at: string;
+}
+
+export interface BomProcessingStage {
+  id: string;
+  bom_line_id: string;
+  item_id: string | null;
+  stage_number: number;
+  stage_name: string;
+  process_name: string;
+  vendor_id: string | null;
+  vendor_name: string | null;
+  expected_days: number;
+  is_final_stage: boolean;
 }
 
 export interface BomNode {
@@ -1251,4 +1266,59 @@ export async function importBomBatch(
   }
 
   return { imported, skipped, errors, skipReasons };
+}
+
+// ============================================================
+// BOM Processing Stages
+// ============================================================
+
+export async function fetchBomProcessingStages(bomLineId: string): Promise<BomProcessingStage[]> {
+  const { data, error } = await (supabase as any)
+    .from('bom_processing_stages')
+    .select('*')
+    .eq('bom_line_id', bomLineId)
+    .order('stage_number', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as BomProcessingStage[];
+}
+
+export async function fetchBomStagesForItem(itemId: string): Promise<BomProcessingStage[]> {
+  const companyId = await getCompanyId();
+  const { data, error } = await (supabase as any)
+    .from('bom_processing_stages')
+    .select('*')
+    .eq('item_id', itemId)
+    .eq('company_id', companyId)
+    .order('stage_number', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as BomProcessingStage[];
+}
+
+export async function saveBomProcessingStages(
+  bomLineId: string,
+  itemId: string | null,
+  stages: Partial<BomProcessingStage>[]
+): Promise<BomProcessingStage[]> {
+  const companyId = await getCompanyId();
+  // Delete existing stages for this bom_line_id
+  await (supabase as any).from('bom_processing_stages').delete().eq('bom_line_id', bomLineId);
+  if (!stages.length) return [];
+  const toInsert = stages.map((s, i) => ({
+    company_id: companyId,
+    bom_line_id: bomLineId,
+    item_id: itemId ?? null,
+    stage_number: s.stage_number ?? i + 1,
+    stage_name: s.stage_name ?? `Stage ${i + 1}`,
+    process_name: s.process_name ?? '',
+    vendor_id: s.vendor_id ?? null,
+    vendor_name: s.vendor_name ?? null,
+    expected_days: s.expected_days ?? 7,
+    is_final_stage: s.is_final_stage ?? false,
+  }));
+  const { data, error } = await (supabase as any)
+    .from('bom_processing_stages')
+    .insert(toInsert)
+    .select();
+  if (error) throw error;
+  return (data ?? []) as BomProcessingStage[];
 }

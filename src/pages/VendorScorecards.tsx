@@ -74,6 +74,12 @@ function RatePct({
   return <span className={`text-sm tabular-nums ${cls}`}>{value.toFixed(1)}%</span>;
 }
 
+function FirstPassYield({ value }: { value: number | null }) {
+  if (value === null) return <span className="text-muted-foreground text-sm">—</span>;
+  const cls = value >= 90 ? 'text-green-600 font-semibold' : value >= 80 ? 'text-amber-600 font-semibold' : 'text-red-600 font-semibold';
+  return <span className={`text-sm tabular-nums ${cls}`}>{value.toFixed(1)}%</span>;
+}
+
 function OnTimePct({ value }: { value: number | null }) {
   if (value === null) return <span className="text-muted-foreground text-sm">—</span>;
   const cls =
@@ -208,6 +214,9 @@ export default function VendorScorecards() {
                 <th className="text-right min-w-[80px] px-3 py-2">JW Steps</th>
                 <th className="text-right min-w-[80px] px-3 py-2">JW Rej%</th>
                 <th className="text-right min-w-[80px] px-3 py-2">Avg Days</th>
+                <th className="text-right min-w-[80px] px-3 py-2">First Pass</th>
+                <th className="text-right min-w-[70px] px-3 py-2">Rework%</th>
+                <th className="text-right min-w-[80px] px-3 py-2">Replacements</th>
                 <th className="text-right min-w-[80px] px-3 py-2">On-Time %</th>
                 <th className="text-right min-w-[80px] px-3 py-2">Overdue</th>
                 <th className="text-right min-w-[100px] px-3 py-2">Total Charges</th>
@@ -218,13 +227,13 @@ export default function VendorScorecards() {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={13} className="text-center py-10 text-muted-foreground">
+                  <td colSpan={16} className="text-center py-10 text-muted-foreground">
                     Loading scorecards…
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="text-center py-10 text-muted-foreground">
+                  <td colSpan={16} className="text-center py-10 text-muted-foreground">
                     {rows.length === 0 ? "No active vendors found." : "No vendors match your search."}
                   </td>
                 </tr>
@@ -270,6 +279,19 @@ export default function VendorScorecards() {
                     </td>
                     <td className="text-right px-3 py-2 font-mono tabular-nums text-sm text-muted-foreground">
                       {row.avg_turnaround_days != null ? `${row.avg_turnaround_days}d` : "—"}
+                    </td>
+                    <td className="text-right px-3 py-2">
+                      <FirstPassYield value={row.first_pass_yield_pct != null ? Number(row.first_pass_yield_pct) : null} />
+                    </td>
+                    <td className="text-right px-3 py-2">
+                      <RatePct value={row.rework_rate_pct != null ? Number(row.rework_rate_pct) : null} greenBelow={5} redAbove={10} />
+                    </td>
+                    <td className="text-right px-3 py-2 font-mono tabular-nums text-sm">
+                      {(row.replacement_count ?? 0) > 0 ? (
+                        <span className="text-amber-700 font-medium">{row.replacement_count}</span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </td>
                     <td className="text-right px-3 py-2">
                       <OnTimePct value={row.on_time_rate_pct != null ? Number(row.on_time_rate_pct) : null} />

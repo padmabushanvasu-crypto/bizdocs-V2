@@ -355,6 +355,11 @@ export interface VendorScorecard {
   total_charges: number;
   performance_rating: "reliable" | "watch" | "review" | "new";
   last_used_at: string | null;
+  first_pass_yield_pct: number | null;
+  rework_count: number;
+  rework_rate_pct: number | null;
+  replacement_count: number;
+  replacement_rate_pct: number | null;
 }
 
 export async function fetchVendorScorecards(search?: string): Promise<VendorScorecard[]> {
@@ -367,5 +372,66 @@ export async function fetchVendorScorecards(search?: string): Promise<VendorScor
   }
   const { data, error } = await query;
   if (error) throw error;
-  return (data ?? []) as VendorScorecard[];
+  const rows = (data ?? []) as VendorScorecard[];
+
+  // Fetch rework metrics from dc_line_items
+  const { data: dcMetrics } = await (supabase as any)
+    .from('delivery_challans')
+    .select(`id, party_id, dc_line_items(quantity, qty_accepted, rework_cycle, is_rework)`)
+    .not('party_id', 'is', null);
+
+  // Build per-vendor metrics
+  const vendorReworkMap = new Map<string, { totalSent: number; reworkQty: number; reworkCount: number; firstPassAccepted: number; firstPassSent: number }>();
+  for (const dc of (dcMetrics ?? []) as any[]) {
+    const vid = dc.party_id as string;
+    if (!vid) continue;
+    if (!vendorReworkMap.has(vid)) vendorReworkMap.set(vid, { totalSent: 0, reworkQty: 0, reworkCount: 0, firstPassAccepted: 0, firstPassSent: 0 });
+    const m = vendorReworkMap.get(vid)!;
+    for (const li of (dc.dc_line_items ?? []) as any[]) {
+      m.totalSent += li.quantity ?? 0;
+      if (li.is_rework) { m.reworkQty += li.quantity ?? 0; m.reworkCount++; }
+      if (!li.is_rework || li.rework_cycle === 1) {
+        m.firstPassSent += li.quantity ?? 0;
+        m.firstPassAccepted += li.qty_accepted ?? 0;
+      }
+    }
+  }
+
+  // Fetch replacement metrics from grn_line_items
+  const { data: grnMetrics } = await (supabase as any)
+    .from('grns')
+    .select(`id, vendor_id, grn_line_items(receiving_now, rejected_quantity, rejection_action, is_replacement)`)
+    .not('vendor_id', 'is', null);
+
+  const vendorReplacementMap = new Map<string, { totalReceived: number; replacementCount: number; replacementQty: number }>();
+  for (const grn of (grnMetrics ?? []) as any[]) {
+    const vid = grn.vendor_id as string;
+    if (!vid) continue;
+    if (!vendorReplacementMap.has(vid)) vendorReplacementMap.set(vid, { totalReceived: 0, replacementCount: 0, replacementQty: 0 });
+    const m = vendorReplacementMap.get(vid)!;
+    for (const li of (grn.grn_line_items ?? []) as any[]) {
+      m.totalReceived += li.receiving_now ?? 0;
+      if (li.is_replacement) m.replacementCount++;
+      if (li.rejection_action === 'replacement_requested') m.replacementQty += li.rejected_quantity ?? 0;
+    }
+  }
+
+  return rows.map((row) => {
+    const rm = vendorReworkMap.get(row.vendor_id);
+    const repm = vendorReplacementMap.get(row.vendor_id);
+    return {
+      ...row,
+      first_pass_yield_pct: rm && rm.firstPassSent > 0
+        ? Math.round((rm.firstPassAccepted / rm.firstPassSent) * 1000) / 10
+        : null,
+      rework_count: rm?.reworkCount ?? 0,
+      rework_rate_pct: rm && rm.totalSent > 0
+        ? Math.round((rm.reworkQty / rm.totalSent) * 1000) / 10
+        : null,
+      replacement_count: repm?.replacementCount ?? 0,
+      replacement_rate_pct: repm && repm.totalReceived > 0
+        ? Math.round((repm.replacementQty / repm.totalReceived) * 1000) / 10
+        : null,
+    };
+  });
 }

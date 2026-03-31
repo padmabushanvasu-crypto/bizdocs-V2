@@ -14,7 +14,12 @@ import {
   cancelDeliveryChallan,
   fetchDCReturns,
   recordLineItemReturn,
+  recordEnhancedReturn,
+  fetchBomStagesForItemDC,
+  fetchComponentProcessingLog,
+  type EnhancedReturnData,
 } from "@/lib/delivery-challans-api";
+import { supabase } from "@/integrations/supabase/client";
 import { formatCurrency, formatNumber, amountInWords } from "@/lib/gst-utils";
 import { DocumentHeader } from "@/components/DocumentHeader";
 import { DocumentActions } from "@/components/DocumentActions";
@@ -54,7 +59,27 @@ export default function DeliveryChallanDetail() {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [isDuplicate, setIsDuplicate] = useState(false);
-  // Per-line return state
+  // Enhanced return dialog state
+  const [returnDialogOpen, setReturnDialogOpen] = useState(false);
+  const [returnLineItem, setReturnLineItem] = useState<any>(null);
+  const [returnBomStages, setReturnBomStages] = useState<any[]>([]);
+  const [returnProcessingLog, setReturnProcessingLog] = useState<any>(null);
+  // Section A fields
+  const [retQtyReturning, setRetQtyReturning] = useState(0);
+  const [retQtyAccepted, setRetQtyAccepted] = useState(0);
+  const [retQtyRejected, setRetQtyRejected] = useState(0);
+  const [retRejectionReason, setRetRejectionReason] = useState('');
+  // Section B fields
+  const [retAcceptedAction, setRetAcceptedAction] = useState('hold');
+  const [retSplitNext, setRetSplitNext] = useState(0);
+  const [retSplitFg, setRetSplitFg] = useState(0);
+  const [retSplitHold, setRetSplitHold] = useState(0);
+  // Section C fields
+  const [retRejectedAction, setRetRejectedAction] = useState('hold');
+  const [retReworkVendorId, setRetReworkVendorId] = useState<string | null>(null);
+  const [retReworkVendorName, setRetReworkVendorName] = useState('');
+  const [retSaving, setRetSaving] = useState(false);
+  // Keep old state for backward compat with old dialog (will be removed)
   const [lineReturnId, setLineReturnId] = useState<string | null>(null);
   const [lineReturnItem, setLineReturnItem] = useState<any>(null);
   const [lineReturnQtyReceived, setLineReturnQtyReceived] = useState(0);
@@ -79,6 +104,43 @@ export default function DeliveryChallanDetail() {
     queryFn: fetchCompanySettings,
     staleTime: 60_000,
   });
+
+  const { data: processorPartiesData } = useQuery({
+    queryKey: ['parties-processors'],
+    queryFn: () => import('@/lib/parties-api').then(m => m.fetchParties({ status: 'active', pageSize: 500 })),
+    staleTime: 60000,
+  });
+  const processorParties = (processorPartiesData?.data ?? []).filter((p: any) => p.vendor_type === 'processor' || p.vendor_type === 'both');
+
+  const openReturnDialog = async (lineItem: any) => {
+    setReturnLineItem(lineItem);
+    setRetQtyReturning(0);
+    setRetQtyAccepted(0);
+    setRetQtyRejected(0);
+    setRetRejectionReason('');
+    setRetAcceptedAction('hold');
+    setRetRejectedAction('hold');
+    setRetReworkVendorId(null);
+    setRetReworkVendorName('');
+    setRetSplitNext(0); setRetSplitFg(0); setRetSplitHold(0);
+    setReturnBomStages([]);
+    setReturnProcessingLog(null);
+
+    const itemIdHint = lineItem.item_id ?? null;
+    if (itemIdHint) {
+      const [stages, log] = await Promise.all([
+        fetchBomStagesForItemDC(itemIdHint),
+        (async () => {
+          const { data: dcRow } = await (supabase as any).from('delivery_challans').select('company_id').eq('id', id!).single();
+          if (dcRow?.company_id) return fetchComponentProcessingLog(dcRow.company_id, itemIdHint);
+          return null;
+        })(),
+      ]);
+      setReturnBomStages(stages);
+      setReturnProcessingLog(log);
+    }
+    setReturnDialogOpen(true);
+  };
 
   const cancelMutation = useMutation({
     mutationFn: () => cancelDeliveryChallan(id!, cancelReason),
@@ -308,6 +370,7 @@ export default function DeliveryChallanDetail() {
                 <th className="text-right">Rate (₹)</th>
                 <th className="text-right">Amount (₹)</th>
                 <th>Remarks</th>
+                {isReturnable && ["issued", "partially_returned"].includes(dc.status) && <th className="print:hidden">Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -326,6 +389,14 @@ export default function DeliveryChallanDetail() {
                   <td className="text-right font-mono tabular-nums">{formatCurrency(item.rate || 0)}</td>
                   <td className="text-right font-mono tabular-nums font-medium">{formatCurrency(item.amount || 0)}</td>
                   <td className="text-muted-foreground text-sm">{item.remarks || "—"}</td>
+                  {isReturnable && ["issued", "partially_returned"].includes(dc.status) && (
+                    <td className="print:hidden">
+                      <Button size="sm" variant="outline" className="h-7 text-xs"
+                        onClick={() => openReturnDialog(item)}>
+                        Return
+                      </Button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -463,88 +534,264 @@ export default function DeliveryChallanDetail() {
         <AuditTimeline documentId={id!} />
       </div>
 
-      {/* Per-line Return Dialog */}
-      <Dialog open={!!lineReturnId} onOpenChange={(o) => { if (!o) { setLineReturnId(null); setLineReturnItem(null); setLineReturnReason(""); } }}>
-        <DialogContent className="max-w-sm">
+      {/* Enhanced Return Dialog */}
+      <Dialog open={returnDialogOpen} onOpenChange={(o) => { if (!o) setReturnDialogOpen(false); }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Record Return — Line Item</DialogTitle>
+            <DialogTitle>
+              Record Return{returnLineItem?.drawing_number ? ` — ${returnLineItem.drawing_number}` : ''}
+              {returnLineItem?.stage_number ? ` · Stage ${returnLineItem.stage_number}: ${returnLineItem.stage_name || returnLineItem.nature_of_process || ''}` : ''}
+            </DialogTitle>
             <DialogDescription>
-              {lineReturnItem && (
-                <span>
-                  {lineReturnItem.description} (Sent: {lineReturnItem.quantity} {lineReturnItem.unit || "NOS"})
+              {returnLineItem?.description}
+              {returnLineItem?.is_rework && (
+                <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200">
+                  Rework — Cycle {returnLineItem?.rework_cycle ?? 1}
                 </span>
               )}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Qty Received</Label>
-              <Input
-                type="number"
-                min={0}
-                value={lineReturnQtyReceived || ""}
-                onChange={(e) => {
-                  const v = Number(e.target.value) || 0;
-                  setLineReturnQtyReceived(v);
-                  if (lineReturnQtyAccepted > v) setLineReturnQtyAccepted(v);
-                }}
-                className="mt-1"
-              />
+
+          <div className="space-y-6">
+            {/* Section A: Quantities */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold text-slate-700 border-b pb-1">Quantities</h3>
+              {(() => {
+                const priorReceived = returnLineItem?.qty_received ?? 0;
+                const priorAccepted = returnLineItem?.qty_accepted ?? 0;
+                const priorRejected = returnLineItem?.qty_rejected ?? 0;
+                const totalSent = returnLineItem?.quantity ?? 0;
+                const remaining = Math.max(0, totalSent - priorReceived);
+                return (
+                  <>
+                    {priorReceived > 0 && (
+                      <div className="text-xs text-slate-500 bg-slate-50 rounded p-2 space-y-0.5">
+                        <p>Previously returned: <span className="font-medium">{priorReceived}</span> units ({priorAccepted} accepted, {priorRejected} rejected)</p>
+                        <p>Remaining: <span className="font-medium">{remaining}</span> units</p>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <Label className="text-xs">Qty Arriving Today</Label>
+                        <Input
+                          type="number" min={0} max={remaining || totalSent}
+                          value={retQtyReturning || ''}
+                          onChange={e => {
+                            const v = Math.min(Number(e.target.value) || 0, remaining || totalSent);
+                            setRetQtyReturning(v);
+                            setRetQtyAccepted(v);
+                            setRetQtyRejected(0);
+                          }}
+                          className="mt-1 h-8 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Qty Accepted</Label>
+                        <Input
+                          type="number" min={0} max={retQtyReturning}
+                          value={retQtyAccepted || ''}
+                          onChange={e => {
+                            const v = Math.min(Number(e.target.value) || 0, retQtyReturning);
+                            setRetQtyAccepted(v);
+                            setRetQtyRejected(Math.max(0, retQtyReturning - v));
+                          }}
+                          className="mt-1 h-8 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Qty Rejected</Label>
+                        <Input
+                          type="number" min={0} max={retQtyReturning}
+                          value={retQtyRejected || ''}
+                          onChange={e => {
+                            const v = Math.min(Number(e.target.value) || 0, retQtyReturning);
+                            setRetQtyRejected(v);
+                            setRetQtyAccepted(Math.max(0, retQtyReturning - v));
+                          }}
+                          className={`mt-1 h-8 text-sm ${retQtyRejected > 0 ? 'text-red-600 border-red-300' : ''}`}
+                        />
+                      </div>
+                    </div>
+                    {retQtyRejected > 0 && (
+                      <div>
+                        <Label className="text-xs">Rejection Reason</Label>
+                        <input
+                          list="rejection-suggestions"
+                          className="mt-1 w-full border rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          value={retRejectionReason}
+                          onChange={e => setRetRejectionReason(e.target.value)}
+                          placeholder="Select or type a reason…"
+                        />
+                        <datalist id="rejection-suggestions">
+                          {['Dimensional error','Surface defect','Wrong specification','Damaged in transit','Poor finish quality','Incomplete processing'].map(s => (
+                            <option key={s} value={s} />
+                          ))}
+                        </datalist>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
-            <div>
-              <Label>Qty Accepted</Label>
-              <Input
-                type="number"
-                min={0}
-                max={lineReturnQtyReceived}
-                value={lineReturnQtyAccepted || ""}
-                onChange={(e) => setLineReturnQtyAccepted(Math.min(Number(e.target.value) || 0, lineReturnQtyReceived))}
-                className="mt-1"
-              />
-            </div>
-            <div className="flex justify-between text-sm text-muted-foreground">
-              <span>Qty Rejected (auto)</span>
-              <span className="font-mono text-red-600">{Math.max(0, lineReturnQtyReceived - lineReturnQtyAccepted)}</span>
-            </div>
-            <div>
-              <Label>Rejection Reason</Label>
-              <Textarea
-                value={lineReturnReason}
-                onChange={(e) => setLineReturnReason(e.target.value)}
-                placeholder="Optional — reason for rejection"
-                rows={2}
-                className="mt-1"
-              />
-            </div>
+
+            {/* Section B: Accepted units action */}
+            {retQtyAccepted > 0 && (
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-slate-700 border-b pb-1">For {retQtyAccepted} accepted units:</h3>
+                <div className="space-y-2">
+                  {(() => {
+                    const currentStageNum = returnLineItem?.stage_number;
+                    const nextStage = currentStageNum
+                      ? returnBomStages.find((s: any) => s.stage_number === currentStageNum + 1)
+                      : returnBomStages.length > 0 ? returnBomStages[0] : null;
+                    const isFinalStage = currentStageNum
+                      ? returnBomStages.find((s: any) => s.stage_number === currentStageNum)?.is_final_stage
+                      : false;
+                    return (
+                      <>
+                        {nextStage && (
+                          <label className="flex items-start gap-2 cursor-pointer">
+                            <input type="radio" name="accepted_action" value="next_stage" checked={retAcceptedAction === 'next_stage'} onChange={() => setRetAcceptedAction('next_stage')} className="mt-0.5" />
+                            <span className="text-sm">Send to Stage {nextStage.stage_number} — {nextStage.process_name}{nextStage.vendor_name ? ` (${nextStage.vendor_name})` : ''}</span>
+                          </label>
+                        )}
+                        <label className="flex items-start gap-2 cursor-pointer">
+                          <input type="radio" name="accepted_action" value="hold" checked={retAcceptedAction === 'hold'} onChange={() => setRetAcceptedAction('hold')} className="mt-0.5" />
+                          <span className="text-sm">Hold in stock — send for processing later</span>
+                        </label>
+                        {(isFinalStage || !nextStage) && (
+                          <label className="flex items-start gap-2 cursor-pointer">
+                            <input type="radio" name="accepted_action" value="finished_goods" checked={retAcceptedAction === 'finished_goods'} onChange={() => setRetAcceptedAction('finished_goods')} className="mt-0.5" />
+                            <span className="text-sm">Mark as finished goods</span>
+                          </label>
+                        )}
+                        <label className="flex items-start gap-2 cursor-pointer">
+                          <input type="radio" name="accepted_action" value="split" checked={retAcceptedAction === 'split'} onChange={() => setRetAcceptedAction('split')} className="mt-0.5" />
+                          <span className="text-sm">Split batch</span>
+                        </label>
+                        {retAcceptedAction === 'split' && (
+                          <div className="ml-6 grid grid-cols-3 gap-2 mt-2">
+                            {nextStage && <div><Label className="text-xs">→ Next stage</Label><Input type="number" min={0} max={retQtyAccepted} value={retSplitNext || ''} onChange={e => setRetSplitNext(Number(e.target.value) || 0)} className="h-7 text-xs mt-0.5" /></div>}
+                            <div><Label className="text-xs">→ Finished goods</Label><Input type="number" min={0} max={retQtyAccepted} value={retSplitFg || ''} onChange={e => setRetSplitFg(Number(e.target.value) || 0)} className="h-7 text-xs mt-0.5" /></div>
+                            <div><Label className="text-xs">→ Hold in stock</Label><Input type="number" min={0} max={retQtyAccepted} value={retSplitHold || ''} onChange={e => setRetSplitHold(Number(e.target.value) || 0)} className="h-7 text-xs mt-0.5" /></div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+
+            {/* Section C: Rejected units action */}
+            {retQtyRejected > 0 && (
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-red-700 border-b border-red-100 pb-1">For {retQtyRejected} rejected units:</h3>
+                <div className="space-y-2">
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input type="radio" name="rejected_action" value="rework_same_vendor" checked={retRejectedAction === 'rework_same_vendor'} onChange={() => setRetRejectedAction('rework_same_vendor')} className="mt-0.5" />
+                    <div>
+                      <span className="text-sm">Send back to same vendor for rework</span>
+                      {dc?.party_name && <p className="text-xs text-muted-foreground">New DC → {dc.party_name}, Cycle {(returnLineItem?.rework_cycle ?? 1) + 1}</p>}
+                    </div>
+                  </label>
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input type="radio" name="rejected_action" value="rework_different_vendor" checked={retRejectedAction === 'rework_different_vendor'} onChange={() => setRetRejectedAction('rework_different_vendor')} className="mt-0.5" />
+                    <span className="text-sm">Send to different vendor for rework</span>
+                  </label>
+                  {retRejectedAction === 'rework_different_vendor' && (
+                    <div className="ml-6">
+                      <select
+                        className="w-full border rounded px-2 py-1.5 text-sm"
+                        value={retReworkVendorId ?? ''}
+                        onChange={e => {
+                          const p = processorParties.find((x: any) => x.id === e.target.value);
+                          setRetReworkVendorId(e.target.value || null);
+                          setRetReworkVendorName((p as any)?.name ?? '');
+                        }}
+                      >
+                        <option value="">Select vendor…</option>
+                        {processorParties.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input type="radio" name="rejected_action" value="scrap" checked={retRejectedAction === 'scrap'} onChange={() => setRetRejectedAction('scrap')} className="mt-0.5" />
+                    <span className="text-sm">Scrap — write off</span>
+                  </label>
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input type="radio" name="rejected_action" value="hold" checked={retRejectedAction === 'hold'} onChange={() => setRetRejectedAction('hold')} className="mt-0.5" />
+                    <span className="text-sm">Hold for inspection</span>
+                  </label>
+                </div>
+              </div>
+            )}
           </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setLineReturnId(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setReturnDialogOpen(false)}>Cancel</Button>
             <Button
-              disabled={lineReturnSaving || lineReturnQtyReceived === 0}
+              disabled={retSaving || retQtyReturning === 0}
               onClick={async () => {
-                if (!lineReturnId) return;
-                setLineReturnSaving(true);
+                if (!returnLineItem) return;
+                if (retQtyRejected > 0 && retRejectedAction === 'scrap' && !retRejectionReason) {
+                  toast({ title: 'Rejection reason required for scrap', variant: 'destructive' });
+                  return;
+                }
+                if (retAcceptedAction === 'split') {
+                  const splitSum = retSplitNext + retSplitFg + retSplitHold;
+                  if (splitSum !== retQtyAccepted) {
+                    toast({ title: `Split quantities must sum to ${retQtyAccepted}`, variant: 'destructive' });
+                    return;
+                  }
+                }
+                setRetSaving(true);
                 try {
-                  const qtyRejected = Math.max(0, lineReturnQtyReceived - lineReturnQtyAccepted);
-                  await recordLineItemReturn(lineReturnId, {
-                    qty_received: lineReturnQtyReceived,
-                    qty_accepted: lineReturnQtyAccepted,
-                    qty_rejected: qtyRejected,
-                    rejection_reason: lineReturnReason || undefined,
-                  });
-                  queryClient.invalidateQueries({ queryKey: ["delivery-challan", id] });
-                  queryClient.invalidateQueries({ queryKey: ["dc-stats"] });
-                  setLineReturnId(null);
-                  setLineReturnItem(null);
-                  toast({ title: "Return recorded", description: `${lineReturnQtyAccepted} units moved to finished goods` });
+                  let itemId: string | null = null;
+                  if (returnLineItem.item_code) {
+                    const { data: itemRow } = await (supabase as any).from('items').select('id').eq('item_code', returnLineItem.item_code).maybeSingle();
+                    itemId = itemRow?.id ?? null;
+                  }
+
+                  const result = await recordEnhancedReturn(returnLineItem.id, {
+                    qty_returning: retQtyReturning,
+                    qty_accepted: retQtyAccepted,
+                    qty_rejected: retQtyRejected,
+                    rejection_reason: retRejectionReason || null,
+                    accepted_action: retAcceptedAction,
+                    rejected_action: retQtyRejected > 0 ? retRejectedAction : null,
+                    rejected_vendor_id: retRejectedAction === 'rework_different_vendor' ? retReworkVendorId : null,
+                    rejected_vendor_name: retRejectedAction === 'rework_different_vendor' ? retReworkVendorName : null,
+                    split_next_stage_qty: retSplitNext,
+                    split_finished_qty: retSplitFg,
+                    split_hold_qty: retSplitHold,
+                    dc_id: id!,
+                    dc_number: dc!.dc_number,
+                    item_id: itemId,
+                    drawing_number: returnLineItem.drawing_number ?? null,
+                    current_stage_number: returnLineItem.stage_number ?? null,
+                    current_rework_cycle: returnLineItem.rework_cycle ?? 1,
+                    bom_stages: returnBomStages,
+                  } as EnhancedReturnData);
+
+                  queryClient.invalidateQueries({ queryKey: ['delivery-challan', id] });
+                  queryClient.invalidateQueries({ queryKey: ['dc-stats'] });
+                  setReturnDialogOpen(false);
+                  toast({ title: 'Return recorded', description: `${retQtyAccepted} accepted, ${retQtyRejected} rejected. Stock updated.` });
+
+                  if (result.nextDCPrefill) {
+                    navigate('/delivery-challans/new', { state: { prefill: result.nextDCPrefill } });
+                  } else if (result.reworkDCPrefill) {
+                    navigate('/delivery-challans/new', { state: { prefill: result.reworkDCPrefill } });
+                  }
                 } catch (err: any) {
-                  toast({ title: "Error", description: err.message, variant: "destructive" });
+                  toast({ title: 'Error', description: err.message, variant: 'destructive' });
                 } finally {
-                  setLineReturnSaving(false);
+                  setRetSaving(false);
                 }
               }}
             >
-              {lineReturnSaving ? "Recording…" : "Confirm Return"}
+              {retSaving ? 'Recording…' : 'Confirm Return'}
             </Button>
           </DialogFooter>
         </DialogContent>

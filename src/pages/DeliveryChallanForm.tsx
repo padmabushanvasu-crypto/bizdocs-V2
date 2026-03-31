@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, ChevronDown, Info, ChevronLeft } from "lucide-react";
@@ -23,8 +23,11 @@ import {
   createDeliveryChallan,
   updateDeliveryChallan,
   issueDeliveryChallan,
+  fetchBomStagesForItemDC,
+  fetchComponentProcessingLog,
   type DCLineItem,
 } from "@/lib/delivery-challans-api";
+import { getCompanyId } from "@/lib/auth-helpers";
 import { formatCurrency, amountInWords } from "@/lib/gst-utils";
 import { getGSTType, calculateLineTax, round2, resolveStateCode, type GSTType } from "@/lib/tax-utils";
 
@@ -66,6 +69,11 @@ function emptyLineItem(serial: number): DCLineItem {
     job_work_id: null,
     job_work_number: null,
     job_work_step_id: null,
+    stage_number: null,
+    stage_name: null,
+    is_rework: false,
+    rework_cycle: 1,
+    parent_dc_line_id: null,
   };
 }
 
@@ -101,6 +109,11 @@ export default function DeliveryChallanForm() {
   const [gstRate, setGstRate] = useState(18);
   const [preparedBy, setPreparedBy] = useState("");
   const [checkedBy, setCheckedBy] = useState("");
+  // BOM stages state
+  const [lineBomStages, setLineBomStages] = useState<Map<number, any[]>>(new Map());
+  const [lineProcessingLog, setLineProcessingLog] = useState<Map<number, any>>(new Map());
+  const [lineStageSelection, setLineStageSelection] = useState<Map<number, number | 'manual'>>(new Map());
+  const [itemIdByIndex, setItemIdByIndex] = useState<Map<number, string>>(new Map());
   // Fetch data
   const { data: partiesData } = useQuery({
     queryKey: ["parties-all"],
@@ -185,6 +198,11 @@ export default function DeliveryChallanForm() {
         job_work_id: li.job_work_id || null,
         job_work_number: li.job_work_number || null,
         job_work_step_id: li.job_work_step_id || null,
+        stage_number: li.stage_number ?? null,
+        stage_name: li.stage_name ?? null,
+        is_rework: li.is_rework ?? false,
+        rework_cycle: li.rework_cycle ?? 1,
+        parent_dc_line_id: li.parent_dc_line_id ?? null,
       }));
       setLineItems(items);
     }
@@ -283,7 +301,16 @@ export default function DeliveryChallanForm() {
 
       const items = lineItems
         .filter((i) => i.description.trim())
-        .map((i, idx) => ({ ...i, serial_number: idx + 1, qty_nos: i.quantity }));
+        .map((i, idx) => ({
+          ...i,
+          serial_number: idx + 1,
+          qty_nos: i.quantity,
+          stage_number: (i as any).stage_number ?? null,
+          stage_name: (i as any).stage_name ?? null,
+          is_rework: (i as any).is_rework ?? false,
+          rework_cycle: (i as any).rework_cycle ?? 1,
+          parent_dc_line_id: (i as any).parent_dc_line_id ?? null,
+        }));
 
       if (isEdit) {
         await updateDeliveryChallan(id!, { dc: dcData as any, lineItems: items });
@@ -580,7 +607,8 @@ export default function DeliveryChallanForm() {
             </thead>
             <tbody>
               {lineItems.map((item, index) => (
-                <tr key={index} className="group border-b border-slate-100 hover:bg-slate-50/50">
+                <React.Fragment key={index}>
+                <tr className="group border-b border-slate-100 hover:bg-slate-50/50">
                   <td className="px-3 py-2 text-muted-foreground font-mono text-sm w-8">{item.serial_number}</td>
                   <td className="px-1 py-1">
                     <ItemSuggest
@@ -596,6 +624,19 @@ export default function DeliveryChallanForm() {
                           const updated = [...items];
                           updated[index].amount = Math.round((updated[index].quantity || 0) * (selectedItem.sale_price || 0) * 100) / 100;
                           return updated;
+                        });
+                        // Track item_id
+                        setItemIdByIndex(prev => { const m = new Map(prev); m.set(index, selectedItem.id); return m; });
+                        // Load BOM stages for this item
+                        fetchBomStagesForItemDC(selectedItem.id).then(stages => {
+                          setLineBomStages(prev => { const m = new Map(prev); m.set(index, stages); return m; });
+                          setLineStageSelection(prev => { const m = new Map(prev); m.delete(index); return m; });
+                        });
+                        // Load processing log
+                        getCompanyId().then(cid => {
+                          fetchComponentProcessingLog(cid, selectedItem.id).then(log => {
+                            setLineProcessingLog(prev => { const m = new Map(prev); if (log) m.set(index, log); else m.delete(index); return m; });
+                          });
                         });
                       }}
                       placeholder="Item description"
@@ -682,6 +723,73 @@ export default function DeliveryChallanForm() {
                     )}
                   </td>
                 </tr>
+                {(lineBomStages.get(index)?.length ?? 0) > 0 && (
+                  <tr key={`stage-${index}`} className="bg-blue-50/40 border-b border-blue-100">
+                    <td />
+                    <td colSpan={10} className="px-3 py-2">
+                      <div className="flex items-start gap-4 flex-wrap">
+                        <div className="flex-1 min-w-[280px]">
+                          <Label className="text-xs text-blue-700 font-medium">Processing Stage</Label>
+                          <select
+                            className="mt-1 w-full border border-blue-200 rounded px-2 py-1.5 text-sm bg-white"
+                            value={lineStageSelection.get(index) ?? ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === 'manual' || val === '') {
+                                setLineStageSelection(prev => { const m = new Map(prev); if (val === 'manual') m.set(index, 'manual'); else m.delete(index); return m; });
+                                return;
+                              }
+                              const stageNum = parseInt(val);
+                              setLineStageSelection(prev => { const m = new Map(prev); m.set(index, stageNum); return m; });
+                              const stage = lineBomStages.get(index)?.find((s: any) => s.stage_number === stageNum);
+                              if (stage) {
+                                if (stage.vendor_id) {
+                                  const p = parties.find((p: Party) => p.id === stage.vendor_id);
+                                  if (p) {
+                                    setPartyId(p.id);
+                                    setSelectedParty(p);
+                                  }
+                                }
+                                updateLineItem(index, 'nature_of_process', stage.process_name);
+                                const due = new Date();
+                                due.setDate(due.getDate() + (stage.expected_days ?? 7));
+                                setReturnDueDate(due);
+                                setLineItems(items => {
+                                  const updated = [...items];
+                                  (updated[index] as any).stage_number = stage.stage_number;
+                                  (updated[index] as any).stage_name = stage.stage_name;
+                                  return updated;
+                                });
+                              }
+                            }}
+                          >
+                            <option value="">Select processing stage…</option>
+                            {(lineBomStages.get(index) ?? []).map((stage: any) => (
+                              <option key={stage.stage_number} value={stage.stage_number}>
+                                Stage {stage.stage_number} — {stage.process_name}{stage.vendor_name ? ` (${stage.vendor_name})` : ''}
+                              </option>
+                            ))}
+                            <option value="manual">Manual entry (no BOM stage)</option>
+                          </select>
+                        </div>
+                        {lineProcessingLog.get(index) && (
+                          <div className="text-xs text-slate-500 self-end pb-1">
+                            Last status: <span className="font-medium">{(lineProcessingLog.get(index) as any)?.current_status?.replace(/_/g, ' ')}</span>
+                            {' — '}
+                            {(lineProcessingLog.get(index) as any)?.accepted_qty ?? 0} accepted,
+                            Stage {(lineProcessingLog.get(index) as any)?.current_stage ?? 0} of {(lineProcessingLog.get(index) as any)?.total_stages ?? 0} complete
+                          </div>
+                        )}
+                        {(location.state as any)?.prefill?.line_items?.[index]?.is_rework && (
+                          <span className="self-end pb-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200">
+                            Rework — Cycle {(location.state as any)?.prefill?.line_items?.[index]?.rework_cycle ?? 2}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>

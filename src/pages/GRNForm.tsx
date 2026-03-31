@@ -493,6 +493,33 @@ export default function GRNForm() {
                       ) : (
                         <span className="text-muted-foreground text-sm">—</span>
                       )}
+                      {item.rejected_quantity > 0 && (
+                        <div className="bg-red-50 border border-red-100 rounded p-2 mt-1 space-y-2">
+                          <p className="text-xs font-medium text-red-700">What to do with {item.rejected_quantity} rejected units?</p>
+                          <div className="space-y-1">
+                            {[
+                              { value: 'return_to_supplier', label: 'Return to supplier' },
+                              { value: 'replacement_requested', label: 'Request replacement from supplier' },
+                              { value: 'scrap', label: 'Scrap at our end' },
+                              { value: 'hold', label: 'Hold for inspection' },
+                            ].map(opt => (
+                              <label key={opt.value} className="flex items-center gap-2 text-xs cursor-pointer">
+                                <input
+                                  type="radio"
+                                  name={`rejection_action_${index}`}
+                                  value={opt.value}
+                                  checked={(item as any).rejection_action === opt.value}
+                                  onChange={() => updateLineItem(index, 'rejection_action' as any, opt.value)}
+                                />
+                                {opt.label}
+                              </label>
+                            ))}
+                          </div>
+                          {(item as any).rejection_action === 'replacement_requested' && (
+                            <p className="text-xs text-muted-foreground">A replacement GRN will be expected. Record it when the replacement arrives.</p>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-sm text-muted-foreground">{item.unit}</td>
                   </tr>

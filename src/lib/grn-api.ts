@@ -18,6 +18,10 @@ export interface GRNLineItem {
   rejected_quantity: number;
   rejection_reason?: string;
   remarks?: string;
+  rejection_action?: string | null; // 'return_to_supplier'|'replacement_requested'|'scrap'|'hold'
+  replacement_cycle?: number;
+  is_replacement?: boolean;
+  supplier_ref?: string | null;
 }
 
 export interface GRN {
@@ -130,6 +134,9 @@ export async function createGRN({ grn, lineItems }: CreateGRNData) {
       pending_quantity: item.pending_quantity, receiving_now: item.receiving_now,
       accepted_quantity: item.accepted_quantity, rejected_quantity: item.rejected_quantity,
       rejection_reason: item.rejection_reason || null, remarks: item.remarks || null,
+      rejection_action: item.rejection_action || null,
+      replacement_cycle: item.replacement_cycle || 1,
+      is_replacement: item.is_replacement || false,
     }));
     const { error: itemsError } = await supabase.from("grn_line_items").insert(itemsToInsert as any);
     if (itemsError) throw itemsError;
@@ -232,4 +239,44 @@ export async function fetchGRNStats() {
 export async function softDeleteGRN(id: string) {
   const { error } = await supabase.from("grns").update({ status: "deleted" } as any).eq("id", id);
   if (error) throw error;
+}
+
+export async function recordGrnRejectionAction(
+  lineItemId: string,
+  action: string,
+  data: {
+    qty: number;
+    reason: string | null;
+    supplier_ref?: string | null;
+    item_id: string | null;
+    drawing_number: string | null;
+    grn_number: string;
+  }
+): Promise<void> {
+  const companyId = await getCompanyId();
+  const today = new Date().toISOString().split('T')[0];
+  const { data: { user } } = await supabase.auth.getUser();
+
+  await (supabase as any).from('grn_line_items').update({
+    rejection_action: action,
+    supplier_ref: data.supplier_ref ?? null,
+  }).eq('id', lineItemId);
+
+  if (action === 'scrap' && data.item_id) {
+    try {
+      await (supabase as any).from('scrap_register').insert({
+        company_id: companyId,
+        item_id: data.item_id,
+        drawing_number: data.drawing_number,
+        quantity: data.qty,
+        reason: data.reason ?? 'GRN rejection — scrap',
+        source: 'grn_rejection',
+        source_ref: data.grn_number,
+        scrapped_at: today,
+        created_by: user?.id ?? null,
+      });
+    } catch (_e) {
+      // scrap_register may not exist; ignore
+    }
+  }
 }

@@ -70,6 +70,18 @@ export default function GRNDetail() {
             <p key={item.serial_number} className="text-sm text-muted-foreground">
               {item.description}: <span className="text-destructive font-medium">{item.rejected_quantity} rejected</span>
               {item.rejection_reason && <span> — {item.rejection_reason}</span>}
+              {(item as any).rejection_action && (
+                <span className="ml-2 text-xs bg-slate-100 px-1.5 py-0.5 rounded">
+                  {(item as any).rejection_action === 'return_to_supplier' ? 'Return to supplier' :
+                   (item as any).rejection_action === 'replacement_requested' ? 'Replacement requested' :
+                   (item as any).rejection_action === 'scrap' ? 'Scrapped' :
+                   (item as any).rejection_action === 'hold' ? 'Hold for inspection' :
+                   (item as any).rejection_action}
+                </span>
+              )}
+              {(item as any).replacement_cycle > 1 && (
+                <span className="ml-2 text-xs text-amber-700">Replacement Cycle {(item as any).replacement_cycle}</span>
+              )}
             </p>
           ))}
         </div>

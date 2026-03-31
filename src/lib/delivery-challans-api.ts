@@ -34,6 +34,13 @@ export interface DCLineItem {
   qty_rejected?: number | null;
   return_status?: string | null;
   rejection_reason?: string | null;
+  stage_number?: number | null;
+  stage_name?: string | null;
+  is_rework?: boolean;
+  rework_cycle?: number;
+  parent_dc_line_id?: string | null;
+  rejection_action?: string | null;
+  processing_log_id?: string | null;
 }
 
 export interface DeliveryChallan {
@@ -117,6 +124,86 @@ export interface DCLineItemWithDC {
   qty_accepted: number | null;
   qty_rejected: number | null;
   return_status: string | null;
+}
+
+export interface ComponentProcessingLog {
+  id: string;
+  company_id: string;
+  item_id: string | null;
+  drawing_number: string | null;
+  batch_ref: string | null;
+  total_qty: number;
+  accepted_qty: number;
+  rejected_qty: number;
+  scrapped_qty: number;
+  current_stage: number;
+  total_stages: number;
+  current_status: string;
+  last_dc_id: string | null;
+  last_return_date: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EnhancedReturnData {
+  qty_returning: number;
+  qty_accepted: number;
+  qty_rejected: number;
+  rejection_reason: string | null;
+  accepted_action: string; // 'next_stage'|'hold'|'finished_goods'|'split'
+  rejected_action: string | null; // 'rework_same_vendor'|'rework_different_vendor'|'next_stage'|'scrap'|'hold'
+  rejected_vendor_id?: string | null;
+  rejected_vendor_name?: string | null;
+  split_next_stage_qty?: number;
+  split_finished_qty?: number;
+  split_hold_qty?: number;
+  dc_id: string;
+  dc_number: string;
+  item_id: string | null;
+  drawing_number: string | null;
+  current_stage_number: number | null;
+  current_rework_cycle: number;
+  bom_stages: import('@/lib/bom-api').BomProcessingStage[];
+}
+
+export interface EnhancedReturnResult {
+  nextDCPrefill: null | {
+    dc_type: string;
+    party_id: string | null;
+    party_name: string | null;
+    return_before_date: string;
+    line_items: Array<{
+      item_code: string;
+      description: string;
+      drawing_number: string;
+      quantity: number;
+      nature_of_process: string;
+      stage_number: number;
+      stage_name: string;
+      is_rework: boolean;
+      rework_cycle: number;
+      parent_dc_line_id: string;
+    }>;
+  };
+  reworkDCPrefill: null | {
+    dc_type: string;
+    party_id: string | null;
+    party_name: string | null;
+    return_before_date: string;
+    line_items: Array<{
+      item_code: string;
+      description: string;
+      drawing_number: string;
+      quantity: number;
+      nature_of_process: string;
+      stage_number: number;
+      stage_name: string;
+      is_rework: boolean;
+      rework_cycle: number;
+      parent_dc_line_id: string;
+    }>;
+  };
 }
 
 export interface DCFilters {
@@ -213,6 +300,11 @@ export async function createDeliveryChallan({ dc, lineItems }: CreateDCData) {
       job_work_number: item.job_work_number || null,
       job_work_step_id: item.job_work_step_id || null,
       return_status: item.return_status || 'pending',
+      stage_number: item.stage_number ?? null,
+      stage_name: item.stage_name ?? null,
+      is_rework: item.is_rework ?? false,
+      rework_cycle: item.rework_cycle ?? 1,
+      parent_dc_line_id: item.parent_dc_line_id ?? null,
     }));
     const { error: itemsError } = await supabase.from("dc_line_items").insert(itemsToInsert as any);
     if (itemsError) throw itemsError;
@@ -257,6 +349,11 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
       job_work_number: item.job_work_number || null,
       job_work_step_id: item.job_work_step_id || null,
       return_status: item.return_status || 'pending',
+      stage_number: item.stage_number ?? null,
+      stage_name: item.stage_name ?? null,
+      is_rework: item.is_rework ?? false,
+      rework_cycle: item.rework_cycle ?? 1,
+      parent_dc_line_id: item.parent_dc_line_id ?? null,
     }));
     const { error: itemsError } = await supabase.from("dc_line_items").insert(itemsToInsert as any);
     if (itemsError) throw itemsError;
@@ -567,4 +664,285 @@ export async function fetchProcessSuggestions(): Promise<string[]> {
     if (item.nature_of_process) processes.add(item.nature_of_process);
   }
   return Array.from(processes);
+}
+
+export async function fetchBomStagesForItemDC(itemId: string): Promise<import('@/lib/bom-api').BomProcessingStage[]> {
+  const companyId = await getCompanyId();
+  const { data, error } = await (supabase as any)
+    .from('bom_processing_stages')
+    .select('*')
+    .eq('item_id', itemId)
+    .eq('company_id', companyId)
+    .order('stage_number', { ascending: true });
+  if (error) return [];
+  return (data ?? []) as import('@/lib/bom-api').BomProcessingStage[];
+}
+
+export async function fetchComponentProcessingLog(
+  companyId: string,
+  itemId: string
+): Promise<ComponentProcessingLog | null> {
+  const { data, error } = await (supabase as any)
+    .from('component_processing_log')
+    .select('*')
+    .eq('item_id', itemId)
+    .eq('company_id', companyId)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) return null;
+  return data as ComponentProcessingLog | null;
+}
+
+export async function createProcessingLog(
+  companyId: string,
+  data: Partial<ComponentProcessingLog>
+): Promise<ComponentProcessingLog> {
+  const { data: row, error } = await (supabase as any)
+    .from('component_processing_log')
+    .insert({ ...data, company_id: companyId })
+    .select()
+    .single();
+  if (error) throw error;
+  return row as ComponentProcessingLog;
+}
+
+export async function updateProcessingLog(
+  logId: string,
+  updates: Partial<ComponentProcessingLog>
+): Promise<void> {
+  const { error } = await (supabase as any)
+    .from('component_processing_log')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', logId);
+  if (error) throw error;
+}
+
+export async function recordEnhancedReturn(
+  lineItemId: string,
+  returnData: EnhancedReturnData
+): Promise<EnhancedReturnResult> {
+  const companyId = await getCompanyId();
+  const today = new Date().toISOString().split('T')[0];
+  const { data: { user } } = await supabase.auth.getUser();
+
+  // Fetch line item
+  const { data: lineItem, error: liErr } = await (supabase as any)
+    .from('dc_line_items')
+    .select('id, dc_id, item_code, description, quantity, qty_received, qty_accepted, qty_rejected, rework_cycle, is_rework, stage_number, stage_name')
+    .eq('id', lineItemId)
+    .single();
+  if (liErr) throw liErr;
+  const li = lineItem as any;
+
+  const priorReceived = (li.qty_received ?? 0);
+  const newTotalReceived = priorReceived + returnData.qty_returning;
+  const totalSent = li.quantity ?? 0;
+  const newReturnStatus = newTotalReceived >= totalSent ? 'returned' : 'partially_returned';
+
+  // Step 1: Update dc_line_items
+  await (supabase as any).from('dc_line_items').update({
+    qty_received: newTotalReceived,
+    qty_accepted: (li.qty_accepted ?? 0) + returnData.qty_accepted,
+    qty_rejected: (li.qty_rejected ?? 0) + returnData.qty_rejected,
+    rejection_reason: returnData.rejection_reason ?? null,
+    rejection_action: returnData.rejected_action ?? null,
+    return_status: newReturnStatus,
+  }).eq('id', lineItemId);
+
+  // Step 2: Stock movements for accepted
+  const finishedQty = returnData.accepted_action === 'finished_goods'
+    ? returnData.qty_accepted
+    : returnData.accepted_action === 'split'
+    ? (returnData.split_finished_qty ?? 0)
+    : 0;
+
+  if (finishedQty > 0 && returnData.item_id) {
+    const { data: item } = await (supabase as any)
+      .from('items')
+      .select('id, item_code, description, current_stock, stock_wip, stock_finished_goods, standard_cost')
+      .eq('id', returnData.item_id)
+      .single();
+    if (item) {
+      const rec = item as any;
+      const newWip = Math.max(0, (rec.stock_wip ?? 0) - finishedQty);
+      const newFg = (rec.stock_finished_goods ?? 0) + finishedQty;
+      await (supabase as any).from('items').update({ stock_wip: newWip, stock_finished_goods: newFg }).eq('id', rec.id);
+      await addStockLedgerEntry({
+        item_id: rec.id,
+        item_code: rec.item_code,
+        item_description: rec.description,
+        transaction_date: today,
+        transaction_type: 'processing_return',
+        qty_in: finishedQty,
+        qty_out: 0,
+        balance_qty: rec.current_stock ?? 0,
+        unit_cost: rec.standard_cost ?? 0,
+        total_value: finishedQty * (rec.standard_cost ?? 0),
+        reference_type: 'delivery_challan',
+        reference_id: returnData.dc_id,
+        reference_number: returnData.dc_number,
+        notes: `Processing return — moved to finished goods: ${returnData.dc_number}`,
+        created_by: user?.id ?? null,
+        from_state: 'wip',
+        to_state: 'finished_goods',
+      });
+    }
+  }
+
+  // Step 3: Stock for rejected — scrap
+  if (returnData.rejected_action === 'scrap' && returnData.qty_rejected > 0 && returnData.item_id) {
+    const { data: item } = await (supabase as any)
+      .from('items')
+      .select('id, item_code, description, current_stock, stock_wip, standard_cost')
+      .eq('id', returnData.item_id)
+      .single();
+    if (item) {
+      const rec = item as any;
+      const newWip = Math.max(0, (rec.stock_wip ?? 0) - returnData.qty_rejected);
+      await (supabase as any).from('items').update({ stock_wip: newWip }).eq('id', rec.id);
+      try {
+        await (supabase as any).from('scrap_register').insert({
+          company_id: companyId,
+          item_id: returnData.item_id,
+          drawing_number: returnData.drawing_number,
+          quantity: returnData.qty_rejected,
+          reason: returnData.rejection_reason ?? 'Processing rejection',
+          source: 'dc_return',
+          source_ref: returnData.dc_number,
+          scrapped_at: today,
+          created_by: user?.id ?? null,
+        }).select().single();
+      } catch (_e) {
+        // scrap_register may not exist; ignore
+      }
+      await addStockLedgerEntry({
+        item_id: rec.id,
+        item_code: rec.item_code,
+        item_description: rec.description,
+        transaction_date: today,
+        transaction_type: 'scrap',
+        qty_in: 0,
+        qty_out: returnData.qty_rejected,
+        balance_qty: rec.current_stock ?? 0,
+        unit_cost: rec.standard_cost ?? 0,
+        total_value: returnData.qty_rejected * (rec.standard_cost ?? 0),
+        reference_type: 'delivery_challan',
+        reference_id: returnData.dc_id,
+        reference_number: returnData.dc_number,
+        notes: `Scrap from processing rejection: ${returnData.dc_number}`,
+        created_by: user?.id ?? null,
+        from_state: 'wip',
+        to_state: 'scrapped',
+      });
+    }
+  }
+
+  // Step 4: Update component_processing_log
+  if (returnData.item_id) {
+    const existingLog = await fetchComponentProcessingLog(companyId, returnData.item_id);
+    let newStatus = 'stage_complete';
+    if (returnData.accepted_action === 'finished_goods') newStatus = 'finished_goods';
+    else if (returnData.rejected_action === 'rework_same_vendor' || returnData.rejected_action === 'rework_different_vendor') newStatus = 'rework_at_vendor';
+
+    const currentStage = returnData.current_stage_number ?? 1;
+    const totalStages = returnData.bom_stages.length || 1;
+
+    if (existingLog) {
+      await updateProcessingLog(existingLog.id, {
+        accepted_qty: (existingLog.accepted_qty ?? 0) + returnData.qty_accepted,
+        rejected_qty: (existingLog.rejected_qty ?? 0) + returnData.qty_rejected,
+        current_status: newStatus,
+        current_stage: newStatus === 'finished_goods' ? totalStages : currentStage,
+        total_stages: totalStages,
+        last_dc_id: returnData.dc_id,
+        last_return_date: today,
+      });
+    } else {
+      await createProcessingLog(companyId, {
+        item_id: returnData.item_id,
+        drawing_number: returnData.drawing_number,
+        total_qty: li.quantity ?? 0,
+        accepted_qty: returnData.qty_accepted,
+        rejected_qty: returnData.qty_rejected,
+        scrapped_qty: returnData.rejected_action === 'scrap' ? returnData.qty_rejected : 0,
+        current_stage: newStatus === 'finished_goods' ? totalStages : currentStage,
+        total_stages: totalStages,
+        current_status: newStatus,
+        last_dc_id: returnData.dc_id,
+        last_return_date: today,
+      });
+    }
+  }
+
+  // Step 5: Recalculate DC status
+  await recalculateDCStatus(returnData.dc_id);
+
+  // Step 6: Build prefill data for next DC or rework DC
+  const result: EnhancedReturnResult = { nextDCPrefill: null, reworkDCPrefill: null };
+
+  const baseLineItem = {
+    item_code: li.item_code ?? '',
+    description: li.description ?? '',
+    drawing_number: returnData.drawing_number ?? '',
+    parent_dc_line_id: lineItemId,
+  };
+
+  if (returnData.accepted_action === 'next_stage' || (returnData.accepted_action === 'split' && (returnData.split_next_stage_qty ?? 0) > 0)) {
+    const nextStageQty = returnData.accepted_action === 'split'
+      ? (returnData.split_next_stage_qty ?? 0)
+      : returnData.qty_accepted;
+    const currentStageIdx = returnData.bom_stages.findIndex(s => s.stage_number === returnData.current_stage_number);
+    const nextStage = currentStageIdx >= 0 && currentStageIdx < returnData.bom_stages.length - 1
+      ? returnData.bom_stages[currentStageIdx + 1]
+      : null;
+    if (nextStage) {
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + (nextStage.expected_days ?? 7));
+      result.nextDCPrefill = {
+        dc_type: 'job_work_out',
+        party_id: nextStage.vendor_id ?? null,
+        party_name: nextStage.vendor_name ?? null,
+        return_before_date: dueDate.toISOString().split('T')[0],
+        line_items: [{
+          ...baseLineItem,
+          quantity: nextStageQty,
+          nature_of_process: nextStage.process_name,
+          stage_number: nextStage.stage_number,
+          stage_name: nextStage.stage_name,
+          is_rework: false,
+          rework_cycle: 1,
+        }],
+      };
+    }
+  }
+
+  if (returnData.rejected_action === 'rework_same_vendor' || returnData.rejected_action === 'rework_different_vendor') {
+    const reworkVendorId = returnData.rejected_action === 'rework_different_vendor'
+      ? (returnData.rejected_vendor_id ?? null)
+      : null;
+    const reworkVendorName = returnData.rejected_action === 'rework_different_vendor'
+      ? (returnData.rejected_vendor_name ?? null)
+      : null;
+    const currentStage = returnData.bom_stages.find(s => s.stage_number === returnData.current_stage_number);
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + (currentStage?.expected_days ?? 7));
+    result.reworkDCPrefill = {
+      dc_type: 'job_work_out',
+      party_id: reworkVendorId,
+      party_name: reworkVendorName,
+      return_before_date: dueDate.toISOString().split('T')[0],
+      line_items: [{
+        ...baseLineItem,
+        quantity: returnData.qty_rejected,
+        nature_of_process: currentStage?.process_name ?? '',
+        stage_number: returnData.current_stage_number ?? 1,
+        stage_name: currentStage?.stage_name ?? '',
+        is_rework: true,
+        rework_cycle: (returnData.current_rework_cycle ?? 1) + 1,
+      }],
+    };
+  }
+
+  return result;
 }

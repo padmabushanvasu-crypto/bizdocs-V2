@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   GitFork, Plus, Trash2, Search, ChevronDown, ChevronRight, ChevronUp,
@@ -34,7 +34,8 @@ import {
   fetchBomLineVendorsBatch, addBomLineVendor, updateBomLineVendor, removeBomLineVendor, swapBomLineVendorOrder,
   fetchBomProcessStepsBatch, addBomProcessStep, updateBomProcessStep, deleteBomProcessStep, reorderBomProcessSteps,
   importBomBatch,
-  type BomLine, type BomVariant, type BomNode, type BomLineVendor, type BomProcessStep,
+  fetchBomProcessingStages, saveBomProcessingStages,
+  type BomLine, type BomVariant, type BomNode, type BomLineVendor, type BomProcessStep, type BomProcessingStage,
 } from "@/lib/bom-api";
 import BackgroundImportDialog from "@/components/BackgroundImportDialog";
 import { BOM_FIELD_MAP } from "@/lib/import-utils";
@@ -339,6 +340,150 @@ const emptyVariantForm = {
   copy_from: "" as string, // "" = fresh, "__default__" = default BOM, uuid = specific variant
 };
 
+// ── ProcessingStagesEditor component ─────────────────────────────────────────
+
+function ProcessingStagesEditor({
+  line,
+  stages: initialStages,
+  processorParties,
+  onSave,
+}: {
+  line: BomLine;
+  stages: BomProcessingStage[];
+  processorParties: Party[];
+  onSave: (stages: Partial<BomProcessingStage>[]) => Promise<void>;
+}) {
+  const [stages, setStages] = useState<Partial<BomProcessingStage>[]>(initialStages.length ? initialStages : []);
+  const [saving, setSaving] = useState(false);
+
+  const addStage = () => {
+    setStages(prev => [
+      ...prev,
+      {
+        stage_number: prev.length + 1,
+        stage_name: `Stage ${prev.length + 1}`,
+        process_name: '',
+        vendor_id: null,
+        vendor_name: null,
+        expected_days: 7,
+        is_final_stage: false,
+      },
+    ]);
+  };
+
+  const updateStage = (idx: number, field: string, value: any) => {
+    setStages(prev => {
+      const next = [...prev];
+      if (field === 'is_final_stage' && value === true) {
+        next.forEach((s, i) => { if (i !== idx) (s as any).is_final_stage = false; });
+      }
+      if (field === 'vendor_id') {
+        const party = processorParties.find(p => p.id === value);
+        (next[idx] as any).vendor_id = value;
+        (next[idx] as any).vendor_name = party?.name ?? null;
+      } else {
+        (next[idx] as any)[field] = value;
+      }
+      return next;
+    });
+  };
+
+  const removeStage = (idx: number) => {
+    setStages(prev => prev.filter((_, i) => i !== idx).map((s, i) => ({ ...s, stage_number: i + 1, stage_name: (s as any).stage_name || `Stage ${i + 1}` })));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try { await onSave(stages); } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="bg-purple-50 border-t border-purple-100 px-4 py-3 space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-purple-800">Processing Stages for {line.child_item_description || line.child_item_code}</p>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={addStage} className="h-7 text-xs">+ Add Stage</Button>
+          <Button size="sm" onClick={handleSave} disabled={saving} className="h-7 text-xs">{saving ? 'Saving…' : 'Save Stages'}</Button>
+        </div>
+      </div>
+      {stages.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No stages defined. Click Add Stage to begin.</p>
+      ) : (
+        <table className="w-full text-xs border-collapse">
+          <thead>
+            <tr className="bg-purple-100/60">
+              <th className="text-left px-2 py-1 w-16">Stage</th>
+              <th className="text-left px-2 py-1">Stage Name</th>
+              <th className="text-left px-2 py-1">Process</th>
+              <th className="text-left px-2 py-1 min-w-[160px]">Vendor</th>
+              <th className="text-right px-2 py-1 w-20">Days</th>
+              <th className="text-center px-2 py-1 w-20">Final</th>
+              <th className="w-8"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {stages.map((stage, idx) => (
+              <tr key={idx} className="border-t border-purple-100">
+                <td className="px-2 py-1 font-mono text-purple-700">{idx + 1}</td>
+                <td className="px-1 py-1">
+                  <input
+                    className="w-full border rounded px-2 py-0.5 text-xs bg-white"
+                    value={(stage as any).stage_name || ''}
+                    onChange={e => updateStage(idx, 'stage_name', e.target.value)}
+                    placeholder="e.g. CNC Turning"
+                  />
+                </td>
+                <td className="px-1 py-1">
+                  <input
+                    className="w-full border rounded px-2 py-0.5 text-xs bg-white"
+                    value={(stage as any).process_name || ''}
+                    onChange={e => updateStage(idx, 'process_name', e.target.value)}
+                    placeholder="e.g. Nickel Plating"
+                  />
+                </td>
+                <td className="px-1 py-1">
+                  <select
+                    className="w-full border rounded px-2 py-0.5 text-xs bg-white"
+                    value={(stage as any).vendor_id || ''}
+                    onChange={e => updateStage(idx, 'vendor_id', e.target.value || null)}
+                  >
+                    <option value="">Select vendor…</option>
+                    {processorParties.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </td>
+                <td className="px-1 py-1">
+                  <input
+                    type="number"
+                    min={1}
+                    className="w-full border rounded px-2 py-0.5 text-xs bg-white text-right"
+                    value={(stage as any).expected_days || 7}
+                    onChange={e => updateStage(idx, 'expected_days', Number(e.target.value))}
+                  />
+                </td>
+                <td className="px-2 py-1 text-center">
+                  <input
+                    type="checkbox"
+                    checked={(stage as any).is_final_stage || false}
+                    onChange={e => updateStage(idx, 'is_final_stage', e.target.checked)}
+                    className="h-3.5 w-3.5 accent-purple-600"
+                  />
+                </td>
+                <td className="px-1 py-1">
+                  <button onClick={() => removeStage(idx)} className="text-red-400 hover:text-red-600 p-0.5 rounded">
+                    <X className="h-3 w-3" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 export default function BillOfMaterials() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -388,6 +533,10 @@ export default function BillOfMaterials() {
   // ── BOM line bulk select state ───────────────────────────────────────────────
   const [selectedBomLines, setSelectedBomLines] = useState<Set<string>>(new Set());
   const [deleteLinesConfirmOpen, setDeleteLinesConfirmOpen] = useState(false);
+
+  // ── Processing stages state ──────────────────────────────────────────────────
+  const [processingStagesByLine, setProcessingStagesByLine] = useState<Map<string, BomProcessingStage[]>>(new Map());
+  const [expandedStageLines, setExpandedStageLines] = useState<Set<string>>(new Set());
 
   // ── Vendor state ─────────────────────────────────────────────────────────────
   const [expandedLines, setExpandedLines] = useState<Set<string>>(new Set());
@@ -603,6 +752,29 @@ export default function BillOfMaterials() {
     enabled: vendorDialogOpen || stepDialogOpen,
   });
   const vendorParties: Party[] = vendorPartiesData?.data ?? [];
+
+  const { data: processorPartiesData } = useQuery({
+    queryKey: ['parties-processors'],
+    queryFn: () => fetchParties({ status: 'active', pageSize: 500 }),
+  });
+  const processorParties = ((processorPartiesData?.data ?? []) as Party[]).filter(
+    (p) => (p as any).vendor_type === 'processor' || (p as any).vendor_type === 'both'
+  );
+
+  // Load processing stages for lines with has_processing_stages = true
+  useEffect(() => {
+    if (!bomLines.length) return;
+    const linesWithStages = bomLines.filter((l: any) => l.has_processing_stages);
+    if (!linesWithStages.length) return;
+    Promise.all(linesWithStages.map((l: BomLine) => fetchBomProcessingStages(l.id).then(stages => ({ lineId: l.id, stages }))))
+      .then(results => {
+        setProcessingStagesByLine(prev => {
+          const next = new Map(prev);
+          for (const { lineId, stages } of results) next.set(lineId, stages);
+          return next;
+        });
+      });
+  }, [bomLines]);
 
   const { data: processNameSuggestions = [] } = useQuery<string[]>({
     queryKey: ["bom-process-names", selectedItem?.id],
@@ -1569,6 +1741,24 @@ export default function BillOfMaterials() {
                                     </td>
                                     <td>
                                       <div className="flex gap-1">
+                                        <button
+                                          title={`${(line as any).has_processing_stages ? 'Processing stages' : 'Add processing stages'}`}
+                                          onClick={async () => {
+                                            if (!(line as any).has_processing_stages) {
+                                              await updateBomLine(line.id, { has_processing_stages: true } as any);
+                                              queryClient.invalidateQueries({ queryKey: ['bom-lines-v2', selectedItem?.id, selectedVariantId] });
+                                            }
+                                            setExpandedStageLines(prev => {
+                                              const next = new Set(prev);
+                                              if (next.has(line.id)) next.delete(line.id);
+                                              else next.add(line.id);
+                                              return next;
+                                            });
+                                          }}
+                                          className={`p-1 rounded text-xs ${(line as any).has_processing_stages ? 'text-purple-600 hover:text-purple-800' : 'text-slate-400 hover:text-slate-600'}`}
+                                        >
+                                          <ListOrdered className="h-3.5 w-3.5" />
+                                        </button>
                                         <Button
                                           variant="ghost"
                                           size="icon"
@@ -1596,6 +1786,27 @@ export default function BillOfMaterials() {
                                       </div>
                                     </td>
                                   </tr>
+                                  {/* Processing Stages section */}
+                                  {(line as any).has_processing_stages && expandedStageLines.has(line.id) && (
+                                    <tr key={`${line.id}-stages`}>
+                                      <td colSpan={99} className="p-0">
+                                        <ProcessingStagesEditor
+                                          line={line}
+                                          stages={processingStagesByLine.get(line.id) ?? []}
+                                          processorParties={processorParties}
+                                          onSave={async (stages) => {
+                                            const saved = await saveBomProcessingStages(line.id, line.child_item_id, stages);
+                                            setProcessingStagesByLine(prev => {
+                                              const next = new Map(prev);
+                                              next.set(line.id, saved);
+                                              return next;
+                                            });
+                                            toast({ title: 'Processing stages saved' });
+                                          }}
+                                        />
+                                      </td>
+                                    </tr>
+                                  )}
                                   {/* Vendor + Process Route sub-table */}
                                   {isExpanded && (
                                     <tr key={`${line.id}-expanded`}>

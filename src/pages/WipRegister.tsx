@@ -97,7 +97,11 @@ export default function WipRegister() {
             description,
             quantity,
             unit,
-            nature_of_job_work,
+            nature_of_process,
+            stage_number,
+            stage_name,
+            is_rework,
+            rework_cycle,
             qty_received,
             qty_accepted,
             qty_rejected,
@@ -105,7 +109,7 @@ export default function WipRegister() {
           )
         `)
         .in('dc_type', ['returnable', 'job_work_143', 'job_work_out'])
-        .in('status', ['sent', 'partially_returned'])
+        .in('status', ['issued', 'partially_returned'])
         .order('dc_date', { ascending: false });
       if (error) throw error;
       return data ?? [];
@@ -268,75 +272,92 @@ export default function WipRegister() {
                 <thead>
                   <tr>
                     <th>DC Number</th>
+                    <th>Drawing No</th>
+                    <th>Description</th>
+                    <th>Stage</th>
+                    <th>Process</th>
                     <th>Vendor</th>
-                    <th>Type</th>
-                    <th>Status</th>
-                    <th>Items</th>
+                    <th className="text-right">Qty Sent</th>
+                    <th className="text-right">Returned</th>
+                    <th className="text-right">Pending</th>
                     <th className="text-right">Due Date</th>
+                    <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {dcLoading ? (
                     <tr>
-                      <td colSpan={6} className="text-center py-10 text-muted-foreground">
+                      <td colSpan={11} className="text-center py-10 text-muted-foreground">
                         Loading DC WIP…
                       </td>
                     </tr>
                   ) : filteredDcs.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="text-center py-10 text-muted-foreground">
+                      <td colSpan={11} className="text-center py-10 text-muted-foreground">
                         {(wipData as any[]).length === 0
                           ? "No open returnable DCs. All clear!"
                           : "No DCs match current search."}
                       </td>
                     </tr>
                   ) : (
-                    filteredDcs.map((row: any) => {
-                      const isOverdue = row.return_before_date && row.return_before_date < today;
-                      const rowBg = isOverdue
-                        ? "bg-red-50/60 hover:bg-red-50"
-                        : "hover:bg-muted/30";
+                    filteredDcs.flatMap((row: any) => {
                       const lineItems: any[] = row.dc_line_items ?? [];
+                      const isOverdue = row.return_before_date && row.return_before_date < today;
+                      const rowBg = isOverdue ? "bg-red-50/60 hover:bg-red-50" : "hover:bg-muted/30";
 
-                      return (
-                        <tr
-                          key={row.id}
-                          className={`cursor-pointer transition-colors ${rowBg}`}
-                          onClick={() => navigate(`/delivery-challans/${row.id}`)}
-                        >
-                          <td className="font-mono text-xs font-medium text-foreground">
-                            {row.dc_number}
-                          </td>
-                          <td className="text-sm">{row.party_name ?? "—"}</td>
-                          <td className="text-sm">{dcTypeLabel(row.dc_type)}</td>
-                          <td>
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border bg-blue-50 text-blue-800 border-blue-200">
-                              <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
-                              {row.status === "partially_returned" ? "Partial Return" : "Sent"}
-                            </span>
-                          </td>
-                          <td className="text-sm text-muted-foreground">
-                            {lineItems.length} item{lineItems.length !== 1 ? "s" : ""}
-                            {lineItems.length > 0 && lineItems[0].drawing_number && (
-                              <span className="ml-1 font-mono text-xs">· {lineItems[0].drawing_number}</span>
-                            )}
-                          </td>
-                          <td className="text-right">
-                            {row.return_before_date ? (
-                              <span className={isOverdue ? "text-destructive font-medium text-sm" : "text-sm"}>
-                                {new Date(row.return_before_date).toLocaleDateString("en-IN", {
-                                  day: "2-digit", month: "short", year: "numeric",
-                                })}
-                                {isOverdue && (
-                                  <AlertTriangle className="h-3.5 w-3.5 inline ml-1" />
-                                )}
-                              </span>
-                            ) : (
-                              <span className="text-muted-foreground text-sm">—</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
+                      if (lineItems.length === 0) {
+                        return [(
+                          <tr key={row.id} className={`cursor-pointer transition-colors ${rowBg}`}
+                              onClick={() => navigate(`/delivery-challans/${row.id}`)}>
+                            <td className="font-mono text-xs font-medium">{row.dc_number}</td>
+                            <td colSpan={8} className="text-sm text-muted-foreground">No line items</td>
+                            <td className="text-right text-sm">{row.return_before_date ? new Date(row.return_before_date).toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'}) : '—'}</td>
+                            <td></td>
+                          </tr>
+                        )];
+                      }
+
+                      return lineItems.map((li: any, liIdx: number) => {
+                        const qtySent = li.quantity ?? 0;
+                        const qtyReturned = li.qty_received ?? 0;
+                        const qtyPending = Math.max(0, qtySent - qtyReturned);
+                        const isRework = li.is_rework;
+                        const statusBadge = isRework
+                          ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200">Rework Cycle {li.rework_cycle ?? 1}</span>
+                          : isOverdue
+                          ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 border border-red-200">Overdue</span>
+                          : li.return_status === 'partially_returned'
+                          ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">Partial Return</span>
+                          : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">At Vendor</span>;
+
+                        return (
+                          <tr key={`${row.id}-${liIdx}`} className={`cursor-pointer transition-colors ${rowBg}`}>
+                            <td className="font-mono text-xs font-medium text-foreground"
+                                onClick={() => navigate(`/delivery-challans/${row.id}`)}>
+                              {liIdx === 0 ? row.dc_number : ''}
+                            </td>
+                            <td className="font-mono text-xs text-blue-700">{li.drawing_number ?? '—'}</td>
+                            <td className="text-sm max-w-[160px] truncate">{li.description ?? '—'}</td>
+                            <td className="text-xs text-muted-foreground">
+                              {li.stage_number ? `Stage ${li.stage_number}${li.stage_name ? `: ${li.stage_name}` : ''}` : '—'}
+                            </td>
+                            <td className="text-xs">{li.nature_of_process ?? '—'}</td>
+                            <td className="text-sm">{liIdx === 0 ? (row.party_name ?? '—') : ''}</td>
+                            <td className="text-right font-mono tabular-nums text-sm">{qtySent}</td>
+                            <td className="text-right font-mono tabular-nums text-sm">{qtyReturned || '—'}</td>
+                            <td className="text-right font-mono tabular-nums text-sm font-medium">{qtyPending}</td>
+                            <td className="text-right">
+                              {liIdx === 0 && row.return_before_date ? (
+                                <span className={isOverdue ? 'text-destructive font-medium text-sm' : 'text-sm'}>
+                                  {new Date(row.return_before_date).toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'})}
+                                  {isOverdue && <AlertTriangle className="h-3.5 w-3.5 inline ml-1" />}
+                                </span>
+                              ) : liIdx === 0 ? <span className="text-muted-foreground text-sm">—</span> : null}
+                            </td>
+                            <td>{statusBadge}</td>
+                          </tr>
+                        );
+                      });
                     })
                   )}
                 </tbody>
