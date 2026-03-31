@@ -95,7 +95,6 @@ export default function CompanySetup() {
       console.log("[setup_company] params:", params);
 
       const result = await supabase.rpc("setup_company" as any, params);
-      console.log("[setup_company] result:", result);
       if (result.error) {
         console.error("[setup_company] error:", result.error);
         throw result.error;
