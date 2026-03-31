@@ -112,8 +112,9 @@ export default function CompanySetup() {
       setLoading(false);
       setRedirecting(true);
 
-      // Small yield so React can flush the state update above before navigation.
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      // Yield long enough for React to flush the auth context's setProfile update
+      // (queued inside refreshProfile) before ProtectedRoute checks companyId.
+      await new Promise((resolve) => setTimeout(resolve, 500));
       navigate("/", { replace: true });
     } catch (err: any) {
       console.error("[setup_company] caught:", err);
