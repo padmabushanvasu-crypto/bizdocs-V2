@@ -20,7 +20,7 @@ export default function CompanySetup() {
   const { toast } = useToast();
   const { user, companyId, loading: authLoading, refreshProfile } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [redirecting, setRedirecting] = useState(false);
+  const [setupComplete, setSetupComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [companyName, setCompanyName] = useState("");
@@ -43,6 +43,14 @@ export default function CompanySetup() {
       if (existingSettings.phone) setPhone(existingSettings.phone ?? "");
     }
   }, [existingSettings]);
+
+  // Navigate only when the auth context has actually committed the new companyId —
+  // not based on a timer. refreshProfile() runs async; this fires when it lands.
+  useEffect(() => {
+    if (setupComplete && companyId) {
+      navigate("/", { replace: true });
+    }
+  }, [setupComplete, companyId, navigate]);
 
   const handleStateChange = (val: string) => {
     const s = INDIAN_STATES.find((st) => st.name === val);
@@ -94,28 +102,19 @@ export default function CompanySetup() {
       }
       const newCompanyId = result.data;
 
-      // Assert the known-good company ID immediately so no subsequent code can wipe it.
+      // Set module-level cache immediately so API calls work right away.
       setCompanyId(newCompanyId);
       localStorage.setItem("bizdocs_company_setup_done", "true");
 
-      // Attempt a profile refresh, but re-assert afterwards.
-      // loadProfile may temporarily clear these flags if the DB hasn't yet
-      // reflected the new company_id on the profile row (replication lag),
-      // causing the repair branch to call clearCompanyId / removeItem.
-      await refreshProfile();
-
-      // Re-assert: the RPC already confirmed success, so we own this state.
-      setCompanyId(newCompanyId);
-      localStorage.setItem("bizdocs_company_setup_done", "true");
+      // Fire profile refresh — do NOT await. When the async fetch completes and
+      // React commits setProfile(data), companyId in the auth context will update,
+      // which triggers the useEffect above to navigate. This is correct: navigation
+      // happens exactly when the context is ready, not based on an arbitrary timer.
+      refreshProfile();
 
       toast({ title: "Company set up successfully!" });
       setLoading(false);
-      setRedirecting(true);
-
-      // Yield long enough for React to flush the auth context's setProfile update
-      // (queued inside refreshProfile) before ProtectedRoute checks companyId.
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      navigate("/", { replace: true });
+      setSetupComplete(true);
     } catch (err: any) {
       console.error("[setup_company] caught:", err);
       const msg = err.message || "Something went wrong during setup.";
@@ -178,8 +177,8 @@ export default function CompanySetup() {
               <Label htmlFor="phone">Phone</Label>
               <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91 98000 00000" />
             </div>
-            <Button type="submit" className="w-full" disabled={loading || redirecting}>
-              {redirecting ? (
+            <Button type="submit" className="w-full" disabled={loading || setupComplete}>
+              {setupComplete ? (
                 <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Redirecting…</>
               ) : loading ? (
                 <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Setting up…</>
