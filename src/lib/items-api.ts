@@ -58,6 +58,8 @@ export interface ItemFilters {
 }
 
 export async function fetchItems(filters: ItemFilters = {}) {
+  const companyId = await getCompanyId();
+  if (!companyId) return { data: [], count: 0 };
   const { search, type = "all", status = "active", page = 1, pageSize = 100 } = filters;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;

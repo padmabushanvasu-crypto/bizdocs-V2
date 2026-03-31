@@ -99,6 +99,7 @@ export async function saveCompanySettings(settings: Partial<CompanySettings>) {
     return data;
   } else {
     const companyId = await getCompanyId();
+    if (!companyId) throw new Error("No company configured");
     const { data, error } = await supabase.from("company_settings").insert({ ...settings, company_id: companyId } as any).select().single();
     if (error) throw error;
     return data;
@@ -137,6 +138,7 @@ export async function fetchCustomFields(docType?: string): Promise<CustomField[]
 
 export async function createCustomField(field: Partial<CustomField>) {
   const companyId = await getCompanyId();
+  if (!companyId) throw new Error("No company configured");
   const { data, error } = await supabase.from("custom_fields").insert({ ...field, company_id: companyId } as any).select().single();
   if (error) throw error;
   return data;

@@ -29,6 +29,8 @@ export interface InvoiceFilters {
 }
 
 export async function fetchInvoices(filters: InvoiceFilters = {}) {
+  const companyId = await getCompanyId();
+  if (!companyId) return { data: [], count: 0 };
   const { search, status = "all", page = 1, pageSize = 20 } = filters;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;

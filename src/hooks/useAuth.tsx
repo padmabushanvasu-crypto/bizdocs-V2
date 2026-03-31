@@ -37,43 +37,6 @@ const AuthContext = createContext<AuthContextType>({
   refreshProfile: async () => {},
 });
 
-// ─── Safety-net repair ────────────────────────────────────────────────────────
-// Called when loadProfile detects a missing profile or null company_id.
-// Uses the same setup_company RPC that CompanySetup.tsx uses — it runs as
-// SECURITY DEFINER so it bypasses RLS and works for Google OAuth users who
-// never explicitly went through the setup flow.
-async function repairMissingCompany(user: User): Promise<Profile | null> {
-  console.warn(
-    "[BizDocs auth] Trigger appears to have failed for user",
-    user.id,
-    "— auto-repairing via setup_company RPC",
-  );
-  const sb = supabase as any;
-
-  const { error: rpcError } = await sb.rpc("setup_company", {
-    _company_name: "My Company",
-    _gstin: null,
-    _state: null,
-    _state_code: null,
-    _phone: null,
-  });
-
-  if (rpcError) {
-    console.error("[BizDocs auth] Auto-repair failed:", rpcError);
-    return null;
-  }
-
-  // Re-fetch profile after repair
-  const { data } = await sb
-    .from("profiles")
-    .select("*")
-    .eq("id", user.id)
-    .single();
-
-  return data ?? null;
-}
-// ─────────────────────────────────────────────────────────────────────────────
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -93,8 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // ── Case 1: No profile at all (trigger failed on first sign-up) ──────────
       if (error && error.code === "PGRST116") {
-        data = await repairMissingCompany(user);
-        // If repair also failed, fall through with null — user goes to /setup
+        // data stays null — fall through, user goes to /setup
       }
 
       // ── Case 2: Profile exists but company_id is null (partial trigger fail) ──
@@ -102,11 +64,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.warn(
           "[BizDocs auth] Profile exists but company_id is null for user",
           user.id,
-          "— attempting auto-repair",
         );
-        const repaired = await repairMissingCompany(user);
-        if (repaired?.company_id) data = repaired;
-        // If repair failed, fall through — user goes to /setup
+        // Fall through — user goes to /setup
       }
 
       // ── Case 3: Profile + company_id look fine — check for shared company ────

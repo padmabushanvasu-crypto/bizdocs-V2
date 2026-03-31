@@ -67,6 +67,8 @@ export interface POFilters {
 }
 
 export async function fetchPurchaseOrders(filters: POFilters = {}) {
+  const companyId = await getCompanyId();
+  if (!companyId) return { data: [], count: 0 };
   const { search, status = "all", vendorSearch, dateFrom, dateTo, page = 1, pageSize = 20 } = filters;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;

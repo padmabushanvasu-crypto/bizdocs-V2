@@ -36,6 +36,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { fetchFatStats } from "@/lib/fat-api";
 import { fetchReorderSummary } from "@/lib/reorder-api";
+import { fetchCompanySettings } from "@/lib/settings-api";
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -408,6 +409,16 @@ export function AppSidebar() {
 
   const reorderCritical = reorderSummary?.critical ?? 0;
 
+  const { data: companySettingsData } = useQuery({
+    queryKey: ["company-settings"],
+    queryFn: fetchCompanySettings,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const companyNeedsSetup = !companySettingsData?.gstin ||
+    !companySettingsData?.company_name ||
+    companySettingsData.company_name === "My Company";
+
   // Dynamic nav arrays (badges computed from live data)
   const dailyWorkNav: NavItem[] = [
     { title: "Dashboard", url: "/", icon: LayoutDashboard },
@@ -442,7 +453,7 @@ export function AppSidebar() {
     { title: "Parties", url: "/parties", icon: Users },
     { title: "Items", url: "/items", icon: Package },
     { title: "Bill of Materials", url: "/bill-of-materials", icon: GitFork },
-    { title: "Settings", url: "/settings", icon: Settings },
+    { title: "Settings", url: "/settings", icon: Settings, badge: companyNeedsSetup ? 1 : undefined, badgeColor: "amber" as const },
   ];
 
   // Group items map for rail flyout

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/useAuth";
 import { ArrowLeft, Save, Building2, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +21,7 @@ export default function CompanySettings() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { profile, refreshProfile } = useAuth();
 
   const [form, setForm] = useState({
     company_name: "",
@@ -115,8 +117,23 @@ export default function CompanySettings() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      let logoUrl = form.logo_url;
+      const isFirstSetup = !profile?.company_id;
 
+      // Step 1: If no company yet, call setup_company RPC to create it
+      if (isFirstSetup) {
+        const { error: rpcError } = await (supabase as any).rpc("setup_company", {
+          _company_name: form.company_name || "My Company",
+          _gstin: form.gstin || null,
+          _state: form.state || null,
+          _state_code: form.state_code || null,
+          _phone: form.phone || null,
+        });
+        if (rpcError) throw rpcError;
+        await refreshProfile();
+      }
+
+      // Step 2: Logo upload (unchanged from existing code)
+      let logoUrl = form.logo_url;
       if (logoFile) {
         setUploading(true);
         try {
@@ -125,7 +142,6 @@ export default function CompanySettings() {
           const { error: uploadError } = await supabase.storage
             .from("company-assets")
             .upload(path, logoFile, { upsert: true });
-
           if (!uploadError) {
             const { data: urlData } = supabase.storage
               .from("company-assets")
@@ -137,29 +153,36 @@ export default function CompanySettings() {
         }
       }
 
-      return saveCompanySettings({
-        company_name: form.company_name || null,
-        address_line1: form.address_line1 || null,
-        address_line2: form.address_line2 || null,
-        city: form.city || null,
-        state: form.state || null,
-        state_code: form.state_code || null,
-        pin_code: form.pin_code || null,
-        gstin: form.gstin || null,
-        pan: form.pan || null,
-        phone: form.phone || null,
-        email: form.email || null,
-        website: form.website || null,
-        logo_url: logoUrl || null,
-        // Extra fields stored as-is (DB may have them via migration)
-        ...(form.address_line3 ? { address_line3: form.address_line3 } : {}),
-        ...(form.cin ? { cin: form.cin } : {}),
-        ...(form.authorized_signatory ? { authorized_signatory: form.authorized_signatory } : {}),
-      } as any);
+      // Step 3: Save extended company settings
+      return {
+        result: await saveCompanySettings({
+          company_name: form.company_name || null,
+          address_line1: form.address_line1 || null,
+          address_line2: form.address_line2 || null,
+          city: form.city || null,
+          state: form.state || null,
+          state_code: form.state_code || null,
+          pin_code: form.pin_code || null,
+          gstin: form.gstin || null,
+          pan: form.pan || null,
+          phone: form.phone || null,
+          email: form.email || null,
+          website: form.website || null,
+          logo_url: logoUrl || null,
+          ...(form.address_line3 ? { address_line3: form.address_line3 } : {}),
+          ...(form.cin ? { cin: form.cin } : {}),
+          ...(form.authorized_signatory ? { authorized_signatory: form.authorized_signatory } : {}),
+        } as any),
+        isFirstSetup,
+      };
     },
-    onSuccess: () => {
+    onSuccess: ({ isFirstSetup }) => {
       queryClient.invalidateQueries({ queryKey: ["company-settings"] });
-      toast({ title: "Company profile saved" });
+      if (isFirstSetup) {
+        toast({ title: "Company configured successfully", description: "You can now use all BizDocs features." });
+      } else {
+        toast({ title: "Company details saved successfully" });
+      }
     },
     onError: (err: any) =>
       toast({ title: "Error", description: err.message, variant: "destructive" }),

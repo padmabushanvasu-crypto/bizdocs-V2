@@ -30,15 +30,11 @@ export function ProtectedRoute({ children, requireCompany = true }: { children: 
   }
 
   if (requireCompany) {
-    // Fast path: localStorage confirms company was set up — skip the DB-derived check.
-    // Handles cases where profile fetch failed transiently after auth resolved.
-    const setupDone = localStorage.getItem("bizdocs_company_setup_done") === "true";
-
     // Safety: never redirect if already on a setup path (prevents redirect loops)
     const onSetupPath = SETUP_PATHS.includes(location.pathname);
 
-    // Step 3+4: Auth loaded, profile loaded, no company confirmed anywhere → redirect
-    if (!setupDone && !companyId && !onSetupPath) {
+    // Step 3+4: Auth loaded, profile loaded, no company → redirect
+    if (!companyId && !onSetupPath) {
       return <Navigate to="/setup" replace />;
     }
   }

@@ -58,6 +58,8 @@ export interface GRNFilters {
 }
 
 export async function fetchGRNs(filters: GRNFilters = {}) {
+  const companyId = await getCompanyId();
+  if (!companyId) return { data: [], count: 0 };
   const { search, status = "all", page = 1, pageSize = 20 } = filters;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
@@ -221,6 +223,8 @@ export async function fetchGRNsForPO(poId: string): Promise<GRN[]> {
 }
 
 export async function fetchGRNStats() {
+  const companyId = await getCompanyId();
+  if (!companyId) return { totalThisMonth: 0, totalAccepted: 0, totalRejected: 0, pendingVerification: 0 };
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
   const { data: allGRNs, error } = await supabase.from("grns").select("id, grn_date, status, total_accepted, total_rejected");

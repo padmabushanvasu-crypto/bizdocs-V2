@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { setCompanyId } from "@/lib/auth-helpers";
+import { fetchCompanySettings } from "@/lib/settings-api";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,12 +29,20 @@ export default function CompanySetup() {
   const [stateCode, setStateCode] = useState("");
   const [phone, setPhone] = useState("");
 
-  // Redirect if user already has a company
+  const { data: existingSettings } = useQuery({
+    queryKey: ["company-settings"],
+    queryFn: fetchCompanySettings,
+  });
+
   useEffect(() => {
-    if (!authLoading && companyId) {
-      navigate("/", { replace: true });
+    if (existingSettings) {
+      setCompanyName(existingSettings.company_name ?? "");
+      setGstin(existingSettings.gstin ?? "");
+      if (existingSettings.state) setState(existingSettings.state);
+      if (existingSettings.state_code) setStateCode(existingSettings.state_code);
+      if (existingSettings.phone) setPhone(existingSettings.phone ?? "");
     }
-  }, [authLoading, companyId, navigate]);
+  }, [existingSettings]);
 
   const handleStateChange = (val: string) => {
     const s = INDIAN_STATES.find((st) => st.name === val);
@@ -130,8 +140,8 @@ export default function CompanySetup() {
           <div className="mx-auto h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
             <Building2 className="h-6 w-6 text-primary" />
           </div>
-          <CardTitle className="font-display text-2xl">Set Up Your Company</CardTitle>
-          <p className="text-sm text-muted-foreground">Tell us about your business to get started</p>
+          <CardTitle className="font-display text-2xl">{companyId ? "Company Details" : "Set Up Your Company"}</CardTitle>
+          <p className="text-sm text-muted-foreground">{companyId ? "Update your company name and basic details" : "Tell us about your business to get started"}</p>
         </CardHeader>
         <CardContent>
           {error && (
@@ -172,7 +182,7 @@ export default function CompanySetup() {
                 <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Redirecting…</>
               ) : loading ? (
                 <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Setting up…</>
-              ) : error ? "Try Again" : "Continue to Dashboard"}
+              ) : error ? "Try Again" : companyId ? "Update Company Details" : "Continue to Dashboard"}
             </Button>
             <p className="text-xs text-center text-muted-foreground">You can update these details later in Settings</p>
           </form>

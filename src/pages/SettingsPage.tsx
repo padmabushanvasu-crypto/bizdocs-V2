@@ -1,6 +1,8 @@
 import { useNavigate } from "react-router-dom";
-import { Building2, FileText, Bell, Upload, FileSpreadsheet, Users, History, BookOpen, ChevronRight } from "lucide-react";
+import { Building2, FileText, Bell, Upload, FileSpreadsheet, Users, History, BookOpen, ChevronRight, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useQuery } from "@tanstack/react-query";
+import { fetchCompanySettings } from "@/lib/settings-api";
 
 interface SettingsCard {
   icon: React.ElementType;
@@ -15,6 +17,15 @@ interface SettingsCard {
 export default function SettingsPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  const { data: companySettings } = useQuery({
+    queryKey: ["company-settings"],
+    queryFn: fetchCompanySettings,
+  });
+
+  const isNotConfigured = !companySettings?.gstin ||
+    !companySettings?.company_name ||
+    companySettings.company_name === "My Company";
 
   const cards: SettingsCard[] = [
     {
@@ -86,6 +97,21 @@ export default function SettingsPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-6">
+      {isNotConfigured && (
+        <div className="mb-2 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-amber-800">Your company is not fully configured</p>
+            <p className="text-sm text-amber-700 mt-0.5">Some features may not work correctly. Complete your company setup to use BizDocs properly.</p>
+          </div>
+          <button
+            onClick={() => navigate("/setup")}
+            className="shrink-0 text-sm font-medium text-amber-800 underline hover:text-amber-900"
+          >
+            Complete Setup →
+          </button>
+        </div>
+      )}
       {/* Page header */}
       <div>
         <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Settings</h1>

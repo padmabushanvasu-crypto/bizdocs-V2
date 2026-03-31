@@ -214,6 +214,8 @@ export interface DCFilters {
 }
 
 export async function fetchDeliveryChallans(filters: DCFilters = {}) {
+  const companyId = await getCompanyId();
+  if (!companyId) return { data: [], count: 0 };
   const { search, status = "all", page = 1, pageSize = 20 } = filters;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
@@ -512,6 +514,8 @@ async function recalculateDCStatus(dcId: string) {
 }
 
 export async function fetchDCStats() {
+  const companyId = await getCompanyId();
+  if (!companyId) return { totalThisMonth: 0, openDCs: 0, overdueDCs: 0, pendingReturns: 0 };
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
   const today = now.toISOString().split("T")[0];

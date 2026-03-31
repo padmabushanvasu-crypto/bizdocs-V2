@@ -20,6 +20,8 @@ export interface PartiesFilters {
 }
 
 export async function fetchParties(filters: PartiesFilters = {}) {
+  const companyId = await getCompanyId();
+  if (!companyId) return { data: [], count: 0 };
   const { search, type = "all", vendor_type = "all", status = "active", page = 1, pageSize = 100 } = filters;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
@@ -363,6 +365,8 @@ export interface VendorScorecard {
 }
 
 export async function fetchVendorScorecards(search?: string): Promise<VendorScorecard[]> {
+  const companyId = await getCompanyId();
+  if (!companyId) return [];
   let query = (supabase as any).from("vendor_scorecard").select("*");
   if (search?.trim()) {
     const sanitized = sanitizeSearchTerm(search);
@@ -438,6 +442,7 @@ export async function fetchVendorScorecards(search?: string): Promise<VendorScor
 
 export async function fetchVendorDCHistory(vendorId: string): Promise<any[]> {
   const companyId = await getCompanyId();
+  if (!companyId) return [];
   const { data, error } = await (supabase as any)
     .from('delivery_challans')
     .select('id, dc_number, dc_date, dc_type, status, party_name, dc_line_items(id, serial_number, description, drawing_number, quantity, qty_nos, qty_accepted, qty_rejected, rejection_reason, rejection_action, rework_cycle, is_rework, stage_number, stage_name, nature_of_process)')
@@ -452,6 +457,7 @@ export async function fetchVendorDCHistory(vendorId: string): Promise<any[]> {
 
 export async function fetchVendorGRNHistory(vendorId: string): Promise<any[]> {
   const companyId = await getCompanyId();
+  if (!companyId) return [];
   const { data, error } = await (supabase as any)
     .from('grns')
     .select('id, grn_number, grn_date, po_number, status, grn_line_items(id, serial_number, description, drawing_number, receiving_now, accepted_quantity, rejected_quantity, rejection_reason, rejection_action, replacement_cycle, is_replacement)')
