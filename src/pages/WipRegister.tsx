@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate, useSearchParams, Link } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import {
   Activity,
   Factory,
@@ -15,34 +15,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/SegmentedControl";
-import { fetchWipRegister, type WipEntry } from "@/lib/job-works-api";
+import { supabase } from "@/integrations/supabase/client";
 import {
   fetchInProgressAOsWithLines,
   type AssemblyOrderWithLines,
 } from "@/lib/assembly-orders-api";
-import { formatCurrency } from "@/lib/gst-utils";
 import { exportToExcel } from "@/lib/export-utils";
 import { format, differenceInDays } from "date-fns";
 
 type WipTab = "all" | "component" | "subassembly";
-
-// ── Status badge (component WIP) ─────────────────────────────────────────────
-
-function StatusBadge({ status }: { status: WipEntry["status"] }) {
-  if (status === "on_hold") {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border bg-amber-50 text-amber-800 border-amber-200">
-        On Hold
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border bg-blue-50 text-blue-800 border-blue-200">
-      <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
-      In Progress
-    </span>
-  );
-}
 
 // ── Days-in-progress cell for AOs ────────────────────────────────────────────
 
@@ -79,20 +60,56 @@ function ComponentsReady({ lines }: { lines: AssemblyOrderWithLines["lines"] }) 
   );
 }
 
+// ── DC type display ────────────────────────────────────────────────────────────
+
+function dcTypeLabel(dcType: string) {
+  if (dcType === "job_work_143") return "Returnable — Section 143";
+  if (dcType === "job_work_out") return "Returnable — Processing";
+  if (dcType === "returnable")   return "Returnable";
+  return dcType;
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function WipRegister() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
 
   const [tab, setTab] = useState<WipTab>("all");
   const [search, setSearch] = useState("");
 
-  // Component WIP (job cards)
-  const { data: rows = [], isLoading: jcLoading, dataUpdatedAt } = useQuery({
-    queryKey: ["wip-register"],
-    queryFn: () => fetchWipRegister(),
-    refetchInterval: 30000,
+  // DC-based WIP
+  const { data: wipData = [], isLoading: dcLoading, dataUpdatedAt } = useQuery({
+    queryKey: ['wip-dcs'],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from('delivery_challans')
+        .select(`
+          id,
+          dc_number,
+          dc_date,
+          dc_type,
+          status,
+          party_name,
+          return_before_date,
+          dc_line_items (
+            id,
+            drawing_number,
+            description,
+            quantity,
+            unit,
+            nature_of_job_work,
+            qty_received,
+            qty_accepted,
+            qty_rejected,
+            return_status
+          )
+        `)
+        .in('dc_type', ['returnable', 'job_work_143', 'job_work_out'])
+        .in('status', ['sent', 'partially_returned'])
+        .order('dc_date', { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
   });
 
   // Sub-assembly WIP (assembly orders in progress)
@@ -102,18 +119,21 @@ export default function WipRegister() {
     refetchInterval: 30000,
   });
 
-  // Filtered component WIP
-  const filteredJc = useMemo(() => {
+  // Filtered DC WIP
+  const filteredDcs = useMemo(() => {
+    const rows = wipData as any[];
     if (!search.trim()) return rows;
     const q = search.toLowerCase();
     return rows.filter(
-      (r) =>
-        r.jc_number?.toLowerCase().includes(q) ||
-        r.item_code?.toLowerCase().includes(q) ||
-        r.item_description?.toLowerCase().includes(q) ||
-        r.current_vendor_name?.toLowerCase().includes(q)
+      (r: any) =>
+        r.dc_number?.toLowerCase().includes(q) ||
+        r.party_name?.toLowerCase().includes(q) ||
+        r.dc_line_items?.some((li: any) =>
+          li.drawing_number?.toLowerCase().includes(q) ||
+          li.description?.toLowerCase().includes(q)
+        )
     );
-  }, [rows, search]);
+  }, [wipData, search]);
 
   // Filtered assembly WIP
   const filteredAo = useMemo(() => {
@@ -129,11 +149,8 @@ export default function WipRegister() {
   }, [aoRows, search]);
 
   // Summary stats
-  const atVendor = rows.filter((r) => r.current_location === "at_vendor").length;
-  const inHouse  = rows.filter((r) => r.current_location === "in_house").length;
-  const overdueCount = rows.filter((r) => r.is_overdue).length;
-
   const today = new Date().toISOString().split("T")[0];
+  const overdueCount = (wipData as any[]).filter((r: any) => r.return_before_date && r.return_before_date < today).length;
   const aoOverdue = aoRows.filter((ao) => ao.planned_date && ao.planned_date < today).length;
 
   const lastRefreshed = dataUpdatedAt
@@ -144,23 +161,16 @@ export default function WipRegister() {
     exportToExcel(
       [
         {
-          sheetName: "Component WIP",
+          sheetName: "DC WIP",
           columns: [
-            { key: "jc_number",           label: "JW Number",       type: "text",     width: 14 },
-            { key: "item_code",            label: "Item Code",        type: "text",     width: 12 },
-            { key: "item_description",     label: "Description",      type: "text",     width: 28 },
-            { key: "status",               label: "Status",           type: "text",     width: 12 },
-            { key: "current_location",     label: "Location",         type: "text",     width: 12 },
-            { key: "current_vendor_name",  label: "Vendor",           type: "text",     width: 20 },
-            { key: "current_step_name",    label: "Current Step",     type: "text",     width: 22 },
-            { key: "expected_return_date", label: "Expected Return",  type: "date",     width: 16 },
-            { key: "days_at_vendor",       label: "Days at Vendor",   type: "number",   width: 14 },
-            { key: "days_overdue",         label: "Days Overdue",     type: "number",   width: 13 },
-            { key: "quantity_accepted",    label: "Qty",              type: "number",   width: 8  },
-            { key: "total_cost",           label: "Running Cost",     type: "currency", width: 14 },
-            { key: "days_active",          label: "Days Active",      type: "number",   width: 12 },
+            { key: "dc_number",          label: "DC Number",       type: "text",   width: 14 },
+            { key: "dc_date",            label: "DC Date",          type: "date",   width: 12 },
+            { key: "dc_type",            label: "Type",             type: "text",   width: 20 },
+            { key: "party_name",         label: "Vendor",           type: "text",   width: 24 },
+            { key: "status",             label: "Status",           type: "text",   width: 14 },
+            { key: "return_before_date", label: "Return Due",       type: "date",   width: 14 },
           ],
-          data: filteredJc,
+          data: filteredDcs,
         },
         {
           sheetName: "Production WIP",
@@ -209,8 +219,8 @@ export default function WipRegister() {
       <div className="flex items-center gap-4 flex-wrap">
         <SegmentedControl
           options={[
-            { value: "all",         label: "All WIP",           color: "#0F172A", count: rows.length + aoRows.length },
-            { value: "component",   label: "Component WIP",     color: "#2563EB", count: rows.length },
+            { value: "all",         label: "All WIP",           color: "#0F172A", count: (wipData as any[]).length + aoRows.length },
+            { value: "component",   label: "DC WIP",            color: "#2563EB", count: (wipData as any[]).length },
             { value: "subassembly", label: "Production WIP",    color: "#0F766E", count: aoRows.length },
           ]}
           value={tab}
@@ -218,34 +228,31 @@ export default function WipRegister() {
         />
 
         <Input
-          placeholder="Search JW number, run number, item, vendor…"
+          placeholder="Search DC number, vendor, drawing, description…"
           className="h-9 w-72 text-sm"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
 
-      {/* ── Section 1: Component WIP ── */}
+      {/* ── Section 1: DC WIP ── */}
       {showComponent && (
         <div className="space-y-3">
           {/* Section header */}
           <div className="flex items-center gap-2">
             <Wrench className="h-4 w-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold text-foreground">Component WIP</h2>
+            <h2 className="text-sm font-semibold text-foreground">DC WIP (Returnable)</h2>
             <span className="bg-slate-100 text-slate-700 text-[11px] font-bold px-2 py-0.5 rounded-full border border-slate-200">
-              {rows.length}
+              {(wipData as any[]).length}
             </span>
           </div>
 
           {/* Inline stat chips */}
           <div className="flex items-center gap-2 flex-wrap text-sm">
             <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-medium text-xs ${
-              atVendor > 0 ? "bg-blue-50 border border-blue-200 text-blue-800 shadow-sm" : "bg-slate-50 border border-slate-200 text-slate-600"
+              (wipData as any[]).length > 0 ? "bg-blue-50 border border-blue-200 text-blue-800 shadow-sm" : "bg-slate-50 border border-slate-200 text-slate-600"
             }`}>
-              <Truck className="h-3 w-3" /> {atVendor} at vendors
-            </span>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-50 border border-slate-200 text-slate-600 font-medium text-xs">
-              <Factory className="h-3 w-3" /> {inHouse} in house
+              <Truck className="h-3 w-3" /> {(wipData as any[]).length} at vendors
             </span>
             <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs ${
               overdueCount > 0 ? "bg-red-50 border border-red-200 text-red-800 font-bold shadow-sm" : "bg-slate-50 border border-slate-200 text-slate-600 font-medium"
@@ -254,127 +261,79 @@ export default function WipRegister() {
             </span>
           </div>
 
-          {/* Component WIP table */}
+          {/* DC WIP table */}
           <div className="paper-card !p-0">
             <div className="overflow-x-auto">
               <table className="w-full data-table">
                 <thead>
                   <tr>
-                    <th>JW Number</th>
-                    <th>Item</th>
+                    <th>DC Number</th>
+                    <th>Vendor</th>
+                    <th>Type</th>
                     <th>Status</th>
-                    <th>Location</th>
-                    <th>Current Step</th>
-                    <th className="text-right">Expected Return</th>
-                    <th className="text-right">Days Overdue</th>
-                    <th className="text-right">Qty</th>
-                    <th className="text-right">Running Cost</th>
-                    <th className="text-right">Days Active</th>
+                    <th>Items</th>
+                    <th className="text-right">Due Date</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {jcLoading ? (
+                  {dcLoading ? (
                     <tr>
-                      <td colSpan={10} className="text-center py-10 text-muted-foreground">
-                        Loading component WIP…
+                      <td colSpan={6} className="text-center py-10 text-muted-foreground">
+                        Loading DC WIP…
                       </td>
                     </tr>
-                  ) : filteredJc.length === 0 ? (
+                  ) : filteredDcs.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="text-center py-10 text-muted-foreground">
-                        {rows.length === 0
-                          ? "No active work orders. All clear!"
-                          : "No work orders match current search."}
+                      <td colSpan={6} className="text-center py-10 text-muted-foreground">
+                        {(wipData as any[]).length === 0
+                          ? "No open returnable DCs. All clear!"
+                          : "No DCs match current search."}
                       </td>
                     </tr>
                   ) : (
-                    filteredJc.map((row) => {
-                      const rowBg = row.is_overdue
+                    filteredDcs.map((row: any) => {
+                      const isOverdue = row.return_before_date && row.return_before_date < today;
+                      const rowBg = isOverdue
                         ? "bg-red-50/60 hover:bg-red-50"
-                        : row.status === "on_hold"
-                        ? "bg-muted/40 hover:bg-muted/60"
                         : "hover:bg-muted/30";
+                      const lineItems: any[] = row.dc_line_items ?? [];
 
                       return (
                         <tr
                           key={row.id}
                           className={`cursor-pointer transition-colors ${rowBg}`}
-                          onClick={() => navigate(`/job-works/${row.id}`)}
+                          onClick={() => navigate(`/delivery-challans/${row.id}`)}
                         >
                           <td className="font-mono text-xs font-medium text-foreground">
-                            {row.jc_number}
+                            {row.dc_number}
                           </td>
+                          <td className="text-sm">{row.party_name ?? "—"}</td>
+                          <td className="text-sm">{dcTypeLabel(row.dc_type)}</td>
                           <td>
-                            <p className="font-medium text-sm leading-tight">{row.item_code ?? "—"}</p>
-                            {row.item_description && (
-                              <p className="text-xs text-muted-foreground truncate max-w-[160px]">
-                                {row.item_description}
-                              </p>
-                            )}
-                            {row.batch_ref && (
-                              <p className="text-[10px] text-muted-foreground/70">Batch: {row.batch_ref}</p>
-                            )}
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border bg-blue-50 text-blue-800 border-blue-200">
+                              <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
+                              {row.status === "partially_returned" ? "Partial Return" : "Sent"}
+                            </span>
                           </td>
-                          <td>
-                            <StatusBadge status={row.status} />
-                          </td>
-                          <td>
-                            {row.current_location === "at_vendor" ? (
-                              <div className="flex items-center gap-1.5">
-                                <Truck className="h-3.5 w-3.5 text-blue-600 shrink-0" />
-                                <span className="text-sm text-blue-600 font-medium">{row.current_vendor_name ?? "Vendor"}</span>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-1.5">
-                                <Factory className="h-3.5 w-3.5 text-blue-600 shrink-0" />
-                                <span className="text-sm text-muted-foreground">In House</span>
-                              </div>
-                            )}
-                          </td>
-                          <td>
-                            {row.current_step_name ? (
-                              <div>
-                                <p className="text-sm">{row.current_step_name}</p>
-                                {row.current_step_number != null && (
-                                  <p className="text-xs text-muted-foreground">Step {row.current_step_number}</p>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-muted-foreground text-sm">—</span>
+                          <td className="text-sm text-muted-foreground">
+                            {lineItems.length} item{lineItems.length !== 1 ? "s" : ""}
+                            {lineItems.length > 0 && lineItems[0].drawing_number && (
+                              <span className="ml-1 font-mono text-xs">· {lineItems[0].drawing_number}</span>
                             )}
                           </td>
                           <td className="text-right">
-                            {row.expected_return_date ? (
-                              <span className={row.is_overdue ? "text-destructive font-medium text-sm" : "text-sm"}>
-                                {new Date(row.expected_return_date).toLocaleDateString("en-IN", {
+                            {row.return_before_date ? (
+                              <span className={isOverdue ? "text-destructive font-medium text-sm" : "text-sm"}>
+                                {new Date(row.return_before_date).toLocaleDateString("en-IN", {
                                   day: "2-digit", month: "short", year: "numeric",
                                 })}
+                                {isOverdue && (
+                                  <AlertTriangle className="h-3.5 w-3.5 inline ml-1" />
+                                )}
                               </span>
                             ) : (
                               <span className="text-muted-foreground text-sm">—</span>
                             )}
-                          </td>
-                          <td className="text-right">
-                            {row.is_overdue && row.days_overdue != null ? (
-                              <span className="text-destructive font-medium text-sm flex items-center justify-end gap-1">
-                                <AlertTriangle className="h-3.5 w-3.5" />
-                                {row.days_overdue}d
-                              </span>
-                            ) : (
-                              <span className="text-muted-foreground text-sm">—</span>
-                            )}
-                          </td>
-                          <td className="text-right font-mono tabular-nums text-sm">
-                            {row.quantity_accepted}
-                          </td>
-                          <td className="text-right font-mono tabular-nums text-sm font-medium">
-                            {formatCurrency(row.total_cost)}
-                          </td>
-                          <td className="text-right">
-                            <div className="flex items-center justify-end gap-1 text-sm text-muted-foreground">
-                              <Clock className="h-3.5 w-3.5" />
-                              {row.days_active}d
-                            </div>
                           </td>
                         </tr>
                       );

@@ -13,7 +13,6 @@ import {
   fetchDeliveryChallan,
   cancelDeliveryChallan,
   fetchDCReturns,
-  recordJobWorkDCReturn,
   recordLineItemReturn,
 } from "@/lib/delivery-challans-api";
 import { formatCurrency, formatNumber, amountInWords } from "@/lib/gst-utils";
@@ -35,11 +34,13 @@ const statusLabels: Record<string, string> = {
   fully_returned: "Fully Returned", cancelled: "Cancelled",
 };
 const typeLabels: Record<string, string> = {
-  returnable: "RETURNABLE", non_returnable: "NON-RETURNABLE", job_work_143: "JOB WORK (SEC 143)",
-  job_work_out: "JOB WORK OUT", job_work_return: "JOB WORK RETURN",
+  returnable: "RETURNABLE", non_returnable: "NON-RETURNABLE",
+  job_work_143: "RETURNABLE — SECTION 143",
+  job_work_out: "RETURNABLE — PROCESSING",
+  job_work_return: "PROCESSING RETURN",
 };
 
-const JOB_WORK_TYPES = ["job_work_out", "job_work_return", "returnable", "job_work_143"];
+const RETURNABLE_DC_TYPES = ["job_work_out", "job_work_return", "returnable", "job_work_143"];
 const categoryLabels: Record<string, string> = {
   supply_on_approval: "Supply on Approval", job_work_return: "Job Work Return",
   sales_return: "Sales Return", others: "Others",
@@ -53,11 +54,6 @@ export default function DeliveryChallanDetail() {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [isDuplicate, setIsDuplicate] = useState(false);
-  const [jwReturnOpen, setJwReturnOpen] = useState(false);
-  const [jwReturnQtyAccepted, setJwReturnQtyAccepted] = useState(0);
-  const [jwReturnQtyRejected, setJwReturnQtyRejected] = useState(0);
-  const [jwReturnReason, setJwReturnReason] = useState("");
-  const [jwReturnSaving, setJwReturnSaving] = useState(false);
   // Per-line return state
   const [lineReturnId, setLineReturnId] = useState<string | null>(null);
   const [lineReturnItem, setLineReturnItem] = useState<any>(null);
@@ -97,11 +93,9 @@ export default function DeliveryChallanDetail() {
   if (!dc) return <div className="p-6 text-muted-foreground">Delivery challan not found.</div>;
 
   const items = dc.line_items || [];
-  const isReturnable = dc.dc_type === "returnable" || dc.dc_type === "job_work_143";
-  const isJobWork = JOB_WORK_TYPES.includes(dc.dc_type);
+  const isReturnable = RETURNABLE_DC_TYPES.includes(dc.dc_type);
   const hasNatureOfProcess = items.some((i) => i.nature_of_process);
   const hasDrawingNumber = items.some((i) => i.drawing_number);
-  const hasPerLineJW = items.some((i) => (i as any).job_work_id);
   const hasQtyKgs = items.some((i) => (i as any).qty_kgs != null);
   const hasQtySft = items.some((i) => (i as any).qty_sft != null);
   const today = new Date().toISOString().split("T")[0];
@@ -139,15 +133,11 @@ export default function DeliveryChallanDetail() {
               <Edit className="h-3.5 w-3.5 mr-1" /> Edit
             </Button>
           )}
-          {isReturnable && ["issued", "partially_returned"].includes(dc.status) && (dc as any).job_work_id && !hasPerLineJW ? (
-            <Button size="sm" onClick={() => setJwReturnOpen(true)}>
-              <RotateCcw className="h-3.5 w-3.5 mr-1" /> Record Return
-            </Button>
-          ) : isReturnable && ["issued", "partially_returned"].includes(dc.status) && !hasPerLineJW ? (
+          {isReturnable && ["issued", "partially_returned"].includes(dc.status) && (
             <Button size="sm" onClick={() => navigate(`/delivery-challans/${id}/record-return`)}>
               <RotateCcw className="h-3.5 w-3.5 mr-1" /> Record Return
             </Button>
-          ) : null}
+          )}
           {!["cancelled", "fully_returned"].includes(dc.status) && (
             <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => setCancelOpen(true)}>
               <X className="h-3.5 w-3.5 mr-1" /> Cancel
@@ -251,17 +241,6 @@ export default function DeliveryChallanDetail() {
             </div>
             <div className="border-t border-border pt-3 space-y-1.5 text-sm">
               <p className="text-xs font-semibold text-slate-500 mb-2">Reference Details</p>
-              {(dc as any).job_work_number && (
-                <div className="flex justify-between items-center">
-                  <span className="text-muted-foreground">Job Work Ref</span>
-                  <button
-                    onClick={() => navigate(`/job-works/${(dc as any).job_work_id}`)}
-                    className="font-mono text-primary hover:underline text-sm"
-                  >
-                    {(dc as any).job_work_number}
-                  </button>
-                </div>
-              )}
               {(dc as any).lo_number && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">L.O. No</span>
@@ -329,10 +308,6 @@ export default function DeliveryChallanDetail() {
                 <th className="text-right">Rate (₹)</th>
                 <th className="text-right">Amount (₹)</th>
                 <th>Remarks</th>
-                {hasPerLineJW && <th className="print:hidden">Job Work</th>}
-                {hasPerLineJW && <th className="print:hidden text-right">Returned</th>}
-                {hasPerLineJW && <th className="print:hidden">Status</th>}
-                {hasPerLineJW && isReturnable && ["issued", "partially_returned"].includes(dc.status) && <th className="print:hidden w-20"></th>}
               </tr>
             </thead>
             <tbody>
@@ -351,49 +326,6 @@ export default function DeliveryChallanDetail() {
                   <td className="text-right font-mono tabular-nums">{formatCurrency(item.rate || 0)}</td>
                   <td className="text-right font-mono tabular-nums font-medium">{formatCurrency(item.amount || 0)}</td>
                   <td className="text-muted-foreground text-sm">{item.remarks || "—"}</td>
-                  {hasPerLineJW && (
-                    <td className="print:hidden font-mono text-xs">
-                      {(item as any).job_work_number ? (
-                        <span className="inline-flex items-center gap-1 text-xs font-medium font-mono px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
-                          {(item as any).job_work_number}
-                        </span>
-                      ) : "—"}
-                    </td>
-                  )}
-                  {hasPerLineJW && (
-                    <td className="print:hidden text-right font-mono tabular-nums text-sm">
-                      {(item as any).qty_accepted != null ? (item as any).qty_accepted : "—"}
-                    </td>
-                  )}
-                  {hasPerLineJW && (
-                    <td className="print:hidden">
-                      {(item as any).return_status === "returned" ? (
-                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-100">Returned</span>
-                      ) : (item as any).job_work_id ? (
-                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200">Pending</span>
-                      ) : null}
-                    </td>
-                  )}
-                  {hasPerLineJW && isReturnable && ["issued", "partially_returned"].includes(dc.status) && (
-                    <td className="print:hidden">
-                      {(item as any).job_work_id && (item as any).return_status !== "returned" && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-xs border-amber-300 text-amber-700 hover:bg-amber-50"
-                          onClick={() => {
-                            setLineReturnId((item as any).id);
-                            setLineReturnItem(item);
-                            setLineReturnQtyReceived(item.quantity || 0);
-                            setLineReturnQtyAccepted(item.quantity || 0);
-                            setLineReturnReason("");
-                          }}
-                        >
-                          <RotateCcw className="h-3 w-3 mr-1" /> Return
-                        </Button>
-                      )}
-                    </td>
-                  )}
                 </tr>
               ))}
             </tbody>
@@ -495,19 +427,10 @@ export default function DeliveryChallanDetail() {
               <h3 className="text-xs font-semibold text-slate-500">Return History</h3>
               <p className="text-xs text-muted-foreground mt-0.5">Records material physically returned by the job worker. To send goods back to a <em>vendor</em>, raise a new DC with type "Return to Vendor".</p>
             </div>
-            {["issued", "partially_returned"].includes(dc.status) && !hasPerLineJW && (
-              (dc as any).job_work_id ? (
-                <Button size="sm" variant="outline" onClick={() => setJwReturnOpen(true)}>
-                  <RotateCcw className="h-3.5 w-3.5 mr-1" /> Record Return
-                </Button>
-              ) : (
-                <Button size="sm" variant="outline" onClick={() => navigate(`/delivery-challans/${id}/record-return`)}>
-                  <RotateCcw className="h-3.5 w-3.5 mr-1" /> Record Return
-                </Button>
-              )
-            )}
-            {hasPerLineJW && (
-              <span className="text-xs text-muted-foreground italic">Use per-line Return buttons in the table above</span>
+            {["issued", "partially_returned"].includes(dc.status) && (
+              <Button size="sm" variant="outline" onClick={() => navigate(`/delivery-challans/${id}/record-return`)}>
+                <RotateCcw className="h-3.5 w-3.5 mr-1" /> Record Return
+              </Button>
             )}
           </div>
           {(returns ?? []).length === 0 ? (
@@ -540,84 +463,6 @@ export default function DeliveryChallanDetail() {
         <AuditTimeline documentId={id!} />
       </div>
 
-      {/* Job Work Return Dialog */}
-      <Dialog open={jwReturnOpen} onOpenChange={(o) => { if (!o) { setJwReturnOpen(false); setJwReturnReason(""); } }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Record Job Work Return</DialogTitle>
-            <DialogDescription>
-              Enter received quantities for {(dc as any).job_work_number ?? dc.dc_number}. Accepted qty will be moved back to stock.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Qty Accepted</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={jwReturnQtyAccepted || ""}
-                  onChange={(e) => setJwReturnQtyAccepted(Number(e.target.value) || 0)}
-                  className="mt-1"
-                />
-              </div>
-              <div>
-                <Label>Qty Rejected</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={jwReturnQtyRejected || ""}
-                  onChange={(e) => setJwReturnQtyRejected(Number(e.target.value) || 0)}
-                  className="mt-1"
-                />
-              </div>
-            </div>
-            <div>
-              <Label>Rejection Reason</Label>
-              <Textarea
-                value={jwReturnReason}
-                onChange={(e) => setJwReturnReason(e.target.value)}
-                placeholder="Optional — note why units were rejected"
-                rows={2}
-                className="mt-1"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setJwReturnOpen(false)}>Cancel</Button>
-            <Button
-              disabled={jwReturnSaving || (jwReturnQtyAccepted === 0 && jwReturnQtyRejected === 0)}
-              onClick={async () => {
-                setJwReturnSaving(true);
-                try {
-                  const firstItem = dc.line_items?.[0];
-                  await recordJobWorkDCReturn(id!, {
-                    qty_accepted: jwReturnQtyAccepted,
-                    qty_rejected: jwReturnQtyRejected,
-                    rejection_reason: jwReturnReason,
-                    item_code: firstItem?.item_code ?? null,
-                    item_description: firstItem?.description ?? null,
-                  });
-                  queryClient.invalidateQueries({ queryKey: ["delivery-challan", id] });
-                  queryClient.invalidateQueries({ queryKey: ["dc-stats"] });
-                  setJwReturnOpen(false);
-                  toast({
-                    title: "Return recorded",
-                    description: `${jwReturnQtyAccepted} units moved back to stock`,
-                  });
-                } catch (err: any) {
-                  toast({ title: "Error", description: err.message, variant: "destructive" });
-                } finally {
-                  setJwReturnSaving(false);
-                }
-              }}
-            >
-              {jwReturnSaving ? "Recording…" : "Confirm Return"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* Per-line Return Dialog */}
       <Dialog open={!!lineReturnId} onOpenChange={(o) => { if (!o) { setLineReturnId(null); setLineReturnItem(null); setLineReturnReason(""); } }}>
         <DialogContent className="max-w-sm">
@@ -626,7 +471,6 @@ export default function DeliveryChallanDetail() {
             <DialogDescription>
               {lineReturnItem && (
                 <span>
-                  {(lineReturnItem as any).job_work_number && <strong>{(lineReturnItem as any).job_work_number} · </strong>}
                   {lineReturnItem.description} (Sent: {lineReturnItem.quantity} {lineReturnItem.unit || "NOS"})
                 </span>
               )}

@@ -19,7 +19,6 @@ const TYPE_SHORT: Record<string, string> = {
   bought_out: "BO",
   finished_good: "FG",
   consumable: "CONS",
-  job_work: "JW",
   service: "SVC",
 };
 

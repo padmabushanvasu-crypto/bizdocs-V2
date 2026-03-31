@@ -95,7 +95,7 @@ export interface BomExplosion {
   total_cost: number;
   raw_material_cost: number;
   bought_out_cost: number;
-  job_work_cost: number;
+  job_work_cost: number; // field kept for DB compat (processing/service cost)
 }
 
 export interface BomCostItem {
@@ -112,7 +112,7 @@ export interface BomCostItem {
 
 export interface BomCostRollup {
   raw_material_cost: number;
-  job_work_cost: number;
+  job_work_cost: number; // field kept for DB compat (processing/service cost)
   bought_out_cost: number;
   consumable_cost: number;
   total_material_cost: number;

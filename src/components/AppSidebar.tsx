@@ -12,7 +12,6 @@ import {
   Settings,
   BarChart2,
   BarChart3,
-  Activity,
   AlertTriangle,
   Star,
   FileSpreadsheet,
@@ -36,7 +35,6 @@ import {
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { fetchWipSummary } from "@/lib/job-works-api";
 import { fetchFatStats } from "@/lib/fat-api";
 import { fetchReorderSummary } from "@/lib/reorder-api";
 import {
@@ -68,8 +66,6 @@ type NavItem = {
 const TOOLTIP_TEXT: Record<string, string> = {
   "Dashboard":
     "Your daily overview — alerts, production status, financial snapshot and quick actions.",
-  "Job Works":
-    "Track components sent to vendors for processing — CNC, plating, welding. One Job Work per component per batch.",
   "Production":
     "Start and complete production runs for finished goods. Serial numbers and FAT drafts are created automatically.",
   "WIP Register":
@@ -118,7 +114,6 @@ const TOOLTIP_TEXT: Record<string, string> = {
 
 const ALL_SEARCH_ITEMS: { title: string; url: string }[] = [
   { title: "Dashboard", url: "/" },
-  { title: "Job Works", url: "/job-works" },
   { title: "Production", url: "/assembly-orders" },
   { title: "WIP Register", url: "/wip-register" },
   { title: "Delivery Challans", url: "/delivery-challans" },
@@ -148,7 +143,7 @@ const STORAGE_KEY = "bizdocs_sidebar_state_v2";
 const RAIL_MODE_KEY = "bizdocs_sidebar_mode";
 
 const GROUP_PATHS: Record<string, string[]> = {
-  "Daily Work":     ["/", "/job-works", "/assembly-orders", "/wip-register", "/delivery-challans"],
+  "Daily Work":     ["/", "/assembly-orders", "/wip-register", "/delivery-challans"],
   "Purchasing":     ["/purchase-orders", "/grn"],
   "Billing":        ["/invoices", "/receipts", "/sales-orders", "/dispatch-notes"],
   "Inventory":      ["/stock-register", "/stock-ledger", "/reorder-intelligence", "/scrap-register", "/serial-numbers", "/fat-certificates"],
@@ -397,12 +392,6 @@ export function AppSidebar() {
   const handleFlyoutLeave = () => startClose();
 
   // Queries
-  const { data: wipSummary } = useQuery({
-    queryKey: ["wip-summary-sidebar"],
-    queryFn: fetchWipSummary,
-    refetchInterval: 60000,
-  });
-
   const { data: fatStats } = useQuery({
     queryKey: ["fat-stats-sidebar"],
     queryFn: fetchFatStats,
@@ -426,17 +415,8 @@ export function AppSidebar() {
   // Dynamic nav arrays (badges computed from live data)
   const dailyWorkNav: NavItem[] = [
     { title: "Dashboard", url: "/", icon: LayoutDashboard },
-    { title: "Job Works", url: "/job-works", icon: Activity },
     { title: "Production", url: "/assembly-orders", icon: Factory },
-    {
-      title: "WIP Register",
-      url: "/wip-register",
-      icon: AlertTriangle,
-      badge:
-        wipSummary?.overdueReturns && wipSummary.overdueReturns > 0
-          ? wipSummary.overdueReturns
-          : undefined,
-    },
+    { title: "WIP Register", url: "/wip-register", icon: AlertTriangle },
     { title: "Delivery Challans", url: "/delivery-challans", icon: Truck },
   ];
 

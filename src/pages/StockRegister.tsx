@@ -152,19 +152,6 @@ export default function StockRegister() {
     navigate(`/purchase-orders/new?item_id=${row.id}`);
   };
 
-  const handleRaiseJobWork = (row: StockStatusRow) => {
-    navigate("/job-works", {
-      state: {
-        openNew: true,
-        prefill: {
-          item_id: row.id,
-          item_code: row.item_code,
-          item_description: row.description,
-          quantity: 1,
-        },
-      },
-    });
-  };
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -313,9 +300,9 @@ export default function StockRegister() {
                             variant="outline"
                             size="sm"
                             className="h-7 text-xs gap-1"
-                            onClick={() => handleRaiseJobWork(row)}
+                            onClick={() => navigate('/delivery-challans/new')}
                           >
-                            <Wrench className="h-3 w-3" /> Raise JW
+                            <Wrench className="h-3 w-3" /> Raise DC
                           </Button>
                         )}
                       </div>

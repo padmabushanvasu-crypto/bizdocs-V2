@@ -1816,7 +1816,7 @@ export default function DataImport() {
       const isFkError = String(err?.message ?? "").includes("violates foreign key constraint");
       const isItemsOrParties = clearTarget?.type === "items" || clearTarget?.type === "parties";
       const description = isFkError && isItemsOrParties
-        ? "Cannot delete — some records are linked to existing Job Works, POs or other documents. Clear those documents first, or contact support."
+        ? "Cannot delete — some records are linked to existing DCs, POs or other documents. Clear those documents first, or contact support."
         : err.message;
       toast({ title: "Clear failed", description, variant: "destructive" });
     } finally {

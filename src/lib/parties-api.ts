@@ -323,3 +323,49 @@ export async function importPartiesBatch(
 
   return { imported, skipped, errors, skipReasons, updated: updatedCount };
 }
+
+// ── Vendor Scorecard (moved from job-works-api) ──────────────────────────────
+
+export interface VendorScorecard {
+  vendor_id: string;
+  company_id: string;
+  vendor_name: string;
+  city: string | null;
+  phone1: string | null;
+  gstin: string | null;
+  vendor_type: "raw_material_supplier" | "processor" | "both" | null;
+  grn_count: number;
+  grn_qty_received: number;
+  grn_qty_accepted: number;
+  grn_qty_rejected: number;
+  grn_rejection_rate_pct: number | null;
+  dc_count: number;
+  dc_qty_sent: number;
+  dc_qty_accepted: number;
+  dc_qty_rejected: number;
+  dc_rejection_rate_pct: number | null;
+  total_steps: number;
+  total_qty_sent: number;
+  total_qty_accepted: number;
+  total_qty_rejected: number;
+  rejection_rate_pct: number | null;
+  avg_turnaround_days: number | null;
+  on_time_rate_pct: number | null;
+  overdue_steps: number;
+  total_charges: number;
+  performance_rating: "reliable" | "watch" | "review" | "new";
+  last_used_at: string | null;
+}
+
+export async function fetchVendorScorecards(search?: string): Promise<VendorScorecard[]> {
+  let query = (supabase as any).from("vendor_scorecard").select("*");
+  if (search?.trim()) {
+    const sanitized = sanitizeSearchTerm(search);
+    if (sanitized) {
+      query = query.ilike("vendor_name", `%${sanitized}%`);
+    }
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as VendorScorecard[];
+}

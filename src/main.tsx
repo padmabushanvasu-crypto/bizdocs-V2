@@ -11,7 +11,7 @@ const sensitiveKeys = [
   'bank_ifsc', 'bank_name', 'account_number',
   'ifsc', 'unit_price', 'standard_cost',
   'amount_paid', 'payment_reference', 'utr',
-  'job_work_charges', 'phone', 'phone1',
+  'processing_charges', 'phone', 'phone1',
   'phone2', 'email', 'password', 'token',
   'access_token', 'auth_token', 'apikey',
   'api_key', 'secret', 'delivery_contact_phone',

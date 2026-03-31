@@ -3,7 +3,6 @@ import {
   LayoutDashboard,
   Package,
   MoreHorizontal,
-  Activity,
   ShoppingCart,
   PackageCheck,
   Users,
@@ -36,7 +35,6 @@ const MORE_GROUPS = [
   {
     label: "Daily Work",
     items: [
-      { label: "Job Works", to: "/job-works", icon: Activity },
       { label: "Production", to: "/assembly-orders", icon: Factory },
       { label: "WIP Register", to: "/wip-register", icon: BookOpen },
       { label: "Delivery Challans", to: "/delivery-challans", icon: Truck },
@@ -89,13 +87,12 @@ const CREATE_TYPES = [
   { label: "Delivery Challan", to: "/delivery-challans/new", icon: Truck },
   { label: "GRN", to: "/grn/new", icon: PackageCheck },
   { label: "Dispatch Note", to: "/dispatch-notes/new", icon: Send },
-  { label: "Job Work", to: "/job-works", icon: Activity },
   { label: "Production Run", to: "/assembly-orders", icon: Factory },
 ];
 
 const MAIN_TABS = [
   { label: "Home", icon: LayoutDashboard, to: "/" },
-  { label: "Job Works", icon: Activity, to: "/job-works" },
+  { label: "DCs", icon: Truck, to: "/delivery-challans" },
   { label: "Items", icon: Package, to: "/items" },
 ];
 
@@ -135,7 +132,7 @@ export function MobileNav() {
             <span className="text-[10px] font-medium">{MAIN_TABS[0].label}</span>
           </NavLink>
 
-          {/* Work Orders */}
+          {/* Delivery Challans */}
           <NavLink
             to={MAIN_TABS[1].to}
             className={({ isActive }) =>
@@ -145,7 +142,7 @@ export function MobileNav() {
               )
             }
           >
-            <Activity className="h-5 w-5" />
+            <Truck className="h-5 w-5" />
             <span className="text-[10px] font-medium">{MAIN_TABS[1].label}</span>
           </NavLink>
 

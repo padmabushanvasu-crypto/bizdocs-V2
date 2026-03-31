@@ -33,9 +33,9 @@ const statusClass: Record<string, string> = {
 const typeLabels: Record<string, string> = {
   returnable: "Returnable",
   non_returnable: "Non-Returnable",
-  job_work_143: "Job Work (143)",
-  job_work_out: "Job Work Out (R45)",
-  job_work_return: "Job Work Return",
+  job_work_143: "Returnable (S.143)",
+  job_work_out: "Returnable (Processing)",
+  job_work_return: "Return Receipt",
   supply: "Supply",
   sample: "Sample",
   loan_borrow: "Loan/Borrow",

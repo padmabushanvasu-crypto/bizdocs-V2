@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { Activity, CheckCircle2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatCurrency } from "@/lib/gst-utils";
-import { fetchWipSummary } from "@/lib/job-works-api";
 import { fetchAssemblyOrderStats } from "@/lib/assembly-orders-api";
 import { fetchFatStats } from "@/lib/fat-api";
 import { fetchReorderAlerts, fetchProductionAlertCount } from "@/lib/reorder-api";
@@ -137,7 +136,6 @@ const DOC_TAGS: Record<string, { cls: string; label: string }> = {
   invoice:          { cls: "bg-emerald-100 text-emerald-800", label: "INV" },
   delivery_challan: { cls: "bg-amber-100 text-amber-800",    label: "DC"  },
   purchase_order:   { cls: "bg-blue-100 text-blue-800",      label: "PO"  },
-  job_work:         { cls: "bg-violet-100 text-violet-800",  label: "JW"  },
   assembly_order:   { cls: "bg-cyan-100 text-cyan-800",      label: "AO"  },
   fat_certificate:  { cls: "bg-rose-100 text-rose-800",      label: "FAT" },
   grn:              { cls: "bg-teal-100 text-teal-800",      label: "GRN" },
@@ -204,12 +202,6 @@ export default function Dashboard() {
     queryFn: fetchCompanySettings,
     staleTime: Infinity,
   });
-  const { data: wipSummary } = useQuery({
-    queryKey: ["wip-summary-db"],
-    queryFn: fetchWipSummary,
-    staleTime: STALE,
-    refetchInterval: STALE,
-  });
   const { data: aoStats } = useQuery({
     queryKey: ["ao-stats-db"],
     queryFn: fetchAssemblyOrderStats,
@@ -255,14 +247,13 @@ export default function Dashboard() {
 
   // Derived alert counts
   const overdueDCReturns  = dashData?.overdueDCCount ?? 0;
-  const jobWorksOverdue   = wipSummary?.overdueReturns ?? 0;
   const zeroStockItems    = dashData?.zeroStockCount ?? 0;
   const reorderAlertCount = reorderAlerts.length;
   const fatPending        = fatStats?.pending ?? 0;
   const uninvoicedUnits   = readyToShip.length;
   const readyToAssemble   = aoStats?.draft ?? 0;
 
-  const totalAlerts = overdueDCReturns + jobWorksOverdue + zeroStockItems + reorderAlertCount + fatPending + uninvoicedUnits + productionRequired;
+  const totalAlerts = overdueDCReturns + zeroStockItems + reorderAlertCount + fatPending + uninvoicedUnits + productionRequired;
   const allClear = totalAlerts === 0;
 
   // Company info
@@ -339,13 +330,6 @@ export default function Dashboard() {
                   state: undefined as any,
                   title: "GRN — Goods Receipt",
                   body: "Use this when purchased materials arrive at the factory. Link to the original PO and record accepted vs rejected quantities. Stock updates automatically.",
-                },
-                {
-                  label: "New Job Work",
-                  route: "/job-works",
-                  state: { openNew: true },
-                  title: "Job Work",
-                  body: "Use this when sending a component to a vendor for external processing — CNC machining, plating, welding. One Job Work per component per batch.",
                 },
                 {
                   label: "New DC",
@@ -428,9 +412,6 @@ export default function Dashboard() {
             {overdueDCReturns > 0 && (
               <AlertPill label="Overdue DC Returns" count={overdueDCReturns} colour="red"   onClick={() => navigate("/delivery-challans")} />
             )}
-            {jobWorksOverdue > 0 && (
-              <AlertPill label="Job Works Overdue"  count={jobWorksOverdue}  colour="red"   onClick={() => navigate("/wip-register?overdue=true")} />
-            )}
             {zeroStockItems > 0 && (
               <AlertPill label="Zero Stock Items"   count={zeroStockItems}   colour="red"   onClick={() => navigate("/stock-register")} />
             )}
@@ -459,15 +440,13 @@ export default function Dashboard() {
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 lg:p-5">
             <div className="flex items-center justify-between mb-1">
               <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Production</p>
-              <button className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors" onClick={() => navigate("/job-works")}>
+              <button className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors" onClick={() => navigate("/assembly-orders")}>
                 View →
               </button>
             </div>
             <div className="divide-y divide-slate-100 mt-2">
-              <LightStatRow label="Active Job Works"   value={wipSummary?.atVendor ?? "—"}         onClick={() => navigate("/job-works")} />
-              <LightStatRow label="Overdue Returns"    value={wipSummary?.overdueReturns ?? "—"}    highlight={(wipSummary?.overdueReturns ?? 0) > 0} onClick={() => navigate("/wip-register?overdue=true")} />
-              <LightStatRow label="Production"          value={aoStats?.active ?? "—"}               onClick={() => navigate("/assembly-orders")} />
-              <LightStatRow label="FAT Pending"        value={fatStats?.pending ?? "—"}             highlight={(fatStats?.pending ?? 0) > 0} onClick={() => navigate("/fat-certificates")} />
+              <LightStatRow label="Production"   value={aoStats?.active ?? "—"}   onClick={() => navigate("/assembly-orders")} />
+              <LightStatRow label="FAT Pending"  value={fatStats?.pending ?? "—"} highlight={(fatStats?.pending ?? 0) > 0} onClick={() => navigate("/fat-certificates")} />
             </div>
           </div>
 

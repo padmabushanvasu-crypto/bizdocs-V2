@@ -5,7 +5,21 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { type JobWorkStep, type RecordReturnData } from "@/lib/job-works-api";
+interface JobWorkStep {
+  name: string;
+  vendor_name?: string | null;
+  qty_sent?: number | null;
+}
+
+interface RecordReturnData {
+  qty_returned: number;
+  inspection_result: string;
+  qty_accepted: number;
+  qty_rejected: number;
+  rejection_reason?: string;
+  inspected_by?: string;
+  notes?: string;
+}
 
 interface RecordReturnDialogProps {
   open: boolean;

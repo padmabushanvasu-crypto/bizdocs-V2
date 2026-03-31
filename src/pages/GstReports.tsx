@@ -1152,70 +1152,9 @@ export default function GstReports() {
     });
   };
 
-  // ── Job Work ──────────────────────────────────────────────────────────────
-
-  const JW_HEADERS = [
-    "DC No", "Date", "Vendor Name", "Vendor GSTIN",
-    "Component", "Qty Sent", "Qty Returned", "Pending Qty", "Days Out",
-  ];
-
-  const previewJobWork = async (range: DateRange): Promise<PreviewSheet[]> => {
-    const rows = await fetchJobWorkRows(range);
-    return [{ name: "Job Work Register", headers: JW_HEADERS, rows, totalRows: rows.length }];
-  };
-
-  const downloadJobWork = async (range: DateRange) => {
-    try {
-      const { label } = getDateBounds(range, fyYear);
-      const rows = await fetchJobWorkRows(range);
-      exportMultiSheet(
-        [toExportSheet("Job Work Register", JW_HEADERS, rows)],
-        `BizDocs_JobWork_${slugLabel(label)}.xlsx`,
-        DISCLAIMER
-      );
-    } catch { handleError("Failed to generate Job Work Register"); }
-  };
-
-  const fetchJobWorkRows = async (range: DateRange) => {
-    const { start, end } = getDateBounds(range, fyYear);
-    const { data: dcs } = await supabase
-      .from("delivery_challans")
-      .select("id, dc_number, dc_date, party_name, party_gstin, return_due_date, status")
-      .eq("dc_type" as any, "returnable")
-      .gte("dc_date", start)
-      .lte("dc_date", end)
-      .order("dc_date", { ascending: true });
-
-    const dcData = (dcs ?? []) as any[];
-    const dcIds = dcData.map((d) => d.id);
-    let lineItems: any[] = [];
-    if (dcIds.length > 0) {
-      const { data: li } = await (supabase as any)
-        .from("dc_line_items")
-        .select("dc_id, description, qty_nos, returned_qty_nos")
-        .in("dc_id", dcIds);
-      lineItems = li ?? [];
-    }
-
-    const dcMap = new Map(dcData.map((d) => [d.id, d]));
-    return lineItems.map((li): (string | number)[] => {
-      const dc = dcMap.get(li.dc_id) as any;
-      const sent = li.qty_nos ?? 0;
-      const returned = li.returned_qty_nos ?? 0;
-      const daysOut = dc?.dc_date
-        ? Math.max(0, Math.floor((Date.now() - new Date(dc.dc_date).getTime()) / 86400000))
-        : 0;
-      return [
-        dc?.dc_number ?? "", formatDateGST(dc?.dc_date),
-        dc?.party_name ?? "", dc?.party_gstin ?? "",
-        li.description ?? "", sent, returned, Math.max(0, sent - returned), daysOut,
-      ];
-    });
-  };
-
   // ── Drag-to-reorder report cards ─────────────────────────────────────────
 
-  const REPORT_IDS = ["gstr1", "gstr2", "hsn", "itc", "eway", "jobwork", "gstr3b"] as const;
+  const REPORT_IDS = ["gstr1", "gstr2", "hsn", "itc", "eway", "gstr3b"] as const;
   type ReportId = typeof REPORT_IDS[number];
 
   const [reportOrder, setReportOrder] = useState<ReportId[]>(() => {
@@ -1298,15 +1237,6 @@ export default function GstReports() {
         description="DC data formatted for e-way bill reference. Includes HSN, vehicle number, party GSTIN and values."
         onDownload={downloadEway}
         onPreview={previewEway}
-      />
-    ),
-    jobwork: (
-      <ReportCard
-        icon={cardIcon}
-        title="Job Work Register (Section 143)"
-        description="All returnable DC components sent for job work — quantity sent, returned, pending, and days outstanding."
-        onDownload={downloadJobWork}
-        onPreview={previewJobWork}
       />
     ),
     gstr3b: <Gstr3bCard companyStateCode={companyStateCode} companyName={companyName} />,

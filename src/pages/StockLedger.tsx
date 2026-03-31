@@ -18,8 +18,8 @@ const TXN_LABELS: Record<string, { label: string; cls: string }> = {
   grn_receipt:           { label: "GRN Receipt",       cls: "bg-green-100 text-green-800" },
   assembly_consumption:  { label: "Production Consumption", cls: "bg-purple-100 text-purple-800" },
   assembly_output:       { label: "Production Output",     cls: "bg-blue-100 text-blue-800" },
-  job_card_issue:        { label: "Job Work Issue",     cls: "bg-amber-100 text-amber-800" },
-  job_card_return:       { label: "Job Work Return",    cls: "bg-teal-100 text-teal-800" },
+  job_card_issue:        { label: "Processing Issue",   cls: "bg-amber-100 text-amber-800" },
+  job_card_return:       { label: "Processing Return",  cls: "bg-teal-100 text-teal-800" },
   invoice_dispatch:      { label: "Dispatched",         cls: "bg-red-100 text-red-800" },
   dc_issue:              { label: "DC Issue",           cls: "bg-orange-100 text-orange-800" },
   dc_return:             { label: "DC Return",          cls: "bg-cyan-100 text-cyan-800" },
@@ -34,7 +34,7 @@ const ROUTE_MAP: Record<string, string> = {
   delivery_challan: "/delivery-challans",
   invoice: "/invoices",
   grn: "/grn",
-  job_card: "/job-works",
+  job_card: "/delivery-challans",
 };
 
 export default function StockLedger() {

@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Building2, FileText, Bell, GitBranch, Upload, FileSpreadsheet, Users, History, BookOpen, ChevronRight } from "lucide-react";
+import { Building2, FileText, Bell, Upload, FileSpreadsheet, Users, History, BookOpen, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface SettingsCard {
@@ -30,7 +30,7 @@ export default function SettingsPage() {
       iconBg: "bg-blue-50",
       iconColor: "text-blue-600",
       title: "Document Settings",
-      description: "Invoice, PO, DC, GRN and Job Work number series. Financial year.",
+      description: "Invoice, PO, DC, GRN number series. Financial year.",
       action: () => navigate("/settings/documents"),
     },
     {
@@ -40,14 +40,6 @@ export default function SettingsPage() {
       title: "Notifications",
       description: "Daily stock alerts and weekly business summary — recipients and schedule",
       action: () => navigate("/settings/notifications"),
-    },
-    {
-      icon: GitBranch,
-      iconBg: "bg-blue-50",
-      iconColor: "text-blue-600",
-      title: "Process Library",
-      description: "Standard processing steps for Job Works. Configure once, auto-populate forever.",
-      action: () => navigate("/stage-templates"),
     },
     {
       icon: Upload,

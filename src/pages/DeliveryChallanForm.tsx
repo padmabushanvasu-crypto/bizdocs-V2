@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, ChevronDown, Info, ChevronLeft, Loader2, AlertCircle } from "lucide-react";
+import { Plus, Trash2, ChevronDown, Info, ChevronLeft } from "lucide-react";
 import { ItemSuggest } from "@/components/ItemSuggest";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,18 +23,15 @@ import {
   createDeliveryChallan,
   updateDeliveryChallan,
   issueDeliveryChallan,
-  fetchOpenJobWorksForDC,
   type DCLineItem,
-  type OpenJobWorkDCItem,
 } from "@/lib/delivery-challans-api";
-import { fetchOpenJobWorks, fetchJobWork } from "@/lib/job-works-api";
 import { formatCurrency, amountInWords } from "@/lib/gst-utils";
 import { getGSTType, calculateLineTax, round2, resolveStateCode, type GSTType } from "@/lib/tax-utils";
 
 const RETURNABLE_SUBTYPES = [
   { value: "returnable", label: "Standard Returnable" },
-  { value: "job_work_143", label: "Job Work (Sec 143)" },
-  { value: "job_work_out", label: "Job Work Out (Rule 45)" },
+  { value: "job_work_143", label: "Returnable — Section 143" },
+  { value: "job_work_out", label: "Returnable — Processing" },
   { value: "loan_borrow", label: "Loan / Borrow" },
 ];
 
@@ -97,22 +94,13 @@ export default function DeliveryChallanForm() {
   const [savedDCId, setSavedDCId] = useState<string | null>(null);
   const [vehicleNumber, setVehicleNumber] = useState("");
   const [loNumber, setLoNumber] = useState("");
-  const [jobWorkId, setJobWorkId] = useState<string | null>(null);
-  const [jobWorkNumber, setJobWorkNumber] = useState("");
-  const [jobWorkOpen, setJobWorkOpen] = useState(false);
-  const [prefillBanner, setPrefillBanner] = useState("");
+  const [prefillBanner, setPrefillBanner] = useState<string>("");
   const [approxValue, setApproxValue] = useState<number | undefined>();
   const [poReference, setPoReference] = useState("");
   const [poDate, setPoDate] = useState<Date | undefined>();
   const [gstRate, setGstRate] = useState(18);
   const [preparedBy, setPreparedBy] = useState("");
   const [checkedBy, setCheckedBy] = useState("");
-  // Multi-JW picker
-  const [jwPickerOpen, setJwPickerOpen] = useState(false);
-  const [jwPickerSelected, setJwPickerSelected] = useState<Set<string>>(new Set());
-  const [jwPickerSearch, setJwPickerSearch] = useState("");
-  const [jwVendorFilterOwn, setJwVendorFilterOwn] = useState(true);
-
   // Fetch data
   const { data: partiesData } = useQuery({
     queryKey: ["parties-all"],
@@ -131,23 +119,6 @@ export default function DeliveryChallanForm() {
     queryFn: getNextDCNumber,
     enabled: !isEdit,
   });
-
-  const { data: openJobWorks = [] } = useQuery({
-    queryKey: ["open-job-works"],
-    queryFn: fetchOpenJobWorks,
-  });
-
-  const { data: openJWsForDC = [], isLoading: isJWsLoading, isError: isJWsError, error: jwsError, refetch: refetchJWsForDC } = useQuery<OpenJobWorkDCItem[]>({
-    queryKey: ["open-jws-for-dc"],
-    queryFn: () => fetchOpenJobWorksForDC(),
-    enabled: jwPickerOpen,
-    staleTime: 0,
-    retry: 1,
-  });
-
-  useEffect(() => {
-    if (jwPickerOpen) refetchJWsForDC();
-  }, [jwPickerOpen]);
 
   const { data: existingDC } = useQuery({
     queryKey: ["delivery-challan", id],
@@ -171,8 +142,6 @@ export default function DeliveryChallanForm() {
       setNatureOfJobWork(existingDC.nature_of_job_work || "");
       setVehicleNumber(existingDC.vehicle_number || "");
       setLoNumber(existingDC.lo_number || "");
-      setJobWorkId(existingDC.job_work_id || null);
-      setJobWorkNumber(existingDC.job_work_number || "");
       setApproxValue(existingDC.approx_value ?? undefined);
       setPoReference(existingDC.po_reference || "");
       setGstRate(existingDC.gst_rate || 18);
@@ -194,11 +163,6 @@ export default function DeliveryChallanForm() {
     if (!prefill || isEdit || parties.length === 0) return;
 
     if (prefill.dc_type) setDcType(prefill.dc_type);
-    if (prefill.job_work_id) setJobWorkId(prefill.job_work_id);
-    if (prefill.job_work_number) {
-      setJobWorkNumber(prefill.job_work_number);
-      setPrefillBanner(`Pre-filled from Job Work ${prefill.job_work_number} — review and confirm before saving`);
-    }
     if (prefill.party_id) {
       setPartyId(prefill.party_id);
       const p = parties.find((p) => p.id === prefill.party_id);
@@ -226,92 +190,10 @@ export default function DeliveryChallanForm() {
     }
   }, [location.state, parties, isEdit]);
 
-  const handleJobWorkSelect = async (jw: { id: string; jc_number: string; item_code: string | null; item_description: string | null }) => {
-    setJobWorkId(jw.id);
-    setJobWorkNumber(jw.jc_number);
-    setJobWorkOpen(false);
-    setDcType("returnable");
-    try {
-      const full = await fetchJobWork(jw.id);
-      const activeStep = full.steps.find((s) => s.step_type === "external" && s.status !== "done");
-      if (activeStep?.vendor_id) {
-        const p = parties.find((p) => p.id === activeStep.vendor_id);
-        if (p) { setPartyId(p.id); setSelectedParty(p); }
-      }
-      const extSteps = full.steps.filter((s) => s.step_type === "external");
-      if (extSteps.length > 0) {
-        setLineItems(extSteps.map((s, idx) => ({
-          serial_number: idx + 1,
-          item_code: full.item_code || "",
-          description: full.item_description || "",
-          drawing_number: full.drawing_number || "",
-          unit: s.unit || full.unit || "NOS",
-          quantity: s.qty_sent || 0,
-          rate: 0,
-          amount: 0,
-          nature_of_process: s.name || "",
-          qty_kgs: undefined,
-          qty_sft: undefined,
-        })));
-      }
-    } catch {
-      // just set the JW reference, don't fail
-    }
-  };
-
   const handlePartySelect = (party: Party) => {
     setPartyId(party.id);
     setSelectedParty(party);
     setPartyOpen(false);
-  };
-
-  const handleAddFromJobWorks = () => {
-    const selectedRows = openJWsForDC.filter((r) => jwPickerSelected.has(r.step_id));
-    if (selectedRows.length === 0) return;
-
-    // Vendor check
-    const firstVendorId = selectedRows[0].vendor_id;
-    if (!selectedParty && firstVendorId) {
-      const p = parties.find((p) => p.id === firstVendorId);
-      if (p) { setPartyId(p.id); setSelectedParty(p); }
-    } else if (selectedParty) {
-      const mismatch = selectedRows.some((r) => r.vendor_id && r.vendor_id !== selectedParty.id);
-      if (mismatch) {
-        toast({ title: "Vendor mismatch warning", description: "Some selected job works are for a different vendor. Review before issuing.", variant: "destructive" });
-      }
-    }
-
-    const newItems: DCLineItem[] = selectedRows.map((r, idx) => {
-      const qty = r.step_qty_sent ?? r.quantity_original;
-      const rate = r.job_work_charges ?? 0;
-      return {
-        serial_number: lineItems.filter((i) => i.description.trim()).length + idx + 1,
-        item_code: r.item_code || "",
-        description: r.item_description || "",
-        drawing_number: r.drawing_revision || r.drawing_number || "",
-        unit: r.step_unit || r.unit || "NOS",
-        quantity: qty,
-        rate,
-        amount: Math.round(qty * rate * 100) / 100,
-        nature_of_process: r.step_name || "",
-        qty_kgs: undefined,
-        qty_sft: undefined,
-        job_work_id: r.jc_id,
-        job_work_number: r.jc_number,
-        job_work_step_id: r.step_id,
-      };
-    });
-
-    // Append (clearing blank placeholder if it's the only item)
-    const existingFilled = lineItems.filter((i) => i.description.trim());
-    const merged = existingFilled.length === 0
-      ? newItems
-      : [...existingFilled, ...newItems];
-    setLineItems(merged.map((i, idx) => ({ ...i, serial_number: idx + 1 })));
-    setDcType("returnable");
-    setJwPickerOpen(false);
-    setJwPickerSelected(new Set());
-    setJwPickerSearch("");
   };
 
   // Line item handlers
@@ -384,8 +266,6 @@ export default function DeliveryChallanForm() {
         vehicle_number: vehicleNumber || null,
         driver_name: null,
         lo_number: null,
-        job_work_id: jobWorkId || null,
-        job_work_number: jobWorkNumber || null,
         approx_value: approxValue ?? null,
         sub_total: subTotal,
         cgst_amount: taxResult.cgst,
@@ -617,46 +497,6 @@ export default function DeliveryChallanForm() {
                 <Label className="text-sm font-medium text-slate-700">Vehicle Number</Label>
                 <Input value={vehicleNumber} onChange={(e) => setVehicleNumber(e.target.value)} className="mt-1" placeholder="e.g., MH-01-AB-1234" />
               </div>
-              <div>
-                <Label className="text-sm font-medium text-slate-700">Job Work Reference</Label>
-                <Popover open={jobWorkOpen} onOpenChange={setJobWorkOpen}>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" role="combobox" className="w-full justify-between mt-1 font-normal text-sm h-9">
-                      {jobWorkNumber || "Link to Job Work..."}
-                      <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-full p-0" align="start">
-                    <Command>
-                      <CommandInput placeholder="Search job works..." />
-                      <CommandList>
-                        <CommandEmpty>No open job works found.</CommandEmpty>
-                        <CommandGroup>
-                          {openJobWorks.map((jw) => (
-                            <CommandItem key={jw.id} value={jw.jc_number} onSelect={() => handleJobWorkSelect(jw)}>
-                              <div>
-                                <p className="font-mono font-medium text-sm">{jw.jc_number}</p>
-                                {jw.item_description && (
-                                  <p className="text-xs text-muted-foreground">{jw.item_code ? `${jw.item_code} — ` : ""}{jw.item_description}</p>
-                                )}
-                              </div>
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
-                {jobWorkId && (
-                  <button
-                    type="button"
-                    onClick={() => { setJobWorkId(null); setJobWorkNumber(""); }}
-                    className="text-[10px] text-muted-foreground hover:text-destructive mt-0.5"
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -719,15 +559,6 @@ export default function DeliveryChallanForm() {
             <h2 className="text-sm uppercase text-muted-foreground font-bold tracking-wider">Line Items</h2>
             <span className="bg-primary text-primary-foreground text-[10px] font-bold px-2 py-0.5 rounded-full">{totalItems}</span>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="border-blue-300 text-blue-700 hover:bg-blue-50 text-xs"
-            onClick={() => setJwPickerOpen(true)}
-          >
-            <Plus className="h-3.5 w-3.5 mr-1" /> Add from Job Works
-          </Button>
         </div>
 
         <div className="overflow-x-auto">
@@ -735,7 +566,6 @@ export default function DeliveryChallanForm() {
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
                 <th className="px-3 py-2 text-left w-8 text-xs font-medium text-slate-400 uppercase tracking-wider">#</th>
-                <th className="px-3 py-2 text-left w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Job Work</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Item / Description</th>
                 <th className="px-3 py-2 text-left w-32 text-xs font-medium text-slate-400 uppercase tracking-wider">Drawing No</th>
                 <th className="px-3 py-2 text-left w-48 text-xs font-medium text-slate-400 uppercase tracking-wider">Nature of Process</th>
@@ -752,15 +582,6 @@ export default function DeliveryChallanForm() {
               {lineItems.map((item, index) => (
                 <tr key={index} className="group border-b border-slate-100 hover:bg-slate-50/50">
                   <td className="px-3 py-2 text-muted-foreground font-mono text-sm w-8">{item.serial_number}</td>
-                  <td className="px-3 py-2 w-24">
-                    {item.job_work_number ? (
-                      <span className="inline-flex items-center gap-1 text-xs font-medium font-mono px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
-                        {item.job_work_number}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </td>
                   <td className="px-1 py-1">
                     <ItemSuggest
                       value={item.description}
@@ -976,175 +797,6 @@ export default function DeliveryChallanForm() {
           Issue DC →
         </Button>
       </div>
-
-      {/* Add from Job Works picker */}
-      <Dialog open={jwPickerOpen} onOpenChange={(o) => { setJwPickerOpen(o); if (!o) { setJwPickerSelected(new Set()); setJwPickerSearch(""); } }}>
-        <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle>Select Job Works to add to this DC</DialogTitle>
-            <DialogDescription>
-              Select external steps to add as line items.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex items-center gap-3">
-            <input
-              type="text"
-              placeholder="Search by drawing number, item or vendor..."
-              value={jwPickerSearch}
-              onChange={(e) => setJwPickerSearch(e.target.value)}
-              className="flex h-9 flex-1 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            />
-            {selectedParty && (
-              <button
-                type="button"
-                onClick={() => setJwVendorFilterOwn((v) => !v)}
-                className={cn(
-                  "shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors whitespace-nowrap",
-                  jwVendorFilterOwn
-                    ? "bg-blue-600 text-white border-blue-600"
-                    : "border-border text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {jwVendorFilterOwn ? "This vendor only" : "All vendors"}
-              </button>
-            )}
-          </div>
-          <div className="overflow-y-auto flex-1 border rounded-lg">
-            {isJWsLoading ? (
-              <div className="flex flex-col items-center justify-center py-12 gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
-                Loading job works...
-              </div>
-            ) : isJWsError ? (
-              <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
-                <AlertCircle className="h-7 w-7 text-destructive" />
-                <p className="text-sm font-medium text-destructive">Failed to load job works</p>
-                {(jwsError as any)?.message && (
-                  <p className="text-xs text-muted-foreground max-w-xs">{(jwsError as any).message}</p>
-                )}
-                <button
-                  onClick={() => refetchJWsForDC()}
-                  className="mt-1 text-xs text-blue-600 underline hover:text-blue-800"
-                >
-                  Try again
-                </button>
-              </div>
-            ) : openJWsForDC.length === 0 ? (
-              <div className="text-center py-10 text-sm text-muted-foreground">
-                No open job works found.
-              </div>
-            ) : (
-              <table className="w-full text-sm min-w-[700px]">
-                <thead className="bg-secondary sticky top-0">
-                  <tr className="text-xs uppercase text-muted-foreground">
-                    <th className="px-3 py-2 text-left w-8">
-                      <input
-                        type="checkbox"
-                        onChange={(e) => {
-                          const filtered = openJWsForDC.filter((r) => {
-                            if (selectedParty && jwVendorFilterOwn && r.vendor_id && r.vendor_id !== selectedParty.id) return false;
-                            const q = jwPickerSearch.toLowerCase();
-                            return !q || r.jc_number.toLowerCase().includes(q) || (r.item_description ?? "").toLowerCase().includes(q) || r.step_name.toLowerCase().includes(q) || (r.drawing_revision ?? "").toLowerCase().includes(q) || (r.vendor_name ?? "").toLowerCase().includes(q);
-                          });
-                          setJwPickerSelected(e.target.checked ? new Set(filtered.map((r) => r.step_id)) : new Set());
-                        }}
-                        checked={jwPickerSelected.size > 0 && openJWsForDC.filter((r) => {
-                            if (selectedParty && jwVendorFilterOwn && r.vendor_id && r.vendor_id !== selectedParty.id) return false;
-                            const q = jwPickerSearch.toLowerCase();
-                            return !q || r.jc_number.toLowerCase().includes(q) || (r.item_description ?? "").toLowerCase().includes(q) || r.step_name.toLowerCase().includes(q) || (r.drawing_revision ?? "").toLowerCase().includes(q) || (r.vendor_name ?? "").toLowerCase().includes(q);
-                          }).every((r) => jwPickerSelected.has(r.step_id))}
-                      />
-                    </th>
-                    <th className="px-3 py-2 text-left">JW Number</th>
-                    <th className="px-3 py-2 text-left">Drawing No.</th>
-                    <th className="px-3 py-2 text-left">Description</th>
-                    <th className="px-3 py-2 text-right">Qty</th>
-                    <th className="px-3 py-2 text-left">Unit</th>
-                    <th className="px-3 py-2 text-left">Vendor</th>
-                    <th className="px-3 py-2 text-left">Process</th>
-                    <th className="px-3 py-2 text-left">Due Date</th>
-                    <th className="px-3 py-2 text-left">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {openJWsForDC
-                    .filter((r) => {
-                      if (selectedParty && jwVendorFilterOwn && r.vendor_id && r.vendor_id !== selectedParty.id) return false;
-                      const q = jwPickerSearch.toLowerCase();
-                      return !q || r.jc_number.toLowerCase().includes(q) || (r.item_description ?? "").toLowerCase().includes(q) || r.step_name.toLowerCase().includes(q) || (r.drawing_revision ?? "").toLowerCase().includes(q) || (r.vendor_name ?? "").toLowerCase().includes(q);
-                    })
-                    .map((r) => {
-                      const isVendorMismatch = !!(selectedParty && r.vendor_id && r.vendor_id !== selectedParty.id);
-                      const isOverdue = r.return_before_date ? new Date(r.return_before_date) < new Date() : false;
-                      return (
-                        <tr
-                          key={r.step_id}
-                          className={cn(
-                            "border-t border-border cursor-pointer hover:bg-muted/40 transition-colors",
-                            jwPickerSelected.has(r.step_id) && "bg-blue-50 border-l-2 border-l-blue-500",
-                            isVendorMismatch && "opacity-75"
-                          )}
-                          onClick={() => setJwPickerSelected((prev) => { const n = new Set(prev); n.has(r.step_id) ? n.delete(r.step_id) : n.add(r.step_id); return n; })}
-                        >
-                          <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                            <input
-                              type="checkbox"
-                              checked={jwPickerSelected.has(r.step_id)}
-                              onChange={() => setJwPickerSelected((prev) => { const n = new Set(prev); n.has(r.step_id) ? n.delete(r.step_id) : n.add(r.step_id); return n; })}
-                            />
-                          </td>
-                          <td className="px-3 py-2 font-mono font-medium text-blue-700">{r.jc_number}</td>
-                          <td className="px-3 py-2 font-mono text-xs text-slate-600">{r.drawing_revision || r.drawing_number || "—"}</td>
-                          <td className="px-3 py-2 text-muted-foreground text-xs max-w-[160px] truncate" title={r.item_description ?? ""}>{r.item_description || "—"}</td>
-                          <td className="px-3 py-2 text-right font-mono tabular-nums text-sm">{r.step_qty_sent ?? r.quantity_original}</td>
-                          <td className="px-3 py-2 text-xs text-muted-foreground">{r.step_unit || r.unit || "NOS"}</td>
-                          <td className="px-3 py-2 text-xs">
-                            {isVendorMismatch ? (
-                              <span className="text-amber-600 flex items-center gap-1">
-                                <Info className="h-3 w-3 shrink-0" /> {r.vendor_name || "—"}
-                              </span>
-                            ) : (r.vendor_name || "—")}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-muted-foreground">{r.step_name}</td>
-                          <td className="px-3 py-2 text-xs">
-                            {r.return_before_date ? (
-                              <span className={isOverdue ? "text-red-600 font-medium" : "text-slate-600"}>
-                                {format(new Date(r.return_before_date), "dd MMM yy")}
-                              </span>
-                            ) : <span className="text-muted-foreground">—</span>}
-                          </td>
-                          <td className="px-3 py-2">
-                            <span className={cn(
-                              "inline-flex text-[10px] font-semibold px-1.5 py-0.5 rounded-full border",
-                              isOverdue ? "bg-red-50 text-red-700 border-red-200" :
-                              r.jc_status === "in_progress" ? "bg-blue-50 text-blue-700 border-blue-200" :
-                              "bg-slate-100 text-slate-600 border-slate-200"
-                            )}>
-                              {isOverdue ? "Overdue" : r.jc_status === "in_progress" ? "In Progress" : "Draft"}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
-            )}
-          </div>
-          <DialogFooter className="mt-3">
-            <span className="text-sm text-muted-foreground mr-auto">
-              {jwPickerSelected.size > 0 ? `${jwPickerSelected.size} job work${jwPickerSelected.size !== 1 ? "s" : ""} selected` : "None selected"}
-            </span>
-            <Button variant="outline" onClick={() => setJwPickerOpen(false)}>Cancel</Button>
-            <Button
-              disabled={jwPickerSelected.size === 0}
-              onClick={handleAddFromJobWorks}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              Add {jwPickerSelected.size > 0 ? `${jwPickerSelected.size} Selected` : "Selected"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Success Dialog */}
       <Dialog open={successDialogOpen} onOpenChange={setSuccessDialogOpen}>

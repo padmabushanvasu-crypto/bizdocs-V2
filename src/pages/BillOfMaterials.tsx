@@ -630,7 +630,7 @@ export default function BillOfMaterials() {
     if (costRollup.bought_out_cost > 0)
       data.push({ name: "Bought Out", value: costRollup.bought_out_cost });
     if (costRollup.job_work_cost > 0)
-      data.push({ name: "Job Work", value: costRollup.job_work_cost });
+      data.push({ name: "Processing Cost", value: costRollup.job_work_cost });
     if (costRollup.consumable_cost > 0)
       data.push({ name: "Consumable", value: costRollup.consumable_cost });
     return data;
@@ -1945,7 +1945,7 @@ export default function BillOfMaterials() {
                           )}
                           {explosionData.job_work_cost > 0 && (
                             <div>
-                              <p className="text-xs text-muted-foreground">Job Work</p>
+                              <p className="text-xs text-muted-foreground">Processing Cost</p>
                               <p className="font-mono font-medium">{formatCurrency(explosionData.job_work_cost)}</p>
                             </div>
                           )}
@@ -2100,7 +2100,7 @@ export default function BillOfMaterials() {
                               )}
                               {costRollup.job_work_cost > 0 && (
                                 <div className="flex justify-between">
-                                  <span className="text-muted-foreground">Job Work</span>
+                                  <span className="text-muted-foreground">Processing Cost</span>
                                   <span className="font-mono">{formatCurrency(costRollup.job_work_cost)}</span>
                                 </div>
                               )}
@@ -3332,7 +3332,7 @@ export default function BillOfMaterials() {
                   }`}
                   onClick={() => setStepForm((f) => ({ ...f, step_type: "external" }))}
                 >
-                  External (Job Work)
+                  External Processing
                 </button>
               </div>
             </div>

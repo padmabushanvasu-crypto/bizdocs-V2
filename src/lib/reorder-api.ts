@@ -57,8 +57,8 @@ export interface ScrapEntry {
   item_code: string | null;
   item_description: string | null;
   drawing_number: string | null;
-  job_card_id: string | null;
-  job_card_number: string | null;
+  linked_dc_id: string | null;
+  linked_dc_number: string | null;
   assembly_order_id: string | null;
   assembly_order_number: string | null;
   qty_scrapped: number;
@@ -424,8 +424,8 @@ export async function createScrapEntry(data: Partial<ScrapEntry>): Promise<Scrap
       item_code: data.item_code ?? null,
       item_description: data.item_description ?? null,
       drawing_number: data.drawing_number ?? null,
-      job_card_id: data.job_card_id ?? null,
-      job_card_number: data.job_card_number ?? null,
+      linked_dc_id: data.linked_dc_id ?? null,
+      linked_dc_number: data.linked_dc_number ?? null,
       assembly_order_id: data.assembly_order_id ?? null,
       assembly_order_number: data.assembly_order_number ?? null,
       qty_scrapped: data.qty_scrapped ?? 0,

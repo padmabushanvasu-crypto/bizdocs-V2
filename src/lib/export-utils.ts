@@ -58,7 +58,6 @@ const STATUS_LABELS: Record<string, string> = {
   both: "Both",
   raw_material: "Raw Material",
   finished_good: "Finished Good",
-  job_work: "Job Work",
   service: "Service",
   consumable: "Consumable",
 };

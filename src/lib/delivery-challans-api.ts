@@ -63,8 +63,6 @@ export interface DeliveryChallan {
   updated_at: string;
   vehicle_number?: string | null;
   driver_name?: string | null;
-  job_work_id?: string | null;
-  job_work_number?: string | null;
   approx_value?: number | null;
   sub_total?: number;
   cgst_amount?: number;
@@ -99,27 +97,6 @@ export interface DCReturnItem {
   returned_kg: number;
   returned_sft: number;
   remarks?: string;
-}
-
-export interface OpenJobWorkDCItem {
-  jc_id: string;
-  jc_number: string;
-  item_code: string | null;
-  item_description: string | null;
-  drawing_revision: string | null;
-  drawing_number: string | null;
-  quantity_original: number;
-  unit: string | null;
-  step_id: string;
-  step_name: string;
-  step_qty_sent: number | null;
-  step_unit: string | null;
-  vendor_id: string | null;
-  vendor_name: string | null;
-  jc_status: string;
-  return_before_date: string | null;
-  job_work_charges: number | null;
-  expected_return_date: string | null;
 }
 
 export interface DCLineItemWithDC {
@@ -423,25 +400,17 @@ export async function recordDCReturn(dcId: string, returnDate: string, receivedB
 
 async function recalculateDCStatus(dcId: string) {
   const { data: lineItems } = await supabase.from("dc_line_items")
-    .select("qty_nos, qty_kg, qty_sft, returned_qty_nos, returned_qty_kg, returned_qty_sft, job_work_id, return_status")
+    .select("qty_nos, qty_kg, qty_sft, returned_qty_nos, returned_qty_kg, returned_qty_sft, return_status")
     .eq("dc_id", dcId);
   if (!lineItems) return;
   const items = lineItems as any[];
-  const jwLines = items.filter((li) => li.job_work_id);
-  let newStatus: string;
-  if (jwLines.length > 0) {
-    const allReturned = jwLines.every((li) => li.return_status === "returned");
-    const anyReturned = jwLines.some((li) => li.return_status === "returned");
-    newStatus = allReturned ? "fully_returned" : anyReturned ? "partially_returned" : "issued";
-  } else {
-    let allReturned = true;
-    let anyReturned = false;
-    for (const item of items) {
-      if ((item.qty_nos || 0) - (item.returned_qty_nos || 0) > 0 || (item.qty_kg || 0) - (item.returned_qty_kg || 0) > 0 || (item.qty_sft || 0) - (item.returned_qty_sft || 0) > 0) allReturned = false;
-      if ((item.returned_qty_nos || 0) > 0 || (item.returned_qty_kg || 0) > 0 || (item.returned_qty_sft || 0) > 0) anyReturned = true;
-    }
-    newStatus = allReturned ? "fully_returned" : anyReturned ? "partially_returned" : "issued";
+  let allReturned = true;
+  let anyReturned = false;
+  for (const item of items) {
+    if ((item.qty_nos || 0) - (item.returned_qty_nos || 0) > 0 || (item.qty_kg || 0) - (item.returned_qty_kg || 0) > 0 || (item.qty_sft || 0) - (item.returned_qty_sft || 0) > 0) allReturned = false;
+    if ((item.returned_qty_nos || 0) > 0 || (item.returned_qty_kg || 0) > 0 || (item.returned_qty_sft || 0) > 0) anyReturned = true;
   }
+  const newStatus = allReturned ? "fully_returned" : anyReturned ? "partially_returned" : "issued";
   await supabase.from("delivery_challans").update({ status: newStatus } as any).eq("id", dcId);
 }
 
@@ -463,120 +432,6 @@ export async function fetchDCStats() {
 export async function softDeleteDeliveryChallan(id: string) {
   const { error } = await supabase.from("delivery_challans").update({ status: "deleted" } as any).eq("id", id);
   if (error) throw error;
-}
-
-export async function fetchDCsForJobWork(jobWorkId: string): Promise<DeliveryChallan[]> {
-  // Header-level link (legacy / single-JW DCs)
-  const { data: headerDCs } = await (supabase as any)
-    .from("delivery_challans")
-    .select("*")
-    .eq("job_work_id", jobWorkId)
-    .order("dc_date", { ascending: false });
-
-  // Line-item-level link (multi-JW DCs)
-  const { data: lineItems } = await (supabase as any)
-    .from("dc_line_items")
-    .select("dc_id")
-    .eq("job_work_id", jobWorkId);
-
-  const lineItemDcIds = [...new Set(((lineItems ?? []) as any[]).map((li: any) => li.dc_id))];
-  let lineItemDCs: any[] = [];
-  if (lineItemDcIds.length > 0) {
-    const { data: lDCs } = await (supabase as any)
-      .from("delivery_challans")
-      .select("*")
-      .in("id", lineItemDcIds)
-      .order("dc_date", { ascending: false });
-    lineItemDCs = lDCs ?? [];
-  }
-
-  const seenIds = new Set<string>();
-  const merged = [...(headerDCs ?? []), ...lineItemDCs].filter((dc: any) => {
-    if (seenIds.has(dc.id)) return false;
-    seenIds.add(dc.id);
-    return true;
-  });
-  merged.sort((a: any, b: any) => new Date(b.dc_date).getTime() - new Date(a.dc_date).getTime());
-  return merged as DeliveryChallan[];
-}
-
-export async function fetchOpenJobWorksForDC(vendorId?: string | null): Promise<OpenJobWorkDCItem[]> {
-  const companyId = await getCompanyId();
-
-  const { data: jcs, error: jcErr } = await (supabase as any)
-    .from("job_cards")
-    .select("id, jc_number, item_code, item_description, drawing_revision, drawing_number, quantity_original, unit, status")
-    .eq("company_id", companyId)
-    .in("status", ["in_progress", "on_hold"])
-    .order("jc_number", { ascending: false })
-    .limit(300);
-  if (jcErr) {
-    console.error("[fetchOpenJobWorksForDC] job_cards query error:", jcErr);
-    throw jcErr;
-  }
-  const jcData = (jcs ?? []) as any[];
-  if (jcData.length === 0) return [];
-
-  const jcIds = jcData.map((jc: any) => jc.id);
-  const { data: steps, error: stepsErr } = await (supabase as any)
-    .from("job_card_steps")
-    .select("id, job_card_id, name, qty_sent, unit, vendor_id, vendor_name, job_work_charges, expected_return_date")
-    .in("job_card_id", jcIds)
-    .eq("step_type", "external")
-    .neq("status", "done")
-    .order("step_number", { ascending: true });
-  if (stepsErr) {
-    console.error("[fetchOpenJobWorksForDC] job_card_steps query error:", stepsErr);
-    throw stepsErr;
-  }
-
-  const jcMap = new Map(jcData.map((jc: any) => [jc.id, jc]));
-  return ((steps ?? []) as any[])
-    .filter((s: any) => !vendorId || s.vendor_id === vendorId)
-    .map((s: any) => {
-      const jc = jcMap.get(s.job_card_id) as any;
-      return {
-        jc_id: s.job_card_id,
-        jc_number: jc?.jc_number ?? "",
-        item_code: jc?.item_code ?? null,
-        item_description: jc?.item_description ?? null,
-        drawing_revision: jc?.drawing_revision ?? null,
-        drawing_number: jc?.drawing_number ?? null,
-        quantity_original: jc?.quantity_original ?? 0,
-        unit: jc?.unit ?? null,
-        step_id: s.id,
-        step_name: s.name,
-        step_qty_sent: s.qty_sent,
-        step_unit: s.unit,
-        vendor_id: s.vendor_id ?? null,
-        vendor_name: s.vendor_name ?? null,
-        jc_status: jc?.status ?? "in_progress",
-        return_before_date: s.expected_return_date ?? null,
-        job_work_charges: s.job_work_charges ?? null,
-        expected_return_date: s.expected_return_date ?? null,
-      };
-    });
-}
-
-export async function fetchDCLineItemsForJobWork(jobWorkId: string): Promise<DCLineItemWithDC[]> {
-  const { data: lineItems } = await (supabase as any)
-    .from("dc_line_items")
-    .select("id, dc_id, serial_number, description, drawing_number, item_code, quantity, unit, nature_of_process, job_work_step_id, qty_received, qty_accepted, qty_rejected, return_status")
-    .eq("job_work_id", jobWorkId)
-    .order("created_at", { ascending: false });
-  if (!lineItems?.length) return [];
-
-  const dcIds = [...new Set(((lineItems as any[]).map((li: any) => li.dc_id)))];
-  const { data: dcs } = await (supabase as any)
-    .from("delivery_challans")
-    .select("id, dc_number, dc_date, party_name")
-    .in("id", dcIds);
-  const dcMap = new Map(((dcs ?? []) as any[]).map((dc: any) => [dc.id, dc]));
-
-  return (lineItems as any[]).map((li: any) => {
-    const dc = dcMap.get(li.dc_id) as any;
-    return { ...li, dc_number: dc?.dc_number ?? "", dc_date: dc?.dc_date ?? "", party_name: dc?.party_name ?? null };
-  }) as DCLineItemWithDC[];
 }
 
 export async function recordLineItemReturn(
@@ -702,78 +557,6 @@ export async function recordLineItemReturn(
 
   // 4. Recalculate DC status
   await recalculateDCStatus(li.dc_id);
-}
-
-export async function recordJobWorkDCReturn(
-  dcId: string,
-  data: {
-    qty_accepted: number;
-    qty_rejected: number;
-    rejection_reason: string;
-    item_code: string | null;
-    item_description: string | null;
-  }
-) {
-  const companyId = await getCompanyId();
-  const today = new Date().toISOString().split("T")[0];
-
-  // Get DC number for ledger reference
-  const { data: dcHeader } = await supabase.from("delivery_challans").select("dc_number").eq("id", dcId).single();
-  const dcNumber = (dcHeader as any)?.dc_number ?? "";
-
-  // Mark DC as fully returned
-  await (supabase as any).from("delivery_challans").update({ status: "fully_returned" }).eq("id", dcId);
-
-  // Look up the job card step linked to this DC via outward_dc_id
-  const { data: step } = await (supabase as any)
-    .from("job_card_steps")
-    .select("id")
-    .eq("outward_dc_id", dcId)
-    .maybeSingle();
-
-  if (step) {
-    await (supabase as any).from("job_card_steps").update({
-      status: "done",
-      qty_returned: data.qty_accepted + data.qty_rejected,
-      qty_accepted: data.qty_accepted,
-      qty_rejected: data.qty_rejected,
-      rejection_reason: data.rejection_reason || null,
-      completed_at: new Date().toISOString(),
-    }).eq("id", step.id);
-  }
-
-  // Add accepted qty back to stock
-  if (data.qty_accepted > 0 && data.item_code) {
-    const { data: itemRecord } = await supabase
-      .from("items")
-      .select("id, item_code, description, current_stock")
-      .eq("item_code", data.item_code)
-      .eq("company_id", companyId)
-      .maybeSingle();
-
-    if (itemRecord) {
-      const rec = itemRecord as any;
-      const newStock = (rec.current_stock ?? 0) + data.qty_accepted;
-      await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
-      await addStockLedgerEntry({
-        item_id: rec.id,
-        item_code: rec.item_code,
-        item_description: rec.description ?? data.item_description ?? "",
-        transaction_date: today,
-        transaction_type: "job_work_return",
-        qty_in: data.qty_accepted,
-        qty_out: 0,
-        balance_qty: newStock,
-        unit_cost: 0,
-        total_value: 0,
-        reference_type: "delivery_challan",
-        reference_id: dcId,
-        reference_number: dcNumber,
-        notes: `Job work return: ${dcNumber}`,
-        created_by: null,
-      });
-    }
-  }
 }
 
 export async function fetchProcessSuggestions(): Promise<string[]> {

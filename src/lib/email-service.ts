@@ -29,9 +29,9 @@ function fmtAmt(n?: number | null): string {
 const DC_TYPE_LABELS: Record<string, string> = {
   returnable: "RETURNABLE",
   non_returnable: "NON-RETURNABLE",
-  job_work_143: "JOB WORK (SEC 143)",
-  job_work_out: "JOB WORK OUT",
-  job_work_return: "JOB WORK RETURN",
+  job_work_143: "RETURNABLE (SEC 143)",
+  job_work_out: "RETURNABLE (PROCESSING)",
+  job_work_return: "RETURN RECEIPT",
 };
 
 const JOB_WORK_TYPES = new Set(["job_work_out", "job_work_return", "returnable", "job_work_143"]);
@@ -62,11 +62,11 @@ function formatDC(dc: AnyDoc, companyName?: string): string {
   const approxVal = dc.approx_value ?? dc.approximate_value ?? dc.grand_total ?? dc.sub_total;
   if (approxVal) lines.push(`Approx. Value: ${fmtAmt(approxVal)}`);
   if (dc.return_due_date) lines.push(`Return Before: ${fmtDate(dc.return_due_date)}`);
-  if (dc.nature_of_job_work) lines.push(`Nature of Job Work: ${dc.nature_of_job_work}`);
+  if (dc.nature_of_job_work) lines.push(`Nature of Processing: ${dc.nature_of_job_work}`);
 
   if (JOB_WORK_TYPES.has(dc.dc_type)) {
     lines.push("");
-    lines.push("NOT FOR SALE — JOB WORK ONLY");
+    lines.push("NOT FOR SALE — RETURNABLE / PROCESSING ONLY");
   }
   lines.push(SEP);
   return lines.join("\n");

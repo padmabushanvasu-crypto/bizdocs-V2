@@ -229,16 +229,6 @@ export async function fetchGRNStats() {
   };
 }
 
-export async function fetchGrnsForJobCard(jobCardId: string): Promise<GRN[]> {
-  const { data, error } = await supabase
-    .from("grns")
-    .select("*")
-    .eq("job_card_id", jobCardId)
-    .order("grn_date", { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as unknown as GRN[];
-}
-
 export async function softDeleteGRN(id: string) {
   const { error } = await supabase.from("grns").update({ status: "deleted" } as any).eq("id", id);
   if (error) throw error;

@@ -30,7 +30,7 @@ const actionIcons: Record<string, React.ElementType> = {
   // Job Card actions
   "Job Card Created": FileText,
   "Internal Step Added": Factory,
-  "External Job Work Added": Truck,
+  "Processing Stage Added": Truck,
   "Step Updated": Edit,
   "Step Deleted": Trash2,
   "Return Recorded — Accepted": CheckCircle2,
@@ -56,7 +56,7 @@ const actionColors: Record<string, string> = {
   // Job Card actions
   "Job Card Created": "text-muted-foreground",
   "Internal Step Added": "text-blue-600",
-  "External Job Work Added": "text-amber-600",
+  "Processing Stage Added": "text-amber-600",
   "Step Updated": "text-blue-600",
   "Step Deleted": "text-destructive",
   "Return Recorded — Accepted": "text-emerald-600",

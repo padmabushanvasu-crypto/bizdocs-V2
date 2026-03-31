@@ -82,7 +82,7 @@ interface ScrapForm {
   scrap_sale_value: number;
   vendor_id: string;
   vendor_name: string;
-  job_card_number: string;
+  linked_dc_number: string;
   assembly_order_number: string;
   remarks: string;
   recorded_by: string;
@@ -104,7 +104,7 @@ function emptyForm(): ScrapForm {
     scrap_sale_value: 0,
     vendor_id: "",
     vendor_name: "",
-    job_card_number: "",
+    linked_dc_number: "",
     assembly_order_number: "",
     remarks: "",
     recorded_by: "",
@@ -203,7 +203,7 @@ export default function ScrapRegister() {
         scrap_sale_value: form.disposal_method === "scrap_sale" ? Number(form.scrap_sale_value) : 0,
         vendor_id: form.disposal_method === "scrap_sale" && form.vendor_id ? form.vendor_id : null,
         vendor_name: form.disposal_method === "scrap_sale" && form.vendor_name ? form.vendor_name : null,
-        job_card_number: form.job_card_number || null,
+        linked_dc_number: form.linked_dc_number || null,
         assembly_order_number: form.assembly_order_number || null,
         remarks: form.remarks || null,
         recorded_by: form.recorded_by || null,
@@ -715,16 +715,16 @@ export default function ScrapRegister() {
                 </>
               )}
 
-              {/* Linked JC / AO */}
+              {/* Linked DC / AO */}
               <div>
                 <Label className="text-sm font-medium text-slate-700">
-                  Linked Job Work (optional)
+                  Linked DC (optional)
                 </Label>
                 <Input
                   className="mt-1"
-                  value={form.job_card_number}
-                  onChange={(e) => setForm((f) => ({ ...f, job_card_number: e.target.value }))}
-                  placeholder="e.g. JW-25-26-001"
+                  value={form.linked_dc_number}
+                  onChange={(e) => setForm((f) => ({ ...f, linked_dc_number: e.target.value }))}
+                  placeholder="e.g. DC-2526-001"
                 />
               </div>
               <div>

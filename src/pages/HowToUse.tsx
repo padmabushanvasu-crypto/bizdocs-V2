@@ -290,18 +290,16 @@ const FLOW_ROWS: FlowRow[] = [
     arrowColor: "text-amber-400",
     steps: [
       { label: "Stock Register", route: "/stock-register" },
-      { label: "Job Work", route: "/job-works" },
-      { label: "Delivery Challan (Out)", route: "/delivery-challans/new" },
+      { label: "Raise DC (Returnable)", route: "/delivery-challans/new" },
       { label: "Material Returns" },
-      { label: "Complete → WIP Stock ↑" },
+      { label: "Record Return → Stock ↑" },
     ],
     explanation:
-      "When component WIP stock is low, check the Stock Register to identify what needs to be processed. Raw material goes to a vendor for CNC machining, then to another for plating, then returns for inspection — a Job Work tracks this entire journey. Each time material leaves the factory raise a Delivery Challan (Returnable type). When it comes back, record the return on the DC. Once all steps are accepted and complete the Job Work — WIP stock of the finished component goes up.",
+      "For processing: raise a Delivery Challan (Returnable type) when goods leave the factory. The DC is your legal proof of dispatch and tracks where material is and when it's due back. When material returns, record the return on the DC. Stock updates automatically.",
     rules: [
-      "Check the Stock Register to identify low-stock components before raising a Job Work",
-      "One Job Work per component per batch",
+      "Check the Stock Register to identify low-stock components",
       "Always raise a DC when material goes out — it's your legal proof of dispatch",
-      "GST Rule 45: job work goods must return within 365 days or GST is payable",
+      "GST Rule 45: goods sent for processing must return within 365 days or GST is payable",
     ],
   },
   {
@@ -433,16 +431,6 @@ interface FeatureCard {
 
 const FEATURES: FeatureCard[] = [
   {
-    icon: Wrench,
-    iconBg: "bg-amber-50",
-    iconColor: "text-amber-600",
-    name: "Job Works",
-    whenToUse: "When component WIP stock is low and material needs to be sent to a vendor for machining, plating, welding or any external process. Triggered by the Stock Register.",
-    thinkOfItAs: "Digital job bag",
-    commonMistake:
-      "Raising a DC without a Job Work — you lose track of where material is and when it's due back.",
-  },
-  {
     icon: Factory,
     iconBg: "bg-purple-50",
     iconColor: "text-purple-600",
@@ -457,7 +445,7 @@ const FEATURES: FeatureCard[] = [
     iconBg: "bg-blue-50",
     iconColor: "text-blue-600",
     name: "Delivery Challans",
-    whenToUse: "When goods leave the factory — either for job work (returnable) or customer delivery (non-returnable).",
+    whenToUse: "When goods leave the factory — either for processing (returnable) or customer delivery (non-returnable).",
     thinkOfItAs: "Gate pass",
     commonMistake:
       "Not recording the Return when material comes back — DC stays open forever, GST Rule 45 clock keeps ticking.",
@@ -547,7 +535,7 @@ const FEATURES: FeatureCard[] = [
     iconBg: "bg-red-50",
     iconColor: "text-red-600",
     name: "Reorder Alerts",
-    whenToUse: "The primary production trigger — check this page every morning. When any item falls below minimum stock the system fires an alert here. Everything starts here: raise POs for raw materials, raise Job Works for components.",
+    whenToUse: "The primary production trigger — check this page every morning. When any item falls below minimum stock the system fires an alert here. Everything starts here: raise POs for raw materials, raise DCs for processing.",
     thinkOfItAs: "Smart purchase reminder",
     commonMistake:
       "Ignoring amber alerts — by the time it turns red you may already have a production stoppage.",

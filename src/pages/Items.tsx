@@ -30,7 +30,6 @@ const TYPE_BADGE: Record<string, string> = {
   component: "bg-sky-100 text-sky-800",
   sub_assembly: "bg-indigo-100 text-indigo-800",
   bought_out: "bg-amber-100 text-amber-800",
-  job_work: "bg-blue-100 text-blue-800",
   service: "bg-violet-100 text-violet-800",
   consumable: "bg-teal-100 text-teal-800",
 };

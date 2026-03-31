@@ -195,7 +195,6 @@ export async function bulkDeleteItems(ids: string[]): Promise<{ deleted: number;
       const [
         { count: stockCount },
         { count: bomCount },
-        { count: jobCardCount },
         { count: poLineCount },
         { count: dcLineCount },
         { count: invoiceLineCount },
@@ -203,7 +202,6 @@ export async function bulkDeleteItems(ids: string[]): Promise<{ deleted: number;
       ] = await Promise.all([
         (supabase as any).from("stock_ledger").select("id", { count: "exact", head: true }).eq("item_id", id),
         (supabase as any).from("bom_lines").select("id", { count: "exact", head: true }).or(`parent_item_id.eq.${id},child_item_id.eq.${id}`),
-        (supabase as any).from("job_cards").select("id", { count: "exact", head: true }).eq("item_id", id),
         (supabase as any).from("po_line_items").select("id", { count: "exact", head: true }).eq("item_id", id),
         (supabase as any).from("dc_line_items").select("id", { count: "exact", head: true }).eq("item_id", id),
         (supabase as any).from("invoice_line_items").select("id", { count: "exact", head: true }).eq("item_id", id),
@@ -212,7 +210,6 @@ export async function bulkDeleteItems(ids: string[]): Promise<{ deleted: number;
       const hasRefs =
         (stockCount ?? 0) > 0 ||
         (bomCount ?? 0) > 0 ||
-        (jobCardCount ?? 0) > 0 ||
         (poLineCount ?? 0) > 0 ||
         (dcLineCount ?? 0) > 0 ||
         (invoiceLineCount ?? 0) > 0 ||
@@ -268,7 +265,7 @@ export async function importItemsBatch(
   const toUpdate: any[] = [];
   const codeToRow = new Map<string, number>();
 
-  const VALID_TYPES = ["raw_material", "component", "sub_assembly", "bought_out", "finished_good", "consumable", "job_work", "service"];
+  const VALID_TYPES = ["raw_material", "component", "sub_assembly", "bought_out", "finished_good", "consumable", "service"];
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];

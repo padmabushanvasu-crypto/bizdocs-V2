@@ -55,7 +55,7 @@ const DROPDOWN_OPTIONS: Record<string, string[]> = {
   party_type: ["vendor", "customer", "both"],
   state: INDIAN_STATES.map((s) => s.name),
   gst_rate: ["0", "5", "12", "18", "28"],
-  item_type: ["raw_material", "finished_good", "job_work", "service", "consumable"],
+  item_type: ["raw_material", "finished_good", "service", "consumable"],
   unit: ["NOS", "KG", "MTR", "SFT", "SET", "ROLL", "LTR", "PKT", "BOX"],
 };
 
@@ -388,7 +388,7 @@ export const ITEMS_IMPORT_CONFIG: ImportConfig = {
     { key: "item_code", label: "Item Code", description: "Your internal code", required: false, example: "230082" },
     { key: "drawing_number", label: "Drawing Number", description: "Engineering drawing ref", required: false, example: "230082-R1" },
     { key: "description", label: "Description", description: "Item description", required: true, example: "Bearing Housing ASGB" },
-    { key: "item_type", label: "Item Type", description: "raw_material/finished_good/job_work/service/consumable", required: false, example: "raw_material" },
+    { key: "item_type", label: "Item Type", description: "raw_material/finished_good/service/consumable", required: false, example: "raw_material" },
     { key: "unit", label: "Default Unit", description: "NOS/KG/MTR/SFT/SET/ROLL etc", required: false, example: "NOS" },
     { key: "purchase_price", label: "Default Purchase Price", description: "₹ amount", required: false, example: "450", validate: (v) => validators.positiveNumber("Purchase Price")(v) },
     { key: "sale_price", label: "Default Sale Price", description: "₹ amount", required: false, example: "650", validate: (v) => validators.positiveNumber("Sale Price")(v) },
@@ -554,7 +554,7 @@ export function normalizeUnit(raw: string): string {
 
 const VALID_ITEM_TYPES = [
   "raw_material", "component", "sub_assembly", "bought_out",
-  "finished_good", "consumable", "job_work", "service",
+  "finished_good", "consumable", "service",
 ];
 
 export function normalizeItemType(raw: string): string {
@@ -568,8 +568,7 @@ export function normalizeItemType(raw: string): string {
   if (["boughtout", "boughtoutpart", "bop", "bo"].includes(v)) return "bought_out";
   if (["finishedgood", "finishedgoods", "finishedproduct", "finprod", "fg", "fp"].includes(v)) return "finished_good";
   if (["consumable", "consum", "cons"].includes(v)) return "consumable";
-  if (["jobwork", "jw"].includes(v)) return "job_work";
-  if (["service", "svc", "srv"].includes(v)) return "service";
+  if (["service", "svc", "srv", "jobwork", "jw"].includes(v)) return "service";
   // Fallback: convert to underscore form rather than silently substituting
   const withUnderscores = raw.toLowerCase().trim().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
   return withUnderscores || "component";
