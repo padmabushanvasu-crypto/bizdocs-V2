@@ -55,7 +55,7 @@ const DROPDOWN_OPTIONS: Record<string, string[]> = {
   party_type: ["vendor", "customer", "both"],
   state: INDIAN_STATES.map((s) => s.name),
   gst_rate: ["0", "5", "12", "18", "28"],
-  item_type: ["raw_material", "finished_good", "service", "consumable"],
+  item_type: ["raw_material", "component", "sub_assembly", "bought_out", "finished_good", "consumable", "service"],
   unit: ["NOS", "KG", "MTR", "SFT", "SET", "ROLL", "LTR", "PKT", "BOX"],
 };
 

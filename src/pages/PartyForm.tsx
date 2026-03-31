@@ -247,15 +247,17 @@ export default function PartyForm() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="raw_material_supplier">Raw Material Supplier</SelectItem>
-                  <SelectItem value="processor">Component Manufacturer / Processor</SelectItem>
-                  <SelectItem value="both">Both</SelectItem>
+                  <SelectItem value="raw_material_supplier">Supplier</SelectItem>
+                  <SelectItem value="processor">Processor</SelectItem>
+                  <SelectItem value="both">Supplier & Processor</SelectItem>
+                  <SelectItem value="customer">Customer</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-[11px] text-muted-foreground mt-1">
                 {vendorType === "raw_material_supplier" && "Supplies raw materials — copper rod, insulation tape, steel sheets etc."}
                 {vendorType === "processor" && "Takes raw material and machines or processes it into components — CNC, plating, welding."}
                 {vendorType === "both" && "Both supplies raw materials and processes components."}
+                {vendorType === "customer" && "A customer who is also a vendor — e.g. consignment or buy-back arrangements."}
               </p>
             </div>
           )}

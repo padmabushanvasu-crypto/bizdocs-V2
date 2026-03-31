@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { FileSpreadsheet, Download, Info, Eye, X, ChevronLeft, ChevronRight, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -1172,6 +1172,7 @@ export default function GstReports() {
 
   const [dragId, setDragId] = useState<ReportId | null>(null);
   const [dragOverId, setDragOverId] = useState<ReportId | null>(null);
+  const touchRef = useRef<{ id: ReportId | null }>({ id: null });
 
   const handleDragStart = (id: ReportId) => setDragId(id);
   const handleDragOver = (e: React.DragEvent, id: ReportId) => { e.preventDefault(); setDragOverId(id); };
@@ -1188,6 +1189,33 @@ export default function GstReports() {
     setDragOverId(null);
   };
   const handleDragEnd = () => { setDragId(null); setDragOverId(null); };
+
+  const handleTouchStart = (e: React.TouchEvent, id: ReportId) => {
+    touchRef.current.id = id;
+    setDragId(id);
+  };
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!touchRef.current.id) return;
+    const y = e.touches[0].clientY;
+    const cards = document.querySelectorAll<HTMLElement>("[data-report-id]");
+    for (const card of Array.from(cards)) {
+      const rect = card.getBoundingClientRect();
+      if (y >= rect.top && y <= rect.bottom) {
+        const targetId = card.dataset.reportId as ReportId;
+        if (targetId !== touchRef.current.id) setDragOverId(targetId);
+        break;
+      }
+    }
+  };
+  const handleTouchEnd = () => {
+    if (touchRef.current.id && dragOverId && touchRef.current.id !== dragOverId) {
+      handleDrop(dragOverId);
+    } else {
+      setDragId(null);
+      setDragOverId(null);
+    }
+    touchRef.current.id = null;
+  };
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -1274,13 +1302,17 @@ export default function GstReports() {
         {reportOrder.map((id) => (
           <div
             key={id}
+            data-report-id={id}
             draggable
             onDragStart={() => handleDragStart(id)}
             onDragOver={(e) => handleDragOver(e, id)}
             onDrop={() => handleDrop(id)}
             onDragEnd={handleDragEnd}
+            onTouchStart={(e) => handleTouchStart(e, id)}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
             className={cn(
-              "relative",
+              "relative touch-none",
               dragId === id && "opacity-50",
               dragOverId === id && dragId !== id && "outline outline-2 outline-dashed outline-blue-400 rounded-xl bg-blue-50/30"
             )}

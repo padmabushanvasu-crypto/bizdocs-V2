@@ -114,6 +114,8 @@ export interface SerialFilters {
 // ============================================================
 
 export async function fetchFatCertificates(filters: FatFilters = {}) {
+  const companyId = await getCompanyId();
+  if (!companyId) return { data: [], count: 0 };
   const { search, status = "all", item_id, page = 1, pageSize = 20 } = filters;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
@@ -121,6 +123,7 @@ export async function fetchFatCertificates(filters: FatFilters = {}) {
   let query = (supabase as any)
     .from("fat_certificates")
     .select("*", { count: "exact" })
+    .eq("company_id", companyId)
     .order("created_at", { ascending: false })
     .range(from, to);
 
@@ -339,6 +342,8 @@ export async function bulkUpdateFatTestResults(
 // ============================================================
 
 export async function fetchSerialNumbers(filters: SerialFilters = {}) {
+  const companyId = await getCompanyId();
+  if (!companyId) return { data: [], count: 0 };
   const { item_id, status, search, fat_completed, fatCompleted, assemblyOrderId, page = 1, pageSize = 50 } = filters;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
@@ -346,6 +351,7 @@ export async function fetchSerialNumbers(filters: SerialFilters = {}) {
   let query = (supabase as any)
     .from("serial_numbers")
     .select("*", { count: "exact" })
+    .eq("company_id", companyId)
     .order("created_at", { ascending: false })
     .range(from, to);
 
@@ -430,9 +436,12 @@ export async function assignSerialToInvoice(
 // ============================================================
 
 export async function fetchFatStats() {
+  const companyId = await getCompanyId();
+  if (!companyId) return { draft: 0, pending: 0, passed: 0, failed: 0, conditional: 0 };
   const { data, error } = await (supabase as any)
     .from("fat_certificates")
-    .select("id, status");
+    .select("id, status")
+    .eq("company_id", companyId);
   if (error) return { draft: 0, pending: 0, passed: 0, failed: 0, conditional: 0 };
   const all = (data ?? []) as any[];
   return {
@@ -445,6 +454,8 @@ export async function fetchFatStats() {
 }
 
 export async function fetchSerialStats() {
+  const companyId = await getCompanyId();
+  if (!companyId) return { inProduction: 0, inStock: 0, dispatched: 0, underWarranty: 0, expiringSoon: 0, fatPending: 0 };
   const today = new Date().toISOString().split("T")[0];
   const in30 = new Date();
   in30.setDate(in30.getDate() + 30);
@@ -452,7 +463,8 @@ export async function fetchSerialStats() {
 
   const { data, error } = await (supabase as any)
     .from("serial_numbers")
-    .select("id, status, fat_completed, warranty_expiry");
+    .select("id, status, fat_completed, warranty_expiry")
+    .eq("company_id", companyId);
   if (error) return { inProduction: 0, inStock: 0, dispatched: 0, underWarranty: 0, expiringSoon: 0, fatPending: 0 };
   const all = (data ?? []) as any[];
   return {

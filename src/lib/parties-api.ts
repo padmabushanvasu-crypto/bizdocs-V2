@@ -3,7 +3,7 @@ import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
 import type { Tables, TablesInsert, TablesUpdate } from "@/integrations/supabase/types";
 import { normalizePartyType, type SkipReason } from "@/lib/import-utils";
 
-export type VendorType = "raw_material_supplier" | "processor" | "both";
+export type VendorType = "raw_material_supplier" | "processor" | "both" | "customer";
 
 // Extend generated type with vendor_type column added via migration
 export type Party = Tables<"parties"> & { vendor_type?: VendorType | null };
@@ -335,7 +335,7 @@ export interface VendorScorecard {
   city: string | null;
   phone1: string | null;
   gstin: string | null;
-  vendor_type: "raw_material_supplier" | "processor" | "both" | null;
+  vendor_type: "raw_material_supplier" | "processor" | "both" | "customer" | null;
   grn_count: number;
   grn_qty_received: number;
   grn_qty_accepted: number;

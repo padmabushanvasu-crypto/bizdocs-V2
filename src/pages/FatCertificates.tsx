@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { ClipboardCheck, Search, Clock, CheckCircle2, XCircle } from "lucide-react";
+import { ClipboardCheck, Search, Clock, CheckCircle2, XCircle, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchFatCertificates, fetchFatStats } from "@/lib/fat-api";
+import { fetchItems } from "@/lib/items-api";
 import { MetricCard } from "@/components/MetricCard";
+import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
 const statusClass: Record<string, string> = {
@@ -26,8 +28,10 @@ const statusLabels: Record<string, string> = {
 
 export default function FatCertificates() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [itemFilter, setItemFilter] = useState("all");
   const [page, setPage] = useState(1);
 
   const { data: stats } = useQuery({
@@ -36,9 +40,22 @@ export default function FatCertificates() {
     refetchInterval: 60000,
   });
 
+  const { data: itemsData } = useQuery({
+    queryKey: ["items", { type: "finished_good", status: "active" }],
+    queryFn: () => fetchItems({ type: "finished_good", status: "active", pageSize: 200 }),
+    staleTime: 5 * 60 * 1000,
+  });
+  const finishedGoodItems = itemsData?.data ?? [];
+
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["fat-certificates", statusFilter, search, page],
-    queryFn: () => fetchFatCertificates({ search, status: statusFilter, page, pageSize: 20 }),
+    queryKey: ["fat-certificates", statusFilter, itemFilter, search, page],
+    queryFn: () => fetchFatCertificates({
+      search,
+      status: statusFilter,
+      item_id: itemFilter === "all" ? undefined : itemFilter,
+      page,
+      pageSize: 20,
+    }),
     refetchInterval: 30000,
   });
 
@@ -55,6 +72,15 @@ export default function FatCertificates() {
           <h1 className="text-2xl font-bold text-slate-900">FAT Certificates</h1>
           <p className="text-sm text-slate-500 mt-1">Factory Acceptance Test records</p>
         </div>
+        <Button
+          size="sm"
+          onClick={() => {
+            toast({ title: "Select a serial number to create a FAT certificate" });
+            navigate("/serial-numbers");
+          }}
+        >
+          <Plus className="h-4 w-4 mr-1" /> New FAT Certificate
+        </Button>
       </div>
 
       {/* Summary Cards */}
@@ -103,6 +129,21 @@ export default function FatCertificates() {
             <SelectItem value="conditional">Conditional</SelectItem>
           </SelectContent>
         </Select>
+        {finishedGoodItems.length > 0 && (
+          <Select value={itemFilter} onValueChange={(v) => { setItemFilter(v); setPage(1); }}>
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="All Items" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Items</SelectItem>
+              {finishedGoodItems.map((item) => (
+                <SelectItem key={item.id} value={item.id}>
+                  {item.item_code} — {item.description}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       {/* Table */}
@@ -179,7 +220,7 @@ export default function FatCertificates() {
                       className="h-7 text-xs"
                       onClick={(e) => { e.stopPropagation(); navigate(`/fat-certificates/${cert.id}`); }}
                     >
-                      {cert.status === "pending" ? "Enter Results" : cert.status === "draft" ? "View Draft" : "View"}
+                      {cert.status === "draft" ? "Edit Draft" : cert.status === "pending" ? "Enter Results" : "View"}
                     </Button>
                   </td>
                 </tr>

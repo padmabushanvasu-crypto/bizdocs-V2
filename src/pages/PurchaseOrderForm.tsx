@@ -396,9 +396,12 @@ export default function PurchaseOrderForm() {
                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
                       selectedVendor.vendor_type === "raw_material_supplier" ? "bg-teal-50 text-teal-700 border-teal-200" :
                       selectedVendor.vendor_type === "processor" ? "bg-purple-50 text-purple-700 border-purple-200" :
+                      selectedVendor.vendor_type === "customer" ? "bg-blue-50 text-blue-700 border-blue-200" :
                       "bg-slate-100 text-slate-600 border-slate-200"
                     }`}>
-                      {selectedVendor.vendor_type === "raw_material_supplier" ? "RAW MAT" : selectedVendor.vendor_type === "processor" ? "PROCESSOR" : "BOTH"}
+                      {selectedVendor.vendor_type === "raw_material_supplier" ? "Supplier" :
+                       selectedVendor.vendor_type === "processor" ? "Processor" :
+                       selectedVendor.vendor_type === "customer" ? "Customer" : "Supplier & Processor"}
                     </span>
                   )}
                 </div>

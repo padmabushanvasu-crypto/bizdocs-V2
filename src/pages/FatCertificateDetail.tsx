@@ -24,12 +24,14 @@ import { DocumentActions } from "@/components/DocumentActions";
 import { format } from "date-fns";
 
 const statusClass: Record<string, string> = {
+  draft: "bg-slate-100 text-slate-600 border border-slate-200",
   pending: "bg-amber-50 text-amber-700 border border-amber-200",
   passed: "bg-green-50 text-green-700 border border-green-200",
   failed: "bg-red-50 text-red-700 border border-red-200",
   conditional: "bg-blue-50 text-blue-700 border border-blue-200",
 };
 const statusLabels: Record<string, string> = {
+  draft: "Draft",
   pending: "Pending",
   passed: "Passed",
   failed: "Failed",
@@ -145,6 +147,20 @@ export default function FatCertificateDetail() {
     },
   });
 
+  const submitForReviewMutation = useMutation({
+    mutationFn: async () => {
+      await updateFatCertificate(id!, { status: "pending" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["fat-certificate", id] });
+      queryClient.invalidateQueries({ queryKey: ["fat-certificates"] });
+      toast({ title: "Submitted for review" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
   const updateResult = (idx: number, field: keyof FatTestResult, value: string) => {
     setLocalResults((prev) => {
       const next = [...prev];
@@ -164,8 +180,10 @@ export default function FatCertificateDetail() {
   );
   if (!fat) return <div className="p-6 text-center text-muted-foreground">FAT Certificate not found.</div>;
 
-  const isCompleted = fat.status !== "pending";
+  const isCompleted = ["passed", "failed", "conditional"].includes(fat.status);
   const allTested = localResults.length > 0 && localResults.every((r) => r.result !== "pending");
+  const completedTests = localResults.filter((r) => r.result !== "pending").length;
+  const totalTests = localResults.length;
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-5xl mx-auto">
@@ -179,8 +197,8 @@ export default function FatCertificateDetail() {
       {/* Actions */}
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div className="flex gap-2 flex-wrap">
-          {!isCompleted && dirty && (
-            <Button variant="outline" size="sm" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+          {!isCompleted && (
+            <Button variant="outline" size="sm" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || !dirty}>
               {saveMutation.isPending ? "Saving..." : "Save Progress"}
             </Button>
           )}
@@ -250,7 +268,16 @@ export default function FatCertificateDetail() {
             {fat.serial_number && (
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Serial Number</span>
-                <span className="font-mono font-semibold">{fat.serial_number}</span>
+                {fat.serial_number_id ? (
+                  <button
+                    className="font-mono font-semibold text-primary hover:underline print:pointer-events-none"
+                    onClick={() => navigate(`/serial-numbers/${fat.serial_number_id}`)}
+                  >
+                    {fat.serial_number}
+                  </button>
+                ) : (
+                  <span className="font-mono font-semibold">{fat.serial_number}</span>
+                )}
               </div>
             )}
             {fat.assembly_order_number && (
@@ -336,7 +363,20 @@ export default function FatCertificateDetail() {
 
         {/* Test Results Table */}
         <div>
-          <h3 className="text-xs font-semibold text-slate-500 mb-3">Test Results</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs font-semibold text-slate-500">Test Results</h3>
+            {totalTests > 0 && (
+              <span className="text-xs text-muted-foreground">{completedTests} of {totalTests} tests completed</span>
+            )}
+          </div>
+          {totalTests > 0 && (
+            <div className="h-1.5 bg-muted rounded-full mb-3 overflow-hidden">
+              <div
+                className="h-full bg-primary rounded-full transition-all"
+                style={{ width: `${Math.round((completedTests / totalTests) * 100)}%` }}
+              />
+            </div>
+          )}
           <div className="overflow-x-auto border border-border rounded-lg">
             <table className="w-full text-sm">
               <thead className="bg-secondary text-muted-foreground text-xs uppercase tracking-wider">
@@ -467,7 +507,26 @@ export default function FatCertificateDetail() {
           </div>
         )}
 
-        {/* Overall Result + Complete (only when pending) */}
+        {/* Submit for Review (only when draft) */}
+        {!isCompleted && fat.status === "draft" && (
+          <div className="border-t border-border pt-4 print:hidden">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Ready for testing?</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Submit for Review changes status to Pending</p>
+              </div>
+              <Button
+                variant="outline"
+                onClick={() => submitForReviewMutation.mutate()}
+                disabled={submitForReviewMutation.isPending}
+              >
+                {submitForReviewMutation.isPending ? "Submitting..." : "Submit for Review"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Overall Result + Complete (only when not completed) */}
         {!isCompleted && (
           <div className="border-t border-border pt-4 space-y-4 print:hidden">
             <div>
