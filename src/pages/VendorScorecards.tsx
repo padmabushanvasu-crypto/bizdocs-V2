@@ -222,18 +222,19 @@ export default function VendorScorecards() {
                 <th className="text-right min-w-[100px] px-3 py-2">Total Charges</th>
                 <th className="text-center min-w-[90px] px-3 py-2">Rating</th>
                 <th className="text-right min-w-[100px] px-3 py-2">Last Used</th>
+                <th className="text-center min-w-[90px] px-3 py-2">History</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={16} className="text-center py-10 text-muted-foreground">
+                  <td colSpan={17} className="text-center py-10 text-muted-foreground">
                     Loading scorecards…
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={16} className="text-center py-10 text-muted-foreground">
+                  <td colSpan={17} className="text-center py-10 text-muted-foreground">
                     {rows.length === 0 ? "No active vendors found." : "No vendors match your search."}
                   </td>
                 </tr>
@@ -248,7 +249,7 @@ export default function VendorScorecards() {
                         ? "bg-amber-50/40 hover:bg-amber-50/60"
                         : "hover:bg-muted/30"
                     }`}
-                    onClick={() => navigate(`/parties/${row.vendor_id}`)}
+                    onClick={() => navigate(`/vendor-scorecards/${row.vendor_id}`)}
                   >
                     <td className="text-left px-3 py-2">
                       <p className="font-medium text-sm">{row.vendor_name}</p>
@@ -317,6 +318,14 @@ export default function VendorScorecards() {
                         ? format(new Date(row.last_used_at), "dd MMM yyyy")
                         : "—"}
                     </td>
+                    <td className="text-center px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors whitespace-nowrap"
+                        onClick={() => navigate(`/vendor-scorecards/${row.vendor_id}`)}
+                      >
+                        View History →
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}
@@ -326,7 +335,7 @@ export default function VendorScorecards() {
       </div>
 
       <p className="text-xs text-muted-foreground text-center">
-        Click any row to view vendor details · GRN = goods receipt quality · DC = job work out quality · JW = job card steps (legacy) · Rating uses worst-case rejection across all sources
+        Click any row or View History to see detailed transaction trail · GRN = goods receipt quality · DC = job work out quality · JW = job card steps (legacy) · Rating uses worst-case rejection across all sources
       </p>
     </div>
   );

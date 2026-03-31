@@ -435,3 +435,30 @@ export async function fetchVendorScorecards(search?: string): Promise<VendorScor
     };
   });
 }
+
+export async function fetchVendorDCHistory(vendorId: string): Promise<any[]> {
+  const companyId = await getCompanyId();
+  const { data, error } = await (supabase as any)
+    .from('delivery_challans')
+    .select('id, dc_number, dc_date, dc_type, status, party_name, dc_line_items(id, serial_number, description, drawing_number, quantity, qty_nos, qty_accepted, qty_rejected, rejection_reason, rejection_action, rework_cycle, is_rework, stage_number, stage_name, nature_of_process)')
+    .eq('party_id', vendorId)
+    .eq('company_id', companyId)
+    .in('dc_type', ['returnable', 'job_work_143', 'job_work_out'])
+    .order('dc_date', { ascending: false })
+    .limit(100);
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function fetchVendorGRNHistory(vendorId: string): Promise<any[]> {
+  const companyId = await getCompanyId();
+  const { data, error } = await (supabase as any)
+    .from('grns')
+    .select('id, grn_number, grn_date, po_number, status, grn_line_items(id, serial_number, description, drawing_number, receiving_now, accepted_quantity, rejected_quantity, rejection_reason, rejection_action, replacement_cycle, is_replacement)')
+    .eq('vendor_id', vendorId)
+    .eq('company_id', companyId)
+    .order('grn_date', { ascending: false })
+    .limit(100);
+  if (error) throw error;
+  return data ?? [];
+}

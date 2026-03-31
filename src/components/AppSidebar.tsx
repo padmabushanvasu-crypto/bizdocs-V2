@@ -28,7 +28,6 @@ import {
   PanelLeft,
   PanelLeftClose,
   Wrench,
-  Factory,
   Search,
   Send,
 } from "lucide-react";
@@ -66,8 +65,6 @@ type NavItem = {
 const TOOLTIP_TEXT: Record<string, string> = {
   "Dashboard":
     "Your daily overview — alerts, production status, financial snapshot and quick actions.",
-  "Production":
-    "Start and complete production runs for finished goods. Serial numbers and FAT drafts are created automatically.",
   "WIP Register":
     "Live view of everything currently in progress — components at vendors and production runs being built.",
   "Delivery Challans":
@@ -114,7 +111,6 @@ const TOOLTIP_TEXT: Record<string, string> = {
 
 const ALL_SEARCH_ITEMS: { title: string; url: string }[] = [
   { title: "Dashboard", url: "/" },
-  { title: "Production", url: "/assembly-orders" },
   { title: "WIP Register", url: "/wip-register" },
   { title: "Delivery Challans", url: "/delivery-challans" },
   { title: "Purchase Orders", url: "/purchase-orders" },
@@ -143,7 +139,7 @@ const STORAGE_KEY = "bizdocs_sidebar_state_v2";
 const RAIL_MODE_KEY = "bizdocs_sidebar_mode";
 
 const GROUP_PATHS: Record<string, string[]> = {
-  "Daily Work":     ["/", "/assembly-orders", "/wip-register", "/delivery-challans"],
+  "Daily Work":     ["/", "/wip-register", "/delivery-challans"],
   "Purchasing":     ["/purchase-orders", "/grn"],
   "Billing":        ["/invoices", "/receipts", "/sales-orders", "/dispatch-notes"],
   "Inventory":      ["/stock-register", "/stock-ledger", "/reorder-intelligence", "/scrap-register", "/serial-numbers", "/fat-certificates"],
@@ -415,7 +411,6 @@ export function AppSidebar() {
   // Dynamic nav arrays (badges computed from live data)
   const dailyWorkNav: NavItem[] = [
     { title: "Dashboard", url: "/", icon: LayoutDashboard },
-    { title: "Production", url: "/assembly-orders", icon: Factory },
     { title: "WIP Register", url: "/wip-register", icon: AlertTriangle },
     { title: "Delivery Challans", url: "/delivery-challans", icon: Truck },
   ];

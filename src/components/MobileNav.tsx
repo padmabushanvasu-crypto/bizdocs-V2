@@ -17,7 +17,6 @@ import {
   FileText,
   Send,
   X,
-  Factory,
   TrendingDown,
   Trash2,
   Hash,
@@ -35,7 +34,6 @@ const MORE_GROUPS = [
   {
     label: "Daily Work",
     items: [
-      { label: "Production", to: "/assembly-orders", icon: Factory },
       { label: "WIP Register", to: "/wip-register", icon: BookOpen },
       { label: "Delivery Challans", to: "/delivery-challans", icon: Truck },
     ],
@@ -87,7 +85,6 @@ const CREATE_TYPES = [
   { label: "Delivery Challan", to: "/delivery-challans/new", icon: Truck },
   { label: "GRN", to: "/grn/new", icon: PackageCheck },
   { label: "Dispatch Note", to: "/dispatch-notes/new", icon: Send },
-  { label: "Production Run", to: "/assembly-orders", icon: Factory },
 ];
 
 const MAIN_TABS = [

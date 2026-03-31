@@ -117,11 +117,11 @@ const SETUP_STEPS: SetupStep[] = [
     iconBg: "bg-purple-50",
     iconColor: "text-purple-600",
     stepNum: 6,
-    title: "Configure Production Settings",
+    title: "Set Minimum Finished Stock",
     description:
-      "For each finished product set a Minimum Finished Stock and a Production Batch Size on the Items page.",
+      "For each finished product set a Minimum Finished Stock and a Production Batch Size on the Items page. When stock falls below this level the system alerts you. Use Stock Register → Finished Goods → Record Build to log what was assembled.",
     whyMatters:
-      "This is the pull trigger for your entire assembly process. When finished goods fall below the minimum, the system alerts you automatically.",
+      "This is the pull trigger for your assembly process. When finished goods fall below the minimum, the system alerts you. Record Build in Stock Register does everything in one click: serial numbers, FAT drafts, and stock update.",
     timeNeeded: "15 minutes — one setting per finished product",
     tag: "Do this once",
     tagOnce: true,
@@ -312,19 +312,18 @@ const FLOW_ROWS: FlowRow[] = [
     arrowColor: "text-purple-400",
     steps: [
       { label: "Stock Alert", route: "/reorder-intelligence" },
-      { label: "Start Production", route: "/assembly-orders" },
       { label: "Assembly on Floor" },
-      { label: "Mark Complete", route: "/assembly-orders" },
+      { label: "Record Build", route: "/stock-register" },
       { label: "FAT Testing", route: "/fat-certificates" },
     ],
     explanation:
-      "Production is triggered by stock level, not by a customer order. When finished goods stock falls below the minimum you set, a Production Required alert appears on the Dashboard and Reorder Intelligence page. Click Start Production — the system immediately generates serial numbers and creates FAT certificate drafts. Assembly happens on the shop floor without any system interaction. When done, the manager clicks Mark Complete — all BOM components are automatically deducted from stock (backflush). No manual component selection ever needed.",
+      "Production is triggered by stock level, not by a customer order. When finished goods stock falls below the minimum you set, an alert appears on the Dashboard and Reorder Intelligence page. Assembly happens on the shop floor — no system interaction needed during assembly. When done, go to Stock Register → Finished Goods tab → click Record Build. In one click: serial numbers are generated, FAT certificate drafts are created, and BOM components are deducted from stock (backflush). No separate Start/Mark Complete steps needed.",
     rules: [
       "Set Minimum Finished Stock on every finished good item — this is the pull trigger",
-      "Serial numbers are created when production STARTS, not when it ends — FAT can begin immediately",
-      "Mark Complete triggers automatic stock deduction — no manual component selection",
+      "Assembly happens on the shop floor — no system steps during assembly",
+      "Record Build in Stock Register does all steps in one click after assembly is done",
+      "Serial numbers and FAT drafts are created at Record Build",
       "A unit cannot be invoiced until its FAT certificate is passed",
-      "No date required to start production — stock level is the only trigger",
     ],
   },
   {
@@ -434,11 +433,11 @@ const FEATURES: FeatureCard[] = [
     icon: Factory,
     iconBg: "bg-purple-50",
     iconColor: "text-purple-600",
-    name: "Production",
-    whenToUse: "When finished goods stock falls below the minimum level set on the item. The system alerts you automatically — you do not need to decide when to build. Just respond to the alert.",
-    thinkOfItAs: "The assembly trigger — one click starts production, one click completes it. Everything in between happens on the shop floor without touching the system.",
+    name: "Record Build",
+    whenToUse: "When finished goods stock falls below the minimum level. Assembly has already happened on the shop floor. Go to Stock Register → Finished Goods tab → click Record Build on the item.",
+    thinkOfItAs: "One-click assembly completion — generates serial numbers, FAT drafts, and updates stock in a single action after physical assembly is done.",
     commonMistake:
-      "Do not wait for a customer order to start production. This is a pull-based system — build to stock, sell from stock. The trigger is your finished goods minimum level, not an order.",
+      "Do not wait for a customer order to record a build. This is a pull-based system — build to stock, sell from stock. The trigger is your finished goods minimum level, not an order.",
   },
   {
     icon: Truck,
@@ -505,10 +504,10 @@ const FEATURES: FeatureCard[] = [
     iconBg: "bg-teal-50",
     iconColor: "text-teal-600",
     name: "FAT Certificates",
-    whenToUse: "FAT drafts are created automatically when a Production Run starts. The quality team fills in test results at any time — during assembly, after assembly, or when the customer's engineer arrives to witness. No need to wait for assembly to be marked complete.",
-    thinkOfItAs: "The test report — pre-created and waiting to be filled in from the moment production starts.",
+    whenToUse: "FAT drafts are created automatically when you Record Build. The quality team fills in test results at any time — during or after assembly. No need to wait.",
+    thinkOfItAs: "The test report — pre-created at Record Build and waiting to be filled in.",
     commonMistake:
-      "Do not think FAT only happens after Mark Complete. FAT drafts exist from production start. Fill them in whenever testing happens on the floor.",
+      "Do not create FAT certificates manually. They are auto-created when you Record Build. Just open the draft and fill in the test results.",
   },
   {
     icon: BookOpen,
@@ -575,10 +574,10 @@ const FEATURES: FeatureCard[] = [
     iconBg: "bg-slate-100",
     iconColor: "text-slate-600",
     name: "Serial Numbers",
-    whenToUse: "They are created automatically when you start a Production Run — you never need to create them manually. Each finished OLTC unit gets a unique serial number the moment production begins.",
-    thinkOfItAs: "The unit's birth certificate — exists from the first moment of production, tracks the unit through FAT, invoice, dispatch, and warranty.",
+    whenToUse: "They are created automatically when you click Record Build in Stock Register — you never need to create them manually. Each finished unit gets a unique serial number at the moment of Record Build.",
+    thinkOfItAs: "The unit's birth certificate — created when you Record Build, tracks the unit through FAT, invoice, dispatch, and warranty.",
     commonMistake:
-      "Serial numbers are NOT created at the end of assembly. They exist from the start so FAT testing can begin immediately during or after assembly.",
+      "Serial numbers are created at Record Build, not manually. They exist from the moment you record the build so FAT testing can begin immediately.",
   },
 ];
 

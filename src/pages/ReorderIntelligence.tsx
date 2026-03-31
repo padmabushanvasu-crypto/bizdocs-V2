@@ -442,12 +442,12 @@ export default function ReorderIntelligence() {
                           variant="outline"
                           className="h-7 text-xs gap-1 whitespace-nowrap"
                           onClick={() =>
-                            navigate("/assembly-orders", {
-                              state: { openNew: true, item_id: pa.item_id },
+                            navigate("/stock-register", {
+                              state: { openBuildDialog: pa.item_id },
                             })
                           }
                         >
-                          <Factory className="h-3 w-3" /> Start Production
+                          Record Build
                         </Button>
                       </td>
                     </tr>

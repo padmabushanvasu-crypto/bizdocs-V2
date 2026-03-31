@@ -38,6 +38,7 @@ import JobWorkDetail from "@/pages/JobWorkDetail";
 import StageTemplates from "@/pages/StageTemplates";
 import WipRegister from "@/pages/WipRegister";
 import VendorScorecards from "@/pages/VendorScorecards";
+import VendorScorecardDetail from "@/pages/VendorScorecardDetail";
 import GstReports from "@/pages/GstReports";
 import NotificationsSettings from "@/pages/NotificationsSettings";
 import BillOfMaterials from "@/pages/BillOfMaterials";
@@ -108,6 +109,7 @@ const App = () => (
               <Route path="/job-works/:id" element={<JobWorkDetail />} />
               <Route path="/wip-register" element={<WipRegister />} />
               <Route path="/vendor-scorecards" element={<VendorScorecards />} />
+              <Route path="/vendor-scorecards/:vendorId" element={<VendorScorecardDetail />} />
               <Route path="/gst-reports" element={<GstReports />} />
               <Route path="/settings/notifications" element={<NotificationsSettings />} />
               <Route path="/settings/documents" element={<DocumentSettings />} />

@@ -5,7 +5,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { formatCurrency } from "@/lib/gst-utils";
 import { fetchAssemblyOrderStats } from "@/lib/assembly-orders-api";
 import { fetchFatStats } from "@/lib/fat-api";
-import { fetchReorderAlerts, fetchProductionAlertCount } from "@/lib/reorder-api";
+import { fetchReorderAlerts } from "@/lib/reorder-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { fetchAllAuditLog, type AuditEntry } from "@/lib/audit-api";
 import { supabase } from "@/integrations/supabase/client";
@@ -23,6 +23,7 @@ interface DashboardData {
   componentCount: number;
   finishedGoodCount: number;
   zeroStockCount: number;
+  needsBuildingCount: number;
 }
 
 interface ReadyToShipRow {
@@ -59,7 +60,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
       .eq("status", "issued"),
     supabase
       .from("items")
-      .select("item_type, current_stock")
+      .select("item_type, current_stock, stock_finished_goods, min_finished_stock")
       .eq("status", "active"),
   ]);
 
@@ -90,11 +91,15 @@ async function fetchDashboardData(): Promise<DashboardData> {
     (i) => i.item_type === "finished_good" && (i.current_stock ?? 0) > 0
   ).length;
   const zeroStockCount = items.filter((i) => (i.current_stock ?? 0) === 0).length;
+  const needsBuildingCount = items.filter(
+    (i) => i.item_type === "finished_good" && (i.stock_finished_goods ?? 0) < (i.min_finished_stock ?? 0) && (i.min_finished_stock ?? 0) > 0
+  ).length;
 
   return {
     thisMonthRevenue, fyRevenue, overdueInvoiceCount,
     openPOValue, overdueDCCount,
     rawMaterialCount, componentCount, finishedGoodCount, zeroStockCount,
+    needsBuildingCount,
   };
 }
 
@@ -238,12 +243,6 @@ export default function Dashboard() {
     staleTime: STALE,
     refetchInterval: STALE,
   });
-  const { data: productionRequired = 0 } = useQuery({
-    queryKey: ["production-alert-count-db"],
-    queryFn: fetchProductionAlertCount,
-    staleTime: STALE,
-    refetchInterval: STALE,
-  });
 
   // Derived alert counts
   const overdueDCReturns  = dashData?.overdueDCCount ?? 0;
@@ -251,9 +250,8 @@ export default function Dashboard() {
   const reorderAlertCount = reorderAlerts.length;
   const fatPending        = fatStats?.pending ?? 0;
   const uninvoicedUnits   = readyToShip.length;
-  const readyToAssemble   = aoStats?.draft ?? 0;
 
-  const totalAlerts = overdueDCReturns + zeroStockItems + reorderAlertCount + fatPending + uninvoicedUnits + productionRequired;
+  const totalAlerts = overdueDCReturns + zeroStockItems + reorderAlertCount + fatPending + uninvoicedUnits + (dashData?.needsBuildingCount ?? 0);
   const allClear = totalAlerts === 0;
 
   // Company info
@@ -339,13 +337,6 @@ export default function Dashboard() {
                   body: "Use this when goods are physically leaving the factory — for job work (returnable) or delivery to a customer (non-returnable).",
                 },
                 {
-                  label: "Start Production",
-                  route: "/assembly-orders",
-                  state: { openNew: true },
-                  title: "Start Production Run",
-                  body: "Use this when finished goods stock falls below minimum levels. Serial numbers are generated immediately at the start of the run and FAT certificates are pre-created as drafts.",
-                },
-                {
                   label: "Record FAT",
                   route: "/fat-certificates",
                   state: undefined as any,
@@ -424,11 +415,8 @@ export default function Dashboard() {
             {uninvoicedUnits > 0 && (
               <AlertPill label="Ready to Invoice"   count={uninvoicedUnits}  colour="amber" onClick={() => navigate("/fat-certificates")} />
             )}
-            {productionRequired > 0 && (
-              <AlertPill label="Production Required" count={productionRequired} colour="amber" onClick={() => navigate("/reorder-intelligence")} />
-            )}
-            {readyToAssemble > 0 && (
-              <AlertPill label="Ready to Assemble"  count={readyToAssemble}  colour="green" onClick={() => navigate("/assembly-orders")} />
+            {(dashData?.needsBuildingCount ?? 0) > 0 && (
+              <AlertPill label="Items Need Building" count={dashData!.needsBuildingCount} colour="amber" onClick={() => navigate("/stock-register")} />
             )}
           </div>
         )}
@@ -440,12 +428,12 @@ export default function Dashboard() {
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 lg:p-5">
             <div className="flex items-center justify-between mb-1">
               <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Production</p>
-              <button className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors" onClick={() => navigate("/assembly-orders")}>
+              <button className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors" onClick={() => navigate("/stock-register")}>
                 View →
               </button>
             </div>
             <div className="divide-y divide-slate-100 mt-2">
-              <LightStatRow label="Production"   value={aoStats?.active ?? "—"}   onClick={() => navigate("/assembly-orders")} />
+              <LightStatRow label="Builds"   value={aoStats?.completedThisMonth ?? "—"}   onClick={() => navigate("/stock-register")} />
               <LightStatRow label="FAT Pending"  value={fatStats?.pending ?? "—"} highlight={(fatStats?.pending ?? 0) > 0} onClick={() => navigate("/fat-certificates")} />
             </div>
           </div>
