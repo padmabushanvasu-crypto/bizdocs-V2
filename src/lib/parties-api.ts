@@ -440,6 +440,60 @@ export async function fetchVendorScorecards(search?: string): Promise<VendorScor
   });
 }
 
+export interface VendorGrnMetrics {
+  acceptance_rate: number | null;
+  rejection_rate: number | null;
+  identity_match_rate: number | null;
+  return_count: number;
+}
+
+export async function fetchVendorGrnMetrics(vendorId: string): Promise<VendorGrnMetrics> {
+  const companyId = await getCompanyId();
+  if (!companyId) return { acceptance_rate: null, rejection_rate: null, identity_match_rate: null, return_count: 0 };
+
+  const { data: grnsData } = await (supabase as any)
+    .from('grns')
+    .select(`id, grn_line_items(received_now, receiving_now, accepted_qty, accepted_quantity, rejected_qty, rejected_quantity, item_identity_match, disposal_method, rejection_action)`)
+    .eq('vendor_id', vendorId)
+    .eq('company_id', companyId);
+
+  if (!grnsData || grnsData.length === 0) {
+    return { acceptance_rate: null, rejection_rate: null, identity_match_rate: null, return_count: 0 };
+  }
+
+  let totalReceived = 0;
+  let totalAccepted = 0;
+  let totalRejected = 0;
+  let identityMatchCount = 0;
+  let identityTotalCount = 0;
+  let returnCount = 0;
+
+  for (const grn of grnsData as any[]) {
+    for (const li of (grn.grn_line_items ?? []) as any[]) {
+      const received = li.received_now ?? li.receiving_now ?? 0;
+      const accepted = li.accepted_qty ?? li.accepted_quantity ?? 0;
+      const rejected = li.rejected_qty ?? li.rejected_quantity ?? 0;
+      totalReceived += received;
+      totalAccepted += accepted;
+      totalRejected += rejected;
+      if (li.item_identity_match !== null && li.item_identity_match !== undefined) {
+        identityTotalCount++;
+        if (li.item_identity_match === true) identityMatchCount++;
+      }
+      if (li.disposal_method === 'return_to_vendor' || li.rejection_action === 'return_to_supplier') {
+        returnCount++;
+      }
+    }
+  }
+
+  return {
+    acceptance_rate: totalReceived > 0 ? Math.round((totalAccepted / totalReceived) * 1000) / 10 : null,
+    rejection_rate: totalReceived > 0 ? Math.round((totalRejected / totalReceived) * 1000) / 10 : null,
+    identity_match_rate: identityTotalCount > 0 ? Math.round((identityMatchCount / identityTotalCount) * 1000) / 10 : null,
+    return_count: returnCount,
+  };
+}
+
 export async function fetchVendorDCHistory(vendorId: string): Promise<any[]> {
   const companyId = await getCompanyId();
   if (!companyId) return [];

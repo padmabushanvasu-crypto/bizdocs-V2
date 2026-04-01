@@ -29,6 +29,8 @@ import DCRecordReturn from "@/pages/DCRecordReturn";
 import GRNRegister from "@/pages/GRNRegister";
 import GRNForm from "@/pages/GRNForm";
 import GRNDetail from "@/pages/GRNDetail";
+import DcGrn from "@/pages/DcGrn";
+import DcGrnForm from "@/pages/DcGrnForm";
 import PaymentReceipts from "@/pages/PaymentReceipts";
 import MoreMenu from "@/pages/MoreMenu";
 import CompanySettings from "@/pages/CompanySettings";
@@ -104,6 +106,9 @@ const App = () => (
               <Route path="/grn" element={<GRNRegister />} />
               <Route path="/grn/new" element={<GRNForm />} />
               <Route path="/grn/:id" element={<GRNDetail />} />
+              <Route path="/dc-grn" element={<DcGrn />} />
+              <Route path="/dc-grn/new" element={<DcGrnForm />} />
+              <Route path="/dc-grn/:id" element={<DcGrnForm />} />
               <Route path="/receipts" element={<PaymentReceipts />} />
               <Route path="/job-works" element={<JobWorks />} />
               <Route path="/job-works/:id" element={<JobWorkDetail />} />

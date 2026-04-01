@@ -23,6 +23,25 @@ export interface GRNLineItem {
   replacement_cycle?: number;
   is_replacement?: boolean;
   supplier_ref?: string | null;
+  // Phase 14 new fields
+  ordered_qty?: number;
+  previously_received_qty?: number;
+  received_now?: number;
+  item_identity_match?: boolean;
+  identity_mismatch_remarks?: string | null;
+  stage1_checked_by?: string | null;
+  stage1_verified_by?: string | null;
+  stage1_date?: string | null;
+  stage1_complete?: boolean;
+  accepted_qty?: number;
+  rejected_qty?: number;
+  disposal_method?: 'return_to_vendor' | 'rework' | 'scrap' | 'use_as_is' | null;
+  stage2_inspected_by?: string | null;
+  stage2_approved_by?: string | null;
+  stage2_date?: string | null;
+  stage2_complete?: boolean;
+  jigs_sent?: any[] | null;
+  jigs_returned?: any[] | null;
 }
 
 export interface GRN {
@@ -49,23 +68,46 @@ export interface GRN {
   created_at: string;
   updated_at: string;
   line_items?: GRNLineItem[];
+  // Phase 14 new fields
+  grn_type?: 'po_grn' | 'dc_grn';
+  driver_name?: string | null;
+  driver_contact?: string | null;
+  linked_dc_id?: string | null;
+  linked_dc_number?: string | null;
+  total_ordered_qty?: number;
+  total_received_qty?: number;
+  total_accepted_qty?: number;
 }
 
 export interface GRNFilters {
   search?: string;
   status?: string;
+  grn_type?: 'po_grn' | 'dc_grn' | 'all';
   page?: number;
   pageSize?: number;
+}
+
+export interface GrnReceiptEvent {
+  id: string;
+  company_id: string;
+  grn_id: string;
+  receipt_date: string;
+  vehicle_number: string | null;
+  driver_name: string | null;
+  driver_contact: string | null;
+  notes: string | null;
+  created_at: string;
 }
 
 export async function fetchGRNs(filters: GRNFilters = {}) {
   const companyId = await getCompanyId();
   if (!companyId) return { data: [], count: 0 };
-  const { search, status = "all", page = 1, pageSize = 20 } = filters;
+  const { search, status = "all", grn_type, page = 1, pageSize = 20 } = filters;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
-  let query = supabase.from("grns").select("*", { count: "exact" }).order("created_at", { ascending: false }).range(from, to);
+  let query = (supabase as any).from("grns").select("*", { count: "exact" }).order("created_at", { ascending: false }).range(from, to);
   if (status && status !== "all") query = query.eq("status", status);
+  if (grn_type && grn_type !== "all") query = query.eq("grn_type", grn_type);
   if (search?.trim()) {
     const sanitized = sanitizeSearchTerm(search);
     if (sanitized) {
@@ -76,6 +118,10 @@ export async function fetchGRNs(filters: GRNFilters = {}) {
   const { data, error, count } = await query;
   if (error) throw error;
   return { data: (data ?? []) as unknown as GRN[], count: count ?? 0 };
+}
+
+export async function fetchDcGrns(filters: GRNFilters = {}) {
+  return fetchGRNs({ ...filters, grn_type: 'dc_grn' });
 }
 
 export async function fetchGRN(id: string): Promise<GRN> {
@@ -246,6 +292,224 @@ export async function fetchGRNStats() {
 export async function softDeleteGRN(id: string) {
   const { error } = await supabase.from("grns").update({ status: "deleted" } as any).eq("id", id);
   if (error) throw error;
+}
+
+// ── Phase 14: Two-Stage GRN API functions ────────────────────────────────────
+
+export async function fetchGrnLineItems(grnId: string): Promise<GRNLineItem[]> {
+  const { data, error } = await (supabase as any).from("grn_line_items").select("*").eq("grn_id", grnId).order("serial_number", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as GRNLineItem[];
+}
+
+export interface Stage1Data {
+  received_now: number;
+  item_identity_match: boolean;
+  identity_mismatch_remarks?: string | null;
+  stage1_checked_by?: string | null;
+  stage1_verified_by?: string | null;
+  stage1_date?: string | null;
+  stage1_complete?: boolean;
+}
+
+export async function updateGrnLineStage1(lineId: string, data: Stage1Data): Promise<void> {
+  const accepted_qty = data.stage1_complete ? data.received_now : undefined;
+  const updatePayload: any = {
+    received_now: data.received_now,
+    receiving_now: data.received_now, // keep legacy field in sync
+    item_identity_match: data.item_identity_match,
+    identity_mismatch_remarks: data.identity_mismatch_remarks ?? null,
+    stage1_checked_by: data.stage1_checked_by ?? null,
+    stage1_verified_by: data.stage1_verified_by ?? null,
+    stage1_date: data.stage1_date ?? null,
+    stage1_complete: data.stage1_complete ?? false,
+  };
+  if (data.stage1_complete && accepted_qty !== undefined) {
+    updatePayload.accepted_qty = accepted_qty;
+    updatePayload.accepted_quantity = accepted_qty; // legacy
+  }
+  const { error } = await (supabase as any).from("grn_line_items").update(updatePayload).eq("id", lineId);
+  if (error) throw error;
+}
+
+export interface Stage2Data {
+  accepted_qty: number;
+  rejected_qty: number;
+  rejection_reason?: string | null;
+  disposal_method?: 'return_to_vendor' | 'rework' | 'scrap' | 'use_as_is' | null;
+  stage2_inspected_by?: string | null;
+  stage2_approved_by?: string | null;
+  stage2_date?: string | null;
+  stage2_complete?: boolean;
+}
+
+export async function updateGrnLineStage2(lineId: string, data: Stage2Data): Promise<void> {
+  const updatePayload: any = {
+    accepted_qty: data.accepted_qty,
+    accepted_quantity: data.accepted_qty, // legacy
+    rejected_qty: data.rejected_qty,
+    rejected_quantity: data.rejected_qty, // legacy
+    rejection_reason: data.rejection_reason ?? null,
+    disposal_method: data.disposal_method ?? null,
+    rejection_action: data.disposal_method ?? null, // legacy
+    stage2_inspected_by: data.stage2_inspected_by ?? null,
+    stage2_approved_by: data.stage2_approved_by ?? null,
+    stage2_date: data.stage2_date ?? null,
+    stage2_complete: data.stage2_complete ?? false,
+  };
+  const { error } = await (supabase as any).from("grn_line_items").update(updatePayload).eq("id", lineId);
+  if (error) throw error;
+}
+
+export interface CreateGrnFromPOData {
+  po_id: string;
+  date: string;
+  vehicle_number?: string | null;
+  driver_name?: string | null;
+  driver_contact?: string | null;
+  vendor_invoice_number?: string | null;
+  notes?: string | null;
+}
+
+export async function createGrnFromPO(data: CreateGrnFromPOData): Promise<GRN> {
+  const companyId = await getCompanyId();
+  const grnNumber = await getNextGRNNumber();
+
+  // Fetch PO info
+  const { data: po, error: poErr } = await supabase.from("purchase_orders").select("*").eq("id", data.po_id).single();
+  if (poErr) throw poErr;
+  const poAny = po as any;
+
+  // Fetch PO line items
+  const { data: poItems, error: liErr } = await supabase.from("po_line_items").select("*").eq("po_id", data.po_id).order("serial_number", { ascending: true });
+  if (liErr) throw liErr;
+
+  // Create GRN header
+  const { data: newGRN, error: grnErr } = await (supabase as any).from("grns").insert({
+    company_id: companyId,
+    grn_number: grnNumber,
+    grn_date: data.date,
+    grn_type: 'po_grn',
+    po_id: data.po_id,
+    po_number: poAny.po_number,
+    vendor_id: poAny.vendor_id,
+    vendor_name: poAny.vendor_name,
+    vendor_invoice_number: data.vendor_invoice_number ?? null,
+    vehicle_number: data.vehicle_number ?? null,
+    driver_name: data.driver_name ?? null,
+    driver_contact: data.driver_contact ?? null,
+    notes: data.notes ?? null,
+    total_received: 0, total_accepted: 0, total_rejected: 0,
+    status: 'draft',
+  }).select().single();
+  if (grnErr) throw grnErr;
+
+  // Create line items from PO
+  const grnId = (newGRN as any).id;
+  if ((poItems ?? []).length > 0) {
+    const lineItemsToInsert = (poItems ?? []).map((item: any, idx: number) => {
+      const prevReceived = item.received_quantity ?? 0;
+      const pending = Math.max(0, (item.quantity ?? 0) - prevReceived);
+      return {
+        company_id: companyId,
+        grn_id: grnId,
+        serial_number: idx + 1,
+        po_line_item_id: item.id,
+        description: item.description,
+        drawing_number: item.drawing_number ?? null,
+        unit: item.unit ?? 'NOS',
+        po_quantity: item.quantity ?? 0,
+        ordered_qty: item.quantity ?? 0,
+        previously_received: prevReceived,
+        previously_received_qty: prevReceived,
+        pending_quantity: pending,
+        receiving_now: 0,
+        received_now: 0,
+        accepted_quantity: 0,
+        accepted_qty: 0,
+        rejected_quantity: 0,
+        rejected_qty: 0,
+        stage1_complete: false,
+        stage2_complete: false,
+      };
+    });
+    const { error: liInsertErr } = await (supabase as any).from("grn_line_items").insert(lineItemsToInsert);
+    if (liInsertErr) throw liInsertErr;
+  }
+
+  return newGRN as unknown as GRN;
+}
+
+export interface CreateGrnFromDCData {
+  dc_id: string;
+  date: string;
+  vehicle_number?: string | null;
+  driver_name?: string | null;
+  driver_contact?: string | null;
+  notes?: string | null;
+}
+
+export async function createGrnFromDC(data: CreateGrnFromDCData): Promise<GRN> {
+  const companyId = await getCompanyId();
+  const grnNumber = await getNextGRNNumber();
+
+  // Fetch DC info
+  const { data: dc, error: dcErr } = await (supabase as any).from("delivery_challans").select("*").eq("id", data.dc_id).single();
+  if (dcErr) throw dcErr;
+  const dcAny = dc as any;
+
+  // Fetch DC line items
+  const { data: dcItems, error: liErr } = await (supabase as any).from("dc_line_items").select("*").eq("dc_id", data.dc_id).order("serial_number", { ascending: true });
+  if (liErr) throw liErr;
+
+  // Create GRN header
+  const { data: newGRN, error: grnErr } = await (supabase as any).from("grns").insert({
+    company_id: companyId,
+    grn_number: grnNumber,
+    grn_date: data.date,
+    grn_type: 'dc_grn',
+    linked_dc_id: data.dc_id,
+    linked_dc_number: dcAny.dc_number,
+    vendor_id: dcAny.party_id ?? null,
+    vendor_name: dcAny.party_name ?? null,
+    vehicle_number: data.vehicle_number ?? null,
+    driver_name: data.driver_name ?? null,
+    driver_contact: data.driver_contact ?? null,
+    notes: data.notes ?? null,
+    total_received: 0, total_accepted: 0, total_rejected: 0,
+    status: 'draft',
+  }).select().single();
+  if (grnErr) throw grnErr;
+
+  // Create line items from DC
+  const grnId = (newGRN as any).id;
+  if ((dcItems ?? []).length > 0) {
+    const lineItemsToInsert = (dcItems ?? []).map((item: any, idx: number) => ({
+      company_id: companyId,
+      grn_id: grnId,
+      serial_number: idx + 1,
+      description: item.description,
+      drawing_number: item.drawing_number ?? null,
+      unit: item.unit ?? 'NOS',
+      po_quantity: item.quantity ?? 0,
+      ordered_qty: item.quantity ?? 0,
+      previously_received: 0,
+      previously_received_qty: 0,
+      pending_quantity: item.quantity ?? 0,
+      receiving_now: 0,
+      received_now: 0,
+      accepted_quantity: 0,
+      accepted_qty: 0,
+      rejected_quantity: 0,
+      rejected_qty: 0,
+      stage1_complete: false,
+      stage2_complete: false,
+    }));
+    const { error: liInsertErr } = await (supabase as any).from("grn_line_items").insert(lineItemsToInsert);
+    if (liInsertErr) throw liInsertErr;
+  }
+
+  return newGRN as unknown as GRN;
 }
 
 export async function recordGrnRejectionAction(

@@ -48,6 +48,7 @@ const MORE_GROUPS = [
     items: [
       { label: "Purchase Orders", to: "/purchase-orders", icon: ShoppingCart },
       { label: "GRN", to: "/grn", icon: PackageCheck },
+      { label: "DC Returns", to: "/dc-grn", icon: RotateCcw },
     ],
   },
   {

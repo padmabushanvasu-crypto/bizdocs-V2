@@ -30,6 +30,7 @@ import {
   Wrench,
   Search,
   Send,
+  RotateCcw,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -74,6 +75,8 @@ const TOOLTIP_TEXT: Record<string, string> = {
     "Raise a formal buy request to a vendor. Triggered when stock falls below reorder point.",
   "GRN":
     "Record goods arriving from a vendor. Links to the original PO. Stock updates automatically when saved.",
+  "DC Returns":
+    "Record goods returning from job work vendors. Links to the Delivery Challan sent earlier.",
   "Invoices":
     "Raise a GST tax invoice to a customer. Only FAT-passed units can be invoiced.",
   "Receipts":
@@ -116,6 +119,7 @@ const ALL_SEARCH_ITEMS: { title: string; url: string }[] = [
   { title: "Delivery Challans", url: "/delivery-challans" },
   { title: "Purchase Orders", url: "/purchase-orders" },
   { title: "GRN", url: "/grn" },
+  { title: "DC Returns", url: "/dc-grn" },
   { title: "Invoices", url: "/invoices" },
   { title: "Receipts", url: "/receipts" },
   { title: "Sales Orders", url: "/sales-orders" },
@@ -141,7 +145,7 @@ const RAIL_MODE_KEY = "bizdocs_sidebar_mode";
 
 const GROUP_PATHS: Record<string, string[]> = {
   "Daily Work":     ["/", "/wip-register", "/delivery-challans"],
-  "Purchasing":     ["/purchase-orders", "/grn"],
+  "Purchasing":     ["/purchase-orders", "/grn", "/dc-grn"],
   "Billing":        ["/invoices", "/receipts", "/sales-orders", "/dispatch-notes"],
   "Inventory":      ["/stock-register", "/stock-ledger", "/reorder-intelligence", "/scrap-register", "/serial-numbers", "/fat-certificates"],
   "Reports & More": ["/gst-reports", "/vendor-scorecards", "/parties", "/items", "/bill-of-materials", "/settings"],
@@ -187,6 +191,7 @@ function getActiveGroupForPath(pathname: string): string | null {
 const purchasingNav: NavItem[] = [
   { title: "Purchase Orders", url: "/purchase-orders", icon: ShoppingCart },
   { title: "GRN", url: "/grn", icon: PackageCheck },
+  { title: "DC Returns", url: "/dc-grn", icon: RotateCcw },
 ];
 
 const billingNav: NavItem[] = [

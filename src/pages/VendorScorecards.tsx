@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Star, AlertTriangle, Eye, Download, CheckCircle, ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { fetchVendorScorecards, type VendorScorecard } from "@/lib/parties-api";
+import { fetchVendorScorecards, fetchVendorGrnMetrics, type VendorScorecard, type VendorGrnMetrics } from "@/lib/parties-api";
 import { formatCurrency } from "@/lib/gst-utils";
 import { exportToExcel } from "@/lib/export-utils";
 import { format } from "date-fns";
@@ -99,6 +99,24 @@ export default function VendorScorecards() {
     queryKey: ["vendor-scorecards"],
     queryFn: () => fetchVendorScorecards(),
     refetchInterval: 60000,
+  });
+
+  // Fetch GRN quality metrics for each vendor (Phase 14)
+  const { data: grnMetricsMap } = useQuery({
+    queryKey: ["vendor-grn-metrics-all"],
+    queryFn: async () => {
+      const result: Record<string, VendorGrnMetrics> = {};
+      await Promise.all(
+        rows
+          .filter((r) => r.grn_count > 0)
+          .map(async (r) => {
+            result[r.vendor_id] = await fetchVendorGrnMetrics(r.vendor_id);
+          })
+      );
+      return result;
+    },
+    enabled: rows.length > 0,
+    staleTime: 2 * 60 * 1000,
   });
 
   const filtered = useMemo(() => {
@@ -214,6 +232,8 @@ export default function VendorScorecards() {
                 <th className="text-right min-w-[80px] px-3 py-2">JW Steps</th>
                 <th className="text-right min-w-[80px] px-3 py-2">JW Rej%</th>
                 <th className="text-right min-w-[80px] px-3 py-2">Avg Days</th>
+                <th className="text-right min-w-[90px] px-3 py-2">Accept%</th>
+                <th className="text-right min-w-[90px] px-3 py-2">ID Match%</th>
                 <th className="text-right min-w-[80px] px-3 py-2">First Pass</th>
                 <th className="text-right min-w-[70px] px-3 py-2">Rework%</th>
                 <th className="text-right min-w-[80px] px-3 py-2">Replacements</th>
@@ -228,13 +248,13 @@ export default function VendorScorecards() {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={17} className="text-center py-10 text-muted-foreground">
+                  <td colSpan={19} className="text-center py-10 text-muted-foreground">
                     Loading scorecards…
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={17} className="text-center py-10 text-muted-foreground">
+                  <td colSpan={19} className="text-center py-10 text-muted-foreground">
                     {rows.length === 0 ? "No active vendors found." : "No vendors match your search."}
                   </td>
                 </tr>
@@ -280,6 +300,22 @@ export default function VendorScorecards() {
                     </td>
                     <td className="text-right px-3 py-2 font-mono tabular-nums text-sm text-muted-foreground">
                       {row.avg_turnaround_days != null ? `${row.avg_turnaround_days}d` : "—"}
+                    </td>
+                    <td className="text-right px-3 py-2">
+                      {(() => {
+                        const m = grnMetricsMap?.[row.vendor_id];
+                        if (!m || m.acceptance_rate === null) return <span className="text-muted-foreground text-sm">—</span>;
+                        const cls = m.acceptance_rate >= 95 ? 'text-green-600 font-semibold' : m.acceptance_rate >= 90 ? 'text-amber-600 font-semibold' : 'text-red-600 font-semibold';
+                        return <span className={`text-sm tabular-nums ${cls}`}>{m.acceptance_rate.toFixed(1)}%</span>;
+                      })()}
+                    </td>
+                    <td className="text-right px-3 py-2">
+                      {(() => {
+                        const m = grnMetricsMap?.[row.vendor_id];
+                        if (!m || m.identity_match_rate === null) return <span className="text-muted-foreground text-sm">—</span>;
+                        const cls = m.identity_match_rate >= 98 ? 'text-green-600 font-semibold' : m.identity_match_rate >= 90 ? 'text-amber-600 font-semibold' : 'text-red-600 font-semibold';
+                        return <span className={`text-sm tabular-nums ${cls}`}>{m.identity_match_rate.toFixed(1)}%</span>;
+                      })()}
                     </td>
                     <td className="text-right px-3 py-2">
                       <FirstPassYield value={row.first_pass_yield_pct != null ? Number(row.first_pass_yield_pct) : null} />
