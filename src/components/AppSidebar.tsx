@@ -38,6 +38,7 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchFatStats } from "@/lib/fat-api";
 import { fetchReorderSummary } from "@/lib/reorder-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
+import { fetchAwoStats } from "@/lib/production-api";
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -146,6 +147,7 @@ const RAIL_MODE_KEY = "bizdocs_sidebar_mode";
 
 const GROUP_PATHS: Record<string, string[]> = {
   "Daily Work":     ["/", "/wip-register", "/delivery-challans"],
+  "Production":     ["/sub-assembly-work-orders", "/finished-good-work-orders"],
   "Purchasing":     ["/purchase-orders", "/grn", "/dc-grn"],
   "Billing":        ["/invoices", "/receipts", "/sales-orders", "/dispatch-notes"],
   "Inventory":      ["/stock-register", "/stock-ledger", "/reorder-intelligence", "/scrap-register", "/serial-numbers", "/fat-certificates"],
@@ -154,6 +156,7 @@ const GROUP_PATHS: Record<string, string[]> = {
 
 const DEFAULTS: Record<string, boolean> = {
   "Daily Work":     true,
+  "Production":     false,
   "Purchasing":     false,
   "Billing":        false,
   "Inventory":      false,
@@ -162,13 +165,14 @@ const DEFAULTS: Record<string, boolean> = {
 
 const GROUP_ICONS: Record<string, React.ComponentType<any>> = {
   "Daily Work":     Wrench,
+  "Production":     Layers,
   "Purchasing":     ShoppingCart,
   "Billing":        FileText,
-  "Inventory":      Layers,
+  "Inventory":      Package,
   "Reports & More": BarChart2,
 };
 
-const ALL_GROUP_NAMES = ["Daily Work", "Purchasing", "Billing", "Inventory", "Reports & More"];
+const ALL_GROUP_NAMES = ["Daily Work", "Production", "Purchasing", "Billing", "Inventory", "Reports & More"];
 
 function loadGroupState(): Record<string, boolean> {
   try {
@@ -421,9 +425,42 @@ export function AppSidebar() {
     staleTime: 5 * 60 * 1000,
   });
 
+  const { data: awoStats } = useQuery({
+    queryKey: ["awo-stats-sidebar"],
+    queryFn: async () => {
+      const [sa, fg] = await Promise.all([
+        fetchAwoStats("sub_assembly"),
+        fetchAwoStats("finished_good"),
+      ]);
+      return {
+        sa_active: (sa.pending_materials ?? 0) + (sa.in_progress ?? 0),
+        fg_active: (fg.pending_materials ?? 0) + (fg.in_progress ?? 0),
+      };
+    },
+    staleTime: 60_000,
+  });
+
   const companyNeedsSetup = !companySettingsData?.gstin ||
     !companySettingsData?.company_name ||
     companySettingsData.company_name === "My Company";
+
+  // Production nav
+  const productionNav: NavItem[] = [
+    {
+      title: "Sub-Assembly",
+      url: "/sub-assembly-work-orders",
+      icon: Layers,
+      badge: awoStats?.sa_active && awoStats.sa_active > 0 ? awoStats.sa_active : undefined,
+      badgeColor: "amber" as const,
+    },
+    {
+      title: "Finished Goods",
+      url: "/finished-good-work-orders",
+      icon: Package,
+      badge: awoStats?.fg_active && awoStats.fg_active > 0 ? awoStats.fg_active : undefined,
+      badgeColor: "amber" as const,
+    },
+  ];
 
   // Dynamic nav arrays (badges computed from live data)
   const dailyWorkNav: NavItem[] = [
@@ -466,6 +503,7 @@ export function AppSidebar() {
   // Group items map for rail flyout
   const GROUP_ITEMS_MAP: Record<string, NavItem[]> = {
     "Daily Work":     dailyWorkNav,
+    "Production":     productionNav,
     "Purchasing":     purchasingNav,
     "Billing":        billingNav,
     "Inventory":      inventoryNav,
@@ -655,6 +693,13 @@ export function AppSidebar() {
                 isActiveFn={isActive}
                 open={groupOpen["Daily Work"]}
                 onToggle={() => toggleGroup("Daily Work")}
+              />
+              <NavGroup
+                label="Production"
+                items={productionNav}
+                isActiveFn={isActive}
+                open={groupOpen["Production"]}
+                onToggle={() => toggleGroup("Production")}
               />
               <NavGroup
                 label="Purchasing"

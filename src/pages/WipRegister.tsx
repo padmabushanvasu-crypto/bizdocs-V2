@@ -21,7 +21,7 @@ import {
   type AssemblyOrderWithLines,
 } from "@/lib/assembly-orders-api";
 import { exportToExcel } from "@/lib/export-utils";
-import { format, differenceInDays } from "date-fns";
+import { format, differenceInDays, parseISO } from "date-fns";
 
 type WipTab = "all" | "component" | "subassembly" | "finished_good";
 
@@ -121,6 +121,26 @@ export default function WipRegister() {
     queryKey: ["wip-assembly-orders"],
     queryFn: fetchInProgressAOsWithLines,
     refetchInterval: 30000,
+  });
+
+  // Finished Good WIP (new AWO system)
+  const { data: fgWorkOrders = [] } = useQuery({
+    queryKey: ["fg-work-orders-wip"],
+    queryFn: async () => {
+      const { supabase: sb } = await import("@/integrations/supabase/client");
+      const { data: { user } } = await sb.auth.getUser();
+      if (!user) return [];
+      const { data: profile } = await sb.from("profiles").select("company_id").eq("id", user.id).single();
+      if (!profile?.company_id) return [];
+      const { data } = await (sb as any)
+        .from("assembly_work_orders")
+        .select("*")
+        .eq("company_id", profile.company_id)
+        .eq("awo_type", "finished_good")
+        .in("status", ["pending_materials", "in_progress"])
+        .order("created_at", { ascending: false });
+      return data ?? [];
+    },
   });
 
   // Filtered DC WIP
@@ -519,12 +539,92 @@ export default function WipRegister() {
 
       {/* ── Section 3: Finished Good WIP ── */}
       {showFinishedGood && (
-        <div className="flex flex-col items-center justify-center py-16 gap-3 bg-white rounded-xl border border-slate-200">
-          <Layers className="h-10 w-10 text-slate-300" />
-          <p className="text-slate-500 font-medium">Finished Good Work Orders will appear here</p>
-          <p className="text-sm text-slate-400 text-center max-w-sm">
-            once the Production module is built.
-          </p>
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Factory className="h-4 w-4 text-muted-foreground" />
+            <h2 className="text-sm font-semibold text-foreground">Finished Good Work Orders</h2>
+            <span className="bg-slate-100 text-slate-700 text-[11px] font-bold px-2 py-0.5 rounded-full border border-slate-200">
+              {(fgWorkOrders as any[]).length}
+            </span>
+          </div>
+          <div className="paper-card !p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full data-table">
+                <thead>
+                  <tr>
+                    <th>WO Number</th>
+                    <th>Serial Number</th>
+                    <th>Item</th>
+                    <th className="text-right">Qty</th>
+                    <th>Raised By</th>
+                    <th>Status</th>
+                    <th>Planned Date</th>
+                    <th className="text-right">Days Open</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(fgWorkOrders as any[]).length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="text-center py-10">
+                        <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                          <Layers className="h-8 w-8 opacity-30" />
+                          <p>No finished good work orders in progress.</p>
+                          <Link
+                            to="/finished-good-work-orders"
+                            className="text-primary text-sm flex items-center gap-1 hover:underline"
+                          >
+                            Go to Finished Goods <ArrowRight className="h-3.5 w-3.5" />
+                          </Link>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    (fgWorkOrders as any[]).map((awo: any) => {
+                      const statusMap: Record<string, { label: string; cls: string }> = {
+                        pending_materials: { label: "Pending Materials", cls: "bg-amber-100 text-amber-800 border-amber-200" },
+                        in_progress: { label: "In Progress", cls: "bg-blue-100 text-blue-800 border-blue-200" },
+                      };
+                      const s = statusMap[awo.status] ?? { label: awo.status, cls: "bg-slate-100 text-slate-700 border-slate-200" };
+                      return (
+                        <tr
+                          key={awo.id}
+                          className="cursor-pointer hover:bg-muted/30 transition-colors"
+                          onClick={() => navigate(`/assembly-work-orders/${awo.id}`)}
+                        >
+                          <td className="font-mono text-xs font-medium text-foreground">{awo.awo_number}</td>
+                          <td className="font-mono text-xs">{awo.serial_number ?? "—"}</td>
+                          <td>
+                            <p className="font-medium text-sm">{awo.item_code ?? "—"}</p>
+                            {awo.item_description && (
+                              <p className="text-xs text-muted-foreground truncate max-w-[160px]">{awo.item_description}</p>
+                            )}
+                          </td>
+                          <td className="text-right font-mono tabular-nums text-sm">{awo.quantity_to_build}</td>
+                          <td className="text-sm">{awo.raised_by ?? "—"}</td>
+                          <td>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${s.cls}`}>
+                              {s.label}
+                            </span>
+                          </td>
+                          <td className="text-sm">
+                            {awo.planned_date
+                              ? format(parseISO(awo.planned_date), "dd MMM yyyy")
+                              : <span className="text-muted-foreground">—</span>}
+                          </td>
+                          <td className="text-right">
+                            <span className="flex items-center justify-end gap-1 text-sm text-muted-foreground">
+                              <Clock className="h-3.5 w-3.5 shrink-0" />
+                              {differenceInDays(new Date(), parseISO(awo.created_at))}d
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
 

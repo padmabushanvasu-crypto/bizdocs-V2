@@ -26,6 +26,7 @@ import {
   RotateCcw,
   AlertCircle,
   Wrench,
+  Layers,
   X,
 } from "lucide-react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
@@ -42,6 +43,14 @@ const MORE_GROUPS = [
       { label: "Assembly Orders", to: "/assembly-orders", icon: ClipboardList },
       { label: "WIP Register", to: "/wip-register", icon: Activity },
       { label: "Stock Register", to: "/stock-register", icon: BarChart3 },
+    ],
+  },
+  {
+    label: "PRODUCTION",
+    items: [
+      { label: "Sub-Assembly Work Orders", to: "/sub-assembly-work-orders", icon: Layers },
+      { label: "Finished Good Work Orders", to: "/finished-good-work-orders", icon: Package },
+      { label: "Storekeeper Queue", to: "/storekeeper", icon: PackageCheck },
     ],
   },
   {

@@ -67,6 +67,10 @@ import HowToUse from "@/pages/HowToUse";
 import NotFound from "@/pages/NotFound";
 import ComponentJourney from "@/pages/ComponentJourney";
 import JigMaster from "@/pages/JigMaster";
+import SubAssemblyWorkOrders from "@/pages/SubAssemblyWorkOrders";
+import FinishedGoodWorkOrders from "@/pages/FinishedGoodWorkOrders";
+import AssemblyWorkOrderDetail from "@/pages/AssemblyWorkOrderDetail";
+import StorekeeperQueue from "@/pages/StorekeeperQueue";
 import { ImportQueueProvider } from "@/lib/import-queue";
 
 const queryClient = new QueryClient();
@@ -145,6 +149,10 @@ const App = () => (
               <Route path="/stage-templates" element={<StageTemplates />} />
               <Route path="/component-journey" element={<ComponentJourney />} />
               <Route path="/jig-master" element={<JigMaster />} />
+              <Route path="/sub-assembly-work-orders" element={<SubAssemblyWorkOrders />} />
+              <Route path="/finished-good-work-orders" element={<FinishedGoodWorkOrders />} />
+              <Route path="/assembly-work-orders/:id" element={<AssemblyWorkOrderDetail />} />
+              <Route path="/storekeeper" element={<StorekeeperQueue />} />
               <Route path="/more" element={<MoreMenu />} />
               <Route path="/settings/company" element={<CompanySettings />} />
               <Route path="/settings" element={<SettingsPage />} />
