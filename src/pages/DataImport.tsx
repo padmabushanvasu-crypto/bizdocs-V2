@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Upload, Download, CheckCircle, XCircle, AlertTriangle, Table, Users, Package, GitFork, ChevronLeft, Trash2 } from "lucide-react";
+import { Upload, Download, CheckCircle, XCircle, AlertTriangle, Table, Users, Package, GitFork, ChevronLeft, Trash2, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { useToast } from "@/hooks/use-toast";
@@ -1725,6 +1725,224 @@ function ReorderRulesTab() {
   );
 }
 
+// ── Processing Routes Import Tab ──────────────────────────────────────────
+
+const PROCESSING_ROUTES_HEADERS = [
+  "Drawing Number *", "Stage No *", "Process Code", "Process Name *", "Stage Type *",
+  "Vendor 1", "Vendor 2", "Lead Time Days", "Notes"
+];
+
+function ProcessingRoutesImportTab() {
+  const { toast } = useToast();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [rows, setRows] = useState<Record<string, string>[]>([]);
+  const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const XLSX = await import("xlsx-js-style");
+      const buffer = await file.arrayBuffer();
+      const wb = (XLSX as any).read(new Uint8Array(buffer), { type: "array", raw: false });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw = (XLSX as any).utils.sheet_to_json(ws, { defval: "" }) as Record<string, string>[];
+      setRows(raw);
+    } catch (err: any) {
+      toast({ title: "Failed to parse file", description: err.message, variant: "destructive" });
+    }
+    e.target.value = "";
+  };
+
+  const handleImport = async () => {
+    if (rows.length === 0) return;
+    try {
+      const companyId = await getCompanyId();
+      const { data: itemsRaw } = await supabase.from("items").select("id, drawing_revision, item_code").eq("company_id", companyId);
+      const drawingToId = new Map<string, string>();
+      for (const i of (itemsRaw ?? [])) {
+        if ((i as any).drawing_revision) drawingToId.set((i as any).drawing_revision.toLowerCase(), (i as any).id);
+        if ((i as any).item_code) drawingToId.set((i as any).item_code.toLowerCase(), (i as any).id);
+      }
+
+      let imported = 0, skipped = 0;
+      for (const row of rows) {
+        const drawingNum = (row["Drawing Number *"] || row["Drawing Number"] || row["drawing_number"] || "").toString().trim();
+        const stageNum = parseInt((row["Stage No *"] || row["Stage No"] || row["stage_number"] || "0").toString().trim(), 10);
+        const processName = (row["Process Name *"] || row["Process Name"] || row["process_name"] || "").toString().trim();
+        const stageType = (row["Stage Type *"] || row["Stage Type"] || row["stage_type"] || "external").toString().trim().toLowerCase() as 'internal' | 'external';
+        if (!drawingNum || !stageNum || !processName) { skipped++; continue; }
+        const itemId = drawingToId.get(drawingNum.toLowerCase());
+        if (!itemId) { skipped++; continue; }
+        try {
+          const { data: routeData } = await (supabase as any)
+            .from("bom_processing_routes")
+            .upsert({
+              company_id: companyId,
+              item_id: itemId,
+              stage_number: stageNum,
+              process_code: (row["Process Code"] || row["process_code"] || "").toString().trim() || null,
+              process_name: processName,
+              stage_type: ['internal', 'external'].includes(stageType) ? stageType : 'external',
+              lead_time_days: parseInt((row["Lead Time Days"] || row["lead_time_days"] || "7").toString(), 10) || 7,
+              notes: (row["Notes"] || row["notes"] || "").toString().trim() || null,
+              is_active: true,
+              updated_at: new Date().toISOString(),
+            }, { onConflict: "company_id,item_id,stage_number" })
+            .select("id")
+            .single();
+          if (routeData?.id) {
+            // Add vendors
+            for (const vKey of ["Vendor 1", "Vendor 2", "vendor_1", "vendor_2"]) {
+              const vName = (row[vKey] || "").toString().trim();
+              if (vName) {
+                const { data: party } = await (supabase as any).from("parties").select("id").ilike("name", vName).eq("company_id", companyId).maybeSingle();
+                if (party) {
+                  await (supabase as any).from("bpr_vendors").insert({
+                    company_id: companyId,
+                    route_id: routeData.id,
+                    vendor_id: party.id,
+                    vendor_name: vName,
+                    is_preferred: vKey.includes("1"),
+                    unit_cost: 0,
+                  }).throwOnError();
+                }
+              }
+            }
+          }
+          imported++;
+        } catch { skipped++; }
+      }
+      setResult({ imported, skipped });
+      setRows([]);
+    } catch (err: any) {
+      toast({ title: "Import failed", description: err.message, variant: "destructive" });
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {result && (
+        <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg p-3">
+          <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
+          <span className="text-sm text-green-800 font-medium">{result.imported} stages imported · {result.skipped} skipped</span>
+        </div>
+      )}
+      <div className="flex flex-wrap gap-3">
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => downloadTemplate("Processing Routes", PROCESSING_ROUTES_HEADERS)}>
+          <Download className="h-4 w-4" /> Download Template
+        </Button>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => fileRef.current?.click()}>
+          <Upload className="h-4 w-4" /> Choose Excel File
+        </Button>
+        <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xls,.csv" className="hidden" onChange={handleFile} />
+        {rows.length > 0 && (
+          <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white" onClick={handleImport}>
+            Import {rows.length} Row{rows.length !== 1 ? "s" : ""}
+          </Button>
+        )}
+      </div>
+      {rows.length > 0 && <PreviewTable rows={rows.slice(0, 10)} errorRows={new Set()} />}
+      {rows.length === 0 && !result && (
+        <div className="border-2 border-dashed border-border rounded-xl py-12 text-center">
+          <Table className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground font-medium">Upload an Excel file to import Processing Routes</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Jig Master Import Tab ──────────────────────────────────────────────────
+
+const JIG_MASTER_HEADERS = ["Drawing Number *", "Jig Number *", "Status", "Associated Process", "Notes"];
+
+function JigMasterImportTab() {
+  const { toast } = useToast();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [rows, setRows] = useState<Record<string, string>[]>([]);
+  const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const XLSX = await import("xlsx-js-style");
+      const buffer = await file.arrayBuffer();
+      const wb = (XLSX as any).read(new Uint8Array(buffer), { type: "array", raw: false });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw = (XLSX as any).utils.sheet_to_json(ws, { defval: "" }) as Record<string, string>[];
+      setRows(raw);
+    } catch (err: any) {
+      toast({ title: "Failed to parse file", description: err.message, variant: "destructive" });
+    }
+    e.target.value = "";
+  };
+
+  const handleImport = async () => {
+    if (rows.length === 0) return;
+    try {
+      const companyId = await getCompanyId();
+      let imported = 0, skipped = 0;
+      const VALID_STATUSES = ['ok', 'to_be_made', 'in_progress', 'damaged'];
+      for (const row of rows) {
+        const drawingNumber = (row["Drawing Number *"] || row["Drawing Number"] || row["drawing_number"] || "").toString().trim();
+        const jigNumber = (row["Jig Number *"] || row["Jig Number"] || row["jig_number"] || "").toString().trim();
+        if (!drawingNumber || !jigNumber) { skipped++; continue; }
+        const rawStatus = (row["Status"] || row["status"] || "ok").toString().trim().toLowerCase().replace(/ /g, '_');
+        const status = VALID_STATUSES.includes(rawStatus) ? rawStatus : 'ok';
+        try {
+          await (supabase as any).from("jig_master").insert({
+            company_id: companyId,
+            drawing_number: drawingNumber,
+            jig_number: jigNumber,
+            status,
+            associated_process: (row["Associated Process"] || row["associated_process"] || "").toString().trim() || null,
+            notes: (row["Notes"] || row["notes"] || "").toString().trim() || null,
+          });
+          imported++;
+        } catch { skipped++; }
+      }
+      setResult({ imported, skipped });
+      setRows([]);
+    } catch (err: any) {
+      toast({ title: "Import failed", description: err.message, variant: "destructive" });
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {result && (
+        <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg p-3">
+          <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
+          <span className="text-sm text-green-800 font-medium">{result.imported} jigs imported · {result.skipped} skipped</span>
+        </div>
+      )}
+      <div className="flex flex-wrap gap-3">
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => downloadTemplate("Jig Master", JIG_MASTER_HEADERS)}>
+          <Download className="h-4 w-4" /> Download Template
+        </Button>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => fileRef.current?.click()}>
+          <Upload className="h-4 w-4" /> Choose Excel File
+        </Button>
+        <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xls,.csv" className="hidden" onChange={handleFile} />
+        {rows.length > 0 && (
+          <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white" onClick={handleImport}>
+            Import {rows.length} Row{rows.length !== 1 ? "s" : ""}
+          </Button>
+        )}
+      </div>
+      {rows.length > 0 && <PreviewTable rows={rows.slice(0, 10)} errorRows={new Set()} />}
+      {rows.length === 0 && !result && (
+        <div className="border-2 border-dashed border-border rounded-xl py-12 text-center">
+          <Wrench className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground font-medium">Upload an Excel file to import Jig Master records</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Page ──────────────────────────────────────────────────────────────
 
 type ClearTarget = { type: "parties" | "items" | "bom" | "stock" | "reorder_rules"; noun: string; count: number };
@@ -1925,6 +2143,8 @@ export default function DataImport() {
           { value: "bom", label: "Bill of Materials" },
           { value: "stock", label: "Opening Stock" },
           { value: "reorder_rules", label: "Reorder Rules" },
+          { value: "processing_routes", label: "Processing Routes" },
+          { value: "jig_master", label: "Jig Master" },
         ]}
         value={activeTab}
         onChange={setActiveTab}
@@ -2063,6 +2283,26 @@ export default function DataImport() {
             Set reorder points, reorder quantities and lead times for each item. Updates items' minimum stock level for Stock Register alerts.
           </p>
           <ReorderRulesTab />
+        </div>
+      )}
+
+      {activeTab === "processing_routes" && (
+        <div className="paper-card mt-4">
+          <h2 className="font-semibold text-slate-900 mb-1">Import Processing Routes</h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            Import multi-stage processing routes per item. Each row is one stage. Items must already exist.
+          </p>
+          <ProcessingRoutesImportTab />
+        </div>
+      )}
+
+      {activeTab === "jig_master" && (
+        <div className="paper-card mt-4">
+          <h2 className="font-semibold text-slate-900 mb-1">Import Jig Master</h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            Import jig and fixture records. Drawing numbers do not need to exist in the Items master.
+          </p>
+          <JigMasterImportTab />
         </div>
       )}
 

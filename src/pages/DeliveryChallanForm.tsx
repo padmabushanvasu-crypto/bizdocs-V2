@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, ChevronDown, Info, ChevronLeft } from "lucide-react";
+import { Plus, Trash2, ChevronDown, Info, ChevronLeft, AlertTriangle } from "lucide-react";
 import { ItemSuggest } from "@/components/ItemSuggest";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,7 @@ import {
   type DCLineItem,
 } from "@/lib/delivery-challans-api";
 import { getCompanyId } from "@/lib/auth-helpers";
+import { fetchProcessingRoute, fetchJigsForDrawing, type ProcessingRoute, type JigMasterRecord } from "@/lib/dc-intelligence-api";
 import { formatCurrency, amountInWords } from "@/lib/gst-utils";
 import { getGSTType, calculateLineTax, round2, resolveStateCode, type GSTType } from "@/lib/tax-utils";
 
@@ -147,6 +148,34 @@ export default function DeliveryChallanForm() {
   const [lineProcessingLog, setLineProcessingLog] = useState<Map<number, any>>(new Map());
   const [lineStageSelection, setLineStageSelection] = useState<Map<number, number | 'manual'>>(new Map());
   const [itemIdByIndex, setItemIdByIndex] = useState<Map<number, string>>(new Map());
+  // Phase 15: processing routes and jigs per line
+  const [lineRoutes, setLineRoutes] = useState<Map<number, ProcessingRoute[]>>(new Map());
+  const [lineJigs, setLineJigs] = useState<Map<number, JigMasterRecord[]>>(new Map());
+  const [lineSelectedStageId, setLineSelectedStageId] = useState<Map<number, string>>(new Map());
+  const [lineJigsChecked, setLineJigsChecked] = useState<Map<number, string[]>>(new Map());
+
+  const selectStage = (lineIndex: number, stage: ProcessingRoute) => {
+    setLineSelectedStageId(prev => { const m = new Map(prev); m.set(lineIndex, stage.id); return m; });
+    setLineItems(items => {
+      const updated = [...items];
+      (updated[lineIndex] as any).selectedStageId = stage.id;
+      (updated[lineIndex] as any).selectedStage = stage;
+      return updated;
+    });
+  };
+
+  const toggleJigCheck = (lineIndex: number, jigId: string, checked: boolean) => {
+    setLineJigsChecked(prev => {
+      const m = new Map(prev);
+      const current = m.get(lineIndex) ?? [];
+      if (checked) {
+        m.set(lineIndex, [...current.filter(id => id !== jigId), jigId]);
+      } else {
+        m.set(lineIndex, current.filter(id => id !== jigId));
+      }
+      return m;
+    });
+  };
   // Fetch data
   const { data: partiesData } = useQuery({
     queryKey: ["parties-all"],
@@ -340,16 +369,28 @@ export default function DeliveryChallanForm() {
 
       const items = lineItems
         .filter((i) => i.description.trim())
-        .map((i, idx) => ({
-          ...i,
-          serial_number: idx + 1,
-          qty_nos: i.quantity,
-          stage_number: (i as any).stage_number ?? null,
-          stage_name: (i as any).stage_name ?? null,
-          is_rework: (i as any).is_rework ?? false,
-          rework_cycle: (i as any).rework_cycle ?? 1,
-          parent_dc_line_id: (i as any).parent_dc_line_id ?? null,
-        }));
+        .map((i, idx) => {
+          const routeForLine = lineRoutes.get(idx) ?? [];
+          const selectedStageId = lineSelectedStageId.get(idx) ?? null;
+          const selectedStage = routeForLine.find(s => s.id === selectedStageId) ?? null;
+          const jigsForLine = lineJigs.get(idx) ?? [];
+          const jigsChecked = lineJigsChecked.get(idx) ?? [];
+          return {
+            ...i,
+            serial_number: idx + 1,
+            qty_nos: i.quantity,
+            stage_number: selectedStage?.stage_number ?? (i as any).stage_number ?? null,
+            stage_name: selectedStage?.process_name ?? (i as any).stage_name ?? null,
+            is_rework: (i as any).is_rework ?? false,
+            rework_cycle: (i as any).rework_cycle ?? 1,
+            parent_dc_line_id: (i as any).parent_dc_line_id ?? null,
+            total_stages: selectedStage ? routeForLine.length : null,
+            route_id: selectedStageId ?? null,
+            jigs_sent: jigsForLine.length > 0
+              ? jigsForLine.filter(j => jigsChecked.includes(j.id)).map(j => ({ id: j.id, jig_number: j.jig_number }))
+              : null,
+          };
+        });
 
       if (isEdit) {
         await updateDeliveryChallan(id!, { dc: dcData as any, lineItems: items });
@@ -676,6 +717,11 @@ export default function DeliveryChallanForm() {
                             setLineProcessingLog(prev => { const m = new Map(prev); if (log) m.set(index, log); else m.delete(index); return m; });
                           });
                         });
+                        // Phase 15: Load processing routes for this item
+                        fetchProcessingRoute(selectedItem.id).then(routes => {
+                          setLineRoutes(prev => { const m = new Map(prev); m.set(index, routes); return m; });
+                          setLineSelectedStageId(prev => { const m = new Map(prev); m.delete(index); return m; });
+                        });
                       }}
                       placeholder="Item description"
                       className="h-8 text-sm w-full"
@@ -685,7 +731,15 @@ export default function DeliveryChallanForm() {
                     <input
                       type="text"
                       value={item.drawing_number || ""}
-                      onChange={(e) => updateLineItem(index, "drawing_number", e.target.value)}
+                      onChange={(e) => {
+                        updateLineItem(index, "drawing_number", e.target.value);
+                        // Phase 15: load jigs when drawing number changes
+                        if (e.target.value.trim().length >= 3) {
+                          fetchJigsForDrawing(e.target.value.trim()).then(jigs => {
+                            setLineJigs(prev => { const m = new Map(prev); m.set(index, jigs); return m; });
+                          });
+                        }
+                      }}
                       placeholder="e.g. 230086"
                       className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm font-mono"
                     />
@@ -822,6 +876,69 @@ export default function DeliveryChallanForm() {
                           <span className="self-end pb-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200">
                             Rework — Cycle {(location.state as any)?.prefill?.line_items?.[index]?.rework_cycle ?? 2}
                           </span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                {/* Phase 15: Processing Route Stage Selector */}
+                {(lineRoutes.get(index)?.length ?? 0) > 0 && (
+                  <tr key={`route-${index}`} className="bg-blue-50/30 border-b border-blue-100">
+                    <td />
+                    <td colSpan={10} className="px-3 py-2">
+                      <div className="mt-1 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <p className="text-xs font-semibold text-blue-700 mb-2">Processing Route</p>
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {(lineRoutes.get(index) ?? []).map((stage) => (
+                            <button
+                              key={stage.id}
+                              type="button"
+                              onClick={() => selectStage(index, stage)}
+                              className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
+                                lineSelectedStageId.get(index) === stage.id
+                                  ? 'bg-blue-600 text-white border-blue-600'
+                                  : 'bg-white text-blue-700 border-blue-300 hover:bg-blue-100'
+                              }`}
+                            >
+                              {stage.stage_number}. {stage.process_name}
+                            </button>
+                          ))}
+                        </div>
+                        {lineSelectedStageId.get(index) && (
+                          <p className="text-xs text-blue-600">
+                            Stage {(lineRoutes.get(index) ?? []).find(s => s.id === lineSelectedStageId.get(index))?.stage_number} of {(lineRoutes.get(index) ?? []).length}
+                          </p>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                {/* Phase 15: Jig Alert */}
+                {(lineJigs.get(index)?.length ?? 0) > 0 && (
+                  <tr key={`jigs-${index}`} className="bg-amber-50/30 border-b border-amber-100">
+                    <td />
+                    <td colSpan={10} className="px-3 py-2">
+                      <div className="mt-1 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                        <p className="text-xs font-semibold text-amber-700 mb-2 flex items-center gap-1">
+                          <AlertTriangle className="h-3.5 w-3.5" /> Jig Required — must be sent with this component
+                        </p>
+                        <div className="space-y-1">
+                          {(lineJigs.get(index) ?? []).map((jig) => (
+                            <label key={jig.id} className="flex items-center gap-2 text-xs cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={(lineJigsChecked.get(index) ?? []).includes(jig.id)}
+                                onChange={(e) => toggleJigCheck(index, jig.id, e.target.checked)}
+                                className="rounded"
+                              />
+                              <span className={(lineJigsChecked.get(index) ?? []).includes(jig.id) ? 'line-through text-slate-400' : 'text-amber-800'}>
+                                {jig.jig_number}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                        {(lineJigsChecked.get(index)?.length ?? 0) < (lineJigs.get(index)?.length ?? 0) && (
+                          <p className="text-xs text-amber-600 mt-1 font-medium">Tick all jigs before saving</p>
                         )}
                       </div>
                     </td>

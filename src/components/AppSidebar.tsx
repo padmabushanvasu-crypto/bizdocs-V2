@@ -135,6 +135,7 @@ const ALL_SEARCH_ITEMS: { title: string; url: string }[] = [
   { title: "Parties", url: "/parties" },
   { title: "Items", url: "/items" },
   { title: "Bill of Materials", url: "/bill-of-materials" },
+  { title: "Jig Master", url: "/jig-master" },
   { title: "Settings", url: "/settings" },
 ];
 
@@ -148,7 +149,7 @@ const GROUP_PATHS: Record<string, string[]> = {
   "Purchasing":     ["/purchase-orders", "/grn", "/dc-grn"],
   "Billing":        ["/invoices", "/receipts", "/sales-orders", "/dispatch-notes"],
   "Inventory":      ["/stock-register", "/stock-ledger", "/reorder-intelligence", "/scrap-register", "/serial-numbers", "/fat-certificates"],
-  "Reports & More": ["/gst-reports", "/vendor-scorecards", "/parties", "/items", "/bill-of-materials", "/settings"],
+  "Reports & More": ["/gst-reports", "/vendor-scorecards", "/parties", "/items", "/bill-of-materials", "/jig-master", "/settings"],
 };
 
 const DEFAULTS: Record<string, boolean> = {
@@ -458,6 +459,7 @@ export function AppSidebar() {
     { title: "Parties", url: "/parties", icon: Users },
     { title: "Items", url: "/items", icon: Package },
     { title: "Bill of Materials", url: "/bill-of-materials", icon: GitFork },
+    { title: "Jig Master", url: "/jig-master", icon: Wrench },
     { title: "Settings", url: "/settings", icon: Settings, badge: companyNeedsSetup ? 1 : undefined, badgeColor: "amber" as const },
   ];
 

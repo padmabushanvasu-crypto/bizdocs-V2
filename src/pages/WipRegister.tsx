@@ -313,7 +313,16 @@ export default function WipRegister() {
                               onClick={() => navigate(`/delivery-challans/${row.id}`)}>
                             <td className="font-mono text-xs font-medium">{row.dc_number}</td>
                             <td colSpan={8} className="text-sm text-muted-foreground">No line items</td>
-                            <td className="text-right text-sm">{row.return_before_date ? new Date(row.return_before_date).toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'}) : '—'}</td>
+                            <td className="text-right text-sm">
+                              {row.return_before_date ? (() => {
+                                const days = differenceInDays(new Date(row.return_before_date), new Date());
+                                return (
+                                  <span className={`text-xs font-medium ${days < 0 ? "text-red-600" : days <= 7 ? "text-amber-600" : "text-slate-600"}`}>
+                                    {days < 0 ? `${Math.abs(days)}d overdue` : `${days}d remaining`}
+                                  </span>
+                                );
+                              })() : '—'}
+                            </td>
                             <td></td>
                           </tr>
                         )];
@@ -332,10 +341,17 @@ export default function WipRegister() {
                           ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">Partial Return</span>
                           : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">At Vendor</span>;
 
+                        const handleRowClick = () => {
+                          if (li.item_id) {
+                            navigate(`/component-journey?item_id=${li.item_id}&dc_ref=${row.dc_number}`);
+                          } else {
+                            navigate(`/delivery-challans/${row.id}`);
+                          }
+                        };
+
                         return (
-                          <tr key={`${row.id}-${liIdx}`} className={`cursor-pointer transition-colors ${rowBg}`}>
-                            <td className="font-mono text-xs font-medium text-foreground"
-                                onClick={() => navigate(`/delivery-challans/${row.id}`)}>
+                          <tr key={`${row.id}-${liIdx}`} className={`cursor-pointer transition-colors ${rowBg}`} onClick={handleRowClick}>
+                            <td className="font-mono text-xs font-medium text-foreground">
                               {liIdx === 0 ? row.dc_number : ''}
                             </td>
                             <td className="font-mono text-xs text-blue-700">{li.drawing_number ?? '—'}</td>
@@ -349,12 +365,15 @@ export default function WipRegister() {
                             <td className="text-right font-mono tabular-nums text-sm">{qtyReturned || '—'}</td>
                             <td className="text-right font-mono tabular-nums text-sm font-medium">{qtyPending}</td>
                             <td className="text-right">
-                              {liIdx === 0 && row.return_before_date ? (
-                                <span className={isOverdue ? 'text-destructive font-medium text-sm' : 'text-sm'}>
-                                  {new Date(row.return_before_date).toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'})}
-                                  {isOverdue && <AlertTriangle className="h-3.5 w-3.5 inline ml-1" />}
-                                </span>
-                              ) : liIdx === 0 ? <span className="text-muted-foreground text-sm">—</span> : null}
+                              {liIdx === 0 && row.return_before_date ? (() => {
+                                const days = differenceInDays(new Date(row.return_before_date), new Date());
+                                return (
+                                  <span className={`text-xs font-medium ${days < 0 ? "text-red-600" : days <= 7 ? "text-amber-600" : "text-slate-600"}`}>
+                                    {days < 0 ? `${Math.abs(days)}d overdue` : `${days}d remaining`}
+                                    {days < 0 && <AlertTriangle className="h-3 w-3 inline ml-1" />}
+                                  </span>
+                                );
+                              })() : liIdx === 0 ? <span className="text-muted-foreground text-sm">—</span> : null}
                             </td>
                             <td>{statusBadge}</td>
                           </tr>

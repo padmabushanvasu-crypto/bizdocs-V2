@@ -25,6 +25,7 @@ import {
   Activity,
   RotateCcw,
   AlertCircle,
+  Wrench,
   X,
 } from "lucide-react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
@@ -65,6 +66,7 @@ const MORE_GROUPS = [
     items: [
       { label: "Parties", to: "/parties", icon: Users },
       { label: "Bill of Materials", to: "/bill-of-materials", icon: GitFork },
+      { label: "Jig Master", to: "/jig-master", icon: Wrench },
     ],
   },
   {

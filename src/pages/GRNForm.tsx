@@ -43,6 +43,8 @@ interface LineItemState extends GRNLineItem {
   s1_verified_by: string;
   s1_date: string;
   s1_complete: boolean;
+  // Jig return check (Phase 15)
+  jigsReturnChecked?: string[];
   // Stage 2 local state
   s2_accepted_qty: number;
   s2_rejected_qty: number;
@@ -265,13 +267,49 @@ function GrnLineItemCard({
               </div>
             </div>
 
+            {/* Phase 15: Jig Return Check */}
+            {(item as any).jigs_sent && ((item as any).jigs_sent as any[]).length > 0 && (
+              <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <p className="text-xs font-semibold text-amber-700 mb-2 flex items-center gap-1">
+                  <AlertTriangle className="h-3.5 w-3.5" /> Jig Return Check
+                </p>
+                {((item as any).jigs_sent as any[]).map((jig: any) => (
+                  <label key={jig.id} className="flex items-center gap-2 text-xs cursor-pointer mb-1">
+                    <input
+                      type="checkbox"
+                      checked={(item.jigsReturnChecked ?? []).includes(jig.id)}
+                      onChange={(e) => {
+                        const current = item.jigsReturnChecked ?? [];
+                        const updated = e.target.checked
+                          ? [...current.filter(id => id !== jig.id), jig.id]
+                          : current.filter(id => id !== jig.id);
+                        onChange(index, { jigsReturnChecked: updated });
+                      }}
+                      disabled={item.s1_complete}
+                    />
+                    <span>{jig.jig_number} — received back</span>
+                  </label>
+                ))}
+                {(item.jigsReturnChecked?.length ?? 0) < ((item as any).jigs_sent as any[]).length && (
+                  <p className="text-xs text-amber-600 mt-1 font-medium">Tick all jigs before completing Stage 1</p>
+                )}
+              </div>
+            )}
+
             {!item.s1_complete && (
               <Button
                 size="sm"
                 variant="outline"
                 className="gap-1.5 border-blue-200 text-blue-700 hover:bg-blue-50"
                 onClick={() => onSaveStage1(index)}
-                disabled={item.s1_received_now <= 0}
+                disabled={
+                  item.s1_received_now <= 0 ||
+                  (
+                    (item as any).jigs_sent &&
+                    ((item as any).jigs_sent as any[]).length > 0 &&
+                    (item.jigsReturnChecked?.length ?? 0) < ((item as any).jigs_sent as any[]).length
+                  )
+                }
               >
                 <CheckCircle2 className="h-3.5 w-3.5" />
                 Stage 1 Complete

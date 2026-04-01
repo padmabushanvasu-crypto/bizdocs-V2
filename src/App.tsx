@@ -65,6 +65,8 @@ import ScrapRegister from "@/pages/ScrapRegister";
 import AuditLog from "@/pages/AuditLog";
 import HowToUse from "@/pages/HowToUse";
 import NotFound from "@/pages/NotFound";
+import ComponentJourney from "@/pages/ComponentJourney";
+import JigMaster from "@/pages/JigMaster";
 import { ImportQueueProvider } from "@/lib/import-queue";
 
 const queryClient = new QueryClient();
@@ -141,6 +143,8 @@ const App = () => (
               <Route path="/audit-log" element={<AuditLog />} />
               <Route path="/how-to-use" element={<HowToUse />} />
               <Route path="/stage-templates" element={<StageTemplates />} />
+              <Route path="/component-journey" element={<ComponentJourney />} />
+              <Route path="/jig-master" element={<JigMaster />} />
               <Route path="/more" element={<MoreMenu />} />
               <Route path="/settings/company" element={<CompanySettings />} />
               <Route path="/settings" element={<SettingsPage />} />
