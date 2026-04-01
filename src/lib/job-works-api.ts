@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
 import { logAudit } from "@/lib/audit-api";
+import { updateStockBucket } from "@/lib/items-api";
 
 // ============================================================
 // Interfaces
@@ -528,6 +529,9 @@ export async function issueJobCardMaterial(jobCardId: string): Promise<void> {
     .from("items")
     .update({ stock_raw_material: newRawMat, stock_wip: newWip })
     .eq("id", itemId);
+  // Phase 13: bucket updates — material issued to subassembly WIP
+  await updateStockBucket(itemId, 'free', -qty).catch(console.error);
+  await updateStockBucket(itemId, 'in_subassembly_wip', +qty).catch(console.error);
 
   // Write stock_ledger entry
   await (supabase as any).from("stock_ledger").insert({

@@ -24,6 +24,8 @@ interface DashboardData {
   finishedGoodCount: number;
   zeroStockCount: number;
   needsBuildingCount: number;
+  criticalStockCount: number;
+  lockedStockCount: number;
 }
 
 interface ReadyToShipRow {
@@ -58,9 +60,9 @@ async function fetchDashboardData(): Promise<DashboardData> {
       .from("delivery_challans")
       .select("dc_type, return_due_date")
       .eq("status", "issued"),
-    supabase
+    (supabase as any)
       .from("items")
-      .select("item_type, current_stock, stock_finished_goods, min_finished_stock")
+      .select("item_type, current_stock, stock_finished_goods, min_finished_stock, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, min_stock, stock_alert_level")
       .eq("status", "active"),
   ]);
 
@@ -94,12 +96,15 @@ async function fetchDashboardData(): Promise<DashboardData> {
   const needsBuildingCount = items.filter(
     (i) => i.item_type === "finished_good" && (i.stock_finished_goods ?? 0) < (i.min_finished_stock ?? 0) && (i.min_finished_stock ?? 0) > 0
   ).length;
+  // Phase 13: critical and locked counts using stock_alert_level
+  const criticalStockCount = items.filter((i) => i.stock_alert_level === 'critical').length;
+  const lockedStockCount = items.filter((i) => i.stock_alert_level === 'locked').length;
 
   return {
     thisMonthRevenue, fyRevenue, overdueInvoiceCount,
     openPOValue, overdueDCCount,
     rawMaterialCount, componentCount, finishedGoodCount, zeroStockCount,
-    needsBuildingCount,
+    needsBuildingCount, criticalStockCount, lockedStockCount,
   };
 }
 
@@ -439,13 +444,29 @@ export default function Dashboard() {
           </div>
 
           {/* Stock card */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 lg:p-5">
+          <div className={`bg-white rounded-xl border shadow-sm p-4 lg:p-5 ${(dashData?.criticalStockCount ?? 0) > 0 ? 'border-red-300' : (dashData?.lockedStockCount ?? 0) > 0 ? 'border-amber-300' : 'border-slate-200'}`}>
             <div className="flex items-center justify-between mb-1">
-              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Stock</p>
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Stock Alerts</p>
               <button className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors" onClick={() => navigate("/stock-register")}>
                 View →
               </button>
             </div>
+            {(dashData?.criticalStockCount ?? 0) > 0 || (dashData?.lockedStockCount ?? 0) > 0 ? (
+              <div className="mb-2">
+                <p className={`text-2xl font-extrabold tracking-tight font-mono tabular-nums ${(dashData?.criticalStockCount ?? 0) > 0 ? 'text-red-600' : 'text-amber-600'}`}>
+                  {dashData?.criticalStockCount ?? 0}
+                </p>
+                <p className="text-[10px] text-slate-400 uppercase tracking-wider">Critical items</p>
+                {(dashData?.lockedStockCount ?? 0) > 0 && (
+                  <p className="text-xs text-amber-600 font-medium mt-0.5">{dashData?.lockedStockCount} locked</p>
+                )}
+              </div>
+            ) : (
+              <div className="mb-2">
+                <p className="text-2xl font-extrabold tracking-tight font-mono tabular-nums text-green-600">0</p>
+                <p className="text-[10px] text-slate-400 uppercase tracking-wider">All healthy</p>
+              </div>
+            )}
             <div className="divide-y divide-slate-100">
               <LightStatRow label="Raw Materials (in stock)"  value={dashData?.rawMaterialCount  ?? "—"} onClick={() => navigate("/stock-register?type=raw_material")} />
               <LightStatRow label="Components (in stock)"     value={dashData?.componentCount    ?? "—"} onClick={() => navigate("/stock-register?type=component")} />

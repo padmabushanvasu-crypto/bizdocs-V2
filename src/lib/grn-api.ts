@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
 import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
 import { getNextDocNumber } from "@/lib/doc-number-utils";
+import { updateStockBucket } from "@/lib/items-api";
 
 export interface GRNLineItem {
   id?: string;
@@ -177,6 +178,8 @@ export async function recordGRNAndUpdatePO(grnData: CreateGRNData) {
         const newStock = (rec.current_stock ?? 0) + item.accepted_quantity;
         const newRawMat = (rec.stock_raw_material ?? 0) + item.accepted_quantity;
         await supabase.from("items").update({ current_stock: newStock, stock_raw_material: newRawMat } as any).eq("id", rec.id);
+        // Phase 13: update stock bucket
+        await updateStockBucket(rec.id, 'free', item.accepted_quantity).catch(console.error);
         await addStockLedgerEntry({
           item_id: rec.id,
           item_code: rec.item_code,

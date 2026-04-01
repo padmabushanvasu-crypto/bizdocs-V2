@@ -28,7 +28,16 @@ export interface Item {
   parent_item_id: string | null;
   min_finished_stock: number;
   production_batch_size: number;
+  // Phase 13: Stock Buckets
+  stock_free: number;
+  stock_in_process: number;
+  stock_in_subassembly_wip: number;
+  stock_in_fg_wip: number;
+  stock_in_fg_ready: number;
+  stock_alert_level: 'critical' | 'warning' | 'watch' | 'locked' | 'healthy';
 }
+
+export type StockBucket = 'free' | 'in_process' | 'in_subassembly_wip' | 'in_fg_wip' | 'in_fg_ready';
 
 export interface StockStatusRow {
   id: string;
@@ -414,4 +423,114 @@ export async function updateMinStockOverride(id: string, value: number | null) {
     .single();
   if (error) throw error;
   return data as Item;
+}
+
+// ── Phase 13: Stock Buckets ───────────────────────────────────────────────────
+
+const BUCKET_COLUMN_MAP: Record<StockBucket, string> = {
+  free: 'stock_free',
+  in_process: 'stock_in_process',
+  in_subassembly_wip: 'stock_in_subassembly_wip',
+  in_fg_wip: 'stock_in_fg_wip',
+  in_fg_ready: 'stock_in_fg_ready',
+};
+
+function computeAlertLevel(
+  stock_free: number,
+  stock_in_process: number,
+  stock_in_subassembly_wip: number,
+  stock_in_fg_wip: number,
+  stock_in_fg_ready: number,
+  min_stock: number
+): Item['stock_alert_level'] {
+  const effective_available = stock_free + stock_in_process;
+  if (min_stock > 0 && stock_free <= min_stock) return 'critical';
+  if (min_stock > 0 && effective_available <= min_stock) return 'warning';
+  if (min_stock > 0 && effective_available <= min_stock * 1.2) return 'watch';
+  if (
+    stock_free === 0 &&
+    (stock_in_process + stock_in_subassembly_wip + stock_in_fg_wip + stock_in_fg_ready) > 0
+  ) return 'locked';
+  return 'healthy';
+}
+
+export async function updateStockBucket(
+  itemId: string,
+  bucket: StockBucket,
+  delta: number,
+  options?: { skipAlertUpdate?: boolean }
+): Promise<void> {
+  const col = BUCKET_COLUMN_MAP[bucket];
+
+  // Fetch current item to get all bucket values
+  const { data: itemData, error: fetchErr } = await (supabase as any)
+    .from('items')
+    .select('stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, min_stock')
+    .eq('id', itemId)
+    .single();
+  if (fetchErr) throw fetchErr;
+
+  const item = itemData as any;
+  const current: number = item[col] ?? 0;
+  const newValue = Math.max(0, current + delta);
+
+  const updatedBuckets = {
+    stock_free: item.stock_free ?? 0,
+    stock_in_process: item.stock_in_process ?? 0,
+    stock_in_subassembly_wip: item.stock_in_subassembly_wip ?? 0,
+    stock_in_fg_wip: item.stock_in_fg_wip ?? 0,
+    stock_in_fg_ready: item.stock_in_fg_ready ?? 0,
+  };
+  updatedBuckets[col as keyof typeof updatedBuckets] = newValue;
+
+  const minStock: number = item.min_stock ?? 0;
+  const alertLevel = options?.skipAlertUpdate
+    ? undefined
+    : computeAlertLevel(
+        updatedBuckets.stock_free,
+        updatedBuckets.stock_in_process,
+        updatedBuckets.stock_in_subassembly_wip,
+        updatedBuckets.stock_in_fg_wip,
+        updatedBuckets.stock_in_fg_ready,
+        minStock
+      );
+
+  const updatePayload: Record<string, any> = {
+    ...updatedBuckets,
+    // Keep current_stock in sync with stock_free for backward compat
+    current_stock: updatedBuckets.stock_free,
+    last_stock_check: new Date().toISOString(),
+  };
+  if (alertLevel !== undefined) updatePayload.stock_alert_level = alertLevel;
+
+  const { error: updateErr } = await (supabase as any)
+    .from('items')
+    .update(updatePayload)
+    .eq('id', itemId);
+  if (updateErr) throw updateErr;
+}
+
+export async function recalcStockAlertLevel(itemId: string): Promise<void> {
+  const { data: itemData, error: fetchErr } = await (supabase as any)
+    .from('items')
+    .select('stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, min_stock')
+    .eq('id', itemId)
+    .single();
+  if (fetchErr) throw fetchErr;
+
+  const item = itemData as any;
+  const alertLevel = computeAlertLevel(
+    item.stock_free ?? 0,
+    item.stock_in_process ?? 0,
+    item.stock_in_subassembly_wip ?? 0,
+    item.stock_in_fg_wip ?? 0,
+    item.stock_in_fg_ready ?? 0,
+    item.min_stock ?? 0
+  );
+
+  const { error: updateErr } = await (supabase as any)
+    .from('items')
+    .update({ stock_alert_level: alertLevel, last_stock_check: new Date().toISOString() })
+    .eq('id', itemId);
+  if (updateErr) throw updateErr;
 }

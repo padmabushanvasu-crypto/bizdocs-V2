@@ -2,6 +2,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
 import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
 import { getNextDocNumber } from "@/lib/doc-number-utils";
+import { updateStockBucket } from "@/lib/items-api";
+
+const RETURNABLE_DC_TYPES = new Set([
+  'job_work_143', 'job_work_out', 'job_work', 'sample', 'loan_borrow', 'returnable',
+]);
 
 export interface DCLineItem {
   id?: string;
@@ -388,6 +393,11 @@ export async function issueDeliveryChallan(id: string) {
     const rec = itemRecord as any;
     const newStock = Math.max(0, (rec.current_stock ?? 0) - qty);
     await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
+    // Phase 13: bucket updates for returnable DCs
+    if (RETURNABLE_DC_TYPES.has(dc.dc_type)) {
+      await updateStockBucket(rec.id, 'free', -qty).catch(console.error);
+      await updateStockBucket(rec.id, 'in_process', +qty).catch(console.error);
+    }
     await addStockLedgerEntry({
       item_id: rec.id,
       item_code: rec.item_code,
@@ -440,9 +450,10 @@ export async function recordDCReturn(dcId: string, returnDate: string, receivedB
     if (itemsErr) throw itemsErr;
   }
 
-  // Fetch DC number once for ledger reference
-  const { data: dcHeader } = await supabase.from("delivery_challans").select("dc_number").eq("id", dcId).single();
+  // Fetch DC number and type once for ledger reference and bucket logic
+  const { data: dcHeader } = await supabase.from("delivery_challans").select("dc_number, dc_type").eq("id", dcId).single();
   const dcNumber = (dcHeader as any)?.dc_number ?? "";
+  const dcType: string = (dcHeader as any)?.dc_type ?? "";
 
   for (const item of items) {
     if (item.returned_nos > 0 || item.returned_kg > 0 || item.returned_sft > 0) {
@@ -472,6 +483,11 @@ export async function recordDCReturn(dcId: string, returnDate: string, receivedB
             const rec = itemRecord as any;
             const newStock = (rec.current_stock ?? 0) + item.returned_nos;
             await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
+            // Phase 13: bucket updates for returnable DC returns
+            if (RETURNABLE_DC_TYPES.has(dcType)) {
+              await updateStockBucket(rec.id, 'in_process', -item.returned_nos).catch(console.error);
+              await updateStockBucket(rec.id, 'free', +item.returned_nos).catch(console.error);
+            }
             await addStockLedgerEntry({
               item_id: rec.id,
               item_code: rec.item_code,

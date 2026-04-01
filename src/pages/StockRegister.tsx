@@ -27,6 +27,14 @@ function StatusBadge({ status }: { status: StockStatusRow["stock_status"] }) {
   );
 }
 
+function AlertBadge({ level }: { level: string }) {
+  if (level === 'critical') return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700 border border-red-200">Critical</span>;
+  if (level === 'warning') return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-700 border border-amber-200">Warning</span>;
+  if (level === 'watch') return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-200">Watch</span>;
+  if (level === 'locked') return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200" title="Stock exists but fully committed">Locked</span>;
+  return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-700 border border-green-200">Healthy</span>;
+}
+
 function InlineEditCell({
   itemId,
   value,
@@ -159,6 +167,7 @@ export default function StockRegister() {
 
   const [statusFilter, setStatusFilter] = useState<"all" | "green" | "amber" | "red">("all");
   const [typeTab, setTypeTab] = useState<TypeTab>("all");
+  const [alertFilter, setAlertFilter] = useState<"all" | "critical" | "warning" | "watch" | "locked" | "healthy">("all");
 
   const { data: bomLines = [] } = useQuery({
     queryKey: ["bom-for-build", buildItem?.id],
@@ -215,6 +224,10 @@ export default function StockRegister() {
       if (typeTab === "all") return true;
       if (typeTab === "component") return r.item_type === "component" || r.item_type === "sub_assembly";
       return r.item_type === typeTab;
+    })
+    .filter((r) => {
+      if (alertFilter === "all") return true;
+      return ((r as any).stock_alert_level ?? 'healthy') === alertFilter;
     });
 
   const counts = {
@@ -305,6 +318,23 @@ export default function StockRegister() {
         ))}
       </div>
 
+      {/* Alert level filter */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-slate-500 font-medium">Alert Level:</span>
+        <select
+          value={alertFilter}
+          onChange={(e) => setAlertFilter(e.target.value as typeof alertFilter)}
+          className="h-8 text-sm border border-slate-200 rounded px-2 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
+        >
+          <option value="all">All</option>
+          <option value="critical">Critical Only</option>
+          <option value="warning">Warning Only</option>
+          <option value="watch">Watch Only</option>
+          <option value="locked">Locked Only</option>
+          <option value="healthy">Healthy Only</option>
+        </select>
+      </div>
+
       {/* Record Build Dialog */}
       <Dialog open={buildDialogOpen} onOpenChange={(o) => { if (!o) { setBuildDialogOpen(false); setBuildResult(null); } }}>
         <DialogContent className="max-w-md">
@@ -391,51 +421,65 @@ export default function StockRegister() {
               <tr>
                 <th>Code</th>
                 <th>Description</th>
-                <th>Unit</th>
-                <th className="text-right">Raw Mat</th>
-                <th className="text-right">WIP</th>
-                <th className="text-right">Finished</th>
+                <th>Type</th>
+                <th className="text-right">Free</th>
+                <th className="text-right">In Process</th>
+                <th className="text-right">S/A WIP</th>
+                <th className="text-right">FG WIP</th>
+                <th className="text-right">FG Ready</th>
                 <th className="text-right">Total</th>
                 <th className="text-right">Min Stock</th>
                 <th className="text-right">Min Override</th>
-                <th className="text-right">Effective Min</th>
+                <th className="text-right">Eff. Min</th>
+                <th>Alert</th>
                 <th>Status</th>
-                <th>Processing Status</th>
+                <th>Processing</th>
                 <th className="w-44">Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={13} className="text-center py-8 text-muted-foreground">Loading...</td></tr>
+                <tr><td colSpan={16} className="text-center py-8 text-muted-foreground">Loading...</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={13} className="text-center py-8 text-muted-foreground">No items found.</td></tr>
+                <tr><td colSpan={16} className="text-center py-8 text-muted-foreground">No items found.</td></tr>
               ) : (
                 filtered.map((row) => (
                   <tr
                     key={row.id}
-                    className={`transition-colors ${row.stock_status === "red" ? "bg-red-50/60 hover:bg-red-50" : row.stock_status === "amber" ? "bg-amber-50/40 hover:bg-amber-50/60" : "hover:bg-blue-50/40"}`}
+                    className={`transition-colors cursor-pointer ${row.stock_status === "red" ? "bg-red-50/60 hover:bg-red-50" : row.stock_status === "amber" ? "bg-amber-50/40 hover:bg-amber-50/60" : "hover:bg-blue-50/40"}`}
+                    onClick={() => navigate(`/stock-ledger?item_id=${row.id}`)}
                   >
                     <td className="font-mono text-xs font-medium text-foreground">{row.item_code}</td>
                     <td className="font-medium">{row.description}</td>
-                    <td className="text-muted-foreground">{row.unit}</td>
-                    <td className="text-right font-mono tabular-nums text-slate-600">
-                      {(row.stock_raw_material ?? 0) > 0 ? (
-                        <span className="px-1.5 py-0.5 rounded text-xs bg-slate-100 text-slate-600">{row.stock_raw_material ?? 0}</span>
+                    <td className="text-muted-foreground text-xs capitalize">{row.item_type?.replace(/_/g, ' ')}</td>
+                    <td className="text-right font-mono tabular-nums">
+                      {((row as any).stock_free ?? 0) > 0 ? (
+                        <span className="px-1.5 py-0.5 rounded text-xs bg-green-50 text-green-700">{(row as any).stock_free ?? 0}</span>
                       ) : <span className="text-muted-foreground text-xs">—</span>}
                     </td>
-                    <td className="text-right font-mono tabular-nums text-amber-700">
-                      {(row.stock_wip ?? 0) > 0 ? (
-                        <span className="px-1.5 py-0.5 rounded text-xs bg-amber-100 text-amber-700">{row.stock_wip ?? 0}</span>
+                    <td className="text-right font-mono tabular-nums">
+                      {((row as any).stock_in_process ?? 0) > 0 ? (
+                        <span className="px-1.5 py-0.5 rounded text-xs bg-amber-50 text-amber-700">{(row as any).stock_in_process ?? 0}</span>
                       ) : <span className="text-muted-foreground text-xs">—</span>}
                     </td>
-                    <td className="text-right font-mono tabular-nums text-green-700">
-                      {(row.stock_finished_goods ?? 0) > 0 ? (
-                        <span className="px-1.5 py-0.5 rounded text-xs bg-green-100 text-green-700">{row.stock_finished_goods ?? 0}</span>
+                    <td className="text-right font-mono tabular-nums">
+                      {((row as any).stock_in_subassembly_wip ?? 0) > 0 ? (
+                        <span className="px-1.5 py-0.5 rounded text-xs bg-blue-50 text-blue-700">{(row as any).stock_in_subassembly_wip ?? 0}</span>
+                      ) : <span className="text-muted-foreground text-xs">—</span>}
+                    </td>
+                    <td className="text-right font-mono tabular-nums">
+                      {((row as any).stock_in_fg_wip ?? 0) > 0 ? (
+                        <span className="px-1.5 py-0.5 rounded text-xs bg-purple-50 text-purple-700">{(row as any).stock_in_fg_wip ?? 0}</span>
+                      ) : <span className="text-muted-foreground text-xs">—</span>}
+                    </td>
+                    <td className="text-right font-mono tabular-nums">
+                      {((row as any).stock_in_fg_ready ?? 0) > 0 ? (
+                        <span className="px-1.5 py-0.5 rounded text-xs bg-emerald-50 text-emerald-700">{(row as any).stock_in_fg_ready ?? 0}</span>
                       ) : <span className="text-muted-foreground text-xs">—</span>}
                     </td>
                     <td className="text-right font-mono tabular-nums font-semibold">{row.current_stock}</td>
                     <td className="text-right font-mono tabular-nums text-muted-foreground">{row.min_stock}</td>
-                    <td className="text-right">
+                    <td className="text-right" onClick={(e) => e.stopPropagation()}>
                       <InlineEditCell
                         itemId={row.id}
                         value={row.min_stock_override}
@@ -443,8 +487,9 @@ export default function StockRegister() {
                       />
                     </td>
                     <td className="text-right font-mono tabular-nums font-medium">{row.effective_min_stock}</td>
+                    <td onClick={(e) => e.stopPropagation()}><AlertBadge level={(row as any).stock_alert_level ?? 'healthy'} /></td>
                     <td><StatusBadge status={row.stock_status} /></td>
-                    <td>
+                    <td onClick={(e) => e.stopPropagation()}>
                       {(() => {
                         const log = processingLogByItemId.get(row.id);
                         if (!log) return null;
@@ -488,7 +533,7 @@ export default function StockRegister() {
                         return null;
                       })()}
                     </td>
-                    <td>
+                    <td onClick={(e) => e.stopPropagation()}>
                       <div className="flex flex-wrap gap-1">
                         {(row.stock_status === "amber" || row.stock_status === "red") &&
                           (row.item_type === "raw_material" || row.item_type === "bought_out") && (

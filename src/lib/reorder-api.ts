@@ -138,7 +138,7 @@ export async function fetchReorderAlerts(): Promise<ReorderAlert[]> {
   // 2. Fetch items that might need reordering (min_stock > 0 OR has a rule)
   let itemsQuery = (supabase as any)
     .from("items")
-    .select("id, item_code, description, item_type, unit, current_stock, stock_raw_material, min_stock, standard_cost")
+    .select("id, item_code, description, item_type, unit, current_stock, stock_raw_material, stock_free, stock_in_process, min_stock, standard_cost")
     .eq("status", "active");
 
   if (ruleItemIds.length > 0) {
@@ -200,9 +200,11 @@ export async function fetchReorderAlerts(): Promise<ReorderAlert[]> {
     const currentStock: number = Number(item.current_stock) || 0;
     const rawStock: number = Number(item.stock_raw_material) || 0;
     const minStock: number = Number(item.min_stock) || 0;
-    // For raw material / bought-out items, use stock_raw_material for alert calculation
+    // Phase 13: use stock_free + stock_in_process as effective available
+    const effective: number = (Number(item.stock_free) || currentStock) + (Number(item.stock_in_process) || 0);
+    // For raw material / bought-out items, use stock_raw_material for alert calculation (legacy fallback)
     const useRawStock = item.item_type === "raw_material" || item.item_type === "bought_out";
-    const alertStock: number = useRawStock ? rawStock : currentStock;
+    const alertStock: number = effective > 0 ? effective : (useRawStock ? rawStock : currentStock);
 
     if (reorderPoint <= 0 && minStock <= 0) continue;
 
@@ -218,12 +220,13 @@ export async function fetchReorderAlerts(): Promise<ReorderAlert[]> {
     );
     const recommendedOrderQty: number = Math.ceil(rawRecommended);
 
+    const threshold: number = reorderPoint > 0 ? reorderPoint : minStock;
     let alertLevel: "critical" | "warning" | "watch" | null = null;
-    if (alertStock <= minStock) {
+    if (alertStock < threshold) {
       alertLevel = "critical";
-    } else if (reorderPoint > 0 && alertStock <= reorderPoint) {
+    } else if (threshold > 0 && alertStock <= threshold) {
       alertLevel = "warning";
-    } else if (reorderPoint > 0 && alertStock <= reorderPoint * 1.2) {
+    } else if (threshold > 0 && alertStock <= threshold * 1.2) {
       alertLevel = "watch";
     }
 

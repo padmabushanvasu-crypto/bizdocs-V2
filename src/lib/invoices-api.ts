@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
 import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
+import { updateStockBucket } from "@/lib/items-api";
 
 export interface InvoiceLineItem {
   id?: string;
@@ -139,6 +140,8 @@ export async function issueInvoice(id: string) {
     const newStock = Math.max(0, (rec.current_stock ?? 0) - qty);
     const newFinishedGoods = Math.max(0, (rec.stock_finished_goods ?? 0) - qty);
     await supabase.from("items").update({ current_stock: newStock, stock_finished_goods: newFinishedGoods } as any).eq("id", rec.id);
+    // Phase 13: deduct from free bucket on invoice dispatch
+    await updateStockBucket(rec.id, 'free', -qty).catch(console.error);
     await addStockLedgerEntry({
       item_id: rec.id,
       item_code: rec.item_code,
