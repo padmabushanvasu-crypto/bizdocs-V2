@@ -321,6 +321,7 @@ export async function importItemsBatch(
       purchase_price: parseFloat(row["purchase_price"] || "0") || 0,
       gst_rate: parseFloat(row["gst_rate"] || "18") || 18,
       min_stock: parseFloat(row["min_stock"] || "0") || 0,
+      is_critical: ["true", "yes", "1", "y"].includes((row["is_critical"] || "").toLowerCase().trim()),
       notes: row["notes"] || null,
       drawing_number: drawingNum || null,
       drawing_revision: drawingNum || null,

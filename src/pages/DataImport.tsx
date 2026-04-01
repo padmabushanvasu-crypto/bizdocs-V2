@@ -36,13 +36,13 @@ async function downloadBOMTemplate() {
   // ── Sheet 1: BOM Lines ──
   const bomHeaders = [
     "Finished Item Code *", "Finished Item Description", "Component Code *",
-    "Component Description", "Quantity Per Unit *", "Unit", "BOM Level", "Notes"
+    "Component Description", "Quantity Per Unit *", "Unit", "Scrap Factor %", "Is Critical", "BOM Level", "Notes"
   ];
-  const noteRow = ["Add vendor information on the Vendors sheet (no limit on vendors per component)", "", "", "", "", "", "", ""];
+  const noteRow = ["Add vendor information on the Vendors sheet (no limit on vendors per component)", "", "", "", "", "", "", "", "", ""];
   const examples = [
-    ["PROD-001", "Main Product", "COMP-A", "Steel Bracket", "2", "NOS", "1", "Main structural component"],
-    ["PROD-001", "Main Product", "COMP-B", "Copper Wire", "0.5", "KG", "1", ""],
-    ["PROD-002", "Sub Assembly", "COMP-A", "Steel Bracket", "4", "NOS", "2", "Used in sub-assembly"],
+    ["PROD-001", "Main Product", "COMP-A", "Steel Bracket", "2", "NOS", "2", "Yes", "1", "Main structural component"],
+    ["PROD-001", "Main Product", "COMP-B", "Copper Wire", "0.5", "KG", "0", "No", "1", ""],
+    ["PROD-002", "Sub Assembly", "COMP-A", "Steel Bracket", "4", "NOS", "0", "No", "2", "Used in sub-assembly"],
   ];
   const aoa1 = [bomHeaders, noteRow, ...examples];
   const ws1 = (XLSX as any).utils.aoa_to_sheet(aoa1);
@@ -67,7 +67,7 @@ async function downloadBOMTemplate() {
       ws1[cell].s = EXAMPLE_STYLE;
     });
   }
-  ws1["!cols"] = bomHeaders.map((h) => ({ wch: Math.max(h.length + 2, 18) }));
+  ws1["!cols"] = bomHeaders.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
   ws1["!rows"] = [{ hpt: 20 }, { hpt: 32 }, { hpt: 16 }, { hpt: 16 }, { hpt: 16 }];
   ws1["!freeze"] = { xSplit: 0, ySplit: 2 };
   (XLSX as any).utils.book_append_sheet(wb, ws1, "BOM Lines");
@@ -399,11 +399,11 @@ async function downloadReorderRulesTemplate() {
   (XLSX as any).writeFile(wb, "Reorder_Rules_Template.xlsx");
 }
 
-const PARTY_HEADERS = ["Party Name *", "Party Type (vendor/customer/both) *", "Contact Person", "Address Line 1", "City", "State", "PIN Code", "Phone 1", "Email", "GSTIN", "PAN", "Payment Terms", "Notes"];
-const ITEM_HEADERS = ["Item Code *", "Description *", "Item Type *", "Unit", "HSN/SAC Code", "Sale Price", "Purchase Price", "GST Rate %", "Min Stock", "Notes"];
-const BOM_HEADERS = ["Finished Item Code *", "Component Code *", "Quantity *", "Unit", "Scrap Factor %", "Variant Name", "Notes"];
+const PARTY_HEADERS = ["Party Name *", "Party Type (vendor/customer/both) *", "Contact Person", "Address Line 1", "Address Line 2", "City", "State", "PIN Code", "Phone 1", "Email", "GSTIN", "PAN", "Payment Terms", "Notes"];
+const ITEM_HEADERS = ["Item Code *", "Description *", "Item Type *", "Unit", "Drawing Revision", "HSN/SAC Code", "Sale Price", "Purchase Price", "GST Rate %", "Min Stock", "Is Critical", "Standard Cost", "Notes"];
+const BOM_HEADERS = ["Finished Item Code *", "Component Code *", "Quantity *", "Unit", "Scrap Factor %", "Is Critical", "Variant Name", "Notes"];
 // BOM template is handled by downloadBOMTemplate() with example rows
-const STOCK_HEADERS = ["Item Code *", "Description", "Drawing Number", "Item Type", "Unit", "Opening Stock Qty *", "Cost Per Unit ₹", "Notes"];
+const STOCK_HEADERS = ["Item Code *", "Description", "Drawing Number", "Item Type", "Unit", "Opening Stock Qty *", "Stock Bucket", "Cost Per Unit ₹", "Notes"];
 
 // ── Column Mapping Summary ─────────────────────────────────────────────────
 
@@ -786,7 +786,7 @@ function BOMImportTab() {
     type VendorEntry = { code: string; process: string; leadDays: number };
     type ResolvedRow = {
       parentId: string; childId: string; qty: number; unit: string;
-      scrapFactor: number; notes: string | null; variantName: string | null; excelRow: number;
+      scrapFactor: number; isCritical: boolean; notes: string | null; variantName: string | null; excelRow: number;
       vendors: VendorEntry[];
     };
     const resolvedRows: ResolvedRow[] = [];
@@ -820,6 +820,7 @@ function BOMImportTab() {
       resolvedRows.push({
         parentId, childId, qty, unit: row["unit"]?.trim() || "NOS",
         scrapFactor: parseFloat(row["scrap_factor"] || "0") || 0,
+        isCritical: ["true", "yes", "1", "y"].includes((row["is_critical"] || "").toLowerCase().trim()),
         notes: row["notes"]?.trim() || null,
         variantName: row["variant_name"]?.trim() || null,
         excelRow,
@@ -872,7 +873,7 @@ function BOMImportTab() {
       const variantId = r.variantName ? (variantMap.get(`${r.parentId}:${r.variantName}`) ?? null) : null;
       const payload: any = {
         company_id: companyId, parent_item_id: r.parentId, child_item_id: r.childId,
-        quantity: r.qty, unit: r.unit, scrap_factor: r.scrapFactor, notes: r.notes,
+        quantity: r.qty, unit: r.unit, scrap_factor: r.scrapFactor, is_critical: r.isCritical, notes: r.notes,
       };
       if (variantId) payload.variant_id = variantId;
       const existingId = bomLineMap.get(`${r.parentId}:${r.childId}`);
@@ -2054,10 +2055,18 @@ export default function DataImport() {
       if ((i as any).drawing_revision) drawingToId.set(String((i as any).drawing_revision).toLowerCase(), (i as any).id);
     }
 
+    const VALID_BUCKETS: Record<string, string> = {
+      free: "stock_free", stock_free: "stock_free",
+      in_process: "stock_in_process", stock_in_process: "stock_in_process",
+      in_subassembly_wip: "stock_in_subassembly_wip", stock_in_subassembly_wip: "stock_in_subassembly_wip",
+      in_fg_wip: "stock_in_fg_wip", stock_in_fg_wip: "stock_in_fg_wip",
+      in_fg_ready: "stock_in_fg_ready", stock_in_fg_ready: "stock_in_fg_ready",
+    };
+
     let skipped = 0;
     const errors: string[] = [];
     const skipReasons: SkipReason[] = [];
-    const toUpdate: Array<{ id: string; current_stock: number; standard_cost?: number }> = [];
+    const toUpdate: Array<{ id: string; current_stock: number; stock_free?: number; [key: string]: unknown }> = [];
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
@@ -2088,14 +2097,20 @@ export default function DataImport() {
         continue;
       }
       const costPerUnit = parseFloat(row["standard_cost"] || "");
-      const entry: { id: string; current_stock: number; standard_cost?: number } = { id: itemId, current_stock: qty };
+      const bucketRaw = (row["stock_bucket"] || "").trim().toLowerCase().replace(/\s+/g, "_");
+      const bucketColumn = VALID_BUCKETS[bucketRaw] ?? "stock_free";
+      const entry: { id: string; current_stock: number; [key: string]: unknown } = {
+        id: itemId,
+        current_stock: qty,
+        [bucketColumn]: qty,
+      };
       if (!isNaN(costPerUnit) && costPerUnit >= 0) entry.standard_cost = costPerUnit;
       toUpdate.push(entry);
     }
 
     let imported = 0;
 
-    // Bulk upsert current_stock (and standard_cost if provided) in chunks of 100
+    // Bulk upsert current_stock (and stock bucket + standard_cost if provided) in chunks of 100
     for (let i = 0; i < toUpdate.length; i += 100) {
       const chunk = toUpdate.slice(i, i + 100);
       try {
