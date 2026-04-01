@@ -1,6 +1,5 @@
 import { useNavigate } from "react-router-dom";
 import { Building2, FileText, Bell, Upload, FileSpreadsheet, Users, History, BookOpen, ChevronRight, AlertTriangle, Receipt } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import { fetchCompanySettings } from "@/lib/settings-api";
 
@@ -16,7 +15,6 @@ interface SettingsCard {
 
 export default function SettingsPage() {
   const navigate = useNavigate();
-  const { toast } = useToast();
 
   const { data: companySettings } = useQuery({
     queryKey: ["company-settings"],
@@ -98,9 +96,8 @@ export default function SettingsPage() {
       iconBg: "bg-blue-50",
       iconColor: "text-blue-600",
       title: "Users and Roles",
-      description: "Invite team members and assign access permissions",
-      action: () => toast({ title: "Users and Roles is coming in a future update" }),
-      badge: "Coming Soon",
+      description: "Invite team members, assign roles (Admin, Purchase, Inward, QC, Storekeeper, Assembly) and manage access",
+      action: () => navigate("/settings/users"),
     },
   ];
 

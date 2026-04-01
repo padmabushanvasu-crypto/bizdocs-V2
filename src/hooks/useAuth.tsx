@@ -11,6 +11,9 @@ interface Profile {
   email: string | null;
   company_id: string | null;
   tour_completed: boolean;
+  role: string | null;
+  display_name: string | null;
+  is_active: boolean | null;
 }
 
 interface AuthContextType {
@@ -18,6 +21,7 @@ interface AuthContextType {
   user: User | null;
   profile: Profile | null;
   companyId: string | null;
+  role: string;
   loading: boolean;
   authError: string | null;
   clearAuthError: () => void;
@@ -30,6 +34,7 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   profile: null,
   companyId: null,
+  role: 'admin',
   loading: true,
   authError: null,
   clearAuthError: () => {},
@@ -143,6 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user: session?.user ?? null,
       profile,
       companyId: profile?.company_id ?? null,
+      role: (profile as any)?.role ?? 'admin',
       loading,
       authError,
       clearAuthError,

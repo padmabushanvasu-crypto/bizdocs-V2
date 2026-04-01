@@ -10,10 +10,14 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { LogOut, Settings, User, LayoutDashboard } from "lucide-react";
 import { generateStockAlerts, generateOverdueDCAlerts } from "@/lib/notifications-api";
+import { FOCUSED_ROLES, FOCUSED_ROLE_REDIRECT, ROLE_LABELS } from "@/lib/roles";
+import type { AppRole } from "@/lib/roles";
 
 export function AppLayout() {
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, signOut, role } = useAuth();
   const navigate = useNavigate();
+
+  const isFocused = FOCUSED_ROLES.includes(role as AppRole);
 
   const displayName = profile?.full_name || user?.user_metadata?.full_name || user?.user_metadata?.name || null;
   const avatarUrl = profile?.avatar_url || user?.user_metadata?.avatar_url || user?.user_metadata?.picture || null;
@@ -32,12 +36,27 @@ export function AppLayout() {
     generateOverdueDCAlerts();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Redirect focused roles to their queue on root path
+  useEffect(() => {
+    if (FOCUSED_ROLES.includes(role as AppRole)) {
+      const target = FOCUSED_ROLE_REDIRECT[role];
+      if (target) {
+        const currentPath = window.location.pathname;
+        if (currentPath === '/') {
+          navigate(target, { replace: true });
+        }
+      }
+    }
+  }, [role]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
-        <div className="hidden md:block print:hidden">
-          <AppSidebar />
-        </div>
+        {!isFocused && (
+          <div className="hidden md:block print:hidden">
+            <AppSidebar />
+          </div>
+        )}
 
         <div className="flex-1 flex flex-col min-w-0">
           <header className="h-12 flex items-center justify-between border-b border-border bg-card px-4 shrink-0 print:hidden">
@@ -55,6 +74,11 @@ export function AppLayout() {
                 </div>
                 <span className="font-bold text-foreground" style={{ letterSpacing: '-0.3px' }}>BizDocs</span>
               </div>
+              {isFocused && (
+                <span className="text-xs text-muted-foreground border border-border rounded px-1.5 py-0.5 hidden md:inline">
+                  {ROLE_LABELS[role as AppRole] ?? role}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-1">
               <NotificationBell />
@@ -95,7 +119,7 @@ export function AppLayout() {
           </main>
         </div>
 
-        <div className="print:hidden"><MobileNav /></div>
+        {!isFocused && <div className="print:hidden"><MobileNav /></div>}
       </div>
     </SidebarProvider>
   );

@@ -36,6 +36,7 @@ import {
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/useAuth";
 import { fetchFatStats } from "@/lib/fat-api";
 import { fetchReorderSummary } from "@/lib/reorder-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
@@ -317,6 +318,20 @@ function NavGroup({
 export function AppSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { role } = useAuth();
+
+  const canSeeGroup = (groupName: string): boolean => {
+    if (role === 'admin') return true;
+    const groupVisibility: Record<string, string[]> = {
+      'Daily Work': ['admin', 'assembly_team'],
+      'Production': ['admin', 'assembly_team'],
+      'Finished Goods': ['admin'],
+      'Purchasing': ['admin', 'purchase_team'],
+      'Inventory': ['admin', 'purchase_team', 'assembly_team'],
+      'Reports & More': ['admin', 'purchase_team'],
+    };
+    return (groupVisibility[groupName] ?? ['admin']).includes(role);
+  };
 
   const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>(loadGroupState);
   const [railMode, setRailMode] = useState<boolean>(() => {
@@ -681,7 +696,7 @@ export function AppSidebar() {
                 gap: 2,
               }}
             >
-              {ALL_GROUP_NAMES.map((groupName) => {
+              {ALL_GROUP_NAMES.filter(canSeeGroup).map((groupName) => {
                 const GroupIcon = GROUP_ICONS[groupName] ?? LayoutDashboard;
                 const active = isGroupActive(groupName);
                 const hovered = hoveredGroup === groupName;
@@ -716,48 +731,60 @@ export function AppSidebar() {
           ) : (
             /* Full mode: collapsible nav groups */
             <div>
-              <NavGroup
-                label="Daily Work"
-                items={dailyWorkNav}
-                isActiveFn={isActive}
-                open={groupOpen["Daily Work"]}
-                onToggle={() => toggleGroup("Daily Work")}
-              />
-              <NavGroup
-                label="Production"
-                items={productionNav}
-                isActiveFn={isActive}
-                open={groupOpen["Production"]}
-                onToggle={() => toggleGroup("Production")}
-              />
-              <NavGroup
-                label="Finished Goods"
-                items={finishedGoodsNav}
-                isActiveFn={isActive}
-                open={groupOpen["Finished Goods"]}
-                onToggle={() => toggleGroup("Finished Goods")}
-              />
-              <NavGroup
-                label="Purchasing"
-                items={purchasingNav}
-                isActiveFn={isActive}
-                open={groupOpen["Purchasing"]}
-                onToggle={() => toggleGroup("Purchasing")}
-              />
-              <NavGroup
-                label="Inventory"
-                items={inventoryNav}
-                isActiveFn={isActive}
-                open={groupOpen["Inventory"]}
-                onToggle={() => toggleGroup("Inventory")}
-              />
-              <NavGroup
-                label="Reports & More"
-                items={reportsModeNav}
-                isActiveFn={isActive}
-                open={groupOpen["Reports & More"]}
-                onToggle={() => toggleGroup("Reports & More")}
-              />
+              {canSeeGroup("Daily Work") && (
+                <NavGroup
+                  label="Daily Work"
+                  items={dailyWorkNav}
+                  isActiveFn={isActive}
+                  open={groupOpen["Daily Work"]}
+                  onToggle={() => toggleGroup("Daily Work")}
+                />
+              )}
+              {canSeeGroup("Production") && (
+                <NavGroup
+                  label="Production"
+                  items={productionNav}
+                  isActiveFn={isActive}
+                  open={groupOpen["Production"]}
+                  onToggle={() => toggleGroup("Production")}
+                />
+              )}
+              {canSeeGroup("Finished Goods") && (
+                <NavGroup
+                  label="Finished Goods"
+                  items={finishedGoodsNav}
+                  isActiveFn={isActive}
+                  open={groupOpen["Finished Goods"]}
+                  onToggle={() => toggleGroup("Finished Goods")}
+                />
+              )}
+              {canSeeGroup("Purchasing") && (
+                <NavGroup
+                  label="Purchasing"
+                  items={purchasingNav}
+                  isActiveFn={isActive}
+                  open={groupOpen["Purchasing"]}
+                  onToggle={() => toggleGroup("Purchasing")}
+                />
+              )}
+              {canSeeGroup("Inventory") && (
+                <NavGroup
+                  label="Inventory"
+                  items={inventoryNav}
+                  isActiveFn={isActive}
+                  open={groupOpen["Inventory"]}
+                  onToggle={() => toggleGroup("Inventory")}
+                />
+              )}
+              {canSeeGroup("Reports & More") && (
+                <NavGroup
+                  label="Reports & More"
+                  items={reportsModeNav}
+                  isActiveFn={isActive}
+                  open={groupOpen["Reports & More"]}
+                  onToggle={() => toggleGroup("Reports & More")}
+                />
+              )}
             </div>
           )}
         </div>
