@@ -23,7 +23,7 @@ import {
 import { exportToExcel } from "@/lib/export-utils";
 import { format, differenceInDays } from "date-fns";
 
-type WipTab = "all" | "component" | "subassembly";
+type WipTab = "all" | "component" | "subassembly" | "finished_good";
 
 // ── Days-in-progress cell for AOs ────────────────────────────────────────────
 
@@ -195,6 +195,7 @@ export default function WipRegister() {
 
   const showComponent = tab === "all" || tab === "component";
   const showAssembly  = tab === "all" || tab === "subassembly";
+  const showFinishedGood = tab === "finished_good";
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -223,9 +224,10 @@ export default function WipRegister() {
       <div className="flex items-center gap-4 flex-wrap">
         <SegmentedControl
           options={[
-            { value: "all",         label: "All WIP",           color: "#0F172A", count: (wipData as any[]).length + aoRows.length },
-            { value: "component",   label: "DC WIP",            color: "#2563EB", count: (wipData as any[]).length },
-            { value: "subassembly", label: "Production WIP",    color: "#0F766E", count: aoRows.length },
+            { value: "all",          label: "All WIP",           color: "#0F172A", count: (wipData as any[]).length + aoRows.length },
+            { value: "component",    label: "Component WIP",     color: "#2563EB", count: (wipData as any[]).length },
+            { value: "subassembly",  label: "Sub-Assembly WIP",  color: "#0F766E", count: aoRows.length },
+            { value: "finished_good", label: "Finished Good WIP", color: "#6366F1", count: 0 },
           ]}
           value={tab}
           onChange={(v) => setTab(v as WipTab)}
@@ -493,6 +495,17 @@ export default function WipRegister() {
               </table>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Section 3: Finished Good WIP ── */}
+      {showFinishedGood && (
+        <div className="flex flex-col items-center justify-center py-16 gap-3 bg-white rounded-xl border border-slate-200">
+          <Layers className="h-10 w-10 text-slate-300" />
+          <p className="text-slate-500 font-medium">Finished Good Work Orders will appear here</p>
+          <p className="text-sm text-slate-400 text-center max-w-sm">
+            once the Production module is built.
+          </p>
         </div>
       )}
 

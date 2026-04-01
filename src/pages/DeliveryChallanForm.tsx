@@ -32,18 +32,49 @@ import { formatCurrency, amountInWords } from "@/lib/gst-utils";
 import { getGSTType, calculateLineTax, round2, resolveStateCode, type GSTType } from "@/lib/tax-utils";
 
 const RETURNABLE_SUBTYPES = [
-  { value: "returnable", label: "Standard Returnable" },
-  { value: "job_work_143", label: "Returnable — Section 143" },
-  { value: "job_work_out", label: "Returnable — Processing" },
+  { value: "job_work_143", label: "Job Work (Section 143)" },
+  { value: "job_work_out", label: "Job Work (Rule 45)" },
+  { value: "sample", label: "Sample" },
   { value: "loan_borrow", label: "Loan / Borrow" },
+  { value: "other_returnable", label: "Other Returnable" },
 ];
 
 const NON_RETURNABLE_SUBTYPES = [
-  { value: "non_returnable", label: "Standard Non-Returnable" },
   { value: "supply", label: "Supply" },
-  { value: "sample", label: "Sample" },
   { value: "job_work_return", label: "Job Work Return" },
+  { value: "other_non_returnable", label: "Other Non-Returnable" },
 ];
+
+// Map (primaryChoice + subtype) → dcType saved to DB
+function buildDcType(primary: "returnable" | "non_returnable", subType: string): string {
+  if (primary === "returnable") {
+    if (subType === "job_work_143") return "job_work_143";
+    if (subType === "job_work_out") return "job_work_out";
+    if (subType === "sample") return "sample";
+    if (subType === "loan_borrow") return "loan_borrow";
+    if (subType) return subType; // other_returnable or custom
+    return "returnable";
+  } else {
+    if (subType === "supply") return "supply";
+    if (subType === "job_work_return") return "job_work_return";
+    if (subType) return subType;
+    return "non_returnable";
+  }
+}
+
+// Reverse: dcType from DB → (primaryChoice, subType)
+function parseDcType(dcType: string): { primary: "returnable" | "non_returnable"; subType: string } {
+  const returnableValues = ["returnable", "job_work_143", "job_work_out", "sample", "loan_borrow", "other_returnable"];
+  const nonReturnableValues = ["non_returnable", "supply", "job_work_return", "other_non_returnable"];
+  if (returnableValues.includes(dcType)) {
+    return { primary: "returnable", subType: dcType === "returnable" ? "" : dcType };
+  }
+  if (nonReturnableValues.includes(dcType)) {
+    return { primary: "non_returnable", subType: dcType === "non_returnable" ? "" : dcType };
+  }
+  // default
+  return { primary: "returnable", subType: "" };
+}
 
 const CHALLAN_CATEGORIES = [
   { value: "supply_on_approval", label: "Supply on Approval" },
@@ -86,7 +117,9 @@ export default function DeliveryChallanForm() {
   const queryClient = useQueryClient();
 
   // Form state
-  const [dcType, setDcType] = useState("returnable");
+  const [primaryChoice, setPrimaryChoice] = useState<"returnable" | "non_returnable">("returnable");
+  const [dcSubType, setDcSubType] = useState<string>("");
+  const dcType = buildDcType(primaryChoice, dcSubType);
   const [dcNumber, setDcNumber] = useState("");
   const [dcDate, setDcDate] = useState<Date>(new Date());
   const [partyId, setPartyId] = useState<string | null>(null);
@@ -146,7 +179,9 @@ export default function DeliveryChallanForm() {
   useEffect(() => {
     if (existingDC) {
       setDcNumber(existingDC.dc_number);
-      setDcType(existingDC.dc_type);
+      const parsed = parseDcType(existingDC.dc_type);
+      setPrimaryChoice(parsed.primary);
+      setDcSubType(parsed.subType);
       setDcDate(new Date(existingDC.dc_date));
       setPartyId(existingDC.party_id);
       setReferenceNumber(existingDC.reference_number || "");
@@ -175,7 +210,11 @@ export default function DeliveryChallanForm() {
     const prefill = (location.state as any)?.prefill;
     if (!prefill || isEdit || parties.length === 0) return;
 
-    if (prefill.dc_type) setDcType(prefill.dc_type);
+    if (prefill.dc_type) {
+      const parsed = parseDcType(prefill.dc_type);
+      setPrimaryChoice(parsed.primary);
+      setDcSubType(parsed.subType);
+    }
     if (prefill.party_id) {
       setPartyId(prefill.party_id);
       const p = parties.find((p) => p.id === prefill.party_id);
@@ -238,9 +277,9 @@ export default function DeliveryChallanForm() {
   const subTotal = useMemo(() => lineItems.reduce((s, i) => round2(s + (i.amount || 0)), 0), [lineItems]);
   const totalItems = lineItems.filter((i) => i.description.trim()).length;
   const totalQty = lineItems.reduce((s, i) => s + (i.quantity || 0), 0);
-  const isReturnable = ["returnable", "job_work_143", "job_work_out", "loan_borrow"].includes(dcType);
-  const isRule45 = dcType === "job_work_out";
-  const isJobWork143 = dcType === "job_work_143";
+  const isReturnable = primaryChoice === "returnable";
+  const isRule45 = dcSubType === "job_work_out";
+  const isJobWork143 = dcSubType === "job_work_143";
 
   // GST type — derive from company state vs party state. Never assume intra-state.
   const gstType = useMemo<GSTType>(
@@ -373,65 +412,78 @@ export default function DeliveryChallanForm() {
       <div className="space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <button
-            onClick={() => { if (!isReturnable) setDcType("returnable"); }}
+            onClick={() => { setPrimaryChoice("returnable"); setDcSubType(""); }}
             className={cn(
-              "p-4 rounded-xl border-2 text-center transition-all",
-              isReturnable ? "border-blue-500 bg-blue-50" : "border-border hover:border-muted-foreground/40"
+              "p-4 rounded-lg border-2 text-center transition-all",
+              isReturnable ? "border-primary bg-primary/5 text-primary" : "border-border hover:border-muted-foreground/40"
             )}
           >
-            <p className="font-bold text-sm text-foreground">RETURNABLE</p>
+            <p className="font-bold text-sm">RETURNABLE</p>
             <p className="text-xs text-muted-foreground mt-1">Goods to be returned after processing</p>
           </button>
           <button
-            onClick={() => { if (isReturnable) setDcType("non_returnable"); }}
+            onClick={() => { setPrimaryChoice("non_returnable"); setDcSubType(""); }}
             className={cn(
-              "p-4 rounded-xl border-2 text-center transition-all",
-              !isReturnable ? "border-blue-500 bg-blue-50" : "border-border hover:border-muted-foreground/40"
+              "p-4 rounded-lg border-2 text-center transition-all",
+              !isReturnable ? "border-primary bg-primary/5 text-primary" : "border-border hover:border-muted-foreground/40"
             )}
           >
-            <p className="font-bold text-sm text-foreground">NON-RETURNABLE</p>
+            <p className="font-bold text-sm">NON-RETURNABLE</p>
             <p className="text-xs text-muted-foreground mt-1">Goods sent permanently to party</p>
           </button>
         </div>
-        <Select value={dcType} onValueChange={setDcType}>
-          <SelectTrigger>
-            <SelectValue placeholder="Select sub-type..." />
-          </SelectTrigger>
-          <SelectContent>
-            {(isReturnable ? RETURNABLE_SUBTYPES : NON_RETURNABLE_SUBTYPES).map((t) => (
-              <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+
+        {/* Sub-type dropdown */}
+        <div className="space-y-1.5">
+          <Label className="text-sm text-muted-foreground">Sub-type (optional)</Label>
+          <Select value={dcSubType} onValueChange={setDcSubType}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select sub-type..." />
+            </SelectTrigger>
+            <SelectContent>
+              {(isReturnable ? RETURNABLE_SUBTYPES : NON_RETURNABLE_SUBTYPES).map((t) => (
+                <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Return Due Date — only for RETURNABLE */}
+        {isReturnable && (
+          <div className="space-y-1.5">
+            <Label className="text-sm">Return Due Date</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className={cn("w-full justify-start font-normal", !returnDueDate && "text-muted-foreground")}>
+                  {returnDueDate ? format(returnDueDate, "dd MMM yyyy") : "Select date..."}
+                  <ChevronDown className="ml-auto h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar mode="single" selected={returnDueDate} onSelect={setReturnDueDate} initialFocus />
+              </PopoverContent>
+            </Popover>
+          </div>
+        )}
+
+        {/* GST Rule 45 reminder */}
+        {isRule45 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start gap-2">
+            <Info className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+            <p className="text-xs text-blue-700">
+              <strong>GST Rule 45:</strong> Goods sent for job work must be returned within 1 year (365 days). Failure to return will attract GST as if a supply was made on the dispatch date.
+            </p>
+          </div>
+        )}
       </div>
 
-      {/* Job Work Sec 143 — no GST note */}
+      {/* Section 143 info note */}
       {isJobWork143 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
-          <Info className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
-          <div>
-            <p className="font-semibold text-blue-800 text-sm">Section 143 — Job Work Challan (No GST)</p>
-            <p className="text-xs text-blue-700 mt-1">
-              No GST is applicable on goods sent for job work under Section 143 of the CGST Act.
-              Goods must be returned within <strong>1 year</strong> (3 years for capital goods).
-              The approximate value field is used only for e-way bill purposes.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* GST Rule 45 Banner */}
-      {isRule45 && (
-        <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 flex items-start gap-3">
-          <Info className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-          <div>
-            <p className="font-semibold text-amber-800 text-sm">GST Rule 45 — Job Work Challan</p>
-            <p className="text-xs text-amber-700 mt-1">
-              Goods sent for job work must be returned within <strong>1 year (365 days)</strong> from
-              the date of dispatch. Failure to return within the prescribed time will attract GST
-              liability as if a supply was made on the date of original dispatch.
-            </p>
-          </div>
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start gap-2">
+          <Info className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+          <p className="text-xs text-blue-700">
+            <strong>Section 143:</strong> No GST on job work challan. Goods must be returned within 1 year (3 years for capital goods).
+          </p>
         </div>
       )}
 
@@ -560,21 +612,7 @@ export default function DeliveryChallanForm() {
               </div>
             </div>
 
-            {isReturnable && (
-              <div>
-                <Label className="text-sm font-medium text-slate-700">Return Due Date</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className={cn("w-full mt-1 justify-start font-normal", !returnDueDate && "text-muted-foreground")}>
-                      {returnDueDate ? format(returnDueDate, "dd MMM yyyy") : "Select return date"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar mode="single" selected={returnDueDate} onSelect={setReturnDueDate} className="p-3 pointer-events-auto" />
-                  </PopoverContent>
-                </Popover>
-              </div>
-            )}
+            {/* Return due date is shown in the DC Type section above */}
           </div>
         </div>
       </div>

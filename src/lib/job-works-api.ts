@@ -1035,4 +1035,6 @@ export async function fetchWipSummary(): Promise<WipSummary> {
 export const updateJobWorkStatus = updateJobCardStatus;
 export const issueJobWorkMaterial = issueJobCardMaterial;
 export const fetchJobWorkStockMovements = fetchJobCardStockMovements;
+// FIX 7: alias for spec-specified name
+export const issueStockForJobCard = issueJobCardMaterial;
 export const fetchJobWorkStats = fetchJobCardStats;
