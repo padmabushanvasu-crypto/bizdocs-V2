@@ -71,6 +71,10 @@ import SubAssemblyWorkOrders from "@/pages/SubAssemblyWorkOrders";
 import FinishedGoodWorkOrders from "@/pages/FinishedGoodWorkOrders";
 import AssemblyWorkOrderDetail from "@/pages/AssemblyWorkOrderDetail";
 import StorekeeperQueue from "@/pages/StorekeeperQueue";
+import DispatchRecords from "@/pages/DispatchRecords";
+import DispatchRecordForm from "@/pages/DispatchRecordForm";
+import DispatchRecordDetail from "@/pages/DispatchRecordDetail";
+import ReadyToDispatch from "@/pages/ReadyToDispatch";
 import { ImportQueueProvider } from "@/lib/import-queue";
 
 const queryClient = new QueryClient();
@@ -153,6 +157,11 @@ const App = () => (
               <Route path="/finished-good-work-orders" element={<FinishedGoodWorkOrders />} />
               <Route path="/assembly-work-orders/:id" element={<AssemblyWorkOrderDetail />} />
               <Route path="/storekeeper" element={<StorekeeperQueue />} />
+              <Route path="/dispatch-records" element={<DispatchRecords />} />
+              <Route path="/dispatch-records/new" element={<DispatchRecordForm />} />
+              <Route path="/dispatch-records/:id" element={<DispatchRecordDetail />} />
+              <Route path="/dispatch-records/:id/edit" element={<DispatchRecordForm />} />
+              <Route path="/ready-to-dispatch" element={<ReadyToDispatch />} />
               <Route path="/more" element={<MoreMenu />} />
               <Route path="/settings/company" element={<CompanySettings />} />
               <Route path="/settings" element={<SettingsPage />} />

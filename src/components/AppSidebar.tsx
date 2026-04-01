@@ -31,6 +31,7 @@ import {
   Search,
   Send,
   RotateCcw,
+  CheckCircle,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -39,6 +40,7 @@ import { fetchFatStats } from "@/lib/fat-api";
 import { fetchReorderSummary } from "@/lib/reorder-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { fetchAwoStats } from "@/lib/production-api";
+import { fetchDispatchStats } from "@/lib/dispatch-api";
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -66,6 +68,8 @@ type NavItem = {
 // ── Tooltip content ───────────────────────────────────────────────────────────
 
 const TOOLTIP_TEXT: Record<string, string> = {
+  "Ready to Dispatch": "FAT-passed finished goods cleared for dispatch. Create a Dispatch Record to ship.",
+  "Dispatch Records": "Permanent log of every shipment made — DR number, customer, serial numbers, driver details.",
   "Dashboard":
     "Your daily overview — alerts, production status, financial snapshot and quick actions.",
   "WIP Register":
@@ -115,6 +119,8 @@ const TOOLTIP_TEXT: Record<string, string> = {
 // ── Search items (all pages) ──────────────────────────────────────────────────
 
 const ALL_SEARCH_ITEMS: { title: string; url: string }[] = [
+  { title: "Ready to Dispatch", url: "/ready-to-dispatch" },
+  { title: "Dispatch Records", url: "/dispatch-records" },
   { title: "Dashboard", url: "/" },
   { title: "WIP Register", url: "/wip-register" },
   { title: "Delivery Challans", url: "/delivery-challans" },
@@ -146,17 +152,19 @@ const STORAGE_KEY = "bizdocs_sidebar_state_v2";
 const RAIL_MODE_KEY = "bizdocs_sidebar_mode";
 
 const GROUP_PATHS: Record<string, string[]> = {
-  "Daily Work":     ["/", "/wip-register", "/delivery-challans"],
-  "Production":     ["/sub-assembly-work-orders", "/finished-good-work-orders"],
-  "Purchasing":     ["/purchase-orders", "/grn", "/dc-grn"],
-  "Billing":        ["/invoices", "/receipts", "/sales-orders", "/dispatch-notes"],
-  "Inventory":      ["/stock-register", "/stock-ledger", "/reorder-intelligence", "/scrap-register", "/serial-numbers", "/fat-certificates"],
-  "Reports & More": ["/gst-reports", "/vendor-scorecards", "/parties", "/items", "/bill-of-materials", "/jig-master", "/settings"],
+  "Daily Work":       ["/", "/wip-register", "/delivery-challans"],
+  "Production":       ["/sub-assembly-work-orders", "/finished-good-work-orders"],
+  "Finished Goods":   ["/ready-to-dispatch", "/dispatch-records"],
+  "Purchasing":       ["/purchase-orders", "/grn", "/dc-grn"],
+  "Billing":          ["/invoices", "/receipts", "/sales-orders", "/dispatch-notes"],
+  "Inventory":        ["/stock-register", "/stock-ledger", "/reorder-intelligence", "/scrap-register", "/serial-numbers", "/fat-certificates"],
+  "Reports & More":   ["/gst-reports", "/vendor-scorecards", "/parties", "/items", "/bill-of-materials", "/jig-master", "/settings"],
 };
 
 const DEFAULTS: Record<string, boolean> = {
   "Daily Work":     true,
   "Production":     false,
+  "Finished Goods": false,
   "Purchasing":     false,
   "Billing":        false,
   "Inventory":      false,
@@ -166,13 +174,14 @@ const DEFAULTS: Record<string, boolean> = {
 const GROUP_ICONS: Record<string, React.ComponentType<any>> = {
   "Daily Work":     Wrench,
   "Production":     Layers,
+  "Finished Goods": Truck,
   "Purchasing":     ShoppingCart,
   "Billing":        FileText,
   "Inventory":      Package,
   "Reports & More": BarChart2,
 };
 
-const ALL_GROUP_NAMES = ["Daily Work", "Production", "Purchasing", "Billing", "Inventory", "Reports & More"];
+const ALL_GROUP_NAMES = ["Daily Work", "Production", "Finished Goods", "Purchasing", "Inventory", "Reports & More"];
 
 function loadGroupState(): Record<string, boolean> {
   try {
@@ -440,6 +449,14 @@ export function AppSidebar() {
     staleTime: 60_000,
   });
 
+  const { data: dispatchStats } = useQuery({
+    queryKey: ["dispatch-stats-sidebar"],
+    queryFn: async () => {
+      try { return await fetchDispatchStats(); } catch { return { ready_to_dispatch: 0 }; }
+    },
+    staleTime: 60_000,
+  });
+
   const companyNeedsSetup = !companySettingsData?.gstin ||
     !companySettingsData?.company_name ||
     companySettingsData.company_name === "My Company";
@@ -460,6 +477,18 @@ export function AppSidebar() {
       badge: awoStats?.fg_active && awoStats.fg_active > 0 ? awoStats.fg_active : undefined,
       badgeColor: "amber" as const,
     },
+  ];
+
+  // Finished Goods nav
+  const finishedGoodsNav: NavItem[] = [
+    {
+      title: "Ready to Dispatch",
+      url: "/ready-to-dispatch",
+      icon: CheckCircle,
+      badge: dispatchStats?.ready_to_dispatch && dispatchStats.ready_to_dispatch > 0 ? dispatchStats.ready_to_dispatch : undefined,
+      badgeColor: "amber" as const,
+    },
+    { title: "Dispatch Records", url: "/dispatch-records", icon: Truck },
   ];
 
   // Dynamic nav arrays (badges computed from live data)
@@ -504,8 +533,8 @@ export function AppSidebar() {
   const GROUP_ITEMS_MAP: Record<string, NavItem[]> = {
     "Daily Work":     dailyWorkNav,
     "Production":     productionNav,
+    "Finished Goods": finishedGoodsNav,
     "Purchasing":     purchasingNav,
-    "Billing":        billingNav,
     "Inventory":      inventoryNav,
     "Reports & More": reportsModeNav,
   };
@@ -702,18 +731,18 @@ export function AppSidebar() {
                 onToggle={() => toggleGroup("Production")}
               />
               <NavGroup
+                label="Finished Goods"
+                items={finishedGoodsNav}
+                isActiveFn={isActive}
+                open={groupOpen["Finished Goods"]}
+                onToggle={() => toggleGroup("Finished Goods")}
+              />
+              <NavGroup
                 label="Purchasing"
                 items={purchasingNav}
                 isActiveFn={isActive}
                 open={groupOpen["Purchasing"]}
                 onToggle={() => toggleGroup("Purchasing")}
-              />
-              <NavGroup
-                label="Billing"
-                items={billingNav}
-                isActiveFn={isActive}
-                open={groupOpen["Billing"]}
-                onToggle={() => toggleGroup("Billing")}
               />
               <NavGroup
                 label="Inventory"

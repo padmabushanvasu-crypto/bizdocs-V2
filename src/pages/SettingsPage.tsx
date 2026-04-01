@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Building2, FileText, Bell, Upload, FileSpreadsheet, Users, History, BookOpen, ChevronRight, AlertTriangle } from "lucide-react";
+import { Building2, FileText, Bell, Upload, FileSpreadsheet, Users, History, BookOpen, ChevronRight, AlertTriangle, Receipt } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import { fetchCompanySettings } from "@/lib/settings-api";
@@ -83,6 +83,15 @@ export default function SettingsPage() {
       title: "How to Use BizDocs",
       description: "Step-by-step guide — what to do first, what comes after, and when to use each feature",
       action: () => navigate("/how-to-use"),
+    },
+    {
+      icon: Receipt,
+      iconBg: "bg-blue-50",
+      iconColor: "text-blue-600",
+      title: "Billing",
+      description: "Invoices, Sales Orders, Receipts — activate when your GST billing workflow is ready",
+      action: () => navigate("/invoices"),
+      badge: "GST Module",
     },
     {
       icon: Users,

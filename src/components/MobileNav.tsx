@@ -28,6 +28,7 @@ import {
   Wrench,
   Layers,
   X,
+  CheckCircle,
 } from "lucide-react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -54,6 +55,13 @@ const MORE_GROUPS = [
     ],
   },
   {
+    label: "FINISHED GOODS",
+    items: [
+      { label: "Ready to Dispatch", to: "/ready-to-dispatch", icon: CheckCircle },
+      { label: "Dispatch Records", to: "/dispatch-records", icon: Truck },
+    ],
+  },
+  {
     label: "PURCHASING",
     items: [
       { label: "Purchase Orders", to: "/purchase-orders", icon: ShoppingCart },
@@ -62,7 +70,7 @@ const MORE_GROUPS = [
     ],
   },
   {
-    label: "DISPATCH & BILLING",
+    label: "BILLING",
     items: [
       { label: "Sales Orders", to: "/sales-orders", icon: ShoppingBag },
       { label: "Delivery Challans", to: "/delivery-challans", icon: Truck },
