@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   fetchNotificationSettings,
   saveNotificationSettings,
+  savePOEmailSettingsToDB,
   type NotificationSettings,
 } from "@/lib/settings-api";
 
@@ -25,6 +26,8 @@ const DEFAULTS: NotificationSettings = {
   weekly_summary_day: "Monday",
   weekly_summary_time: "08:00",
   weekly_summary_recipients: [],
+  po_email_enabled: true,
+  po_email_recipients: [],
 };
 
 // ── Email Tag Input ───────────────────────────────────────────────────────────
@@ -113,6 +116,7 @@ export default function NotificationsSettings() {
     setSaving(true);
     try {
       await saveNotificationSettings(settings);
+      await savePOEmailSettingsToDB(settings.po_email_enabled, settings.po_email_recipients);
       toast({ title: "Notification settings saved" });
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
@@ -270,6 +274,49 @@ export default function NotificationsSettings() {
               onChange={(v) => set({ weekly_summary_recipients: v })}
               placeholder="Owner/manager emails — press Enter"
             />
+          </div>
+        </div>
+      </div>
+
+      {/* Section 3 — Weekly PO Summary Email */}
+      <div className="paper-card space-y-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-slate-900 text-sm">Weekly PO Summary Email</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Every Monday at 8:00 AM — 3-sheet report: last week's POs, open POs, overdue POs
+            </p>
+          </div>
+          <Switch
+            checked={settings.po_email_enabled}
+            onCheckedChange={(v) => set({ po_email_enabled: v })}
+          />
+        </div>
+
+        <div className={`space-y-4 ${!settings.po_email_enabled ? "opacity-50 pointer-events-none" : ""}`}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2.5">
+              <p className="text-[11px] text-muted-foreground font-medium">Send Day</p>
+              <p className="text-sm font-semibold text-slate-800 mt-0.5">Monday</p>
+            </div>
+            <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2.5">
+              <p className="text-[11px] text-muted-foreground font-medium">Send Time</p>
+              <p className="text-sm font-semibold text-slate-800 mt-0.5">8:00 AM IST</p>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-slate-700">Purchase Team Recipients</Label>
+            <EmailTagInput
+              value={settings.po_email_recipients}
+              onChange={(v) => set({ po_email_recipients: v })}
+              placeholder="Purchase team emails — press Enter"
+            />
+          </div>
+          <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2.5 text-xs text-blue-700 space-y-0.5">
+            <p className="font-semibold">Report includes:</p>
+            <p>Sheet 1 — POs raised last week with totals</p>
+            <p>Sheet 2 — Open POs with due date alerts (amber: due in 7 days, red: overdue)</p>
+            <p>Sheet 3 — All overdue POs sorted by days overdue</p>
           </div>
         </div>
       </div>

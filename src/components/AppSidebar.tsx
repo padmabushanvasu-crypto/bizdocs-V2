@@ -42,6 +42,7 @@ import { fetchReorderSummary } from "@/lib/reorder-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { fetchAwoStats } from "@/lib/production-api";
 import { fetchDispatchStats } from "@/lib/dispatch-api";
+import { supabase } from "@/integrations/supabase/client";
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -202,12 +203,6 @@ function getActiveGroupForPath(pathname: string): string | null {
 }
 
 // ── Static nav arrays ─────────────────────────────────────────────────────────
-
-const purchasingNav: NavItem[] = [
-  { title: "Purchase Orders", url: "/purchase-orders", icon: ShoppingCart },
-  { title: "GRN", url: "/grn", icon: PackageCheck },
-  { title: "DC Returns", url: "/dc-grn", icon: RotateCcw },
-];
 
 const billingNav: NavItem[] = [
   { title: "Invoices", url: "/invoices", icon: FileText },
@@ -472,6 +467,24 @@ export function AppSidebar() {
     staleTime: 60_000,
   });
 
+  const { data: overduePOCount } = useQuery({
+    queryKey: ["overdue-po-count-sidebar"],
+    queryFn: async () => {
+      try {
+        const todayStr = new Date().toISOString().split("T")[0];
+        const { count } = await supabase
+          .from("purchase_orders")
+          .select("*", { count: "exact", head: true })
+          .not("status", "in", '("cancelled","closed","received")')
+          .lt("delivery_date", todayStr)
+          .not("delivery_date", "is", null);
+        return count ?? 0;
+      } catch { return 0; }
+    },
+    staleTime: 120_000,
+    refetchInterval: 120_000,
+  });
+
   const companyNeedsSetup = !companySettingsData?.gstin ||
     !companySettingsData?.company_name ||
     companySettingsData.company_name === "My Company";
@@ -511,6 +524,18 @@ export function AppSidebar() {
     { title: "Dashboard", url: "/", icon: LayoutDashboard },
     { title: "WIP Register", url: "/wip-register", icon: AlertTriangle },
     { title: "Delivery Challans", url: "/delivery-challans", icon: Truck },
+  ];
+
+  const purchasingNav: NavItem[] = [
+    {
+      title: "Purchase Orders",
+      url: "/purchase-orders",
+      icon: ShoppingCart,
+      badge: overduePOCount && overduePOCount > 0 ? overduePOCount : undefined,
+      badgeColor: "red" as const,
+    },
+    { title: "GRN", url: "/grn", icon: PackageCheck },
+    { title: "DC Returns", url: "/dc-grn", icon: RotateCcw },
   ];
 
   const inventoryNav: NavItem[] = [

@@ -26,6 +26,7 @@ interface DashboardData {
   needsBuildingCount: number;
   criticalStockCount: number;
   lockedStockCount: number;
+  overduePOCount: number;
 }
 
 interface ReadyToShipRow {
@@ -46,7 +47,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
   const fyYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
   const fyStart = format(new Date(fyYear, 3, 1), "yyyy-MM-dd");
 
-  const [invsRes, openPOsRes, openDCsRes, itemsRes] = await Promise.all([
+  const [invsRes, openPOsRes, openDCsRes, itemsRes, overduePOsRes] = await Promise.all([
     supabase
       .from("invoices")
       .select("grand_total, invoice_date, due_date, status")
@@ -64,6 +65,12 @@ async function fetchDashboardData(): Promise<DashboardData> {
       .from("items")
       .select("item_type, current_stock, stock_finished_goods, min_finished_stock, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, min_stock, stock_alert_level")
       .eq("status", "active"),
+    supabase
+      .from("purchase_orders")
+      .select("*", { count: "exact", head: true })
+      .not("status", "in", '("cancelled","closed","received")')
+      .lt("delivery_date", todayStr)
+      .not("delivery_date", "is", null),
   ]);
 
   const invoices = (invsRes.data ?? []) as any[];
@@ -100,11 +107,14 @@ async function fetchDashboardData(): Promise<DashboardData> {
   const criticalStockCount = items.filter((i) => i.stock_alert_level === 'critical').length;
   const lockedStockCount = items.filter((i) => i.stock_alert_level === 'locked').length;
 
+  const overduePOCount = overduePOsRes.count ?? 0;
+
   return {
     thisMonthRevenue, fyRevenue, overdueInvoiceCount,
     openPOValue, overdueDCCount,
     rawMaterialCount, componentCount, finishedGoodCount, zeroStockCount,
     needsBuildingCount, criticalStockCount, lockedStockCount,
+    overduePOCount,
   };
 }
 
@@ -256,7 +266,7 @@ export default function Dashboard() {
   const fatPending        = fatStats?.pending ?? 0;
   const uninvoicedUnits   = readyToShip.length;
 
-  const totalAlerts = overdueDCReturns + zeroStockItems + reorderAlertCount + fatPending + uninvoicedUnits + (dashData?.needsBuildingCount ?? 0);
+  const totalAlerts = overdueDCReturns + zeroStockItems + reorderAlertCount + fatPending + uninvoicedUnits + (dashData?.needsBuildingCount ?? 0) + (dashData?.overduePOCount ?? 0);
   const allClear = totalAlerts === 0;
 
   // Company info
@@ -408,6 +418,9 @@ export default function Dashboard() {
             {overdueDCReturns > 0 && (
               <AlertPill label="Overdue DC Returns" count={overdueDCReturns} colour="red"   onClick={() => navigate("/delivery-challans")} />
             )}
+            {(dashData?.overduePOCount ?? 0) > 0 && (
+              <AlertPill label="Overdue POs" count={dashData!.overduePOCount} colour="red" onClick={() => navigate("/purchase-orders")} />
+            )}
             {zeroStockItems > 0 && (
               <AlertPill label="Zero Stock Items"   count={zeroStockItems}   colour="red"   onClick={() => navigate("/stock-register")} />
             )}
@@ -490,6 +503,7 @@ export default function Dashboard() {
             <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-3">This month's revenue</p>
             <div className="divide-y divide-slate-100">
               <LightStatRow label="Overdue Invoices" value={dashData?.overdueInvoiceCount ?? "—"} highlight={(dashData?.overdueInvoiceCount ?? 0) > 0} onClick={() => navigate("/invoices")} />
+              <LightStatRow label="Overdue POs" value={dashData?.overduePOCount ?? "—"} highlight={(dashData?.overduePOCount ?? 0) > 0} onClick={() => navigate("/purchase-orders")} />
               <LightStatRow label="Open PO Value"    value={formatCurrency(dashData?.openPOValue ?? 0)} onClick={() => navigate("/purchase-orders")} />
               <LightStatRow label="FY Revenue"       value={formatCurrency(dashData?.fyRevenue ?? 0)} />
             </div>

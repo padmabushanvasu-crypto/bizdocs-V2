@@ -166,6 +166,9 @@ export interface NotificationSettings {
   weekly_summary_day: string;
   weekly_summary_time: string;
   weekly_summary_recipients: string[];
+  // Phase 19: Weekly PO email
+  po_email_enabled: boolean;
+  po_email_recipients: string[];
 }
 
 const NS_KEY = "bizdocs_notification_settings";
@@ -180,6 +183,8 @@ const NS_DEFAULTS: NotificationSettings = {
   weekly_summary_day: "Monday",
   weekly_summary_time: "08:00",
   weekly_summary_recipients: [],
+  po_email_enabled: true,
+  po_email_recipients: [],
 };
 
 export async function fetchNotificationSettings(): Promise<NotificationSettings> {
@@ -192,6 +197,18 @@ export async function fetchNotificationSettings(): Promise<NotificationSettings>
 
 export async function saveNotificationSettings(settings: NotificationSettings): Promise<void> {
   localStorage.setItem(NS_KEY, JSON.stringify(settings));
+}
+
+export async function savePOEmailSettingsToDB(
+  po_email_enabled: boolean,
+  po_email_recipients: string[]
+): Promise<void> {
+  const existing = await fetchCompanySettings();
+  if (!existing) return;
+  await supabase
+    .from("company_settings")
+    .update({ po_email_enabled, po_email_recipients } as any)
+    .eq("id", existing.id);
 }
 
 // Financial Year
