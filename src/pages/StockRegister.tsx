@@ -1,16 +1,12 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { BarChart3, ShoppingCart, Check, X, Shield, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { fetchStockStatus, updateMinStockOverride, type StockStatusRow } from "@/lib/items-api";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { loadBomForItem, recordBuild } from "@/lib/assembly-orders-api";
 
 function StatusBadge({ status }: { status: StockStatusRow["stock_status"] }) {
   const map = {
@@ -123,23 +119,6 @@ export default function StockRegister() {
   const location = useLocation();
   const { toast } = useToast();
 
-  // Record Build dialog state
-  const [buildDialogOpen, setBuildDialogOpen] = useState(false);
-  const [buildItem, setBuildItem] = useState<StockStatusRow | null>(null);
-  const [buildQty, setBuildQty] = useState<number>(1);
-  const [buildDate, setBuildDate] = useState<string>(new Date().toISOString().split("T")[0]);
-  const [buildNotes, setBuildNotes] = useState<string>("");
-  const [buildResult, setBuildResult] = useState<{ serial_numbers: string[]; fat_certificate_ids: string[] } | null>(null);
-
-  const openBuildDialog = (row: StockStatusRow) => {
-    setBuildItem(row);
-    setBuildQty((row as any).production_batch_size > 0 ? (row as any).production_batch_size : 1);
-    setBuildDate(new Date().toISOString().split("T")[0]);
-    setBuildNotes("");
-    setBuildResult(null);
-    setBuildDialogOpen(true);
-  };
-
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ["stock_status"],
     queryFn: fetchStockStatus,
@@ -169,44 +148,6 @@ export default function StockRegister() {
   const [typeTab, setTypeTab] = useState<TypeTab>("all");
   const [alertFilter, setAlertFilter] = useState<"all" | "critical" | "warning" | "watch" | "locked" | "healthy">("all");
 
-  const { data: bomLines = [] } = useQuery({
-    queryKey: ["bom-for-build", buildItem?.id],
-    queryFn: () => loadBomForItem(buildItem!.id, buildQty),
-    enabled: buildDialogOpen && !!buildItem,
-  });
-  const hasBom = bomLines.length > 0;
-
-  useEffect(() => {
-    if ((location.state as any)?.openBuildDialog && rows.length > 0) {
-      const itemId = (location.state as any).openBuildDialog as string;
-      const item = rows.find((r) => r.id === itemId);
-      if (item) openBuildDialog(item);
-    }
-  }, [rows, location.state]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const buildMutation = useMutation({
-    mutationFn: () => recordBuild({
-      item_id: buildItem!.id,
-      item_description: buildItem!.description,
-      drawing_number: buildItem!.item_code,
-      quantity: buildQty,
-      date_built: buildDate,
-      notes: buildNotes || undefined,
-    }),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["stock_status"] });
-      queryClient.invalidateQueries({ queryKey: ["fat-certificates"] });
-      queryClient.invalidateQueries({ queryKey: ["serial-numbers"] });
-      setBuildResult(result);
-      toast({
-        title: `${buildQty} unit${buildQty !== 1 ? "s" : ""} recorded`,
-        description: `${result.serial_numbers.length} serial number${result.serial_numbers.length !== 1 ? "s" : ""} generated. FAT certificates ready.`,
-      });
-    },
-    onError: (err: any) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    },
-  });
 
   // DEBUG: log active tab and row counts to diagnose bought-out items not appearing
   // If bought_out count is 0 even though items exist in the items table, the stock_status VIEW
@@ -334,85 +275,6 @@ export default function StockRegister() {
           <option value="healthy">Healthy Only</option>
         </select>
       </div>
-
-      {/* Record Build Dialog */}
-      <Dialog open={buildDialogOpen} onOpenChange={(o) => { if (!o) { setBuildDialogOpen(false); setBuildResult(null); } }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Record Build — {buildItem?.description}</DialogTitle>
-            <DialogDescription className="font-mono text-xs">{buildItem?.item_code}</DialogDescription>
-          </DialogHeader>
-          {buildResult ? (
-            <div className="space-y-3">
-              <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800">
-                <p className="font-semibold mb-1">{buildQty} unit{buildQty !== 1 ? "s" : ""} recorded successfully.</p>
-                <p className="text-xs">{buildResult.serial_numbers.length} serial number{buildResult.serial_numbers.length !== 1 ? "s" : ""} generated. FAT certificates ready to fill in.</p>
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-slate-500 mb-1">Serial numbers created:</p>
-                <p className="text-xs font-mono bg-slate-50 rounded p-2 break-all">{buildResult.serial_numbers.join(", ")}</p>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" className="flex-1" onClick={() => { setBuildDialogOpen(false); setBuildResult(null); }}>Close</Button>
-                <Button className="flex-1" onClick={() => { setBuildDialogOpen(false); setBuildResult(null); navigate("/fat-certificates"); }}>Go to FAT Certificates →</Button>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div>
-                <Label className="text-sm">How many units were assembled? *</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={buildQty || ""}
-                  onChange={(e) => setBuildQty(Math.max(1, parseInt(e.target.value) || 1))}
-                  className="mt-1"
-                />
-              </div>
-              <div>
-                <Label className="text-sm">Date assembled</Label>
-                <Input
-                  type="date"
-                  value={buildDate}
-                  onChange={(e) => setBuildDate(e.target.value)}
-                  className="mt-1"
-                />
-              </div>
-              <div>
-                <Label className="text-sm">Notes (optional)</Label>
-                <Textarea
-                  value={buildNotes}
-                  onChange={(e) => setBuildNotes(e.target.value)}
-                  placeholder="e.g. Batch ref, operator name"
-                  className="mt-1"
-                  rows={2}
-                />
-              </div>
-              {/* What will happen */}
-              <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs text-blue-800 space-y-1">
-                <p className="font-semibold">This will:</p>
-                <ul className="space-y-0.5 list-disc list-inside">
-                  <li>Generate {buildQty} serial number{buildQty !== 1 ? "s" : ""} automatically</li>
-                  <li>Create {buildQty} FAT certificate draft{buildQty !== 1 ? "s" : ""}</li>
-                  {hasBom && <li>Deduct components from stock (BOM backflush)</li>}
-                  <li>Add {buildQty} unit{buildQty !== 1 ? "s" : ""} to finished goods stock</li>
-                </ul>
-              </div>
-              {buildDialogOpen && !hasBom && (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
-                  No BOM found for this item — components will not be deducted automatically. Set up a BOM first for accurate stock tracking.
-                </div>
-              )}
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setBuildDialogOpen(false)}>Cancel</Button>
-                <Button onClick={() => buildMutation.mutate()} disabled={buildMutation.isPending || buildQty < 1}>
-                  {buildMutation.isPending ? "Recording…" : "Record Build"}
-                </Button>
-              </DialogFooter>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
 
       <div className="paper-card !p-0">
         <div className="overflow-x-auto">
@@ -559,12 +421,12 @@ export default function StockRegister() {
                         )}
                         {row.item_type === "finished_good" && (
                           <Button
-                            variant={row.stock_status === "amber" || row.stock_status === "red" ? "default" : "outline"}
+                            variant="outline"
                             size="sm"
-                            className={`h-7 text-xs gap-1 ${row.stock_status === "amber" || row.stock_status === "red" ? "bg-blue-600 hover:bg-blue-700 text-white" : ""}`}
-                            onClick={() => openBuildDialog(row)}
+                            className="h-7 text-xs gap-1"
+                            onClick={() => navigate('/sub-assembly-work-orders')}
                           >
-                            Record Build
+                            Work Orders
                           </Button>
                         )}
                       </div>

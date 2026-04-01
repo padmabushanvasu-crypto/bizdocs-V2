@@ -236,32 +236,32 @@ function GrnLineItemCard({
 
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <Label className="text-xs font-medium text-slate-700">Checked By</Label>
+                <Label className="text-xs font-medium text-slate-700">Checked By <span className="text-red-500">*</span></Label>
                 <Input
                   value={item.s1_checked_by}
                   onChange={(e) => onChange(index, { s1_checked_by: e.target.value })}
-                  className="h-8 text-sm mt-1"
+                  className={`h-8 text-sm mt-1 ${!item.s1_checked_by && (item as any).s1_validation_error ? "border-red-400" : ""}`}
                   placeholder="Name"
                   disabled={item.s1_complete}
                 />
               </div>
               <div>
-                <Label className="text-xs font-medium text-slate-700">Verified By</Label>
+                <Label className="text-xs font-medium text-slate-700">Verified By <span className="text-red-500">*</span></Label>
                 <Input
                   value={item.s1_verified_by}
                   onChange={(e) => onChange(index, { s1_verified_by: e.target.value })}
-                  className="h-8 text-sm mt-1"
+                  className={`h-8 text-sm mt-1 ${!item.s1_verified_by && (item as any).s1_validation_error ? "border-red-400" : ""}`}
                   placeholder="Name"
                   disabled={item.s1_complete}
                 />
               </div>
               <div>
-                <Label className="text-xs font-medium text-slate-700">Date</Label>
+                <Label className="text-xs font-medium text-slate-700">Date <span className="text-red-500">*</span></Label>
                 <Input
                   type="date"
                   value={item.s1_date}
                   onChange={(e) => onChange(index, { s1_date: e.target.value })}
-                  className="h-8 text-sm mt-1"
+                  className={`h-8 text-sm mt-1 ${!item.s1_date && (item as any).s1_validation_error ? "border-red-400" : ""}`}
                   disabled={item.s1_complete}
                 />
               </div>
@@ -692,6 +692,16 @@ export default function GRNForm({ defaultGrnType }: Props) {
   });
 
   const handleSaveStage1 = (index: number) => {
+    const item = lineItems[index];
+    if (!item.s1_checked_by.trim() || !item.s1_verified_by.trim() || !item.s1_date.trim()) {
+      updateLineItem(index, { ...(item as any), s1_validation_error: true } as any);
+      toast({
+        title: "Required fields missing",
+        description: "Checked By, Verified By, and Stage 1 Date are all required.",
+        variant: "destructive",
+      });
+      return;
+    }
     updateLineItem(index, { s1_complete: true });
     if (lineItems[index].id) {
       stage1Mutation.mutate(index);

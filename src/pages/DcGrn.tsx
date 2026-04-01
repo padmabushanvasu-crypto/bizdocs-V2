@@ -7,11 +7,20 @@ import { Input } from "@/components/ui/input";
 import { fetchDcGrns, softDeleteGRN, type GRNFilters } from "@/lib/grn-api";
 import { useToast } from "@/hooks/use-toast";
 
-const statusClass: Record<string, string> = {
-  draft: "status-draft",
-  recorded: "bg-blue-50 text-blue-700 border border-blue-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
-  verified: "status-paid",
+const STATUS_LABEL: Record<string, string> = {
+  draft: "Open",
+  recorded: "Partially Complete",
+  verified: "Complete",
 };
+const STATUS_CLASS: Record<string, string> = {
+  draft: "bg-amber-50 text-amber-700 border border-amber-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
+  recorded: "bg-blue-50 text-blue-700 border border-blue-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
+  verified: "bg-green-50 text-green-700 border border-green-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
+};
+
+function daysOpen(dateStr: string): number {
+  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+}
 
 export default function DcGrn() {
   const navigate = useNavigate();
@@ -76,22 +85,24 @@ export default function DcGrn() {
           <table className="w-full data-table">
             <thead>
               <tr>
-                <th>GRN #</th>
-                <th>Date</th>
+                <th>DC Number</th>
+                <th>DC Return #</th>
                 <th>Vendor / Party</th>
-                <th>Linked DC</th>
-                <th>Status</th>
+                <th>DC Date</th>
+                <th>Items</th>
+                <th>GRN Status</th>
+                <th>Days Open</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-8 text-muted-foreground">Loading...</td>
+                  <td colSpan={8} className="text-center py-8 text-muted-foreground">Loading...</td>
                 </tr>
               ) : grns.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-12">
+                  <td colSpan={8} className="text-center py-12">
                     <PackageCheck className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
                     <p className="text-muted-foreground font-medium">No DC-GRNs yet</p>
                     <p className="text-sm text-muted-foreground">Record goods returned from vendors</p>
@@ -106,15 +117,10 @@ export default function DcGrn() {
                       className="hover:bg-muted/50 cursor-pointer transition-colors"
                       onClick={() => navigate(`/dc-grn/${grn.id}`)}
                     >
-                      <td className="font-mono text-sm font-medium text-foreground">{grn.grn_number}</td>
-                      <td className="text-muted-foreground">
-                        {new Date(grn.grn_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
-                      </td>
-                      <td className="font-medium">{grn.vendor_name || "—"}</td>
                       <td>
                         {g.linked_dc_number ? (
                           <button
-                            className="font-mono text-xs text-primary hover:underline"
+                            className="font-mono text-sm font-medium text-primary hover:underline"
                             onClick={(e) => {
                               e.stopPropagation();
                               if (g.linked_dc_id) navigate(`/delivery-challans/${g.linked_dc_id}`);
@@ -123,13 +129,24 @@ export default function DcGrn() {
                             {g.linked_dc_number}
                           </button>
                         ) : (
-                          "—"
+                          <span className="text-muted-foreground">—</span>
                         )}
                       </td>
+                      <td className="font-mono text-sm font-medium text-foreground">{grn.grn_number}</td>
+                      <td className="font-medium">{grn.vendor_name || "—"}</td>
+                      <td className="text-muted-foreground">
+                        {new Date(grn.grn_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                      </td>
+                      <td className="text-center text-sm text-muted-foreground">
+                        {(g as any).items_count ?? (g as any).line_items_count ?? "—"}
+                      </td>
                       <td>
-                        <span className={statusClass[grn.status] || "status-draft"}>
-                          {grn.status}
+                        <span className={STATUS_CLASS[grn.status] || STATUS_CLASS.draft}>
+                          {STATUS_LABEL[grn.status] || grn.status}
                         </span>
+                      </td>
+                      <td className="text-sm text-muted-foreground tabular-nums">
+                        {grn.status !== "verified" ? `${daysOpen(grn.grn_date)}d` : <span className="text-green-600 font-medium">Done</span>}
                       </td>
                       <td>
                         <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>

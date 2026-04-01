@@ -135,11 +135,11 @@ export default function DeliveryChallanForm() {
   const [successDialogOpen, setSuccessDialogOpen] = useState(false);
   const [savedDCId, setSavedDCId] = useState<string | null>(null);
   const [vehicleNumber, setVehicleNumber] = useState("");
+  const [driverName, setDriverName] = useState("");
+  const [driverContact, setDriverContact] = useState("");
   const [loNumber, setLoNumber] = useState("");
   const [prefillBanner, setPrefillBanner] = useState<string>("");
   const [approxValue, setApproxValue] = useState<number | undefined>();
-  const [poReference, setPoReference] = useState("");
-  const [poDate, setPoDate] = useState<Date | undefined>();
   const [gstRate, setGstRate] = useState(18);
   const [preparedBy, setPreparedBy] = useState("");
   const [checkedBy, setCheckedBy] = useState("");
@@ -218,13 +218,13 @@ export default function DeliveryChallanForm() {
       setInternalRemarks(existingDC.internal_remarks || "");
       setNatureOfJobWork(existingDC.nature_of_job_work || "");
       setVehicleNumber(existingDC.vehicle_number || "");
+      setDriverName((existingDC as any).driver_name || "");
+      setDriverContact((existingDC as any).driver_contact || "");
       setLoNumber(existingDC.lo_number || "");
       setApproxValue(existingDC.approx_value ?? undefined);
-      setPoReference(existingDC.po_reference || "");
       setGstRate(existingDC.gst_rate || 18);
       setPreparedBy(existingDC.prepared_by || "");
       setCheckedBy(existingDC.checked_by || "");
-      if (existingDC.po_date) setPoDate(new Date(existingDC.po_date));
       if (existingDC.return_due_date) setReturnDueDate(new Date(existingDC.return_due_date));
       if (existingDC.line_items?.length) setLineItems(existingDC.line_items);
       if (existingDC.party_id) {
@@ -350,7 +350,8 @@ export default function DeliveryChallanForm() {
         cancelled_at: null,
         cancellation_reason: null,
         vehicle_number: vehicleNumber || null,
-        driver_name: null,
+        driver_name: driverName || null,
+        driver_contact: driverContact || null,
         lo_number: null,
         approx_value: approxValue ?? null,
         sub_total: subTotal,
@@ -360,8 +361,6 @@ export default function DeliveryChallanForm() {
         total_gst: taxResult.total,
         grand_total: grandTotal,
         gst_rate: gstRate,
-        po_reference: poReference || null,
-        po_date: poDate ? format(poDate, "yyyy-MM-dd") : null,
         challan_category: "supply_on_approval",
         prepared_by: preparedBy || null,
         checked_by: checkedBy || null,
@@ -621,6 +620,17 @@ export default function DeliveryChallanForm() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
+                <Label className="text-sm font-medium text-slate-700">Driver Name</Label>
+                <Input value={driverName} onChange={(e) => setDriverName(e.target.value)} className="mt-1" placeholder="Driver's name" />
+              </div>
+              <div>
+                <Label className="text-sm font-medium text-slate-700">Driver Contact</Label>
+                <Input value={driverContact} onChange={(e) => setDriverContact(e.target.value)} className="mt-1" placeholder="Mobile number" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
                 <Label className="text-sm font-medium text-slate-700">Approx. Value ₹</Label>
                 <Input
                   type="number"
@@ -630,26 +640,6 @@ export default function DeliveryChallanForm() {
                   placeholder="Declared value"
                 />
                 <p className="text-[10px] text-muted-foreground mt-0.5">Required for e-way bill if goods &gt; ₹50,000</p>
-              </div>
-              <div>
-                <Label className="text-sm font-medium text-slate-700">PO Reference</Label>
-                <Input value={poReference} onChange={(e) => setPoReference(e.target.value)} className="mt-1" placeholder="PO number" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <Label className="text-sm font-medium text-slate-700">PO Date</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className={cn("w-full mt-1 justify-start font-normal", !poDate && "text-muted-foreground")}>
-                      {poDate ? format(poDate, "dd MMM yyyy") : "Select"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar mode="single" selected={poDate} onSelect={setPoDate} className="p-3 pointer-events-auto" />
-                  </PopoverContent>
-                </Popover>
               </div>
             </div>
 

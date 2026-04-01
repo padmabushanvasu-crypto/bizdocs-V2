@@ -154,10 +154,10 @@ const STORAGE_KEY = "bizdocs_sidebar_state_v2";
 const RAIL_MODE_KEY = "bizdocs_sidebar_mode";
 
 const GROUP_PATHS: Record<string, string[]> = {
-  "Daily Work":       ["/", "/wip-register", "/delivery-challans"],
-  "Production":       ["/sub-assembly-work-orders", "/finished-good-work-orders"],
+  "Daily Work":       ["/", "/wip-register", "/delivery-challans", "/dc-grn"],
+  "Production":       ["/sub-assembly-work-orders", "/finished-good-work-orders", "/storekeeper"],
   "Finished Goods":   ["/ready-to-dispatch", "/dispatch-records"],
-  "Purchasing":       ["/purchase-orders", "/grn", "/dc-grn"],
+  "Purchasing":       ["/purchase-orders", "/grn"],
   "Billing":          ["/invoices", "/receipts", "/sales-orders", "/dispatch-notes"],
   "Inventory":        ["/stock-register", "/stock-ledger", "/reorder-intelligence", "/scrap-register", "/serial-numbers", "/fat-certificates"],
   "Reports & More":   ["/gst-reports", "/vendor-scorecards", "/parties", "/items", "/bill-of-materials", "/jig-master", "/settings"],
@@ -505,6 +505,7 @@ export function AppSidebar() {
       badge: awoStats?.fg_active && awoStats.fg_active > 0 ? awoStats.fg_active : undefined,
       badgeColor: "amber" as const,
     },
+    { title: "Storekeeper Queue", url: "/storekeeper", icon: PackageCheck },
   ];
 
   // Finished Goods nav
@@ -524,6 +525,7 @@ export function AppSidebar() {
     { title: "Dashboard", url: "/", icon: LayoutDashboard },
     { title: "WIP Register", url: "/wip-register", icon: AlertTriangle },
     { title: "Delivery Challans", url: "/delivery-challans", icon: Truck },
+    { title: "DC Returns", url: "/dc-grn", icon: RotateCcw },
   ];
 
   const purchasingNav: NavItem[] = [
@@ -535,7 +537,6 @@ export function AppSidebar() {
       badgeColor: "red" as const,
     },
     { title: "GRN", url: "/grn", icon: PackageCheck },
-    { title: "DC Returns", url: "/dc-grn", icon: RotateCcw },
   ];
 
   const inventoryNav: NavItem[] = [

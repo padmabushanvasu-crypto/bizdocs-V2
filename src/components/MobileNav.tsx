@@ -66,7 +66,6 @@ const MORE_GROUPS = [
     items: [
       { label: "Purchase Orders", to: "/purchase-orders", icon: ShoppingCart },
       { label: "GRN", to: "/grn", icon: PackageCheck },
-      { label: "DC Returns", to: "/dc-grn", icon: RotateCcw },
     ],
   },
   {
@@ -74,6 +73,7 @@ const MORE_GROUPS = [
     items: [
       { label: "Sales Orders", to: "/sales-orders", icon: ShoppingBag },
       { label: "Delivery Challans", to: "/delivery-challans", icon: Truck },
+      { label: "DC Returns", to: "/dc-grn", icon: RotateCcw },
       { label: "Dispatch Notes", to: "/dispatch-notes", icon: Send },
       { label: "Receipts", to: "/receipts", icon: Receipt },
     ],

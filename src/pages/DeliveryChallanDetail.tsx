@@ -240,6 +240,12 @@ export default function DeliveryChallanDetail() {
               <div style={{ fontWeight: '700', fontSize: '9pt' }}>DC No: {dc.dc_number}</div>
               <div style={{ fontSize: '9pt' }}>Date: {new Date(dc.dc_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
               {dc.vehicle_number && <div style={{ fontSize: '9pt' }}>Vehicle: {dc.vehicle_number}</div>}
+              {(dc as any).driver_name && (
+                <div style={{ fontSize: '9pt' }}>
+                  Driver: {(dc as any).driver_name}
+                  {(dc as any).driver_contact ? ` — ${(dc as any).driver_contact}` : ''}
+                </div>
+              )}
               <div style={{ fontSize: '8pt', fontWeight: '700', border: '1pt solid currentColor', display: 'inline-block', padding: '1px 6px', marginTop: '2px' }}>
                 {isDuplicate ? "DUPLICATE" : "ORIGINAL"}
               </div>
@@ -272,7 +278,7 @@ export default function DeliveryChallanDetail() {
             {dc.driver_name && (
               <div>
                 <p className="text-xs text-muted-foreground">Driver</p>
-                <p>{dc.driver_name}</p>
+                <p>{dc.driver_name}{(dc as any).driver_contact ? ` — ${(dc as any).driver_contact}` : ''}</p>
               </div>
             )}
           </div>
