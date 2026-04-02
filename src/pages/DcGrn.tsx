@@ -22,7 +22,10 @@ class DcGrnErrorBoundary extends Component<{ children: ReactNode }, { error: Err
         <div className="p-6 text-center space-y-3">
           <p className="text-destructive font-medium">Something went wrong loading DC Returns.</p>
           <p className="text-sm text-muted-foreground">{this.state.error.message}</p>
-          <Button variant="outline" onClick={() => this.setState({ error: null })}>Retry</Button>
+          <div className="flex justify-center gap-2">
+            <Button variant="outline" onClick={() => this.setState({ error: null })}>Retry</Button>
+            <Button variant="ghost" onClick={() => { window.location.href = "/dashboard"; }}>Go to Dashboard</Button>
+          </div>
         </div>
       );
     }
@@ -113,12 +116,12 @@ function DcGrnInner() {
             onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value, page: 1 }))}
           />
         </div>
-        <Select value={filters.month ?? ""} onValueChange={(v) => setFilters((f) => ({ ...f, month: v || undefined, page: 1 }))}>
+        <Select value={filters.month ?? "all"} onValueChange={(v) => setFilters((f) => ({ ...f, month: v === "all" ? undefined : v, page: 1 }))}>
           <SelectTrigger className="w-[150px]">
             <SelectValue placeholder="All months" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All months</SelectItem>
+            <SelectItem value="all">All months</SelectItem>
             {monthOptions.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
             ))}
