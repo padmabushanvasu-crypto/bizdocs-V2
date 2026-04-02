@@ -270,8 +270,7 @@ export async function fetchReorderAlerts(): Promise<ReorderAlert[]> {
 export async function fetchReorderSummary(): Promise<{ critical: number; warning: number }> {
   const { data, error } = await (supabase as any)
     .from("stock_status")
-    .select("stock_status")
-    .gt("effective_min_stock", 0);
+    .select("stock_status");
 
   if (error) return { critical: 0, warning: 0 };
 

@@ -144,15 +144,6 @@ export async function importProcessCodes(
   const companyId = await getCompanyId();
   if (!companyId) throw new Error("Import failed: company ID is missing. Please complete company setup.");
 
-  // Fetch existing process codes to detect duplicates by name
-  const { data: existingCodes } = await (supabase as any)
-    .from("process_codes")
-    .select("process_name")
-    .eq("company_id", companyId);
-  const existingNames = new Set<string>(
-    (existingCodes ?? []).map((r: any) => (r.process_name ?? "").toLowerCase().trim())
-  );
-
   // Fetch vendors for name → id lookup
   const { data: vendorsData } = await (supabase as any)
     .from("parties")
@@ -167,7 +158,7 @@ export async function importProcessCodes(
   let skipped = 0;
   const errors: string[] = [];
 
-  // Parse all valid rows in memory
+  // Parse and deduplicate rows in memory — last occurrence of each process_name wins
   const VENDOR_KEYS = ["Vendor 1", "Vendor 2", "Vendor 3", "Vendor 4", "Vendor 5", "Vendor 6", "Vendor 7"];
   type ParsedRow = {
     process_code: string | null;
@@ -176,7 +167,7 @@ export async function importProcessCodes(
     excelRow: number;
     vendors: Array<{ name: string; isPreferred: boolean }>;
   };
-  const validRows: ParsedRow[] = [];
+  const dedupMap = new Map<string, ParsedRow>();
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -187,11 +178,6 @@ export async function importProcessCodes(
     if (!processName) {
       skipped++;
       errors.push(`Row ${excelRow}: Process Name is required`);
-      continue;
-    }
-    if (existingNames.has(processName.toLowerCase())) {
-      skipped++;
-      errors.push(`Row ${excelRow} (${processName}): Duplicate — already exists, skipped`);
       continue;
     }
     const processCode = (
@@ -208,36 +194,54 @@ export async function importProcessCodes(
       if (vName) vendors.push({ name: vName, isPreferred: vi === 0 });
     }
 
-    validRows.push({ process_code: processCode, process_name: processName, stage_type, excelRow, vendors });
-    existingNames.add(processName.toLowerCase()); // prevent duplicates within this import
+    dedupMap.set(processName.toLowerCase(), { process_code: processCode, process_name: processName, stage_type, excelRow, vendors });
   }
 
-  // Batch insert process codes in chunks of 500
+  const validRows = Array.from(dedupMap.values());
+
+  // Batch upsert process codes in chunks of 500; fall back to row-by-row on conflict error
   const CHUNK = 500;
-  // nameToId map to look up IDs after batch insert
   const nameToId = new Map<string, string>();
 
   for (let i = 0; i < validRows.length; i += CHUNK) {
     const chunk = validRows.slice(i, i + CHUNK);
+    const chunkPayloads = chunk.map((r) => ({
+      company_id: companyId,
+      process_code: r.process_code,
+      process_name: r.process_name,
+      stage_type: r.stage_type,
+      is_active: true,
+    }));
+    let batchOk = false;
     try {
-      const { data: created, error: insertErr } = await (supabase as any)
+      const { data: upserted, error: upsertErr } = await (supabase as any)
         .from("process_codes")
-        .insert(
-          chunk.map((r) => ({
-            company_id: companyId,
-            process_code: r.process_code,
-            process_name: r.process_name,
-            stage_type: r.stage_type,
-            is_active: true,
-          }))
-        )
+        .upsert(chunkPayloads, { onConflict: "company_id,process_name", ignoreDuplicates: false })
         .select("id, process_name");
-      if (insertErr) throw insertErr;
-      for (const c of (created ?? [])) nameToId.set((c.process_name as string).toLowerCase(), c.id as string);
+      if (upsertErr) throw upsertErr;
+      for (const c of (upserted ?? [])) nameToId.set((c.process_name as string).toLowerCase(), c.id as string);
       imported += chunk.length;
-    } catch (err: any) {
-      skipped += chunk.length;
-      errors.push(`Batch insert rows ${chunk[0].excelRow}–${chunk[chunk.length - 1].excelRow}: ${err.message ?? "DB error"}`);
+      batchOk = true;
+    } catch { /* fall through to row-by-row */ }
+
+    if (!batchOk) {
+      for (const r of chunk) {
+        try {
+          const { data: upserted, error: upsertErr } = await (supabase as any)
+            .from("process_codes")
+            .upsert(
+              [{ company_id: companyId, process_code: r.process_code, process_name: r.process_name, stage_type: r.stage_type, is_active: true }],
+              { onConflict: "company_id,process_name", ignoreDuplicates: false }
+            )
+            .select("id, process_name");
+          if (upsertErr) throw upsertErr;
+          for (const c of (upserted ?? [])) nameToId.set((c.process_name as string).toLowerCase(), c.id as string);
+          imported++;
+        } catch (err: any) {
+          skipped++;
+          errors.push(`Row ${r.excelRow} (${r.process_name}): ${err?.message ?? "DB error"}`);
+        }
+      }
     }
   }
 

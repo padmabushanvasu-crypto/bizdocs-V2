@@ -475,7 +475,7 @@ export function AppSidebar() {
         const { count } = await supabase
           .from("purchase_orders")
           .select("*", { count: "exact", head: true })
-          .not("status", "in", '("cancelled","closed","received")')
+          .not("status", "in", "(cancelled,closed,received)")
           .lt("delivery_date", todayStr)
           .not("delivery_date", "is", null);
         return count ?? 0;

@@ -68,7 +68,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
     supabase
       .from("purchase_orders")
       .select("*", { count: "exact", head: true })
-      .not("status", "in", '("cancelled","closed","received")')
+      .not("status", "in", "(cancelled,closed,received)")
       .lt("delivery_date", todayStr)
       .not("delivery_date", "is", null),
   ]);

@@ -1767,7 +1767,7 @@ function ProcessingRoutesImportTab() {
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
-  const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
+  const [result, setResult] = useState<{ imported: number; skipped: number; errors: string[] } | null>(null);
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState(0);
 
@@ -1809,18 +1809,23 @@ function ProcessingRoutesImportTab() {
 
       // Parse all rows into payloads in memory
       type RowVendor = { name: string; isPreferred: boolean };
-      const routePayloads: any[] = [];
-      const rowVendors: RowVendor[][] = [];
+      type ParsedRoute = { payload: any; vendors: RowVendor[]; excelRow: number };
+      const parsedMap = new Map<string, ParsedRoute>(); // key: "item_id:stage_number" — last row wins (dedup)
       let skipped = 0;
+      const skipErrors: string[] = [];
 
-      for (const row of rows) {
+      rows.forEach((row, idx) => {
+        const excelRow = idx + 2;
         const drawingNum = (row["Drawing Number *"] || row["Drawing Number"] || row["drawing_number"] || "").toString().trim();
         const stageNum = parseInt((row["Stage No *"] || row["Stage No"] || row["stage_number"] || "0").toString().trim(), 10);
         const processName = (row["Process Name *"] || row["Process Name"] || row["process_name"] || "").toString().trim();
         const stageType = (row["Stage Type *"] || row["Stage Type"] || row["stage_type"] || "external").toString().trim().toLowerCase() as 'internal' | 'external';
-        if (!drawingNum || !stageNum || !processName) { skipped++; continue; }
+
+        if (!drawingNum) { skipped++; skipErrors.push(`Row ${excelRow}: Drawing Number is required`); return; }
+        if (!stageNum) { skipped++; skipErrors.push(`Row ${excelRow} (${drawingNum}): Stage No is required or invalid`); return; }
+        if (!processName) { skipped++; skipErrors.push(`Row ${excelRow} (${drawingNum}): Process Name is required`); return; }
         const itemId = drawingToId.get(drawingNum.toLowerCase());
-        if (!itemId) { skipped++; continue; }
+        if (!itemId) { skipped++; skipErrors.push(`Row ${excelRow}: Drawing/Item "${drawingNum}" not found in items master`); return; }
 
         const vendors: RowVendor[] = [];
         for (const vKey of ["Vendor 1", "Vendor 2", "vendor_1", "vendor_2"]) {
@@ -1828,47 +1833,76 @@ function ProcessingRoutesImportTab() {
           if (vName) vendors.push({ name: vName, isPreferred: vKey.includes("1") });
         }
 
-        routePayloads.push({
-          company_id: companyId,
-          item_id: itemId,
-          stage_number: stageNum,
-          process_code: (row["Process Code"] || row["process_code"] || "").toString().trim() || null,
-          process_name: processName,
-          stage_type: ['internal', 'external'].includes(stageType) ? stageType : 'external',
-          lead_time_days: parseInt((row["Lead Time Days"] || row["lead_time_days"] || "7").toString(), 10) || 7,
-          notes: (row["Notes"] || row["notes"] || "").toString().trim() || null,
-          is_active: true,
-          updated_at: new Date().toISOString(),
+        const dedupeKey = `${itemId}:${stageNum}`;
+        parsedMap.set(dedupeKey, {
+          payload: {
+            company_id: companyId,
+            item_id: itemId,
+            stage_number: stageNum,
+            process_code: (row["Process Code"] || row["process_code"] || "").toString().trim() || null,
+            process_name: processName,
+            stage_type: ['internal', 'external'].includes(stageType) ? stageType : 'external',
+            lead_time_days: parseInt((row["Lead Time Days"] || row["lead_time_days"] || "7").toString(), 10) || 7,
+            notes: (row["Notes"] || row["notes"] || "").toString().trim() || null,
+            is_active: true,
+            updated_at: new Date().toISOString(),
+          },
+          vendors,
+          excelRow,
         });
-        rowVendors.push(vendors);
-      }
+      });
 
-      // Batch upsert routes in chunks of 500
+      const dedupedRoutes = Array.from(parsedMap.values());
+
+      // Batch upsert routes in chunks of 500; fall back to row-by-row on conflict error
       const CHUNK = 500;
       let imported = 0;
       const routeIdMap = new Map<string, string>(); // "item_id:stage_number" → route id
+      const dbErrors: string[] = [];
 
-      for (let i = 0; i < routePayloads.length; i += CHUNK) {
-        const chunk = routePayloads.slice(i, i + CHUNK);
+      for (let i = 0; i < dedupedRoutes.length; i += CHUNK) {
+        const chunk = dedupedRoutes.slice(i, i + CHUNK);
+        const chunkPayloads = chunk.map((r) => r.payload);
+        let batchOk = false;
         try {
           const { data: upserted, error } = await (supabase as any)
             .from("bom_processing_routes")
-            .upsert(chunk, { onConflict: "company_id,item_id,stage_number" })
+            .upsert(chunkPayloads, { onConflict: "company_id,item_id,stage_number", ignoreDuplicates: false })
             .select("id, item_id, stage_number");
           if (error) throw error;
           for (const r of (upserted ?? [])) routeIdMap.set(`${r.item_id}:${r.stage_number}`, r.id);
           imported += chunk.length;
-        } catch { skipped += chunk.length; }
-        setProgress(Math.round(((i + chunk.length) / routePayloads.length) * 80));
+          batchOk = true;
+        } catch { /* fall through to row-by-row */ }
+
+        if (!batchOk) {
+          // Row-by-row fallback so one bad row doesn't block the rest
+          for (const entry of chunk) {
+            try {
+              const { data: upserted, error } = await (supabase as any)
+                .from("bom_processing_routes")
+                .upsert([entry.payload], { onConflict: "company_id,item_id,stage_number", ignoreDuplicates: false })
+                .select("id, item_id, stage_number");
+              if (error) throw error;
+              for (const r of (upserted ?? [])) routeIdMap.set(`${r.item_id}:${r.stage_number}`, r.id);
+              imported++;
+            } catch (err: any) {
+              skipped++;
+              dbErrors.push(`Row ${entry.excelRow} (item ${entry.payload.item_id}, stage ${entry.payload.stage_number}): ${err?.message ?? "DB error"}`);
+            }
+          }
+        }
+
+        setProgress(Math.round(((i + chunk.length) / dedupedRoutes.length) * 80));
         await new Promise<void>((r) => setTimeout(r, 10));
       }
 
       // Collect all vendor records and batch insert in chunks of 500
       const allVendorRecords: any[] = [];
-      for (let i = 0; i < routePayloads.length; i++) {
-        const routeId = routeIdMap.get(`${routePayloads[i].item_id}:${routePayloads[i].stage_number}`);
-        if (!routeId || rowVendors[i].length === 0) continue;
-        for (const v of rowVendors[i]) {
+      for (const entry of dedupedRoutes) {
+        const routeId = routeIdMap.get(`${entry.payload.item_id}:${entry.payload.stage_number}`);
+        if (!routeId || entry.vendors.length === 0) continue;
+        for (const v of entry.vendors) {
           const vendorId = vendorByName.get(v.name.toLowerCase());
           if (!vendorId) continue;
           allVendorRecords.push({
@@ -1887,7 +1921,7 @@ function ProcessingRoutesImportTab() {
         await new Promise<void>((r) => setTimeout(r, 10));
       }
 
-      setResult({ imported, skipped });
+      setResult({ imported, skipped, errors: [...skipErrors, ...dbErrors] });
       setRows([]);
     } catch (err: any) {
       toast({ title: "Import failed", description: err.message, variant: "destructive" });
@@ -1900,9 +1934,25 @@ function ProcessingRoutesImportTab() {
   return (
     <div className="space-y-4">
       {result && (
-        <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg p-3">
-          <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
-          <span className="text-sm text-green-800 font-medium">{result.imported} stages imported · {result.skipped} skipped</span>
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg p-3">
+            <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
+            <span className="text-sm text-green-800 font-medium">{result.imported} stages imported · {result.skipped} skipped</span>
+          </div>
+          {result.errors.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1">
+              <div className="flex items-center gap-2 mb-1">
+                <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                <span className="text-xs font-medium text-amber-800">{result.errors.length} issue{result.errors.length !== 1 ? "s" : ""}</span>
+              </div>
+              {result.errors.slice(0, 10).map((e, i) => (
+                <p key={i} className="text-xs text-amber-700 pl-6">{e}</p>
+              ))}
+              {result.errors.length > 10 && (
+                <p className="text-xs text-amber-600 pl-6">…and {result.errors.length - 10} more</p>
+              )}
+            </div>
+          )}
         </div>
       )}
       <div className="flex flex-wrap gap-3">
@@ -1943,7 +1993,7 @@ function JigMasterImportTab() {
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
-  const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
+  const [result, setResult] = useState<{ imported: number; skipped: number; errors: string[] } | null>(null);
   const [importing, setImporting] = useState(false);
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1966,41 +2016,80 @@ function JigMasterImportTab() {
     if (rows.length === 0) return;
     setImporting(true);
     try {
+      const { data: { session } } = await (supabase as any).auth.getSession();
+      if (!session) throw new Error("Session expired. Please sign out and sign in again.");
       const companyId = await getCompanyId();
+      if (!companyId) throw new Error("Company ID not found. Please complete company setup.");
+
       const VALID_STATUSES = ['ok', 'to_be_made', 'in_progress', 'damaged'];
 
-      // Build payloads in memory, validate upfront
-      const payloads: any[] = [];
+      // Build payloads in memory — deduplicate on (drawing_number, jig_number); last row wins
+      type JigEntry = { payload: any; excelRow: number };
+      const dedupMap = new Map<string, JigEntry>();
+      const validationErrors: string[] = [];
       let skipped = 0;
-      for (const row of rows) {
+
+      rows.forEach((row, i) => {
+        const excelRow = i + 2;
         const drawingNumber = (row["Drawing Number *"] || row["Drawing Number"] || row["drawing_number"] || "").toString().trim();
         const jigNumber = (row["Jig Number *"] || row["Jig Number"] || row["jig_number"] || "").toString().trim();
-        if (!drawingNumber || !jigNumber) { skipped++; continue; }
+        if (!drawingNumber || !jigNumber) {
+          skipped++;
+          validationErrors.push(`Row ${excelRow}: ${!drawingNumber ? "Drawing Number" : "Jig Number"} is required`);
+          return;
+        }
         const rawStatus = (row["Status"] || row["status"] || "ok").toString().trim().toLowerCase().replace(/ /g, '_');
-        payloads.push({
-          company_id: companyId,
-          drawing_number: drawingNumber,
-          jig_number: jigNumber,
-          status: VALID_STATUSES.includes(rawStatus) ? rawStatus : 'ok',
-          associated_process: (row["Associated Process"] || row["associated_process"] || "").toString().trim() || null,
-          notes: (row["Notes"] || row["notes"] || "").toString().trim() || null,
+        dedupMap.set(`${drawingNumber.toLowerCase()}:${jigNumber.toLowerCase()}`, {
+          payload: {
+            company_id: companyId,
+            drawing_number: drawingNumber,
+            jig_number: jigNumber,
+            status: VALID_STATUSES.includes(rawStatus) ? rawStatus : 'ok',
+            associated_process: (row["Associated Process"] || row["associated_process"] || "").toString().trim() || null,
+            notes: (row["Notes"] || row["notes"] || "").toString().trim() || null,
+          },
+          excelRow,
         });
-      }
+      });
 
-      // Batch insert in chunks of 500
+      const dedupedJigs = Array.from(dedupMap.values());
+
+      // Batch upsert in chunks of 500; fall back to row-by-row on batch failure
       let imported = 0;
+      const dbErrors: string[] = [];
       const CHUNK = 500;
-      for (let i = 0; i < payloads.length; i += CHUNK) {
-        const chunk = payloads.slice(i, i + CHUNK);
+
+      for (let i = 0; i < dedupedJigs.length; i += CHUNK) {
+        const chunk = dedupedJigs.slice(i, i + CHUNK);
+        const chunkPayloads = chunk.map((e) => e.payload);
+        let batchOk = false;
         try {
-          const { error } = await (supabase as any).from("jig_master").insert(chunk);
+          const { error } = await (supabase as any)
+            .from("jig_master")
+            .upsert(chunkPayloads, { onConflict: "company_id,drawing_number,jig_number", ignoreDuplicates: false });
           if (error) throw error;
           imported += chunk.length;
-        } catch { skipped += chunk.length; }
+          batchOk = true;
+        } catch { /* fall through to row-by-row */ }
+
+        if (!batchOk) {
+          for (const entry of chunk) {
+            try {
+              const { error } = await (supabase as any)
+                .from("jig_master")
+                .upsert([entry.payload], { onConflict: "company_id,drawing_number,jig_number", ignoreDuplicates: false });
+              if (error) throw error;
+              imported++;
+            } catch (err: any) {
+              skipped++;
+              dbErrors.push(`Row ${entry.excelRow} (${entry.payload.drawing_number} / ${entry.payload.jig_number}): ${err?.message ?? "DB error"}`);
+            }
+          }
+        }
         await new Promise<void>((r) => setTimeout(r, 10));
       }
 
-      setResult({ imported, skipped });
+      setResult({ imported, skipped, errors: [...validationErrors, ...dbErrors] });
       setRows([]);
     } catch (err: any) {
       toast({ title: "Import failed", description: err.message, variant: "destructive" });
@@ -2012,9 +2101,23 @@ function JigMasterImportTab() {
   return (
     <div className="space-y-4">
       {result && (
-        <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg p-3">
-          <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
-          <span className="text-sm text-green-800 font-medium">{result.imported} jigs imported · {result.skipped} skipped</span>
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg p-3">
+            <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
+            <span className="text-sm text-green-800 font-medium">{result.imported} jigs imported · {result.skipped} skipped</span>
+          </div>
+          {result.errors.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1">
+              <div className="flex items-center gap-1.5 text-amber-800 text-xs font-semibold">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                {result.errors.length} issue{result.errors.length !== 1 ? "s" : ""} — rows skipped
+              </div>
+              {result.errors.slice(0, 5).map((e, i) => (
+                <p key={i} className="text-xs text-amber-700 pl-5">{e}</p>
+              ))}
+              {result.errors.length > 5 && <p className="text-xs text-amber-600 pl-5">…and {result.errors.length - 5} more</p>}
+            </div>
+          )}
         </div>
       )}
       <div className="flex flex-wrap gap-3">
@@ -2055,6 +2158,7 @@ function ProcessCodeImportTab() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [result, setResult] = useState<{ imported: number; skipped: number; errors: string[] } | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -2073,8 +2177,19 @@ function ProcessCodeImportTab() {
   };
 
   const handleImport = async () => {
-    if (rows.length === 0) return;
+    if (rows.length === 0 || importing) return;
+    setImporting(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast({ title: "Session expired", description: "Please sign out and sign in again before importing.", variant: "destructive" });
+        return;
+      }
+      const companyId = await getCompanyId();
+      if (!companyId) {
+        toast({ title: "Company not found", description: "Please complete company setup before importing.", variant: "destructive" });
+        return;
+      }
       const res = await importProcessCodes(rows);
       setResult(res);
       setRows([]);
@@ -2082,24 +2197,34 @@ function ProcessCodeImportTab() {
       queryClient.invalidateQueries({ queryKey: ["count", "process_codes"] });
     } catch (err: any) {
       toast({ title: "Import failed", description: err.message, variant: "destructive" });
+    } finally {
+      setImporting(false);
     }
   };
 
   return (
     <div className="space-y-4">
       {result && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-3 space-y-1">
-          <div className="flex items-center gap-2">
+        <div className="space-y-2">
+          <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-2">
             <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
             <span className="text-sm text-green-800 font-medium">
               {result.imported} process code{result.imported !== 1 ? "s" : ""} imported · {result.skipped} skipped
             </span>
           </div>
-          {result.errors.slice(0, 5).map((e, i) => (
-            <p key={i} className="text-xs text-amber-700 pl-6">{e}</p>
-          ))}
-          {result.errors.length > 5 && (
-            <p className="text-xs text-amber-600 pl-6">…and {result.errors.length - 5} more</p>
+          {result.errors.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1">
+              <div className="flex items-center gap-2 mb-1">
+                <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                <span className="text-xs font-medium text-amber-800">{result.errors.length} issue{result.errors.length !== 1 ? "s" : ""}</span>
+              </div>
+              {result.errors.slice(0, 5).map((e, i) => (
+                <p key={i} className="text-xs text-amber-700 pl-6">{e}</p>
+              ))}
+              {result.errors.length > 5 && (
+                <p className="text-xs text-amber-600 pl-6">…and {result.errors.length - 5} more</p>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -2120,9 +2245,10 @@ function ProcessCodeImportTab() {
         {rows.length > 0 && (
           <button
             onClick={handleImport}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+            disabled={importing}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Import {rows.length} Row{rows.length !== 1 ? "s" : ""}
+            {importing ? "Importing…" : `Import ${rows.length} Row${rows.length !== 1 ? "s" : ""}`}
           </button>
         )}
         {rows.length > 0 && (
