@@ -101,6 +101,7 @@ export async function addProcessCodeVendor(
   is_preferred: boolean
 ): Promise<ProcessCodeVendor> {
   const companyId = await getCompanyId();
+  if (!companyId) throw new Error("Company not found. Please refresh and try again.");
   const { data, error } = await (supabase as any)
     .from("process_code_vendors")
     .insert({
@@ -138,8 +139,10 @@ export async function fetchProcessCodesCount(): Promise<number> {
 export async function importProcessCodes(
   rows: Record<string, string>[]
 ): Promise<{ imported: number; skipped: number; errors: string[] }> {
+  const { data: { session } } = await (supabase as any).auth.getSession();
+  if (!session) throw new Error("Import failed: session expired. Please sign out and sign in again.");
   const companyId = await getCompanyId();
-  if (!companyId) throw new Error("Company ID not found");
+  if (!companyId) throw new Error("Import failed: company ID is missing. Please complete company setup.");
 
   // Fetch existing process codes to detect duplicates by name
   const { data: existingCodes } = await (supabase as any)
