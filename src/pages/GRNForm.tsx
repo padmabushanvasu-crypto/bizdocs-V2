@@ -856,7 +856,7 @@ export default function GRNForm({ defaultGrnType }: Props) {
           accepted_quantity: i.s2_accepted_qty,
           rejected_quantity: i.s2_rejected_qty,
           rejection_reason: i.s2_rejection_reason || undefined,
-          rejection_action: i.s2_disposal_method || null,
+          rejection_action: null, // disposal_method has a different check constraint; don't write it to rejection_action
         }));
 
       const result = await recordGRNAndUpdatePO({ grn: grnData, lineItems: items });

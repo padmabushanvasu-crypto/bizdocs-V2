@@ -56,6 +56,7 @@ export interface StockStatusRow {
   effective_min_stock: number;
   stock_status: "green" | "amber" | "red";
   company_id: string;
+  stock_alert_level: 'critical' | 'warning' | 'watch' | 'locked' | 'healthy';
 }
 
 export interface ItemFilters {
@@ -189,12 +190,31 @@ export async function deleteItem(id: string) {
 }
 
 export async function fetchStockStatus() {
-  const { data, error } = await supabase
-    .from("stock_status" as any)
-    .select("*")
+  // Query items table directly so stock_alert_level is always available.
+  // The stock_status view may not expose this column.
+  const companyId = await getCompanyId();
+  if (!companyId) return [] as StockStatusRow[];
+  const { data, error } = await (supabase as any)
+    .from("items")
+    .select("id, item_code, description, unit, item_type, current_stock, stock_raw_material, stock_wip, stock_finished_goods, min_stock, min_stock_override, standard_cost, parent_item_id, company_id, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, stock_alert_level, min_finished_stock, stock_finished_goods")
+    .eq("company_id", companyId)
+    .eq("status", "active")
     .order("item_code", { ascending: true });
   if (error) throw error;
-  return (data ?? []) as StockStatusRow[];
+  // Compute stock_status and effective_min_stock client-side (same logic as the view)
+  const rows = (data ?? []).map((item: any) => {
+    const effectiveMin = item.min_stock_override ?? item.min_stock ?? 0;
+    let stock_status: "green" | "amber" | "red" = "green";
+    if (item.current_stock <= 0) stock_status = "red";
+    else if (effectiveMin > 0 && item.current_stock <= effectiveMin) stock_status = "amber";
+    return {
+      ...item,
+      effective_min_stock: effectiveMin,
+      stock_status,
+      stock_alert_level: item.stock_alert_level ?? 'healthy',
+    } as StockStatusRow;
+  });
+  return rows;
 }
 
 export async function bulkUpdateItemStatus(ids: string[], status: string) {

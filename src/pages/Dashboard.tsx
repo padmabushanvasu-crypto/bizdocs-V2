@@ -25,6 +25,7 @@ interface DashboardData {
   zeroStockCount: number;
   needsBuildingCount: number;
   criticalStockCount: number;
+  warningStockCount: number;
   lockedStockCount: number;
   overduePOCount: number;
 }
@@ -103,9 +104,10 @@ async function fetchDashboardData(): Promise<DashboardData> {
   const needsBuildingCount = items.filter(
     (i) => i.item_type === "finished_good" && (i.stock_finished_goods ?? 0) < (i.min_finished_stock ?? 0) && (i.min_finished_stock ?? 0) > 0
   ).length;
-  // Phase 13: critical and locked counts using stock_alert_level
+  // Phase 13: critical/warning/locked counts using stock_alert_level
   const criticalStockCount = items.filter((i) => i.stock_alert_level === 'critical').length;
-  const lockedStockCount = items.filter((i) => i.stock_alert_level === 'locked').length;
+  const warningStockCount  = items.filter((i) => i.stock_alert_level === 'warning').length;
+  const lockedStockCount   = items.filter((i) => i.stock_alert_level === 'locked').length;
 
   const overduePOCount = overduePOsRes.count ?? 0;
 
@@ -113,7 +115,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
     thisMonthRevenue, fyRevenue, overdueInvoiceCount,
     openPOValue, overdueDCCount,
     rawMaterialCount, componentCount, finishedGoodCount, zeroStockCount,
-    needsBuildingCount, criticalStockCount, lockedStockCount,
+    needsBuildingCount, criticalStockCount, warningStockCount, lockedStockCount,
     overduePOCount,
   };
 }
@@ -464,14 +466,34 @@ export default function Dashboard() {
                 View →
               </button>
             </div>
-            {(dashData?.criticalStockCount ?? 0) > 0 || (dashData?.lockedStockCount ?? 0) > 0 ? (
-              <div className="mb-2">
-                <p className={`text-2xl font-extrabold tracking-tight font-mono tabular-nums ${(dashData?.criticalStockCount ?? 0) > 0 ? 'text-red-600' : 'text-amber-600'}`}>
-                  {dashData?.criticalStockCount ?? 0}
-                </p>
-                <p className="text-[10px] text-slate-400 uppercase tracking-wider">Critical items</p>
+            {(dashData?.criticalStockCount ?? 0) > 0 || (dashData?.warningStockCount ?? 0) > 0 || (dashData?.lockedStockCount ?? 0) > 0 ? (
+              <div className="mb-2 space-y-1">
+                {(dashData?.criticalStockCount ?? 0) > 0 && (
+                  <button
+                    className="w-full flex items-center justify-between hover:bg-red-50 -mx-1 px-1 rounded transition-colors"
+                    onClick={() => navigate("/stock-register?filter=critical")}
+                  >
+                    <span className="text-xs font-semibold text-red-700 uppercase tracking-wider">Critical</span>
+                    <span className="text-lg font-extrabold font-mono tabular-nums text-red-600">{dashData?.criticalStockCount}</span>
+                  </button>
+                )}
+                {(dashData?.warningStockCount ?? 0) > 0 && (
+                  <button
+                    className="w-full flex items-center justify-between hover:bg-amber-50 -mx-1 px-1 rounded transition-colors"
+                    onClick={() => navigate("/stock-register?filter=warning")}
+                  >
+                    <span className="text-xs font-semibold text-amber-700 uppercase tracking-wider">Warning</span>
+                    <span className="text-lg font-extrabold font-mono tabular-nums text-amber-600">{dashData?.warningStockCount}</span>
+                  </button>
+                )}
                 {(dashData?.lockedStockCount ?? 0) > 0 && (
-                  <p className="text-xs text-amber-600 font-medium mt-0.5">{dashData?.lockedStockCount} locked</p>
+                  <button
+                    className="w-full flex items-center justify-between hover:bg-slate-100 -mx-1 px-1 rounded transition-colors"
+                    onClick={() => navigate("/stock-register?filter=locked")}
+                  >
+                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Locked</span>
+                    <span className="text-lg font-extrabold font-mono tabular-nums text-slate-700">{dashData?.lockedStockCount}</span>
+                  </button>
                 )}
               </div>
             ) : (

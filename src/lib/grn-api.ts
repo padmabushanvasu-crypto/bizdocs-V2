@@ -357,7 +357,7 @@ export async function updateGrnLineStage2(lineId: string, data: Stage2Data): Pro
     rejected_quantity: data.rejected_qty, // legacy
     rejection_reason: data.rejection_reason ?? null,
     disposal_method: data.disposal_method ?? null,
-    rejection_action: data.disposal_method ?? null, // legacy
+    // rejection_action intentionally not set — its check constraint only allows old values
     stage2_inspected_by: data.stage2_inspected_by ?? null,
     stage2_approved_by: data.stage2_approved_by ?? null,
     stage2_date: data.stage2_date ?? null,

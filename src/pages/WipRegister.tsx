@@ -479,10 +479,14 @@ export default function WipRegister() {
                         Loading production runs…
                       </td>
                     </tr>
-                  ) : filteredAo.length === 0 ? (
+                  ) : filteredAo.length === 0 && saWorkOrders.filter((awo: any) => {
+                      if (!search.trim()) return true;
+                      const q = search.toLowerCase();
+                      return awo.awo_number?.toLowerCase().includes(q) || awo.item_code?.toLowerCase().includes(q) || awo.item_description?.toLowerCase().includes(q);
+                    }).length === 0 ? (
                     <tr>
                       <td colSpan={9} className="text-center py-10">
-                        {aoRows.length === 0 ? (
+                        {aoRows.length === 0 && saWorkOrders.length === 0 ? (
                           <div className="flex flex-col items-center gap-2 text-muted-foreground">
                             <Layers className="h-8 w-8 opacity-30" />
                             <p>No production runs in progress.</p>

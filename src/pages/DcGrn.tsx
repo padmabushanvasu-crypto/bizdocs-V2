@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, Component, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PackageCheck, Plus, Search, Eye, Trash2, RotateCcw } from "lucide-react";
@@ -7,6 +7,28 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchDcGrns, softDeleteGRN, type GRNFilters } from "@/lib/grn-api";
 import { useToast } from "@/hooks/use-toast";
+
+class DcGrnErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="p-6 text-center space-y-3">
+          <p className="text-destructive font-medium">Something went wrong loading DC Returns.</p>
+          <p className="text-sm text-muted-foreground">{this.state.error.message}</p>
+          <Button variant="outline" onClick={() => this.setState({ error: null })}>Retry</Button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const STATUS_LABEL: Record<string, string> = {
   draft: "Open",
@@ -23,7 +45,7 @@ function daysOpen(dateStr: string): number {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
 }
 
-export default function DcGrn() {
+function DcGrnInner() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -203,7 +225,7 @@ export default function DcGrn() {
         </div>
       </div>
 
-      {/* Pagination */}
+      {/* Pagination — only shown when more records exist than current page size */}
       {(data?.count ?? 0) > (filters.pageSize ?? 20) && (
         <div className="flex justify-center gap-2">
           <Button
@@ -228,5 +250,13 @@ export default function DcGrn() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function DcGrn() {
+  return (
+    <DcGrnErrorBoundary>
+      <DcGrnInner />
+    </DcGrnErrorBoundary>
   );
 }

@@ -167,8 +167,18 @@ function StockRegisterInner() {
   }, [processingLogs]);
 
   const [statusFilter, setStatusFilter] = useState<"all" | "green" | "amber" | "red">("all");
-  const [typeTab, setTypeTab] = useState<TypeTab>("all");
-  const [alertFilter, setAlertFilter] = useState<"all" | "critical" | "warning" | "watch" | "locked" | "healthy">("all");
+  const [typeTab, setTypeTab] = useState<TypeTab>(() => {
+    const params = new URLSearchParams(location.search);
+    const t = params.get("type");
+    if (t === "raw_material" || t === "component" || t === "finished_good" || t === "bought_out") return t;
+    return "all";
+  });
+  const [alertFilter, setAlertFilter] = useState<"all" | "critical" | "warning" | "watch" | "locked" | "healthy">(() => {
+    const params = new URLSearchParams(location.search);
+    const f = params.get("filter");
+    if (f === "critical" || f === "warning" || f === "watch" || f === "locked" || f === "healthy") return f;
+    return "all";
+  });
 
 
   const filtered = rows
