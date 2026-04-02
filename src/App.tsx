@@ -78,6 +78,7 @@ import DispatchRecords from "@/pages/DispatchRecords";
 import DispatchRecordForm from "@/pages/DispatchRecordForm";
 import DispatchRecordDetail from "@/pages/DispatchRecordDetail";
 import ReadyToDispatch from "@/pages/ReadyToDispatch";
+import ProcessLibrary from "@/pages/ProcessLibrary";
 import { ImportQueueProvider } from "@/lib/import-queue";
 
 const queryClient = new QueryClient();
@@ -170,6 +171,7 @@ const App = () => (
               <Route path="/ready-to-dispatch" element={<ReadyToDispatch />} />
               <Route path="/more" element={<MoreMenu />} />
               <Route path="/settings/company" element={<CompanySettings />} />
+              <Route path="/settings/process-library" element={<ProcessLibrary />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
             <Route path="*" element={<NotFound />} />

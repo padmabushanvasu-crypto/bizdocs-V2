@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Upload, Download, CheckCircle, XCircle, AlertTriangle, Table, Users, Package, GitFork, ChevronLeft, Trash2, Wrench } from "lucide-react";
+import { Upload, Download, CheckCircle, XCircle, AlertTriangle, Table, Users, Package, GitFork, ChevronLeft, Trash2, Wrench, Cog } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { useToast } from "@/hooks/use-toast";
@@ -17,6 +17,7 @@ import {
 } from "@/lib/import-utils";
 import { importItemsBatch } from "@/lib/items-api";
 import { importPartiesBatch } from "@/lib/parties-api";
+import { importProcessCodes } from "@/lib/process-library-api";
 import { useImportQueue, type BatchImportFn } from "@/lib/import-queue";
 
 // ── Template download helpers ──────────────────────────────────────────────
@@ -936,12 +937,12 @@ function BOMImportTab() {
       }
     }
 
-    // Insert vendors for each resolved row that has vendor data
+    // Collect all vendor records for inline BOM rows and batch insert
     const allRowsWithVendors = [
       ...toInsert.map((r) => ({ lineId: insertedLineIds.get(`${r.parentId}:${r.childId}`) ?? null, vendors: r.vendors })),
       ...toUpdate.map((r) => ({ lineId: r.id, vendors: r.vendors })),
     ];
-
+    const bomVendorRecords: any[] = [];
     for (const { lineId, vendors } of allRowsWithVendors) {
       if (!lineId || vendors.length === 0) continue;
       for (let vi = 0; vi < vendors.length; vi++) {
@@ -951,23 +952,24 @@ function BOMImportTab() {
           skipReasons.push({ row: 0, value: ve.code, reason: `Vendor code '${ve.code}' not found in Parties master` });
           continue;
         }
-        try {
-          await (supabase as any).from("bom_line_vendors").insert({
-            company_id: companyId,
-            bom_line_id: lineId,
-            vendor_id: found.id,
-            vendor_name: found.name,
-            vendor_code: ve.code,
-            notes: ve.process || null,
-            lead_time_days: ve.leadDays,
-            currency: "INR",
-            is_preferred: vi === 0,
-            preference_order: vi + 1,
-          });
-        } catch {
-          // Non-fatal — vendor insert failure doesn't fail the BOM line
-        }
+        bomVendorRecords.push({
+          company_id: companyId,
+          bom_line_id: lineId,
+          vendor_id: found.id,
+          vendor_name: found.name,
+          vendor_code: ve.code,
+          notes: ve.process || null,
+          lead_time_days: ve.leadDays,
+          currency: "INR",
+          is_preferred: vi === 0,
+          preference_order: vi + 1,
+        });
       }
+    }
+    const BOM_CHUNK = 500;
+    for (let i = 0; i < bomVendorRecords.length; i += BOM_CHUNK) {
+      try { await (supabase as any).from("bom_line_vendors").insert(bomVendorRecords.slice(i, i + BOM_CHUNK)); } catch { /* non-fatal */ }
+      await new Promise<void>((r) => setTimeout(r, 10));
     }
 
     // Process vendor sheet rows (if any) — adds vendors to ALL BOM lines containing the component
@@ -991,6 +993,7 @@ function BOMImportTab() {
         }
       }
 
+      const sheetVendorRecords: any[] = [];
       for (const vRow of vendorSheetRows) {
         const compCode = vRow["component_code"]?.trim() ?? "";
         const vendCode = vRow["vendor_code"]?.trim() ?? "";
@@ -1005,22 +1008,24 @@ function BOMImportTab() {
         const lineIds = childToLineIds.get(childId) ?? [];
         const prefOrder = parseInt(vRow["preference_order"] || "1", 10) || 1;
         for (const lineId of lineIds) {
-          try {
-            await (supabase as any).from("bom_line_vendors").insert({
-              company_id: companyId,
-              bom_line_id: lineId,
-              vendor_id: found.id,
-              vendor_name: found.name,
-              vendor_code: vendCode,
-              notes: vRow["process_name"]?.trim() || vRow["notes"]?.trim() || null,
-              lead_time_days: parseInt(vRow["lead_time_days"] || "7", 10) || 7,
-              currency: "INR",
-              is_preferred: prefOrder === 1,
-              preference_order: prefOrder,
-            });
-            vendorMappingsCount++;
-          } catch { /* non-fatal */ }
+          sheetVendorRecords.push({
+            company_id: companyId,
+            bom_line_id: lineId,
+            vendor_id: found.id,
+            vendor_name: found.name,
+            vendor_code: vendCode,
+            notes: vRow["process_name"]?.trim() || vRow["notes"]?.trim() || null,
+            lead_time_days: parseInt(vRow["lead_time_days"] || "7", 10) || 7,
+            currency: "INR",
+            is_preferred: prefOrder === 1,
+            preference_order: prefOrder,
+          });
+          vendorMappingsCount++;
         }
+      }
+      for (let i = 0; i < sheetVendorRecords.length; i += BOM_CHUNK) {
+        try { await (supabase as any).from("bom_line_vendors").insert(sheetVendorRecords.slice(i, i + BOM_CHUNK)); } catch { /* non-fatal */ }
+        await new Promise<void>((r) => setTimeout(r, 10));
       }
     }
 
@@ -1564,7 +1569,11 @@ function ReorderRulesTab() {
       let skipped = 0;
       const errors: string[] = [];
       const skipReasons: SkipReason[] = [];
-      const total = bRows.length;
+
+      // Parse all rows in memory
+      const newRules: any[] = [];
+      const updateRules: Array<{ id: string; data: any }> = [];
+      const minStockUpdates: Array<{ id: string; min_stock: number }> = [];
 
       for (let i = 0; i < bRows.length; i++) {
         const row = bRows[i];
@@ -1578,7 +1587,6 @@ function ReorderRulesTab() {
           skipped++;
           errors.push(`Row ${excelRow} (${ref}): Item not found in Items master`);
           skipReasons.push({ row: excelRow, value: ref, reason: `Item '${ref}' not found` });
-          if (total > 0) onProgress?.(Math.round(((i + 1) / total) * 100));
           continue;
         }
 
@@ -1591,11 +1599,7 @@ function ReorderRulesTab() {
         const vendorCode = row["preferred_vendor_code"]?.trim();
         if (vendorCode) {
           const vid = vendorByName.get(vendorCode.toLowerCase());
-          if (vid) {
-            preferred_vendor_id = vid;
-          } else {
-            vendorNotFound++;
-          }
+          if (vid) { preferred_vendor_id = vid; } else { vendorNotFound++; }
         }
 
         const ruleData: any = {
@@ -1610,27 +1614,53 @@ function ReorderRulesTab() {
           updated_at: new Date().toISOString(),
         };
 
-        try {
-          const existingId = existingByItemId.get(itemId);
-          if (existingId) {
-            const { error } = await (supabase as any).from("reorder_rules").update(ruleData).eq("id", existingId);
-            if (error) throw error;
-            updatedCount++;
-          } else {
-            const { error } = await (supabase as any).from("reorder_rules").insert(ruleData);
-            if (error) throw error;
-            importedNew++;
-          }
-          await (supabase as any).from("items").update({ min_stock: reorderPoint }).eq("id", itemId);
-        } catch (err: any) {
-          skipped++;
-          errors.push(`Row ${excelRow} (${ref}): ${err?.message ?? "DB error"}`);
-          skipReasons.push({ row: excelRow, value: ref, reason: `DB error: ${err?.message ?? "unknown"}` });
+        const existingId = existingByItemId.get(itemId);
+        if (existingId) {
+          updateRules.push({ id: existingId, data: ruleData });
+        } else {
+          newRules.push(ruleData);
         }
-
-        if (total > 0) onProgress?.(Math.round(((i + 1) / total) * 100));
+        minStockUpdates.push({ id: itemId, min_stock: reorderPoint });
       }
 
+      // Batch insert new rules in chunks of 500
+      const CHUNK = 500;
+      for (let i = 0; i < newRules.length; i += CHUNK) {
+        try {
+          const { error } = await (supabase as any).from("reorder_rules").insert(newRules.slice(i, i + CHUNK));
+          if (error) throw error;
+          importedNew += Math.min(CHUNK, newRules.length - i);
+        } catch (err: any) {
+          const count = Math.min(CHUNK, newRules.length - i);
+          skipped += count;
+          errors.push(`Batch insert failed: ${err?.message ?? "DB error"}`);
+        }
+        await new Promise<void>((r) => setTimeout(r, 10));
+      }
+
+      // Batch upsert existing rules in chunks of 500
+      for (let i = 0; i < updateRules.length; i += CHUNK) {
+        const chunk = updateRules.slice(i, i + CHUNK).map((r) => ({ id: r.id, ...r.data }));
+        try {
+          const { error } = await (supabase as any).from("reorder_rules").upsert(chunk, { onConflict: "id" });
+          if (error) throw error;
+          updatedCount += chunk.length;
+        } catch (err: any) {
+          skipped += chunk.length;
+          errors.push(`Batch update failed: ${err?.message ?? "DB error"}`);
+        }
+        await new Promise<void>((r) => setTimeout(r, 10));
+      }
+
+      // Batch upsert items.min_stock in chunks of 500
+      for (let i = 0; i < minStockUpdates.length; i += CHUNK) {
+        try {
+          await (supabase as any).from("items").upsert(minStockUpdates.slice(i, i + CHUNK), { onConflict: "id" });
+        } catch { /* non-fatal */ }
+        await new Promise<void>((r) => setTimeout(r, 10));
+      }
+
+      if (bRows.length > 0) onProgress?.(100);
       return { imported: importedNew + updatedCount, skipped, errors, skipReasons };
     };
 
@@ -1738,6 +1768,8 @@ function ProcessingRoutesImportTab() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [progress, setProgress] = useState(0);
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1757,16 +1789,30 @@ function ProcessingRoutesImportTab() {
 
   const handleImport = async () => {
     if (rows.length === 0) return;
+    setImporting(true);
+    setProgress(0);
     try {
       const companyId = await getCompanyId();
-      const { data: itemsRaw } = await supabase.from("items").select("id, drawing_revision, item_code").eq("company_id", companyId);
+
+      // Fetch items + parties once upfront
+      const [{ data: itemsRaw }, { data: partiesRaw }] = await Promise.all([
+        supabase.from("items").select("id, drawing_revision, item_code").eq("company_id", companyId),
+        (supabase as any).from("parties").select("id, name").eq("company_id", companyId),
+      ]);
       const drawingToId = new Map<string, string>();
       for (const i of (itemsRaw ?? [])) {
         if ((i as any).drawing_revision) drawingToId.set((i as any).drawing_revision.toLowerCase(), (i as any).id);
         if ((i as any).item_code) drawingToId.set((i as any).item_code.toLowerCase(), (i as any).id);
       }
+      const vendorByName = new Map<string, string>();
+      for (const p of (partiesRaw ?? [])) vendorByName.set(String(p.name).toLowerCase(), p.id);
 
-      let imported = 0, skipped = 0;
+      // Parse all rows into payloads in memory
+      type RowVendor = { name: string; isPreferred: boolean };
+      const routePayloads: any[] = [];
+      const rowVendors: RowVendor[][] = [];
+      let skipped = 0;
+
       for (const row of rows) {
         const drawingNum = (row["Drawing Number *"] || row["Drawing Number"] || row["drawing_number"] || "").toString().trim();
         const stageNum = parseInt((row["Stage No *"] || row["Stage No"] || row["stage_number"] || "0").toString().trim(), 10);
@@ -1775,49 +1821,79 @@ function ProcessingRoutesImportTab() {
         if (!drawingNum || !stageNum || !processName) { skipped++; continue; }
         const itemId = drawingToId.get(drawingNum.toLowerCase());
         if (!itemId) { skipped++; continue; }
-        try {
-          const { data: routeData } = await (supabase as any)
-            .from("bom_processing_routes")
-            .upsert({
-              company_id: companyId,
-              item_id: itemId,
-              stage_number: stageNum,
-              process_code: (row["Process Code"] || row["process_code"] || "").toString().trim() || null,
-              process_name: processName,
-              stage_type: ['internal', 'external'].includes(stageType) ? stageType : 'external',
-              lead_time_days: parseInt((row["Lead Time Days"] || row["lead_time_days"] || "7").toString(), 10) || 7,
-              notes: (row["Notes"] || row["notes"] || "").toString().trim() || null,
-              is_active: true,
-              updated_at: new Date().toISOString(),
-            }, { onConflict: "company_id,item_id,stage_number" })
-            .select("id")
-            .single();
-          if (routeData?.id) {
-            // Add vendors
-            for (const vKey of ["Vendor 1", "Vendor 2", "vendor_1", "vendor_2"]) {
-              const vName = (row[vKey] || "").toString().trim();
-              if (vName) {
-                const { data: party } = await (supabase as any).from("parties").select("id").ilike("name", vName).eq("company_id", companyId).maybeSingle();
-                if (party) {
-                  await (supabase as any).from("bpr_vendors").insert({
-                    company_id: companyId,
-                    route_id: routeData.id,
-                    vendor_id: party.id,
-                    vendor_name: vName,
-                    is_preferred: vKey.includes("1"),
-                    unit_cost: 0,
-                  }).throwOnError();
-                }
-              }
-            }
-          }
-          imported++;
-        } catch { skipped++; }
+
+        const vendors: RowVendor[] = [];
+        for (const vKey of ["Vendor 1", "Vendor 2", "vendor_1", "vendor_2"]) {
+          const vName = (row[vKey] || "").toString().trim();
+          if (vName) vendors.push({ name: vName, isPreferred: vKey.includes("1") });
+        }
+
+        routePayloads.push({
+          company_id: companyId,
+          item_id: itemId,
+          stage_number: stageNum,
+          process_code: (row["Process Code"] || row["process_code"] || "").toString().trim() || null,
+          process_name: processName,
+          stage_type: ['internal', 'external'].includes(stageType) ? stageType : 'external',
+          lead_time_days: parseInt((row["Lead Time Days"] || row["lead_time_days"] || "7").toString(), 10) || 7,
+          notes: (row["Notes"] || row["notes"] || "").toString().trim() || null,
+          is_active: true,
+          updated_at: new Date().toISOString(),
+        });
+        rowVendors.push(vendors);
       }
+
+      // Batch upsert routes in chunks of 500
+      const CHUNK = 500;
+      let imported = 0;
+      const routeIdMap = new Map<string, string>(); // "item_id:stage_number" → route id
+
+      for (let i = 0; i < routePayloads.length; i += CHUNK) {
+        const chunk = routePayloads.slice(i, i + CHUNK);
+        try {
+          const { data: upserted, error } = await (supabase as any)
+            .from("bom_processing_routes")
+            .upsert(chunk, { onConflict: "company_id,item_id,stage_number" })
+            .select("id, item_id, stage_number");
+          if (error) throw error;
+          for (const r of (upserted ?? [])) routeIdMap.set(`${r.item_id}:${r.stage_number}`, r.id);
+          imported += chunk.length;
+        } catch { skipped += chunk.length; }
+        setProgress(Math.round(((i + chunk.length) / routePayloads.length) * 80));
+        await new Promise<void>((r) => setTimeout(r, 10));
+      }
+
+      // Collect all vendor records and batch insert in chunks of 500
+      const allVendorRecords: any[] = [];
+      for (let i = 0; i < routePayloads.length; i++) {
+        const routeId = routeIdMap.get(`${routePayloads[i].item_id}:${routePayloads[i].stage_number}`);
+        if (!routeId || rowVendors[i].length === 0) continue;
+        for (const v of rowVendors[i]) {
+          const vendorId = vendorByName.get(v.name.toLowerCase());
+          if (!vendorId) continue;
+          allVendorRecords.push({
+            company_id: companyId,
+            route_id: routeId,
+            vendor_id: vendorId,
+            vendor_name: v.name,
+            is_preferred: v.isPreferred,
+            unit_cost: 0,
+          });
+        }
+      }
+      for (let i = 0; i < allVendorRecords.length; i += CHUNK) {
+        try { await (supabase as any).from("bpr_vendors").insert(allVendorRecords.slice(i, i + CHUNK)); } catch { /* non-fatal */ }
+        if (allVendorRecords.length > 0) setProgress(80 + Math.round(((i + CHUNK) / allVendorRecords.length) * 20));
+        await new Promise<void>((r) => setTimeout(r, 10));
+      }
+
       setResult({ imported, skipped });
       setRows([]);
     } catch (err: any) {
       toast({ title: "Import failed", description: err.message, variant: "destructive" });
+    } finally {
+      setImporting(false);
+      setProgress(0);
     }
   };
 
@@ -1833,18 +1909,23 @@ function ProcessingRoutesImportTab() {
         <Button variant="outline" size="sm" className="gap-1.5" onClick={() => downloadTemplate("Processing Routes", PROCESSING_ROUTES_HEADERS)}>
           <Download className="h-4 w-4" /> Download Template
         </Button>
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => fileRef.current?.click()}>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => fileRef.current?.click()} disabled={importing}>
           <Upload className="h-4 w-4" /> Choose Excel File
         </Button>
         <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xls,.csv" className="hidden" onChange={handleFile} />
         {rows.length > 0 && (
-          <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white" onClick={handleImport}>
-            Import {rows.length} Row{rows.length !== 1 ? "s" : ""}
+          <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white" onClick={handleImport} disabled={importing}>
+            {importing ? `Importing… ${progress}%` : `Import ${rows.length} Row${rows.length !== 1 ? "s" : ""}`}
           </Button>
         )}
       </div>
-      {rows.length > 0 && <PreviewTable rows={rows.slice(0, 10)} errorRows={new Set()} />}
-      {rows.length === 0 && !result && (
+      {importing && (
+        <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+          <div className="bg-blue-500 h-1.5 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
+        </div>
+      )}
+      {rows.length > 0 && !importing && <PreviewTable rows={rows.slice(0, 10)} errorRows={new Set()} />}
+      {rows.length === 0 && !result && !importing && (
         <div className="border-2 border-dashed border-border rounded-xl py-12 text-center">
           <Table className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
           <p className="text-sm text-muted-foreground font-medium">Upload an Excel file to import Processing Routes</p>
@@ -1863,6 +1944,117 @@ function JigMasterImportTab() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
+  const [importing, setImporting] = useState(false);
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const XLSX = await import("xlsx-js-style");
+      const buffer = await file.arrayBuffer();
+      const wb = (XLSX as any).read(new Uint8Array(buffer), { type: "array", raw: false });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw = (XLSX as any).utils.sheet_to_json(ws, { defval: "" }) as Record<string, string>[];
+      setRows(raw);
+    } catch (err: any) {
+      toast({ title: "Failed to parse file", description: err.message, variant: "destructive" });
+    }
+    e.target.value = "";
+  };
+
+  const handleImport = async () => {
+    if (rows.length === 0) return;
+    setImporting(true);
+    try {
+      const companyId = await getCompanyId();
+      const VALID_STATUSES = ['ok', 'to_be_made', 'in_progress', 'damaged'];
+
+      // Build payloads in memory, validate upfront
+      const payloads: any[] = [];
+      let skipped = 0;
+      for (const row of rows) {
+        const drawingNumber = (row["Drawing Number *"] || row["Drawing Number"] || row["drawing_number"] || "").toString().trim();
+        const jigNumber = (row["Jig Number *"] || row["Jig Number"] || row["jig_number"] || "").toString().trim();
+        if (!drawingNumber || !jigNumber) { skipped++; continue; }
+        const rawStatus = (row["Status"] || row["status"] || "ok").toString().trim().toLowerCase().replace(/ /g, '_');
+        payloads.push({
+          company_id: companyId,
+          drawing_number: drawingNumber,
+          jig_number: jigNumber,
+          status: VALID_STATUSES.includes(rawStatus) ? rawStatus : 'ok',
+          associated_process: (row["Associated Process"] || row["associated_process"] || "").toString().trim() || null,
+          notes: (row["Notes"] || row["notes"] || "").toString().trim() || null,
+        });
+      }
+
+      // Batch insert in chunks of 500
+      let imported = 0;
+      const CHUNK = 500;
+      for (let i = 0; i < payloads.length; i += CHUNK) {
+        const chunk = payloads.slice(i, i + CHUNK);
+        try {
+          const { error } = await (supabase as any).from("jig_master").insert(chunk);
+          if (error) throw error;
+          imported += chunk.length;
+        } catch { skipped += chunk.length; }
+        await new Promise<void>((r) => setTimeout(r, 10));
+      }
+
+      setResult({ imported, skipped });
+      setRows([]);
+    } catch (err: any) {
+      toast({ title: "Import failed", description: err.message, variant: "destructive" });
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {result && (
+        <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg p-3">
+          <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
+          <span className="text-sm text-green-800 font-medium">{result.imported} jigs imported · {result.skipped} skipped</span>
+        </div>
+      )}
+      <div className="flex flex-wrap gap-3">
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => downloadTemplate("Jig Master", JIG_MASTER_HEADERS)}>
+          <Download className="h-4 w-4" /> Download Template
+        </Button>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => fileRef.current?.click()} disabled={importing}>
+          <Upload className="h-4 w-4" /> Choose Excel File
+        </Button>
+        <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xls,.csv" className="hidden" onChange={handleFile} />
+        {rows.length > 0 && (
+          <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white" onClick={handleImport} disabled={importing}>
+            {importing ? "Importing…" : `Import ${rows.length} Row${rows.length !== 1 ? "s" : ""}`}
+          </Button>
+        )}
+      </div>
+      {rows.length > 0 && !importing && <PreviewTable rows={rows.slice(0, 10)} errorRows={new Set()} />}
+      {rows.length === 0 && !result && !importing && (
+        <div className="border-2 border-dashed border-border rounded-xl py-12 text-center">
+          <Wrench className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground font-medium">Upload an Excel file to import Jig Master records</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Process Code Master Import Tab ────────────────────────────────────────
+
+const PROCESS_CODE_HEADERS = [
+  "Process Code", "Process Name *", "Stage Type (internal/external) *",
+  "Vendor 1", "Vendor 2", "Vendor 3", "Vendor 4", "Vendor 5", "Vendor 6", "Vendor 7",
+];
+
+function ProcessCodeImportTab() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [rows, setRows] = useState<Record<string, string>[]>([]);
+  const [result, setResult] = useState<{ imported: number; skipped: number; errors: string[] } | null>(null);
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1883,29 +2075,11 @@ function JigMasterImportTab() {
   const handleImport = async () => {
     if (rows.length === 0) return;
     try {
-      const companyId = await getCompanyId();
-      let imported = 0, skipped = 0;
-      const VALID_STATUSES = ['ok', 'to_be_made', 'in_progress', 'damaged'];
-      for (const row of rows) {
-        const drawingNumber = (row["Drawing Number *"] || row["Drawing Number"] || row["drawing_number"] || "").toString().trim();
-        const jigNumber = (row["Jig Number *"] || row["Jig Number"] || row["jig_number"] || "").toString().trim();
-        if (!drawingNumber || !jigNumber) { skipped++; continue; }
-        const rawStatus = (row["Status"] || row["status"] || "ok").toString().trim().toLowerCase().replace(/ /g, '_');
-        const status = VALID_STATUSES.includes(rawStatus) ? rawStatus : 'ok';
-        try {
-          await (supabase as any).from("jig_master").insert({
-            company_id: companyId,
-            drawing_number: drawingNumber,
-            jig_number: jigNumber,
-            status,
-            associated_process: (row["Associated Process"] || row["associated_process"] || "").toString().trim() || null,
-            notes: (row["Notes"] || row["notes"] || "").toString().trim() || null,
-          });
-          imported++;
-        } catch { skipped++; }
-      }
-      setResult({ imported, skipped });
+      const res = await importProcessCodes(rows);
+      setResult(res);
       setRows([]);
+      queryClient.invalidateQueries({ queryKey: ["process-codes"] });
+      queryClient.invalidateQueries({ queryKey: ["count", "process_codes"] });
     } catch (err: any) {
       toast({ title: "Import failed", description: err.message, variant: "destructive" });
     }
@@ -1914,30 +2088,59 @@ function JigMasterImportTab() {
   return (
     <div className="space-y-4">
       {result && (
-        <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg p-3">
-          <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
-          <span className="text-sm text-green-800 font-medium">{result.imported} jigs imported · {result.skipped} skipped</span>
+        <div className="bg-green-50 border border-green-200 rounded-lg p-3 space-y-1">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
+            <span className="text-sm text-green-800 font-medium">
+              {result.imported} process code{result.imported !== 1 ? "s" : ""} imported · {result.skipped} skipped
+            </span>
+          </div>
+          {result.errors.slice(0, 5).map((e, i) => (
+            <p key={i} className="text-xs text-amber-700 pl-6">{e}</p>
+          ))}
+          {result.errors.length > 5 && (
+            <p className="text-xs text-amber-600 pl-6">…and {result.errors.length - 5} more</p>
+          )}
         </div>
       )}
       <div className="flex flex-wrap gap-3">
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => downloadTemplate("Jig Master", JIG_MASTER_HEADERS)}>
+        <button
+          onClick={() => downloadTemplate("Process Code Master", PROCESS_CODE_HEADERS)}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md border border-input bg-background hover:bg-accent transition-colors"
+        >
           <Download className="h-4 w-4" /> Download Template
-        </Button>
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => fileRef.current?.click()}>
+        </button>
+        <button
+          onClick={() => fileRef.current?.click()}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md border border-input bg-background hover:bg-accent transition-colors"
+        >
           <Upload className="h-4 w-4" /> Choose Excel File
-        </Button>
+        </button>
         <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xls,.csv" className="hidden" onChange={handleFile} />
         {rows.length > 0 && (
-          <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white" onClick={handleImport}>
+          <button
+            onClick={handleImport}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+          >
             Import {rows.length} Row{rows.length !== 1 ? "s" : ""}
-          </Button>
+          </button>
+        )}
+        {rows.length > 0 && (
+          <button onClick={() => setRows([])} className="text-sm text-muted-foreground hover:text-foreground px-2">
+            Clear
+          </button>
         )}
       </div>
       {rows.length > 0 && <PreviewTable rows={rows.slice(0, 10)} errorRows={new Set()} />}
       {rows.length === 0 && !result && (
         <div className="border-2 border-dashed border-border rounded-xl py-12 text-center">
-          <Wrench className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground font-medium">Upload an Excel file to import Jig Master records</p>
+          <Cog className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground font-medium">
+            Upload an Excel file to import Process Code Master
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Template columns: Process Code · Process Name · Stage Type · Vendor 1–7
+          </p>
         </div>
       )}
     </div>
@@ -2160,6 +2363,7 @@ export default function DataImport() {
           { value: "reorder_rules", label: "Reorder Rules" },
           { value: "processing_routes", label: "Processing Routes" },
           { value: "jig_master", label: "Jig Master" },
+          { value: "process_codes", label: "Process Code Master" },
         ]}
         value={activeTab}
         onChange={setActiveTab}
@@ -2318,6 +2522,17 @@ export default function DataImport() {
             Import jig and fixture records. Drawing numbers do not need to exist in the Items master.
           </p>
           <JigMasterImportTab />
+        </div>
+      )}
+
+      {activeTab === "process_codes" && (
+        <div className="paper-card mt-4">
+          <h2 className="font-semibold text-slate-900 mb-1">Import Process Code Master</h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            Import your standard process codes and approved vendors. Duplicate process names will be skipped.
+            Vendor names must match existing Parties.
+          </p>
+          <ProcessCodeImportTab />
         </div>
       )}
 

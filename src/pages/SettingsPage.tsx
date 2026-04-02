@@ -1,7 +1,8 @@
 import { useNavigate } from "react-router-dom";
-import { Building2, FileText, Bell, Upload, FileSpreadsheet, Users, History, BookOpen, ChevronRight, AlertTriangle, Receipt } from "lucide-react";
+import { Building2, FileText, Bell, Upload, FileSpreadsheet, Users, History, BookOpen, ChevronRight, AlertTriangle, Receipt, Cog } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchCompanySettings } from "@/lib/settings-api";
+import { fetchProcessCodesCount } from "@/lib/process-library-api";
 
 interface SettingsCard {
   icon: React.ElementType;
@@ -19,6 +20,11 @@ export default function SettingsPage() {
   const { data: companySettings } = useQuery({
     queryKey: ["company-settings"],
     queryFn: fetchCompanySettings,
+  });
+
+  const { data: processCodesCount = 0 } = useQuery({
+    queryKey: ["count", "process_codes"],
+    queryFn: fetchProcessCodesCount,
   });
 
   const isNotConfigured = !companySettings?.gstin ||
@@ -90,6 +96,15 @@ export default function SettingsPage() {
       description: "Invoices, Sales Orders, Receipts — activate when your GST billing workflow is ready",
       action: () => navigate("/invoices"),
       badge: "GST Module",
+    },
+    {
+      icon: Cog,
+      iconBg: "bg-slate-100",
+      iconColor: "text-slate-600",
+      title: "Process Library",
+      description: "Standard process codes and approved vendors used across all manufacturing operations",
+      action: () => navigate("/settings/process-library"),
+      badge: processCodesCount > 0 ? `${processCodesCount} codes` : undefined,
     },
     {
       icon: Users,
