@@ -1,14 +1,18 @@
 import { useState, useMemo, Component, type ReactNode } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { BarChart3, ShoppingCart, Check, X, Shield, Wrench } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { useToast } from "@/hooks/use-toast";
-import { fetchStockStatus, updateMinStockOverride, type StockStatusRow } from "@/lib/items-api";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useLocation } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { Package, Shield } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { fetchStockStatus, type StockStatusRow } from "@/lib/items-api";
 
-class StockRegisterErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+// ── Error boundary ─────────────────────────────────────────────────────────────
+
+class StockRegisterErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: Error | null }
+> {
   constructor(props: { children: ReactNode }) {
     super(props);
     this.state = { error: null };
@@ -20,9 +24,13 @@ class StockRegisterErrorBoundary extends Component<{ children: ReactNode }, { er
     if (this.state.error) {
       return (
         <div className="p-6 text-center space-y-3">
-          <p className="text-destructive font-medium">Something went wrong loading the Stock Register.</p>
+          <p className="text-destructive font-medium">
+            Something went wrong loading the Stock Register.
+          </p>
           <p className="text-sm text-muted-foreground">{this.state.error.message}</p>
-          <Button variant="outline" onClick={() => this.setState({ error: null })}>Retry</Button>
+          <Button variant="outline" onClick={() => this.setState({ error: null })}>
+            Retry
+          </Button>
         </div>
       );
     }
@@ -30,439 +38,563 @@ class StockRegisterErrorBoundary extends Component<{ children: ReactNode }, { er
   }
 }
 
-function StatusBadge({ status }: { status: StockStatusRow["stock_status"] }) {
-  const map = {
-    green: "bg-green-100 text-green-800 border-green-200",
-    amber: "bg-amber-100 text-amber-800 border-amber-200",
-    red: "bg-red-100 text-red-800 border-red-200",
+// ── Type badge ─────────────────────────────────────────────────────────────────
+
+function TypeBadge({ type }: { type: string }) {
+  const map: Record<string, { label: string; cls: string }> = {
+    component:    { label: "Component",     cls: "bg-slate-100 text-slate-700 border border-slate-200" },
+    bought_out:   { label: "Bought-Out",    cls: "bg-blue-50 text-blue-700 border border-blue-200" },
+    sub_assembly: { label: "Sub-Assembly",  cls: "bg-purple-50 text-purple-700 border border-purple-200" },
+    finished_good:{ label: "Finished Good", cls: "bg-emerald-50 text-emerald-700 border border-emerald-200" },
+    raw_material: { label: "Raw Material",  cls: "bg-orange-50 text-orange-700 border border-orange-200" },
   };
-  const label = { green: "OK", amber: "Low", red: "Out" };
+  const t = map[type] ?? {
+    label: type.replace(/_/g, " "),
+    cls: "bg-slate-100 text-slate-600 border border-slate-200",
+  };
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${map[status]}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${status === "green" ? "bg-green-500" : status === "amber" ? "bg-amber-500" : "bg-red-500"}`} />
-      {label[status]}
+    <span
+      className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap ${t.cls}`}
+    >
+      {t.label}
     </span>
   );
 }
 
-function AlertBadge({ level }: { level: string }) {
-  if (level === 'critical') return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700 border border-red-200">Critical</span>;
-  if (level === 'warning') return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-700 border border-amber-200">Warning</span>;
-  if (level === 'watch') return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-200">Watch</span>;
-  if (level === 'locked') return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200" title="Stock exists but fully committed">Locked</span>;
-  return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-700 border border-green-200">Healthy</span>;
-}
+// ── Status badge ───────────────────────────────────────────────────────────────
 
-function InlineEditCell({
-  itemId,
-  value,
-  onSaved,
-}: {
-  itemId: string;
-  value: number | null;
-  onSaved: () => void;
-}) {
-  const { toast } = useToast();
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value != null ? String(value) : "");
+function StatusBadge({ row }: { row: StockStatusRow }) {
+  const level = row.stock_alert_level ?? "healthy";
+  const allZero =
+    row.stock_free === 0 &&
+    row.stock_in_process === 0 &&
+    row.stock_in_subassembly_wip === 0 &&
+    row.stock_in_fg_wip === 0 &&
+    row.stock_in_fg_ready === 0;
 
-  const mutation = useMutation({
-    mutationFn: (val: number | null) => updateMinStockOverride(itemId, val),
-    onSuccess: () => {
-      onSaved();
-      setEditing(false);
-      toast({ title: "Min stock override saved" });
-    },
-    onError: (err: any) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    },
-  });
-
-  const commit = () => {
-    const parsed = draft.trim() === "" ? null : parseFloat(draft);
-    if (parsed !== null && isNaN(parsed)) {
-      toast({ title: "Invalid number", variant: "destructive" });
-      return;
-    }
-    mutation.mutate(parsed);
-  };
-
-  const cancel = () => {
-    setDraft(value != null ? String(value) : "");
-    setEditing(false);
-  };
-
-  if (!editing) {
+  if (level === "critical") {
     return (
-      <button
-        className="text-left w-full hover:underline focus:outline-none text-sm tabular-nums"
-        onClick={() => { setDraft(value != null ? String(value) : ""); setEditing(true); }}
-        title="Click to edit"
-      >
-        {value != null ? value : <span className="text-muted-foreground italic">—</span>}
-      </button>
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 border border-red-200 whitespace-nowrap">
+        Reorder Now
+      </span>
     );
   }
-
+  if (level === "warning") {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 border border-amber-200 whitespace-nowrap">
+        Running Low
+      </span>
+    );
+  }
+  if (level === "locked") {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap cursor-default">
+            Engaged
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="left" className="max-w-[240px] text-xs">
+          Stock exists but none is currently free — all quantity is at vendors or in active
+          production
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+  if (level === "healthy" && allZero) {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-500 border border-slate-200 whitespace-nowrap">
+        No Stock
+      </span>
+    );
+  }
+  // healthy (with stock) or watch
   return (
-    <div className="flex items-center gap-1">
-      <Input
-        autoFocus
-        type="number"
-        min={0}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") cancel(); }}
-        className="h-7 w-24 text-sm"
-      />
-      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={commit} disabled={mutation.isPending}>
-        <Check className="h-3.5 w-3.5 text-green-600" />
-      </Button>
-      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={cancel}>
-        <X className="h-3.5 w-3.5 text-muted-foreground" />
-      </Button>
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-200 whitespace-nowrap">
+      In Stock
+    </span>
+  );
+}
+
+// ── Stat chip ──────────────────────────────────────────────────────────────────
+
+function StatChip({
+  label,
+  value,
+  colour,
+}: {
+  label: string;
+  value: number;
+  colour: "slate" | "green" | "amber" | "red";
+}) {
+  const cls = {
+    slate: "bg-slate-50 border-slate-200 text-slate-600",
+    green: "bg-green-50 border-green-200 text-green-700",
+    amber: "bg-amber-50 border-amber-200 text-amber-700",
+    red:   "bg-red-50 border-red-200 text-red-700",
+  }[colour];
+  return (
+    <div
+      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium ${cls}`}
+    >
+      <span className="opacity-70">{label}</span>
+      <span className="font-bold font-mono tabular-nums">{value}</span>
     </div>
   );
 }
 
-type TypeTab = "all" | "raw_material" | "component" | "finished_good" | "bought_out";
+// ── Types ──────────────────────────────────────────────────────────────────────
 
-const TYPE_TABS: { value: TypeTab; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "raw_material", label: "Raw Materials" },
-  { value: "component", label: "Components" },
-  { value: "finished_good", label: "Finished Goods" },
-  { value: "bought_out", label: "Bought-Out" },
-];
+type AvailabilityFilter =
+  | "all"
+  | "in_store"
+  | "at_vendor"
+  | "in_production"
+  | "ready_to_dispatch";
+
+type AlertFilter = "all" | "critical" | "warning" | "locked" | "healthy";
+
+type TypeFilter =
+  | "all"
+  | "component"
+  | "bought_out"
+  | "sub_assembly"
+  | "finished_good";
+
+// ── Column header with tooltip ─────────────────────────────────────────────────
+
+function ColHeader({
+  label,
+  tip,
+  align = "right",
+}: {
+  label: string;
+  tip: string;
+  align?: "left" | "right";
+}) {
+  return (
+    <th
+      className={`px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap ${
+        align === "right" ? "text-right" : "text-left"
+      }`}
+    >
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="cursor-default">{label}</span>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-[220px] text-xs">
+          {tip}
+        </TooltipContent>
+      </Tooltip>
+    </th>
+  );
+}
+
+// ── Num cell ───────────────────────────────────────────────────────────────────
+
+function Num({ value, bold }: { value: number; bold?: boolean }) {
+  if (!value)
+    return <span className="text-slate-300 text-sm select-none">—</span>;
+  return (
+    <span
+      className={`text-sm font-mono tabular-nums ${
+        bold ? "font-semibold text-slate-800" : "text-slate-600"
+      }`}
+    >
+      {value}
+    </span>
+  );
+}
+
+// ── Main inner component ───────────────────────────────────────────────────────
 
 function StockRegisterInner() {
-  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
-  const { toast } = useToast();
+
+  // Pre-set filters from URL params
+  const urlParams = new URLSearchParams(location.search);
+  const urlFilter = urlParams.get("filter");
+  const urlType = urlParams.get("type");
+
+  const [search, setSearch] = useState("");
+  const [availability, setAvailability] = useState<AvailabilityFilter>("all");
+  const [alertFilter, setAlertFilter] = useState<AlertFilter>(() => {
+    if (
+      urlFilter === "critical" ||
+      urlFilter === "warning" ||
+      urlFilter === "locked" ||
+      urlFilter === "healthy"
+    )
+      return urlFilter;
+    return "all";
+  });
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>(() => {
+    if (
+      urlType === "component" ||
+      urlType === "bought_out" ||
+      urlType === "sub_assembly" ||
+      urlType === "finished_good"
+    )
+      return urlType;
+    return "all";
+  });
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ["stock_status"],
     queryFn: fetchStockStatus,
   });
 
-  const { data: processingLogs = [] } = useQuery({
-    queryKey: ['component-processing-logs'],
-    queryFn: async () => {
-      const { data, error } = await (supabase as any)
-        .from('component_processing_log')
-        .select('*')
-        .order('updated_at', { ascending: false });
-      if (error) return [];
-      return data ?? [];
-    },
-    staleTime: 30000,
-  });
-  const processingLogByItemId = useMemo(() => {
-    const map = new Map<string, any>();
-    for (const log of processingLogs as any[]) {
-      if (!map.has(log.item_id)) map.set(log.item_id, log);
+  const anyFilterActive =
+    search.trim() !== "" ||
+    availability !== "all" ||
+    alertFilter !== "all" ||
+    typeFilter !== "all";
+
+  // Stat chips — always from full unfiltered list
+  const chips = useMemo(
+    () => ({
+      total: rows.length,
+      inStore: rows.filter((r) => r.stock_free > 0).length,
+      atVendor: rows.filter((r) => r.stock_in_process > 0).length,
+      needsAttention: rows.filter((r) =>
+        ["critical", "warning", "locked"].includes(r.stock_alert_level ?? "healthy")
+      ).length,
+    }),
+    [rows]
+  );
+
+  // Filtered rows
+  const filtered = useMemo(() => {
+    let result = rows;
+
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter(
+        (r) =>
+          r.item_code.toLowerCase().includes(q) ||
+          r.description.toLowerCase().includes(q)
+      );
     }
-    return map;
-  }, [processingLogs]);
 
-  const [statusFilter, setStatusFilter] = useState<"all" | "green" | "amber" | "red">("all");
-  const [typeTab, setTypeTab] = useState<TypeTab>(() => {
-    const params = new URLSearchParams(location.search);
-    const t = params.get("type");
-    if (t === "raw_material" || t === "component" || t === "finished_good" || t === "bought_out") return t;
-    return "all";
-  });
-  const [alertFilter, setAlertFilter] = useState<"all" | "critical" | "warning" | "watch" | "locked" | "healthy">(() => {
-    const params = new URLSearchParams(location.search);
-    const f = params.get("filter");
-    if (f === "critical" || f === "warning" || f === "watch" || f === "locked" || f === "healthy") return f;
-    return "all";
-  });
+    if (typeFilter !== "all") {
+      result = result.filter((r) => r.item_type === typeFilter);
+    }
 
+    if (availability !== "all") {
+      result = result.filter((r) => {
+        if (availability === "in_store")          return r.stock_free > 0;
+        if (availability === "at_vendor")         return r.stock_in_process > 0;
+        if (availability === "in_production")     return (r.stock_in_subassembly_wip + r.stock_in_fg_wip) > 0;
+        if (availability === "ready_to_dispatch") return r.stock_in_fg_ready > 0;
+        return true;
+      });
+    }
 
-  const filtered = rows
-    .filter((r) => statusFilter === "all" || r.stock_status === statusFilter)
-    .filter((r) => {
-      if (typeTab === "all") return true;
-      if (typeTab === "component") return r.item_type === "component" || r.item_type === "sub_assembly";
-      return r.item_type === typeTab;
-    })
-    .filter((r) => {
-      if (alertFilter === "all") return true;
-      return ((r as any).stock_alert_level ?? 'healthy') === alertFilter;
-    });
+    if (alertFilter !== "all") {
+      result = result.filter(
+        (r) => (r.stock_alert_level ?? "healthy") === alertFilter
+      );
+    }
 
-  const counts = {
-    green: rows.filter((r) => r.stock_status === "green").length,
-    amber: rows.filter((r) => r.stock_status === "amber").length,
-    red: rows.filter((r) => r.stock_status === "red").length,
+    return result;
+  }, [rows, search, typeFilter, availability, alertFilter]);
+
+  const clearFilters = () => {
+    setSearch("");
+    setAvailability("all");
+    setAlertFilter("all");
+    setTypeFilter("all");
   };
 
-  const tabCounts: Record<TypeTab, number> = {
-    all: rows.length,
-    raw_material: rows.filter((r) => r.item_type === "raw_material").length,
-    component: rows.filter((r) => r.item_type === "component" || r.item_type === "sub_assembly").length,
-    finished_good: rows.filter((r) => r.item_type === "finished_good").length,
-    bought_out: rows.filter((r) => r.item_type === "bought_out").length,
-  };
+  const AVAIL_OPTS: { v: AvailabilityFilter; label: string }[] = [
+    { v: "all",               label: "All" },
+    { v: "in_store",          label: "In Store" },
+    { v: "at_vendor",         label: "At Vendor" },
+    { v: "in_production",     label: "In Production" },
+    { v: "ready_to_dispatch", label: "Ready to Dispatch" },
+  ];
 
-  const handleCreatePO = (row: StockStatusRow) => {
-    navigate(`/purchase-orders/new?item_id=${row.id}`);
-  };
-
+  const TYPE_OPTS: { v: TypeFilter; label: string }[] = [
+    { v: "all",           label: "All Types" },
+    { v: "component",     label: "Component" },
+    { v: "bought_out",    label: "Bought-Out" },
+    { v: "sub_assembly",  label: "Sub-Assembly" },
+    { v: "finished_good", label: "Finished Good" },
+  ];
 
   return (
     <div className="p-4 md:p-6 space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-            <Shield className="h-5 w-5 text-blue-600" /> Stock Register
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">Current stock vs minimum levels for all active items</p>
-        </div>
+
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+          <Shield className="h-5 w-5 text-blue-600" />
+          Stock Register
+        </h1>
+        <p className="text-sm text-slate-500 mt-0.5">
+          Real-time view of all inventory across store, vendors, and production
+        </p>
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {(["all", "green", "amber", "red"] as const).map((s) => {
-          const labelMap = { all: "All Items", green: "In Stock", amber: "Low Stock", red: "Out of Stock" };
-          const countMap = { all: rows.length, green: counts.green, amber: counts.amber, red: counts.red };
-          const cardColour = {
-            all: "bg-white border-slate-200",
-            green: "bg-green-50 border-green-200",
-            amber: "bg-amber-50 border-amber-200",
-            red: "bg-red-50 border-red-200",
-          };
-          const textColour = {
-            all: "text-slate-700",
-            green: "text-green-700",
-            amber: "text-amber-700",
-            red: "text-red-700",
-          };
-          const numColour = {
-            all: "text-slate-900",
-            green: "text-green-800",
-            amber: "text-amber-800",
-            red: "text-red-800",
-          };
-          return (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              className={`rounded-xl border shadow-sm p-4 text-left transition-all hover:shadow-md ${cardColour[s]} ${statusFilter === s ? "ring-2 ring-offset-1 ring-blue-400/40" : ""}`}
-            >
-              <p className={`text-xs font-semibold uppercase tracking-wider ${textColour[s]}`}>{labelMap[s]}</p>
-              <p className={`text-2xl font-bold font-mono mt-1 ${numColour[s]}`}>{countMap[s]}</p>
-            </button>
-          );
-        })}
+      {/* ── Stat chips ─────────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap gap-2">
+        <StatChip label="Total Items"     value={chips.total}          colour="slate" />
+        <StatChip label="In Store"        value={chips.inStore}        colour="green" />
+        <StatChip label="At Vendor"       value={chips.atVendor}       colour="amber" />
+        <StatChip
+          label="Needs Attention"
+          value={chips.needsAttention}
+          colour={chips.needsAttention > 0 ? "red" : "slate"}
+        />
       </div>
 
-      {/* Type tab bar */}
-      <div className="flex gap-1 border-b border-slate-200">
-        {TYPE_TABS.map((tab) => (
-          <button
-            key={tab.value}
-            onClick={() => setTypeTab(tab.value)}
-            className={`px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
-              typeTab === tab.value
-                ? "border-b-2 border-blue-600 text-blue-600"
-                : "text-slate-500 hover:text-slate-700"
-            }`}
+      {/* ── Filters row 1 ──────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap gap-2 items-center">
+        {/* Search */}
+        <div className="relative flex-1 min-w-[240px] max-w-sm">
+          <svg
+            className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
           >
-            {tab.label}
-            {tabCounts[tab.value] > 0 && (
-              <span className="ml-1.5 text-[10px] font-semibold bg-slate-200 text-slate-600 rounded-full px-1.5 py-0.5 tabular-nums">
-                {tabCounts[tab.value]}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
+          </svg>
+          <Input
+            placeholder="Search by item name or drawing number..."
+            className="pl-9 h-9 text-sm"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
 
-      {/* Alert level filter */}
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-slate-500 font-medium">Alert Level:</span>
+        {/* Availability segmented control */}
+        <div className="flex rounded-lg border border-slate-200 bg-white overflow-hidden">
+          {AVAIL_OPTS.map((opt) => (
+            <button
+              key={opt.v}
+              onClick={() => setAvailability(opt.v)}
+              className={`px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap border-r border-slate-200 last:border-r-0 ${
+                availability === opt.v
+                  ? "bg-slate-900 text-white"
+                  : "text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Alert status filter */}
         <select
           value={alertFilter}
-          onChange={(e) => setAlertFilter(e.target.value as typeof alertFilter)}
-          className="h-8 text-sm border border-slate-200 rounded px-2 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
+          onChange={(e) => setAlertFilter(e.target.value as AlertFilter)}
+          className="h-9 text-sm border border-slate-200 rounded-lg px-3 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
         >
-          <option value="all">All</option>
-          <option value="critical">Critical Only</option>
-          <option value="warning">Warning Only</option>
-          <option value="watch">Watch Only</option>
-          <option value="locked">Locked Only</option>
-          <option value="healthy">Healthy Only</option>
+          <option value="all">All Statuses</option>
+          <option value="critical">Needs Reorder</option>
+          <option value="warning">Running Low</option>
+          <option value="locked">Engaged</option>
+          <option value="healthy">Healthy</option>
         </select>
       </div>
 
-      <div className="paper-card !p-0">
-        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
-          <table className="w-full data-table">
-            <thead className="sticky top-0 z-10">
-              <tr>
-                <th>Code</th>
-                <th>Description</th>
-                <th>Type</th>
-                <th className="text-right">Free</th>
-                <th className="text-right">In Process</th>
-                <th className="text-right">S/A WIP</th>
-                <th className="text-right">FG WIP</th>
-                <th className="text-right">FG Ready</th>
-                <th className="text-right">Total</th>
-                <th className="text-right">Min Stock</th>
-                <th className="text-right">Min Override</th>
-                <th className="text-right">Eff. Min</th>
-                <th>Alert</th>
-                <th>Status</th>
-                <th>Processing</th>
-                <th className="w-44">Actions</th>
+      {/* ── Filters row 2 ──────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap gap-2 items-center">
+        {/* Type segmented control */}
+        <div className="flex rounded-lg border border-slate-200 bg-white overflow-hidden">
+          {TYPE_OPTS.map((opt) => (
+            <button
+              key={opt.v}
+              onClick={() => setTypeFilter(opt.v)}
+              className={`px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap border-r border-slate-200 last:border-r-0 ${
+                typeFilter === opt.v
+                  ? "bg-slate-900 text-white"
+                  : "text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        {anyFilterActive && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 text-xs text-slate-500 hover:text-slate-800"
+            onClick={clearFilters}
+          >
+            Clear filters
+          </Button>
+        )}
+      </div>
+
+      {/* ── Table ──────────────────────────────────────────────────────────── */}
+      <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 z-10 bg-white shadow-sm">
+              <tr className="border-b border-slate-200">
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Item
+                </th>
+                <th className="text-left px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                  Type
+                </th>
+                <ColHeader
+                  label="In Store"
+                  tip="Physically available in store, ready to use"
+                />
+                <ColHeader
+                  label="At Vendor"
+                  tip="Sent for processing via Delivery Challan, expected to return"
+                />
+                <ColHeader
+                  label="In Production"
+                  tip="Currently being assembled into a sub-assembly or finished good"
+                />
+                <ColHeader
+                  label="Ready to Ship"
+                  tip="Completed finished goods awaiting dispatch"
+                />
+                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                  Total
+                </th>
+                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                  Min Required
+                </th>
+                <th className="text-left px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                  Status
+                </th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-slate-100">
               {isLoading ? (
-                <tr><td colSpan={16} className="text-center py-8 text-muted-foreground">Loading...</td></tr>
+                <tr>
+                  <td colSpan={9} className="text-center py-12 text-slate-400 text-sm">
+                    Loading…
+                  </td>
+                </tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={16} className="text-center py-8 text-muted-foreground">No items found.</td></tr>
-              ) : (
-                filtered.map((row) => (
-                  <tr
-                    key={row.id}
-                    className={`transition-colors cursor-pointer ${row.stock_status === "red" ? "bg-red-50/60 hover:bg-red-50" : row.stock_status === "amber" ? "bg-amber-50/40 hover:bg-amber-50/60" : "hover:bg-blue-50/40"}`}
-                    onClick={() => navigate(`/stock-ledger?item_id=${row.id}`)}
-                  >
-                    <td className="font-mono text-xs font-medium text-foreground">{row.item_code}</td>
-                    <td className="font-medium">{row.description}</td>
-                    <td className="text-muted-foreground text-xs capitalize">{row.item_type?.replace(/_/g, ' ')}</td>
-                    <td className="text-right font-mono tabular-nums">
-                      {((row as any).stock_free ?? 0) > 0 ? (
-                        <span className="px-1.5 py-0.5 rounded text-xs bg-green-50 text-green-700">{(row as any).stock_free ?? 0}</span>
-                      ) : <span className="text-muted-foreground text-xs">—</span>}
-                    </td>
-                    <td className="text-right font-mono tabular-nums">
-                      {((row as any).stock_in_process ?? 0) > 0 ? (
-                        <span className="px-1.5 py-0.5 rounded text-xs bg-amber-50 text-amber-700">{(row as any).stock_in_process ?? 0}</span>
-                      ) : <span className="text-muted-foreground text-xs">—</span>}
-                    </td>
-                    <td className="text-right font-mono tabular-nums">
-                      {((row as any).stock_in_subassembly_wip ?? 0) > 0 ? (
-                        <span className="px-1.5 py-0.5 rounded text-xs bg-blue-50 text-blue-700">{(row as any).stock_in_subassembly_wip ?? 0}</span>
-                      ) : <span className="text-muted-foreground text-xs">—</span>}
-                    </td>
-                    <td className="text-right font-mono tabular-nums">
-                      {((row as any).stock_in_fg_wip ?? 0) > 0 ? (
-                        <span className="px-1.5 py-0.5 rounded text-xs bg-purple-50 text-purple-700">{(row as any).stock_in_fg_wip ?? 0}</span>
-                      ) : <span className="text-muted-foreground text-xs">—</span>}
-                    </td>
-                    <td className="text-right font-mono tabular-nums">
-                      {((row as any).stock_in_fg_ready ?? 0) > 0 ? (
-                        <span className="px-1.5 py-0.5 rounded text-xs bg-emerald-50 text-emerald-700">{(row as any).stock_in_fg_ready ?? 0}</span>
-                      ) : <span className="text-muted-foreground text-xs">—</span>}
-                    </td>
-                    <td className="text-right font-mono tabular-nums font-semibold">{row.current_stock}</td>
-                    <td className="text-right font-mono tabular-nums text-muted-foreground">{row.min_stock}</td>
-                    <td className="text-right" onClick={(e) => e.stopPropagation()}>
-                      <InlineEditCell
-                        itemId={row.id}
-                        value={row.min_stock_override}
-                        onSaved={() => queryClient.invalidateQueries({ queryKey: ["stock_status"] })}
-                      />
-                    </td>
-                    <td className="text-right font-mono tabular-nums font-medium">{row.effective_min_stock}</td>
-                    <td onClick={(e) => e.stopPropagation()}><AlertBadge level={(row as any).stock_alert_level ?? 'healthy'} /></td>
-                    <td><StatusBadge status={row.stock_status} /></td>
-                    <td onClick={(e) => e.stopPropagation()}>
-                      {(() => {
-                        const log = processingLogByItemId.get(row.id);
-                        if (!log) return null;
-                        const status = log.current_status as string;
-                        if (status === 'finished_goods') return (
-                          <div className="flex items-center gap-1">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200">All stages complete</span>
-                            <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 ml-1"
-                              onClick={async () => {
-                                const qty = Math.min(row.stock_wip ?? 0, log.accepted_qty - (row.stock_finished_goods ?? 0));
-                                if (qty <= 0) return;
-                                await (supabase as any).from('items').update({ stock_wip: Math.max(0, (row.stock_wip ?? 0) - qty), stock_finished_goods: (row.stock_finished_goods ?? 0) + qty }).eq('id', row.id);
-                                queryClient.invalidateQueries({ queryKey: ['stock_status'] });
-                                toast({ title: 'Moved to finished goods', description: `${qty} units moved` });
-                              }}>
-                              Move to FG
-                            </Button>
-                          </div>
-                        );
-                        if (status === 'at_vendor' || status === 'rework_at_vendor') return (
-                          <div className="flex items-center gap-1">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${status === 'rework_at_vendor' ? 'bg-orange-100 text-orange-800 border border-orange-200' : 'bg-amber-100 text-amber-800 border border-amber-200'}`}>
-                              {status === 'rework_at_vendor' ? 'Rework at vendor' : `At vendor — Stage ${log.current_stage} of ${log.total_stages}`}
-                            </span>
-                            {log.last_dc_id && (
-                              <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2" onClick={() => navigate(`/delivery-challans/${log.last_dc_id}`)}>View DC</Button>
-                            )}
-                          </div>
-                        );
-                        if (status === 'stage_complete') return (
-                          <div className="flex items-center gap-1">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
-                              Stage {log.current_stage} complete — Stage {log.current_stage + 1} pending
-                            </span>
-                            <Button size="sm" variant="outline" className="h-6 text-[10px] px-2"
-                              onClick={() => navigate('/delivery-challans/new', { state: { prefill: { dc_type: 'job_work_out', line_items: [{ item_code: row.item_code, description: row.description, drawing_number: row.item_code, quantity: log.accepted_qty - (row.stock_finished_goods ?? 0) }] } } })}>
-                              Raise DC
-                            </Button>
-                          </div>
-                        );
-                        return null;
-                      })()}
-                    </td>
-                    <td onClick={(e) => e.stopPropagation()}>
-                      <div className="flex flex-wrap gap-1">
-                        {(row.stock_status === "amber" || row.stock_status === "red") &&
-                          (row.item_type === "raw_material" || row.item_type === "bought_out") && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 text-xs gap-1"
-                            onClick={() => handleCreatePO(row)}
-                          >
-                            <ShoppingCart className="h-3 w-3" /> Create PO
-                          </Button>
-                        )}
-                        {(row.stock_status === "amber" || row.stock_status === "red") &&
-                          (row.item_type === "component" || row.item_type === "sub_assembly") && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 text-xs gap-1"
-                            onClick={() => navigate('/delivery-challans/new')}
-                          >
-                            <Wrench className="h-3 w-3" /> Raise DC
-                          </Button>
-                        )}
-                        {row.item_type === "finished_good" && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 text-xs gap-1"
-                            onClick={() => navigate('/sub-assembly-work-orders')}
-                          >
-                            Work Orders
-                          </Button>
-                        )}
+                <tr>
+                  <td colSpan={9} className="py-16">
+                    <div className="flex flex-col items-center gap-3">
+                      <Package className="h-10 w-10 text-slate-300" />
+                      <div className="text-center">
+                        <p className="font-medium text-slate-600">No items found</p>
+                        <p className="text-sm text-slate-400 mt-0.5">
+                          {rows.length === 0
+                            ? "No stock data yet. Import items via Settings → Data Import → Items"
+                            : "Try adjusting your search or filters"}
+                        </p>
                       </div>
-                    </td>
-                  </tr>
-                ))
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                filtered.map((row) => {
+                  const inProd = row.stock_in_subassembly_wip + row.stock_in_fg_wip;
+                  const total =
+                    row.stock_free +
+                    row.stock_in_process +
+                    inProd +
+                    row.stock_in_fg_ready;
+                  const minReq = row.min_stock_override ?? row.min_stock ?? 0;
+
+                  return (
+                    <tr
+                      key={row.id}
+                      className="hover:bg-blue-50/40 cursor-pointer transition-colors"
+                      onClick={() => navigate(`/stock-ledger?item_id=${row.id}`)}
+                    >
+                      {/* Item */}
+                      <td className="px-4 py-3 max-w-[280px]">
+                        <p className="text-[11px] text-slate-400 font-mono leading-none mb-0.5">
+                          {row.item_code}
+                        </p>
+                        <p className="text-sm font-medium text-slate-800 leading-snug">
+                          {row.description}
+                        </p>
+                      </td>
+
+                      {/* Type */}
+                      <td className="px-3 py-3">
+                        <TypeBadge type={row.item_type} />
+                      </td>
+
+                      {/* In Store */}
+                      <td className="px-3 py-3 text-right">
+                        <Num value={row.stock_free} bold={row.stock_free > 0} />
+                      </td>
+
+                      {/* At Vendor */}
+                      <td className="px-3 py-3 text-right">
+                        <Num value={row.stock_in_process} />
+                      </td>
+
+                      {/* In Production */}
+                      <td className="px-3 py-3 text-right">
+                        <Num value={inProd} />
+                      </td>
+
+                      {/* Ready to Ship */}
+                      <td className="px-3 py-3 text-right">
+                        <Num value={row.stock_in_fg_ready} />
+                      </td>
+
+                      {/* Total */}
+                      <td className="px-3 py-3 text-right">
+                        {total === 0 ? (
+                          <span className="text-slate-300 text-sm select-none">—</span>
+                        ) : (
+                          <span className="text-sm font-mono tabular-nums font-semibold text-slate-500">
+                            {total}
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Min Required */}
+                      <td className="px-3 py-3 text-right">
+                        {minReq > 0 ? (
+                          <span className="text-sm font-mono tabular-nums text-slate-500">
+                            {minReq}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300 text-sm select-none">—</span>
+                        )}
+                      </td>
+
+                      {/* Status */}
+                      <td className="px-3 py-3">
+                        <StatusBadge row={row} />
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* Row count */}
+      {!isLoading && filtered.length > 0 && (
+        <p className="text-xs text-slate-400 text-right tabular-nums">
+          Showing {filtered.length} of {rows.length} items
+        </p>
+      )}
     </div>
   );
 }
+
+// ── Export ─────────────────────────────────────────────────────────────────────
 
 export default function StockRegister() {
   return (

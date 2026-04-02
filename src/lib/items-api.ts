@@ -57,6 +57,12 @@ export interface StockStatusRow {
   stock_status: "green" | "amber" | "red";
   company_id: string;
   stock_alert_level: 'critical' | 'warning' | 'watch' | 'locked' | 'healthy';
+  // Phase 13 stock buckets (fetched from items table)
+  stock_free: number;
+  stock_in_process: number;
+  stock_in_subassembly_wip: number;
+  stock_in_fg_wip: number;
+  stock_in_fg_ready: number;
 }
 
 export interface ItemFilters {
