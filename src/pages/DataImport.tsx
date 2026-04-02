@@ -1763,7 +1763,7 @@ const PROCESSING_ROUTES_HEADERS = [
   "Vendor 1", "Vendor 2", "Lead Time Days", "Notes"
 ];
 
-function ProcessingRoutesImportTab() {
+function ProcessingRoutesImportTab({ companyId }: { companyId: string | null }) {
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
@@ -1788,12 +1788,14 @@ function ProcessingRoutesImportTab() {
   };
 
   const handleImport = async () => {
-    if (rows.length === 0) return;
+    if (rows.length === 0 || importing) return;
+    if (!companyId) {
+      toast({ title: "Session error", description: "Please refresh the page and try again.", variant: "destructive" });
+      return;
+    }
     setImporting(true);
     setProgress(0);
     try {
-      const companyId = await getCompanyId();
-
       // Fetch items + parties once upfront
       const [{ data: itemsRaw }, { data: partiesRaw }] = await Promise.all([
         supabase.from("items").select("id, drawing_revision, item_code").eq("company_id", companyId),
@@ -1989,7 +1991,7 @@ function ProcessingRoutesImportTab() {
 
 const JIG_MASTER_HEADERS = ["Drawing Number *", "Jig Number *", "Status", "Associated Process", "Notes"];
 
-function JigMasterImportTab() {
+function JigMasterImportTab({ companyId }: { companyId: string | null }) {
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
@@ -2013,14 +2015,13 @@ function JigMasterImportTab() {
   };
 
   const handleImport = async () => {
-    if (rows.length === 0) return;
+    if (rows.length === 0 || importing) return;
+    if (!companyId) {
+      toast({ title: "Session error", description: "Please refresh the page and try again.", variant: "destructive" });
+      return;
+    }
     setImporting(true);
     try {
-      const { data: { session } } = await (supabase as any).auth.getSession();
-      if (!session) throw new Error("Session expired. Please sign out and sign in again.");
-      const companyId = await getCompanyId();
-      if (!companyId) throw new Error("Company ID not found. Please complete company setup.");
-
       const VALID_STATUSES = ['ok', 'to_be_made', 'in_progress', 'damaged'];
 
       // Build payloads in memory — deduplicate on (drawing_number, jig_number); last row wins
@@ -2152,7 +2153,7 @@ const PROCESS_CODE_HEADERS = [
   "Vendor 1", "Vendor 2", "Vendor 3", "Vendor 4", "Vendor 5", "Vendor 6", "Vendor 7",
 ];
 
-function ProcessCodeImportTab() {
+function ProcessCodeImportTab({ companyId }: { companyId: string | null }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -2178,19 +2179,13 @@ function ProcessCodeImportTab() {
 
   const handleImport = async () => {
     if (rows.length === 0 || importing) return;
+    if (!companyId) {
+      toast({ title: "Session error", description: "Please refresh the page and try again.", variant: "destructive" });
+      return;
+    }
     setImporting(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        toast({ title: "Session expired", description: "Please sign out and sign in again before importing.", variant: "destructive" });
-        return;
-      }
-      const companyId = await getCompanyId();
-      if (!companyId) {
-        toast({ title: "Company not found", description: "Please complete company setup before importing.", variant: "destructive" });
-        return;
-      }
-      const res = await importProcessCodes(rows);
+      const res = await importProcessCodes(rows, companyId);
       setResult(res);
       setRows([]);
       queryClient.invalidateQueries({ queryKey: ["process-codes"] });
@@ -2283,6 +2278,15 @@ export default function DataImport() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState((location.state as any)?.tab ?? "parties");
+  const [pageCompanyId, setPageCompanyId] = useState<string | null>(null);
+  const [companyIdLoaded, setCompanyIdLoaded] = useState(false);
+
+  useEffect(() => {
+    getCompanyId().then((id) => {
+      setPageCompanyId(id);
+      setCompanyIdLoaded(true);
+    });
+  }, []);
 
   useEffect(() => {
     if ((location.state as any)?.tab) {
@@ -2490,6 +2494,13 @@ export default function DataImport() {
         </p>
       </div>
 
+      {companyIdLoaded && !pageCompanyId && (
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg p-3">
+          <AlertTriangle className="h-4 w-4 text-red-600 shrink-0" />
+          <span className="text-sm text-red-800 font-medium">Session error — please refresh the page and try again.</span>
+        </div>
+      )}
+
       <SegmentedControl
         options={[
           { value: "parties", label: "Parties" },
@@ -2647,7 +2658,7 @@ export default function DataImport() {
           <p className="text-sm text-muted-foreground mb-4">
             Import multi-stage processing routes per item. Each row is one stage. Items must already exist.
           </p>
-          <ProcessingRoutesImportTab />
+          <ProcessingRoutesImportTab companyId={pageCompanyId} />
         </div>
       )}
 
@@ -2657,7 +2668,7 @@ export default function DataImport() {
           <p className="text-sm text-muted-foreground mb-4">
             Import jig and fixture records. Drawing numbers do not need to exist in the Items master.
           </p>
-          <JigMasterImportTab />
+          <JigMasterImportTab companyId={pageCompanyId} />
         </div>
       )}
 
@@ -2668,7 +2679,7 @@ export default function DataImport() {
             Import your standard process codes and approved vendors. Duplicate process names will be skipped.
             Vendor names must match existing Parties.
           </p>
-          <ProcessCodeImportTab />
+          <ProcessCodeImportTab companyId={pageCompanyId} />
         </div>
       )}
 

@@ -137,12 +137,9 @@ export async function fetchProcessCodesCount(): Promise<number> {
 }
 
 export async function importProcessCodes(
-  rows: Record<string, string>[]
+  rows: Record<string, string>[],
+  companyId: string
 ): Promise<{ imported: number; skipped: number; errors: string[] }> {
-  const { data: { session } } = await (supabase as any).auth.getSession();
-  if (!session) throw new Error("Import failed: session expired. Please sign out and sign in again.");
-  const companyId = await getCompanyId();
-  if (!companyId) throw new Error("Import failed: company ID is missing. Please complete company setup.");
 
   // Fetch vendors for name → id lookup
   const { data: vendorsData } = await (supabase as any)
