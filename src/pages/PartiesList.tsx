@@ -10,7 +10,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { fetchParties, deactivateParty, deleteParty, deleteAllParties, bulkDeleteParties, importPartiesBatch, type PartiesFilters, type VendorType } from "@/lib/parties-api";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { fetchParties, deactivateParty, deleteParty, bulkDeleteParties, safeDeleteAllParties, importPartiesBatch, type PartiesFilters, type VendorType } from "@/lib/parties-api";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import BackgroundImportDialog from "@/components/BackgroundImportDialog";
@@ -61,6 +62,7 @@ export default function PartiesList() {
   const { toast } = useToast();
   const { companyId } = useAuth();
   const [importOpen, setImportOpen] = useState(false);
+  const [clearAllOpen, setClearAllOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState<PartiesFilters>({
     search: "",
@@ -144,13 +146,13 @@ export default function PartiesList() {
   });
 
   const deleteAllMutation = useMutation({
-    mutationFn: () => deleteAllParties(),
+    mutationFn: () => safeDeleteAllParties(),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["parties"] });
       const parts: string[] = [];
       if (result.deleted > 0) parts.push(`${result.deleted} deleted`);
-      if (result.deactivated > 0) parts.push(`${result.deactivated} deactivated (have transactions)`);
-      toast({ title: parts.join(", ") || "No parties to delete" });
+      if (result.skipped > 0) parts.push(`${result.skipped} skipped (linked to existing documents)`);
+      toast({ title: parts.join(". ") || "No unlinked parties to delete" });
     },
     onError: (err: any) => {
       console.error("[PartiesList] deleteAll error:", err);
@@ -201,12 +203,8 @@ export default function PartiesList() {
           <Button
             variant="outline"
             className="border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
-            disabled={parties.length === 0 || deleteAllMutation.isPending}
-            onClick={() => {
-              if (confirm(`Delete all ${totalCount} parties? Parties with transaction history will be marked inactive instead. This cannot be undone.`)) {
-                deleteAllMutation.mutate();
-              }
-            }}
+            disabled={totalCount === 0 || deleteAllMutation.isPending}
+            onClick={() => setClearAllOpen(true)}
           >
             <Trash2 className="h-4 w-4 mr-1" /> Clear All
           </Button>
@@ -451,6 +449,34 @@ export default function PartiesList() {
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
       )}
+
+      {/* Clear All confirmation dialog */}
+      <Dialog open={clearAllOpen} onOpenChange={setClearAllOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete all {totalCount} parties?</DialogTitle>
+            <DialogDescription>
+              Parties linked to existing documents (POs, DCs, GRNs, invoices, etc.) will be skipped.
+              Only unlinked parties will be permanently deleted. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClearAllOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleteAllMutation.isPending}
+              onClick={() => {
+                setClearAllOpen(false);
+                deleteAllMutation.mutate();
+              }}
+            >
+              {deleteAllMutation.isPending ? "Deleting…" : "Delete unlinked parties"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <BackgroundImportDialog
         open={importOpen}

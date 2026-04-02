@@ -170,6 +170,56 @@ export async function deleteAllParties(): Promise<{ deleted: number; deactivated
   return bulkDeleteParties(ids);
 }
 
+/**
+ * Delete all unlinked parties for the current company.
+ * Parties that have any linked POs, DCs, GRNs, invoices, etc. are silently skipped
+ * (NOT deactivated). Returns { deleted, skipped }.
+ */
+export async function safeDeleteAllParties(): Promise<{ deleted: number; skipped: number }> {
+  const companyId = await getCompanyId();
+  const { data: allParties } = await (supabase as any)
+    .from("parties")
+    .select("id")
+    .eq("company_id", companyId);
+  const ids = (allParties ?? []).map((p: any) => p.id as string);
+  if (ids.length === 0) return { deleted: 0, skipped: 0 };
+
+  let deleted = 0, skipped = 0;
+  for (const id of ids) {
+    const [
+      { count: poCount }, { count: dcCount }, { count: soCount },
+      { count: invoiceCount }, { count: receiptCount }, { count: jobCardCount },
+      { count: dispatchCount }, { count: scrapCount }, { count: fatCount },
+    ] = await Promise.all([
+      (supabase as any).from("purchase_orders").select("id", { count: "exact", head: true }).eq("vendor_id", id),
+      (supabase as any).from("delivery_challans").select("id", { count: "exact", head: true }).eq("party_id", id),
+      (supabase as any).from("sales_orders").select("id", { count: "exact", head: true }).eq("customer_id", id),
+      (supabase as any).from("invoices").select("id", { count: "exact", head: true }).eq("customer_id", id),
+      (supabase as any).from("receipts").select("id", { count: "exact", head: true }).eq("party_id", id),
+      (supabase as any).from("job_cards").select("id", { count: "exact", head: true }).eq("vendor_id", id),
+      (supabase as any).from("dispatch_records").select("id", { count: "exact", head: true }).eq("customer_id", id),
+      (supabase as any).from("scrap_register").select("id", { count: "exact", head: true }).eq("vendor_id", id),
+      (supabase as any).from("fat_certificates").select("id", { count: "exact", head: true }).eq("customer_id", id),
+    ]);
+    const hasRefs =
+      (poCount ?? 0) > 0 || (dcCount ?? 0) > 0 || (soCount ?? 0) > 0 ||
+      (invoiceCount ?? 0) > 0 || (receiptCount ?? 0) > 0 || (jobCardCount ?? 0) > 0 ||
+      (dispatchCount ?? 0) > 0 || (scrapCount ?? 0) > 0 || (fatCount ?? 0) > 0;
+    if (hasRefs) {
+      skipped++;
+    } else {
+      try {
+        const { error } = await (supabase as any).from("parties").delete().eq("id", id);
+        if (error) throw error;
+        deleted++;
+      } catch {
+        skipped++;
+      }
+    }
+  }
+  return { deleted, skipped };
+}
+
 export async function bulkUpdatePartyStatus(ids: string[], status: string) {
   const { error } = await supabase.from("parties").update({ status } as any).in("id", ids);
   if (error) throw error;

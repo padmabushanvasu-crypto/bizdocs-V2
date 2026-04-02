@@ -16,7 +16,7 @@ import {
   type ColumnMappingSummary, type SkipReason,
 } from "@/lib/import-utils";
 import { importItemsBatch } from "@/lib/items-api";
-import { importPartiesBatch } from "@/lib/parties-api";
+import { importPartiesBatch, safeDeleteAllParties } from "@/lib/parties-api";
 import { importProcessCodes } from "@/lib/process-library-api";
 import { useImportQueue, type BatchImportFn } from "@/lib/import-queue";
 
@@ -2216,9 +2216,21 @@ export default function DataImport() {
     if (!clearTarget) return;
     setClearLoading(true);
     try {
+      // Parties: safe delete — skip linked parties instead of failing or deactivating
+      if (clearTarget.type === "parties") {
+        const result = await safeDeleteAllParties();
+        queryClient.invalidateQueries({ queryKey: ["parties"] });
+        refetchPartiesCount();
+        const parts: string[] = [];
+        if (result.deleted > 0) parts.push(`${result.deleted} parties deleted`);
+        if (result.skipped > 0) parts.push(`${result.skipped} skipped (linked to existing documents)`);
+        toast({ title: parts.join(". ") || "No unlinked parties to delete" });
+        setClearTarget(null);
+        return;
+      }
+
       const companyId = await getCompanyId();
-      const rpcMap: Record<ClearTarget["type"], string> = {
-        parties: "clear_all_parties",
+      const rpcMap: Record<string, string> = {
         items: "clear_all_items",
         bom: "clear_all_bom_lines",
         stock: "clear_opening_stock",
@@ -2227,8 +2239,7 @@ export default function DataImport() {
       const { data, error } = await (supabase as any).rpc(rpcMap[clearTarget.type], { p_company_id: companyId });
       if (error) throw error;
       const count = (data as number) ?? 0;
-      if (clearTarget.type === "parties") { queryClient.invalidateQueries({ queryKey: ["parties"] }); refetchPartiesCount(); }
-      else if (clearTarget.type === "items") { queryClient.invalidateQueries({ queryKey: ["items"] }); refetchItemsCount(); }
+      if (clearTarget.type === "items") { queryClient.invalidateQueries({ queryKey: ["items"] }); refetchItemsCount(); }
       else if (clearTarget.type === "bom") { queryClient.invalidateQueries({ queryKey: ["bom-lines"] }); refetchBomCount(); }
       else if (clearTarget.type === "stock") { queryClient.invalidateQueries({ queryKey: ["items"] }); queryClient.invalidateQueries({ queryKey: ["stock_status"] }); refetchStockCount(); }
       else { queryClient.invalidateQueries({ queryKey: ["reorder-rules"] }); queryClient.invalidateQueries({ queryKey: ["stock_status"] }); refetchReorderRulesCount(); }
@@ -2236,9 +2247,8 @@ export default function DataImport() {
       setClearTarget(null);
     } catch (err: any) {
       const isFkError = String(err?.message ?? "").includes("violates foreign key constraint");
-      const isItemsOrParties = clearTarget?.type === "items" || clearTarget?.type === "parties";
-      const description = isFkError && isItemsOrParties
-        ? "Cannot delete — some records are linked to existing DCs, POs or other documents. Clear those documents first, or contact support."
+      const description = isFkError
+        ? "Cannot delete — some records are linked to existing documents. Clear those documents first."
         : err.message;
       toast({ title: "Clear failed", description, variant: "destructive" });
     } finally {
