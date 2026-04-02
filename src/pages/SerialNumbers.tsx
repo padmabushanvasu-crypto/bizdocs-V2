@@ -213,7 +213,7 @@ export default function SerialNumbers() {
       </div>
 
       {/* Table */}
-      <div className="paper-card !p-0 overflow-x-auto">
+      <div className="paper-card !p-0 overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
         {isLoading ? (
           <div className="py-12 text-center text-muted-foreground">Loading...</div>
         ) : isError ? (
@@ -230,7 +230,7 @@ export default function SerialNumbers() {
           </div>
         ) : (
           <table className="w-full data-table">
-            <thead>
+            <thead className="sticky top-0 z-10">
               <tr>
                 <th>Serial Number</th>
                 <th>Item</th>

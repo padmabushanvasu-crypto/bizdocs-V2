@@ -262,9 +262,9 @@ export default function Items() {
       )}
 
       <div className="paper-card !p-0">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
           <table className="w-full data-table">
-            <thead>
+            <thead className="sticky top-0 z-10">
               <tr>
                 <th className="w-8">
                   <button onClick={toggleAll} className="flex items-center justify-center">

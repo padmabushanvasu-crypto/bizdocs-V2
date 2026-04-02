@@ -310,9 +310,9 @@ export default function WipRegister() {
 
           {/* DC WIP table */}
           <div className="paper-card !p-0">
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
               <table className="w-full data-table">
-                <thead>
+                <thead className="sticky top-0 z-10">
                   <tr>
                     <th>DC Number</th>
                     <th>Drawing No</th>
@@ -457,9 +457,9 @@ export default function WipRegister() {
 
           {/* Sub-Assembly table */}
           <div className="paper-card !p-0">
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
               <table className="w-full data-table">
-                <thead>
+                <thead className="sticky top-0 z-10">
                   <tr>
                     <th>Run #</th>
                     <th>Item Being Built</th>
@@ -610,9 +610,9 @@ export default function WipRegister() {
             </span>
           </div>
           <div className="paper-card !p-0">
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
               <table className="w-full data-table">
-                <thead>
+                <thead className="sticky top-0 z-10">
                   <tr>
                     <th>WO Number</th>
                     <th>Serial Number</th>

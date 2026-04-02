@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from "react";
+import React, { useState, useMemo, useRef, useEffect, Component, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   GitFork, Plus, Trash2, Search, ChevronDown, ChevronRight, ChevronUp,
@@ -337,7 +337,7 @@ const emptyVariantForm = {
   description: "",
   is_default: false,
   notes: "",
-  copy_from: "" as string, // "" = fresh, "__default__" = default BOM, uuid = specific variant
+  copy_from: "__scratch__" as string, // "__scratch__" = fresh start, "__default__" = default BOM, uuid = specific variant
 };
 
 // ── ProcessingStagesEditor component ─────────────────────────────────────────
@@ -484,7 +484,7 @@ function ProcessingStagesEditor({
   );
 }
 
-export default function BillOfMaterials() {
+function BillOfMaterialsInner() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -497,8 +497,8 @@ export default function BillOfMaterials() {
 
   // ── Tab / variant state ─────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState("structure");
-  // "" = default BOM (variant_id IS NULL), "uuid" = specific variant
-  const [selectedVariantId, setSelectedVariantId] = useState("");
+  // "__default_bom__" = default BOM (variant_id IS NULL), "uuid" = specific variant
+  const [selectedVariantId, setSelectedVariantId] = useState("__default_bom__");
 
   // ── Tab 2: Explosion ────────────────────────────────────────────────────────
   const [explosionQty, setExplosionQty] = useState(1);
@@ -573,7 +573,7 @@ export default function BillOfMaterials() {
   const handleSelectItem = (item: Item) => {
     console.log("[BOM] Item selected:", item.id, item.description, "type:", item.item_type);
     setSelectedItem(item);
-    setSelectedVariantId("");
+    setSelectedVariantId("__default_bom__");
     setActiveTab("structure");
     setCollapsedNodes(new Set());
     setWhereUsedItemId(item.id);
@@ -605,7 +605,7 @@ export default function BillOfMaterials() {
       )
     : parentCandidates;
 
-  const variantFilter = selectedVariantId === "" ? null : selectedVariantId;
+  const variantFilter = selectedVariantId === "__default_bom__" ? null : selectedVariantId;
 
   const { data: bomLines = [], isLoading: bomLoading, isError: bomError, error: bomQueryError, refetch: refetchLines } = useQuery({
     queryKey: ["bom-lines-v2", selectedItem?.id, selectedVariantId],
@@ -878,7 +878,7 @@ export default function BillOfMaterials() {
   const createVariantMutation = useMutation({
     mutationFn: () => {
       const copyFrom =
-        variantForm.copy_from === ""
+        variantForm.copy_from === "__scratch__"
           ? undefined
           : variantForm.copy_from === "__default__"
           ? (null as null)
@@ -920,8 +920,8 @@ export default function BillOfMaterials() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["bom-variants", selectedItem?.id] });
       queryClient.invalidateQueries({ queryKey: ["bom-lines-v2", selectedItem?.id] });
-      if (selectedVariantId && bomVariants.find((v) => v.id === selectedVariantId)) {
-        setSelectedVariantId("");
+      if (selectedVariantId !== "__default_bom__" && bomVariants.find((v) => v.id === selectedVariantId)) {
+        setSelectedVariantId("__default_bom__");
       }
       toast({ title: "Variant deleted" });
     },
@@ -1182,7 +1182,7 @@ export default function BillOfMaterials() {
         <SelectValue placeholder="Default BOM" />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value="">Default BOM</SelectItem>
+        <SelectItem value="__default_bom__">Default BOM</SelectItem>
         {bomVariants.map((v) => (
           <SelectItem key={v.id} value={v.id}>
             {v.variant_name}
@@ -1533,9 +1533,9 @@ export default function BillOfMaterials() {
                         </Button>
                       </div>
                     ) : (
-                      <div className="overflow-x-auto flex-1">
+                      <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)] flex-1">
                         <table className="w-full data-table text-sm">
-                          <thead>
+                          <thead className="sticky top-0 z-10">
                             <tr>
                               <th className="w-6">
                                 <button
@@ -2114,9 +2114,9 @@ export default function BillOfMaterials() {
                       </div>
                     ) : (
                       <>
-                        <div className="overflow-x-auto flex-1">
+                        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)] flex-1">
                           <table className="w-full data-table text-sm">
-                            <thead>
+                            <thead className="sticky top-0 z-10">
                               <tr>
                                 <th>Item Code</th>
                                 <th>Description</th>
@@ -2207,9 +2207,9 @@ export default function BillOfMaterials() {
                       <div className="flex flex-col flex-1">
                         <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] flex-1">
                           {/* Left: table */}
-                          <div className="overflow-x-auto">
+                          <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
                             <table className="w-full data-table text-sm">
-                              <thead>
+                              <thead className="sticky top-0 z-10">
                                 <tr>
                                   <th>Item Code</th>
                                   <th>Description</th>
@@ -2374,9 +2374,9 @@ export default function BillOfMaterials() {
                         </p>
                       </div>
                     ) : (
-                      <div className="overflow-x-auto flex-1">
+                      <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)] flex-1">
                         <table className="w-full data-table text-sm">
-                          <thead>
+                          <thead className="sticky top-0 z-10">
                             <tr>
                               <th>Finished Item Code</th>
                               <th>Description</th>
@@ -2461,9 +2461,9 @@ export default function BillOfMaterials() {
                         </p>
                       </div>
                     ) : (
-                      <div className="overflow-x-auto">
+                      <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
                         <table className="w-full data-table text-sm">
-                          <thead>
+                          <thead className="sticky top-0 z-10">
                             <tr>
                               <th>Variant Name</th>
                               <th>Code</th>
@@ -2531,7 +2531,7 @@ export default function BillOfMaterials() {
                                           description: v.description ?? "",
                                           is_default: v.is_default,
                                           notes: v.notes ?? "",
-                                          copy_from: "",
+                                          copy_from: "__scratch__",
                                         });
                                       }}
                                     >
@@ -3251,7 +3251,7 @@ export default function BillOfMaterials() {
                   <SelectValue placeholder="Start from scratch" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Start from scratch</SelectItem>
+                  <SelectItem value="__scratch__">Start from scratch</SelectItem>
                   <SelectItem value="__default__">Default BOM</SelectItem>
                   {bomVariants.map((v) => (
                     <SelectItem key={v.id} value={v.id}>
@@ -3634,5 +3634,48 @@ export default function BillOfMaterials() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+class BomErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="p-6 text-center space-y-3">
+          <p className="font-medium text-destructive">Something went wrong loading the Bill of Materials.</p>
+          <p className="text-sm text-muted-foreground">{this.state.error.message}</p>
+          <div className="flex justify-center gap-2">
+            <button
+              className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-slate-50"
+              onClick={() => this.setState({ error: null })}
+            >
+              Retry
+            </button>
+            <button
+              className="rounded-md px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+              onClick={() => { window.location.href = "/dashboard"; }}
+            >
+              Go to Dashboard
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export default function BillOfMaterials() {
+  return (
+    <BomErrorBoundary>
+      <BillOfMaterialsInner />
+    </BomErrorBoundary>
   );
 }

@@ -220,29 +220,29 @@ export default function VendorScorecards() {
 
       {/* Table */}
       <div className="paper-card !p-0">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
           <table className="w-full data-table">
-            <thead>
+            <thead className="sticky top-0 z-10">
               <tr>
-                <th className="text-left min-w-[180px] px-3 py-2">Vendor</th>
-                <th className="text-left min-w-[100px] px-3 py-2">City</th>
-                <th className="text-left min-w-[80px] px-3 py-2">Source</th>
-                <th className="text-right min-w-[80px] px-3 py-2">GRN Rej%</th>
-                <th className="text-right min-w-[80px] px-3 py-2">DC Rej%</th>
-                <th className="text-right min-w-[80px] px-3 py-2">JW Steps</th>
-                <th className="text-right min-w-[80px] px-3 py-2">JW Rej%</th>
-                <th className="text-right min-w-[80px] px-3 py-2">Avg Days</th>
-                <th className="text-right min-w-[90px] px-3 py-2">Accept%</th>
-                <th className="text-right min-w-[90px] px-3 py-2">ID Match%</th>
-                <th className="text-right min-w-[80px] px-3 py-2">First Pass</th>
-                <th className="text-right min-w-[70px] px-3 py-2">Rework%</th>
-                <th className="text-right min-w-[80px] px-3 py-2">Replacements</th>
-                <th className="text-right min-w-[80px] px-3 py-2">On-Time %</th>
-                <th className="text-right min-w-[80px] px-3 py-2">Overdue</th>
-                <th className="text-right min-w-[100px] px-3 py-2">Total Charges</th>
-                <th className="text-center min-w-[90px] px-3 py-2">Rating</th>
-                <th className="text-right min-w-[100px] px-3 py-2">Last Used</th>
-                <th className="text-center min-w-[90px] px-3 py-2">History</th>
+                <th className="text-left min-w-[180px] max-w-[260px] px-3 py-2 whitespace-nowrap">Vendor</th>
+                <th className="text-left min-w-[90px] max-w-[140px] px-3 py-2 whitespace-nowrap">City</th>
+                <th className="text-left min-w-[70px] px-3 py-2 whitespace-nowrap">Source</th>
+                <th className="text-right min-w-[80px] w-[80px] px-3 py-2 whitespace-nowrap">GRN Rej%</th>
+                <th className="text-right min-w-[80px] w-[80px] px-3 py-2 whitespace-nowrap">DC Rej%</th>
+                <th className="text-right min-w-[72px] w-[72px] px-3 py-2 whitespace-nowrap">JW Steps</th>
+                <th className="text-right min-w-[72px] w-[72px] px-3 py-2 whitespace-nowrap">JW Rej%</th>
+                <th className="text-right min-w-[76px] w-[76px] px-3 py-2 whitespace-nowrap">Avg Days</th>
+                <th className="text-right min-w-[76px] w-[76px] px-3 py-2 whitespace-nowrap">Accept%</th>
+                <th className="text-right min-w-[82px] w-[82px] px-3 py-2 whitespace-nowrap">ID Match%</th>
+                <th className="text-right min-w-[80px] w-[80px] px-3 py-2 whitespace-nowrap">First Pass</th>
+                <th className="text-right min-w-[68px] w-[68px] px-3 py-2 whitespace-nowrap">Rework%</th>
+                <th className="text-right min-w-[88px] w-[88px] px-3 py-2 whitespace-nowrap">Replacements</th>
+                <th className="text-right min-w-[76px] w-[76px] px-3 py-2 whitespace-nowrap">On-Time %</th>
+                <th className="text-right min-w-[72px] w-[72px] px-3 py-2 whitespace-nowrap">Overdue</th>
+                <th className="text-right min-w-[100px] w-[110px] px-3 py-2 whitespace-nowrap">Total Charges</th>
+                <th className="text-center min-w-[88px] w-[88px] px-3 py-2 whitespace-nowrap">Rating</th>
+                <th className="text-right min-w-[96px] w-[96px] px-3 py-2 whitespace-nowrap">Last Used</th>
+                <th className="text-center min-w-[80px] w-[80px] px-3 py-2 whitespace-nowrap">History</th>
               </tr>
             </thead>
             <tbody>
