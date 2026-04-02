@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId } from "@/lib/auth-helpers";
+import { useAuth } from "@/hooks/useAuth";
 import {
   resolveColumns, extractRow, buildMappingSummary,
   normaliseHeader, fieldDisplayName,
@@ -2278,15 +2279,9 @@ export default function DataImport() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState((location.state as any)?.tab ?? "parties");
-  const [pageCompanyId, setPageCompanyId] = useState<string | null>(null);
-  const [companyIdLoaded, setCompanyIdLoaded] = useState(false);
-
-  useEffect(() => {
-    getCompanyId().then((id) => {
-      setPageCompanyId(id);
-      setCompanyIdLoaded(true);
-    });
-  }, []);
+  // companyId is guaranteed non-null here by ProtectedRoute (redirects to /setup if null).
+  // Reading from auth context avoids a redundant network call and race conditions.
+  const { companyId: pageCompanyId, signOut } = useAuth();
 
   useEffect(() => {
     if ((location.state as any)?.tab) {
@@ -2494,12 +2489,19 @@ export default function DataImport() {
         </p>
       </div>
 
-      {companyIdLoaded && !pageCompanyId && (
-        <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg p-3">
-          <AlertTriangle className="h-4 w-4 text-red-600 shrink-0" />
-          <span className="text-sm text-red-800 font-medium">Session error — please refresh the page and try again.</span>
+      {!pageCompanyId ? (
+        <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
+          <AlertTriangle className="h-10 w-10 text-red-400" />
+          <div className="space-y-1">
+            <p className="text-base font-semibold text-slate-900">Account not linked to a company</p>
+            <p className="text-sm text-slate-500">Your account is not linked to a company. Please log out and log back in, or contact support.</p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => window.location.reload()}>Refresh</Button>
+            <Button variant="outline" size="sm" onClick={() => signOut()}>Log out</Button>
+          </div>
         </div>
-      )}
+      ) : (<>
 
       <SegmentedControl
         options={[
@@ -2700,6 +2702,7 @@ export default function DataImport() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </>)}
     </div>
   );
 }

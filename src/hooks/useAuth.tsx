@@ -65,24 +65,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       // ── Case 2: Profile exists but company_id is null (partial trigger fail) ──
+      // Attempt auto-fix: call setup_company RPC (SECURITY DEFINER) to create a
+      // company and link it to the profile without requiring user interaction.
       if (data && !data.company_id) {
-        console.warn(
-          "[BizDocs auth] Profile exists but company_id is null for user",
-          user.id,
-        );
-        // Fall through — user goes to /setup
-      }
+        try {
+          const { data: fixedId, error: fixErr } = await (supabase as any).rpc("setup_company", {
+            _company_name: "My Company",
+          });
+          if (!fixErr && fixedId) {
+            data = { ...data, company_id: fixedId };
+          }
+        } catch { /* silent — handled below */ }
 
-      // ── Case 3: Profile + company_id look fine — check for shared company ────
-      // NOTE: RLS prevents querying other users' profiles, so a direct count query
-      // would always return 0 and give a false-negative. The real guard against
-      // shared company_ids is the updated handle_new_user trigger (Step 1 SQL).
-      // Log a developer warning here only if somehow we can detect the conflict.
-      if (data?.company_id) {
-        // This check is included as a belt-and-suspenders measure.
-        // In practice, RLS will prevent seeing other users' rows, so conflict
-        // detection must be done via the diagnostic SQL queries (Step 5).
-        console.debug("[BizDocs auth] Loaded company_id:", data.company_id, "for user:", user.id);
+        if (!data.company_id) {
+          setAuthError("Account setup incomplete. Please contact your administrator or refresh the page.");
+        }
       }
 
       if (data) {
