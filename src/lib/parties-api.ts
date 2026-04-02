@@ -122,19 +122,31 @@ export async function deleteParty(id: string): Promise<{ deleted: boolean; deact
     { count: soCount },
     { count: invoiceCount },
     { count: receiptCount },
+    { count: jobCardCount },
+    { count: dispatchCount },
+    { count: scrapCount },
+    { count: fatCount },
   ] = await Promise.all([
     (supabase as any).from("purchase_orders").select("id", { count: "exact", head: true }).eq("vendor_id", id),
     (supabase as any).from("delivery_challans").select("id", { count: "exact", head: true }).eq("party_id", id),
     (supabase as any).from("sales_orders").select("id", { count: "exact", head: true }).eq("customer_id", id),
     (supabase as any).from("invoices").select("id", { count: "exact", head: true }).eq("customer_id", id),
     (supabase as any).from("receipts").select("id", { count: "exact", head: true }).eq("party_id", id),
+    (supabase as any).from("job_cards").select("id", { count: "exact", head: true }).eq("vendor_id", id),
+    (supabase as any).from("dispatch_records").select("id", { count: "exact", head: true }).eq("customer_id", id),
+    (supabase as any).from("scrap_register").select("id", { count: "exact", head: true }).eq("vendor_id", id),
+    (supabase as any).from("fat_certificates").select("id", { count: "exact", head: true }).eq("customer_id", id),
   ]);
   const hasRefs =
     (poCount ?? 0) > 0 ||
     (dcCount ?? 0) > 0 ||
     (soCount ?? 0) > 0 ||
     (invoiceCount ?? 0) > 0 ||
-    (receiptCount ?? 0) > 0;
+    (receiptCount ?? 0) > 0 ||
+    (jobCardCount ?? 0) > 0 ||
+    (dispatchCount ?? 0) > 0 ||
+    (scrapCount ?? 0) > 0 ||
+    (fatCount ?? 0) > 0;
   if (hasRefs) {
     await updateParty(id, { status: "inactive" });
     return { deleted: false, deactivated: true };
@@ -173,19 +185,31 @@ export async function bulkDeleteParties(ids: string[]): Promise<{ deleted: numbe
         { count: soCount },
         { count: invoiceCount },
         { count: receiptCount },
+        { count: jobCardCount },
+        { count: dispatchCount },
+        { count: scrapCount },
+        { count: fatCount },
       ] = await Promise.all([
         (supabase as any).from("purchase_orders").select("id", { count: "exact", head: true }).eq("vendor_id", id),
         (supabase as any).from("delivery_challans").select("id", { count: "exact", head: true }).eq("party_id", id),
         (supabase as any).from("sales_orders").select("id", { count: "exact", head: true }).eq("customer_id", id),
         (supabase as any).from("invoices").select("id", { count: "exact", head: true }).eq("customer_id", id),
         (supabase as any).from("receipts").select("id", { count: "exact", head: true }).eq("party_id", id),
+        (supabase as any).from("job_cards").select("id", { count: "exact", head: true }).eq("vendor_id", id),
+        (supabase as any).from("dispatch_records").select("id", { count: "exact", head: true }).eq("customer_id", id),
+        (supabase as any).from("scrap_register").select("id", { count: "exact", head: true }).eq("vendor_id", id),
+        (supabase as any).from("fat_certificates").select("id", { count: "exact", head: true }).eq("customer_id", id),
       ]);
       const hasRefs =
         (poCount ?? 0) > 0 ||
         (dcCount ?? 0) > 0 ||
         (soCount ?? 0) > 0 ||
         (invoiceCount ?? 0) > 0 ||
-        (receiptCount ?? 0) > 0;
+        (receiptCount ?? 0) > 0 ||
+        (jobCardCount ?? 0) > 0 ||
+        (dispatchCount ?? 0) > 0 ||
+        (scrapCount ?? 0) > 0 ||
+        (fatCount ?? 0) > 0;
       if (hasRefs) {
         await updateParty(id, { status: "inactive" });
         deactivated++;
