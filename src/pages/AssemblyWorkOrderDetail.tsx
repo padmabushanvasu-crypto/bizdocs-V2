@@ -257,7 +257,7 @@ export default function AssemblyWorkOrderDetail() {
             <table className="w-full data-table">
               <thead>
                 <tr>
-                  <th>Drawing No</th>
+                  <th>Item Code</th>
                   <th>Description</th>
                   <th>Type</th>
                   <th className="text-right">Required Qty</th>
@@ -276,12 +276,9 @@ export default function AssemblyWorkOrderDetail() {
                 ) : (
                   (awo.line_items ?? []).map((li) => (
                     <tr key={li.id}>
-                      <td className="font-mono text-xs text-blue-700">{li.drawing_number ?? "—"}</td>
+                      <td className="font-mono text-xs text-blue-700">{li.drawing_number}</td>
                       <td>
-                        <p className="text-sm font-medium">{li.item_code ?? "—"}</p>
-                        {li.item_description && (
-                          <p className="text-xs text-muted-foreground">{li.item_description}</p>
-                        )}
+                        <p className="text-sm font-medium">{li.item_description}</p>
                       </td>
                       <td className="text-sm text-muted-foreground">
                         {li.is_critical ? (

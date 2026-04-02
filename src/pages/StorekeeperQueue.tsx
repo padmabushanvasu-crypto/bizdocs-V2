@@ -4,6 +4,7 @@ import { Package, CheckCircle, AlertTriangle, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   fetchMaterialIssueRequests,
   fetchMaterialIssueRequest,
@@ -33,7 +34,21 @@ export default function StorekeeperQueue() {
   const [selectedMirId, setSelectedMirId] = useState<string | null>(null);
   const [lineEdits, setLineEdits] = useState<Record<string, { issued_qty: number; shortage_notes: string }>>({});
   const [statusFilter, setStatusFilter] = useState("pending");
-  const [month, setMonth] = useState("");
+
+  // Last-6-months options for month filter
+  const monthOptions = (() => {
+    const opts: { value: string; label: string }[] = [];
+    const now = new Date();
+    for (let i = 0; i < 6; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const label = d.toLocaleString("en-IN", { month: "short", year: "numeric" });
+      opts.push({ value, label });
+    }
+    return opts;
+  })();
+  const currentMonth = monthOptions[0].value;
+  const [month, setMonth] = useState(currentMonth);
 
   const issuedBy = profile?.full_name ?? "Storekeeper";
 
@@ -102,31 +117,27 @@ export default function StorekeeperQueue() {
 
         {/* Filters */}
         <div className="flex flex-wrap gap-2">
-          <select
-            className="border rounded-md px-3 py-2 text-sm h-10"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-          >
-            <option value="pending">Pending</option>
-            <option value="partially_issued">Partially Issued</option>
-            <option value="issued">Issued</option>
-            <option value="all">All Statuses</option>
-          </select>
-          <input
-            type="month"
-            className="border rounded-md px-3 py-2 text-sm h-10"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-          />
-          {month && (
-            <button
-              type="button"
-              className="text-xs text-muted-foreground underline px-1"
-              onClick={() => setMonth("")}
-            >
-              Clear
-            </button>
-          )}
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="partially_issued">Partially Issued</SelectItem>
+              <SelectItem value="issued">Issued</SelectItem>
+              <SelectItem value="all">All Statuses</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={month} onValueChange={setMonth}>
+            <SelectTrigger className="w-[150px]">
+              <SelectValue placeholder="Month" />
+            </SelectTrigger>
+            <SelectContent>
+              {monthOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {listLoading ? (
@@ -168,9 +179,10 @@ export default function StorekeeperQueue() {
                   </div>
                   <Button
                     size="sm"
+                    variant={mir.status === "issued" ? "outline" : "default"}
                     onClick={() => setSelectedMirId(mir.id)}
                   >
-                    Open
+                    {mir.status === "issued" ? "View" : "Open"}
                   </Button>
                 </div>
               </div>
@@ -248,23 +260,29 @@ export default function StorekeeperQueue() {
                       ) : "—"}
                     </td>
                     <td className="text-right">
-                      <Input
-                        type="number"
-                        min={0}
-                        max={li.requested_qty}
-                        value={edit.issued_qty}
-                        onChange={(e) => {
-                          const val = Math.min(li.requested_qty, Math.max(0, Number(e.target.value)));
-                          setLineEdits((prev) => ({
-                            ...prev,
-                            [li.id]: { ...edit, issued_qty: val },
-                          }));
-                        }}
-                        className="w-20 text-right ml-auto"
-                      />
+                      {mirDetail.status === "issued" ? (
+                        <span className="font-mono tabular-nums text-sm">{edit.issued_qty}</span>
+                      ) : (
+                        <Input
+                          type="number"
+                          min={0}
+                          max={li.requested_qty}
+                          value={edit.issued_qty}
+                          onChange={(e) => {
+                            const val = Math.min(li.requested_qty, Math.max(0, Number(e.target.value)));
+                            setLineEdits((prev) => ({
+                              ...prev,
+                              [li.id]: { ...edit, issued_qty: val },
+                            }));
+                          }}
+                          className="w-20 text-right ml-auto"
+                        />
+                      )}
                     </td>
                     <td>
-                      {hasShortage ? (
+                      {mirDetail.status === "issued" ? (
+                        <span className="text-muted-foreground text-sm">{edit.shortage_notes || "—"}</span>
+                      ) : hasShortage ? (
                         <Input
                           placeholder="Reason for shortage"
                           value={edit.shortage_notes}
@@ -293,17 +311,21 @@ export default function StorekeeperQueue() {
         <div className="flex items-center gap-2 text-sm">
           <AlertTriangle className="w-4 h-4 text-amber-500" />
           <span className="text-muted-foreground">
-            Issued by: <b className="text-foreground">{issuedBy}</b>
+            {mirDetail.status === "issued"
+              ? <>Issued by: <b className="text-foreground">{(mirDetail as any).issued_by ?? issuedBy}</b></>
+              : <>Issuing as: <b className="text-foreground">{issuedBy}</b></>}
           </span>
         </div>
-        <Button
-          className="bg-green-600 hover:bg-green-700 text-white"
-          onClick={() => confirmMutation.mutate()}
-          disabled={confirmMutation.isPending}
-        >
-          <CheckCircle className="w-4 h-4 mr-2" />
-          {confirmMutation.isPending ? "Confirming…" : "Confirm Issue"}
-        </Button>
+        {mirDetail.status !== "issued" && (
+          <Button
+            className="bg-green-600 hover:bg-green-700 text-white"
+            onClick={() => confirmMutation.mutate()}
+            disabled={confirmMutation.isPending}
+          >
+            <CheckCircle className="w-4 h-4 mr-2" />
+            {confirmMutation.isPending ? "Confirming…" : "Confirm Issue"}
+          </Button>
+        )}
       </div>
     </div>
   );

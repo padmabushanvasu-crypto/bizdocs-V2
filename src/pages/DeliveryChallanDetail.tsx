@@ -192,7 +192,7 @@ export default function DeliveryChallanDetail() {
             </Button>
           )}
           {isReturnable && ["issued", "partially_returned"].includes(dc.status) && (
-            <Button size="sm" onClick={() => navigate(`/delivery-challans/${id}/record-return`)}>
+            <Button size="sm" onClick={() => navigate(`/dc-grn/new?dc_id=${id}`)}>
               <RotateCcw className="h-3.5 w-3.5 mr-1" /> Record Return
             </Button>
           )}

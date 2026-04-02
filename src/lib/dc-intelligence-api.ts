@@ -46,6 +46,21 @@ export async function fetchProcessingRoute(itemId: string): Promise<ProcessingRo
     .eq("company_id", companyId)
     .eq("item_id", itemId)
     .eq("is_active", true)
+    .eq("stage_type", "external")
+    .order("stage_number", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function fetchProcessingRouteAll(itemId: string): Promise<ProcessingRoute[]> {
+  const companyId = await getCompanyId();
+  if (!companyId) return [];
+  const { data, error } = await (supabase as any)
+    .from("bom_processing_routes")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("item_id", itemId)
+    .eq("is_active", true)
     .order("stage_number", { ascending: true });
   if (error) throw error;
   return data ?? [];

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, Component, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { BarChart3, ShoppingCart, Check, X, Shield, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,28 @@ import { useToast } from "@/hooks/use-toast";
 import { fetchStockStatus, updateMinStockOverride, type StockStatusRow } from "@/lib/items-api";
 import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+
+class StockRegisterErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="p-6 text-center space-y-3">
+          <p className="text-destructive font-medium">Something went wrong loading the Stock Register.</p>
+          <p className="text-sm text-muted-foreground">{this.state.error.message}</p>
+          <Button variant="outline" onClick={() => this.setState({ error: null })}>Retry</Button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function StatusBadge({ status }: { status: StockStatusRow["stock_status"] }) {
   const map = {
@@ -113,7 +135,7 @@ const TYPE_TABS: { value: TypeTab; label: string }[] = [
   { value: "bought_out", label: "Bought-Out" },
 ];
 
-export default function StockRegister() {
+function StockRegisterInner() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
@@ -429,5 +451,13 @@ export default function StockRegister() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function StockRegister() {
+  return (
+    <StockRegisterErrorBoundary>
+      <StockRegisterInner />
+    </StockRegisterErrorBoundary>
   );
 }

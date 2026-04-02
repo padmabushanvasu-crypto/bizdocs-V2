@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PackageCheck, Plus, Search, Eye, Trash2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchDcGrns, softDeleteGRN, type GRNFilters } from "@/lib/grn-api";
 import { useToast } from "@/hooks/use-toast";
 
@@ -27,10 +28,22 @@ export default function DcGrn() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  const monthOptions = useMemo(() => {
+    const opts: { value: string; label: string }[] = [];
+    const now = new Date();
+    for (let i = 0; i < 6; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const label = d.toLocaleString("en-IN", { month: "short", year: "numeric" });
+      opts.push({ value, label });
+    }
+    return opts;
+  }, []);
+
   const [filters, setFilters] = useState<GRNFilters>({
     search: "",
     status: "all",
-    month: "",
+    month: monthOptions[0].value,
     page: 1,
     pageSize: 20,
   });
@@ -78,21 +91,17 @@ export default function DcGrn() {
             onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value, page: 1 }))}
           />
         </div>
-        <input
-          type="month"
-          className="border rounded-md px-3 py-2 text-sm h-10"
-          value={filters.month ?? ""}
-          onChange={(e) => setFilters((f) => ({ ...f, month: e.target.value || undefined, page: 1 }))}
-        />
-        {filters.month && (
-          <button
-            type="button"
-            className="text-xs text-muted-foreground underline px-1"
-            onClick={() => setFilters((f) => ({ ...f, month: undefined, page: 1 }))}
-          >
-            Clear
-          </button>
-        )}
+        <Select value={filters.month ?? ""} onValueChange={(v) => setFilters((f) => ({ ...f, month: v || undefined, page: 1 }))}>
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder="All months" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">All months</SelectItem>
+            {monthOptions.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Table */}

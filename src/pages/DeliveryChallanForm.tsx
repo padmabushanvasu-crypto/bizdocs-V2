@@ -28,7 +28,7 @@ import {
   type DCLineItem,
 } from "@/lib/delivery-challans-api";
 import { getCompanyId } from "@/lib/auth-helpers";
-import { fetchProcessingRoute, fetchJigsForDrawing, type ProcessingRoute, type JigMasterRecord } from "@/lib/dc-intelligence-api";
+import { fetchProcessingRoute, fetchJigsForDrawing, fetchStageVendors, type ProcessingRoute, type JigMasterRecord } from "@/lib/dc-intelligence-api";
 import { formatCurrency, amountInWords } from "@/lib/gst-utils";
 import { getGSTType, calculateLineTax, round2, resolveStateCode, type GSTType } from "@/lib/tax-utils";
 
@@ -153,6 +153,7 @@ export default function DeliveryChallanForm() {
   const [lineJigs, setLineJigs] = useState<Map<number, JigMasterRecord[]>>(new Map());
   const [lineSelectedStageId, setLineSelectedStageId] = useState<Map<number, string>>(new Map());
   const [lineJigsChecked, setLineJigsChecked] = useState<Map<number, string[]>>(new Map());
+  const [lineAutoFilledRate, setLineAutoFilledRate] = useState<Map<number, boolean>>(new Map());
 
   const selectStage = (lineIndex: number, stage: ProcessingRoute) => {
     setLineSelectedStageId(prev => { const m = new Map(prev); m.set(lineIndex, stage.id); return m; });
@@ -162,6 +163,24 @@ export default function DeliveryChallanForm() {
       (updated[lineIndex] as any).selectedStage = stage;
       return updated;
     });
+    // Auto-fill rate from preferred vendor's unit_cost
+    fetchStageVendors(stage.id).then(vendors => {
+      if (vendors.length === 0) return;
+      const preferred = vendors.find(v => v.is_preferred) ?? vendors[0];
+      if (preferred.unit_cost) {
+        setLineItems(items => {
+          const updated = [...items];
+          const qty = Number(updated[lineIndex].quantity) || 0;
+          updated[lineIndex] = {
+            ...updated[lineIndex],
+            rate: preferred.unit_cost,
+            amount: Math.round(qty * preferred.unit_cost * 100) / 100,
+          };
+          return updated;
+        });
+        setLineAutoFilledRate(prev => { const m = new Map(prev); m.set(lineIndex, true); return m; });
+      }
+    }).catch(() => {/* ignore */});
   };
 
   const toggleJigCheck = (lineIndex: number, jigId: string, checked: boolean) => {
@@ -761,13 +780,21 @@ export default function DeliveryChallanForm() {
                     </select>
                   </td>
                   <td className="p-0 w-28">
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={item.rate || ""}
-                      onChange={(e) => updateLineItem(index, "rate", Number(e.target.value))}
-                      className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm text-right font-mono tabular-nums"
-                    />
+                    <div className="relative">
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={item.rate || ""}
+                        onChange={(e) => {
+                          updateLineItem(index, "rate", Number(e.target.value));
+                          setLineAutoFilledRate(prev => { const m = new Map(prev); m.delete(index); return m; });
+                        }}
+                        className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm text-right font-mono tabular-nums"
+                      />
+                      {lineAutoFilledRate.get(index) && (
+                        <span className="absolute -top-1 right-1 text-[9px] text-blue-600 font-semibold">auto</span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-3 py-2 w-28 bg-slate-50 text-right text-sm font-medium text-slate-700 font-mono tabular-nums">
                     {item.amount
@@ -884,8 +911,14 @@ export default function DeliveryChallanForm() {
                     </td>
                   </tr>
                 )}
-                {/* Phase 15: Jig Alert */}
-                {(lineJigs.get(index)?.length ?? 0) > 0 && (
+                {/* Phase 15: Jig Alert — only for drilling stages */}
+                {(lineJigs.get(index)?.length ?? 0) > 0 && (() => {
+                  const selectedStageId = lineSelectedStageId.get(index);
+                  if (!selectedStageId || selectedStageId === 'manual') return false;
+                  const stage = lineRoutes.get(index)?.find(s => s.id === selectedStageId);
+                  if (!stage) return false;
+                  return stage.process_code === '13' || stage.process_name.toUpperCase().includes('DRILL');
+                })() && (
                   <tr key={`jigs-${index}`} className="bg-amber-50/30 border-b border-amber-100">
                     <td />
                     <td colSpan={10} className="px-3 py-2">

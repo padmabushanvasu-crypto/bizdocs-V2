@@ -37,7 +37,7 @@ interface LineItemState extends GRNLineItem {
   expanded?: boolean;
   // Stage 1 local state
   s1_received_now: number;
-  s1_identity_match: boolean;
+  s1_identity_match: boolean | null;
   s1_mismatch_remarks: string;
   s1_checked_by: string;
   s1_verified_by: string;
@@ -69,7 +69,7 @@ function toLineState(item: GRNLineItem, idx: number): LineItemState {
     serial_number: idx + 1,
     expanded: false,
     s1_received_now: a.received_now ?? item.receiving_now ?? 0,
-    s1_identity_match: a.item_identity_match ?? true,
+    s1_identity_match: a.item_identity_match ?? null,
     s1_mismatch_remarks: a.identity_mismatch_remarks ?? '',
     s1_checked_by: a.stage1_checked_by ?? '',
     s1_verified_by: a.stage1_verified_by ?? '',
@@ -206,29 +206,48 @@ function GrnLineItemCard({
               </div>
             </div>
 
-            {/* Identity match */}
+            {/* Identity match — mandatory, null default */}
             <div className="space-y-2">
-              <Label className="text-sm font-medium text-slate-700">Item Identity Match</Label>
-              <div className="flex gap-3">
-                {([true, false] as boolean[]).map((val) => (
-                  <label key={String(val)} className="flex items-center gap-1.5 text-sm cursor-pointer">
-                    <input
-                      type="radio"
-                      name={`identity_${index}`}
-                      checked={item.s1_identity_match === val}
-                      onChange={() => onChange(index, { s1_identity_match: val })}
-                      disabled={item.s1_complete}
-                    />
-                    {val ? "Yes" : "No"}
-                  </label>
-                ))}
+              <Label className="text-sm font-medium text-slate-700">
+                Item Identity Match <span className="text-red-500">*</span>
+              </Label>
+              {item.s1_identity_match === null && !item.s1_complete && (
+                <p className="text-xs text-amber-600 font-medium">Must confirm item identity before saving receipt</p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={item.s1_complete}
+                  onClick={() => onChange(index, { s1_identity_match: true })}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors",
+                    item.s1_identity_match === true
+                      ? "bg-green-600 text-white border-green-600"
+                      : "bg-white text-slate-700 border-slate-300 hover:border-green-400 hover:text-green-700"
+                  )}
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" /> Item Matches Order
+                </button>
+                <button
+                  type="button"
+                  disabled={item.s1_complete}
+                  onClick={() => onChange(index, { s1_identity_match: false })}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors",
+                    item.s1_identity_match === false
+                      ? "bg-red-600 text-white border-red-600"
+                      : "bg-white text-slate-700 border-slate-300 hover:border-red-400 hover:text-red-700"
+                  )}
+                >
+                  <AlertTriangle className="h-3.5 w-3.5" /> Item Does NOT Match
+                </button>
               </div>
-              {!item.s1_identity_match && (
+              {item.s1_identity_match === false && (
                 <Input
-                  placeholder="Mismatch remarks..."
+                  placeholder="Mismatch remarks (required)..."
                   value={item.s1_mismatch_remarks}
                   onChange={(e) => onChange(index, { s1_mismatch_remarks: e.target.value })}
-                  className="text-sm"
+                  className={`text-sm ${!item.s1_mismatch_remarks ? "border-red-300" : ""}`}
                   disabled={item.s1_complete}
                 />
               )}
@@ -304,6 +323,8 @@ function GrnLineItemCard({
                 onClick={() => onSaveStage1(index)}
                 disabled={
                   item.s1_received_now <= 0 ||
+                  item.s1_identity_match === null ||
+                  (item.s1_identity_match === false && !item.s1_mismatch_remarks.trim()) ||
                   (
                     (item as any).jigs_sent &&
                     ((item as any).jigs_sent as any[]).length > 0 &&
@@ -312,7 +333,7 @@ function GrnLineItemCard({
                 }
               >
                 <CheckCircle2 className="h-3.5 w-3.5" />
-                Stage 1 Complete
+                Save Receipt
               </Button>
             )}
           </div>
@@ -439,7 +460,7 @@ function GrnLineItemCard({
                 onClick={() => onSaveStage2(index)}
               >
                 <CheckCircle2 className="h-3.5 w-3.5" />
-                Stage 2 Complete
+                Save Inspection
               </Button>
             )}
           </div>
@@ -459,12 +480,13 @@ export default function GRNForm({ defaultGrnType }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  const preselectedDCId = searchParams.get("dc_id");
   const isExistingGrn = Boolean(editId);
 
   // Header state
   const [grnNumber, setGrnNumber] = useState("");
   const [grnDate, setGrnDate] = useState<Date>(new Date());
-  const [grnType, setGrnType] = useState<GrnType>(defaultGrnType ?? 'po_grn');
+  const [grnType, setGrnType] = useState<GrnType>(defaultGrnType ?? (preselectedDCId ? 'dc_grn' : 'po_grn'));
 
   // PO-GRN
   const [selectedPO, setSelectedPO] = useState<any>(null);
@@ -518,7 +540,7 @@ export default function GRNForm({ defaultGrnType }: Props) {
       if (error) throw error;
       return (data ?? []) as any[];
     },
-    enabled: grnType === 'dc_grn',
+    enabled: grnType === 'dc_grn' || !!preselectedDCId,
   });
 
   const { data: nextNumber } = useQuery({
@@ -566,6 +588,13 @@ export default function GRNForm({ defaultGrnType }: Props) {
       if (po) handlePOSelect(po);
     }
   }, [preselectedPOId, openPOs]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (preselectedDCId && returnableDCs && !isExistingGrn && !selectedDC) {
+      const dc = returnableDCs.find((d: any) => d.id === preselectedDCId);
+      if (dc) handleDCSelect(dc);
+    }
+  }, [preselectedDCId, returnableDCs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
@@ -670,7 +699,7 @@ export default function GRNForm({ defaultGrnType }: Props) {
       if (!item.id) return; // not yet saved to DB
       const data: Stage1Data = {
         received_now: item.s1_received_now,
-        item_identity_match: item.s1_identity_match,
+        item_identity_match: item.s1_identity_match ?? null,
         identity_mismatch_remarks: item.s1_mismatch_remarks || null,
         stage1_checked_by: item.s1_checked_by || null,
         stage1_verified_by: item.s1_verified_by || null,
@@ -683,7 +712,15 @@ export default function GRNForm({ defaultGrnType }: Props) {
     onSuccess: (index) => {
       if (index === undefined) return;
       updateLineItem(index, { s1_complete: true });
-      toast({ title: "Stage 1 saved", description: "Quantitative check recorded." });
+      const item = lineItems[index];
+      const orderedQty = (item as any).ordered_qty ?? item.po_quantity ?? 0;
+      const prevReceived = (item as any).previously_received_qty ?? item.previously_received ?? 0;
+      const totalReceived = prevReceived + item.s1_received_now;
+      if (orderedQty > 0 && totalReceived < orderedQty) {
+        toast({ title: "Partial receipt saved", description: `${item.s1_received_now} of ${orderedQty} received. ${orderedQty - totalReceived} units still pending.` });
+      } else {
+        toast({ title: "Receipt saved", description: "Quantitative check recorded." });
+      }
     },
     onError: (err: any) => {
       // If DB columns don't exist yet, just update local state
@@ -702,11 +739,37 @@ export default function GRNForm({ defaultGrnType }: Props) {
       });
       return;
     }
+    if (item.s1_identity_match === null) {
+      toast({
+        title: "Identity match required",
+        description: "Please confirm whether the item matches the order.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (item.s1_identity_match === false && !item.s1_mismatch_remarks.trim()) {
+      toast({
+        title: "Mismatch remarks required",
+        description: "Please describe the reason for mismatch.",
+        variant: "destructive",
+      });
+      return;
+    }
     updateLineItem(index, { s1_complete: true });
+    const orderedQty = (item as any).ordered_qty ?? item.po_quantity ?? 0;
+    const prevReceived = (item as any).previously_received_qty ?? item.previously_received ?? 0;
+    const totalReceived = prevReceived + item.s1_received_now;
     if (lineItems[index].id) {
       stage1Mutation.mutate(index);
+    } else if (orderedQty > 0) {
+      if (totalReceived >= orderedQty) {
+        toast({ title: "Receipt saved", description: "All ordered quantity received." });
+      } else {
+        const remaining = orderedQty - totalReceived;
+        toast({ title: "Partial receipt saved", description: `${item.s1_received_now} of ${orderedQty} received. ${remaining} units still pending.` });
+      }
     } else {
-      toast({ title: "Stage 1 marked complete" });
+      toast({ title: "Receipt saved" });
     }
   };
 
@@ -868,7 +931,7 @@ export default function GRNForm({ defaultGrnType }: Props) {
       {/* Header Card */}
       <div className="paper-card space-y-5">
         {/* GRN Type Toggle */}
-        {!isExistingGrn && (
+        {!isExistingGrn && !preselectedDCId && (
           <div className="space-y-2">
             <Label className="text-sm font-medium text-slate-700">GRN Type</Label>
             <div className="flex gap-2">

@@ -116,10 +116,31 @@ export default function WipRegister() {
     },
   });
 
-  // Sub-assembly WIP (assembly orders in progress)
+  // Sub-assembly WIP (legacy assembly orders in progress)
   const { data: aoRows = [], isLoading: aoLoading } = useQuery({
     queryKey: ["wip-assembly-orders"],
     queryFn: fetchInProgressAOsWithLines,
+    refetchInterval: 30000,
+  });
+
+  // Sub-assembly WIP (new AWO system — pending_materials + in_progress)
+  const { data: saWorkOrders = [] } = useQuery({
+    queryKey: ["sa-work-orders-wip"],
+    queryFn: async () => {
+      const { supabase: sb } = await import("@/integrations/supabase/client");
+      const { data: { user } } = await sb.auth.getUser();
+      if (!user) return [];
+      const { data: profile } = await sb.from("profiles").select("company_id").eq("id", user.id).single();
+      if (!profile?.company_id) return [];
+      const { data } = await (sb as any)
+        .from("assembly_work_orders")
+        .select("*")
+        .eq("company_id", profile.company_id)
+        .eq("awo_type", "sub_assembly")
+        .in("status", ["pending_materials", "in_progress"])
+        .order("created_at", { ascending: false });
+      return data ?? [];
+    },
     refetchInterval: 30000,
   });
 
@@ -244,10 +265,10 @@ export default function WipRegister() {
       <div className="flex items-center gap-4 flex-wrap">
         <SegmentedControl
           options={[
-            { value: "all",          label: "All WIP",           color: "#0F172A", count: (wipData as any[]).length + aoRows.length },
+            { value: "all",          label: "All WIP",           color: "#0F172A", count: (wipData as any[]).length + aoRows.length + saWorkOrders.length },
             { value: "component",    label: "Component WIP",     color: "#2563EB", count: (wipData as any[]).length },
-            { value: "subassembly",  label: "Sub-Assembly WIP",  color: "#0F766E", count: aoRows.length },
-            { value: "finished_good", label: "Finished Good WIP", color: "#6366F1", count: 0 },
+            { value: "subassembly",  label: "Sub-Assembly WIP",  color: "#0F766E", count: aoRows.length + saWorkOrders.length },
+            { value: "finished_good", label: "Finished Good WIP", color: "#6366F1", count: fgWorkOrders.length },
           ]}
           value={tab}
           onChange={(v) => setTab(v as WipTab)}
@@ -416,7 +437,7 @@ export default function WipRegister() {
             <Layers className="h-4 w-4 text-muted-foreground" />
             <h2 className="text-sm font-semibold text-foreground">Production Runs</h2>
             <span className="bg-slate-100 text-slate-700 text-[11px] font-bold px-2 py-0.5 rounded-full border border-slate-200">
-              {aoRows.length}
+              {aoRows.length + saWorkOrders.length}
             </span>
           </div>
 
@@ -478,7 +499,8 @@ export default function WipRegister() {
                       </td>
                     </tr>
                   ) : (
-                    filteredAo.map((ao) => (
+                    <>
+                    {filteredAo.map((ao) => (
                       <tr
                         key={ao.id}
                         className="cursor-pointer hover:bg-muted/30 transition-colors"
@@ -528,7 +550,43 @@ export default function WipRegister() {
                           </span>
                         </td>
                       </tr>
-                    ))
+                    ))}
+                    {saWorkOrders.filter((awo: any) => {
+                      if (!search.trim()) return true;
+                      const q = search.toLowerCase();
+                      return awo.awo_number?.toLowerCase().includes(q) || awo.item_code?.toLowerCase().includes(q) || awo.item_description?.toLowerCase().includes(q);
+                    }).map((awo: any) => (
+                      <tr
+                        key={awo.id}
+                        className="cursor-pointer hover:bg-muted/30 transition-colors"
+                        onClick={() => navigate(`/assembly-work-orders/${awo.id}`)}
+                      >
+                        <td className="font-mono text-xs font-medium text-foreground">{awo.awo_number}</td>
+                        <td>
+                          <p className="font-medium text-sm leading-tight">{awo.item_code ?? "—"}</p>
+                          {awo.item_description && (
+                            <p className="text-xs text-muted-foreground truncate max-w-[180px]">{awo.item_description}</p>
+                          )}
+                        </td>
+                        <td className="text-right font-mono tabular-nums text-sm">{awo.quantity_to_build}</td>
+                        <td className="text-right"><span className="text-muted-foreground text-sm">—</span></td>
+                        <td className="font-mono text-sm text-muted-foreground">{awo.work_order_ref ?? "—"}</td>
+                        <td className="text-sm">
+                          {awo.planned_date ? format(parseISO(awo.planned_date), "dd MMM yyyy") : <span className="text-muted-foreground">—</span>}
+                        </td>
+                        <td className="text-right">
+                          <DaysInProgress createdAt={awo.created_at} />
+                        </td>
+                        <td><span className="text-muted-foreground text-sm">—</span></td>
+                        <td>
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${awo.status === 'pending_materials' ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-blue-50 text-blue-800 border-blue-200'}`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${awo.status === 'pending_materials' ? 'bg-amber-500' : 'bg-blue-500 animate-pulse'}`} />
+                            {awo.status === 'pending_materials' ? 'Pending Materials' : 'In Progress'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                    </>
                   )}
                 </tbody>
               </table>

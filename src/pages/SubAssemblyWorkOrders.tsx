@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { Layers, Plus } from "lucide-react";
@@ -74,7 +74,19 @@ export default function SubAssemblyWorkOrders() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<FormState>(defaultForm);
   const [search, setSearch] = useState("");
-  const [month, setMonth] = useState("");
+
+  const monthOptions = useMemo(() => {
+    const opts: { value: string; label: string }[] = [];
+    const now = new Date();
+    for (let i = 0; i < 6; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const label = d.toLocaleString("en-IN", { month: "short", year: "numeric" });
+      opts.push({ value, label });
+    }
+    return opts;
+  }, []);
+  const [month, setMonth] = useState(monthOptions[0].value);
 
   const { data: awos = [], isLoading } = useQuery({
     queryKey: ["awo", "sub_assembly", month],
@@ -181,21 +193,16 @@ export default function SubAssemblyWorkOrders() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <input
-          type="month"
-          className="border rounded-md px-3 py-2 text-sm h-10"
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
-        />
-        {month && (
-          <button
-            type="button"
-            className="text-xs text-muted-foreground underline px-1"
-            onClick={() => setMonth("")}
-          >
-            Clear
-          </button>
-        )}
+        <Select value={month} onValueChange={setMonth}>
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder="Month" />
+          </SelectTrigger>
+          <SelectContent>
+            {monthOptions.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Table */}

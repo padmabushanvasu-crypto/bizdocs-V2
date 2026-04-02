@@ -174,19 +174,19 @@ export async function fetchAssemblyWorkOrder(id: string): Promise<AssemblyWorkOr
     .filter((id): id is string => id !== null);
 
   const stockMap: Record<string, number> = {};
-  const itemsInfoMap: Record<string, { drawing_revision: string | null; description: string | null; unit: string | null }> = {};
+  const itemsInfoMap: Record<string, { item_code: string | null; description: string | null; unit: string | null }> = {};
 
   if (itemIds.length > 0) {
     const { data: itemsData } = await supabase
       .from("items")
-      .select("id, stock_free, drawing_revision, description, unit")
+      .select("id, stock_free, item_code, description, unit")
       .in("id", itemIds);
 
     if (itemsData) {
       for (const item of itemsData as any[]) {
         stockMap[item.id] = item.stock_free ?? 0;
         itemsInfoMap[item.id] = {
-          drawing_revision: item.drawing_revision ?? null,
+          item_code: item.item_code ?? null,
           description: item.description ?? null,
           unit: item.unit ?? null,
         };
@@ -197,7 +197,7 @@ export async function fetchAssemblyWorkOrder(id: string): Promise<AssemblyWorkOr
   awo.line_items = lineItems.map((li) => ({
     ...li,
     stock_free: li.item_id ? (stockMap[li.item_id] ?? 0) : 0,
-    drawing_number: li.drawing_number ?? (li.item_id ? (itemsInfoMap[li.item_id]?.drawing_revision ?? null) : null),
+    drawing_number: li.item_id ? (itemsInfoMap[li.item_id]?.item_code ?? li.drawing_number ?? null) : li.drawing_number,
     item_description: li.item_description ?? (li.item_id ? (itemsInfoMap[li.item_id]?.description ?? null) : null),
     unit: li.unit || (li.item_id ? (itemsInfoMap[li.item_id]?.unit ?? 'NOS') : 'NOS'),
   }));
@@ -641,7 +641,8 @@ export async function completeAssemblyWorkOrder(id: string): Promise<void> {
     // Consume components from in_subassembly_wip
     for (const li of awo.line_items ?? []) {
       if (li.item_id && li.issued_qty > 0) {
-        await updateStockBucket(li.item_id, 'in_subassembly_wip', -li.issued_qty);
+        const err = await updateStockBucket(li.item_id, 'in_subassembly_wip', -li.issued_qty).catch((e: Error) => e);
+        if (err instanceof Error) throw new Error(`Stock update failed for ${li.item_code ?? li.item_id}: ${err.message}`);
       }
     }
 
@@ -666,7 +667,8 @@ export async function completeAssemblyWorkOrder(id: string): Promise<void> {
     // Consume components from in_fg_wip
     for (const li of awo.line_items ?? []) {
       if (li.item_id && li.issued_qty > 0) {
-        await updateStockBucket(li.item_id, 'in_fg_wip', -li.issued_qty);
+        const err = await updateStockBucket(li.item_id, 'in_fg_wip', -li.issued_qty).catch((e: Error) => e);
+        if (err instanceof Error) throw new Error(`Stock update failed for ${li.item_code ?? li.item_id}: ${err.message}`);
       }
     }
 
