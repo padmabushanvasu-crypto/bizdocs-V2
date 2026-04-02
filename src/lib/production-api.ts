@@ -105,6 +105,7 @@ export async function fetchAssemblyWorkOrders(filters: {
   type?: string;
   status?: string;
   search?: string;
+  month?: string;
 } = {}): Promise<AssemblyWorkOrder[]> {
   const companyId = await getCompanyId();
   if (!companyId) return [];
@@ -125,6 +126,11 @@ export async function fetchAssemblyWorkOrders(filters: {
     query = query.or(
       `awo_number.ilike.%${filters.search}%,item_description.ilike.%${filters.search}%`
     );
+  }
+  if (filters.month) {
+    const start = `${filters.month}-01`;
+    const end = new Date(new Date(start).getFullYear(), new Date(start).getMonth() + 1, 0).toISOString().split('T')[0];
+    query = query.gte("awo_date", start).lte("awo_date", end);
   }
 
   const { data, error } = await query;
@@ -168,16 +174,22 @@ export async function fetchAssemblyWorkOrder(id: string): Promise<AssemblyWorkOr
     .filter((id): id is string => id !== null);
 
   const stockMap: Record<string, number> = {};
+  const itemsInfoMap: Record<string, { drawing_revision: string | null; description: string | null; unit: string | null }> = {};
 
   if (itemIds.length > 0) {
     const { data: itemsData } = await supabase
       .from("items")
-      .select("id, stock_free")
+      .select("id, stock_free, drawing_revision, description, unit")
       .in("id", itemIds);
 
     if (itemsData) {
-      for (const item of itemsData) {
-        stockMap[(item as any).id] = (item as any).stock_free ?? 0;
+      for (const item of itemsData as any[]) {
+        stockMap[item.id] = item.stock_free ?? 0;
+        itemsInfoMap[item.id] = {
+          drawing_revision: item.drawing_revision ?? null,
+          description: item.description ?? null,
+          unit: item.unit ?? null,
+        };
       }
     }
   }
@@ -185,6 +197,9 @@ export async function fetchAssemblyWorkOrder(id: string): Promise<AssemblyWorkOr
   awo.line_items = lineItems.map((li) => ({
     ...li,
     stock_free: li.item_id ? (stockMap[li.item_id] ?? 0) : 0,
+    drawing_number: li.drawing_number ?? (li.item_id ? (itemsInfoMap[li.item_id]?.drawing_revision ?? null) : null),
+    item_description: li.item_description ?? (li.item_id ? (itemsInfoMap[li.item_id]?.description ?? null) : null),
+    unit: li.unit || (li.item_id ? (itemsInfoMap[li.item_id]?.unit ?? 'NOS') : 'NOS'),
   }));
 
   return awo;
@@ -387,6 +402,7 @@ export async function createMaterialIssueRequest(awo_id: string): Promise<string
 export async function fetchMaterialIssueRequests(filters: {
   status?: string;
   awo_id?: string;
+  month?: string;
 } = {}): Promise<MaterialIssueRequest[]> {
   const companyId = await getCompanyId();
   if (!companyId) return [];
@@ -402,6 +418,11 @@ export async function fetchMaterialIssueRequests(filters: {
   }
   if (filters.awo_id) {
     query = query.eq("awo_id", filters.awo_id);
+  }
+  if (filters.month) {
+    const start = `${filters.month}-01`;
+    const end = new Date(new Date(start).getFullYear(), new Date(start).getMonth() + 1, 0).toISOString().split('T')[0];
+    query = query.gte("request_date", start).lte("request_date", end);
   }
 
   const { data, error } = await query;
@@ -520,10 +541,10 @@ export async function confirmMaterialIssue(
 
   let hasShortages = false;
 
-  for (const issue of lineIssues) {
-    // Find the mir line item
+  // Process all line items in parallel to avoid sequential-await timeouts
+  await Promise.all(lineIssues.map(async (issue) => {
     const mirLine = mir.line_items?.find((li) => li.id === issue.mir_line_item_id);
-    if (!mirLine) continue;
+    if (!mirLine) return;
 
     const shortage_qty = Math.max(0, mirLine.requested_qty - issue.issued_qty);
     if (shortage_qty > 0) hasShortages = true;
@@ -541,7 +562,6 @@ export async function confirmMaterialIssue(
 
     // Update awo_line_items issued_qty
     if (mirLine.awo_line_item_id) {
-      // Fetch current issued_qty
       const { data: awoLine } = await (supabase as any)
         .from("awo_line_items")
         .select("issued_qty")
@@ -562,7 +582,6 @@ export async function confirmMaterialIssue(
       await updateStockBucket(mirLine.item_id, 'free', -issue.issued_qty);
       await updateStockBucket(mirLine.item_id, 'in_subassembly_wip', +issue.issued_qty);
 
-      // Insert stock ledger entry
       try {
         await (supabase as any).from("stock_ledger").insert({
           company_id: companyId,
@@ -575,13 +594,14 @@ export async function confirmMaterialIssue(
         // stock_ledger may not exist yet — ignore
       }
     }
-  }
+  }));
 
-  // Update MIR status
+  // Update MIR status (partially_issued when shortages exist)
+  const mirStatus = hasShortages ? 'partially_issued' : 'issued';
   await (supabase as any)
     .from("material_issue_requests")
     .update({
-      status: 'issued',
+      status: mirStatus,
       issue_date: new Date().toISOString().split('T')[0],
       issued_by,
       issued_by_user_id: user.id,

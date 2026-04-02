@@ -61,6 +61,7 @@ export interface StockStatusRow {
 export interface ItemFilters {
   search?: string;
   type?: string;
+  types?: string[];
   status?: string;
   page?: number;
   pageSize?: number;
@@ -69,7 +70,7 @@ export interface ItemFilters {
 export async function fetchItems(filters: ItemFilters = {}) {
   const companyId = await getCompanyId();
   if (!companyId) return { data: [], count: 0 };
-  const { search, type = "all", status = "active", page = 1, pageSize = 100 } = filters;
+  const { search, type = "all", types, status = "active", page = 1, pageSize = 100 } = filters;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
@@ -80,7 +81,9 @@ export async function fetchItems(filters: ItemFilters = {}) {
     .range(from, to);
 
   if (status !== "all") query = query.eq("status", status);
-  if (type && type !== "all") {
+  if (types && types.length > 0) {
+    query = query.in("item_type", types);
+  } else if (type && type !== "all") {
     query = query.eq("item_type", type);
   }
 

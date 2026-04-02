@@ -83,6 +83,7 @@ export interface GRNFilters {
   search?: string;
   status?: string;
   grn_type?: 'po_grn' | 'dc_grn' | 'all';
+  month?: string;
   page?: number;
   pageSize?: number;
 }
@@ -102,12 +103,17 @@ export interface GrnReceiptEvent {
 export async function fetchGRNs(filters: GRNFilters = {}) {
   const companyId = await getCompanyId();
   if (!companyId) return { data: [], count: 0 };
-  const { search, status = "all", grn_type, page = 1, pageSize = 20 } = filters;
+  const { search, status = "all", grn_type, month, page = 1, pageSize = 20 } = filters;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
   let query = (supabase as any).from("grns").select("*", { count: "exact" }).order("created_at", { ascending: false }).range(from, to);
   if (status && status !== "all") query = query.eq("status", status);
   if (grn_type && grn_type !== "all") query = query.eq("grn_type", grn_type);
+  if (month) {
+    const start = `${month}-01`;
+    const end = new Date(new Date(start).getFullYear(), new Date(start).getMonth() + 1, 0).toISOString().split('T')[0];
+    query = query.gte("grn_date", start).lte("grn_date", end);
+  }
   if (search?.trim()) {
     const sanitized = sanitizeSearchTerm(search);
     if (sanitized) {
@@ -504,6 +510,7 @@ export async function createGrnFromDC(data: CreateGrnFromDCData): Promise<GRN> {
       rejected_qty: 0,
       stage1_complete: false,
       stage2_complete: false,
+      jigs_sent: item.jigs_sent ?? null,
     }));
     const { error: liInsertErr } = await (supabase as any).from("grn_line_items").insert(lineItemsToInsert);
     if (liInsertErr) throw liInsertErr;

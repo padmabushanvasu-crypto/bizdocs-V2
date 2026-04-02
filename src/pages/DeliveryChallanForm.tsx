@@ -666,8 +666,6 @@ export default function DeliveryChallanForm() {
                 <th className="px-3 py-2 text-left w-32 text-xs font-medium text-slate-400 uppercase tracking-wider">Drawing No</th>
                 <th className="px-3 py-2 text-left w-48 text-xs font-medium text-slate-400 uppercase tracking-wider">Nature of Process</th>
                 <th className="px-3 py-2 text-right w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Qty</th>
-                <th className="px-3 py-2 text-right w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">KGS</th>
-                <th className="px-3 py-2 text-right w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">SFT</th>
                 <th className="px-3 py-2 text-left w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Unit</th>
                 <th className="px-3 py-2 text-right w-28 text-xs font-medium text-slate-400 uppercase tracking-wider">Rate ₹</th>
                 <th className="px-3 py-2 text-right w-28 text-xs font-medium text-slate-400 uppercase tracking-wider">Amount ₹</th>
@@ -752,32 +750,15 @@ export default function DeliveryChallanForm() {
                     />
                   </td>
                   <td className="p-0 w-24">
-                    <input
-                      type="number"
-                      step="0.001"
-                      value={item.qty_kgs ?? ""}
-                      onChange={(e) => updateLineItem(index, "qty_kgs", e.target.value ? Number(e.target.value) : undefined)}
-                      placeholder="—"
-                      className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm text-right font-mono tabular-nums placeholder:text-slate-300"
-                    />
-                  </td>
-                  <td className="p-0 w-24">
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={item.qty_sft ?? ""}
-                      onChange={(e) => updateLineItem(index, "qty_sft", e.target.value ? Number(e.target.value) : undefined)}
-                      placeholder="—"
-                      className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm text-right font-mono tabular-nums placeholder:text-slate-300"
-                    />
-                  </td>
-                  <td className="p-0 w-24">
-                    <input
-                      type="text"
+                    <select
                       value={item.unit || "NOS"}
                       onChange={(e) => updateLineItem(index, "unit", e.target.value)}
-                      className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm"
-                    />
+                      className="w-full min-h-[44px] px-2 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm"
+                    >
+                      {["NOS","KG","KGS","MTR","SFT","SET","ROLL","SHEET","OTHER"].map((u) => (
+                        <option key={u} value={u}>{u}</option>
+                      ))}
+                    </select>
                   </td>
                   <td className="p-0 w-28">
                     <input

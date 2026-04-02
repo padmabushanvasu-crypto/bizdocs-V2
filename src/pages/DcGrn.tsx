@@ -30,6 +30,7 @@ export default function DcGrn() {
   const [filters, setFilters] = useState<GRNFilters>({
     search: "",
     status: "all",
+    month: "",
     page: 1,
     pageSize: 20,
   });
@@ -77,6 +78,21 @@ export default function DcGrn() {
             onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value, page: 1 }))}
           />
         </div>
+        <input
+          type="month"
+          className="border rounded-md px-3 py-2 text-sm h-10"
+          value={filters.month ?? ""}
+          onChange={(e) => setFilters((f) => ({ ...f, month: e.target.value || undefined, page: 1 }))}
+        />
+        {filters.month && (
+          <button
+            type="button"
+            className="text-xs text-muted-foreground underline px-1"
+            onClick={() => setFilters((f) => ({ ...f, month: undefined, page: 1 }))}
+          >
+            Clear
+          </button>
+        )}
       </div>
 
       {/* Table */}

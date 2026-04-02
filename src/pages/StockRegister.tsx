@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { fetchStockStatus, updateMinStockOverride, type StockStatusRow } from "@/lib/items-api";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 
 function StatusBadge({ status }: { status: StockStatusRow["stock_status"] }) {
@@ -148,16 +148,6 @@ export default function StockRegister() {
   const [typeTab, setTypeTab] = useState<TypeTab>("all");
   const [alertFilter, setAlertFilter] = useState<"all" | "critical" | "warning" | "watch" | "locked" | "healthy">("all");
 
-
-  // DEBUG: log active tab and row counts to diagnose bought-out items not appearing
-  // If bought_out count is 0 even though items exist in the items table, the stock_status VIEW
-  // in Supabase likely has a WHERE item_type IN (...) clause that excludes 'bought_out'.
-  // SQL fix (run in Supabase SQL editor):
-  //   DROP VIEW IF EXISTS stock_status;
-  //   CREATE VIEW stock_status AS SELECT ... FROM items WHERE status = 'active';
-  //   (remove the item_type filter from the WHERE clause, or add 'bought_out' to the IN list)
-  // eslint-disable-next-line no-console
-  console.log('Tab:', typeTab, 'Rows:', rows.length, 'bought_out in data:', rows.filter(r => r.item_type === 'bought_out').length);
 
   const filtered = rows
     .filter((r) => statusFilter === "all" || r.stock_status === statusFilter)

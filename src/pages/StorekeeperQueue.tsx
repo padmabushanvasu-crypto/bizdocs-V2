@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Package, CheckCircle, AlertTriangle, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -32,13 +32,18 @@ export default function StorekeeperQueue() {
 
   const [selectedMirId, setSelectedMirId] = useState<string | null>(null);
   const [lineEdits, setLineEdits] = useState<Record<string, { issued_qty: number; shortage_notes: string }>>({});
+  const [statusFilter, setStatusFilter] = useState("pending");
+  const [month, setMonth] = useState("");
 
   const issuedBy = profile?.full_name ?? "Storekeeper";
 
-  // List view query
-  const { data: pendingMirs = [], isLoading: listLoading } = useQuery({
-    queryKey: ["mirs-pending"],
-    queryFn: () => fetchMaterialIssueRequests({ status: "pending" }),
+  // List view query — show all statuses, filtered client-side or via param
+  const { data: mirs = [], isLoading: listLoading } = useQuery({
+    queryKey: ["mirs", statusFilter, month],
+    queryFn: () => fetchMaterialIssueRequests({
+      status: statusFilter !== "all" ? statusFilter : undefined,
+      month: month || undefined,
+    }),
     enabled: !selectedMirId,
   });
 
@@ -47,19 +52,18 @@ export default function StorekeeperQueue() {
     queryKey: ["mir-detail", selectedMirId],
     queryFn: () => fetchMaterialIssueRequest(selectedMirId!),
     enabled: !!selectedMirId,
-    onSuccess: (mir) => {
-      if (mir?.line_items) {
-        const edits: Record<string, { issued_qty: number; shortage_notes: string }> = {};
-        for (const li of mir.line_items) {
-          edits[li.id] = {
-            issued_qty: li.requested_qty,
-            shortage_notes: "",
-          };
-        }
-        setLineEdits(edits);
-      }
-    },
   });
+
+  // Initialize lineEdits when mirDetail loads (replaces deprecated onSuccess)
+  useEffect(() => {
+    if (mirDetail?.line_items) {
+      const edits: Record<string, { issued_qty: number; shortage_notes: string }> = {};
+      for (const li of mirDetail.line_items) {
+        edits[li.id] = { issued_qty: li.requested_qty, shortage_notes: "" };
+      }
+      setLineEdits(edits);
+    }
+  }, [mirDetail]);
 
   const confirmMutation = useMutation({
     mutationFn: () => {
@@ -72,7 +76,7 @@ export default function StorekeeperQueue() {
       return confirmMaterialIssue(selectedMirId, lineIssues, issuedBy);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["mirs-pending"] });
+      queryClient.invalidateQueries({ queryKey: ["mirs"] });
       queryClient.invalidateQueries({ queryKey: ["awo-detail"] });
       toast({ title: "Materials issued successfully" });
       setSelectedMirId(null);
@@ -88,7 +92,7 @@ export default function StorekeeperQueue() {
   if (!selectedMirId) {
     return (
       <div className="p-4 md:p-6 space-y-4">
-        <div className="flex items-center gap-3 mb-6">
+        <div className="flex items-center gap-3 mb-4">
           <Package className="w-6 h-6 text-primary" />
           <h1 className="text-2xl font-bold">Material Issues</h1>
           {profile?.full_name && (
@@ -96,17 +100,46 @@ export default function StorekeeperQueue() {
           )}
         </div>
 
+        {/* Filters */}
+        <div className="flex flex-wrap gap-2">
+          <select
+            className="border rounded-md px-3 py-2 text-sm h-10"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+          >
+            <option value="pending">Pending</option>
+            <option value="partially_issued">Partially Issued</option>
+            <option value="issued">Issued</option>
+            <option value="all">All Statuses</option>
+          </select>
+          <input
+            type="month"
+            className="border rounded-md px-3 py-2 text-sm h-10"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+          />
+          {month && (
+            <button
+              type="button"
+              className="text-xs text-muted-foreground underline px-1"
+              onClick={() => setMonth("")}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
         {listLoading ? (
           <p className="text-muted-foreground text-center py-10">Loading…</p>
-        ) : pendingMirs.length === 0 ? (
+        ) : mirs.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3 bg-white rounded-xl border border-slate-200">
             <CheckCircle className="h-10 w-10 text-green-400" />
-            <p className="text-slate-500 font-medium">No pending material requests</p>
-            <p className="text-sm text-slate-400">All clear — no materials waiting to be issued.</p>
+            <p className="text-slate-500 font-medium">No material requests</p>
+            <p className="text-sm text-slate-400">No MIRs match the selected filters.</p>
           </div>
         ) : (
           <div className="space-y-3">
-            {pendingMirs.map((mir) => (
+            {mirs.map((mir) => (
               <div
                 key={mir.id}
                 className="paper-card space-y-2 hover:shadow-md transition-shadow cursor-pointer"

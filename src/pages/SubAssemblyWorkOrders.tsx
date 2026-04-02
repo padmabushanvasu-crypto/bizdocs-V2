@@ -74,10 +74,11 @@ export default function SubAssemblyWorkOrders() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<FormState>(defaultForm);
   const [search, setSearch] = useState("");
+  const [month, setMonth] = useState("");
 
   const { data: awos = [], isLoading } = useQuery({
-    queryKey: ["awo", "sub_assembly"],
-    queryFn: () => fetchAssemblyWorkOrders({ type: "sub_assembly" }),
+    queryKey: ["awo", "sub_assembly", month],
+    queryFn: () => fetchAssemblyWorkOrders({ type: "sub_assembly", month: month || undefined }),
   });
 
   const { data: stats } = useQuery({
@@ -172,13 +173,30 @@ export default function SubAssemblyWorkOrders() {
         <span><b className="text-green-600">{stats?.complete_this_month ?? 0}</b> complete this month</span>
       </div>
 
-      {/* Search */}
-      <Input
-        placeholder="Search by WO number, item…"
-        className="max-w-sm"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-      />
+      {/* Search + Month filter */}
+      <div className="flex flex-wrap gap-2">
+        <Input
+          placeholder="Search by WO number, item…"
+          className="max-w-sm"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <input
+          type="month"
+          className="border rounded-md px-3 py-2 text-sm h-10"
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
+        />
+        {month && (
+          <button
+            type="button"
+            className="text-xs text-muted-foreground underline px-1"
+            onClick={() => setMonth("")}
+          >
+            Clear
+          </button>
+        )}
+      </div>
 
       {/* Table */}
       <div className="paper-card !p-0">
