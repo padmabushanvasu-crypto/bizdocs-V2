@@ -473,7 +473,7 @@ export default function Dashboard() {
                     className="w-full flex items-center justify-between hover:bg-red-50 -mx-1 px-1 rounded transition-colors"
                     onClick={() => navigate("/stock-register?filter=critical")}
                   >
-                    <span className="text-xs font-semibold text-red-700 uppercase tracking-wider">Critical</span>
+                    <span className="text-xs font-semibold text-red-700 uppercase tracking-wider">Reorder Now</span>
                     <span className="text-lg font-extrabold font-mono tabular-nums text-red-600">{dashData?.criticalStockCount}</span>
                   </button>
                 )}
@@ -482,7 +482,7 @@ export default function Dashboard() {
                     className="w-full flex items-center justify-between hover:bg-amber-50 -mx-1 px-1 rounded transition-colors"
                     onClick={() => navigate("/stock-register?filter=warning")}
                   >
-                    <span className="text-xs font-semibold text-amber-700 uppercase tracking-wider">Warning</span>
+                    <span className="text-xs font-semibold text-amber-700 uppercase tracking-wider">Running Low</span>
                     <span className="text-lg font-extrabold font-mono tabular-nums text-amber-600">{dashData?.warningStockCount}</span>
                   </button>
                 )}
@@ -491,7 +491,7 @@ export default function Dashboard() {
                     className="w-full flex items-center justify-between hover:bg-slate-100 -mx-1 px-1 rounded transition-colors"
                     onClick={() => navigate("/stock-register?filter=locked")}
                   >
-                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Locked</span>
+                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Engaged</span>
                     <span className="text-lg font-extrabold font-mono tabular-nums text-slate-700">{dashData?.lockedStockCount}</span>
                   </button>
                 )}

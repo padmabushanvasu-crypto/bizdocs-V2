@@ -4,7 +4,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { Package, Shield } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { StockStatusBadge } from "@/components/StockStatusBadge";
 import { fetchStockStatus, type StockStatusRow } from "@/lib/items-api";
 
 // ── Error boundary ─────────────────────────────────────────────────────────────
@@ -57,61 +57,6 @@ function TypeBadge({ type }: { type: string }) {
       className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap ${t.cls}`}
     >
       {t.label}
-    </span>
-  );
-}
-
-// ── Status badge ───────────────────────────────────────────────────────────────
-
-function StatusBadge({ row }: { row: StockStatusRow }) {
-  const level = row.stock_alert_level ?? "healthy";
-  const allZero =
-    row.stock_free === 0 &&
-    row.stock_in_process === 0 &&
-    row.stock_in_subassembly_wip === 0 &&
-    row.stock_in_fg_wip === 0 &&
-    row.stock_in_fg_ready === 0;
-
-  if (level === "critical") {
-    return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 border border-red-200 whitespace-nowrap">
-        Reorder Now
-      </span>
-    );
-  }
-  if (level === "warning") {
-    return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 border border-amber-200 whitespace-nowrap">
-        Running Low
-      </span>
-    );
-  }
-  if (level === "locked") {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap cursor-default">
-            Engaged
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="left" className="max-w-[240px] text-xs">
-          Stock exists but none is currently free — all quantity is at vendors or in active
-          production
-        </TooltipContent>
-      </Tooltip>
-    );
-  }
-  if (level === "healthy" && allZero) {
-    return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-500 border border-slate-200 whitespace-nowrap">
-        No Stock
-      </span>
-    );
-  }
-  // healthy (with stock) or watch
-  return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-200 whitespace-nowrap">
-      In Stock
     </span>
   );
 }
@@ -573,7 +518,16 @@ function StockRegisterInner() {
 
                       {/* Status */}
                       <td className="px-3 py-3">
-                        <StatusBadge row={row} />
+                        <StockStatusBadge
+                          alertLevel={row.stock_alert_level ?? "healthy"}
+                          totalStock={
+                            row.stock_free +
+                            row.stock_in_process +
+                            row.stock_in_subassembly_wip +
+                            row.stock_in_fg_wip +
+                            row.stock_in_fg_ready
+                          }
+                        />
                       </td>
                     </tr>
                   );
