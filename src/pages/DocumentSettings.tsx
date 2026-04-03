@@ -69,6 +69,8 @@ export default function DocumentSettings() {
     show_original_duplicate: true,
     default_footer_text: "",
   });
+  const [poTerms, setPoTerms] = useState("");
+  const [dcTerms, setDcTerms] = useState("");
   const [sigFile, setSigFile] = useState<File | null>(null);
   const [sigPreview, setSigPreview] = useState("");
   const [sigUploading, setSigUploading] = useState(false);
@@ -123,6 +125,10 @@ export default function DocumentSettings() {
       }
       return next;
     });
+    const poDs = allDocSettings.find((s) => s.document_type === "purchase_order");
+    if (poDs?.terms_and_conditions) setPoTerms(poDs.terms_and_conditions);
+    const dcDs = allDocSettings.find((s) => s.document_type === "delivery_challan");
+    if (dcDs?.terms_and_conditions) setDcTerms(dcDs.terms_and_conditions);
   }, [allDocSettings]);
 
   const handleSigChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -156,6 +162,10 @@ export default function DocumentSettings() {
           numbering_current: series[d.prefixKey].current,
         } as any);
       }
+
+      // Save per-document T&C
+      await upsertDocumentSettings("purchase_order", { terms_and_conditions: poTerms || null } as any);
+      await upsertDocumentSettings("delivery_challan", { terms_and_conditions: dcTerms || null } as any);
 
       if (sigFile) {
         setSigUploading(true);
@@ -319,7 +329,33 @@ export default function DocumentSettings() {
         </div>
       </div>
 
-      {/* Section 4: Print Toggles */}
+      {/* Section 4: Document-Specific Terms & Conditions */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-4 space-y-4">
+        <div>
+          <h2 className="text-xs font-bold uppercase text-slate-500 tracking-wider">Document Terms &amp; Conditions</h2>
+          <p className="text-sm text-slate-500 mt-0.5">Set T&amp;C per document type. Leave blank to use the default Invoice T&amp;C above.</p>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Purchase Order T&amp;C</Label>
+          <Textarea
+            value={poTerms}
+            onChange={(e) => setPoTerms(e.target.value)}
+            rows={4}
+            placeholder="Terms & conditions printed on Purchase Orders…"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Delivery Challan T&amp;C</Label>
+          <Textarea
+            value={dcTerms}
+            onChange={(e) => setDcTerms(e.target.value)}
+            rows={4}
+            placeholder="Terms & conditions printed on Delivery Challans…"
+          />
+        </div>
+      </div>
+
+      {/* Section 5: Print Toggles */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-4 space-y-4">
         <h2 className="text-xs font-bold uppercase text-slate-500 tracking-wider">Print Options</h2>
         <div className="space-y-3">

@@ -26,6 +26,8 @@ export interface PurchaseOrder {
   vendor_gstin: string | null;
   vendor_state_code: string | null;
   vendor_phone: string | null;
+  vendor_reference: string | null;
+  vendor_email: string | null;
   reference_number: string | null;
   payment_terms: string | null;
   delivery_address: string | null;

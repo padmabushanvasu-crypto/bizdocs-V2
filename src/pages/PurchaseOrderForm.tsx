@@ -64,6 +64,8 @@ export default function PurchaseOrderForm() {
   const [vendorId, setVendorId] = useState<string | null>(null);
   const [selectedVendor, setSelectedVendor] = useState<Party | null>(null);
   const [vendorOpen, setVendorOpen] = useState(false);
+  const [vendorReference, setVendorReference] = useState("");
+  const [vendorEmail, setVendorEmail] = useState("");
   const [referenceNumber, setReferenceNumber] = useState("");
   const [paymentTerms, setPaymentTerms] = useState("");
   const [customPaymentTerms, setCustomPaymentTerms] = useState("");
@@ -128,6 +130,8 @@ export default function PurchaseOrderForm() {
       setPONumber(existingPO.po_number);
       setPODate(new Date(existingPO.po_date));
       setVendorId(existingPO.vendor_id);
+      setVendorReference((existingPO as any).vendor_reference || "");
+      setVendorEmail((existingPO as any).vendor_email || "");
       setReferenceNumber(existingPO.reference_number || "");
       setPaymentTerms(existingPO.payment_terms || "");
       setDeliveryAddress(existingPO.delivery_address || "");
@@ -188,6 +192,9 @@ export default function PurchaseOrderForm() {
     setVendorOpen(false);
     if (vendor.payment_terms && !paymentTerms) {
       setPaymentTerms(vendor.payment_terms);
+    }
+    if ((vendor as any).email1) {
+      setVendorEmail((vendor as any).email1);
     }
   };
 
@@ -257,6 +264,8 @@ export default function PurchaseOrderForm() {
         vendor_gstin: selectedVendor?.gstin || null,
         vendor_state_code: selectedVendor?.state_code || null,
         vendor_phone: selectedVendor?.phone1 || null,
+        vendor_reference: vendorReference || null,
+        vendor_email: vendorEmail || null,
         reference_number: referenceNumber || null,
         payment_terms: paymentTerms === "Custom" ? customPaymentTerms : paymentTerms || null,
         delivery_address: deliveryAddress || null,
@@ -413,8 +422,22 @@ export default function PurchaseOrderForm() {
                 )}
                 {selectedVendor.gstin && <p className="font-mono text-xs">GSTIN: {selectedVendor.gstin}</p>}
                 {selectedVendor.phone1 && <p className="text-muted-foreground">Ph: {selectedVendor.phone1}</p>}
+                {(selectedVendor as any).email1 && <p className="text-muted-foreground">{(selectedVendor as any).email1}</p>}
               </div>
             )}
+
+            <div>
+              <Label className="text-sm font-medium text-slate-700">Vendor Reference</Label>
+              <Input value={vendorReference} onChange={(e) => setVendorReference(e.target.value)} className="mt-1" placeholder="Vendor quotation / reference" />
+            </div>
+
+            <div>
+              <Label className="text-sm font-medium text-slate-700">Vendor Email</Label>
+              <Input value={vendorEmail} onChange={(e) => setVendorEmail(e.target.value)} className="mt-1" placeholder="vendor@example.com" type="email" />
+              {selectedVendor && (selectedVendor as any).email1 && vendorEmail === (selectedVendor as any).email1 && (
+                <p className="text-[10px] text-muted-foreground mt-1">Auto-filled from vendor record</p>
+              )}
+            </div>
 
             <div>
               <Label className="text-sm font-medium text-slate-700">Reference / L.O. Number</Label>
