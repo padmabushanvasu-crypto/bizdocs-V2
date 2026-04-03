@@ -14,6 +14,7 @@ import {
   normaliseHeader, fieldDisplayName,
   parseExcelSmart,
   PARTY_FIELD_MAP, ITEM_FIELD_MAP, BOM_FIELD_MAP, STOCK_FIELD_MAP, VENDOR_SHEET_FIELD_MAP, REORDER_FIELD_MAP,
+  JIG_FIELD_MAP, MOULD_FIELD_MAP, PROCESSING_ROUTES_FIELD_MAP,
   type ColumnMappingSummary, type SkipReason,
 } from "@/lib/import-utils";
 import { importItemsBatch } from "@/lib/items-api";
@@ -1839,12 +1840,20 @@ function ProcessingRoutesImportTab({ companyId }: { companyId: string | null }) 
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const XLSX = await import("xlsx-js-style");
-      const buffer = await file.arrayBuffer();
-      const wb = (XLSX as any).read(new Uint8Array(buffer), { type: "array", raw: false });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const raw = (XLSX as any).utils.sheet_to_json(ws, { defval: "" }) as Record<string, string>[];
-      setRows(raw);
+      const { rows: raw, skipped: parsedSkips } = await parseExcelSmart(file, PROCESSING_ROUTES_FIELD_MAP);
+      if (raw.length === 0) {
+        toast({ title: "No data found", description: "The file is empty or contains only headers.", variant: "destructive" });
+        e.target.value = "";
+        return;
+      }
+      const headers = Object.keys(raw[0]);
+      const colMap = resolveColumns(headers, PROCESSING_ROUTES_FIELD_MAP);
+      const parsed = raw.map((r) => extractRow(r, headers, colMap));
+      setRows(parsed);
+      setResult(null);
+      if (parsedSkips.length > 0) {
+        toast({ title: `${parsedSkips.length} instruction row${parsedSkips.length !== 1 ? "s" : ""} skipped`, description: "Example/header rows were ignored automatically." });
+      }
     } catch (err: any) {
       toast({ title: "Failed to parse file", description: err.message, variant: "destructive" });
     }
@@ -1882,10 +1891,10 @@ function ProcessingRoutesImportTab({ companyId }: { companyId: string | null }) 
 
       rows.forEach((row, idx) => {
         const excelRow = idx + 2;
-        const drawingNum = (row["Drawing Number *"] || row["Drawing Number"] || row["drawing_number"] || "").toString().trim();
-        const stageNum = parseInt((row["Stage No *"] || row["Stage No"] || row["stage_number"] || "0").toString().trim(), 10);
-        const processName = (row["Process Name *"] || row["Process Name"] || row["process_name"] || "").toString().trim();
-        const stageType = (row["Stage Type *"] || row["Stage Type"] || row["stage_type"] || "external").toString().trim().toLowerCase() as 'internal' | 'external';
+        const drawingNum = (row["drawing_number"] || "").toString().trim();
+        const stageNum = parseInt((row["stage_number"] || "0").toString().trim(), 10);
+        const processName = (row["process_name"] || "").toString().trim();
+        const stageType = (row["stage_type"] || "external").toString().trim().toLowerCase() as 'internal' | 'external';
 
         if (!drawingNum) { skipped++; skipErrors.push(`Row ${excelRow}: Drawing Number is required`); return; }
         if (!stageNum) { skipped++; skipErrors.push(`Row ${excelRow} (${drawingNum}): Stage No is required or invalid`); return; }
@@ -1894,10 +1903,10 @@ function ProcessingRoutesImportTab({ companyId }: { companyId: string | null }) 
         if (!itemId) { skipped++; skipErrors.push(`Row ${excelRow}: Drawing/Item "${drawingNum}" not found in items master`); return; }
 
         const vendors: RowVendor[] = [];
-        for (const vKey of ["Vendor 1", "Vendor 2", "vendor_1", "vendor_2"]) {
-          const vName = (row[vKey] || "").toString().trim();
-          if (vName) vendors.push({ name: vName, isPreferred: vKey.includes("1") });
-        }
+        const v1 = (row["vendor_1"] || "").toString().trim();
+        const v2 = (row["vendor_2"] || "").toString().trim();
+        if (v1) vendors.push({ name: v1, isPreferred: true });
+        if (v2) vendors.push({ name: v2, isPreferred: false });
 
         const dedupeKey = `${itemId}:${stageNum}`;
         parsedMap.set(dedupeKey, {
@@ -1905,11 +1914,11 @@ function ProcessingRoutesImportTab({ companyId }: { companyId: string | null }) 
             company_id: companyId,
             item_id: itemId,
             stage_number: stageNum,
-            process_code: (row["Process Code"] || row["process_code"] || "").toString().trim() || null,
+            process_code: (row["process_code"] || "").toString().trim() || null,
             process_name: processName,
             stage_type: ['internal', 'external'].includes(stageType) ? stageType : 'external',
-            lead_time_days: parseInt((row["Lead Time Days"] || row["lead_time_days"] || "7").toString(), 10) || 7,
-            notes: (row["Notes"] || row["notes"] || "").toString().trim() || null,
+            lead_time_days: parseInt((row["lead_time_days"] || "7").toString(), 10) || 7,
+            notes: (row["notes"] || "").toString().trim() || null,
             is_active: true,
             updated_at: new Date().toISOString(),
           },
@@ -2066,12 +2075,20 @@ function JigMasterImportTab({ companyId }: { companyId: string | null }) {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const XLSX = await import("xlsx-js-style");
-      const buffer = await file.arrayBuffer();
-      const wb = (XLSX as any).read(new Uint8Array(buffer), { type: "array", raw: false });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const raw = (XLSX as any).utils.sheet_to_json(ws, { defval: "" }) as Record<string, string>[];
-      setRows(raw);
+      const { rows: raw, skipped: parsedSkips } = await parseExcelSmart(file, JIG_FIELD_MAP);
+      if (raw.length === 0) {
+        toast({ title: "No data found", description: "The file is empty or contains only headers.", variant: "destructive" });
+        e.target.value = "";
+        return;
+      }
+      const headers = Object.keys(raw[0]);
+      const colMap = resolveColumns(headers, JIG_FIELD_MAP);
+      const parsed = raw.map((r) => extractRow(r, headers, colMap));
+      setRows(parsed);
+      setResult(null);
+      if (parsedSkips.length > 0) {
+        toast({ title: `${parsedSkips.length} instruction row${parsedSkips.length !== 1 ? "s" : ""} skipped` });
+      }
     } catch (err: any) {
       toast({ title: "Failed to parse file", description: err.message, variant: "destructive" });
     }
@@ -2096,22 +2113,22 @@ function JigMasterImportTab({ companyId }: { companyId: string | null }) {
 
       rows.forEach((row, i) => {
         const excelRow = i + 2;
-        const drawingNumber = (row["Drawing Number *"] || row["Drawing Number"] || row["drawing_number"] || "").toString().trim();
-        const jigNumber = (row["Jig Number *"] || row["Jig Number"] || row["jig_number"] || "").toString().trim();
+        const drawingNumber = (row["drawing_number"] || "").toString().trim();
+        const jigNumber = (row["jig_number"] || "").toString().trim();
         if (!drawingNumber || !jigNumber) {
           skipped++;
           validationErrors.push(`Row ${excelRow}: ${!drawingNumber ? "Drawing Number" : "Jig Number"} is required`);
           return;
         }
-        const rawStatus = (row["Status"] || row["status"] || "ok").toString().trim().toLowerCase().replace(/ /g, '_');
+        const rawStatus = (row["status"] || "ok").toString().trim().toLowerCase().replace(/ /g, '_');
         dedupMap.set(`${drawingNumber.toLowerCase()}:${jigNumber.toLowerCase()}`, {
           payload: {
             company_id: companyId,
             drawing_number: drawingNumber,
             jig_number: jigNumber,
             status: VALID_STATUSES.includes(rawStatus) ? rawStatus : 'ok',
-            associated_process: (row["Associated Process"] || row["associated_process"] || "").toString().trim() || null,
-            notes: (row["Notes"] || row["notes"] || "").toString().trim() || null,
+            associated_process: (row["associated_process"] || "").toString().trim() || null,
+            notes: (row["notes"] || "").toString().trim() || null,
           },
           excelRow,
         });
@@ -2223,21 +2240,16 @@ function MouldItemsImportTab({ companyId }: { companyId: string | null }) {
 
   const handleFile = async (file: File) => {
     try {
-      const XLSX = await import("xlsx-js-style");
-      const data = await file.arrayBuffer();
-      const wb = (XLSX as any).read(data, { type: "array" });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const raw: string[][] = (XLSX as any).utils.sheet_to_json(ws, { header: 1, defval: "" });
-      if (raw.length < 2) { toast({ title: "Empty file", variant: "destructive" }); return; }
-      const headers = (raw[0] as string[]).map((h: string) => String(h).trim());
-      const dataRows = raw.slice(1).filter((r: string[]) => r.some(c => String(c).trim()));
-      const parsed = dataRows.map((row: string[]) => {
-        const obj: Record<string, string> = {};
-        headers.forEach((h, i) => { obj[h] = String(row[i] ?? "").trim(); });
-        return obj;
-      });
+      const { rows: raw, skipped: parsedSkips } = await parseExcelSmart(file, MOULD_FIELD_MAP);
+      if (raw.length === 0) { toast({ title: "Empty file", variant: "destructive" }); return; }
+      const headers = Object.keys(raw[0]);
+      const colMap = resolveColumns(headers, MOULD_FIELD_MAP);
+      const parsed = raw.map((r) => extractRow(r, headers, colMap));
       setRows(parsed);
       setResult(null);
+      if (parsedSkips.length > 0) {
+        toast({ title: `${parsedSkips.length} instruction row${parsedSkips.length !== 1 ? "s" : ""} skipped` });
+      }
     } catch (err: any) {
       toast({ title: "Failed to parse file", description: err.message, variant: "destructive" });
     }
@@ -2252,9 +2264,9 @@ function MouldItemsImportTab({ companyId }: { companyId: string | null }) {
     // Validate rows and build payloads
     const payloads: any[] = [];
     rows.forEach((row, i) => {
-      const drawing = (row["Drawing Number *"] || row["Drawing Number"] || "").trim();
-      const description = (row["Description *"] || row["Description"] || "").trim();
-      const vendorName = (row["Vendor Name *"] || row["Vendor Name"] || "").trim();
+      const drawing = (row["drawing_number"] || "").trim();
+      const description = (row["description"] || "").trim();
+      const vendorName = (row["vendor_name"] || "").trim();
       if (!drawing || !description || !vendorName) {
         errors.push(`Row ${i + 1}: Drawing Number, Description and Vendor Name are required`);
         skipped++;
@@ -2263,11 +2275,11 @@ function MouldItemsImportTab({ companyId }: { companyId: string | null }) {
       payloads.push({
         company_id: companyId,
         drawing_number: drawing,
-        drawing_revision: row["Drawing Revision"]?.trim() || null,
+        drawing_revision: row["drawing_revision"]?.trim() || null,
         description,
         vendor_name: vendorName,
-        notes: row["Notes"]?.trim() || null,
-        alert_message: row["Alert Message"]?.trim() || null,
+        notes: row["notes"]?.trim() || null,
+        alert_message: row["alert_message"]?.trim() || null,
       });
     });
 

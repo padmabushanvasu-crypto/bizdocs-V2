@@ -475,11 +475,14 @@ export function resolveColumns(
   for (const [field, aliases] of Object.entries(fieldMap)) {
     for (const alias of aliases) {
       const normAlias = normaliseHeader(alias);
-      // Only allow short aliases (< 4 chars) to match by substring to avoid false positives
       const idx = normHeaders.findIndex((h) => {
         if (h === normAlias) return true;
+        // header contains alias (e.g. header "drawing revision 2" contains alias "drawing revision")
         if (normAlias.length >= 4 && h.includes(normAlias)) return true;
-        if (normAlias.length >= 4 && normAlias.includes(h) && h.length >= 4) return true;
+        // alias contains header — only allow when header is 6+ chars to avoid
+        // short words like "unit", "code", "name" falsely matching longer aliases
+        // (e.g. "unit" matching "unit cost" or "cost per unit")
+        if (normAlias.length >= 4 && normAlias.includes(h) && h.length >= 6) return true;
         return false;
       });
       if (idx !== -1) { result[field] = idx; break; }
@@ -575,23 +578,24 @@ export function normalizeItemType(raw: string): string {
 }
 
 export const PARTY_FIELD_MAP: Record<string, string[]> = {
-  name: ["party name", "company name", "name", "vendor name", "customer name", "supplier name"],
-  party_type: ["party type", "type", "vendor customer", "party type"],
-  contact_person: ["contact person", "contact", "contact name"],
-  address_line1: ["address line 1", "address 1", "address", "street address"],
-  address_line2: ["address line 2", "address 2"],
-  city: ["city", "town"],
-  state: ["state", "state name"],
-  pin_code: ["pin code", "pin", "pincode", "postal code", "zip code"],
-  phone1: ["phone 1", "phone", "phone1", "mobile", "mobile number", "contact number"],
-  phone2: ["phone 2", "phone2"],
-  email1: ["email", "email 1", "email1", "email address"],
-  gstin: ["gstin", "gst number", "gst no", "gst in"],
+  name: ["party name", "company name", "name", "vendor name", "customer name", "supplier name", "ledger name", "account name", "party", "firm name", "trade name"],
+  party_type: ["party type", "type", "vendor customer", "account type", "ledger type"],
+  contact_person: ["contact person", "contact", "contact name", "person name", "representative"],
+  address_line1: ["address line 1", "address 1", "address", "street address", "mailing address", "registered address", "address line1"],
+  address_line2: ["address line 2", "address 2", "address line2"],
+  address_line3: ["address line 3", "address 3", "address line3"],
+  city: ["city", "town", "district"],
+  state: ["state", "state name", "state of supply"],
+  pin_code: ["pin code", "pin", "pincode", "postal code", "zip code", "zip"],
+  phone1: ["phone 1", "phone", "phone1", "mobile", "mobile number", "contact number", "telephone", "cell"],
+  phone2: ["phone 2", "phone2", "alternate phone", "alternate mobile"],
+  email1: ["email", "email 1", "email1", "email address", "email id"],
+  gstin: ["gstin", "gst number", "gst no", "gst in", "gst registration no", "gstin no", "gst reg no"],
   pan: ["pan", "pan number", "pan no"],
-  payment_terms: ["payment terms", "terms"],
+  payment_terms: ["payment terms", "terms", "credit days", "payment days"],
   state_code: ["state code"],
-  credit_limit: ["credit limit", "credit"],
-  notes: ["notes", "remarks", "comments"],
+  credit_limit: ["credit limit", "credit", "credit amount"],
+  notes: ["notes", "remarks", "comments", "description"],
 };
 
 export const ITEM_FIELD_MAP: Record<string, string[]> = {
@@ -612,13 +616,13 @@ export const ITEM_FIELD_MAP: Record<string, string[]> = {
 };
 
 export const BOM_FIELD_MAP: Record<string, string[]> = {
-  finished_item_code: ["finished item code", "parent item code", "parent code", "finished item", "parent item"],
+  finished_item_code: ["finished item code", "parent item code", "parent code", "finished item", "parent item", "finished good code", "assembly code", "finished code", "fg code", "parent"],
   finished_item_drawing: ["finished drawing", "parent drawing", "parent drawing no", "finished drawing no", "parent drg"],
-  component_code: ["component code", "child item code", "child code", "child item"],
+  component_code: ["component code", "child item code", "child code", "child item", "component", "material code", "sub item code", "component item code", "part code"],
   component_drawing: ["component drawing", "child drawing", "child drawing no", "component drawing no", "child drg"],
-  quantity: ["quantity per unit", "quantity", "qty", "quantity required", "bom qty"],
-  unit: ["unit", "uom"],
-  scrap_factor: ["scrap factor %", "scrap factor", "scrap %", "waste %"],
+  quantity: ["quantity per unit", "quantity", "qty", "quantity required", "bom qty", "qty per unit", "qty per", "required qty", "component qty"],
+  unit: ["unit", "uom", "unit of measure"],
+  scrap_factor: ["scrap factor %", "scrap factor", "scrap %", "waste %", "scrap"],
   is_critical: ["is critical", "critical", "critical component", "critical flag"],
   variant_name: ["variant name", "variant", "bom variant"],
   notes: ["notes", "remarks"],
@@ -645,8 +649,9 @@ export const VENDOR_SHEET_FIELD_MAP: Record<string, string[]> = {
 export const STOCK_FIELD_MAP: Record<string, string[]> = {
   drawing_revision: ["drawing revision", "drawing number", "drawing no", "dwg no", "dwg number", "dwg rev", "drg no"],
   item_code: ["item code", "code", "sku", "part number", "part no"],
-  current_stock: ["opening stock qty", "opening stock", "current stock", "stock qty", "opening qty", "quantity", "qty"],
-  standard_cost: ["cost per unit ₹", "cost per unit", "cost/unit", "standard cost", "unit cost", "cost"],
+  current_stock: ["opening stock qty", "opening stock / current stock", "opening stock", "current stock", "stock qty", "opening qty"],
+  unit: ["unit", "uom", "unit of measure"],
+  standard_cost: ["cost per unit ₹", "cost per unit", "cost/unit", "standard cost", "unit cost"],
   stock_bucket: ["stock bucket", "bucket", "stock type"],
   notes: ["notes", "remarks"],
 };
@@ -815,3 +820,34 @@ export async function parseExcelSmart(
 
   return { rows, rowNums, skipped };
 }
+
+// ── Field maps for Jig Master, Mould Items, and Processing Routes ─────────────
+
+export const JIG_FIELD_MAP: Record<string, string[]> = {
+  drawing_number: ["drawing number", "drawing no", "drg no", "part number", "item code", "drawing"],
+  jig_number: ["jig number", "jig no", "jig id", "tool number", "jig", "fixture number"],
+  status: ["status", "jig status", "condition"],
+  associated_process: ["associated process", "process", "operation"],
+  notes: ["notes", "remarks", "comments"],
+};
+
+export const MOULD_FIELD_MAP: Record<string, string[]> = {
+  drawing_number: ["drawing number", "drawing no", "drg no", "part number", "item code", "drawing"],
+  drawing_revision: ["drawing revision", "revision", "rev", "drawing rev"],
+  description: ["description", "item name", "name", "item description", "mould description"],
+  vendor_name: ["vendor name", "vendor", "supplier", "supplier name", "manufacturer"],
+  notes: ["notes", "remarks", "comments"],
+  alert_message: ["alert message", "alert", "message", "warning"],
+};
+
+export const PROCESSING_ROUTES_FIELD_MAP: Record<string, string[]> = {
+  drawing_number: ["drawing number", "drawing no", "drg no", "part number", "item code", "drawing"],
+  stage_number: ["stage no", "stage number", "stage", "seq no", "sequence", "step no", "step number", "operation no"],
+  process_name: ["process name", "process", "operation name", "operation", "activity"],
+  process_code: ["process code", "code", "op code", "operation code"],
+  stage_type: ["stage type", "type", "internal external", "process type"],
+  lead_time_days: ["lead time days", "lead time", "lead days", "turnaround days", "days"],
+  vendor_1: ["vendor 1", "vendor1", "primary vendor", "preferred vendor", "vendor"],
+  vendor_2: ["vendor 2", "vendor2", "secondary vendor", "alternate vendor"],
+  notes: ["notes", "remarks", "comments"],
+};
