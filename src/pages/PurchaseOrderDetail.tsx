@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
-import { fetchCompanySettings } from "@/lib/settings-api";
+import { fetchCompanySettings, fetchDocumentSettings } from "@/lib/settings-api";
 import {
   fetchPurchaseOrder,
   cancelPurchaseOrder,
@@ -69,6 +69,12 @@ export default function PurchaseOrderDetail() {
   const { data: company } = useQuery({
     queryKey: ["company-settings"],
     queryFn: fetchCompanySettings,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: poDocSettings } = useQuery({
+    queryKey: ["document-settings", "purchase_order"],
+    queryFn: () => fetchDocumentSettings("purchase_order"),
     staleTime: 5 * 60 * 1000,
   });
 
@@ -248,6 +254,7 @@ export default function PurchaseOrderDetail() {
               <div style={{ fontWeight: '700', fontSize: '9pt' }}>PO No: {po.po_number}</div>
               <div style={{ fontSize: '9pt' }}>Date: {new Date(po.po_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
               {po.payment_terms && <div style={{ fontSize: '9pt' }}>Terms: {po.payment_terms}</div>}
+              {(po as any).vendor_reference && <div style={{ fontSize: '9pt' }}>Vendor Ref: {(po as any).vendor_reference}</div>}
               {po.reference_number && <div style={{ fontSize: '9pt' }}>Ref: {po.reference_number}</div>}
             </div>
           </div>
@@ -268,6 +275,7 @@ export default function PurchaseOrderDetail() {
                 {po.vendor_address && <p className="text-sm text-muted-foreground">{po.vendor_address}</p>}
                 {po.vendor_gstin && <p className="text-sm font-mono">GSTIN: {po.vendor_gstin}</p>}
                 {po.vendor_phone && <p className="text-sm text-muted-foreground">Ph: {po.vendor_phone}</p>}
+                {(po as any).vendor_email && <p className="text-sm text-muted-foreground">{(po as any).vendor_email}</p>}
               </div>
               <div className="text-left md:text-right space-y-1">
                 <div className="flex md:justify-end gap-4">
@@ -280,6 +288,12 @@ export default function PurchaseOrderDetail() {
                     <p>{new Date(po.po_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</p>
                   </div>
                 </div>
+                {(po as any).vendor_reference && (
+                  <div className="md:text-right">
+                    <p className="text-xs text-muted-foreground">Vendor Reference</p>
+                    <p className="text-sm">{(po as any).vendor_reference}</p>
+                  </div>
+                )}
                 {po.reference_number && (
                   <div className="md:text-right">
                     <p className="text-xs text-muted-foreground">Reference</p>
@@ -318,6 +332,7 @@ export default function PurchaseOrderDetail() {
               {po.vendor_address && <div style={{ fontSize: '8pt', color: '#475569' }}>{po.vendor_address}</div>}
               {po.vendor_gstin && <div style={{ fontSize: '8pt', fontFamily: 'monospace' }}>GSTIN: {po.vendor_gstin}</div>}
               {po.vendor_phone && <div style={{ fontSize: '8pt', color: '#475569' }}>Ph: {po.vendor_phone}</div>}
+              {(po as any).vendor_email && <div style={{ fontSize: '8pt', color: '#475569' }}>{(po as any).vendor_email}</div>}
             </div>
             {po.delivery_address && (
               <div style={{ flex: '1', paddingLeft: '8px' }}>
@@ -459,12 +474,11 @@ export default function PurchaseOrderDetail() {
             {/* T&C */}
             <div style={{ flex: '1' }}>
               <div style={{ fontSize: '7pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>Terms &amp; Conditions</div>
-              {company?.default_terms_conditions && (
+              {(poDocSettings?.terms_and_conditions || company?.default_terms_conditions) ? (
                 <div style={{ fontSize: '7pt', color: '#475569', lineHeight: 1.4, maxHeight: '18mm', overflow: 'hidden' }}>
-                  {company.default_terms_conditions}
+                  {poDocSettings?.terms_and_conditions || company?.default_terms_conditions}
                 </div>
-              )}
-              {!company?.default_terms_conditions && (
+              ) : (
                 <div style={{ fontSize: '7pt', color: '#94a3b8' }}>
                   1. Payment due as per agreed terms.<br />
                   2. Goods to be delivered as per PO specifications.<br />
