@@ -17,19 +17,21 @@ import { exportToExcel, ITEMS_EXPORT_COLS } from "@/lib/export-utils";
 const ITEM_TYPES = [
   { value: "raw_material", label: "Raw Material" },
   { value: "component", label: "Component" },
-  { value: "sub_assembly", label: "Sub-Assembly" },
-  { value: "bought_out", label: "Bought-Out" },
+  { value: "sub_assembly", label: "Sub Assembly" },
+  { value: "bought_out", label: "Bought Out" },
   { value: "finished_good", label: "Finished Good" },
+  { value: "product", label: "Product" },
   { value: "consumable", label: "Consumable" },
   { value: "service", label: "Service" },
 ];
 
 const TYPE_BADGE: Record<string, string> = {
-  finished_good: "bg-emerald-100 text-emerald-800",
+  finished_good: "bg-blue-50 text-blue-700 border border-blue-200",
   raw_material: "bg-orange-100 text-orange-800",
   component: "bg-sky-100 text-sky-800",
   sub_assembly: "bg-indigo-100 text-indigo-800",
   bought_out: "bg-amber-100 text-amber-800",
+  product: "bg-emerald-100 text-emerald-800",
   service: "bg-violet-100 text-violet-800",
   consumable: "bg-teal-100 text-teal-800",
 };

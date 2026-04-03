@@ -107,20 +107,20 @@ export default function SettingsPage() {
       badge: processCodesCount > 0 ? `${processCodesCount} codes` : undefined,
     },
     {
-      icon: Users,
-      iconBg: "bg-blue-50",
-      iconColor: "text-blue-600",
-      title: "Users and Roles",
-      description: "Invite team members, assign roles (Admin, Purchase, Inward, QC, Storekeeper, Assembly) and manage access",
-      action: () => navigate("/settings/users"),
-    },
-    {
       icon: Wrench,
       iconBg: "bg-teal-50",
       iconColor: "text-teal-600",
       title: "Jig & Mould Master",
       description: "Drilling jigs and mould-dependent items — alerts auto-trigger on Delivery Challans",
       action: () => navigate("/settings/jig-mould"),
+    },
+    {
+      icon: Users,
+      iconBg: "bg-blue-50",
+      iconColor: "text-blue-600",
+      title: "Users and Roles",
+      description: "Invite team members, assign roles (Admin, Purchase, Inward, QC, Storekeeper, Assembly) and manage access",
+      action: () => navigate("/settings/users"),
     },
   ];
 

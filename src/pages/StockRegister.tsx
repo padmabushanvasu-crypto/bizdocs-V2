@@ -45,8 +45,8 @@ class StockRegisterErrorBoundary extends Component<
 function TypeBadge({ type }: { type: string }) {
   const map: Record<string, { label: string; cls: string }> = {
     component:    { label: "Component",     cls: "bg-slate-100 text-slate-700 border border-slate-200" },
-    bought_out:   { label: "Bought-Out",    cls: "bg-blue-50 text-blue-700 border border-blue-200" },
-    sub_assembly: { label: "Sub-Assembly",  cls: "bg-purple-50 text-purple-700 border border-purple-200" },
+    bought_out:   { label: "Bought Out",    cls: "bg-blue-50 text-blue-700 border border-blue-200" },
+    sub_assembly: { label: "Sub Assembly",  cls: "bg-purple-50 text-purple-700 border border-purple-200" },
     finished_good:{ label: "Finished Good", cls: "bg-emerald-50 text-emerald-700 border border-emerald-200" },
     raw_material: { label: "Raw Material",  cls: "bg-orange-50 text-orange-700 border border-orange-200" },
   };
@@ -106,7 +106,8 @@ type TypeFilter =
   | "component"
   | "bought_out"
   | "sub_assembly"
-  | "finished_good";
+  | "finished_good"
+  | "raw_material";
 
 // ── Column header with tooltip ─────────────────────────────────────────────────
 
@@ -181,7 +182,8 @@ function StockRegisterInner() {
       urlType === "component" ||
       urlType === "bought_out" ||
       urlType === "sub_assembly" ||
-      urlType === "finished_good"
+      urlType === "finished_good" ||
+      urlType === "raw_material"
     )
       return urlType;
     return "all";
@@ -275,9 +277,10 @@ function StockRegisterInner() {
 
   const TYPE_OPTS: { v: TypeFilter; label: string }[] = [
     { v: "all",           label: "All Types" },
+    { v: "raw_material",  label: "Raw Material" },
     { v: "component",     label: "Component" },
-    { v: "bought_out",    label: "Bought-Out" },
-    { v: "sub_assembly",  label: "Sub-Assembly" },
+    { v: "bought_out",    label: "Bought Out" },
+    { v: "sub_assembly",  label: "Sub Assembly" },
     { v: "finished_good", label: "Finished Good" },
   ];
 

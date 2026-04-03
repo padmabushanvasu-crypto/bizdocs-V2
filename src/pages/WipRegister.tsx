@@ -60,6 +60,37 @@ function ComponentsReady({ lines }: { lines: AssemblyOrderWithLines["lines"] }) 
   );
 }
 
+// ── Stage progress dots ───────────────────────────────────────────────────────
+
+function StageProgressBar({ current, total }: { current: number | null; total: number | null }) {
+  if (!total || total <= 1) return <span className="text-muted-foreground text-xs">—</span>;
+  const cur = current ?? 0;
+  return (
+    <div className="flex items-center gap-0.5">
+      {Array.from({ length: total }).map((_, i) => {
+        const stageNum = i + 1;
+        const done = stageNum < cur;
+        const active = stageNum === cur;
+        return (
+          <div key={i} className="flex items-center">
+            <div
+              className={`h-2 w-2 rounded-full shrink-0 ${
+                done   ? "bg-blue-500" :
+                active ? "bg-amber-500 animate-pulse" :
+                         "bg-slate-200"
+              }`}
+            />
+            {i < total - 1 && (
+              <div className={`h-px w-2 ${done ? "bg-blue-300" : "bg-slate-200"}`} />
+            )}
+          </div>
+        );
+      })}
+      <span className="ml-1 text-[10px] text-muted-foreground font-mono">{cur}/{total}</span>
+    </div>
+  );
+}
+
 // ── DC type display ────────────────────────────────────────────────────────────
 
 function dcTypeLabel(dcType: string) {
@@ -100,6 +131,7 @@ export default function WipRegister() {
             nature_of_process,
             stage_number,
             stage_name,
+            total_stages,
             is_rework,
             rework_cycle,
             qty_received,
@@ -318,6 +350,7 @@ export default function WipRegister() {
                     <th>Drawing No</th>
                     <th>Description</th>
                     <th>Stage</th>
+                    <th>Progress</th>
                     <th>Process</th>
                     <th>Vendor</th>
                     <th className="text-right">Qty Sent</th>
@@ -330,13 +363,13 @@ export default function WipRegister() {
                 <tbody>
                   {dcLoading ? (
                     <tr>
-                      <td colSpan={11} className="text-center py-10 text-muted-foreground">
+                      <td colSpan={12} className="text-center py-10 text-muted-foreground">
                         Loading DC WIP…
                       </td>
                     </tr>
                   ) : filteredDcs.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className="text-center py-10 text-muted-foreground">
+                      <td colSpan={12} className="text-center py-10 text-muted-foreground">
                         {(wipData as any[]).length === 0
                           ? "No open returnable DCs. All clear!"
                           : "No DCs match current search."}
@@ -353,7 +386,7 @@ export default function WipRegister() {
                           <tr key={row.id} className={`cursor-pointer transition-colors ${rowBg}`}
                               onClick={() => navigate(`/delivery-challans/${row.id}`)}>
                             <td className="font-mono text-xs font-medium">{row.dc_number}</td>
-                            <td colSpan={8} className="text-sm text-muted-foreground">No line items</td>
+                            <td colSpan={9} className="text-sm text-muted-foreground">No line items</td>
                             <td className="text-right text-sm">
                               {row.return_before_date ? (() => {
                                 const days = differenceInDays(new Date(row.return_before_date), new Date());
@@ -399,6 +432,9 @@ export default function WipRegister() {
                             <td className="text-sm max-w-[160px] truncate">{li.description ?? '—'}</td>
                             <td className="text-xs text-muted-foreground">
                               {li.stage_number ? `Stage ${li.stage_number}${li.stage_name ? `: ${li.stage_name}` : ''}` : '—'}
+                            </td>
+                            <td>
+                              <StageProgressBar current={li.stage_number ?? null} total={li.total_stages ?? null} />
                             </td>
                             <td className="text-xs">{li.nature_of_process ?? '—'}</td>
                             <td className="text-sm">{liIdx === 0 ? (row.party_name ?? '—') : ''}</td>
