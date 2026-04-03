@@ -167,7 +167,7 @@ function GRNRegisterInner() {
           </SelectContent>
         </Select>
         <Select
-          value={filters.status}
+          value={filters.status ?? "all"}
           onValueChange={(v) => setFilters((f) => ({ ...f, status: v, page: 1 }))}
         >
           <SelectTrigger className="w-[160px]">
