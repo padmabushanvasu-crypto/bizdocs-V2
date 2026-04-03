@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, Component, type ReactNode } from "react";
 import { useNavigate, useSearchParams, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -470,9 +470,51 @@ function GrnLineItemCard({
   );
 }
 
+// ── Error boundary ─────────────────────────────────────────────────────────────
+
+class GrnFormErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: Error | null }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="p-6 text-center space-y-3">
+          <p className="font-medium text-destructive">
+            Something went wrong loading the GRN form.
+          </p>
+          <p className="text-sm text-muted-foreground">{this.state.error.message}</p>
+          <div className="flex justify-center gap-2">
+            <button
+              className="px-4 py-2 rounded-md border text-sm font-medium hover:bg-muted transition-colors"
+              onClick={() => this.setState({ error: null })}
+            >
+              Retry
+            </button>
+            <a
+              href="/"
+              className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
+            >
+              Go to Dashboard
+            </a>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ── Main GRNForm Component ─────────────────────────────────────────────────────
 
-export default function GRNForm({ defaultGrnType }: Props) {
+function GRNFormInner({ defaultGrnType }: Props) {
   const navigate = useNavigate();
   const { id: editId } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
@@ -1203,5 +1245,15 @@ export default function GRNForm({ defaultGrnType }: Props) {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+// ── Export ─────────────────────────────────────────────────────────────────────
+
+export default function GRNForm({ defaultGrnType }: Props) {
+  return (
+    <GrnFormErrorBoundary>
+      <GRNFormInner defaultGrnType={defaultGrnType} />
+    </GrnFormErrorBoundary>
   );
 }

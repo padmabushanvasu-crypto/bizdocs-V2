@@ -519,6 +519,9 @@ export async function createGrnFromDC(data: CreateGrnFromDCData): Promise<GRN> {
   return newGRN as unknown as GRN;
 }
 
+// Valid values per grn_line_items_rejection_action_check constraint
+const VALID_REJECTION_ACTIONS = ['return_to_supplier', 'replacement_requested', 'scrap', 'hold'] as const;
+
 export async function recordGrnRejectionAction(
   lineItemId: string,
   action: string,
@@ -531,6 +534,12 @@ export async function recordGrnRejectionAction(
     grn_number: string;
   }
 ): Promise<void> {
+  if (!VALID_REJECTION_ACTIONS.includes(action as any)) {
+    throw new Error(
+      `Invalid rejection_action "${action}". Must be one of: ${VALID_REJECTION_ACTIONS.join(', ')}`
+    );
+  }
+
   const companyId = await getCompanyId();
   const today = new Date().toISOString().split('T')[0];
   const { data: { user } } = await supabase.auth.getUser();

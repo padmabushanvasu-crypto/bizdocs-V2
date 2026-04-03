@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, Component, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { PackageCheck, Plus, Search, Eye, ClipboardCheck, AlertTriangle, Package, Download, Trash2 } from "lucide-react";
@@ -23,7 +23,49 @@ const statusClass: Record<string, string> = {
   verified: "status-paid",
 };
 
-export default function GRNRegister() {
+// ── Error boundary ─────────────────────────────────────────────────────────────
+
+class GrnRegisterErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: Error | null }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="p-6 text-center space-y-3">
+          <p className="font-medium text-destructive">
+            Something went wrong loading Goods Receipt Notes.
+          </p>
+          <p className="text-sm text-muted-foreground">{this.state.error.message}</p>
+          <div className="flex justify-center gap-2">
+            <button
+              className="px-4 py-2 rounded-md border text-sm font-medium hover:bg-muted transition-colors"
+              onClick={() => this.setState({ error: null })}
+            >
+              Retry
+            </button>
+            <a
+              href="/"
+              className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
+            >
+              Go to Dashboard
+            </a>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function GRNRegisterInner() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -113,12 +155,12 @@ export default function GRNRegister() {
             onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value, page: 1 }))}
           />
         </div>
-        <Select value={filters.month ?? ""} onValueChange={(v) => setFilters((f) => ({ ...f, month: v || undefined, page: 1 }))}>
+        <Select value={filters.month ?? "__all_months__"} onValueChange={(v) => setFilters((f) => ({ ...f, month: v === "__all_months__" ? undefined : v, page: 1 }))}>
           <SelectTrigger className="w-[150px]">
             <SelectValue placeholder="All months" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All months</SelectItem>
+            <SelectItem value="__all_months__">All months</SelectItem>
             {monthOptions.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
             ))}
@@ -258,5 +300,15 @@ export default function GRNRegister() {
         </div>
       )}
     </div>
+  );
+}
+
+// ── Export ─────────────────────────────────────────────────────────────────────
+
+export default function GRNRegister() {
+  return (
+    <GrnRegisterErrorBoundary>
+      <GRNRegisterInner />
+    </GrnRegisterErrorBoundary>
   );
 }
