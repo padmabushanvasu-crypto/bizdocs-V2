@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { Package, Shield } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { StockStatusBadge } from "@/components/StockStatusBadge";
 import { fetchStockStatus, type StockStatusRow } from "@/lib/items-api";
 
