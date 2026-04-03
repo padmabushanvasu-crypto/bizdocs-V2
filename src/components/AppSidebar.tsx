@@ -476,8 +476,7 @@ export function AppSidebar() {
           .from("purchase_orders")
           .select("*", { count: "exact", head: true })
           .not("status", "in", "(cancelled,closed,received)")
-          .lt("delivery_date", todayStr)
-          .not("delivery_date", "is", null);
+          .lt("delivery_date", todayStr);
         return count ?? 0;
       } catch { return 0; }
     },
