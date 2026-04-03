@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -53,6 +53,7 @@ export default function Items() {
   const [filters, setFilters] = useState<ItemFilters>({ search: "", type: "all", status: "active" });
   const [formOpen, setFormOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [form, setForm] = useState(emptyItem);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -89,6 +90,65 @@ export default function Items() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
+  // Optimistic single delete
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteItem(id),
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ["items", filters] });
+      const prev = queryClient.getQueryData(["items", filters]);
+      queryClient.setQueryData(["items", filters], (old: any) =>
+        old ? {
+          ...old,
+          pages: old.pages.map((p: any) => ({
+            ...p,
+            data: p.data.filter((i: any) => i.id !== id),
+          })),
+        } : old
+      );
+      return { prev };
+    },
+    onError: (_err, _id, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(["items", filters], ctx.prev);
+      toast({ title: "Delete failed", variant: "destructive" });
+    },
+    onSuccess: () => {
+      toast({ title: "Item deleted" });
+      queryClient.invalidateQueries({ queryKey: ["items"] });
+    },
+  });
+
+  // Optimistic bulk delete
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => bulkDeleteItems(ids),
+    onMutate: async (ids) => {
+      await queryClient.cancelQueries({ queryKey: ["items", filters] });
+      const prev = queryClient.getQueryData(["items", filters]);
+      const idSet = new Set(ids);
+      queryClient.setQueryData(["items", filters], (old: any) =>
+        old ? {
+          ...old,
+          pages: old.pages.map((p: any) => ({
+            ...p,
+            data: p.data.filter((i: any) => !idSet.has(i.id)),
+          })),
+        } : old
+      );
+      setSelected(new Set());
+      return { prev };
+    },
+    onError: (_err, _ids, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(["items", filters], ctx.prev);
+      toast({ title: "Delete failed", variant: "destructive" });
+    },
+    onSuccess: (result) => {
+      const parts: string[] = [];
+      if (result.deleted > 0) parts.push(`${result.deleted} deleted`);
+      if (result.deactivated > 0) parts.push(`${result.deactivated} deactivated`);
+      toast({ title: parts.join(", ") || "Done" });
+      queryClient.invalidateQueries({ queryKey: ["items"] });
+    },
+  });
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       // Normalize optional text fields — send null, not empty string
@@ -119,28 +179,6 @@ export default function Items() {
     },
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => deleteItem(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["items"] });
-      toast({ title: "Item deactivated" });
-    },
-  });
-
-  const bulkDeleteMutation = useMutation({
-    mutationFn: (ids: string[]) => bulkDeleteItems(ids),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["items"] });
-      setSelected(new Set());
-      const parts: string[] = [];
-      if (result.deleted > 0) parts.push(`${result.deleted} deleted`);
-      if (result.deactivated > 0) parts.push(`${result.deactivated} deactivated (have transaction history)`);
-      toast({ title: parts.join(", ") || "Done" });
-    },
-    onError: (err: any) => {
-      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
-    },
-  });
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
@@ -243,11 +281,7 @@ export default function Items() {
             size="sm"
             variant="outline"
             className="h-7 text-xs border-blue-300 text-blue-700 hover:bg-blue-100"
-            onClick={() => {
-              if (confirm(`Delete ${selected.size} item(s)? Items with transaction history will be deactivated instead.`)) {
-                bulkDeleteMutation.mutate([...selected]);
-              }
-            }}
+            onClick={() => setBulkDeleteOpen(true)}
             disabled={bulkDeleteMutation.isPending}
           >
             <Trash2 className="h-3 w-3 mr-1" /> Delete Selected
@@ -486,6 +520,30 @@ export default function Items() {
         </DialogContent>
       </Dialog>
       <ItemsImportDialog open={importOpen} onOpenChange={setImportOpen} />
+
+      {/* Bulk delete confirmation */}
+      <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete {selected.size} item{selected.size !== 1 ? "s" : ""}?</DialogTitle>
+            <DialogDescription>
+              Items with transaction history will be deactivated instead of deleted. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkDeleteOpen(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                bulkDeleteMutation.mutate([...selected]);
+                setBulkDeleteOpen(false);
+              }}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

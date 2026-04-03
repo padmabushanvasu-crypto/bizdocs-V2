@@ -365,17 +365,20 @@ export async function importItemsBatch(
 
   const totalOps = toInsert.length + toUpdate.length;
 
-  // Bulk insert new items in chunks of 200
+  // Bulk insert new items — parallel chunks of 500
   if (toInsert.length > 0) {
+    const CHUNK = 500;
     const bulkInsert = async (items: any[]) => {
-      for (let i = 0; i < items.length; i += 200) {
-        const chunk = items.slice(i, i + 200);
+      const chunks = Array.from({ length: Math.ceil(items.length / CHUNK) }, (_, i) =>
+        items.slice(i * CHUNK, (i + 1) * CHUNK)
+      );
+      await Promise.all(chunks.map(async (chunk) => {
         const { error } = await supabase.from("items").insert(chunk);
         if (error) throw error;
         imported += chunk.length;
         newCount += chunk.length;
-        if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
-      }
+      }));
+      if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
     };
     try {
       await bulkInsert(toInsert);
@@ -414,30 +417,35 @@ export async function importItemsBatch(
     }
   }
 
-  // Bulk upsert updates in chunks of 100
-  for (let i = 0; i < toUpdate.length; i += 100) {
-    const chunk = toUpdate.slice(i, i + 100);
-    try {
-      const { error } = await supabase.from("items").upsert(chunk, { onConflict: "id" });
-      if (error) throw error;
-      imported += chunk.length;
-      updatedCount += chunk.length;
-    } catch {
-      for (const itemData of chunk) {
-        const { id, ...rest } = itemData;
-        try {
-          const { error } = await supabase.from("items").update(rest).eq("id", id);
-          if (error) throw error;
-          imported++; updatedCount++;
-        } catch (err: any) {
-          skipped++;
-          const rowNum = codeToRow.get((rest.item_code || "").toLowerCase()) ?? 0;
-          const reason = `DB error: ${err?.message ?? "unknown"}`;
-          errors.push(`Row ${rowNum} (${rest.item_code || rest.description}): ${reason}`);
-          skipReasons.push({ row: rowNum, value: rest.item_code || "", reason });
+  // Bulk upsert updates — parallel chunks of 500
+  if (toUpdate.length > 0) {
+    const UPDATE_CHUNK = 500;
+    const updateChunks = Array.from({ length: Math.ceil(toUpdate.length / UPDATE_CHUNK) }, (_, i) =>
+      toUpdate.slice(i * UPDATE_CHUNK, (i + 1) * UPDATE_CHUNK)
+    );
+    await Promise.all(updateChunks.map(async (chunk) => {
+      try {
+        const { error } = await supabase.from("items").upsert(chunk, { onConflict: "id" });
+        if (error) throw error;
+        imported += chunk.length;
+        updatedCount += chunk.length;
+      } catch {
+        for (const itemData of chunk) {
+          const { id, ...rest } = itemData;
+          try {
+            const { error } = await supabase.from("items").update(rest).eq("id", id);
+            if (error) throw error;
+            imported++; updatedCount++;
+          } catch (err: any) {
+            skipped++;
+            const rowNum = codeToRow.get((rest.item_code || "").toLowerCase()) ?? 0;
+            const reason = `DB error: ${err?.message ?? "unknown"}`;
+            errors.push(`Row ${rowNum} (${rest.item_code || rest.description}): ${reason}`);
+            skipReasons.push({ row: rowNum, value: rest.item_code || "", reason });
+          }
         }
       }
-    }
+    }));
     if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
   }
 

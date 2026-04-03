@@ -67,8 +67,19 @@ function JigTab() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteJigRecord(id),
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ["jig-master-settings"] });
+      const prev = queryClient.getQueryData<JigMasterRecord[]>(["jig-master-settings"]);
+      queryClient.setQueryData<JigMasterRecord[]>(["jig-master-settings"], (old) =>
+        (old ?? []).filter((j) => j.id !== id)
+      );
+      return { prev };
+    },
+    onError: (_err, _id, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(["jig-master-settings"], ctx.prev);
+      toast({ title: "Delete failed", variant: "destructive" });
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["jig-master-settings"] });
       toast({ title: "Jig deleted" });
     },
   });
@@ -221,8 +232,19 @@ function MouldTab() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteMouldItem(id),
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ["mould-items-settings"] });
+      const prev = queryClient.getQueryData<MouldItem[]>(["mould-items-settings"]);
+      queryClient.setQueryData<MouldItem[]>(["mould-items-settings"], (old) =>
+        (old ?? []).filter((m) => m.id !== id)
+      );
+      return { prev };
+    },
+    onError: (_err, _id, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(["mould-items-settings"], ctx.prev);
+      toast({ title: "Delete failed", variant: "destructive" });
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["mould-items-settings"] });
       toast({ title: "Mould item deleted" });
     },
   });

@@ -593,6 +593,10 @@ function BOMImportTab() {
     }
   }, [jobs, currentJobId]);
 
+  const bomCurrentJob = currentJobId ? jobs.find((j) => j.id === currentJobId) : null;
+  const bomJobRunning = bomCurrentJob?.status === "running" || bomCurrentJob?.status === "queued";
+  const bomProgressPct = bomCurrentJob ? Math.round((bomCurrentJob.progress / Math.max(1, bomCurrentJob.total)) * 100) : 0;
+
   const clearAll = () => {
     setRows([]); setValidRows([]); setValidRowNums([]); setErrors([]);
     setErrorRows(new Set()); setErrorMessages(new Map()); setResult(null);
@@ -1081,15 +1085,32 @@ function BOMImportTab() {
             size="sm"
             className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"
             onClick={handleImport}
-            disabled={validating}
+            disabled={validating || bomJobRunning}
           >
-            Import {validRows.length} Valid Row{validRows.length !== 1 ? "s" : ""}
+            {bomJobRunning ? (
+              <><span className="h-3 w-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> Importing…</>
+            ) : (
+              `Import ${validRows.length} Valid Row${validRows.length !== 1 ? "s" : ""}`
+            )}
           </Button>
         )}
         {rows.length > 0 && (
-          <Button size="sm" variant="ghost" onClick={clearAll}>Clear</Button>
+          <Button size="sm" variant="ghost" onClick={clearAll} disabled={bomJobRunning}>Clear</Button>
         )}
       </div>
+
+      {/* BOM progress bar */}
+      {bomJobRunning && bomCurrentJob && (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>Importing BOM lines…</span>
+            <span>{bomCurrentJob.progress} / {bomCurrentJob.total} rows</span>
+          </div>
+          <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+            <div className="h-full bg-blue-500 rounded-full transition-all duration-300" style={{ width: `${bomProgressPct}%` }} />
+          </div>
+        </div>
+      )}
 
       {/* Summary chips */}
       {rows.length > 0 && !validating && (
@@ -1280,6 +1301,10 @@ function ImportTab({
     e.target.value = "";
   };
 
+  const currentJob = currentJobId ? jobs.find((j) => j.id === currentJobId) : null;
+  const jobRunning = currentJob?.status === "running" || currentJob?.status === "queued";
+  const jobProgressPct = currentJob ? Math.round((currentJob.progress / Math.max(1, currentJob.total)) * 100) : 0;
+
   // FIX 6: queue the import instead of awaiting directly
   const handleImport = async () => {
     if (validRows.length === 0) return;
@@ -1353,14 +1378,31 @@ function ImportTab({
         </Button>
         <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xls,.csv" className="hidden" onChange={handleFile} />
         {validRows.length > 0 && (
-          <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white" onClick={handleImport}>
-            Import {validRows.length} Row{validRows.length !== 1 ? "s" : ""}
+          <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white" onClick={handleImport} disabled={jobRunning}>
+            {jobRunning ? (
+              <><span className="h-3 w-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> Importing…</>
+            ) : (
+              `Import ${validRows.length} Row${validRows.length !== 1 ? "s" : ""}`
+            )}
           </Button>
         )}
         {rows.length > 0 && (
-          <Button size="sm" variant="ghost" onClick={clearAll}>Clear</Button>
+          <Button size="sm" variant="ghost" onClick={clearAll} disabled={jobRunning}>Clear</Button>
         )}
       </div>
+
+      {/* Progress bar */}
+      {jobRunning && currentJob && (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>Importing…</span>
+            <span>{currentJob.progress} / {currentJob.total} rows</span>
+          </div>
+          <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+            <div className="h-full bg-blue-500 rounded-full transition-all duration-300" style={{ width: `${jobProgressPct}%` }} />
+          </div>
+        </div>
+      )}
 
       {/* Summary chips */}
       {rows.length > 0 && (
@@ -1446,6 +1488,10 @@ function ReorderRulesTab() {
     if (!job) return;
     if (job.status === "completed" || job.status === "failed") setCurrentJobId(null);
   }, [jobs, currentJobId]);
+
+  const reorderCurrentJob = currentJobId ? jobs.find((j) => j.id === currentJobId) : null;
+  const reorderJobRunning = reorderCurrentJob?.status === "running" || reorderCurrentJob?.status === "queued";
+  const reorderProgressPct = reorderCurrentJob ? Math.round((reorderCurrentJob.progress / Math.max(1, reorderCurrentJob.total)) * 100) : 0;
 
   const clearAll = () => {
     setRows([]); setValidRows([]); setValidRowNums([]); setErrors([]);
@@ -1703,12 +1749,29 @@ function ReorderRulesTab() {
         </Button>
         <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xls,.csv" className="hidden" onChange={handleFile} />
         {validRows.length > 0 && (
-          <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white" onClick={handleImport}>
-            Import {validRows.length} Row{validRows.length !== 1 ? "s" : ""}
+          <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white" onClick={handleImport} disabled={reorderJobRunning}>
+            {reorderJobRunning ? (
+              <><span className="h-3 w-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> Importing…</>
+            ) : (
+              `Import ${validRows.length} Row${validRows.length !== 1 ? "s" : ""}`
+            )}
           </Button>
         )}
-        {rows.length > 0 && <Button size="sm" variant="ghost" onClick={clearAll}>Clear</Button>}
+        {rows.length > 0 && <Button size="sm" variant="ghost" onClick={clearAll} disabled={reorderJobRunning}>Clear</Button>}
       </div>
+
+      {/* Reorder Rules progress bar */}
+      {reorderJobRunning && reorderCurrentJob && (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>Importing reorder rules…</span>
+            <span>{reorderCurrentJob.progress} / {reorderCurrentJob.total} rows</span>
+          </div>
+          <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+            <div className="h-full bg-blue-500 rounded-full transition-all duration-300" style={{ width: `${reorderProgressPct}%` }} />
+          </div>
+        </div>
+      )}
 
       {rows.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap">
@@ -2186,28 +2249,49 @@ function MouldItemsImportTab({ companyId }: { companyId: string | null }) {
     let imported = 0, skipped = 0;
     const errors: string[] = [];
 
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      const drawing = row["Drawing Number *"] || row["Drawing Number"] || "";
-      const description = row["Description *"] || row["Description"] || "";
-      const vendorName = row["Vendor Name *"] || row["Vendor Name"] || "";
-      if (!drawing.trim() || !description.trim() || !vendorName.trim()) {
+    // Validate rows and build payloads
+    const payloads: any[] = [];
+    rows.forEach((row, i) => {
+      const drawing = (row["Drawing Number *"] || row["Drawing Number"] || "").trim();
+      const description = (row["Description *"] || row["Description"] || "").trim();
+      const vendorName = (row["Vendor Name *"] || row["Vendor Name"] || "").trim();
+      if (!drawing || !description || !vendorName) {
         errors.push(`Row ${i + 1}: Drawing Number, Description and Vendor Name are required`);
         skipped++;
-        continue;
+        return;
       }
-      const { error } = await (supabase as any)
-        .from("mould_items")
-        .insert({
-          company_id: companyId,
-          drawing_number: drawing.trim(),
-          drawing_revision: row["Drawing Revision"]?.trim() || null,
-          description: description.trim(),
-          vendor_name: vendorName.trim(),
-          notes: row["Notes"]?.trim() || null,
-          alert_message: row["Alert Message"]?.trim() || null,
-        });
-      if (error) { errors.push(`Row ${i + 1}: ${error.message}`); skipped++; } else { imported++; }
+      payloads.push({
+        company_id: companyId,
+        drawing_number: drawing,
+        drawing_revision: row["Drawing Revision"]?.trim() || null,
+        description,
+        vendor_name: vendorName,
+        notes: row["Notes"]?.trim() || null,
+        alert_message: row["Alert Message"]?.trim() || null,
+      });
+    });
+
+    // Batch insert in chunks of 500
+    const CHUNK = 500;
+    for (let i = 0; i < payloads.length; i += CHUNK) {
+      const chunk = payloads.slice(i, i + CHUNK);
+      try {
+        const { error } = await (supabase as any).from("mould_items").insert(chunk);
+        if (error) throw error;
+        imported += chunk.length;
+      } catch (err: any) {
+        // Row-by-row fallback
+        for (let j = 0; j < chunk.length; j++) {
+          try {
+            const { error } = await (supabase as any).from("mould_items").insert(chunk[j]);
+            if (error) throw error;
+            imported++;
+          } catch (rowErr: any) {
+            errors.push(`Row ${i + j + 1}: ${rowErr.message}`);
+            skipped++;
+          }
+        }
+      }
     }
 
     setResult({ imported, skipped, errors });

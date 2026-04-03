@@ -13,7 +13,7 @@ import { ImportProgressBar } from "@/components/ImportProgressBar";
 import type { SkipReason } from "@/lib/import-utils";
 
 const LS_KEY = "bizdocs_import_queue";
-const BATCH_SIZE = 50;
+const BATCH_SIZE = 500;
 
 // ── Public types ───────────────────────────────────────────────────────────
 

@@ -345,21 +345,24 @@ export async function importPartiesBatch(
   const totalOps = toInsert.length + toUpdate.length;
 
   if (toInsert.length > 0) {
+    const INS_CHUNK = 500;
+    const insertChunks = Array.from({ length: Math.ceil(toInsert.length / INS_CHUNK) }, (_, i) =>
+      toInsert.slice(i * INS_CHUNK, (i + 1) * INS_CHUNK)
+    );
     try {
-      for (let i = 0; i < toInsert.length; i += 200) {
-        const chunk = toInsert.slice(i, i + 200);
+      await Promise.all(insertChunks.map(async (chunk) => {
         const { error } = await (supabase as any).from("parties").insert(chunk);
         if (error) throw error;
         imported += chunk.length; newCount += chunk.length;
-        if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
-      }
+      }));
     } catch {
+      // Fallback: row-by-row
+      imported = 0; newCount = 0;
       for (const party of toInsert) {
         try {
           const { error } = await (supabase as any).from("parties").insert(party);
           if (error) throw error;
           imported++; newCount++;
-          if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
         } catch (err: any) {
           skipped++;
           const isDup = err?.code === "23505" || String(err?.message ?? "").toLowerCase().includes("duplicate");
@@ -370,30 +373,36 @@ export async function importPartiesBatch(
         }
       }
     }
+    if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
   }
 
-  for (let i = 0; i < toUpdate.length; i += 100) {
-    const chunk = toUpdate.slice(i, i + 100);
-    try {
-      const { error } = await (supabase as any).from("parties").upsert(chunk, { onConflict: "id" });
-      if (error) throw error;
-      imported += chunk.length; updatedCount += chunk.length;
-    } catch {
-      for (const party of chunk) {
-        const { id, ...rest } = party;
-        try {
-          const { error } = await (supabase as any).from("parties").update(rest).eq("id", id);
-          if (error) throw error;
-          imported++; updatedCount++;
-        } catch (err: any) {
-          skipped++;
-          const rowNum = nameToRow.get(rest.name?.toLowerCase()) ?? 0;
-          const reason = `DB error: ${err?.message ?? "unknown"}`;
-          errors.push(`Row ${rowNum} (${rest.name}): ${reason}`);
-          skipReasons.push({ row: rowNum, value: rest.name, reason });
+  if (toUpdate.length > 0) {
+    const UPD_CHUNK = 500;
+    const updateChunks = Array.from({ length: Math.ceil(toUpdate.length / UPD_CHUNK) }, (_, i) =>
+      toUpdate.slice(i * UPD_CHUNK, (i + 1) * UPD_CHUNK)
+    );
+    await Promise.all(updateChunks.map(async (chunk) => {
+      try {
+        const { error } = await (supabase as any).from("parties").upsert(chunk, { onConflict: "id" });
+        if (error) throw error;
+        imported += chunk.length; updatedCount += chunk.length;
+      } catch {
+        for (const party of chunk) {
+          const { id, ...rest } = party;
+          try {
+            const { error } = await (supabase as any).from("parties").update(rest).eq("id", id);
+            if (error) throw error;
+            imported++; updatedCount++;
+          } catch (err: any) {
+            skipped++;
+            const rowNum = nameToRow.get(rest.name?.toLowerCase()) ?? 0;
+            const reason = `DB error: ${err?.message ?? "unknown"}`;
+            errors.push(`Row ${rowNum} (${rest.name}): ${reason}`);
+            skipReasons.push({ row: rowNum, value: rest.name, reason });
+          }
         }
       }
-    }
+    }));
     if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
   }
 

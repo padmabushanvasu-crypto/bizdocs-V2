@@ -63,6 +63,7 @@ export default function PartiesList() {
   const { companyId } = useAuth();
   const [importOpen, setImportOpen] = useState(false);
   const [clearAllOpen, setClearAllOpen] = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState<PartiesFilters>({
     search: "",
@@ -104,44 +105,86 @@ export default function PartiesList() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
+  const deletePartyMutation = useMutation({
+    mutationFn: (id: string) => deleteParty(id),
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ["parties", filters] });
+      const prev = queryClient.getQueryData(["parties", filters]);
+      queryClient.setQueryData(["parties", filters], (old: any) =>
+        old ? {
+          ...old,
+          pages: old.pages.map((p: any) => ({
+            ...p,
+            data: p.data.filter((party: any) => party.id !== id),
+          })),
+        } : old
+      );
+      return { prev };
+    },
+    onError: (_err, _id, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(["parties", filters], ctx.prev);
+      toast({ title: "Delete failed", variant: "destructive" });
+    },
+    onSuccess: (result) => {
+      if (result.deactivated) {
+        toast({ title: "Party marked inactive", description: "This party has existing transactions and cannot be fully deleted." });
+      } else {
+        toast({ title: "Party deleted" });
+      }
+      queryClient.invalidateQueries({ queryKey: ["parties"] });
+    },
+  });
+
   const handleDeactivate = async (id: string) => {
+    // Optimistic update
+    const prev = queryClient.getQueryData(["parties", filters]);
+    queryClient.setQueryData(["parties", filters], (old: any) =>
+      old ? {
+        ...old,
+        pages: old.pages.map((p: any) => ({
+          ...p,
+          data: p.data.filter((party: any) => party.id !== id),
+        })),
+      } : old
+    );
     try {
       await deactivateParty(id);
       toast({ title: "Party deactivated" });
       queryClient.invalidateQueries({ queryKey: ["parties"] });
     } catch {
+      if (prev) queryClient.setQueryData(["parties", filters], prev);
       toast({ title: "Failed to deactivate party", variant: "destructive" });
     }
   };
 
   const bulkDeactivateMutation = useMutation({
     mutationFn: (ids: string[]) => bulkDeleteParties(ids),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["parties"] });
+    onMutate: async (ids) => {
+      await queryClient.cancelQueries({ queryKey: ["parties", filters] });
+      const prev = queryClient.getQueryData(["parties", filters]);
+      const idSet = new Set(ids);
+      queryClient.setQueryData(["parties", filters], (old: any) =>
+        old ? {
+          ...old,
+          pages: old.pages.map((p: any) => ({
+            ...p,
+            data: p.data.filter((party: any) => !idSet.has(party.id)),
+          })),
+        } : old
+      );
       setSelected(new Set());
+      return { prev };
+    },
+    onError: (_err, _ids, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(["parties", filters], ctx.prev);
+      toast({ title: "Delete failed", variant: "destructive" });
+    },
+    onSuccess: (result) => {
       const parts: string[] = [];
       if (result.deleted > 0) parts.push(`${result.deleted} deleted`);
-      if (result.deactivated > 0) parts.push(`${result.deactivated} deactivated (have transaction history)`);
+      if (result.deactivated > 0) parts.push(`${result.deactivated} deactivated`);
       toast({ title: parts.join(", ") || "Done" });
-    },
-    onError: (err: any) => {
-      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
-    },
-  });
-
-  const deletePartyMutation = useMutation({
-    mutationFn: (id: string) => deleteParty(id),
-    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["parties"] });
-      if (result.deactivated) {
-        toast({ title: "Party marked inactive", description: "This party has existing transactions and cannot be fully deleted." });
-      } else {
-        toast({ title: "Party deleted" });
-      }
-    },
-    onError: (err: any) => {
-      console.error("[PartiesList] deleteParty error:", err);
-      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
     },
   });
 
@@ -282,11 +325,7 @@ export default function PartiesList() {
             size="sm"
             variant="outline"
             className="h-7 text-xs border-blue-300 text-blue-700 hover:bg-blue-100"
-            onClick={() => {
-              if (confirm(`Delete ${selected.size} party(s)? Parties with transaction history will be deactivated instead.`)) {
-                bulkDeactivateMutation.mutate([...selected]);
-              }
-            }}
+            onClick={() => setBulkDeleteOpen(true)}
             disabled={bulkDeactivateMutation.isPending}
           >
             <Trash2 className="h-3 w-3 mr-1" /> Delete Selected
@@ -412,11 +451,7 @@ export default function PartiesList() {
                           size="icon"
                           className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50"
                           disabled={deletePartyMutation.isPending}
-                          onClick={() => {
-                            if (confirm(`Delete "${party.name}"? Parties with existing transactions will be marked inactive instead.`)) {
-                              deletePartyMutation.mutate(party.id);
-                            }
-                          }}
+                          onClick={() => deletePartyMutation.mutate(party.id)}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -473,6 +508,30 @@ export default function PartiesList() {
               }}
             >
               {deleteAllMutation.isPending ? "Deleting…" : "Delete unlinked parties"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk delete confirmation */}
+      <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete {selected.size} part{selected.size !== 1 ? "ies" : "y"}?</DialogTitle>
+            <DialogDescription>
+              Parties with transaction history will be deactivated instead of deleted.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkDeleteOpen(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                bulkDeactivateMutation.mutate([...selected]);
+                setBulkDeleteOpen(false);
+              }}
+            >
+              Delete
             </Button>
           </DialogFooter>
         </DialogContent>
