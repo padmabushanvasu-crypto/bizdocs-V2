@@ -3637,41 +3637,6 @@ function BillOfMaterialsInner() {
   );
 }
 
-class BomErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
-  constructor(props: { children: ReactNode }) {
-    super(props);
-    this.state = { error: null };
-  }
-  static getDerivedStateFromError(error: Error) {
-    return { error };
-  }
-  render() {
-    if (this.state.error) {
-      return (
-        <div className="p-6 text-center space-y-3">
-          <p className="font-medium text-destructive">Something went wrong loading the Bill of Materials.</p>
-          <p className="text-sm text-muted-foreground">{this.state.error.message}</p>
-          <div className="flex justify-center gap-2">
-            <button
-              className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-slate-50"
-              onClick={() => this.setState({ error: null })}
-            >
-              Retry
-            </button>
-            <button
-              className="rounded-md px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
-              onClick={() => { window.location.href = "/dashboard"; }}
-            >
-              Go to Dashboard
-            </button>
-          </div>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
 export default function BillOfMaterials() {
   return (
     <BomErrorBoundary>
