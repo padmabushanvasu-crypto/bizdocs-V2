@@ -264,6 +264,8 @@ export default function Dashboard() {
   const overdueDCReturns  = dashData?.overdueDCCount ?? 0;
   const zeroStockItems    = dashData?.zeroStockCount ?? 0;
   const reorderAlertCount = reorderAlerts.length;
+  const actionedCount   = reorderAlerts.filter(a => a.actioned).length;
+  const needActionCount = reorderAlertCount - actionedCount;
   const fatPending        = fatStats?.pending ?? 0;
   const uninvoicedUnits   = readyToShip.length;
 
@@ -505,7 +507,28 @@ export default function Dashboard() {
               <LightStatRow label="Raw Materials (in stock)"  value={dashData?.rawMaterialCount  ?? "—"} onClick={() => navigate("/stock-register?type=raw_material")} />
               <LightStatRow label="Components (in stock)"     value={dashData?.componentCount    ?? "—"} onClick={() => navigate("/stock-register?type=component")} />
               <LightStatRow label="Finished Goods (in stock)" value={dashData?.finishedGoodCount ?? "—"} onClick={() => navigate("/stock-register?type=finished_good")} />
-              <LightStatRow label="Reorder Alerts"            value={reorderAlertCount}           highlight={reorderAlertCount > 0} onClick={() => navigate("/reorder-intelligence")} />
+              {reorderAlertCount === 0 ? (
+                <LightStatRow label="Reorder Alerts" value="0" />
+              ) : (
+                <div
+                  className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0 cursor-pointer hover:bg-slate-50 -mx-4 px-4 transition-colors"
+                  onClick={() => navigate("/stock-register?filter=critical")}
+                >
+                  <span className="text-sm text-slate-600">Reorder Alerts</span>
+                  <div className="text-right">
+                    <span className={`text-sm font-semibold font-mono tabular-nums ${needActionCount > 0 ? 'text-red-600' : 'text-amber-600'}`}>
+                      {reorderAlertCount}
+                    </span>
+                    <p className="text-[10px] text-slate-400 leading-none mt-0.5">
+                      {needActionCount > 0 && actionedCount > 0
+                        ? `${needActionCount} need action · ${actionedCount} actioned`
+                        : needActionCount > 0
+                        ? `${needActionCount} need action`
+                        : `all ${actionedCount} actioned`}
+                    </p>
+                  </div>
+                </div>
+              )}
               <LightStatRow label="Zero Stock Items"          value={dashData?.zeroStockCount ?? "—"} highlight={(dashData?.zeroStockCount ?? 0) > 0} onClick={() => navigate("/stock-register")} />
             </div>
           </div>

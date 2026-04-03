@@ -28,7 +28,7 @@ import {
   type DCLineItem,
 } from "@/lib/delivery-challans-api";
 import { getCompanyId } from "@/lib/auth-helpers";
-import { fetchProcessingRoute, fetchJigsForDrawing, fetchStageVendors, type ProcessingRoute, type JigMasterRecord } from "@/lib/dc-intelligence-api";
+import { fetchProcessingRoute, fetchJigsForDrawing, fetchStageVendors, fetchMouldItemsForDrawing, type ProcessingRoute, type JigMasterRecord, type MouldItem } from "@/lib/dc-intelligence-api";
 import { formatCurrency, amountInWords } from "@/lib/gst-utils";
 import { getGSTType, calculateLineTax, round2, resolveStateCode, type GSTType } from "@/lib/tax-utils";
 
@@ -154,6 +154,8 @@ export default function DeliveryChallanForm() {
   const [lineSelectedStageId, setLineSelectedStageId] = useState<Map<number, string>>(new Map());
   const [lineJigsChecked, setLineJigsChecked] = useState<Map<number, string[]>>(new Map());
   const [lineAutoFilledRate, setLineAutoFilledRate] = useState<Map<number, boolean>>(new Map());
+  const [lineMouldItems, setLineMouldItems] = useState<Map<number, MouldItem[]>>(new Map());
+  const [lineMouldAcknowledged, setLineMouldAcknowledged] = useState<Map<number, boolean>>(new Map());
 
   const selectStage = (lineIndex: number, stage: ProcessingRoute) => {
     setLineSelectedStageId(prev => { const m = new Map(prev); m.set(lineIndex, stage.id); return m; });
@@ -446,6 +448,18 @@ export default function DeliveryChallanForm() {
       toast({ title: "Items required", description: "Add at least one line item.", variant: "destructive" });
       return;
     }
+    // Check mould acknowledgements
+    const unacknowledgedMouldLines = lineItems
+      .map((_, idx) => idx)
+      .filter(idx => (lineMouldItems.get(idx)?.length ?? 0) > 0 && !lineMouldAcknowledged.get(idx));
+    if (unacknowledgedMouldLines.length > 0) {
+      toast({
+        title: "Mould acknowledgement required",
+        description: `Please acknowledge the mould confirmation for line item(s): ${unacknowledgedMouldLines.map(i => i + 1).join(', ')}`,
+        variant: "destructive",
+      });
+      return;
+    }
     saveMutation.mutate(status);
   };
 
@@ -729,6 +743,17 @@ export default function DeliveryChallanForm() {
                           setLineRoutes(prev => { const m = new Map(prev); m.set(index, routes); return m; });
                           setLineSelectedStageId(prev => { const m = new Map(prev); m.delete(index); return m; });
                         });
+                        // Load mould items and jigs by drawing number
+                        const drawingNum = selectedItem.drawing_revision || (selectedItem as any).drawing_number || '';
+                        if (drawingNum.trim()) {
+                          fetchJigsForDrawing(drawingNum.trim()).then(jigs => {
+                            setLineJigs(prev => { const m = new Map(prev); m.set(index, jigs); return m; });
+                          });
+                          fetchMouldItemsForDrawing(drawingNum.trim()).then(moulds => {
+                            setLineMouldItems(prev => { const m = new Map(prev); m.set(index, moulds); return m; });
+                            setLineMouldAcknowledged(prev => { const m = new Map(prev); m.delete(index); return m; });
+                          });
+                        }
                       }}
                       placeholder="Item description"
                       className="h-8 text-sm w-full"
@@ -744,6 +769,10 @@ export default function DeliveryChallanForm() {
                         if (e.target.value.trim().length >= 3) {
                           fetchJigsForDrawing(e.target.value.trim()).then(jigs => {
                             setLineJigs(prev => { const m = new Map(prev); m.set(index, jigs); return m; });
+                          });
+                          fetchMouldItemsForDrawing(e.target.value.trim()).then(moulds => {
+                            setLineMouldItems(prev => { const m = new Map(prev); m.set(index, moulds); return m; });
+                            setLineMouldAcknowledged(prev => { const m = new Map(prev); m.delete(index); return m; });
                           });
                         }
                       }}
@@ -944,6 +973,41 @@ export default function DeliveryChallanForm() {
                         {(lineJigsChecked.get(index)?.length ?? 0) < (lineJigs.get(index)?.length ?? 0) && (
                           <p className="text-xs text-amber-600 mt-1 font-medium">Tick all jigs before saving</p>
                         )}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                {/* Mould alert */}
+                {(lineMouldItems.get(index)?.length ?? 0) > 0 && (
+                  <tr key={`mould-${index}`} className="bg-amber-50/40 border-b border-amber-100">
+                    <td />
+                    <td colSpan={10} className="px-3 py-2">
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2">
+                        {(lineMouldItems.get(index) ?? []).map((mould) => (
+                          <div key={mould.id} className="flex items-start gap-2">
+                            <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0 mt-0.5" />
+                            <p className="text-xs text-amber-800 font-medium">
+                              {mould.alert_message
+                                ? mould.alert_message
+                                : `Mould required — Confirm mould is at ${mould.vendor_name} before dispatching raw material for this item.`}
+                            </p>
+                          </div>
+                        ))}
+                        <label className="flex items-center gap-2 text-xs cursor-pointer font-medium text-amber-900">
+                          <input
+                            type="checkbox"
+                            checked={lineMouldAcknowledged.get(index) ?? false}
+                            onChange={(e) => {
+                              setLineMouldAcknowledged(prev => {
+                                const m = new Map(prev);
+                                m.set(index, e.target.checked);
+                                return m;
+                              });
+                            }}
+                            className="rounded border-amber-400"
+                          />
+                          I confirm mould is at vendor
+                        </label>
                       </div>
                     </td>
                   </tr>

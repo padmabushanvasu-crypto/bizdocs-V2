@@ -79,6 +79,7 @@ import DispatchRecordForm from "@/pages/DispatchRecordForm";
 import DispatchRecordDetail from "@/pages/DispatchRecordDetail";
 import ReadyToDispatch from "@/pages/ReadyToDispatch";
 import ProcessLibrary from "@/pages/ProcessLibrary";
+import JigMouldSettings from "@/pages/JigMouldSettings";
 import { ImportQueueProvider } from "@/lib/import-queue";
 
 const queryClient = new QueryClient();
@@ -172,6 +173,7 @@ const App = () => (
               <Route path="/more" element={<MoreMenu />} />
               <Route path="/settings/company" element={<CompanySettings />} />
               <Route path="/settings/process-library" element={<ProcessLibrary />} />
+              <Route path="/settings/jig-mould" element={<JigMouldSettings />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
             <Route path="*" element={<NotFound />} />

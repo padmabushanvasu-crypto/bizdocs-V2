@@ -471,9 +471,9 @@ function GrnLineItemCard({
                   <div className="flex flex-wrap gap-3 mt-1">
                     {[
                       { value: 'return_to_vendor', label: 'Return to Vendor' },
-                      { value: 'rework', label: 'Rework' },
+                      { value: 'rework', label: 'Rework (Our Scope)' },
                       { value: 'scrap', label: 'Scrap' },
-                      { value: 'use_as_is', label: 'Use As-Is' },
+                      { value: 'use_as_is', label: 'Use As-Is (Conditional)' },
                     ].map((opt) => (
                       <label key={opt.value} className="flex items-center gap-1.5 text-sm cursor-pointer">
                         <input

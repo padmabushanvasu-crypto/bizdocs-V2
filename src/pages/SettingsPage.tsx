@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Building2, FileText, Bell, Upload, FileSpreadsheet, Users, History, BookOpen, ChevronRight, AlertTriangle, Receipt, Cog } from "lucide-react";
+import { Building2, FileText, Bell, Upload, FileSpreadsheet, Users, History, BookOpen, ChevronRight, AlertTriangle, Receipt, Cog, Wrench } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { fetchProcessCodesCount } from "@/lib/process-library-api";
@@ -113,6 +113,14 @@ export default function SettingsPage() {
       title: "Users and Roles",
       description: "Invite team members, assign roles (Admin, Purchase, Inward, QC, Storekeeper, Assembly) and manage access",
       action: () => navigate("/settings/users"),
+    },
+    {
+      icon: Wrench,
+      iconBg: "bg-teal-50",
+      iconColor: "text-teal-600",
+      title: "Jig & Mould Master",
+      description: "Drilling jigs and mould-dependent items — alerts auto-trigger on Delivery Challans",
+      action: () => navigate("/settings/jig-mould"),
     },
   ];
 

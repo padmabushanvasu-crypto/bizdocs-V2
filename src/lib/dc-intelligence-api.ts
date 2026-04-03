@@ -236,3 +236,78 @@ export async function removeBprVendor(id: string): Promise<void> {
     .eq("id", id);
   if (error) throw error;
 }
+
+// ── Mould Items ───────────────────────────────────────────────────────────────
+
+export interface MouldItem {
+  id: string;
+  company_id: string;
+  drawing_number: string;
+  drawing_revision: string | null;
+  description: string;
+  vendor_name: string;
+  vendor_id: string | null;
+  notes: string | null;
+  alert_message: string | null;
+  created_at: string;
+}
+
+export async function fetchMouldItemsForDrawing(drawingNumber: string): Promise<MouldItem[]> {
+  const companyId = await getCompanyId();
+  if (!companyId || !drawingNumber.trim()) return [];
+  const { data, error } = await (supabase as any)
+    .from("mould_items")
+    .select("*")
+    .eq("company_id", companyId)
+    .ilike("drawing_number", drawingNumber.trim());
+  if (error) { console.warn("mould_items query error:", error.message); return []; }
+  return data ?? [];
+}
+
+export async function fetchMouldItems(filters?: { search?: string }): Promise<MouldItem[]> {
+  const companyId = await getCompanyId();
+  if (!companyId) return [];
+  let query = (supabase as any)
+    .from("mould_items")
+    .select("*")
+    .eq("company_id", companyId)
+    .order("drawing_number", { ascending: true });
+  if (filters?.search) {
+    const s = filters.search.trim();
+    query = query.or(`drawing_number.ilike.%${s}%,description.ilike.%${s}%,vendor_name.ilike.%${s}%`);
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function createMouldItem(data: Omit<MouldItem, 'id' | 'company_id' | 'created_at'>): Promise<MouldItem> {
+  const companyId = await getCompanyId();
+  if (!companyId) throw new Error("No company");
+  const { data: result, error } = await (supabase as any)
+    .from("mould_items")
+    .insert({ ...data, company_id: companyId })
+    .select()
+    .single();
+  if (error) throw error;
+  return result;
+}
+
+export async function updateMouldItem(id: string, data: Partial<MouldItem>): Promise<MouldItem> {
+  const { data: result, error } = await (supabase as any)
+    .from("mould_items")
+    .update(data)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  return result;
+}
+
+export async function deleteMouldItem(id: string): Promise<void> {
+  const { error } = await (supabase as any)
+    .from("mould_items")
+    .delete()
+    .eq("id", id);
+  if (error) throw error;
+}

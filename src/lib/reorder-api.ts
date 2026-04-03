@@ -46,6 +46,9 @@ export interface ReorderAlert {
   alert_level: "critical" | "warning" | "watch";
   open_po_qty: number;
   open_ao_requirement: number;
+  actioned: boolean;
+  po_number?: string | null;
+  po_expected_date?: string | null;
 }
 
 export interface ScrapEntry {
@@ -252,6 +255,9 @@ export async function fetchReorderAlerts(): Promise<ReorderAlert[]> {
       alert_level: alertLevel,
       open_po_qty: 0, // PO line items don't track item_id FK
       open_ao_requirement: openAOReq,
+      actioned: false,
+      po_number: null,
+      po_expected_date: null,
     });
   }
 
@@ -262,6 +268,63 @@ export async function fetchReorderAlerts(): Promise<ReorderAlert[]> {
     if (ld !== 0) return ld;
     return a.days_of_stock_remaining - b.days_of_stock_remaining;
   });
+
+  // Enrich alerts with open PO data
+  const alertItemCodes = alerts.map(a => a.item_code).filter(Boolean) as string[];
+  if (alertItemCodes.length > 0) {
+    const { data: openPOs } = await (supabase as any)
+      .from("purchase_orders")
+      .select("id, po_number, delivery_date")
+      .eq("company_id", companyId)
+      .not("status", "in", "(received,cancelled,closed)");
+
+    const openPOIds = (openPOs || []).map((p: any) => p.id);
+    const openPOMap: Record<string, { po_number: string; delivery_date: string | null }> = {};
+    for (const p of (openPOs || [])) {
+      openPOMap[p.id] = { po_number: p.po_number, delivery_date: p.delivery_date };
+    }
+
+    if (openPOIds.length > 0) {
+      const { data: poLines } = await (supabase as any)
+        .from("purchase_order_items")
+        .select("item_code, qty_ordered, purchase_order_id")
+        .in("purchase_order_id", openPOIds)
+        .in("item_code", alertItemCodes);
+
+      const itemPoMap: Record<string, { qty: number; po_number: string; delivery_date: string | null }> = {};
+      for (const line of (poLines || [])) {
+        const code = line.item_code as string;
+        if (!code) continue;
+        const po = openPOMap[line.purchase_order_id];
+        if (!po) continue;
+        if (!itemPoMap[code]) {
+          itemPoMap[code] = { qty: 0, po_number: po.po_number, delivery_date: po.delivery_date };
+        }
+        itemPoMap[code].qty += Number(line.qty_ordered) || 0;
+      }
+
+      for (const alert of alerts) {
+        const poData = itemPoMap[alert.item_code];
+        if (poData && poData.qty > 0) {
+          alert.open_po_qty = poData.qty;
+          alert.actioned = true;
+          alert.po_number = poData.po_number;
+          alert.po_expected_date = poData.delivery_date;
+        } else {
+          alert.open_po_qty = 0;
+          alert.actioned = false;
+          alert.po_number = null;
+          alert.po_expected_date = null;
+        }
+      }
+    } else {
+      for (const alert of alerts) {
+        alert.actioned = false;
+        alert.po_number = null;
+        alert.po_expected_date = null;
+      }
+    }
+  }
 
   return alerts;
 }

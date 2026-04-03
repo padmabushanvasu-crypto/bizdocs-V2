@@ -2147,6 +2147,114 @@ function JigMasterImportTab({ companyId }: { companyId: string | null }) {
   );
 }
 
+// ── Mould Items Import Tab ─────────────────────────────────────────────────
+
+const MOULD_ITEMS_HEADERS = ["Drawing Number *", "Drawing Revision", "Description *", "Vendor Name *", "Notes", "Alert Message"];
+
+function MouldItemsImportTab({ companyId }: { companyId: string | null }) {
+  const { toast } = useToast();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [rows, setRows] = useState<Record<string, string>[]>([]);
+  const [importing, setImporting] = useState(false);
+  const [result, setResult] = useState<{ imported: number; skipped: number; errors: string[] } | null>(null);
+
+  const handleFile = async (file: File) => {
+    try {
+      const XLSX = await import("xlsx-js-style");
+      const data = await file.arrayBuffer();
+      const wb = (XLSX as any).read(data, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw: string[][] = (XLSX as any).utils.sheet_to_json(ws, { header: 1, defval: "" });
+      if (raw.length < 2) { toast({ title: "Empty file", variant: "destructive" }); return; }
+      const headers = (raw[0] as string[]).map((h: string) => String(h).trim());
+      const dataRows = raw.slice(1).filter((r: string[]) => r.some(c => String(c).trim()));
+      const parsed = dataRows.map((row: string[]) => {
+        const obj: Record<string, string> = {};
+        headers.forEach((h, i) => { obj[h] = String(row[i] ?? "").trim(); });
+        return obj;
+      });
+      setRows(parsed);
+      setResult(null);
+    } catch (err: any) {
+      toast({ title: "Failed to parse file", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleImport = async () => {
+    if (!companyId || rows.length === 0) return;
+    setImporting(true);
+    let imported = 0, skipped = 0;
+    const errors: string[] = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const drawing = row["Drawing Number *"] || row["Drawing Number"] || "";
+      const description = row["Description *"] || row["Description"] || "";
+      const vendorName = row["Vendor Name *"] || row["Vendor Name"] || "";
+      if (!drawing.trim() || !description.trim() || !vendorName.trim()) {
+        errors.push(`Row ${i + 1}: Drawing Number, Description and Vendor Name are required`);
+        skipped++;
+        continue;
+      }
+      const { error } = await (supabase as any)
+        .from("mould_items")
+        .insert({
+          company_id: companyId,
+          drawing_number: drawing.trim(),
+          drawing_revision: row["Drawing Revision"]?.trim() || null,
+          description: description.trim(),
+          vendor_name: vendorName.trim(),
+          notes: row["Notes"]?.trim() || null,
+          alert_message: row["Alert Message"]?.trim() || null,
+        });
+      if (error) { errors.push(`Row ${i + 1}: ${error.message}`); skipped++; } else { imported++; }
+    }
+
+    setResult({ imported, skipped, errors });
+    setRows([]);
+    setImporting(false);
+  };
+
+  return (
+    <div className="space-y-4">
+      {result && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg p-3">
+            <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
+            <span className="text-sm text-green-800 font-medium">{result.imported} mould items imported · {result.skipped} skipped</span>
+          </div>
+          {result.errors.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1">
+              <div className="flex items-center gap-1.5 text-amber-800 text-xs font-semibold">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                {result.errors.length} issue{result.errors.length !== 1 ? "s" : ""}
+              </div>
+              {result.errors.slice(0, 5).map((e, i) => (
+                <p key={i} className="text-xs text-amber-700 pl-5">{e}</p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      <div className="flex flex-wrap gap-3">
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => downloadTemplate("Mould Items", MOULD_ITEMS_HEADERS)}>
+          <Download className="h-4 w-4" /> Download Template
+        </Button>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => fileRef.current?.click()} disabled={importing}>
+          <Upload className="h-4 w-4" /> Choose File
+        </Button>
+        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }} />
+        {rows.length > 0 && (
+          <Button size="sm" className="gap-1.5" onClick={handleImport} disabled={importing}>
+            {importing ? "Importing..." : `Import ${rows.length} rows`}
+          </Button>
+        )}
+      </div>
+      {rows.length > 0 && <PreviewTable rows={rows.slice(0, 10)} errorRows={new Set()} />}
+    </div>
+  );
+}
+
 // ── Process Code Master Import Tab ────────────────────────────────────────
 
 const PROCESS_CODE_HEADERS = [
@@ -2512,6 +2620,7 @@ export default function DataImport() {
           { value: "reorder_rules", label: "Reorder Rules" },
           { value: "processing_routes", label: "Processing Routes" },
           { value: "jig_master", label: "Jig Master" },
+          { value: "mould_items", label: "Mould Items" },
           { value: "process_codes", label: "Process Code Master" },
         ]}
         value={activeTab}
@@ -2671,6 +2780,16 @@ export default function DataImport() {
             Import jig and fixture records. Drawing numbers do not need to exist in the Items master.
           </p>
           <JigMasterImportTab companyId={pageCompanyId} />
+        </div>
+      )}
+
+      {activeTab === "mould_items" && (
+        <div className="paper-card mt-4">
+          <h2 className="font-semibold text-slate-900 mb-1">Import Mould Items</h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            Import mould-dependent component records. Mould alerts auto-trigger on Delivery Challans when a matching drawing number is added.
+          </p>
+          <MouldItemsImportTab companyId={pageCompanyId} />
         </div>
       )}
 
