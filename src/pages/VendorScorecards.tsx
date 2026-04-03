@@ -139,13 +139,13 @@ export default function VendorScorecards() {
         { key: "grn_count", label: "GRN Count", type: "number", width: 10 },
         { key: "grn_qty_received", label: "GRN Qty Received", type: "number", width: 14 },
         { key: "grn_qty_accepted", label: "GRN Qty Accepted", type: "number", width: 14 },
-        { key: "grn_qty_rejected", label: "GRN Qty Rejected", type: "number", width: 14 },
-        { key: "grn_rejection_rate_pct", label: "GRN Rejection %", type: "number", width: 14 },
+        { key: "grn_qty_rejected", label: "GRN Non-Conforming Qty", type: "number", width: 14 },
+        { key: "grn_rejection_rate_pct", label: "GRN Non-Conformance %", type: "number", width: 14 },
         { key: "dc_count", label: "DC Count", type: "number", width: 10 },
         { key: "dc_qty_sent", label: "DC Qty Sent", type: "number", width: 12 },
         { key: "dc_qty_accepted", label: "DC Qty Accepted", type: "number", width: 14 },
-        { key: "dc_qty_rejected", label: "DC Qty Rejected", type: "number", width: 14 },
-        { key: "dc_rejection_rate_pct", label: "DC Rejection %", type: "number", width: 14 },
+        { key: "dc_qty_rejected", label: "DC Non-Conforming Qty", type: "number", width: 14 },
+        { key: "dc_rejection_rate_pct", label: "DC Non-Conformance %", type: "number", width: 14 },
         { key: "total_steps", label: "JW Steps", type: "number", width: 10 },
         { key: "rejection_rate_pct", label: "JW Rejection %", type: "number", width: 14 },
         { key: "avg_turnaround_days", label: "Avg Turnaround (days)", type: "number", width: 18 },
@@ -227,8 +227,8 @@ export default function VendorScorecards() {
                 <th className="text-left min-w-[180px] max-w-[260px] px-3 py-2 whitespace-nowrap">Vendor</th>
                 <th className="text-left min-w-[90px] max-w-[140px] px-3 py-2 whitespace-nowrap">City</th>
                 <th className="text-left min-w-[70px] px-3 py-2 whitespace-nowrap">Source</th>
-                <th className="text-right min-w-[80px] w-[80px] px-3 py-2 whitespace-nowrap">GRN Rej%</th>
-                <th className="text-right min-w-[80px] w-[80px] px-3 py-2 whitespace-nowrap">DC Rej%</th>
+                <th className="text-right min-w-[80px] w-[80px] px-3 py-2 whitespace-nowrap">GRN NC%</th>
+                <th className="text-right min-w-[80px] w-[80px] px-3 py-2 whitespace-nowrap">DC NC%</th>
                 <th className="text-right min-w-[72px] w-[72px] px-3 py-2 whitespace-nowrap">JW Steps</th>
                 <th className="text-right min-w-[72px] w-[72px] px-3 py-2 whitespace-nowrap">JW Rej%</th>
                 <th className="text-right min-w-[76px] w-[76px] px-3 py-2 whitespace-nowrap">Avg Days</th>

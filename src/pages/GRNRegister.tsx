@@ -136,7 +136,7 @@ function GRNRegisterInner() {
         <MetricCard title="GRNs This Month" value={String(stats?.totalThisMonth ?? 0)} icon={PackageCheck} />
         <MetricCard title="Items Accepted" value={String(stats?.totalAccepted ?? 0)} icon={Package} />
         <MetricCard
-          title="Items Rejected"
+          title="Non-Conforming Items"
           value={String(stats?.totalRejected ?? 0)}
           icon={AlertTriangle}
           className={stats?.totalRejected ? "border-destructive/30" : ""}
@@ -193,7 +193,7 @@ function GRNRegisterInner() {
                 <th>Vendor</th>
                 <th>Linked PO</th>
                 <th className="text-right">Accepted</th>
-                <th className="text-right">Rejected</th>
+                <th className="text-right">Non-Conforming</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
