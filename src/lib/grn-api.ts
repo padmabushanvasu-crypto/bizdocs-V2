@@ -42,6 +42,8 @@ export interface GRNLineItem {
   stage2_complete?: boolean;
   jigs_sent?: any[] | null;
   jigs_returned?: any[] | null;
+  identity_matched_qty?: number;
+  identity_not_matched_qty?: number;
 }
 
 export interface GRN {
@@ -316,6 +318,8 @@ export interface Stage1Data {
   stage1_verified_by?: string | null;
   stage1_date?: string | null;
   stage1_complete?: boolean;
+  identity_matched_qty?: number;
+  identity_not_matched_qty?: number;
 }
 
 export async function updateGrnLineStage1(lineId: string, data: Stage1Data): Promise<void> {
@@ -329,6 +333,8 @@ export async function updateGrnLineStage1(lineId: string, data: Stage1Data): Pro
     stage1_verified_by: data.stage1_verified_by ?? null,
     stage1_date: data.stage1_date ?? null,
     stage1_complete: data.stage1_complete ?? false,
+    identity_matched_qty: data.identity_matched_qty ?? null,
+    identity_not_matched_qty: data.identity_not_matched_qty ?? null,
   };
   if (data.stage1_complete && accepted_qty !== undefined) {
     updatePayload.accepted_qty = accepted_qty;
