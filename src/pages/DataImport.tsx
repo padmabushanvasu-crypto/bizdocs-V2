@@ -2832,7 +2832,7 @@ export default function DataImport() {
             onImport={handleStockImport}
             invalidateOnComplete={[["items"], ["stock_status"]]}
             validate={(row) => {
-              if (!row["item_code"]?.trim()) return "Item Code is required";
+              if (!row["item_code"]?.trim() && !row["drawing_revision"]?.trim()) return "Item Code or Drawing Number is required";
               if (isNaN(parseFloat(row["current_stock"] || ""))) return "Quantity must be a number";
               return null;
             }}

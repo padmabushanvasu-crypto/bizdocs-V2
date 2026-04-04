@@ -305,7 +305,7 @@ export async function importItemsBatch(
   const toUpdate: any[] = [];
   const codeToRow = new Map<string, number>();
 
-  const VALID_TYPES = ["raw_material", "component", "sub_assembly", "bought_out", "finished_good", "consumable", "service"];
+  const VALID_TYPES = ["raw_material", "component", "sub_assembly", "bought_out", "finished_good", "product", "consumable", "service"];
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
