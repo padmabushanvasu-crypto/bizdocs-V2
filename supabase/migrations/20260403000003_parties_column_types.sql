@@ -7,8 +7,8 @@ DROP VIEW IF EXISTS public.vendor_scorecard;
 
 -- Step 2: Alter the columns
 ALTER TABLE public.parties
-  ALTER COLUMN gstin         TYPE VARCHAR(20),
-  ALTER COLUMN state_code    TYPE VARCHAR(10),
+  ALTER COLUMN gstin         TYPE VARCHAR(50),
+  ALTER COLUMN state_code    TYPE VARCHAR(20),
   ALTER COLUMN address_line1 TYPE TEXT,
   ALTER COLUMN address_line2 TYPE TEXT,
   ALTER COLUMN address_line3 TYPE TEXT,
