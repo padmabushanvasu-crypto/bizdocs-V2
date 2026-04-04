@@ -18,7 +18,7 @@ import {
   type ColumnMappingSummary, type SkipReason,
 } from "@/lib/import-utils";
 import { importItemsBatch } from "@/lib/items-api";
-import { importPartiesBatch, safeDeleteAllParties } from "@/lib/parties-api";
+import { importPartiesBatch } from "@/lib/parties-api";
 import { importProcessCodes } from "@/lib/process-library-api";
 import { useImportQueue, type BatchImportFn } from "@/lib/import-queue";
 
@@ -2453,7 +2453,7 @@ function ProcessCodeImportTab({ companyId }: { companyId: string | null }) {
 
 // ── Main Page ──────────────────────────────────────────────────────────────
 
-type ClearTarget = { type: "parties" | "items" | "bom" | "stock" | "reorder_rules"; noun: string; count: number };
+type ClearTarget = { type: "parties" | "items" | "bom" | "stock" | "reorder_rules" | "processing_routes" | "jig_master" | "mould_items" | "process_codes"; noun: string; count: number };
 
 export default function DataImport() {
   const navigate = useNavigate();
@@ -2519,37 +2519,73 @@ export default function DataImport() {
     },
   });
 
+  const { data: processingRoutesCount = 0, refetch: refetchProcessingRoutesCount } = useQuery({
+    queryKey: ["count", "processing_routes"],
+    queryFn: async () => {
+      const companyId = await getCompanyId();
+      const { count } = await (supabase as any).from("bom_processing_routes").select("id", { count: "exact", head: true }).eq("company_id", companyId);
+      return count ?? 0;
+    },
+  });
+
+  const { data: jigMasterCount = 0, refetch: refetchJigMasterCount } = useQuery({
+    queryKey: ["count", "jig_master"],
+    queryFn: async () => {
+      const companyId = await getCompanyId();
+      const { count } = await (supabase as any).from("jig_master").select("id", { count: "exact", head: true }).eq("company_id", companyId);
+      return count ?? 0;
+    },
+  });
+
+  const { data: mouldItemsCount = 0, refetch: refetchMouldItemsCount } = useQuery({
+    queryKey: ["count", "mould_items"],
+    queryFn: async () => {
+      const companyId = await getCompanyId();
+      const { count } = await (supabase as any).from("mould_items").select("id", { count: "exact", head: true }).eq("company_id", companyId);
+      return count ?? 0;
+    },
+  });
+
+  const { data: processCodesCount = 0, refetch: refetchProcessCodesCount } = useQuery({
+    queryKey: ["count", "process_codes"],
+    queryFn: async () => {
+      const companyId = await getCompanyId();
+      const { count } = await (supabase as any).from("process_codes").select("id", { count: "exact", head: true }).eq("company_id", companyId);
+      return count ?? 0;
+    },
+  });
+
   const doClear = async () => {
     if (!clearTarget) return;
     setClearLoading(true);
     try {
-      // Parties: safe delete — skip linked parties instead of failing or deactivating
-      if (clearTarget.type === "parties") {
-        const result = await safeDeleteAllParties();
-        queryClient.invalidateQueries({ queryKey: ["parties"] });
-        refetchPartiesCount();
-        const parts: string[] = [];
-        if (result.deleted > 0) parts.push(`${result.deleted} parties deleted`);
-        if (result.skipped > 0) parts.push(`${result.skipped} skipped (linked to existing documents)`);
-        toast({ title: parts.join(". ") || "No unlinked parties to delete" });
-        setClearTarget(null);
-        return;
-      }
-
+      // All tabs use a single-DELETE RPC — no per-row loops.
+      // clear_all_parties pre-nulls FK refs then does DELETE WHERE company_id = $1
+      // (same pattern as clear_all_items) so it completes in <1 s for any row count.
       const companyId = await getCompanyId();
       const rpcMap: Record<string, string> = {
+        parties: "clear_all_parties",
         items: "clear_all_items",
         bom: "clear_all_bom_lines",
         stock: "clear_opening_stock",
         reorder_rules: "clear_all_reorder_rules",
+        processing_routes: "clear_all_processing_routes",
+        jig_master: "clear_all_jig_master",
+        mould_items: "clear_all_mould_items",
+        process_codes: "clear_all_process_codes",
       };
       const { data, error } = await (supabase as any).rpc(rpcMap[clearTarget.type], { p_company_id: companyId });
       if (error) throw error;
       const count = (data as number) ?? 0;
-      if (clearTarget.type === "items") { queryClient.invalidateQueries({ queryKey: ["items"] }); refetchItemsCount(); }
+      if (clearTarget.type === "parties") { queryClient.invalidateQueries({ queryKey: ["parties"] }); refetchPartiesCount(); }
+      else if (clearTarget.type === "items") { queryClient.invalidateQueries({ queryKey: ["items"] }); refetchItemsCount(); }
       else if (clearTarget.type === "bom") { queryClient.invalidateQueries({ queryKey: ["bom-lines"] }); refetchBomCount(); }
       else if (clearTarget.type === "stock") { queryClient.invalidateQueries({ queryKey: ["items"] }); queryClient.invalidateQueries({ queryKey: ["stock_status"] }); refetchStockCount(); }
-      else { queryClient.invalidateQueries({ queryKey: ["reorder-rules"] }); queryClient.invalidateQueries({ queryKey: ["stock_status"] }); refetchReorderRulesCount(); }
+      else if (clearTarget.type === "reorder_rules") { queryClient.invalidateQueries({ queryKey: ["reorder-rules"] }); queryClient.invalidateQueries({ queryKey: ["stock_status"] }); refetchReorderRulesCount(); }
+      else if (clearTarget.type === "processing_routes") { refetchProcessingRoutesCount(); }
+      else if (clearTarget.type === "jig_master") { refetchJigMasterCount(); }
+      else if (clearTarget.type === "mould_items") { refetchMouldItemsCount(); }
+      else if (clearTarget.type === "process_codes") { refetchProcessCodesCount(); }
       toast({ title: `All ${count} ${clearTarget.noun} cleared successfully` });
       setClearTarget(null);
     } catch (err: any) {
@@ -2834,7 +2870,15 @@ export default function DataImport() {
 
       {activeTab === "processing_routes" && (
         <div className="paper-card mt-4">
-          <h2 className="font-semibold text-slate-900 mb-1">Import Processing Routes</h2>
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="font-semibold text-slate-900">Import Processing Routes</h2>
+            {processingRoutesCount > 0 && (
+              <Button variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50 gap-1.5"
+                onClick={() => setClearTarget({ type: "processing_routes", noun: "processing routes", count: processingRoutesCount })}>
+                <Trash2 className="h-3.5 w-3.5" /> Clear All ({processingRoutesCount})
+              </Button>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground mb-4">
             Import multi-stage processing routes per item. Each row is one stage. Items must already exist.
           </p>
@@ -2844,7 +2888,15 @@ export default function DataImport() {
 
       {activeTab === "jig_master" && (
         <div className="paper-card mt-4">
-          <h2 className="font-semibold text-slate-900 mb-1">Import Jig Master</h2>
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="font-semibold text-slate-900">Import Jig Master</h2>
+            {jigMasterCount > 0 && (
+              <Button variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50 gap-1.5"
+                onClick={() => setClearTarget({ type: "jig_master", noun: "jig records", count: jigMasterCount })}>
+                <Trash2 className="h-3.5 w-3.5" /> Clear All ({jigMasterCount})
+              </Button>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground mb-4">
             Import jig and fixture records. Drawing numbers do not need to exist in the Items master.
           </p>
@@ -2854,7 +2906,15 @@ export default function DataImport() {
 
       {activeTab === "mould_items" && (
         <div className="paper-card mt-4">
-          <h2 className="font-semibold text-slate-900 mb-1">Import Mould Items</h2>
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="font-semibold text-slate-900">Import Mould Items</h2>
+            {mouldItemsCount > 0 && (
+              <Button variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50 gap-1.5"
+                onClick={() => setClearTarget({ type: "mould_items", noun: "mould item records", count: mouldItemsCount })}>
+                <Trash2 className="h-3.5 w-3.5" /> Clear All ({mouldItemsCount})
+              </Button>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground mb-4">
             Import mould-dependent component records. Mould alerts auto-trigger on Delivery Challans when a matching drawing number is added.
           </p>
@@ -2864,7 +2924,15 @@ export default function DataImport() {
 
       {activeTab === "process_codes" && (
         <div className="paper-card mt-4">
-          <h2 className="font-semibold text-slate-900 mb-1">Import Process Code Master</h2>
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="font-semibold text-slate-900">Import Process Code Master</h2>
+            {processCodesCount > 0 && (
+              <Button variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50 gap-1.5"
+                onClick={() => setClearTarget({ type: "process_codes", noun: "process codes", count: processCodesCount })}>
+                <Trash2 className="h-3.5 w-3.5" /> Clear All ({processCodesCount})
+              </Button>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground mb-4">
             Import your standard process codes and approved vendors. Duplicate process names will be skipped.
             Vendor names must match existing Parties.
