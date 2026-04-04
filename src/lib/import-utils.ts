@@ -534,6 +534,49 @@ export function buildMappingSummary(
   };
 }
 
+// ── Three-level item lookup (shared by BOM, Stock, Routes importers) ─────────
+//
+// Level 1: exact case-insensitive match on item_code
+// Level 2: normalised — strip spaces + periods, UPPER compare
+//          handles "ASSY." ↔ "ASSY" and "11 KV" ↔ "11KV"
+// Level 3: match on drawing_revision or drawing_number
+//
+// Why not use PostgREST .in()? Values with "(" or ")" break the in.(...) URL
+// syntax — e.g. "Pre Selector (T:6mm)" causes the parser to close the list
+// at the inner ")" and silently drop those items from results.
+export function findItemByCode(
+  items: Array<{ id: string; item_code: string | null; drawing_revision?: string | null; drawing_number?: string | null }>,
+  code: string
+): string | undefined {
+  const codeTrimmed = code.trim();
+  if (!codeTrimmed) return undefined;
+  const codeLower = codeTrimmed.toLowerCase();
+
+  // Level 1: exact item_code match (case-insensitive)
+  for (const item of items) {
+    if (item.item_code && item.item_code.toLowerCase() === codeLower) return item.id;
+  }
+
+  // Level 2: normalised — strip spaces and periods, uppercase compare
+  const normCode = codeTrimmed.toUpperCase().replace(/[\s.]/g, "");
+  if (normCode) {
+    for (const item of items) {
+      if (item.item_code) {
+        const normItem = item.item_code.toUpperCase().replace(/[\s.]/g, "");
+        if (normItem === normCode) return item.id;
+      }
+    }
+  }
+
+  // Level 3: drawing_revision or drawing_number
+  for (const item of items) {
+    if (item.drawing_revision && item.drawing_revision.toLowerCase() === codeLower) return item.id;
+    if (item.drawing_number && item.drawing_number.toLowerCase() === codeLower) return item.id;
+  }
+
+  return undefined;
+}
+
 export function normalizePartyType(raw: string): string {
   const v = raw.toLowerCase().replace(/[^a-z]/g, "");
   if (["vendor", "supplier", "vend", "sup", "seller", "v", "s"].includes(v)) return "vendor";

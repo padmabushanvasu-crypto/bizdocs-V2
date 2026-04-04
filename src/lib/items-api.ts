@@ -449,6 +449,33 @@ export async function importItemsBatch(
     if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
   }
 
+  // Post-import verification: re-query DB and surface any newly-inserted items
+  // that silently failed (e.g. DB constraint on special chars, unique violations
+  // that didn't throw, etc.).  Fetch only item_code so the query is lightweight.
+  if (toInsert.length > 0) {
+    try {
+      const { data: nowInDB } = await supabase
+        .from("items")
+        .select("item_code")
+        .eq("company_id", companyId);
+      // Build a Set from the DB result for O(1) lookup — avoids PostgREST
+      // .in() which breaks when codes contain "(" or ")" characters.
+      const inDBCodes = new Set<string>((nowInDB ?? []).map((i: any) => String(i.item_code)));
+      for (const item of toInsert) {
+        if (item.item_code && !inDBCodes.has(item.item_code)) {
+          const rowNum = codeToRow.get((item.item_code as string).toLowerCase()) ?? 0;
+          const reason = "Not persisted — check item_code for special characters";
+          errors.push(`Row ${rowNum} (${item.item_code}): ${reason}`);
+          skipReasons.push({ row: rowNum, value: item.item_code as string, reason });
+          skipped++;
+          if (imported > 0) { imported--; newCount--; }
+        }
+      }
+    } catch {
+      // Verification query failed — don't block the import result
+    }
+  }
+
   return { imported, skipped, errors, skipReasons, updated: updatedCount };
 }
 

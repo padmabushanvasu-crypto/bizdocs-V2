@@ -12,7 +12,7 @@ import { useAuth } from "@/hooks/useAuth";
 import {
   resolveColumns, extractRow, buildMappingSummary,
   normaliseHeader, fieldDisplayName,
-  parseExcelSmart,
+  parseExcelSmart, findItemByCode,
   PARTY_FIELD_MAP, ITEM_FIELD_MAP, BOM_FIELD_MAP, STOCK_FIELD_MAP, VENDOR_SHEET_FIELD_MAP, REORDER_FIELD_MAP,
   JIG_FIELD_MAP, MOULD_FIELD_MAP, PROCESSING_ROUTES_FIELD_MAP,
   type ColumnMappingSummary, type SkipReason,
@@ -679,27 +679,16 @@ function BOMImportTab() {
           )
         ),
       ];
-      const { data: itemsByCode } = await supabase
-        .from("items").select("id, item_code, drawing_revision").in("item_code", allCodes);
-      // resolvedCodes stores normalized (lowercase) versions of every code that matched an item
-      const resolvedCodes = new Set<string>(
-        (itemsByCode ?? []).map((i: any) => (i.item_code as string).toLowerCase())
-      );
+      // Pre-fetch ALL items for reliable 3-level lookup.
+      // PostgREST .in() breaks when item codes contain "(" or ")" — the inner
+      // paren closes the in.(...) URL syntax and those items silently vanish.
+      const { data: allItemsForBOM } = await supabase
+        .from("items").select("id, item_code, drawing_revision, drawing_number");
 
-      // For codes not found by item_code, try drawing_revision ILIKE (case-insensitive)
-      const missingCodes = allCodes.filter((c) => !resolvedCodes.has(c.toLowerCase()));
-      if (missingCodes.length > 0) {
-        const ilikeFilter = missingCodes.map((c) => `drawing_revision.ilike.${c}`).join(",");
-        const { data: itemsByRev } = await supabase
-          .from("items").select("id, item_code, drawing_revision").or(ilikeFilter);
-        for (const item of (itemsByRev ?? []) as any[]) {
-          if (item.drawing_revision) {
-            // Mark whichever missing code this item's drawing_revision matches
-            const matched = missingCodes.find(
-              (c) => c.toLowerCase() === (item.drawing_revision as string).toLowerCase()
-            );
-            if (matched) resolvedCodes.add(matched.toLowerCase());
-          }
+      const resolvedCodes = new Set<string>();
+      for (const code of allCodes) {
+        if (findItemByCode(allItemsForBOM ?? [], code)) {
+          resolvedCodes.add(code.toLowerCase());
         }
       }
 
@@ -764,15 +753,9 @@ function BOMImportTab() {
   const bomImportFn: BatchImportFn = async (rows, rowNums) => {
     const companyId = await getCompanyId();
 
-    // Pre-fetch ALL items in one query
+    // Pre-fetch ALL items in one query — used by findItemByCode (3-level lookup)
     const { data: allItems } = await supabase
-      .from("items").select("id, item_code, drawing_revision").eq("company_id", companyId);
-    const codeToId = new Map<string, string>();
-    const drawingToId = new Map<string, string>();
-    for (const item of (allItems ?? []) as any[]) {
-      if (item.item_code) codeToId.set((item.item_code as string).toLowerCase(), item.id as string);
-      if (item.drawing_revision) drawingToId.set((item.drawing_revision as string).toLowerCase(), item.id as string);
-    }
+      .from("items").select("id, item_code, drawing_revision, drawing_number").eq("company_id", companyId);
 
     // Pre-fetch parties (vendors) for vendor lookup
     const { data: allParties } = await (supabase as any)
@@ -804,8 +787,8 @@ function BOMImportTab() {
       const parentCode = row["finished_item_code"]?.trim() ?? "";
       const childCode = row["component_code"]?.trim() ?? "";
       const qty = parseFloat(row["quantity"] || "0");
-      const parentId = codeToId.get(parentCode.toLowerCase()) ?? drawingToId.get(parentCode.toLowerCase());
-      const childId = codeToId.get(childCode.toLowerCase()) ?? drawingToId.get(childCode.toLowerCase());
+      const parentId = findItemByCode(allItems ?? [], parentCode);
+      const childId = findItemByCode(allItems ?? [], childCode);
       if (!parentId || !childId) {
         skipped++;
         const missingCode = !parentId ? parentCode : childCode;
@@ -1871,14 +1854,9 @@ function ProcessingRoutesImportTab({ companyId }: { companyId: string | null }) 
     try {
       // Fetch items + parties once upfront
       const [{ data: itemsRaw }, { data: partiesRaw }] = await Promise.all([
-        supabase.from("items").select("id, drawing_revision, item_code").eq("company_id", companyId),
+        supabase.from("items").select("id, item_code, drawing_revision, drawing_number").eq("company_id", companyId),
         (supabase as any).from("parties").select("id, name").eq("company_id", companyId),
       ]);
-      const drawingToId = new Map<string, string>();
-      for (const i of (itemsRaw ?? [])) {
-        if ((i as any).drawing_revision) drawingToId.set((i as any).drawing_revision.toLowerCase(), (i as any).id);
-        if ((i as any).item_code) drawingToId.set((i as any).item_code.toLowerCase(), (i as any).id);
-      }
       const vendorByName = new Map<string, string>();
       for (const p of (partiesRaw ?? [])) vendorByName.set(String(p.name).toLowerCase(), p.id);
 
@@ -1899,7 +1877,7 @@ function ProcessingRoutesImportTab({ companyId }: { companyId: string | null }) 
         if (!drawingNum) { skipped++; skipErrors.push(`Row ${excelRow}: Drawing Number is required`); return; }
         if (!stageNum) { skipped++; skipErrors.push(`Row ${excelRow} (${drawingNum}): Stage No is required or invalid`); return; }
         if (!processName) { skipped++; skipErrors.push(`Row ${excelRow} (${drawingNum}): Process Name is required`); return; }
-        const itemId = drawingToId.get(drawingNum.toLowerCase());
+        const itemId = findItemByCode(itemsRaw ?? [], drawingNum);
         if (!itemId) { skipped++; skipErrors.push(`Row ${excelRow}: Drawing/Item "${drawingNum}" not found in items master`); return; }
 
         const vendors: RowVendor[] = [];
@@ -2588,14 +2566,9 @@ export default function DataImport() {
   const handleStockImport: BatchImportFn = async (rows, rowNums) => {
     const companyId = await getCompanyId();
 
-    // Pre-fetch all items — support lookup by item_code or drawing_revision
+    // Pre-fetch all items — used by findItemByCode (3-level lookup)
     const { data: itemsData } = await supabase
-      .from("items").select("id, item_code, drawing_revision").eq("company_id", companyId);
-    const codeToId = new Map<string, string>((itemsData ?? []).map((i: any) => [String(i.item_code).toLowerCase(), i.id]));
-    const drawingToId = new Map<string, string>();
-    for (const i of (itemsData ?? [])) {
-      if ((i as any).drawing_revision) drawingToId.set(String((i as any).drawing_revision).toLowerCase(), (i as any).id);
-    }
+      .from("items").select("id, item_code, drawing_revision, drawing_number").eq("company_id", companyId);
 
     const VALID_BUCKETS: Record<string, string> = {
       free: "stock_free", stock_free: "stock_free",
@@ -2629,8 +2602,8 @@ export default function DataImport() {
         skipReasons.push({ row: excelRow, value: ref, reason: "Opening Stock Qty is not a valid number" });
         continue;
       }
-      // Try drawing_revision first, then item_code
-      const itemId = (drawing ? drawingToId.get(drawing.toLowerCase()) : undefined) ?? (code ? codeToId.get(code.toLowerCase()) : undefined);
+      // drawing takes priority over item_code; findItemByCode tries 3 levels
+      const itemId = findItemByCode(itemsData ?? [], drawing || code || "");
       const ref = drawing || code || "";
       if (!itemId) {
         skipped++;
