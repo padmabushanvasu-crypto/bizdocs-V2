@@ -285,9 +285,15 @@ export async function importItemsBatch(
   const { data: existingItems } = await supabase
     .from("items").select("id, item_code, drawing_revision").eq("company_id", companyId);
 
+  const normalizeItemCode = (s: string) => s.toUpperCase().replace(/[\s.]/g, "");
+
   const byCode = new Map<string, string>(
     (existingItems ?? []).filter((i: any) => i.item_code)
       .map((i: any) => [(i.item_code as string).toLowerCase(), i.id as string])
+  );
+  const byNormCode = new Map<string, string>(
+    (existingItems ?? []).filter((i: any) => i.item_code)
+      .map((i: any) => [normalizeItemCode(i.item_code as string), i.id as string])
   );
   const byDrawing = new Map<string, { id: string; item_code: string }>(
     (existingItems ?? []).filter((i: any) => i.drawing_revision)
@@ -304,6 +310,8 @@ export async function importItemsBatch(
   const toInsert: any[] = [];
   const toUpdate: any[] = [];
   const codeToRow = new Map<string, number>();
+  const insertErrors = new Map<string, string>(); // item_code.toLowerCase() → DB error reason
+  const insertingNormCodes = new Map<string, number>(); // normCode → index in toInsert
 
   const VALID_TYPES = ["raw_material", "component", "sub_assembly", "bought_out", "finished_good", "product", "consumable", "service"];
 
@@ -326,7 +334,7 @@ export async function importItemsBatch(
     let resolvedCode = code;
 
     if (code) {
-      existingId = byCode.get(code.toLowerCase()) ?? null;
+      existingId = byCode.get(code.toLowerCase()) ?? byNormCode.get(normalizeItemCode(code)) ?? null;
     } else if (drawingNum) {
       const match = byDrawing.get(drawingNum.toLowerCase());
       if (match) { existingId = match.id; resolvedCode = match.item_code || drawingNum; }
@@ -359,8 +367,21 @@ export async function importItemsBatch(
 
     if (resolvedCode) codeToRow.set(resolvedCode.toLowerCase(), excelRow);
 
-    if (existingId) toUpdate.push({ id: existingId, ...itemData });
-    else toInsert.push(itemData);
+    if (existingId) {
+      toUpdate.push({ id: existingId, ...itemData });
+    } else {
+      // Check for within-batch duplicate by normalized code
+      const normCode = resolvedCode ? normalizeItemCode(resolvedCode) : "";
+      if (normCode && insertingNormCodes.has(normCode)) {
+        skipped++;
+        const reason = `Duplicate of a row already queued for insert (normalized code "${normCode}")`;
+        errors.push(`Row ${excelRow}${displayKey ? ` (${displayKey})` : ""}: ${reason}`);
+        skipReasons.push({ row: excelRow, value: displayKey, reason });
+      } else {
+        if (normCode) insertingNormCodes.set(normCode, toInsert.length);
+        toInsert.push(itemData);
+      }
+    }
   }
 
   const totalOps = toInsert.length + toUpdate.length;
@@ -410,6 +431,7 @@ export async function importItemsBatch(
               const rowNum = codeToRow.get((itemData.item_code || "").toLowerCase()) ?? 0;
               errors.push(`Row ${rowNum} (${itemData.item_code || itemData.description}): ${reason}`);
               skipReasons.push({ row: rowNum, value: itemData.item_code || "", reason });
+              if (itemData.item_code) insertErrors.set((itemData.item_code as string).toLowerCase(), reason);
             }
           }
         }
@@ -464,11 +486,15 @@ export async function importItemsBatch(
       for (const item of toInsert) {
         if (item.item_code && !inDBCodes.has(item.item_code)) {
           const rowNum = codeToRow.get((item.item_code as string).toLowerCase()) ?? 0;
-          const reason = "Not persisted — check item_code for special characters";
-          errors.push(`Row ${rowNum} (${item.item_code}): ${reason}`);
-          skipReasons.push({ row: rowNum, value: item.item_code as string, reason });
-          skipped++;
-          if (imported > 0) { imported--; newCount--; }
+          const storedError = insertErrors.get((item.item_code as string).toLowerCase());
+          const reason = storedError ?? "Not persisted — insert appeared to succeed but item is absent from DB";
+          // Only surface if not already logged by the row-by-row error path
+          if (!storedError) {
+            errors.push(`Row ${rowNum} (${item.item_code}): ${reason}`);
+            skipReasons.push({ row: rowNum, value: item.item_code as string, reason });
+            skipped++;
+            if (imported > 0) { imported--; newCount--; }
+          }
         }
       }
     } catch {
