@@ -475,16 +475,20 @@ export function resolveColumns(
   for (const [field, aliases] of Object.entries(fieldMap)) {
     for (const alias of aliases) {
       const normAlias = normaliseHeader(alias);
-      const idx = normHeaders.findIndex((h) => {
-        if (h === normAlias) return true;
-        // header contains alias (e.g. header "drawing revision 2" contains alias "drawing revision")
-        if (normAlias.length >= 4 && h.includes(normAlias)) return true;
-        // alias contains header — only allow when header is 6+ chars to avoid
-        // short words like "unit", "code", "name" falsely matching longer aliases
-        // (e.g. "unit" matching "unit cost" or "cost per unit")
-        if (normAlias.length >= 4 && normAlias.includes(h) && h.length >= 6) return true;
-        return false;
-      });
+      // Pass 1: exact match only — avoids short aliases like "state" matching
+      // "state code" before the exact "state" header is found
+      let idx = normHeaders.findIndex((h) => h === normAlias);
+      // Pass 2: fuzzy match (only if no exact match found)
+      if (idx === -1) {
+        idx = normHeaders.findIndex((h) => {
+          // header contains alias (e.g. "drawing revision 2" contains "drawing revision")
+          if (normAlias.length >= 4 && h.includes(normAlias)) return true;
+          // alias contains header — only allow when header is 6+ chars to avoid
+          // short words like "unit", "code", "name" falsely matching longer aliases
+          if (normAlias.length >= 4 && normAlias.includes(h) && h.length >= 6) return true;
+          return false;
+        });
+      }
       if (idx !== -1) { result[field] = idx; break; }
     }
   }
