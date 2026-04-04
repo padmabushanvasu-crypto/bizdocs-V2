@@ -471,18 +471,17 @@ export async function importItemsBatch(
     if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
   }
 
-  // Post-import verification: re-query DB and surface any newly-inserted items
-  // that silently failed (e.g. DB constraint on special chars, unique violations
-  // that didn't throw, etc.).  Fetch only item_code so the query is lightweight.
+  // Post-import verification: ask the DB which of the inserted codes actually
+  // landed.  Uses an RPC so the code list is passed as a JSON array — no
+  // PostgREST URL encoding issues with special characters (/, (, ), :, &).
   if (toInsert.length > 0) {
     try {
-      const { data: nowInDB } = await supabase
-        .from("items")
-        .select("item_code")
-        .eq("company_id", companyId);
-      // Build a Set from the DB result for O(1) lookup — avoids PostgREST
-      // .in() which breaks when codes contain "(" or ")" characters.
-      const inDBCodes = new Set<string>((nowInDB ?? []).map((i: any) => String(i.item_code)));
+      const codesToCheck = toInsert.map((i: any) => i.item_code).filter(Boolean) as string[];
+      const { data: foundCodes } = await (supabase as any).rpc("verify_item_codes_exist", {
+        p_company_id: companyId,
+        p_codes: codesToCheck,
+      });
+      const inDBCodes = new Set<string>(foundCodes ?? []);
       for (const item of toInsert) {
         if (item.item_code && !inDBCodes.has(item.item_code)) {
           const rowNum = codeToRow.get((item.item_code as string).toLowerCase()) ?? 0;
