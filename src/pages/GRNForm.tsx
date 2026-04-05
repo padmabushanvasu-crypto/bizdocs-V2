@@ -24,9 +24,13 @@ import {
   fetchGRN,
   updateGrnLineStage1,
   updateGrnLineStage2,
+  fetchGrnInspectionLines,
+  upsertGrnInspectionLines,
+  updateGrnQcFields,
   type GRNLineItem,
   type Stage1Data,
   type Stage2Data,
+  type GrnInspectionLine,
 } from "@/lib/grn-api";
 import { logAudit } from "@/lib/audit-api";
 import { supabase } from "@/integrations/supabase/client";
@@ -629,6 +633,14 @@ function GRNFormInner({ defaultGrnType }: Props) {
   // Line items
   const [lineItems, setLineItems] = useState<LineItemState[]>([]);
 
+  // QC Inspection state
+  const [qcExpanded, setQcExpanded] = useState(false);
+  const [inspectionLines, setInspectionLines] = useState<GrnInspectionLine[]>([]);
+  const [qcRemarks, setQcRemarks] = useState("");
+  const [qcPreparedBy, setQcPreparedBy] = useState("");
+  const [qcInspectedBy, setQcInspectedBy] = useState("");
+  const [qcApprovedBy, setQcApprovedBy] = useState("");
+
   // Success dialog
   const [successDialogOpen, setSuccessDialogOpen] = useState(false);
   const [savedGRNId, setSavedGRNId] = useState<string | null>(null);
@@ -705,9 +717,15 @@ function GRNFormInner({ defaultGrnType }: Props) {
       setLrReference(existingGrn.lr_reference ?? '');
       setReceivedBy(existingGrn.received_by ?? '');
       setTransporterName(existingGrn.transporter_name ?? '');
+      setQcRemarks(g.qc_remarks ?? '');
+      setQcPreparedBy(g.qc_prepared_by ?? '');
+      setQcInspectedBy(g.qc_inspected_by ?? '');
+      setQcApprovedBy(g.qc_approved_by ?? '');
       if (existingGrn.line_items) {
         setLineItems(existingGrn.line_items.map((li, idx) => toLineState(li, idx)));
       }
+      // Load existing inspection lines
+      fetchGrnInspectionLines(existingGrn.id).then(setInspectionLines).catch(console.error);
     }
   }, [existingGrn]);
 
@@ -976,6 +994,10 @@ function GRNFormInner({ defaultGrnType }: Props) {
         status,
         recorded_at: status === "recorded" ? new Date().toISOString() : null,
         verified_at: null,
+        qc_remarks: qcRemarks || null,
+        qc_prepared_by: qcPreparedBy || null,
+        qc_inspected_by: qcInspectedBy || null,
+        qc_approved_by: qcApprovedBy || null,
       };
 
       const items = lineItems
@@ -991,6 +1013,12 @@ function GRNFormInner({ defaultGrnType }: Props) {
         }));
 
       const result = await recordGRNAndUpdatePO({ grn: grnData, lineItems: items });
+      // Save QC inspection lines
+      if (inspectionLines.length > 0) {
+        const { getCompanyId } = await import("@/lib/auth-helpers");
+        const companyId = await getCompanyId();
+        await upsertGrnInspectionLines(result.id, companyId!, inspectionLines);
+      }
       return result;
     },
     onSuccess: (result, status) => {
@@ -1022,8 +1050,35 @@ function GRNFormInner({ defaultGrnType }: Props) {
       toast({ title: "No items", description: "Enter receiving quantities for at least one item.", variant: "destructive" });
       return;
     }
+    // QC validation
+    if (inspectionLines.length > 0) {
+      const failWithoutReason = inspectionLines.find(l => l.result === 'fail' && !l.non_conformance_reason?.trim());
+      if (failWithoutReason) {
+        toast({ title: "NC Reason required", description: `Row ${failWithoutReason.sl_no}: Non-conformance reason is required for fail result.`, variant: "destructive" });
+        return;
+      }
+      if (!qcInspectedBy.trim()) {
+        toast({ title: "Inspected By required", description: "Enter the QC inspector's name.", variant: "destructive" });
+        return;
+      }
+    }
     if (!isExistingGrn) saveMutation.mutate(status);
     else {
+      // For existing GRN, save QC fields separately
+      if (editId) {
+        const qcUpdate = async () => {
+          const { getCompanyId } = await import("@/lib/auth-helpers");
+          const companyId = await getCompanyId();
+          await updateGrnQcFields(editId, {
+            qc_remarks: qcRemarks || null,
+            qc_prepared_by: qcPreparedBy || null,
+            qc_inspected_by: qcInspectedBy || null,
+            qc_approved_by: qcApprovedBy || null,
+          });
+          await upsertGrnInspectionLines(editId, companyId!, inspectionLines);
+        };
+        qcUpdate().catch(console.error);
+      }
       toast({ title: "Saved", description: "Stage updates are saved per-item." });
       navigate("/grn");
     }
@@ -1274,6 +1329,198 @@ function GRNFormInner({ defaultGrnType }: Props) {
           </div>
         </div>
       )}
+
+      {/* QC Inspection Section */}
+      <div className="paper-card">
+        <button
+          type="button"
+          className="w-full flex items-center justify-between py-1"
+          onClick={() => setQcExpanded((v) => !v)}
+        >
+          <span className="text-sm font-semibold text-slate-700 uppercase tracking-wider">QC Inspection Report</span>
+          {qcExpanded ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+        </button>
+
+        {qcExpanded && (
+          <div className="mt-4 space-y-4">
+            {/* Inspection lines table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-50">
+                    <th className="border border-slate-200 px-2 py-1.5 text-left w-10">Sl.</th>
+                    <th className="border border-slate-200 px-2 py-1.5 text-left">Characteristic</th>
+                    <th className="border border-slate-200 px-2 py-1.5 text-left">Specification</th>
+                    <th className="border border-slate-200 px-2 py-1.5 text-right w-20">Qty Checked</th>
+                    <th className="border border-slate-200 px-2 py-1.5 text-center w-24">Result</th>
+                    <th className="border border-slate-200 px-2 py-1.5 text-left">Measuring Instrument</th>
+                    <th className="border border-slate-200 px-2 py-1.5 text-left">NC Reason</th>
+                    <th className="border border-slate-200 px-2 py-1.5 w-8"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {inspectionLines.map((line, idx) => (
+                    <tr key={idx} className={line.result === 'fail' ? 'bg-red-50/40' : line.result === 'conditional' ? 'bg-amber-50/40' : ''}>
+                      <td className="border border-slate-200 px-2 py-1 text-center text-slate-500">{line.sl_no}</td>
+                      <td className="border border-slate-200 px-1 py-1">
+                        <input
+                          className="w-full bg-transparent outline-none text-xs"
+                          value={line.characteristic}
+                          onChange={(e) => {
+                            const next = [...inspectionLines];
+                            next[idx] = { ...next[idx], characteristic: e.target.value };
+                            setInspectionLines(next);
+                          }}
+                          placeholder="e.g., Dimensional check"
+                        />
+                      </td>
+                      <td className="border border-slate-200 px-1 py-1">
+                        <input
+                          className="w-full bg-transparent outline-none text-xs"
+                          value={line.specification ?? ''}
+                          onChange={(e) => {
+                            const next = [...inspectionLines];
+                            next[idx] = { ...next[idx], specification: e.target.value };
+                            setInspectionLines(next);
+                          }}
+                          placeholder="e.g., ±0.1mm"
+                        />
+                      </td>
+                      <td className="border border-slate-200 px-1 py-1">
+                        <input
+                          type="number"
+                          className="w-full bg-transparent outline-none text-xs text-right"
+                          value={line.qty_checked ?? ''}
+                          onChange={(e) => {
+                            const next = [...inspectionLines];
+                            next[idx] = { ...next[idx], qty_checked: e.target.value ? Number(e.target.value) : null };
+                            setInspectionLines(next);
+                          }}
+                        />
+                      </td>
+                      <td className="border border-slate-200 px-1 py-1">
+                        <select
+                          className="w-full bg-transparent outline-none text-xs"
+                          value={line.result ?? ''}
+                          onChange={(e) => {
+                            const next = [...inspectionLines];
+                            next[idx] = { ...next[idx], result: (e.target.value || null) as any };
+                            setInspectionLines(next);
+                          }}
+                        >
+                          <option value="">—</option>
+                          <option value="pass">Pass</option>
+                          <option value="fail">Fail</option>
+                          <option value="conditional">Conditional</option>
+                        </select>
+                      </td>
+                      <td className="border border-slate-200 px-1 py-1">
+                        <input
+                          className="w-full bg-transparent outline-none text-xs"
+                          value={line.measuring_instrument ?? ''}
+                          onChange={(e) => {
+                            const next = [...inspectionLines];
+                            next[idx] = { ...next[idx], measuring_instrument: e.target.value };
+                            setInspectionLines(next);
+                          }}
+                          placeholder="e.g., Vernier caliper"
+                        />
+                      </td>
+                      <td className="border border-slate-200 px-1 py-1">
+                        <input
+                          className={cn("w-full bg-transparent outline-none text-xs", line.result === 'fail' && !line.non_conformance_reason ? 'placeholder:text-red-400' : '')}
+                          value={line.non_conformance_reason ?? ''}
+                          onChange={(e) => {
+                            const next = [...inspectionLines];
+                            next[idx] = { ...next[idx], non_conformance_reason: e.target.value };
+                            setInspectionLines(next);
+                          }}
+                          placeholder={line.result === 'fail' ? 'Required for fail' : ''}
+                        />
+                      </td>
+                      <td className="border border-slate-200 px-1 py-1 text-center">
+                        <button
+                          type="button"
+                          className="text-slate-400 hover:text-red-500 text-xs"
+                          onClick={() => setInspectionLines((prev) => prev.filter((_, i) => i !== idx).map((l, i) => ({ ...l, sl_no: i + 1 })))}
+                        >
+                          ×
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {inspectionLines.length < 30 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setInspectionLines((prev) => [...prev, { sl_no: prev.length + 1, characteristic: '' }])}
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" /> Add Row
+              </Button>
+            )}
+
+            {/* Auto-calculated summary */}
+            {inspectionLines.length > 0 && (
+              <div className="flex gap-6 text-xs text-slate-600 bg-slate-50 rounded px-3 py-2">
+                <span>Checked: <strong>{inspectionLines.filter(l => l.qty_checked).reduce((s, l) => s + (l.qty_checked ?? 0), 0)}</strong></span>
+                <span className="text-emerald-700">Accepted (Pass): <strong>{inspectionLines.filter(l => l.result === 'pass').length}</strong></span>
+                <span className="text-red-600">Not Accepted (Fail): <strong>{inspectionLines.filter(l => l.result === 'fail').length}</strong></span>
+                <span className="text-amber-600">Conditional: <strong>{inspectionLines.filter(l => l.result === 'conditional').length}</strong></span>
+              </div>
+            )}
+
+            {/* Signatures */}
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <Label className="text-xs font-medium text-slate-600">Prepared By</Label>
+                <Input
+                  value={qcPreparedBy}
+                  onChange={(e) => setQcPreparedBy(e.target.value)}
+                  className="mt-1 text-sm"
+                  placeholder="Name"
+                />
+              </div>
+              <div>
+                <Label className="text-xs font-medium text-slate-600">
+                  Inspected By <span className="text-red-400">*</span>
+                </Label>
+                <Input
+                  value={qcInspectedBy}
+                  onChange={(e) => setQcInspectedBy(e.target.value)}
+                  className={cn("mt-1 text-sm", inspectionLines.length > 0 && !qcInspectedBy ? 'border-red-300' : '')}
+                  placeholder="Name"
+                />
+              </div>
+              <div>
+                <Label className="text-xs font-medium text-slate-600">Approved By</Label>
+                <Input
+                  value={qcApprovedBy}
+                  onChange={(e) => setQcApprovedBy(e.target.value)}
+                  className="mt-1 text-sm"
+                  placeholder="Name"
+                />
+              </div>
+            </div>
+
+            {/* Remarks */}
+            <div>
+              <Label className="text-xs font-medium text-slate-600">QC Remarks</Label>
+              <Textarea
+                value={qcRemarks}
+                onChange={(e) => setQcRemarks(e.target.value)}
+                className="mt-1 text-sm"
+                rows={2}
+                placeholder="Overall inspection remarks, non-conformance summary..."
+              />
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Empty state */}
       {lineItems.length === 0 && !isExistingGrn && (

@@ -1,11 +1,12 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { PackageCheck, AlertTriangle, CheckCircle2, Clock, ExternalLink, ChevronLeft } from "lucide-react";
+import { PackageCheck, AlertTriangle, CheckCircle2, Clock, ExternalLink, ChevronLeft, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { fetchGRN } from "@/lib/grn-api";
+import { fetchGRN, fetchGrnInspectionLines } from "@/lib/grn-api";
 import { DocumentHeader } from "@/components/DocumentHeader";
 import { DocumentActions } from "@/components/DocumentActions";
 import { AuditTimeline } from "@/components/AuditTimeline";
+import GrnPrintView from "@/components/GrnPrintView";
 
 const statusClass: Record<string, string> = {
   draft: "status-draft",
@@ -23,6 +24,12 @@ export default function GRNDetail() {
   const { data: grn, isLoading } = useQuery({
     queryKey: ["grn", id],
     queryFn: () => fetchGRN(id!),
+    enabled: !!id,
+  });
+
+  const { data: inspectionLines = [] } = useQuery({
+    queryKey: ["grn-inspection-lines", id],
+    queryFn: () => fetchGrnInspectionLines(id!),
     enabled: !!id,
   });
 
@@ -48,6 +55,9 @@ export default function GRNDetail() {
           <span className={statusClass[grn.status] || "status-draft"}>{statusLabels[grn.status] || grn.status}</span>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => window.print()}>
+            <Printer className="h-3.5 w-3.5 mr-1" /> Print Inspection Report
+          </Button>
           <DocumentActions documentNumber={grn.grn_number} documentType="Goods Receipt Note" documentData={grn as Record<string, unknown>} />
           {grn.po_id && (
             <Button variant="outline" size="sm" onClick={() => navigate(`/purchase-orders/${grn.po_id}`)}>
@@ -228,6 +238,11 @@ export default function GRNDetail() {
       {/* Audit Trail */}
       <div className="print:hidden">
         <AuditTimeline documentId={id!} />
+      </div>
+
+      {/* Print-only: Inspection Report */}
+      <div className="hidden print:block">
+        <GrnPrintView grn={{ ...grn, line_items: items }} />
       </div>
     </div>
   );

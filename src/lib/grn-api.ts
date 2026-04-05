@@ -79,6 +79,25 @@ export interface GRN {
   total_ordered_qty?: number;
   total_received_qty?: number;
   total_accepted_qty?: number;
+  // QC Inspection fields
+  qc_remarks?: string | null;
+  qc_prepared_by?: string | null;
+  qc_inspected_by?: string | null;
+  qc_approved_by?: string | null;
+}
+
+export interface GrnInspectionLine {
+  id?: string;
+  grn_id?: string;
+  company_id?: string;
+  sl_no: number;
+  characteristic: string;
+  specification?: string;
+  qty_checked?: number | null;
+  result?: 'pass' | 'fail' | 'conditional' | null;
+  measuring_instrument?: string;
+  non_conformance_reason?: string;
+  created_at?: string;
 }
 
 export interface GRNFilters {
@@ -175,6 +194,10 @@ export async function createGRN({ grn, lineItems }: CreateGRNData) {
     received_by: grn.received_by || null, notes: grn.notes || null,
     total_received: grn.total_received, total_accepted: grn.total_accepted, total_rejected: grn.total_rejected,
     status: grn.status, recorded_at: grn.recorded_at,
+    qc_remarks: grn.qc_remarks ?? null,
+    qc_prepared_by: grn.qc_prepared_by ?? null,
+    qc_inspected_by: grn.qc_inspected_by ?? null,
+    qc_approved_by: grn.qc_approved_by ?? null,
   } as any).select().single();
   if (error) {
     console.error("[GRN] create error:", error);
@@ -523,6 +546,61 @@ export async function createGrnFromDC(data: CreateGrnFromDCData): Promise<GRN> {
   }
 
   return newGRN as unknown as GRN;
+}
+
+// ── QC Inspection Lines ───────────────────────────────────────────────────────
+
+export async function fetchGrnInspectionLines(grnId: string): Promise<GrnInspectionLine[]> {
+  const { data, error } = await (supabase as any)
+    .from("grn_inspection_lines")
+    .select("*")
+    .eq("grn_id", grnId)
+    .order("sl_no", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as GrnInspectionLine[];
+}
+
+export async function upsertGrnInspectionLines(
+  grnId: string,
+  companyId: string,
+  lines: GrnInspectionLine[]
+): Promise<void> {
+  // Delete existing then re-insert
+  const { error: delErr } = await (supabase as any)
+    .from("grn_inspection_lines")
+    .delete()
+    .eq("grn_id", grnId);
+  if (delErr) throw delErr;
+
+  if (lines.length === 0) return;
+
+  const toInsert = lines.map((l) => ({
+    grn_id: grnId,
+    company_id: companyId,
+    sl_no: l.sl_no,
+    characteristic: l.characteristic,
+    specification: l.specification ?? null,
+    qty_checked: l.qty_checked ?? null,
+    result: l.result ?? null,
+    measuring_instrument: l.measuring_instrument ?? null,
+    non_conformance_reason: l.non_conformance_reason ?? null,
+  }));
+
+  const { error: insErr } = await (supabase as any)
+    .from("grn_inspection_lines")
+    .insert(toInsert);
+  if (insErr) throw insErr;
+}
+
+export async function updateGrnQcFields(
+  grnId: string,
+  data: { qc_remarks?: string | null; qc_prepared_by?: string | null; qc_inspected_by?: string | null; qc_approved_by?: string | null }
+): Promise<void> {
+  const { error } = await (supabase as any)
+    .from("grns")
+    .update(data)
+    .eq("id", grnId);
+  if (error) throw error;
 }
 
 // Valid values per grn_line_items_rejection_action_check constraint
