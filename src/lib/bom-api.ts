@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId } from "@/lib/auth-helpers";
 import type { SkipReason } from "@/lib/import-utils";
+import { findItemByCode } from "@/lib/import-utils";
 
 // ============================================================
 // Interfaces
@@ -1132,13 +1133,7 @@ export async function importBomBatch(
   const companyId = await getCompanyId();
 
   const { data: allItems } = await supabase
-    .from("items").select("id, item_code, drawing_revision").eq("company_id", companyId);
-  const codeToId = new Map<string, string>();
-  const drawingToId = new Map<string, string>();
-  for (const item of (allItems ?? []) as any[]) {
-    if (item.item_code) codeToId.set((item.item_code as string).toLowerCase(), item.id as string);
-    if (item.drawing_revision) drawingToId.set((item.drawing_revision as string).toLowerCase(), item.id as string);
-  }
+    .from("items").select("id, item_code, drawing_revision, drawing_number").eq("company_id", companyId);
 
   let skipped = 0;
   const errors: string[] = [];
@@ -1157,8 +1152,8 @@ export async function importBomBatch(
     const childCode = (row["component_code"] || row["component_drawing"] || "").trim();
     const qty = parseFloat(row["quantity"] || "0") || 0;
 
-    const parentId = codeToId.get(parentCode.toLowerCase()) ?? drawingToId.get(parentCode.toLowerCase());
-    const childId = codeToId.get(childCode.toLowerCase()) ?? drawingToId.get(childCode.toLowerCase());
+    const parentId = findItemByCode(allItems ?? [], parentCode);
+    const childId = findItemByCode(allItems ?? [], childCode);
 
     if (!parentId || !childId) {
       skipped++;
