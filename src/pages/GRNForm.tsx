@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, Component, type ReactNode } from "
 import { useNavigate, useSearchParams, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertTriangle, PackageCheck, ChevronLeft,
+  AlertTriangle, PackageCheck, ChevronLeft, ChevronDown,
   Info, Plus, Truck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
