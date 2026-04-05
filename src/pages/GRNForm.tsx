@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo, Component, type ReactNode } from "
 import { useNavigate, useSearchParams, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  ChevronDown, ChevronUp, AlertTriangle, PackageCheck, ChevronLeft,
-  Info, Plus, CheckCircle2, Truck,
+  AlertTriangle, PackageCheck, ChevronLeft,
+  Info, Plus, Truck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,17 +22,8 @@ import {
   fetchPOLineItemsForGRN,
   recordGRNAndUpdatePO,
   fetchGRN,
-  updateGrnLineStage1,
-  updateGrnLineStage2,
-  fetchGrnInspectionLines,
-  upsertGrnInspectionLines,
-  updateGrnQcFields,
   type GRNLineItem,
-  type Stage1Data,
-  type Stage2Data,
-  type GrnInspectionLine,
 } from "@/lib/grn-api";
-import { logAudit } from "@/lib/audit-api";
 import { supabase } from "@/integrations/supabase/client";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -104,448 +95,76 @@ function toLineState(item: GRNLineItem, idx: number): LineItemState {
   };
 }
 
-// ── GrnLineItemCard ────────────────────────────────────────────────────────────
+// ── GrnLineItemRow — simple table row, no per-item stages ────────────────────
 
-function GrnLineItemCard({
+function GrnLineItemRow({
   item,
   index,
-  isExistingGrn,
   isAdmin,
   onChange,
-  onSaveStage1,
-  onSaveStage2,
 }: {
   item: LineItemState;
   index: number;
-  isExistingGrn: boolean;
   isAdmin: boolean;
   onChange: (index: number, update: Partial<LineItemState>) => void;
-  onSaveStage1: (index: number) => void;
-  onSaveStage2: (index: number) => void;
 }) {
   const orderedQty = (item as any).ordered_qty ?? item.po_quantity ?? 0;
   const prevReceived = (item as any).previously_received_qty ?? item.previously_received ?? 0;
   const pendingQty = Math.max(0, orderedQty - prevReceived);
+  const exceedsPending = item.s1_received_now > 0 && pendingQty > 0 && item.s1_received_now > pendingQty && !item.s1_admin_override;
 
   return (
-    <div className="border border-border rounded-lg overflow-hidden">
-      {/* Collapsed header */}
-      <div
-        className="flex items-center justify-between px-4 py-3 bg-muted/30 cursor-pointer hover:bg-muted/50 transition-colors"
-        onClick={() => onChange(index, { expanded: !item.expanded })}
-      >
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-mono text-muted-foreground w-5">{index + 1}</span>
-          <div>
-            <p className="text-sm font-medium">{item.description || "—"}</p>
-            {item.drawing_number && (
-              <p className="text-xs text-muted-foreground font-mono">{item.drawing_number}</p>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="text-right hidden sm:block">
-            <p className="text-xs text-muted-foreground">Ordered</p>
-            <p className="text-sm font-mono font-medium">{orderedQty} {item.unit}</p>
-          </div>
-          <div className="text-right hidden sm:block">
-            <p className="text-xs text-muted-foreground">Pending</p>
-            <p className="text-sm font-mono font-medium text-amber-600">{pendingQty} {item.unit}</p>
-          </div>
-          <div className="text-right hidden sm:block">
-            <p className="text-xs text-muted-foreground">Received</p>
-            <p className="text-sm font-mono font-medium text-primary">{item.s1_received_now || 0} {item.unit}</p>
-          </div>
-          <div className="flex items-center gap-1.5 flex-shrink-0">
-            {item.s1_complete && (
-              <span className="text-xs text-blue-600 font-medium flex items-center gap-1">
-                <CheckCircle2 className="h-3.5 w-3.5" /> S1
-              </span>
-            )}
-            {item.s2_complete && (
-              <span className="text-xs text-green-600 font-medium flex items-center gap-1">
-                <CheckCircle2 className="h-3.5 w-3.5" /> S2
-              </span>
-            )}
-            {item.expanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-          </div>
-        </div>
-      </div>
-
-      {/* Expanded content */}
-      {item.expanded && (
-        <div className="p-4 space-y-5">
-          {/* Stage 1 */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <div className="h-5 w-5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">1</div>
-              <h4 className="text-sm font-semibold text-slate-700">Quantitative / Inward Check</h4>
-              {item.s1_complete && <span className="text-xs text-blue-600 font-medium flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> Complete</span>}
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
-              <div>
-                <p className="text-xs text-muted-foreground">Description</p>
-                <p className="text-sm font-medium">{item.description}</p>
-              </div>
-              {item.drawing_number && (
-                <div>
-                  <p className="text-xs text-muted-foreground">Drawing No</p>
-                  <p className="text-sm font-mono">{item.drawing_number}</p>
-                </div>
-              )}
-              <div>
-                <p className="text-xs text-muted-foreground">Ordered Qty</p>
-                <p className="text-sm font-mono font-medium">{orderedQty} {item.unit}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Prev Received</p>
-                <p className="text-sm font-mono font-medium">{prevReceived} {item.unit}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Pending Qty</p>
-                <p className="text-sm font-mono font-medium text-amber-600">{pendingQty} {item.unit}</p>
-              </div>
-              <div>
-                <Label className="text-xs font-medium text-slate-700">Received Now ({item.unit}) *</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={item.s1_received_now || ""}
-                  onChange={(e) => {
-                    const v = Math.max(0, Number(e.target.value));
-                    onChange(index, {
-                      s1_received_now: v,
-                      s1_identity_matched_qty: v,
-                      s1_identity_not_matched_qty: 0,
-                      s2_accepted_qty: v,
-                      s2_rejected_qty: 0,
-                    });
-                  }}
-                  className="h-8 text-sm font-mono mt-1"
-                  disabled={item.s1_complete}
-                />
-                {/* FIX 4 — inline alert when received exceeds pending */}
-                {item.s1_received_now > 0 && pendingQty > 0 && item.s1_received_now > pendingQty && !item.s1_admin_override && (
-                  <div className="mt-1.5 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700 space-y-1.5">
-                    <p>Received quantity ({item.s1_received_now} {item.unit}) exceeds the pending quantity ({pendingQty} {item.unit}). Please contact the Purchase Team to amend the PO/DC before proceeding.</p>
-                    {isAdmin && (
-                      <button
-                        type="button"
-                        onClick={() => onChange(index, { s1_admin_override: true })}
-                        className="inline-flex items-center gap-1 px-2 py-1 rounded border border-red-400 text-red-700 font-medium hover:bg-red-100 transition-colors"
-                      >
-                        Admin Override
-                      </button>
-                    )}
-                  </div>
-                )}
-                {item.s1_admin_override && (
-                  <p className="mt-1 text-xs text-amber-700 font-medium">⚠ Admin override active — quantity will be saved as entered.</p>
-                )}
-              </div>
-            </div>
-
-            {/* FIX 5 — Identity match bifurcation */}
-            {item.s1_received_now > 0 && (
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-slate-700">Identity Check</Label>
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <p className="text-xs text-muted-foreground">Received Qty</p>
-                    <p className="text-sm font-mono font-medium">{item.s1_received_now} {item.unit}</p>
-                  </div>
-                  <div>
-                    <Label className="text-xs font-medium text-slate-700">Identity Matched ({item.unit})</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={item.s1_received_now}
-                      value={item.s1_identity_matched_qty === 0 ? "0" : item.s1_identity_matched_qty || ""}
-                      onChange={(e) => {
-                        const v = Math.min(Math.max(0, Number(e.target.value)), item.s1_received_now);
-                        onChange(index, {
-                          s1_identity_matched_qty: v,
-                          s1_identity_not_matched_qty: Math.max(0, item.s1_received_now - v),
-                          s2_accepted_qty: Math.min(item.s2_accepted_qty, v),
-                          s2_rejected_qty: Math.max(0, v - Math.min(item.s2_accepted_qty, v)),
-                        });
-                      }}
-                      className="h-8 text-sm font-mono mt-1"
-                      disabled={item.s1_complete}
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs font-medium text-slate-700">Not Matched ({item.unit})</Label>
-                    <Input
-                      type="number"
-                      readOnly
-                      value={item.s1_identity_not_matched_qty || 0}
-                      className={`h-8 text-sm font-mono mt-1 bg-muted ${item.s1_identity_not_matched_qty > 0 ? "text-amber-700 border-amber-300" : ""}`}
-                    />
-                  </div>
-                </div>
-                {item.s1_identity_not_matched_qty > 0 && (
-                  <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
-                    {item.s1_identity_not_matched_qty} {item.unit} do not match order description. These units will NOT proceed to quality inspection. Purchase Team to be contacted.
-                  </div>
-                )}
-                {item.s1_identity_not_matched_qty > 0 && (
-                  <div>
-                    <Label className="text-xs font-medium text-slate-700">Non-Match Remarks</Label>
-                    <Input
-                      placeholder="Describe the mismatch..."
-                      value={item.s1_mismatch_remarks}
-                      onChange={(e) => onChange(index, { s1_mismatch_remarks: e.target.value })}
-                      className="text-sm mt-1"
-                      disabled={item.s1_complete}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <Label className="text-xs font-medium text-slate-700">Checked By <span className="text-red-500">*</span></Label>
-                <Input
-                  value={item.s1_checked_by}
-                  onChange={(e) => onChange(index, { s1_checked_by: e.target.value })}
-                  className={`h-8 text-sm mt-1 ${!item.s1_checked_by && (item as any).s1_validation_error ? "border-red-400" : ""}`}
-                  placeholder="Name"
-                  disabled={item.s1_complete}
-                />
-              </div>
-              <div>
-                <Label className="text-xs font-medium text-slate-700">Verified By</Label>
-                <Input
-                  value={item.s1_verified_by}
-                  onChange={(e) => onChange(index, { s1_verified_by: e.target.value })}
-                  className="h-8 text-sm mt-1"
-                  placeholder="Name (optional)"
-                  disabled={item.s1_complete}
-                />
-              </div>
-              <div>
-                <Label className="text-xs font-medium text-slate-700">Date <span className="text-red-500">*</span></Label>
-                <Input
-                  type="date"
-                  value={item.s1_date}
-                  onChange={(e) => onChange(index, { s1_date: e.target.value })}
-                  className={`h-8 text-sm mt-1 ${!item.s1_date && (item as any).s1_validation_error ? "border-red-400" : ""}`}
-                  disabled={item.s1_complete}
-                />
-              </div>
-            </div>
-
-            {/* Phase 15: Jig Return Check */}
-            {(item as any).jigs_sent && ((item as any).jigs_sent as any[]).length > 0 && (
-              <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                <p className="text-xs font-semibold text-amber-700 mb-2 flex items-center gap-1">
-                  <AlertTriangle className="h-3.5 w-3.5" /> Jig Return Check
-                </p>
-                {((item as any).jigs_sent as any[]).map((jig: any) => (
-                  <label key={jig.id} className="flex items-center gap-2 text-xs cursor-pointer mb-1">
-                    <input
-                      type="checkbox"
-                      checked={(item.jigsReturnChecked ?? []).includes(jig.id)}
-                      onChange={(e) => {
-                        const current = item.jigsReturnChecked ?? [];
-                        const updated = e.target.checked
-                          ? [...current.filter(id => id !== jig.id), jig.id]
-                          : current.filter(id => id !== jig.id);
-                        onChange(index, { jigsReturnChecked: updated });
-                      }}
-                      disabled={item.s1_complete}
-                    />
-                    <span>{jig.jig_number} — received back</span>
-                  </label>
-                ))}
-                {(item.jigsReturnChecked?.length ?? 0) < ((item as any).jigs_sent as any[]).length && (
-                  <p className="text-xs text-amber-600 mt-1 font-medium">Tick all jigs before completing Stage 1</p>
-                )}
-              </div>
-            )}
-
-            {!item.s1_complete && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5 border-blue-200 text-blue-700 hover:bg-blue-50"
-                onClick={() => onSaveStage1(index)}
-                disabled={
-                  item.s1_received_now <= 0 ||
-                  (item.s1_received_now > pendingQty && pendingQty > 0 && !item.s1_admin_override) ||
-                  (
-                    (item as any).jigs_sent &&
-                    ((item as any).jigs_sent as any[]).length > 0 &&
-                    (item.jigsReturnChecked?.length ?? 0) < ((item as any).jigs_sent as any[]).length
-                  )
-                }
-              >
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                Save Receipt
-              </Button>
-            )}
-          </div>
-
-          {/* Stage 2 */}
-          {/* FIX 5 — block stage 2 if all received units failed identity check */}
-          {item.s1_complete && item.s1_received_now > 0 && item.s1_identity_matched_qty === 0 && !item.s1_admin_override ? (
-            <div className="rounded-lg bg-red-50 border border-red-200 p-4 space-y-2">
-              <div className="flex items-center gap-2">
-                <div className="h-5 w-5 rounded-full bg-red-100 text-red-700 text-xs font-bold flex items-center justify-center">2</div>
-                <h4 className="text-sm font-semibold text-red-800">Stage 2 Blocked</h4>
-              </div>
-              <p className="text-sm text-red-700">All received units failed identity check. Stage 2 is blocked. Admin override required to proceed.</p>
-              {isAdmin && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="border-red-300 text-red-700 hover:bg-red-100"
-                  onClick={() => onChange(index, { s1_admin_override: true })}
-                >
-                  Admin Override — Allow Stage 2
-                </Button>
-              )}
-            </div>
-          ) : (
-          <div className={cn("space-y-4 rounded-lg p-4", !item.s1_complete ? "bg-slate-50 opacity-50 pointer-events-none" : "bg-slate-50")}>
-            <div className="flex items-center gap-2">
-              <div className="h-5 w-5 rounded-full bg-green-100 text-green-700 text-xs font-bold flex items-center justify-center">2</div>
-              <h4 className="text-sm font-semibold text-slate-700">Qualitative / QC Inspection</h4>
-              {!item.s1_complete && <span className="text-xs text-muted-foreground italic">(Complete Stage 1 first)</span>}
-              {item.s2_complete && <span className="text-xs text-green-600 font-medium flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> Complete</span>}
-              {item.s1_complete && item.s1_identity_not_matched_qty > 0 && item.s1_identity_matched_qty > 0 && (
-                <span className="text-xs text-amber-700 font-medium">
-                  Partially matched — {item.s1_identity_matched_qty} of {item.s1_received_now} {item.unit} proceeding to QC
-                </span>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <div>
-                <p className="text-xs text-muted-foreground">For QC (Identity Matched)</p>
-                <p className="text-sm font-mono font-medium">{item.s1_identity_matched_qty || item.s1_received_now || 0} {item.unit}</p>
-              </div>
-              <div>
-                <Label className="text-xs font-medium text-slate-700">Accepted Qty ({item.unit})</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={item.s1_identity_matched_qty || item.s1_received_now}
-                  value={item.s2_accepted_qty || ""}
-                  onChange={(e) => {
-                    const maxQty = item.s1_identity_matched_qty || item.s1_received_now;
-                    const v = Math.min(Math.max(0, Number(e.target.value)), maxQty);
-                    onChange(index, {
-                      s2_accepted_qty: v,
-                      s2_rejected_qty: Math.max(0, maxQty - v),
-                    });
-                  }}
-                  className="h-8 text-sm font-mono mt-1"
-                  disabled={item.s2_complete}
-                />
-              </div>
-              <div>
-                <Label className="text-xs font-medium text-slate-700">Non-Conforming Qty ({item.unit})</Label>
-                <Input
-                  type="number"
-                  readOnly
-                  value={item.s2_rejected_qty || 0}
-                  className="h-8 text-sm font-mono mt-1 bg-muted"
-                />
-              </div>
-            </div>
-
-            {item.s2_rejected_qty > 0 && (
-              <div className="space-y-3">
-                <div>
-                  <Label className="text-xs font-medium text-slate-700">Non-Conformance Reason</Label>
-                  <Input
-                    value={item.s2_rejection_reason}
-                    onChange={(e) => onChange(index, { s2_rejection_reason: e.target.value })}
-                    className="text-sm mt-1"
-                    placeholder="Describe the reason for non-conformance"
-                    disabled={item.s2_complete}
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs font-medium text-slate-700">Disposal Method</Label>
-                  <div className="flex flex-wrap gap-3 mt-1">
-                    {[
-                      { value: 'return_to_vendor', label: 'Return to Vendor' },
-                      { value: 'rework', label: 'Rework (Our Scope)' },
-                      { value: 'scrap', label: 'Scrap' },
-                      { value: 'use_as_is', label: 'Use As-Is (Conditional)' },
-                    ].map((opt) => (
-                      <label key={opt.value} className="flex items-center gap-1.5 text-sm cursor-pointer">
-                        <input
-                          type="radio"
-                          name={`disposal_${index}`}
-                          value={opt.value}
-                          checked={item.s2_disposal_method === opt.value}
-                          onChange={() => onChange(index, { s2_disposal_method: opt.value as LineItemState['s2_disposal_method'] })}
-                          disabled={item.s2_complete}
-                        />
-                        {opt.label}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* FIX 3 — all three Stage 2 fields required */}
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <Label className="text-xs font-medium text-slate-700">Inspected By <span className="text-red-500">*</span></Label>
-                <Input
-                  value={item.s2_inspected_by}
-                  onChange={(e) => onChange(index, { s2_inspected_by: e.target.value })}
-                  className={`h-8 text-sm mt-1 ${item.s2_validation_error && !item.s2_inspected_by ? "border-red-400" : ""}`}
-                  placeholder="Name"
-                  disabled={item.s2_complete}
-                />
-              </div>
-              <div>
-                <Label className="text-xs font-medium text-slate-700">Approved By <span className="text-red-500">*</span></Label>
-                <Input
-                  value={item.s2_approved_by}
-                  onChange={(e) => onChange(index, { s2_approved_by: e.target.value })}
-                  className={`h-8 text-sm mt-1 ${item.s2_validation_error && !item.s2_approved_by ? "border-red-400" : ""}`}
-                  placeholder="Name"
-                  disabled={item.s2_complete}
-                />
-              </div>
-              <div>
-                <Label className="text-xs font-medium text-slate-700">Inspection Date <span className="text-red-500">*</span></Label>
-                <Input
-                  type="date"
-                  value={item.s2_date}
-                  onChange={(e) => onChange(index, { s2_date: e.target.value })}
-                  className={`h-8 text-sm mt-1 ${item.s2_validation_error && !item.s2_date ? "border-red-400" : ""}`}
-                  disabled={item.s2_complete}
-                />
-              </div>
-            </div>
-
-            {item.s1_complete && !item.s2_complete && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5 border-green-200 text-green-700 hover:bg-green-50"
-                onClick={() => onSaveStage2(index)}
-              >
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                Save Inspection
-              </Button>
-            )}
-          </div>
+    <>
+      <tr className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+        <td className="px-3 py-2 text-slate-400 text-xs text-center">{index + 1}</td>
+        <td className="px-3 py-2">
+          <p className="text-sm font-medium text-slate-800">{item.description || "—"}</p>
+          {item.drawing_number && (
+            <p className="text-xs font-mono text-slate-400 mt-0.5">{item.drawing_number}</p>
           )}
-        </div>
+        </td>
+        <td className="px-3 py-2 text-right font-mono text-sm tabular-nums text-slate-500">{orderedQty}</td>
+        <td className="px-3 py-2 text-right font-mono text-sm tabular-nums text-slate-400">{prevReceived}</td>
+        <td className="px-3 py-2 text-right font-mono text-sm tabular-nums text-amber-600 font-medium">{pendingQty}</td>
+        <td className="px-3 py-2">
+          <div className="flex items-center gap-1.5 justify-end">
+            <input
+              type="number"
+              min={0}
+              value={item.s1_received_now || ""}
+              onChange={(e) => {
+                const v = Math.max(0, Number(e.target.value));
+                onChange(index, { s1_received_now: v });
+              }}
+              className={cn(
+                "w-24 text-right border rounded px-2 py-1 text-sm font-mono focus:outline-none focus:ring-2",
+                exceedsPending
+                  ? "border-red-300 bg-red-50 focus:ring-red-300"
+                  : "border-slate-200 focus:ring-blue-400"
+              )}
+            />
+            {exceedsPending && <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />}
+          </div>
+        </td>
+        <td className="px-3 py-2 text-slate-500 text-xs">{item.unit}</td>
+      </tr>
+      {exceedsPending && (
+        <tr className="bg-red-50/60">
+          <td colSpan={7} className="px-3 py-1.5 text-xs text-red-700">
+            Received ({item.s1_received_now}) exceeds pending ({pendingQty}).
+            {isAdmin && (
+              <button
+                type="button"
+                className="ml-2 underline font-medium"
+                onClick={() => onChange(index, { s1_admin_override: true })}
+              >
+                Override (Admin)
+              </button>
+            )}
+          </td>
+        </tr>
       )}
-    </div>
+    </>
   );
 }
 
@@ -633,13 +252,6 @@ function GRNFormInner({ defaultGrnType }: Props) {
   // Line items
   const [lineItems, setLineItems] = useState<LineItemState[]>([]);
 
-  // QC Inspection state
-  const [qcExpanded, setQcExpanded] = useState(false);
-  const [inspectionLines, setInspectionLines] = useState<GrnInspectionLine[]>([]);
-  const [qcRemarks, setQcRemarks] = useState("");
-  const [qcPreparedBy, setQcPreparedBy] = useState("");
-  const [qcInspectedBy, setQcInspectedBy] = useState("");
-  const [qcApprovedBy, setQcApprovedBy] = useState("");
 
   // Success dialog
   const [successDialogOpen, setSuccessDialogOpen] = useState(false);
@@ -717,15 +329,9 @@ function GRNFormInner({ defaultGrnType }: Props) {
       setLrReference(existingGrn.lr_reference ?? '');
       setReceivedBy(existingGrn.received_by ?? '');
       setTransporterName(existingGrn.transporter_name ?? '');
-      setQcRemarks(g.qc_remarks ?? '');
-      setQcPreparedBy(g.qc_prepared_by ?? '');
-      setQcInspectedBy(g.qc_inspected_by ?? '');
-      setQcApprovedBy(g.qc_approved_by ?? '');
       if (existingGrn.line_items) {
         setLineItems(existingGrn.line_items.map((li, idx) => toLineState(li, idx)));
       }
-      // Load existing inspection lines
-      fetchGrnInspectionLines(existingGrn.id).then(setInspectionLines).catch(console.error);
     }
   }, [existingGrn]);
 
@@ -839,135 +445,12 @@ function GRNFormInner({ defaultGrnType }: Props) {
     });
   };
 
-  // Stage 1 save
-  const stage1Mutation = useMutation({
-    mutationFn: async (index: number) => {
-      const item = lineItems[index];
-      if (!item.id) return; // not yet saved to DB
-      const data: Stage1Data = {
-        received_now: item.s1_received_now,
-        item_identity_match: item.s1_received_now > 0 && item.s1_identity_matched_qty >= item.s1_received_now,
-        identity_mismatch_remarks: item.s1_mismatch_remarks || null,
-        stage1_checked_by: item.s1_checked_by || null,
-        stage1_verified_by: item.s1_verified_by || null,
-        stage1_date: item.s1_date || null,
-        stage1_complete: true,
-        identity_matched_qty: item.s1_identity_matched_qty,
-        identity_not_matched_qty: item.s1_identity_not_matched_qty,
-      };
-      await updateGrnLineStage1(item.id, data);
-      return index;
-    },
-    onSuccess: (index) => {
-      if (index === undefined) return;
-      updateLineItem(index, { s1_complete: true });
-      const item = lineItems[index];
-      const orderedQty = (item as any).ordered_qty ?? item.po_quantity ?? 0;
-      const prevReceived = (item as any).previously_received_qty ?? item.previously_received ?? 0;
-      const totalReceived = prevReceived + item.s1_received_now;
-      if (orderedQty > 0 && totalReceived < orderedQty) {
-        toast({ title: "Partial receipt saved", description: `${item.s1_received_now} of ${orderedQty} received. ${orderedQty - totalReceived} units still pending.` });
-      } else {
-        toast({ title: "Receipt saved", description: "Quantitative check recorded." });
-      }
-    },
-    onError: (err: any) => {
-      // If DB columns don't exist yet, just update local state
-      toast({ title: "Stage 1 saved locally", description: "Changes saved in form." });
-    },
-  });
-
-  const handleSaveStage1 = (index: number) => {
-    const item = lineItems[index];
-    // FIX 2 — only Checked By and Date are required; Verified By is optional
-    if (!item.s1_checked_by.trim() || !item.s1_date.trim()) {
-      updateLineItem(index, { ...(item as any), s1_validation_error: true } as any);
-      toast({
-        title: "Required fields missing",
-        description: "Checked By and Check Date are required.",
-        variant: "destructive",
-      });
-      return;
-    }
-    // FIX 4 — admin override audit log
-    if (item.s1_admin_override && editId) {
-      logAudit("grn", editId, "admin_override_qty_exceeded").catch(console.error);
-    }
-    updateLineItem(index, { s1_complete: true });
-    const orderedQty = (item as any).ordered_qty ?? item.po_quantity ?? 0;
-    const prevReceived = (item as any).previously_received_qty ?? item.previously_received ?? 0;
-    const totalReceived = prevReceived + item.s1_received_now;
-    if (lineItems[index].id) {
-      stage1Mutation.mutate(index);
-    } else if (orderedQty > 0) {
-      if (totalReceived >= orderedQty) {
-        toast({ title: "Receipt saved", description: "All ordered quantity received." });
-      } else {
-        const remaining = orderedQty - totalReceived;
-        toast({ title: "Partial receipt saved", description: `${item.s1_received_now} of ${orderedQty} received. ${remaining} units still pending.` });
-      }
-    } else {
-      toast({ title: "Receipt saved" });
-    }
-  };
-
-  // Stage 2 save
-  const stage2Mutation = useMutation({
-    mutationFn: async (index: number) => {
-      const item = lineItems[index];
-      if (!item.id) return;
-      const data: Stage2Data = {
-        accepted_qty: item.s2_accepted_qty,
-        rejected_qty: item.s2_rejected_qty,
-        rejection_reason: item.s2_rejection_reason || null,
-        disposal_method: item.s2_disposal_method as any || null,
-        stage2_inspected_by: item.s2_inspected_by || null,
-        stage2_approved_by: item.s2_approved_by || null,
-        stage2_date: item.s2_date || null,
-        stage2_complete: true,
-      };
-      await updateGrnLineStage2(item.id, data);
-      return index;
-    },
-    onSuccess: (index) => {
-      if (index === undefined) return;
-      updateLineItem(index, { s2_complete: true });
-      toast({ title: "Stage 2 saved", description: "QC inspection recorded." });
-      queryClient.invalidateQueries({ queryKey: ["grn", editId] });
-    },
-    onError: () => {
-      toast({ title: "Stage 2 saved locally", description: "Changes saved in form." });
-    },
-  });
-
-  const handleSaveStage2 = (index: number) => {
-    const item = lineItems[index];
-    // FIX 3 — all three Stage 2 fields are required
-    if (!item.s2_inspected_by.trim() || !item.s2_approved_by.trim() || !item.s2_date.trim()) {
-      updateLineItem(index, { s2_validation_error: true } as any);
-      toast({
-        title: "Required fields missing",
-        description: "Inspected By, Approved By, and Inspection Date are all required.",
-        variant: "destructive",
-      });
-      return;
-    }
-    updateLineItem(index, { s2_complete: true, s2_validation_error: false });
-    if (lineItems[index].id) {
-      stage2Mutation.mutate(index);
-    } else {
-      toast({ title: "Stage 2 marked complete" });
-    }
-  };
-
   // ── Totals ─────────────────────────────────────────────────────────────────
 
   const totals = useMemo(() => {
     const totalOrdered = lineItems.reduce((s, i) => s + ((i as any).ordered_qty ?? i.po_quantity ?? 0), 0);
     const totalReceiving = lineItems.reduce((s, i) => s + (i.s1_received_now ?? 0), 0);
-    const totalAccepted = lineItems.reduce((s, i) => s + (i.s2_accepted_qty ?? 0), 0);
-    const totalRejected = lineItems.reduce((s, i) => s + (i.s2_rejected_qty ?? 0), 0);
-    return { totalOrdered, totalReceiving, totalAccepted, totalRejected };
+    return { totalOrdered, totalReceiving };
   }, [lineItems]);
 
   // ── Save GRN ───────────────────────────────────────────────────────────────
@@ -989,15 +472,15 @@ function GRNFormInner({ defaultGrnType }: Props) {
         received_by: receivedBy || null,
         notes: notes || null,
         total_received: totals.totalReceiving,
-        total_accepted: totals.totalAccepted,
-        total_rejected: totals.totalRejected,
+        total_accepted: totals.totalReceiving,
+        total_rejected: 0,
         status,
         recorded_at: status === "recorded" ? new Date().toISOString() : null,
         verified_at: null,
-        qc_remarks: qcRemarks || null,
-        qc_prepared_by: qcPreparedBy || null,
-        qc_inspected_by: qcInspectedBy || null,
-        qc_approved_by: qcApprovedBy || null,
+        qc_remarks: null,
+        qc_prepared_by: null,
+        qc_inspected_by: null,
+        qc_approved_by: null,
       };
 
       const items = lineItems
@@ -1006,20 +489,13 @@ function GRNFormInner({ defaultGrnType }: Props) {
           ...i,
           serial_number: idx + 1,
           receiving_now: i.s1_received_now,
-          accepted_quantity: i.s2_accepted_qty,
-          rejected_quantity: i.s2_rejected_qty,
-          rejection_reason: i.s2_rejection_reason || undefined,
-          rejection_action: null, // disposal_method has a different check constraint; don't write it to rejection_action
+          accepted_quantity: i.s1_received_now,
+          rejected_quantity: 0,
+          rejection_reason: undefined,
+          rejection_action: null,
         }));
 
-      const result = await recordGRNAndUpdatePO({ grn: grnData, lineItems: items });
-      // Save QC inspection lines
-      if (inspectionLines.length > 0) {
-        const { getCompanyId } = await import("@/lib/auth-helpers");
-        const companyId = await getCompanyId();
-        await upsertGrnInspectionLines(result.id, companyId!, inspectionLines);
-      }
-      return result;
+      return await recordGRNAndUpdatePO({ grn: grnData, lineItems: items });
     },
     onSuccess: (result, status) => {
       queryClient.invalidateQueries({ queryKey: ["grns"] });
@@ -1050,36 +526,9 @@ function GRNFormInner({ defaultGrnType }: Props) {
       toast({ title: "No items", description: "Enter receiving quantities for at least one item.", variant: "destructive" });
       return;
     }
-    // QC validation
-    if (inspectionLines.length > 0) {
-      const failWithoutReason = inspectionLines.find(l => l.result === 'fail' && !l.non_conformance_reason?.trim());
-      if (failWithoutReason) {
-        toast({ title: "NC Reason required", description: `Row ${failWithoutReason.sl_no}: Non-conformance reason is required for fail result.`, variant: "destructive" });
-        return;
-      }
-      if (!qcInspectedBy.trim()) {
-        toast({ title: "Inspected By required", description: "Enter the QC inspector's name.", variant: "destructive" });
-        return;
-      }
-    }
     if (!isExistingGrn) saveMutation.mutate(status);
     else {
-      // For existing GRN, save QC fields separately
-      if (editId) {
-        const qcUpdate = async () => {
-          const { getCompanyId } = await import("@/lib/auth-helpers");
-          const companyId = await getCompanyId();
-          await updateGrnQcFields(editId, {
-            qc_remarks: qcRemarks || null,
-            qc_prepared_by: qcPreparedBy || null,
-            qc_inspected_by: qcInspectedBy || null,
-            qc_approved_by: qcApprovedBy || null,
-          });
-          await upsertGrnInspectionLines(editId, companyId!, inspectionLines);
-        };
-        qcUpdate().catch(console.error);
-      }
-      toast({ title: "Saved", description: "Stage updates are saved per-item." });
+      toast({ title: "Saved" });
       navigate("/grn");
     }
   };
@@ -1301,19 +750,31 @@ function GRNFormInner({ defaultGrnType }: Props) {
             )}
           </div>
 
-          <div className="space-y-2">
-            {lineItems.map((item, index) => (
-              <GrnLineItemCard
-                key={index}
-                item={item}
-                index={index}
-                isExistingGrn={isExistingGrn}
-                isAdmin={isAdmin}
-                onChange={updateLineItem}
-                onSaveStage1={handleSaveStage1}
-                onSaveStage2={handleSaveStage2}
-              />
-            ))}
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="bg-slate-50 text-xs text-slate-600 uppercase tracking-wide">
+                  <th className="text-left px-3 py-2.5 font-semibold w-8">#</th>
+                  <th className="text-left px-3 py-2.5 font-semibold">Description</th>
+                  <th className="text-right px-3 py-2.5 font-semibold w-20">Ordered</th>
+                  <th className="text-right px-3 py-2.5 font-semibold w-20">Prev Rcvd</th>
+                  <th className="text-right px-3 py-2.5 font-semibold w-20">Pending</th>
+                  <th className="text-right px-3 py-2.5 font-semibold w-32">Receiving Now *</th>
+                  <th className="text-left px-3 py-2.5 font-semibold w-16">Unit</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lineItems.map((item, index) => (
+                  <GrnLineItemRow
+                    key={index}
+                    item={item}
+                    index={index}
+                    isAdmin={isAdmin}
+                    onChange={updateLineItem}
+                  />
+                ))}
+              </tbody>
+            </table>
           </div>
 
           {/* Summary bar */}
@@ -1321,206 +782,10 @@ function GRNFormInner({ defaultGrnType }: Props) {
             <div className="flex flex-wrap gap-6 text-sm">
               <div><span className="text-muted-foreground">Total Ordered: </span><span className="font-mono font-medium">{totals.totalOrdered}</span></div>
               <div><span className="text-muted-foreground">Receiving Now: </span><span className="font-mono font-medium text-primary">{totals.totalReceiving}</span></div>
-              <div><span className="text-muted-foreground">Accepted: </span><span className="font-mono font-medium text-emerald-600">{totals.totalAccepted}</span></div>
-              {totals.totalRejected > 0 && (
-                <div><span className="text-muted-foreground">Non-Conforming: </span><span className="font-mono font-medium text-destructive">{totals.totalRejected}</span></div>
-              )}
             </div>
           </div>
         </div>
       )}
-
-      {/* QC Inspection Section */}
-      <div className="paper-card">
-        <button
-          type="button"
-          className="w-full flex items-center justify-between py-1"
-          onClick={() => setQcExpanded((v) => !v)}
-        >
-          <span className="text-sm font-semibold text-slate-700 uppercase tracking-wider">QC Inspection Report</span>
-          {qcExpanded ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
-        </button>
-
-        {qcExpanded && (
-          <div className="mt-4 space-y-4">
-            {/* Inspection lines table */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr className="bg-slate-50">
-                    <th className="border border-slate-200 px-2 py-1.5 text-left w-10">Sl.</th>
-                    <th className="border border-slate-200 px-2 py-1.5 text-left">Characteristic</th>
-                    <th className="border border-slate-200 px-2 py-1.5 text-left">Specification</th>
-                    <th className="border border-slate-200 px-2 py-1.5 text-right w-20">Qty Checked</th>
-                    <th className="border border-slate-200 px-2 py-1.5 text-center w-24">Result</th>
-                    <th className="border border-slate-200 px-2 py-1.5 text-left">Measuring Instrument</th>
-                    <th className="border border-slate-200 px-2 py-1.5 text-left">NC Reason</th>
-                    <th className="border border-slate-200 px-2 py-1.5 w-8"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {inspectionLines.map((line, idx) => (
-                    <tr key={idx} className={line.result === 'fail' ? 'bg-red-50/40' : line.result === 'conditional' ? 'bg-amber-50/40' : ''}>
-                      <td className="border border-slate-200 px-2 py-1 text-center text-slate-500">{line.sl_no}</td>
-                      <td className="border border-slate-200 px-1 py-1">
-                        <input
-                          className="w-full bg-transparent outline-none text-xs"
-                          value={line.characteristic}
-                          onChange={(e) => {
-                            const next = [...inspectionLines];
-                            next[idx] = { ...next[idx], characteristic: e.target.value };
-                            setInspectionLines(next);
-                          }}
-                          placeholder="e.g., Dimensional check"
-                        />
-                      </td>
-                      <td className="border border-slate-200 px-1 py-1">
-                        <input
-                          className="w-full bg-transparent outline-none text-xs"
-                          value={line.specification ?? ''}
-                          onChange={(e) => {
-                            const next = [...inspectionLines];
-                            next[idx] = { ...next[idx], specification: e.target.value };
-                            setInspectionLines(next);
-                          }}
-                          placeholder="e.g., ±0.1mm"
-                        />
-                      </td>
-                      <td className="border border-slate-200 px-1 py-1">
-                        <input
-                          type="number"
-                          className="w-full bg-transparent outline-none text-xs text-right"
-                          value={line.qty_checked ?? ''}
-                          onChange={(e) => {
-                            const next = [...inspectionLines];
-                            next[idx] = { ...next[idx], qty_checked: e.target.value ? Number(e.target.value) : null };
-                            setInspectionLines(next);
-                          }}
-                        />
-                      </td>
-                      <td className="border border-slate-200 px-1 py-1">
-                        <select
-                          className="w-full bg-transparent outline-none text-xs"
-                          value={line.result ?? ''}
-                          onChange={(e) => {
-                            const next = [...inspectionLines];
-                            next[idx] = { ...next[idx], result: (e.target.value || null) as any };
-                            setInspectionLines(next);
-                          }}
-                        >
-                          <option value="">—</option>
-                          <option value="pass">Pass</option>
-                          <option value="fail">Fail</option>
-                          <option value="conditional">Conditional</option>
-                        </select>
-                      </td>
-                      <td className="border border-slate-200 px-1 py-1">
-                        <input
-                          className="w-full bg-transparent outline-none text-xs"
-                          value={line.measuring_instrument ?? ''}
-                          onChange={(e) => {
-                            const next = [...inspectionLines];
-                            next[idx] = { ...next[idx], measuring_instrument: e.target.value };
-                            setInspectionLines(next);
-                          }}
-                          placeholder="e.g., Vernier caliper"
-                        />
-                      </td>
-                      <td className="border border-slate-200 px-1 py-1">
-                        <input
-                          className={cn("w-full bg-transparent outline-none text-xs", line.result === 'fail' && !line.non_conformance_reason ? 'placeholder:text-red-400' : '')}
-                          value={line.non_conformance_reason ?? ''}
-                          onChange={(e) => {
-                            const next = [...inspectionLines];
-                            next[idx] = { ...next[idx], non_conformance_reason: e.target.value };
-                            setInspectionLines(next);
-                          }}
-                          placeholder={line.result === 'fail' ? 'Required for fail' : ''}
-                        />
-                      </td>
-                      <td className="border border-slate-200 px-1 py-1 text-center">
-                        <button
-                          type="button"
-                          className="text-slate-400 hover:text-red-500 text-xs"
-                          onClick={() => setInspectionLines((prev) => prev.filter((_, i) => i !== idx).map((l, i) => ({ ...l, sl_no: i + 1 })))}
-                        >
-                          ×
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {inspectionLines.length < 30 && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setInspectionLines((prev) => [...prev, { sl_no: prev.length + 1, characteristic: '' }])}
-              >
-                <Plus className="h-3.5 w-3.5 mr-1" /> Add Row
-              </Button>
-            )}
-
-            {/* Auto-calculated summary */}
-            {inspectionLines.length > 0 && (
-              <div className="flex gap-6 text-xs text-slate-600 bg-slate-50 rounded px-3 py-2">
-                <span>Checked: <strong>{inspectionLines.filter(l => l.qty_checked).reduce((s, l) => s + (l.qty_checked ?? 0), 0)}</strong></span>
-                <span className="text-emerald-700">Accepted (Pass): <strong>{inspectionLines.filter(l => l.result === 'pass').length}</strong></span>
-                <span className="text-red-600">Not Accepted (Fail): <strong>{inspectionLines.filter(l => l.result === 'fail').length}</strong></span>
-                <span className="text-amber-600">Conditional: <strong>{inspectionLines.filter(l => l.result === 'conditional').length}</strong></span>
-              </div>
-            )}
-
-            {/* Signatures */}
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <Label className="text-xs font-medium text-slate-600">Prepared By</Label>
-                <Input
-                  value={qcPreparedBy}
-                  onChange={(e) => setQcPreparedBy(e.target.value)}
-                  className="mt-1 text-sm"
-                  placeholder="Name"
-                />
-              </div>
-              <div>
-                <Label className="text-xs font-medium text-slate-600">
-                  Inspected By <span className="text-red-400">*</span>
-                </Label>
-                <Input
-                  value={qcInspectedBy}
-                  onChange={(e) => setQcInspectedBy(e.target.value)}
-                  className={cn("mt-1 text-sm", inspectionLines.length > 0 && !qcInspectedBy ? 'border-red-300' : '')}
-                  placeholder="Name"
-                />
-              </div>
-              <div>
-                <Label className="text-xs font-medium text-slate-600">Approved By</Label>
-                <Input
-                  value={qcApprovedBy}
-                  onChange={(e) => setQcApprovedBy(e.target.value)}
-                  className="mt-1 text-sm"
-                  placeholder="Name"
-                />
-              </div>
-            </div>
-
-            {/* Remarks */}
-            <div>
-              <Label className="text-xs font-medium text-slate-600">QC Remarks</Label>
-              <Textarea
-                value={qcRemarks}
-                onChange={(e) => setQcRemarks(e.target.value)}
-                className="mt-1 text-sm"
-                rows={2}
-                placeholder="Overall inspection remarks, non-conformance summary..."
-              />
-            </div>
-          </div>
-        )}
-      </div>
 
       {/* Empty state */}
       {lineItems.length === 0 && !isExistingGrn && (
