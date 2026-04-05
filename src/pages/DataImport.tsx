@@ -2661,26 +2661,32 @@ export default function DataImport() {
 
     let imported = 0;
 
-    // Bulk upsert current_stock (and stock bucket + standard_cost if provided) in chunks of 100
-    for (let i = 0; i < toUpdate.length; i += 100) {
-      const chunk = toUpdate.slice(i, i + 100);
-      try {
-        const { error } = await supabase.from("items").upsert(chunk as any, { onConflict: "id" });
-        if (error) throw error;
-        imported += chunk.length;
-      } catch {
-        for (const item of chunk) {
-          try {
-            const { id, ...updateFields } = item;
-            const { error } = await supabase.from("items").update(updateFields as any).eq("id", id);
-            if (error) throw error;
-            imported++;
-          } catch (err: any) {
-            skipped++;
-            skipReasons.push({ row: 0, value: item.id, reason: `DB error: ${err?.message ?? "unknown"}` });
+    // Bulk upsert current_stock (and stock bucket + standard_cost if provided)
+    // Parallel chunks of 500 — same pattern as Items import for speed.
+    if (toUpdate.length > 0) {
+      const CHUNK = 500;
+      const chunks = Array.from({ length: Math.ceil(toUpdate.length / CHUNK) }, (_, ci) =>
+        toUpdate.slice(ci * CHUNK, (ci + 1) * CHUNK)
+      );
+      await Promise.all(chunks.map(async (chunk) => {
+        try {
+          const { error } = await supabase.from("items").upsert(chunk as any, { onConflict: "id" });
+          if (error) throw error;
+          imported += chunk.length;
+        } catch {
+          for (const item of chunk) {
+            try {
+              const { id, ...updateFields } = item;
+              const { error } = await supabase.from("items").update(updateFields as any).eq("id", id);
+              if (error) throw error;
+              imported++;
+            } catch (err: any) {
+              skipped++;
+              skipReasons.push({ row: 0, value: String(item.id), reason: `DB error: ${err?.message ?? "unknown"}` });
+            }
           }
         }
-      }
+      }));
     }
 
     return { imported, skipped, errors, skipReasons };
