@@ -32,6 +32,7 @@ import {
   Send,
   RotateCcw,
   CheckCircle,
+  Activity,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -76,7 +77,9 @@ const TOOLTIP_TEXT: Record<string, string> = {
     "Your daily overview — alerts, production status, financial snapshot and quick actions.",
   "WIP Register":
     "Live view of everything currently in progress — components at vendors and production runs being built.",
-  "Delivery Challans":
+  "Job Cards":
+    "Track components sent to vendors for job work. One job card per item per DC. Updated as processing progresses.",
+  "DC / Job Work Order":
     "The gate pass for goods leaving the factory. Returnable for job work, non-returnable for customer deliveries.",
   "Purchase Orders":
     "Raise a formal buy request to a vendor. Triggered when stock falls below reorder point.",
@@ -125,7 +128,8 @@ const ALL_SEARCH_ITEMS: { title: string; url: string }[] = [
   { title: "Dispatch Records", url: "/dispatch-records" },
   { title: "Dashboard", url: "/" },
   { title: "WIP Register", url: "/wip-register" },
-  { title: "Delivery Challans", url: "/delivery-challans" },
+  { title: "Job Cards", url: "/job-cards" },
+  { title: "DC / Job Work Order", url: "/delivery-challans" },
   { title: "Purchase Orders", url: "/purchase-orders" },
   { title: "GRN", url: "/grn" },
   { title: "DC Returns", url: "/dc-grn" },
@@ -154,7 +158,7 @@ const STORAGE_KEY = "bizdocs_sidebar_state_v2";
 const RAIL_MODE_KEY = "bizdocs_sidebar_mode";
 
 const GROUP_PATHS: Record<string, string[]> = {
-  "Daily Work":       ["/", "/wip-register", "/delivery-challans", "/dc-grn"],
+  "Daily Work":       ["/", "/wip-register", "/job-cards", "/delivery-challans", "/dc-grn"],
   "Production":       ["/sub-assembly-work-orders", "/finished-good-work-orders", "/storekeeper"],
   "Finished Goods":   ["/ready-to-dispatch", "/dispatch-records"],
   "Purchasing":       ["/purchase-orders", "/grn"],
@@ -523,7 +527,8 @@ export function AppSidebar() {
   const dailyWorkNav: NavItem[] = [
     { title: "Dashboard", url: "/", icon: LayoutDashboard },
     { title: "WIP Register", url: "/wip-register", icon: AlertTriangle },
-    { title: "Delivery Challans", url: "/delivery-challans", icon: Truck },
+    { title: "Job Cards", url: "/job-cards", icon: Activity },
+    { title: "DC / Job Work Order", url: "/delivery-challans", icon: Truck },
     { title: "DC Returns", url: "/dc-grn", icon: RotateCcw },
   ];
 

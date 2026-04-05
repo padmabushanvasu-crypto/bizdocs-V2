@@ -367,7 +367,7 @@ export default function Dashboard() {
                   label: "New DC",
                   route: "/delivery-challans/new",
                   state: undefined as any,
-                  title: "Delivery Challan",
+                  title: "DC / Job Work Order",
                   body: "Use this when goods are physically leaving the factory — for job work (returnable) or delivery to a customer (non-returnable).",
                 },
                 {

@@ -57,7 +57,19 @@ export default function DeliveryChallanDetail() {
   const queryClient = useQueryClient();
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
-  const [isDuplicate, setIsDuplicate] = useState(false);
+  const [copyLabel, setCopyLabel] = useState("ORIGINAL");
+  const [printDialogOpen, setPrintDialogOpen] = useState(false);
+  const [printCopiesSelected, setPrintCopiesSelected] = useState(2);
+  const DC_COPY_LABELS = ["ORIGINAL", "DUPLICATE", "TRIPLICATE"];
+  const triggerPrint = (totalCopies: number, index = 0) => {
+    if (index >= totalCopies) { setCopyLabel("ORIGINAL"); return; }
+    setCopyLabel(DC_COPY_LABELS[index]);
+    setTimeout(() => {
+      const handler = () => { window.removeEventListener("afterprint", handler); setTimeout(() => triggerPrint(totalCopies, index + 1), 50); };
+      window.addEventListener("afterprint", handler);
+      window.print();
+    }, 100);
+  };
   // Enhanced return dialog state
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
   const [returnLineItem, setReturnLineItem] = useState<any>(null);
@@ -170,7 +182,7 @@ export default function DeliveryChallanDetail() {
         className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 transition-colors mb-3 print:hidden"
       >
         <ChevronLeft className="h-4 w-4" />
-        Back to Delivery Challans
+        Back to DC / Job Work Orders
       </button>
       {/* Top Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
@@ -182,8 +194,8 @@ export default function DeliveryChallanDetail() {
           )}
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={() => { setIsDuplicate(true); setTimeout(() => { window.print(); setIsDuplicate(false); }, 100); }}>
-            <Printer className="h-3.5 w-3.5 mr-1" /> Print Duplicate
+          <Button variant="outline" size="sm" onClick={() => setPrintDialogOpen(true)}>
+            <Printer className="h-3.5 w-3.5 mr-1" /> Print Options
           </Button>
           <DocumentActions documentNumber={dc.dc_number} documentType="Delivery Challan" documentData={dc as Record<string, unknown>} />
           {dc.status === "draft" && (
@@ -211,11 +223,11 @@ export default function DeliveryChallanDetail() {
           <DocumentHeader />
           <div className="text-center border-b border-border pb-4 relative">
             <h2 className="text-lg font-display font-bold text-primary uppercase tracking-wider">
-              Delivery Challan
+              Delivery Challan cum Job Work Order
             </h2>
             <p className="text-xs text-muted-foreground mt-1">[{typeLabels[dc.dc_type] || dc.dc_type}]</p>
             <span className="absolute top-0 right-0 text-xs font-bold border border-current px-2 py-0.5 rounded tracking-widest">
-              {isDuplicate ? "DUPLICATE" : "ORIGINAL"}
+              {copyLabel}
             </span>
           </div>
         </div>
@@ -235,7 +247,7 @@ export default function DeliveryChallanDetail() {
               {companySettings?.phone && <div style={{ fontSize: '8pt', color: '#475569' }}>Ph: {companySettings.phone}</div>}
             </div>
             <div style={{ flex: '0 0 42%', textAlign: 'right' }}>
-              <div style={{ fontWeight: '700', fontSize: '13pt', color: '#1E3A5F', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Delivery Challan</div>
+              <div style={{ fontWeight: '700', fontSize: '13pt', color: '#1E3A5F', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Delivery Challan cum Job Work Order</div>
               <div style={{ fontSize: '8pt', color: '#64748b' }}>[{typeLabels[dc.dc_type] || dc.dc_type}]</div>
               <div style={{ fontWeight: '700', fontSize: '9pt' }}>DC No: {dc.dc_number}</div>
               <div style={{ fontSize: '9pt' }}>Date: {new Date(dc.dc_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
@@ -247,7 +259,7 @@ export default function DeliveryChallanDetail() {
                 </div>
               )}
               <div style={{ fontSize: '8pt', fontWeight: '700', border: '1pt solid currentColor', display: 'inline-block', padding: '1px 6px', marginTop: '2px' }}>
-                {isDuplicate ? "DUPLICATE" : "ORIGINAL"}
+                {copyLabel}
               </div>
             </div>
           </div>
@@ -794,6 +806,36 @@ export default function DeliveryChallanDetail() {
               }}
             >
               {retSaving ? 'Recording…' : 'Confirm Return'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Print Options Dialog */}
+      <Dialog open={printDialogOpen} onOpenChange={setPrintDialogOpen}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Print Options</DialogTitle>
+            <DialogDescription>Select number of copies to print.</DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2 justify-center py-2">
+            {[1, 2, 3].map(n => (
+              <button
+                key={n}
+                onClick={() => setPrintCopiesSelected(n)}
+                className={`w-14 h-14 rounded-lg border-2 font-semibold text-sm transition-colors ${printCopiesSelected === n ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 hover:border-slate-400'}`}
+              >
+                {n}<br /><span className="text-[10px] font-normal">{n === 1 ? 'copy' : 'copies'}</span>
+              </button>
+            ))}
+          </div>
+          <div className="text-xs text-center text-muted-foreground">
+            {DC_COPY_LABELS.slice(0, printCopiesSelected).join(" + ")}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPrintDialogOpen(false)}>Cancel</Button>
+            <Button onClick={() => { setPrintDialogOpen(false); triggerPrint(printCopiesSelected); }}>
+              <Printer className="h-3.5 w-3.5 mr-1" /> Print
             </Button>
           </DialogFooter>
         </DialogContent>

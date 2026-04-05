@@ -72,7 +72,7 @@ const MORE_GROUPS = [
     label: "BILLING",
     items: [
       { label: "Sales Orders", to: "/sales-orders", icon: ShoppingBag },
-      { label: "Delivery Challans", to: "/delivery-challans", icon: Truck },
+      { label: "DC / Job Work Order", to: "/delivery-challans", icon: Truck },
       { label: "DC Returns", to: "/dc-grn", icon: RotateCcw },
       { label: "Dispatch Notes", to: "/dispatch-notes", icon: Send },
       { label: "Receipts", to: "/receipts", icon: Receipt },

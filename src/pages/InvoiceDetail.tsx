@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, Download, Edit, XCircle, IndianRupee, CheckCircle2, Truck } from "lucide-react";
+import { ChevronLeft, Download, Edit, XCircle, IndianRupee, CheckCircle2, Truck, Printer } from "lucide-react";
 import { EditableSection } from "@/components/EditableSection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,6 +41,19 @@ export default function InvoiceDetail() {
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  const [invCopyLabel, setInvCopyLabel] = useState("");
+  const [invPrintDialogOpen, setInvPrintDialogOpen] = useState(false);
+  const [invPrintCopies, setInvPrintCopies] = useState(3);
+  const INV_COPY_LABELS = ["ORIGINAL FOR RECIPIENT", "DUPLICATE FOR TRANSPORTER", "TRIPLICATE FOR SUPPLIER"];
+  const triggerInvPrint = (totalCopies: number, index = 0) => {
+    if (index >= totalCopies) { setInvCopyLabel(""); return; }
+    setInvCopyLabel(INV_COPY_LABELS[index]);
+    setTimeout(() => {
+      const handler = () => { window.removeEventListener("afterprint", handler); setTimeout(() => triggerInvPrint(totalCopies, index + 1), 50); };
+      window.addEventListener("afterprint", handler);
+      window.print();
+    }, 100);
+  };
 
   // Payment form state
   const [payAmount, setPayAmount] = useState(0);
@@ -161,6 +174,9 @@ export default function InvoiceDetail() {
           </div>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={() => setInvPrintDialogOpen(true)}>
+            <Printer className="h-3.5 w-3.5 mr-1" /> Print Options
+          </Button>
           <DocumentActions
             documentNumber={inv.invoice_number}
             documentType="Tax Invoice"
@@ -224,6 +240,7 @@ export default function InvoiceDetail() {
             </div>
             <div style={{ flex: '0 0 42%', textAlign: 'right' }}>
               <div style={{ fontWeight: '700', fontSize: '13pt', color: '#1E3A5F', letterSpacing: '0.04em' }}>TAX INVOICE</div>
+              {invCopyLabel && <div style={{ fontSize: '8pt', fontWeight: '700', border: '1pt solid currentColor', display: 'inline-block', padding: '1px 6px', marginBottom: '2px' }}>{invCopyLabel}</div>}
               <div style={{ fontWeight: '700', fontSize: '9pt' }}>Invoice No: {inv.invoice_number}</div>
               <div style={{ fontSize: '9pt' }}>Date: {inv.invoice_date}</div>
               {inv.due_date && <div style={{ fontSize: '9pt' }}>Due: {inv.due_date}</div>}
@@ -477,6 +494,36 @@ export default function InvoiceDetail() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setCancelOpen(false)}>Keep Invoice</Button>
             <Button variant="destructive" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>Cancel Invoice</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Print Options Dialog */}
+      <Dialog open={invPrintDialogOpen} onOpenChange={setInvPrintDialogOpen}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Print Options</DialogTitle>
+            <DialogDescription>Select number of copies to print.</DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2 justify-center py-2">
+            {[1, 2, 3].map(n => (
+              <button
+                key={n}
+                onClick={() => setInvPrintCopies(n)}
+                className={`w-14 h-14 rounded-lg border-2 font-semibold text-sm transition-colors ${invPrintCopies === n ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 hover:border-slate-400'}`}
+              >
+                {n}<br /><span className="text-[10px] font-normal">{n === 1 ? 'copy' : 'copies'}</span>
+              </button>
+            ))}
+          </div>
+          <div className="text-xs text-center text-muted-foreground">
+            {INV_COPY_LABELS.slice(0, invPrintCopies).join(" + ")}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setInvPrintDialogOpen(false)}>Cancel</Button>
+            <Button onClick={() => { setInvPrintDialogOpen(false); triggerInvPrint(invPrintCopies); }}>
+              <Printer className="h-3.5 w-3.5 mr-1" /> Print
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

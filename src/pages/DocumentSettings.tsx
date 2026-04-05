@@ -24,7 +24,7 @@ const FY_OPTIONS = [
 const DOC_SERIES = [
   { prefixKey: "invoice_prefix", dsType: "invoice",          label: "Invoice",           defaultPrefix: "INV" },
   { prefixKey: "po_prefix",      dsType: "purchase_order",   label: "Purchase Order",    defaultPrefix: "PO"  },
-  { prefixKey: "dc_prefix",      dsType: "delivery_challan", label: "Delivery Challan",  defaultPrefix: "DC"  },
+  { prefixKey: "dc_prefix",      dsType: "delivery_challan", label: "DC / Job Work Order Number Series",  defaultPrefix: "DC"  },
   { prefixKey: "grn_prefix",     dsType: "grn",              label: "GRN",               defaultPrefix: "GRN" },
   { prefixKey: "ao_prefix",      dsType: "assembly_order",   label: "Production Run",    defaultPrefix: "AO"  },
   { prefixKey: "so_prefix",      dsType: "sales_order",      label: "Sales Order",       defaultPrefix: "SO"  },

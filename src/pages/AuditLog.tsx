@@ -19,7 +19,7 @@ const PAGE_SIZE = 50;
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   purchase_order: "Purchase Order",
-  delivery_challan: "Delivery Challan",
+  delivery_challan: "DC / JWO",
   invoice: "Invoice",
   grn: "GRN",
   job_card: "Processing DC",

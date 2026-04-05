@@ -102,7 +102,7 @@ export default function DeliveryChallansRegister() {
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Delivery Challans</h1>
+          <h1 className="text-2xl font-bold text-slate-900">DC / Job Work Orders</h1>
           <p className="text-sm text-slate-500 mt-1">Track outgoing material and returns</p>
         </div>
         <div className="flex flex-wrap gap-2 flex-shrink-0">
