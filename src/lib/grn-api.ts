@@ -97,6 +97,7 @@ export interface GRN {
   created_at: string;
   updated_at: string;
   line_items?: GRNLineItem[];
+  qc_measurements?: GRNQCMeasurement[];
   // Phase 14 new fields
   grn_type?: 'po_grn' | 'dc_grn';
   driver_name?: string | null;
@@ -134,6 +135,25 @@ export interface GrnInspectionLine {
   measuring_instrument?: string;
   non_conformance_reason?: string;
   created_at?: string;
+}
+
+export interface GRNQCMeasurement {
+  id?: string;
+  company_id?: string;
+  grn_id: string;
+  grn_line_item_id: string;
+  sl_no: number;
+  characteristic: string;
+  specification?: string;
+  qty_checked?: number;
+  sample_1?: string;
+  sample_2?: string;
+  sample_3?: string;
+  sample_4?: string;
+  sample_5?: string;
+  result?: 'conforming' | 'non_conforming';
+  measuring_instrument?: string;
+  remarks?: string;
 }
 
 export interface GRNFilters {
@@ -805,7 +825,14 @@ export async function fetchGRNWithStages(id: string): Promise<GRN> {
   const { data: items, error: itemsError } = await (supabase as any)
     .from('grn_line_items').select('*').eq('grn_id', id).order('serial_number', { ascending: true });
   if (itemsError) throw itemsError;
-  return { ...(grn as unknown as GRN), line_items: items as unknown as GRNLineItem[] };
+  const { data: measurements } = await (supabase as any)
+    .from('grn_qc_measurements').select('*').eq('grn_id', id)
+    .order('grn_line_item_id', { ascending: true }).order('sl_no', { ascending: true });
+  return {
+    ...(grn as unknown as GRN),
+    line_items: items as unknown as GRNLineItem[],
+    qc_measurements: (measurements ?? []) as GRNQCMeasurement[],
+  };
 }
 
 export async function fetchPendingQCGRNs(): Promise<GRN[]> {
@@ -818,4 +845,50 @@ export async function fetchPendingQCGRNs(): Promise<GRN[]> {
     .order('quantitative_completed_at', { ascending: true });
   if (error) throw error;
   return (data ?? []) as unknown as GRN[];
+}
+
+export async function fetchGRNQCMeasurements(grnId: string): Promise<GRNQCMeasurement[]> {
+  const { data, error } = await (supabase as any)
+    .from('grn_qc_measurements')
+    .select('*')
+    .eq('grn_id', grnId)
+    .order('grn_line_item_id', { ascending: true })
+    .order('sl_no', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as GRNQCMeasurement[];
+}
+
+export async function saveGRNQCMeasurements(
+  grnId: string,
+  measurements: GRNQCMeasurement[]
+): Promise<void> {
+  const companyId = await getCompanyId();
+  // Delete existing rows for this GRN first
+  const { error: delError } = await (supabase as any)
+    .from('grn_qc_measurements')
+    .delete()
+    .eq('grn_id', grnId);
+  if (delError) throw delError;
+  if (measurements.length === 0) return;
+  const rows = measurements.map((m) => ({
+    company_id: companyId,
+    grn_id: grnId,
+    grn_line_item_id: m.grn_line_item_id,
+    sl_no: m.sl_no,
+    characteristic: m.characteristic,
+    specification: m.specification ?? null,
+    qty_checked: m.qty_checked ?? null,
+    sample_1: m.sample_1 ?? null,
+    sample_2: m.sample_2 ?? null,
+    sample_3: m.sample_3 ?? null,
+    sample_4: m.sample_4 ?? null,
+    sample_5: m.sample_5 ?? null,
+    result: m.result ?? null,
+    measuring_instrument: m.measuring_instrument ?? null,
+    remarks: m.remarks ?? null,
+  }));
+  const { error } = await (supabase as any)
+    .from('grn_qc_measurements')
+    .insert(rows);
+  if (error) throw error;
 }
