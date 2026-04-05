@@ -131,7 +131,7 @@ const ALL_SEARCH_ITEMS: { title: string; url: string }[] = [
   { title: "Dispatch Records", url: "/dispatch-records" },
   { title: "Dashboard", url: "/" },
   { title: "WIP Register", url: "/wip-register" },
-  { title: "Job Cards", url: "/job-cards" },
+  { title: "Job Cards", url: "/job-works" },
   { title: "DC / Job Work Order", url: "/delivery-challans" },
   { title: "Purchase Orders", url: "/purchase-orders" },
   { title: "GRN", url: "/grn" },
@@ -162,7 +162,7 @@ const STORAGE_KEY = "bizdocs_sidebar_state_v2";
 const RAIL_MODE_KEY = "bizdocs_sidebar_mode";
 
 const GROUP_PATHS: Record<string, string[]> = {
-  "Daily Work":       ["/", "/wip-register", "/job-cards", "/delivery-challans", "/dc-grn"],
+  "Daily Work":       ["/", "/wip-register", "/job-works", "/delivery-challans", "/dc-grn"],
   "Production":       ["/sub-assembly-work-orders", "/finished-good-work-orders", "/storekeeper"],
   "Finished Goods":   ["/ready-to-dispatch", "/dispatch-records"],
   "Purchasing":       ["/purchase-orders", "/grn"],
@@ -531,7 +531,7 @@ export function AppSidebar() {
   const dailyWorkNav: NavItem[] = [
     { title: "Dashboard", url: "/", icon: LayoutDashboard },
     { title: "WIP Register", url: "/wip-register", icon: AlertTriangle },
-    { title: "Job Cards", url: "/job-cards", icon: Activity },
+    { title: "Job Cards", url: "/job-works", icon: Activity },
     { title: "DC / Job Work Order", url: "/delivery-challans", icon: Truck },
     { title: "DC Returns", url: "/dc-grn", icon: RotateCcw },
   ];

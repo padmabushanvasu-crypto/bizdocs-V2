@@ -252,7 +252,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
 
   // Line items
   const [lineItems, setLineItems] = useState<LineItemState[]>([]);
-
+  const [fullyReceived, setFullyReceived] = useState(false);
 
   // Success dialog
   const [successDialogOpen, setSuccessDialogOpen] = useState(false);
@@ -357,12 +357,17 @@ function GRNFormInner({ defaultGrnType }: Props) {
     setPOOpen(false);
     setVendorName(po.vendor_name ?? '');
     const poItems = await fetchPOLineItemsForGRN(po.id);
-    const items: LineItemState[] = poItems
-      .filter((item: any) => {
-        const pending = (item.quantity || 0) - (item.received_quantity || 0);
-        return pending > 0;
-      })
-      .map((item: any, idx: number) => {
+    const pendingItems = poItems.filter((item: any) => {
+      const pending = (item.quantity || 0) - (item.received_quantity || 0);
+      return pending > 0;
+    });
+    if (pendingItems.length === 0) {
+      setFullyReceived(true);
+      setLineItems([]);
+      return;
+    }
+    setFullyReceived(false);
+    const items: LineItemState[] = pendingItems.map((item: any, idx: number) => {
         const prevReceived = item.received_quantity || 0;
         const pending = (item.quantity || 0) - prevReceived;
         const base: GRNLineItem = {
@@ -374,14 +379,16 @@ function GRNFormInner({ defaultGrnType }: Props) {
           po_quantity: item.quantity || 0,
           previously_received: prevReceived,
           pending_quantity: pending,
-          receiving_now: 0,
+          receiving_now: pending,
           accepted_quantity: 0,
           rejected_quantity: 0,
           rejection_reason: "",
           remarks: "",
           rejection_action: null,
         };
-        return toLineState(base, idx);
+        const state = toLineState(base, idx);
+        state.s1_received_now = pending;
+        return state;
       });
     setLineItems(items);
   };
@@ -400,12 +407,17 @@ function GRNFormInner({ defaultGrnType }: Props) {
           .order("serial_number", { ascending: true }),
         fetchDCReceiptSummary(dc.id),
       ]);
-      const items: LineItemState[] = (dcItems ?? [])
-        .filter((item: any) => {
+      const pendingDCItems = (dcItems ?? []).filter((item: any) => {
           const alreadyReceived = prevReceivedMap[item.id] ?? 0;
           return (item.quantity || 0) - alreadyReceived > 0;
-        })
-        .map((item: any, idx: number) => {
+        });
+      if (pendingDCItems.length === 0) {
+        setFullyReceived(true);
+        setLineItems([]);
+        return;
+      }
+      setFullyReceived(false);
+      const items: LineItemState[] = pendingDCItems.map((item: any, idx: number) => {
           const alreadyReceived = prevReceivedMap[item.id] ?? 0;
           const pending = Math.max(0, (item.quantity || 0) - alreadyReceived);
           const base: GRNLineItem = {
@@ -416,12 +428,13 @@ function GRNFormInner({ defaultGrnType }: Props) {
             po_quantity: item.quantity || 0,
             previously_received: alreadyReceived,
             pending_quantity: pending,
-            receiving_now: 0,
+            receiving_now: pending,
             accepted_quantity: 0,
             rejected_quantity: 0,
             dc_line_item_id: item.id,
           };
           const state = toLineState(base, idx);
+          state.s1_received_now = pending;
           (state as any).ordered_qty = item.quantity || 0;
           (state as any).previously_received_qty = alreadyReceived;
           (state as any).dc_line_item_id = item.id;
@@ -570,6 +583,19 @@ function GRNFormInner({ defaultGrnType }: Props) {
         <p className="text-sm text-muted-foreground">Record incoming material received from a vendor</p>
       </div>
 
+      {/* Deleted / Cancelled banner */}
+      {isExistingGrn && ((existingGrn as any)?.status === 'deleted' || (existingGrn as any)?.status === 'cancelled') && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 flex gap-3">
+          <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-red-800 capitalize">
+              This GRN has been {(existingGrn as any).status}
+            </p>
+            <p className="text-sm text-red-700 mt-0.5">This document is read-only and cannot be edited.</p>
+          </div>
+        </div>
+      )}
+
       {/* Info Banner */}
       {!isExistingGrn && (
         <div className="flex gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
@@ -591,7 +617,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
               {(['po_grn', 'dc_grn'] as GrnType[]).map((t) => (
                 <button
                   key={t}
-                  onClick={() => { setGrnType(t); setSelectedPO(null); setSelectedDC(null); setLineItems([]); }}
+                  onClick={() => { setGrnType(t); setSelectedPO(null); setSelectedDC(null); setLineItems([]); setFullyReceived(false); }}
                   className={cn(
                     "px-4 py-2 rounded-lg text-sm font-medium border transition-colors",
                     grnType === t
@@ -805,8 +831,19 @@ function GRNFormInner({ defaultGrnType }: Props) {
         </div>
       )}
 
+      {/* Fully received banner */}
+      {fullyReceived && lineItems.length === 0 && !isExistingGrn && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 flex gap-3">
+          <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-amber-800">All items fully received</p>
+            <p className="text-sm text-amber-700 mt-0.5">Every line item on this {grnType === 'po_grn' ? 'PO' : 'DC'} has already been received in full. No pending quantities remain — a new GRN cannot be raised.</p>
+          </div>
+        </div>
+      )}
+
       {/* Empty state */}
-      {lineItems.length === 0 && !isExistingGrn && (
+      {lineItems.length === 0 && !isExistingGrn && !fullyReceived && (
         <div className="paper-card text-center py-12">
           <PackageCheck className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
           <p className="text-muted-foreground font-medium">No items yet</p>
@@ -819,12 +856,6 @@ function GRNFormInner({ defaultGrnType }: Props) {
         </div>
       )}
 
-      {lineItems.length === 0 && selectedPO && (
-        <div className="paper-card text-center py-12">
-          <AlertTriangle className="h-10 w-10 text-amber-500/50 mx-auto mb-3" />
-          <p className="text-muted-foreground font-medium">All items in this PO have been fully received</p>
-        </div>
-      )}
 
       {/* Sticky Action Bar */}
       <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-border p-3 flex justify-end gap-2 z-40">

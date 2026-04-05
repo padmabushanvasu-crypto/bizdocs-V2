@@ -59,6 +59,7 @@ const DISPOSITIONS: { value: Disposition; label: string }[] = [
   { value: "conditional_accept", label: "Conditional Accept" },
   { value: "return_to_vendor",   label: "Return to Vendor" },
   { value: "scrap",              label: "Scrap" },
+  { value: "rework_our_scope",   label: "Rework (Our Scope)" },
 ];
 
 // ── Stage 1 line state ─────────────────────────────────────────────────────────
@@ -438,15 +439,14 @@ function QCMeasurementEditor({
                           <td className="px-2 py-1.5">
                             <input
                               type="number"
-                              className={`w-full text-center border rounded px-1 py-0.5 text-xs focus:outline-none focus:ring-1 ${
+                              readOnly
+                              className={`w-full text-center border rounded px-1 py-0.5 text-xs cursor-default ${
                                 isNC
-                                  ? "border-red-300 bg-red-50 text-red-700 focus:ring-red-400"
-                                  : "border-slate-200 focus:ring-purple-400"
+                                  ? "border-red-200 bg-red-50 text-red-700"
+                                  : "border-slate-100 bg-slate-50 text-slate-500"
                               }`}
                               value={row.non_conforming_qty}
-                              placeholder="0"
-                              min={0}
-                              onChange={(e) => onChangeRow(globalIdx, "non_conforming_qty", e.target.value)}
+                              tabIndex={-1}
                             />
                           </td>
                           <td className="px-2 py-1.5">
@@ -1130,7 +1130,10 @@ export default function GRNDetail() {
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
+  const isDeletedOrCancelled = (grn as any)?.status === 'deleted' || (grn as any)?.status === 'cancelled';
+
   const handleS1Save = () => {
+    if (isDeletedOrCancelled) return;
     if (s1Lines.some((l) => !l.received_qty && l.received_qty !== 0)) {
       toast({ title: "Received quantities required", variant: "destructive" });
       return;
@@ -1147,6 +1150,7 @@ export default function GRNDetail() {
   };
 
   const handleS2Save = () => {
+    if (isDeletedOrCancelled) return;
     if (!s2InspectedBy.trim()) {
       toast({ title: "Inspected By is required", variant: "destructive" });
       return;
@@ -1183,15 +1187,16 @@ export default function GRNDetail() {
 
   const addQCRow = (lineItemId: string) => {
     const itemRows = qcRows.filter((r) => r.lineItemId === lineItemId);
+    const receivedQty = editorLineItems.find((l) => l.id === lineItemId)?.received_qty ?? 0;
     const newRow: QCRow = {
       lineItemId,
       sl_no: itemRows.length + 1,
       characteristic: "",
       specification: "",
-      qty_checked: "",
+      qty_checked: receivedQty > 0 ? String(receivedQty) : "",
       sample_1: "", sample_2: "", sample_3: "", sample_4: "", sample_5: "",
-      conforming_qty: "",
-      non_conforming_qty: "",
+      conforming_qty: receivedQty > 0 ? String(receivedQty) : "",
+      non_conforming_qty: "0",
       measuring_instrument: "",
     };
     setQcRows((prev) => [...prev, newRow]);
@@ -1200,7 +1205,14 @@ export default function GRNDetail() {
   const changeQCRow = (globalIdx: number, field: keyof QCRow, value: string) => {
     setQcRows((prev) => {
       const next = [...prev];
-      next[globalIdx] = { ...next[globalIdx], [field]: value };
+      const row = { ...next[globalIdx], [field]: value };
+      // Auto-derive non_conforming_qty when conforming_qty or qty_checked changes
+      if (field === "conforming_qty" || field === "qty_checked") {
+        const qty = Number(field === "qty_checked" ? value : row.qty_checked) || 0;
+        const conf = Number(field === "conforming_qty" ? value : row.conforming_qty) || 0;
+        row.non_conforming_qty = String(Math.max(0, qty - conf));
+      }
+      next[globalIdx] = row;
       return next;
     });
   };
@@ -1304,6 +1316,21 @@ export default function GRNDetail() {
       >
         <ChevronLeft className="h-4 w-4" /> Back to GRN Register
       </button>
+
+      {/* ── Deleted / Cancelled banner ── */}
+      {((grn as any).status === 'deleted' || (grn as any).status === 'cancelled') && (
+        <div className="no-print rounded-lg border border-red-200 bg-red-50 p-4 flex gap-3">
+          <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-red-800 capitalize">
+              This GRN has been {(grn as any).status}
+            </p>
+            <p className="text-sm text-red-700 mt-0.5">
+              This document is read-only and cannot be edited. All stage actions are disabled.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── Header ── */}
       <div className="paper-card space-y-4 no-print">
@@ -1501,7 +1528,7 @@ export default function GRNDetail() {
                 <Label className="text-xs font-medium text-slate-600">Receipt Notes</Label>
                 <Textarea value={s1Notes} onChange={(e) => setS1Notes(e.target.value)} className="mt-1 text-sm" rows={2} placeholder="Overall notes for this delivery (optional)…" />
               </div>
-              <Button onClick={handleS1Save} disabled={s1Mutation.isPending} className="w-full bg-blue-600 hover:bg-blue-700 text-white">
+              <Button onClick={handleS1Save} disabled={s1Mutation.isPending || isDeletedOrCancelled} className="w-full bg-blue-600 hover:bg-blue-700 text-white">
                 {s1Mutation.isPending ? "Saving…" : "Save — Stage 1 Complete"}
               </Button>
             </>
@@ -1566,7 +1593,7 @@ export default function GRNDetail() {
                           <span className="font-medium text-slate-700">{item.description}</span>
                           <span className="text-green-700">Conforming: <strong>{nc.conforming_qty} {unit}</strong></span>
                           <span className="text-amber-700">Non-Conforming: <strong>{nc.non_conforming_qty} {unit}</strong></span>
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-slate-500">Disposition:</span>
                             <select
                               className="border border-amber-300 rounded px-2 py-0.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-amber-400"
@@ -1578,6 +1605,9 @@ export default function GRNDetail() {
                                 <option key={d.value} value={d.value}>{d.label}</option>
                               ))}
                             </select>
+                            {nc.disposition === "rework_our_scope" && (
+                              <span className="text-blue-600 text-[10px] italic">Note: Raise an internal work order or job card to track this rework.</span>
+                            )}
                           </div>
                           <div className="flex items-center gap-1.5">
                             <Label className="text-xs text-slate-500">Conf. Qty:</Label>
@@ -1662,7 +1692,7 @@ export default function GRNDetail() {
                         </div>
                       ) : null;
                     })}
-                    <p className="text-amber-600 italic">Reflect this deduction on vendor's next payment or PO.</p>
+                    <p className="text-amber-600 italic">Coordinate with accounts to reflect this deduction against the vendor.</p>
                   </div>
                 )}
 
@@ -1688,7 +1718,7 @@ export default function GRNDetail() {
 
                 <Button
                   onClick={handleS2Save}
-                  disabled={s2Mutation.isPending}
+                  disabled={s2Mutation.isPending || isDeletedOrCancelled}
                   className="w-full bg-purple-600 hover:bg-purple-700 text-white"
                 >
                   {s2Mutation.isPending ? "Saving…" : "Save — Stage 2 Complete"}

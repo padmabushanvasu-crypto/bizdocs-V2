@@ -128,9 +128,9 @@ function GRNRegisterInner() {
   const grns = useMemo(() => {
     let list = data?.data ?? [];
     if (stageFilter === 'closed_accepted') {
-      list = list.filter(g => (g as any).overall_quality_verdict === 'fully_accepted' || (g as any).overall_quality_verdict === 'conditionally_accepted');
+      list = list.filter(g => (g as any).overall_quality_verdict === 'fully_accepted');
     } else if (stageFilter === 'closed_nonconforming') {
-      list = list.filter(g => ['partially_returned','returned'].includes((g as any).overall_quality_verdict ?? ''));
+      list = list.filter(g => ['conditionally_accepted','partially_returned','returned'].includes((g as any).overall_quality_verdict ?? ''));
     }
     return list;
   }, [data, stageFilter]);

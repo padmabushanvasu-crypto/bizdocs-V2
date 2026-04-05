@@ -7,7 +7,7 @@ import { updateStockBucket } from "@/lib/items-api";
 export type GRNStage = 'draft' | 'quantitative_pending' | 'quantitative_done' | 'quality_pending' | 'quality_done' | 'closed' | 'awaiting_store';
 export type QualityVerdict = 'fully_accepted' | 'conditionally_accepted' | 'partially_returned' | 'returned';
 export type NonConformanceType = 'dimensional' | 'surface_finish' | 'material_grade' | 'functional' | 'packaging' | 'documentation' | 'other';
-export type Disposition = 'accept_as_is' | 'conditional_accept' | 'return_to_vendor' | 'scrap';
+export type Disposition = 'accept_as_is' | 'conditional_accept' | 'return_to_vendor' | 'scrap' | 'rework_our_scope';
 export type InspectionMethod = '100_percent' | 'random_sample' | 'visual_only' | 'certificate_verification';
 
 export interface GRNLineItem {

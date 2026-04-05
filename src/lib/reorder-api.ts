@@ -152,7 +152,8 @@ export async function fetchReorderAlerts(): Promise<ReorderAlert[]> {
 
   const { data: itemsRaw, error: itemsError } = await itemsQuery;
   if (itemsError) throw itemsError;
-  const items = (itemsRaw || []) as any[];
+  // Exclude sub-assemblies from reorder alerts — they are planned via Assembly Orders, not POs
+  const items = ((itemsRaw || []) as any[]).filter((i) => i.item_type !== 'sub_assembly');
 
   if (items.length === 0) return [];
 
