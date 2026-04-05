@@ -8,6 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { StockStatusBadge } from "@/components/StockStatusBadge";
 import { fetchStockStatus, type StockStatusRow } from "@/lib/items-api";
 import { fetchReorderAlerts, type ReorderAlert } from "@/lib/reorder-api";
+import { fetchPendingQCGRNs } from "@/lib/grn-api";
 
 // ── Error boundary ─────────────────────────────────────────────────────────────
 
@@ -204,6 +205,30 @@ function StockRegisterInner() {
     for (const a of reorderAlerts) m.set(a.item_id, a);
     return m;
   }, [reorderAlerts]);
+
+  const { data: pendingQCGrns = [] } = useQuery({
+    queryKey: ['pending-qc-grns'],
+    queryFn: fetchPendingQCGRNs,
+    staleTime: 60000,
+  });
+
+  const pendingQcMap = useMemo(() => {
+    const map = new Map<string, { qty: number; date: string; vendor: string }>();
+    for (const grn of pendingQCGrns) {
+      for (const item of (grn as any).line_items ?? []) {
+        if (!item.drawing_number) continue;
+        const key = item.drawing_number;
+        const existing = map.get(key);
+        const qty = (item.received_qty ?? item.receiving_now ?? 0);
+        if (existing) {
+          map.set(key, { qty: existing.qty + qty, date: existing.date, vendor: existing.vendor });
+        } else {
+          map.set(key, { qty, date: grn.grn_date, vendor: grn.vendor_name ?? '' });
+        }
+      }
+    }
+    return map;
+  }, [pendingQCGrns]);
 
   const anyFilterActive =
     search.trim() !== "" ||
@@ -431,6 +456,10 @@ function StockRegisterInner() {
                 <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
                   Min Required
                 </th>
+                <ColHeader
+                  label="Pending QC"
+                  tip="Qty received but awaiting quality clearance. Will enter confirmed stock after QC approval."
+                />
                 <th className="text-left px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
                   Status
                 </th>
@@ -439,13 +468,13 @@ function StockRegisterInner() {
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={9} className="text-center py-12 text-slate-400 text-sm">
+                  <td colSpan={10} className="text-center py-12 text-slate-400 text-sm">
                     Loading…
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-16">
+                  <td colSpan={10} className="py-16">
                     <div className="flex flex-col items-center gap-3">
                       <Package className="h-10 w-10 text-slate-300" />
                       <div className="text-center">
@@ -530,6 +559,26 @@ function StockRegisterInner() {
                         ) : (
                           <span className="text-slate-300 text-sm select-none">—</span>
                         )}
+                      </td>
+
+                      {/* Pending QC */}
+                      <td className="px-3 py-2 text-right">
+                        {(() => {
+                          const pqc = pendingQcMap.get(row.item_code) ?? pendingQcMap.get((row as any).drawing_revision ?? '');
+                          if (!pqc || pqc.qty === 0) return <span className="text-slate-300 text-sm">—</span>;
+                          return (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="text-amber-600 font-mono text-sm font-semibold cursor-default">
+                                  ⏳ {pqc.qty}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="max-w-[220px] text-xs">
+                                {pqc.qty} received on {new Date(pqc.date).toLocaleDateString('en-IN')} from {pqc.vendor} — awaiting quality clearance
+                              </TooltipContent>
+                            </Tooltip>
+                          );
+                        })()}
                       </td>
 
                       {/* Status */}

@@ -38,10 +38,10 @@ const DC_ACTION_LABELS: Record<string, string> = {
 };
 
 const GRN_ACTION_LABELS: Record<string, string> = {
-  return_to_supplier: "Returned to supplier",
-  replacement_requested: "Replacement requested",
-  scrap: "Scrapped at our end",
-  hold: "Held for inspection",
+  return_to_supplier: "Returned to Vendor",
+  replacement_requested: "Replacement Requested",
+  scrap: "Scrapped",
+  hold: "Hold for Inspection",
 };
 
 export default function VendorScorecardDetail() {
@@ -100,7 +100,7 @@ export default function VendorScorecardDetail() {
           {/* Summary metrics */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
-              { label: "GRN Rejection Rate", value: pct(vendor.grn_rejection_rate_pct), bad: (vendor.grn_rejection_rate_pct ?? 0) > 5 },
+              { label: "GRN Non-Conformance Rate", value: pct(vendor.grn_rejection_rate_pct), bad: (vendor.grn_rejection_rate_pct ?? 0) > 5 },
               { label: "DC First Pass Yield", value: pct(vendor.first_pass_yield_pct), bad: (vendor.first_pass_yield_pct ?? 100) < 80 },
               { label: "Rework Rate", value: pct(vendor.rework_rate_pct), bad: (vendor.rework_rate_pct ?? 0) > 10 },
               { label: "Replacement Rate", value: pct(vendor.replacement_rate_pct), bad: (vendor.replacement_rate_pct ?? 0) > 5 },
@@ -236,7 +236,7 @@ export default function VendorScorecardDetail() {
                     <div className="text-xs text-slate-600">
                       {totalReceived > 0 && (
                         <span>
-                          {totalReceived} received → <span className="text-green-700 font-medium">{totalAccepted} accepted</span>, <span className="text-red-600 font-medium">{totalRejected} rejected</span>
+                          {totalReceived} received → <span className="text-green-700 font-medium">{totalAccepted} accepted</span>, <span className="text-red-600 font-medium">{totalRejected} non-conforming</span>
                         </span>
                       )}
                     </div>
@@ -251,8 +251,8 @@ export default function VendorScorecardDetail() {
                             <th className="px-2 py-1.5 text-left font-semibold">Description</th>
                             <th className="px-2 py-1.5 text-right font-semibold">Received</th>
                             <th className="px-2 py-1.5 text-right font-semibold">Accepted</th>
-                            <th className="px-2 py-1.5 text-right font-semibold">Rejected</th>
-                            <th className="px-2 py-1.5 text-left font-semibold">Rejection Reason</th>
+                            <th className="px-2 py-1.5 text-right font-semibold">Non-Conforming</th>
+                            <th className="px-2 py-1.5 text-left font-semibold">NC Reason</th>
                             <th className="px-2 py-1.5 text-left font-semibold">Action Taken</th>
                           </tr>
                         </thead>

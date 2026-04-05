@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { Activity, CheckCircle2 } from "lucide-react";
+import { fetchPendingQCGRNs } from "@/lib/grn-api";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatCurrency } from "@/lib/gst-utils";
 import { fetchAssemblyOrderStats } from "@/lib/assembly-orders-api";
@@ -260,6 +261,14 @@ export default function Dashboard() {
     refetchInterval: STALE,
   });
 
+  const { data: pendingQCGrns = [] } = useQuery({
+    queryKey: ['pending-qc-grns-dash'],
+    queryFn: fetchPendingQCGRNs,
+    staleTime: STALE,
+    refetchInterval: STALE,
+  });
+  const pendingQCCount = pendingQCGrns.length;
+
   // Derived alert counts
   const overdueDCReturns  = dashData?.overdueDCCount ?? 0;
   const zeroStockItems    = dashData?.zeroStockCount ?? 0;
@@ -429,6 +438,14 @@ export default function Dashboard() {
             )}
             {reorderAlertCount > 0 && (
               <AlertPill label="Reorder Alerts"     count={reorderAlertCount} colour="amber" onClick={() => navigate("/reorder-intelligence")} />
+            )}
+            {pendingQCCount > 0 && (
+              <AlertPill
+                label="Awaiting QC"
+                count={pendingQCCount}
+                colour="amber"
+                onClick={() => navigate('/grn?stage=quality_pending')}
+              />
             )}
             {fatPending > 0 && (
               <AlertPill label="FAT Pending"        count={fatPending}       colour="amber" onClick={() => navigate("/fat-certificates")} />

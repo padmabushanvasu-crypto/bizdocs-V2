@@ -6,57 +6,48 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MetricCard } from "@/components/MetricCard";
-import { fetchGRNs, fetchGRNStats, softDeleteGRN, type GRNFilters } from "@/lib/grn-api";
+import { fetchGRNs, fetchGRNStats, softDeleteGRN, fetchPendingQCGRNs, type GRNFilters } from "@/lib/grn-api";
 import { logAudit } from "@/lib/audit-api";
 import { exportToExcel, GRN_EXPORT_COLS } from "@/lib/export-utils";
 import { useToast } from "@/hooks/use-toast";
 
-const statusLabels: Record<string, string> = {
-  draft: "Draft",
-  recorded: "Recorded",
-  verified: "Verified",
+const stageConfig: Record<string, { label: string; cls: string; pulse?: boolean }> = {
+  draft:                          { label: 'Draft',             cls: 'bg-slate-100 text-slate-600 border border-slate-200' },
+  quantitative_pending:           { label: 'Awaiting Receipt',  cls: 'bg-blue-50 text-blue-700 border border-blue-200' },
+  quantitative_done:              { label: 'Receipt Done',      cls: 'bg-blue-100 text-blue-800 border border-blue-300' },
+  quality_pending:                { label: 'Awaiting QC',       cls: 'bg-amber-50 text-amber-700 border border-amber-200', pulse: true },
+  quality_done:                   { label: 'QC Done',           cls: 'bg-teal-50 text-teal-700 border border-teal-200' },
+  closed_fully_accepted:          { label: '✓ Fully Accepted',  cls: 'bg-green-50 text-green-700 border border-green-200' },
+  closed_conditionally_accepted:  { label: '⚠ Conditional',    cls: 'bg-amber-50 text-amber-700 border border-amber-200' },
+  closed_partially_returned:      { label: '↩ Partial Return',  cls: 'bg-amber-50 text-amber-700 border border-amber-200' },
+  closed_returned:                { label: '✗ Returned',        cls: 'bg-red-50 text-red-700 border border-red-200' },
 };
 
-const statusClass: Record<string, string> = {
-  draft: "status-draft",
-  recorded: "bg-blue-50 text-blue-700 border border-blue-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
-  verified: "status-paid",
-};
+function StageBadge({ grn }: { grn: any }) {
+  const stage = (grn.grn_stage ?? grn.status ?? 'draft') as string;
+  let key = stage;
+  if (stage === 'closed' && grn.overall_quality_verdict) key = `closed_${grn.overall_quality_verdict}`;
+  const cfg = stageConfig[key] ?? stageConfig['draft'];
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-0.5 rounded-full ${cfg.cls}`}>
+      {cfg.pulse && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />}
+      {cfg.label}
+    </span>
+  );
+}
 
-// ── Error boundary ─────────────────────────────────────────────────────────────
-
-class GrnRegisterErrorBoundary extends Component<
-  { children: ReactNode },
-  { error: Error | null }
-> {
-  constructor(props: { children: ReactNode }) {
-    super(props);
-    this.state = { error: null };
-  }
-  static getDerivedStateFromError(error: Error) {
-    return { error };
-  }
+class GrnRegisterErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  constructor(props: { children: ReactNode }) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error: Error) { return { error }; }
   render() {
     if (this.state.error) {
       return (
         <div className="p-6 text-center space-y-3">
-          <p className="font-medium text-destructive">
-            Something went wrong loading Goods Receipt Notes.
-          </p>
+          <p className="font-medium text-destructive">Something went wrong loading Goods Receipt Notes.</p>
           <p className="text-sm text-muted-foreground">{this.state.error.message}</p>
           <div className="flex justify-center gap-2">
-            <button
-              className="px-4 py-2 rounded-md border text-sm font-medium hover:bg-muted transition-colors"
-              onClick={() => this.setState({ error: null })}
-            >
-              Retry
-            </button>
-            <a
-              href="/"
-              className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
-            >
-              Go to Dashboard
-            </a>
+            <button className="px-4 py-2 rounded-md border text-sm font-medium hover:bg-muted transition-colors" onClick={() => this.setState({ error: null })}>Retry</button>
+            <a href="/" className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity">Go to Dashboard</a>
           </div>
         </div>
       );
@@ -64,6 +55,14 @@ class GrnRegisterErrorBoundary extends Component<
     return this.props.children;
   }
 }
+
+const STAGE_PILLS = [
+  { label: 'All',              value: 'all' },
+  { label: 'Awaiting Receipt', value: 'quantitative_pending' },
+  { label: 'Awaiting QC',      value: 'quality_pending' },
+  { label: 'Accepted',         value: 'closed_accepted' },
+  { label: 'Non-Conforming',   value: 'closed_nonconforming' },
+];
 
 function GRNRegisterInner() {
   const navigate = useNavigate();
@@ -82,6 +81,7 @@ function GRNRegisterInner() {
     return opts;
   }, []);
 
+  const [stageFilter, setStageFilter] = useState('all');
   const [filters, setFilters] = useState<GRNFilters>({
     search: "",
     status: "all",
@@ -102,17 +102,34 @@ function GRNRegisterInner() {
     },
   });
 
-  const { data: stats } = useQuery({
-    queryKey: ["grn-stats"],
-    queryFn: fetchGRNStats,
-  });
+  const { data: stats } = useQuery({ queryKey: ["grn-stats"], queryFn: fetchGRNStats });
+  const { data: pendingQC = [] } = useQuery({ queryKey: ["pending-qc-grns"], queryFn: fetchPendingQCGRNs });
+
+  // Build effective filters including stage filter
+  const effectiveFilters = useMemo(() => {
+    const f = { ...filters };
+    if (stageFilter === 'quantitative_pending') (f as any).grn_stage = 'quantitative_pending';
+    else if (stageFilter === 'quality_pending') (f as any).grn_stage = 'quality_pending';
+    else if (stageFilter === 'closed_accepted') (f as any).grn_stage = 'closed';
+    else if (stageFilter === 'closed_nonconforming') (f as any).grn_stage = 'closed';
+    else delete (f as any).grn_stage;
+    return f;
+  }, [filters, stageFilter]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["grns", filters],
-    queryFn: () => fetchGRNs(filters),
+    queryKey: ["grns", effectiveFilters],
+    queryFn: () => fetchGRNs(effectiveFilters),
   });
 
-  const grns = data?.data ?? [];
+  const grns = useMemo(() => {
+    let list = data?.data ?? [];
+    if (stageFilter === 'closed_accepted') {
+      list = list.filter(g => (g as any).overall_quality_verdict === 'fully_accepted' || (g as any).overall_quality_verdict === 'conditionally_accepted');
+    } else if (stageFilter === 'closed_nonconforming') {
+      list = list.filter(g => ['partially_returned','returned'].includes((g as any).overall_quality_verdict ?? ''));
+    }
+    return list;
+  }, [data, stageFilter]);
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -135,13 +152,28 @@ function GRNRegisterInner() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <MetricCard title="GRNs This Month" value={String(stats?.totalThisMonth ?? 0)} icon={PackageCheck} />
         <MetricCard title="Items Accepted" value={String(stats?.totalAccepted ?? 0)} icon={Package} />
-        <MetricCard
-          title="Non-Conforming Items"
-          value={String(stats?.totalRejected ?? 0)}
-          icon={AlertTriangle}
-          className={stats?.totalRejected ? "border-destructive/30" : ""}
-        />
-        <MetricCard title="Pending Verification" value={String(stats?.pendingVerification ?? 0)} icon={ClipboardCheck} />
+        <MetricCard title="Non-Conforming Items" value={String(stats?.totalRejected ?? 0)} icon={AlertTriangle} className={stats?.totalRejected ? "border-destructive/30" : ""} />
+        <MetricCard title="Awaiting QC" value={String(pendingQC.length)} icon={ClipboardCheck} className={pendingQC.length > 0 ? "border-amber-300 bg-amber-50/30" : ""} />
+      </div>
+
+      {/* Stage filter pills */}
+      <div className="flex flex-wrap gap-1.5">
+        {STAGE_PILLS.map(pill => (
+          <button
+            key={pill.value}
+            onClick={() => setStageFilter(pill.value)}
+            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+              stageFilter === pill.value
+                ? 'bg-slate-900 text-white border-slate-900'
+                : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'
+            }`}
+          >
+            {pill.label}
+            {pill.value === 'quality_pending' && pendingQC.length > 0 && (
+              <span className="ml-1.5 bg-amber-500 text-white text-[10px] px-1 py-0.5 rounded-full">{pendingQC.length}</span>
+            )}
+          </button>
+        ))}
       </div>
 
       {/* Filters */}
@@ -156,28 +188,10 @@ function GRNRegisterInner() {
           />
         </div>
         <Select value={filters.month ?? "__all_months__"} onValueChange={(v) => setFilters((f) => ({ ...f, month: v === "__all_months__" ? undefined : v, page: 1 }))}>
-          <SelectTrigger className="w-[150px]">
-            <SelectValue placeholder="All months" />
-          </SelectTrigger>
+          <SelectTrigger className="w-[150px]"><SelectValue placeholder="All months" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="__all_months__">All months</SelectItem>
-            {monthOptions.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={filters.status ?? "all"}
-          onValueChange={(v) => setFilters((f) => ({ ...f, status: v, page: 1 }))}
-        >
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="draft">Draft</SelectItem>
-            <SelectItem value="recorded">Recorded</SelectItem>
-            <SelectItem value="verified">Verified</SelectItem>
+            {monthOptions.map((opt) => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
@@ -194,75 +208,42 @@ function GRNRegisterInner() {
                 <th>Linked PO</th>
                 <th className="text-right">Accepted</th>
                 <th className="text-right">Non-Conforming</th>
-                <th>Status</th>
+                <th>Stage</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr>
-                  <td colSpan={8} className="text-center py-8 text-muted-foreground">Loading...</td>
-                </tr>
+                <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">Loading...</td></tr>
               ) : grns.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="text-center py-12">
                     <PackageCheck className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
-                    <p className="text-muted-foreground font-medium">No GRNs yet</p>
-                    <p className="text-sm text-muted-foreground">Record your first goods receipt</p>
+                    <p className="text-muted-foreground font-medium">No GRNs found</p>
                   </td>
                 </tr>
               ) : (
                 grns.map((grn) => (
-                  <tr
-                    key={grn.id}
-                    className="hover:bg-muted/50 cursor-pointer transition-colors"
-                    onClick={() => navigate(`/grn/${grn.id}`)}
-                  >
+                  <tr key={grn.id} className="hover:bg-muted/50 cursor-pointer transition-colors" onClick={() => navigate(`/grn/${grn.id}`)}>
                     <td className="font-mono text-sm font-medium text-foreground">{grn.grn_number}</td>
-                    <td className="text-muted-foreground">
-                      {new Date(grn.grn_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
-                    </td>
+                    <td className="text-muted-foreground">{new Date(grn.grn_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</td>
                     <td className="font-medium">{grn.vendor_name || "—"}</td>
                     <td>
                       {grn.po_number ? (
-                        <button
-                          className="font-mono text-xs text-primary hover:underline"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigate(`/purchase-orders/${grn.po_id}`);
-                          }}
-                        >
+                        <button className="font-mono text-xs text-primary hover:underline" onClick={(e) => { e.stopPropagation(); navigate(`/purchase-orders/${grn.po_id}`); }}>
                           {grn.po_number}
                         </button>
-                      ) : (
-                        "—"
-                      )}
+                      ) : "—"}
                     </td>
                     <td className="text-right font-mono tabular-nums">{grn.total_accepted}</td>
                     <td className="text-right font-mono tabular-nums">
-                      {grn.total_rejected > 0 ? (
-                        <span className="text-destructive font-medium">{grn.total_rejected}</span>
-                      ) : (
-                        grn.total_rejected
-                      )}
+                      {grn.total_rejected > 0 ? <span className="text-destructive font-medium">{grn.total_rejected}</span> : grn.total_rejected}
                     </td>
-                    <td>
-                      <span className={statusClass[grn.status] || "status-draft"}>
-                        {statusLabels[grn.status] || grn.status}
-                      </span>
-                    </td>
+                    <td><StageBadge grn={grn} /></td>
                     <td>
                       <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate(`/grn/${grn.id}`)}>
-                          <Eye className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          disabled={grn.status === "deleted"}
-                          onClick={() => deleteMutation.mutate(grn)}
-                        >
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate(`/grn/${grn.id}`)}><Eye className="h-3.5 w-3.5" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" disabled={(grn as any).status === "deleted"} onClick={() => deleteMutation.mutate(grn)}>
                           <Trash2 className="h-3.5 w-3.5 text-destructive" />
                         </Button>
                       </div>
@@ -275,35 +256,16 @@ function GRNRegisterInner() {
         </div>
       </div>
 
-      {/* Pagination */}
       {(data?.count ?? 0) > (filters.pageSize ?? 20) && (
         <div className="flex justify-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={(filters.page ?? 1) <= 1}
-            onClick={() => setFilters((f) => ({ ...f, page: (f.page ?? 1) - 1 }))}
-          >
-            Previous
-          </Button>
-          <span className="text-sm text-muted-foreground flex items-center px-2">
-            Page {filters.page} of {Math.ceil((data?.count ?? 0) / (filters.pageSize ?? 20))}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={(filters.page ?? 1) * (filters.pageSize ?? 20) >= (data?.count ?? 0)}
-            onClick={() => setFilters((f) => ({ ...f, page: (f.page ?? 1) + 1 }))}
-          >
-            Next
-          </Button>
+          <Button variant="outline" size="sm" disabled={(filters.page ?? 1) <= 1} onClick={() => setFilters((f) => ({ ...f, page: (f.page ?? 1) - 1 }))}>Previous</Button>
+          <span className="text-sm text-muted-foreground flex items-center px-2">Page {filters.page} of {Math.ceil((data?.count ?? 0) / (filters.pageSize ?? 20))}</span>
+          <Button variant="outline" size="sm" disabled={(filters.page ?? 1) * (filters.pageSize ?? 20) >= (data?.count ?? 0)} onClick={() => setFilters((f) => ({ ...f, page: (f.page ?? 1) + 1 }))}>Next</Button>
         </div>
       )}
     </div>
   );
 }
-
-// ── Export ─────────────────────────────────────────────────────────────────────
 
 export default function GRNRegister() {
   return (

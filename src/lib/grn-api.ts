@@ -4,6 +4,12 @@ import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
 import { getNextDocNumber } from "@/lib/doc-number-utils";
 import { updateStockBucket } from "@/lib/items-api";
 
+export type GRNStage = 'draft' | 'quantitative_pending' | 'quantitative_done' | 'quality_pending' | 'quality_done' | 'closed';
+export type QualityVerdict = 'fully_accepted' | 'conditionally_accepted' | 'partially_returned' | 'returned';
+export type NonConformanceType = 'dimensional' | 'surface_finish' | 'material_grade' | 'functional' | 'packaging' | 'documentation' | 'other';
+export type Disposition = 'accept_as_is' | 'conditional_accept' | 'return_to_vendor' | 'scrap';
+export type InspectionMethod = '100_percent' | 'random_sample' | 'visual_only' | 'certificate_verification';
+
 export interface GRNLineItem {
   id?: string;
   serial_number: number;
@@ -44,6 +50,27 @@ export interface GRNLineItem {
   jigs_returned?: any[] | null;
   identity_matched_qty?: number;
   identity_not_matched_qty?: number;
+  // Stage 1 — Quantitative
+  received_qty?: number;
+  qty_matched?: boolean;
+  condition_on_arrival?: string | null;
+  packing_intact?: boolean;
+  vendor_invoice_ref?: string | null;
+  quantitative_verified_by?: string | null;
+  quantitative_verified_at?: string | null;
+  quantitative_notes?: string | null;
+  // Stage 2 — Qualitative
+  qty_inspected?: number | null;
+  inspection_method?: InspectionMethod | null;
+  conforming_qty?: number | null;
+  non_conforming_qty?: number | null;
+  non_conformance_type?: NonConformanceType | null;
+  deviation_description?: string | null;
+  disposition?: Disposition | null;
+  reference_drawing?: string | null;
+  qc_inspected_by?: string | null;
+  qc_inspected_at?: string | null;
+  qc_notes?: string | null;
 }
 
 export interface GRN {
@@ -79,6 +106,15 @@ export interface GRN {
   total_ordered_qty?: number;
   total_received_qty?: number;
   total_accepted_qty?: number;
+  grn_stage?: GRNStage;
+  quantitative_completed_at?: string | null;
+  quantitative_completed_by?: string | null;
+  quality_completed_at?: string | null;
+  quality_completed_by?: string | null;
+  overall_quality_verdict?: QualityVerdict | null;
+  quality_remarks?: string | null;
+  vendor_invoice_number?: string | null;
+  vendor_invoice_date?: string | null;
   // QC Inspection fields
   qc_remarks?: string | null;
   qc_prepared_by?: string | null;
@@ -104,6 +140,7 @@ export interface GRNFilters {
   search?: string;
   status?: string;
   grn_type?: 'po_grn' | 'dc_grn' | 'all';
+  grn_stage?: string;
   month?: string;
   page?: number;
   pageSize?: number;
@@ -130,6 +167,7 @@ export async function fetchGRNs(filters: GRNFilters = {}) {
   let query = (supabase as any).from("grns").select("*", { count: "exact" }).order("created_at", { ascending: false }).range(from, to);
   if (status && status !== "all") query = query.eq("status", status);
   if (grn_type && grn_type !== "all") query = query.eq("grn_type", grn_type);
+  if (filters.grn_stage && filters.grn_stage !== 'all') query = query.eq('grn_stage', filters.grn_stage);
   if (month) {
     const start = `${month}-01`;
     const end = new Date(new Date(start).getFullYear(), new Date(start).getMonth() + 1, 0).toISOString().split('T')[0];
@@ -650,4 +688,134 @@ export async function recordGrnRejectionAction(
       // scrap_register may not exist; ignore
     }
   }
+}
+
+// ── New Two-Stage API ─────────────────────────────────────────────────────────
+
+export interface QuantitativeLineData {
+  id: string;
+  received_qty: number;
+  qty_matched: boolean;
+  condition_on_arrival: string;
+  packing_intact: boolean;
+  quantitative_notes?: string | null;
+  vendor_invoice_ref?: string | null;
+}
+
+export async function saveQuantitativeStage(
+  grnId: string,
+  lines: QuantitativeLineData[],
+  verifiedBy: string,
+  vendorInvoiceNumber?: string | null,
+  vendorInvoiceDate?: string | null,
+): Promise<void> {
+  const now = new Date().toISOString();
+  // Update each line
+  for (const line of lines) {
+    const { error } = await (supabase as any)
+      .from('grn_line_items')
+      .update({
+        received_qty: line.received_qty,
+        receiving_now: line.received_qty, // keep legacy field in sync
+        qty_matched: line.qty_matched,
+        condition_on_arrival: line.condition_on_arrival,
+        packing_intact: line.packing_intact,
+        quantitative_notes: line.quantitative_notes ?? null,
+        vendor_invoice_ref: line.vendor_invoice_ref ?? null,
+        quantitative_verified_by: verifiedBy,
+        quantitative_verified_at: now,
+      })
+      .eq('id', line.id);
+    if (error) throw error;
+  }
+  // Update GRN header
+  const updateData: any = {
+    grn_stage: 'quality_pending',
+    quantitative_completed_at: now,
+    quantitative_completed_by: verifiedBy,
+  };
+  if (vendorInvoiceNumber !== undefined) updateData.vendor_invoice_number = vendorInvoiceNumber;
+  if (vendorInvoiceDate !== undefined) updateData.vendor_invoice_date = vendorInvoiceDate || null;
+  const { error: grnErr } = await (supabase as any)
+    .from('grns')
+    .update(updateData)
+    .eq('id', grnId);
+  if (grnErr) throw grnErr;
+}
+
+export interface QualitativeLineData {
+  id: string;
+  qty_inspected: number;
+  inspection_method: InspectionMethod;
+  conforming_qty: number;
+  non_conforming_qty: number;
+  non_conformance_type?: NonConformanceType | null;
+  deviation_description?: string | null;
+  disposition?: Disposition | null;
+  reference_drawing?: string | null;
+  qc_notes?: string | null;
+}
+
+export async function saveQualityStage(
+  grnId: string,
+  lines: QualitativeLineData[],
+  inspectedBy: string,
+  qualityRemarks?: string | null,
+  inspectionDate?: string | null,
+): Promise<void> {
+  const now = inspectionDate ? new Date(inspectionDate).toISOString() : new Date().toISOString();
+  for (const line of lines) {
+    const { error } = await (supabase as any)
+      .from('grn_line_items')
+      .update({
+        qty_inspected: line.qty_inspected,
+        inspection_method: line.inspection_method,
+        conforming_qty: line.conforming_qty,
+        non_conforming_qty: line.non_conforming_qty,
+        non_conformance_type: line.non_conformance_type ?? null,
+        deviation_description: line.deviation_description ?? null,
+        disposition: line.disposition ?? null,
+        reference_drawing: line.reference_drawing ?? null,
+        qc_notes: line.qc_notes ?? null,
+        qc_inspected_by: inspectedBy,
+        qc_inspected_at: now,
+        accepted_qty: line.conforming_qty + (line.non_conforming_qty > 0 && ['accept_as_is','conditional_accept'].includes(line.disposition ?? '') ? line.non_conforming_qty : 0),
+        rejected_qty: line.non_conforming_qty > 0 && ['return_to_vendor','scrap'].includes(line.disposition ?? '') ? line.non_conforming_qty : 0,
+      })
+      .eq('id', line.id);
+    if (error) throw error;
+  }
+  const totalConforming = lines.reduce((s, l) => s + l.conforming_qty, 0);
+  const totalNonConforming = lines.reduce((s, l) => s + l.non_conforming_qty, 0);
+  const { error: grnErr } = await (supabase as any)
+    .from('grns')
+    .update({
+      quality_remarks: qualityRemarks ?? null,
+      quality_completed_by: inspectedBy,
+      total_accepted: totalConforming,
+      total_rejected: totalNonConforming,
+    })
+    .eq('id', grnId);
+  if (grnErr) throw grnErr;
+}
+
+export async function fetchGRNWithStages(id: string): Promise<GRN> {
+  const { data: grn, error } = await (supabase as any).from('grns').select('*').eq('id', id).single();
+  if (error) throw error;
+  const { data: items, error: itemsError } = await (supabase as any)
+    .from('grn_line_items').select('*').eq('grn_id', id).order('serial_number', { ascending: true });
+  if (itemsError) throw itemsError;
+  return { ...(grn as unknown as GRN), line_items: items as unknown as GRNLineItem[] };
+}
+
+export async function fetchPendingQCGRNs(): Promise<GRN[]> {
+  const companyId = await getCompanyId();
+  if (!companyId) return [];
+  const { data, error } = await (supabase as any)
+    .from('grns')
+    .select('*')
+    .eq('grn_stage', 'quality_pending')
+    .order('quantitative_completed_at', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as unknown as GRN[];
 }

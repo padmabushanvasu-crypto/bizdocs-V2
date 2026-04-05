@@ -140,7 +140,7 @@ export default function VendorScorecards() {
         { key: "grn_qty_received", label: "GRN Qty Received", type: "number", width: 14 },
         { key: "grn_qty_accepted", label: "GRN Qty Accepted", type: "number", width: 14 },
         { key: "grn_qty_rejected", label: "GRN Non-Conforming Qty", type: "number", width: 14 },
-        { key: "grn_rejection_rate_pct", label: "GRN Non-Conformance %", type: "number", width: 14 },
+        { key: "grn_rejection_rate_pct", label: "GRN NC Rate %", type: "number", width: 14 },
         { key: "dc_count", label: "DC Count", type: "number", width: 10 },
         { key: "dc_qty_sent", label: "DC Qty Sent", type: "number", width: 12 },
         { key: "dc_qty_accepted", label: "DC Qty Accepted", type: "number", width: 14 },
@@ -196,7 +196,7 @@ export default function VendorScorecards() {
             <p className="text-xs font-semibold text-slate-500">Need Review</p>
           </div>
           <p className={`text-2xl font-bold font-mono mt-1 ${needReview > 0 ? "text-red-700" : ""}`}>{needReview}</p>
-          <p className="text-xs text-muted-foreground mt-0.5">{needReview > 0 ? "high rejection or late deliveries" : "all clear"}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{needReview > 0 ? "high non-conformance or late deliveries" : "all clear"}</p>
         </div>
         <div className={`paper-card ${onWatch > 0 ? "border-l-4 border-l-amber-400" : ""}`}>
           <div className="flex items-center gap-1.5">
@@ -371,7 +371,7 @@ export default function VendorScorecards() {
       </div>
 
       <p className="text-xs text-muted-foreground text-center">
-        Click any row or View History to see detailed transaction trail · GRN = goods receipt quality · DC = job work out quality · JW = job card steps (legacy) · Rating uses worst-case rejection across all sources
+        Click any row or View History to see detailed transaction trail · GRN = goods receipt quality · DC = job work out quality · JW = job card steps (legacy) · Rating uses worst-case non-conformance rate across all sources
       </p>
     </div>
   );
