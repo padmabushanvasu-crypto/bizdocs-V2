@@ -14,8 +14,7 @@ import { ChevronDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { createJobWorkStep } from "@/lib/job-works-api";
 import { fetchParties, type Party } from "@/lib/parties-api";
-
-const UNITS = ["NOS", "KG", "KGS", "MTR", "SFT", "SET"];
+import { UNITS } from "@/lib/constants";
 
 interface AddStepDialogProps {
   open: boolean;

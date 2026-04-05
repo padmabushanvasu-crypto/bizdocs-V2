@@ -8,6 +8,7 @@ import {
   PackageCheck,
   Users,
   Package,
+  Package2,
   Receipt,
   Settings,
   BarChart2,
@@ -115,6 +116,8 @@ const TOOLTIP_TEXT: Record<string, string> = {
     "All vendors and customers. Set up once — auto-fills on every PO, DC and invoice.",
   "Items":
     "Every raw material, component and finished product. The parts catalogue for the factory.",
+  "Assets Register":
+    "Tools, equipment, and other non-stock items that belong to the company. Filtered from the Stock Register.",
   "Bill of Materials":
     "The recipe for every product — what components go in, how many, and which vendors make them.",
   "Settings":
@@ -147,6 +150,7 @@ const ALL_SEARCH_ITEMS: { title: string; url: string }[] = [
   { title: "Vendor Scorecards", url: "/vendor-scorecards" },
   { title: "Parties", url: "/parties" },
   { title: "Items", url: "/items" },
+  { title: "Assets Register", url: "/assets-register" },
   { title: "Bill of Materials", url: "/bill-of-materials" },
   { title: "Jig Master", url: "/jig-master" },
   { title: "Settings", url: "/settings" },
@@ -164,7 +168,7 @@ const GROUP_PATHS: Record<string, string[]> = {
   "Purchasing":       ["/purchase-orders", "/grn"],
   "Billing":          ["/invoices", "/receipts", "/sales-orders", "/dispatch-notes"],
   "Inventory":        ["/stock-register", "/stock-ledger", "/reorder-intelligence", "/scrap-register", "/serial-numbers", "/fat-certificates"],
-  "Reports & More":   ["/gst-reports", "/vendor-scorecards", "/parties", "/items", "/bill-of-materials", "/jig-master", "/settings"],
+  "Reports & More":   ["/gst-reports", "/vendor-scorecards", "/parties", "/items", "/assets-register", "/bill-of-materials", "/jig-master", "/settings"],
 };
 
 const DEFAULTS: Record<string, boolean> = {
@@ -569,6 +573,7 @@ export function AppSidebar() {
     { title: "Vendor Scorecards", url: "/vendor-scorecards", icon: Star },
     { title: "Parties", url: "/parties", icon: Users },
     { title: "Items", url: "/items", icon: Package },
+    { title: "Assets Register", url: "/assets-register", icon: Package2 },
     { title: "Bill of Materials", url: "/bill-of-materials", icon: GitFork },
     { title: "Jig Master", url: "/jig-master", icon: Wrench },
     { title: "Settings", url: "/settings", icon: Settings, badge: companyNeedsSetup ? 1 : undefined, badgeColor: "amber" as const },

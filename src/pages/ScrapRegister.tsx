@@ -45,7 +45,8 @@ import {
 import { fetchItems, type Item } from "@/lib/items-api";
 import { fetchParties, type Party } from "@/lib/parties-api";
 import { formatCurrency } from "@/lib/gst-utils";
-import { exportToExcel } from "@/lib/export-utils";
+import { exportMultiSheet } from "@/lib/export-utils";
+import { UNITS } from "@/lib/constants";
 import { format } from "date-fns";
 
 const SCRAP_CATEGORIES = [
@@ -65,7 +66,6 @@ const DISPOSAL_METHODS = [
   { value: "return_to_vendor",  label: "Return to Vendor" },
 ];
 
-const UNITS = ["NOS", "KG", "KGS", "MTR", "SFT", "SET", "ROLL", "SHEET", "LITRE", "BOX"];
 
 interface ScrapForm {
   scrap_date: string;
@@ -240,7 +240,7 @@ export default function ScrapRegister() {
   };
 
   const handleExport = () => {
-    exportToExcel(
+    exportMultiSheet(
       [
         {
           sheetName: "Scrap Register",
@@ -264,7 +264,7 @@ export default function ScrapRegister() {
           data: entries,
         },
       ],
-      "Scrap_Register"
+      "Scrap_Register.xlsx"
     );
   };
 

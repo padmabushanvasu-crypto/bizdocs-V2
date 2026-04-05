@@ -80,6 +80,7 @@ import DispatchRecordDetail from "@/pages/DispatchRecordDetail";
 import ReadyToDispatch from "@/pages/ReadyToDispatch";
 import ProcessLibrary from "@/pages/ProcessLibrary";
 import JigMouldSettings from "@/pages/JigMouldSettings";
+import AssetsRegister from "@/pages/AssetsRegister";
 import { ImportQueueProvider } from "@/lib/import-queue";
 
 const queryClient = new QueryClient();
@@ -175,6 +176,7 @@ const App = () => (
               <Route path="/settings/process-library" element={<ProcessLibrary />} />
               <Route path="/settings/jig-mould" element={<JigMouldSettings />} />
               <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/assets-register" element={<AssetsRegister />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>

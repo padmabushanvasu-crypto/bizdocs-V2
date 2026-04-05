@@ -2,6 +2,44 @@ import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
 import { normalizeItemType, normalizeUnit, type SkipReason } from "@/lib/import-utils";
 
+export interface ItemClassification {
+  id: string;
+  company_id: string | null;
+  name: string;
+  description: string | null;
+  affects_stock: boolean;
+  affects_reorder: boolean;
+  affects_bom: boolean;
+  is_system: boolean;
+  color: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchItemClassifications(): Promise<ItemClassification[]> {
+  const companyId = await getCompanyId();
+  const { data, error } = await (supabase as any)
+    .from("item_classifications")
+    .select("*")
+    .or(`is_system.eq.true,company_id.eq.${companyId}`)
+    .order("name", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as ItemClassification[];
+}
+
+export async function createItemClassification(
+  payload: Pick<ItemClassification, "name" | "description" | "affects_stock" | "affects_reorder" | "affects_bom">
+): Promise<ItemClassification> {
+  const companyId = await getCompanyId();
+  const { data, error } = await (supabase as any)
+    .from("item_classifications")
+    .insert({ ...payload, company_id: companyId, is_system: false, color: "64748B" })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as ItemClassification;
+}
+
 export interface Item {
   id: string;
   item_code: string;
@@ -35,6 +73,7 @@ export interface Item {
   stock_in_fg_wip: number;
   stock_in_fg_ready: number;
   stock_alert_level: 'critical' | 'warning' | 'watch' | 'locked' | 'healthy';
+  custom_classification_id: string | null;
 }
 
 export type StockBucket = 'free' | 'in_process' | 'in_subassembly_wip' | 'in_fg_wip' | 'in_fg_ready';

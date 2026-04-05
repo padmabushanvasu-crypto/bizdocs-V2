@@ -20,7 +20,7 @@ import {
   fetchInProgressAOsWithLines,
   type AssemblyOrderWithLines,
 } from "@/lib/assembly-orders-api";
-import { exportToExcel } from "@/lib/export-utils";
+import { exportMultiSheet } from "@/lib/export-utils";
 import { format, differenceInDays, parseISO } from "date-fns";
 
 type WipTab = "all" | "component" | "subassembly" | "finished_good";
@@ -247,7 +247,7 @@ export default function WipRegister() {
     : "—";
 
   const handleExport = () => {
-    exportToExcel(
+    exportMultiSheet(
       [
         {
           sheetName: "DC WIP",
@@ -274,7 +274,7 @@ export default function WipRegister() {
           data: filteredAo,
         },
       ],
-      "WIP_Register"
+      "WIP_Register.xlsx"
     );
   };
 

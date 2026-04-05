@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchReorderAlerts, fetchProductionAlerts, type ReorderAlert, type ProductionAlert } from "@/lib/reorder-api";
-import { exportToExcel } from "@/lib/export-utils";
+import { exportMultiSheet } from "@/lib/export-utils";
 import { format } from "date-fns";
 
 const ITEM_TYPES = [
@@ -98,7 +98,7 @@ export default function ReorderIntelligence() {
     : "—";
 
   const handleExport = () => {
-    exportToExcel(
+    exportMultiSheet(
       [
         {
           sheetName: "Reorder Alerts",
@@ -119,7 +119,7 @@ export default function ReorderIntelligence() {
           data: filtered,
         },
       ],
-      "Reorder_Alerts"
+      "Reorder_Alerts.xlsx"
     );
   };
 

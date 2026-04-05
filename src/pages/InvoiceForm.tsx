@@ -30,8 +30,8 @@ import {
 import { formatCurrency, formatNumber, amountInWords } from "@/lib/gst-utils";
 import { getGSTType, calculateLineTax, round2, resolveStateCode, getStateName, type GSTType } from "@/lib/tax-utils";
 import { fetchSerialNumbers, assignSerialToInvoice } from "@/lib/fat-api";
+import { UNITS } from "@/lib/constants";
 
-const UNITS = ["NOS", "KG", "MTR", "SFT", "SET", "ROLL", "SHEET", "LITRE", "BOX"];
 const PAYMENT_TERMS = ["Immediate", "7 Days", "15 Days", "30 Days", "45 Days", "60 Days"];
 const GST_RATES = [0, 5, 12, 18, 28];
 // Company state code fetched dynamically from settings

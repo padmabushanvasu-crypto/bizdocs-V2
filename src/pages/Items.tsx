@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Package, Plus, Search, Edit, Trash2, X, Upload, Download, CheckSquare, Square, XCircle, Loader2 } from "lucide-react";
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Package, Plus, Search, Edit, Trash2, X, Upload, Download, CheckSquare, Square, XCircle, Loader2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,9 +10,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { fetchItems, createItem, updateItem, deleteItem, bulkDeleteItems, type Item, type ItemFilters } from "@/lib/items-api";
+import { fetchItems, createItem, updateItem, deleteItem, bulkDeleteItems, fetchItemClassifications, createItemClassification, type Item, type ItemFilters, type ItemClassification } from "@/lib/items-api";
 import ItemsImportDialog from "@/components/ItemsImportDialog";
 import { exportToExcel, ITEMS_EXPORT_COLS } from "@/lib/export-utils";
+import { UNITS } from "@/lib/constants";
 
 const ITEM_TYPES = [
   { value: "raw_material", label: "Raw Material" },
@@ -36,7 +37,6 @@ const TYPE_BADGE: Record<string, string> = {
   consumable: "bg-teal-100 text-teal-800",
 };
 
-const UNITS = ["NOS", "KG", "KGS", "MTR", "SFT", "SET", "ROLL", "SHEET", "LTR", "BOX", "COIL", "PAIR", "LOT"];
 const GST_RATES = [0, 5, 12, 18, 28];
 
 const emptyItem = {
@@ -57,6 +57,10 @@ export default function Items() {
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [form, setForm] = useState(emptyItem);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Classification
+  const [classifDialogOpen, setClassifDialogOpen] = useState(false);
+  const [classifForm, setClassifForm] = useState({ name: "", description: "", affects_stock: true, affects_reorder: true, affects_bom: true });
+  const [customClassifId, setCustomClassifId] = useState<string | null>(null);
 
   const {
     data,
@@ -75,6 +79,24 @@ export default function Items() {
 
   const items = data?.pages.flatMap((p) => p.data) ?? [];
   const totalCount = data?.pages[0]?.count ?? 0;
+
+  const { data: classifications = [] } = useQuery({
+    queryKey: ["item-classifications"],
+    queryFn: fetchItemClassifications,
+    staleTime: 60_000,
+  });
+
+  const createClassifMutation = useMutation({
+    mutationFn: () => createItemClassification(classifForm),
+    onSuccess: (newClassif) => {
+      queryClient.invalidateQueries({ queryKey: ["item-classifications"] });
+      setCustomClassifId(newClassif.id);
+      setClassifDialogOpen(false);
+      setClassifForm({ name: "", description: "", affects_stock: true, affects_reorder: true, affects_bom: true });
+      toast({ title: "Classification created" });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
 
   useEffect(() => {
     const handleScroll = () => {
@@ -159,6 +181,7 @@ export default function Items() {
         hsn_sac_code: form.hsn_sac_code || null,
         notes: form.notes || null,
         standard_cost: form.standard_cost || 0,
+        custom_classification_id: customClassifId ?? null,
         // min_stock_override intentionally omitted — never set by this form;
         // sending explicit null overwrites any value set via other means and
         // fails if PostgREST schema cache hasn't refreshed since the migration.
@@ -200,11 +223,13 @@ export default function Items() {
   const openNew = () => {
     setEditingItem(null);
     setForm(emptyItem);
+    setCustomClassifId(null);
     setFormOpen(true);
   };
 
   const openEdit = (item: Item) => {
     setEditingItem(item);
+    setCustomClassifId((item as any).custom_classification_id ?? null);
     setForm({
       item_code: item.item_code, description: item.description,
       drawing_number: item.drawing_number || "", drawing_revision: item.drawing_revision || "", item_type: item.item_type,
@@ -417,10 +442,40 @@ export default function Items() {
                   )}
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Item Type *</Label>
-                  <Select value={form.item_type} onValueChange={(v) => setForm((f) => ({ ...f, item_type: v }))}>
+                  <Label>Item Type / Classification *</Label>
+                  <Select
+                    value={customClassifId ?? form.item_type}
+                    onValueChange={(v) => {
+                      if (v === "__create_new__") { setClassifDialogOpen(true); return; }
+                      const isClassif = classifications.some(c => c.id === v);
+                      if (isClassif) {
+                        setCustomClassifId(v);
+                      } else {
+                        setCustomClassifId(null);
+                        setForm(f => ({ ...f, item_type: v }));
+                      }
+                    }}
+                  >
                     <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>{ITEM_TYPES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</SelectContent>
+                    <SelectContent>
+                      {ITEM_TYPES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                      {classifications.filter(c => !c.is_system).length > 0 && (
+                        <>
+                          <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Custom</div>
+                          {classifications.filter(c => !c.is_system).map(c => (
+                            <SelectItem key={c.id} value={c.id}>
+                              <span className="flex items-center gap-1.5">
+                                <span className="h-2 w-2 rounded-full inline-block" style={{ backgroundColor: `#${c.color}` }} />
+                                {c.name}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </>
+                      )}
+                      <SelectItem value="__create_new__">
+                        <span className="text-primary font-medium">+ Create New Classification</span>
+                      </SelectItem>
+                    </SelectContent>
                   </Select>
                 </div>
               </div>
@@ -520,6 +575,57 @@ export default function Items() {
         </DialogContent>
       </Dialog>
       <ItemsImportDialog open={importOpen} onOpenChange={setImportOpen} />
+
+      {/* Create Classification Dialog */}
+      <Dialog open={classifDialogOpen} onOpenChange={setClassifDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create New Item Classification</DialogTitle>
+            <DialogDescription>
+              Classify items to control stock tracking, reorder alerts, and BOM behaviour.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+            <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+            <span>Item classifications affect how items behave across the entire app — stock tracking, reorder alerts, BOM, and assembly orders. Set these options carefully. They cannot be changed once items are assigned to this classification.</span>
+          </div>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Classification Name *</Label>
+              <Input value={classifForm.name} onChange={e => setClassifForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Tool, Fixture, Packing Material" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Description</Label>
+              <Input value={classifForm.description} onChange={e => setClassifForm(f => ({ ...f, description: e.target.value }))} placeholder="Optional description" />
+            </div>
+            <div className="space-y-2">
+              {([
+                { key: "affects_stock", label: "Affects Stock Register" },
+                { key: "affects_reorder", label: "Affects Reorder Alerts" },
+                { key: "affects_bom", label: "Appears in BOM" },
+              ] as const).map(({ key, label }) => (
+                <div key={key} className="flex items-center justify-between">
+                  <span className="text-sm">{label}</span>
+                  <div className="flex gap-2">
+                    {([true, false] as const).map(v => (
+                      <button key={String(v)} onClick={() => setClassifForm(f => ({ ...f, [key]: v }))}
+                        className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${classifForm[key] === v ? 'bg-slate-900 text-white border-slate-900' : 'border-slate-200 hover:border-slate-400'}`}>
+                        {v ? "Yes" : "No"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClassifDialogOpen(false)}>Cancel</Button>
+            <Button onClick={() => createClassifMutation.mutate()} disabled={!classifForm.name.trim() || createClassifMutation.isPending}>
+              Create Classification
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Bulk delete confirmation */}
       <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>

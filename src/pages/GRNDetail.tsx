@@ -33,6 +33,7 @@ import {
 import { DocumentHeader } from "@/components/DocumentHeader";
 import { AuditTimeline } from "@/components/AuditTimeline";
 import { logAudit } from "@/lib/audit-api";
+import { UNITS } from "@/lib/constants";
 
 // ── Lookup tables ──────────────────────────────────────────────────────────────
 
@@ -1442,7 +1443,7 @@ export default function GRNDetail() {
                                     onChange={(e) => setScrapItems((prev) => prev.map((r, i) => i === idx ? { ...r, unit: e.target.value } : r))}
                                   >
                                     <option value="">—</option>
-                                    {["NOS","KG","KGS","MTR","SFT","SET","ROLL","SHEET","LTR","BOX","COIL","PAIR","LOT"].map((u) => (
+                                    {UNITS.map((u) => (
                                       <option key={u} value={u}>{u}</option>
                                     ))}
                                   </select>
