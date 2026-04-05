@@ -132,6 +132,7 @@ function GrnLineItemRow({
             <input
               type="number"
               min={0}
+              max={item.s1_admin_override ? undefined : (pendingQty > 0 ? pendingQty : undefined)}
               value={item.s1_received_now || ""}
               onChange={(e) => {
                 const v = Math.max(0, Number(e.target.value));

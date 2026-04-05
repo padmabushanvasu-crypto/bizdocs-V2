@@ -1410,7 +1410,7 @@ export default function DeliveryChallanForm() {
               </div>
               <DialogFooter className="gap-2">
                 <Button variant="outline" onClick={() => { setJcDialogOpen(false); navigate("/delivery-challans/new"); }}>Create Another DC</Button>
-                <Button onClick={() => navigate("/job-cards")}>View Job Cards →</Button>
+                <Button onClick={() => navigate("/job-works")}>View Job Cards →</Button>
               </DialogFooter>
             </div>
           ) : (

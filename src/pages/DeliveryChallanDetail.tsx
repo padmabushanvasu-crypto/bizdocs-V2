@@ -297,8 +297,8 @@ export default function DeliveryChallanDetail() {
         </EditableSection>
 
         {/* FROM / TO Block */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="border border-border rounded-lg p-4 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 print:grid-cols-2 gap-6 print:gap-2">
+          <div className="border border-border rounded-lg p-4 print:p-1 print:border-0 space-y-4 print:space-y-1">
             <div>
               <p className="text-xs font-semibold text-slate-500 mb-2">FROM</p>
               {companySettings ? (
@@ -359,7 +359,7 @@ export default function DeliveryChallanDetail() {
             </div>
           </div>
 
-          <div className="border border-border rounded-lg p-4">
+          <div className="border border-border rounded-lg p-4 print:p-1 print:border-0">
             <p className="text-xs font-semibold text-slate-500 mb-2">TO</p>
             <p className="font-medium text-foreground">{dc.party_name}</p>
             {dc.party_address && <p className="text-sm text-muted-foreground">{dc.party_address}</p>}
@@ -486,8 +486,8 @@ export default function DeliveryChallanDetail() {
         </div>
 
         {/* Receiver Box */}
-        <div className="border-2 border-dashed border-border rounded-lg p-4">
-          <p className="text-sm text-muted-foreground text-center mb-8">Received the above goods in good condition</p>
+        <div className="border-2 border-dashed border-border rounded-lg p-4 print:p-2">
+          <p className="text-sm text-muted-foreground text-center mb-8 print:mb-4">Received the above goods in good condition</p>
           <div className="flex justify-between items-end px-8">
             <div className="text-center">
               <div className="border-t border-border pt-1">

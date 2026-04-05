@@ -1251,7 +1251,7 @@ export default function GRNDetail() {
   const s2Visible = ["quality_pending", "quality_done", "closed", "awaiting_store"].includes(stage);
   const s2Done    = ["quality_done", "closed", "awaiting_store"].includes(stage);
   const showStorePanel = stage === "awaiting_store" && !g.store_confirmed;
-  const s1Editable = !s1Done || s1Editing;
+  const s1Editable = (!s1Done || s1Editing) && !isDeletedOrCancelled;
 
   const qtyMismatches = s1Lines.filter((l) => l.received_qty > 0 && l.received_qty !== l.po_quantity);
   const ncItemsWithData = ncSummaries.filter((s) => s.non_conforming_qty > 0);
@@ -1295,8 +1295,9 @@ export default function GRNDetail() {
       {/* Print CSS */}
       <style>{`
         @media print {
-          body > * { display: none !important; }
-          #grn-print-view { display: block !important; }
+          * { visibility: hidden; }
+          #grn-print-view, #grn-print-view * { visibility: visible; }
+          #grn-print-view { position: absolute; left: 0; top: 0; width: 100%; display: block !important; }
           @page {
             size: A4 portrait;
             margin: 12mm 14mm 12mm 14mm;
@@ -1386,7 +1387,7 @@ export default function GRNDetail() {
             <p className="text-xs text-blue-600 mt-0.5">Inward Team</p>
           </div>
           <div className="flex items-center gap-3">
-            {s1Done && !s1Editing && (
+            {s1Done && !s1Editing && !isDeletedOrCancelled && (
               <Button variant="outline" size="sm" className="text-blue-700 border-blue-300 bg-white" onClick={() => setS1Editing(true)}>
                 Edit Receipt
               </Button>

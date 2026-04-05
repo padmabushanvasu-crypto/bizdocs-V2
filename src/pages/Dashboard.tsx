@@ -100,12 +100,16 @@ async function fetchDashboardData(): Promise<DashboardData> {
   const finishedGoodCount = items.filter(
     (i) => i.item_type === "finished_good" && (i.current_stock ?? 0) > 0
   ).length;
-  const zeroStockCount = items.filter((i) => (i.current_stock ?? 0) === 0).length;
+  const zeroStockCount = items.filter(
+    (i) => (i.current_stock ?? 0) === 0 && i.item_type !== 'sub_assembly' && i.item_type !== 'finished_good'
+  ).length;
   const needsBuildingCount = items.filter(
     (i) => i.item_type === "finished_good" && (i.stock_finished_goods ?? 0) < (i.min_finished_stock ?? 0) && (i.min_finished_stock ?? 0) > 0
   ).length;
   // Phase 13: critical/warning/locked counts using stock_alert_level
-  const criticalStockCount = items.filter((i) => i.stock_alert_level === 'critical').length;
+  const criticalStockCount = items.filter(
+    (i) => i.stock_alert_level === 'critical' && i.item_type !== 'sub_assembly' && i.item_type !== 'finished_good'
+  ).length;
   const warningStockCount  = items.filter((i) => i.stock_alert_level === 'warning').length;
   const lockedStockCount   = items.filter((i) => i.stock_alert_level === 'locked').length;
 

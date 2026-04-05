@@ -463,18 +463,21 @@ function StockRegisterInner() {
                 <th className="text-left px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
                   Status
                 </th>
+                <th className="text-left px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                  Action
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={10} className="text-center py-12 text-slate-400 text-sm">
+                  <td colSpan={11} className="text-center py-12 text-slate-400 text-sm">
                     Loading…
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-16">
+                  <td colSpan={11} className="py-16">
                     <div className="flex flex-col items-center gap-3">
                       <Package className="h-10 w-10 text-slate-300" />
                       <div className="text-center">
@@ -622,6 +625,44 @@ function StockRegisterInner() {
                               }
                             />
                           );
+                        })()}
+                      </td>
+
+                      {/* Action */}
+                      <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                        {(() => {
+                          const t = row.item_type;
+                          if (t === "raw_material" || t === "bought_out" || t === "consumable") {
+                            return (
+                              <button
+                                className="text-xs font-medium text-blue-700 border border-blue-200 rounded px-2 py-1 hover:bg-blue-50 transition-colors whitespace-nowrap"
+                                onClick={() => navigate(`/purchase-orders/new?item_id=${row.id}`)}
+                              >
+                                Raise PO
+                              </button>
+                            );
+                          }
+                          if (t === "component") {
+                            return (
+                              <button
+                                className="text-xs font-medium text-slate-700 border border-slate-200 rounded px-2 py-1 hover:bg-slate-50 transition-colors whitespace-nowrap"
+                                onClick={() => navigate(`/delivery-challans/new?item_id=${row.id}`)}
+                              >
+                                Raise Job Card
+                              </button>
+                            );
+                          }
+                          if (t === "sub_assembly" || t === "finished_good") {
+                            return (
+                              <button
+                                className="text-xs font-medium text-emerald-700 border border-emerald-200 rounded px-2 py-1 hover:bg-emerald-50 transition-colors whitespace-nowrap"
+                                onClick={() => navigate(`/assembly-orders?item_id=${row.id}`)}
+                              >
+                                Assembly Order
+                              </button>
+                            );
+                          }
+                          return null;
                         })()}
                       </td>
                     </tr>
