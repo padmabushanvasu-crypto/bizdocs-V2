@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, AlertTriangle } from "lucide-react";
-import { fetchJobWork, type JobWorkStep } from "@/lib/job-works-api";
+import { ChevronLeft, AlertTriangle, TrendingUp } from "lucide-react";
+import { fetchJobWork, type JobWork, type JobWorkStep } from "@/lib/job-works-api";
 import { format } from "date-fns";
 
 // ── Stage Progress Bar with rich tooltips ─────────────────────────────────────
@@ -72,6 +72,129 @@ function StageProgressBar({ steps }: { steps: JobWorkStep[] }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ── Cost Summary Panel ────────────────────────────────────────────────────────
+
+function fmt(n: number) {
+  return "₹" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function CostSummaryPanel({ jc, steps }: { jc: JobWork; steps: JobWorkStep[] }) {
+  const rawMaterialCost = jc.initial_cost ?? 0;
+
+  const processingRows = steps.map((step) => {
+    if (step.step_type === "internal") {
+      const total = (step.labour_cost ?? 0) + (step.material_cost ?? 0) + (step.additional_cost ?? 0);
+      return { step, total };
+    } else {
+      const total = (step.job_work_charges ?? 0) + (step.transport_cost_out ?? 0) + (step.transport_cost_in ?? 0);
+      return { step, total };
+    }
+  });
+
+  const totalProcessingCost = processingRows.reduce((s, r) => s + r.total, 0);
+  const totalCost = rawMaterialCost + totalProcessingCost;
+
+  const acceptedQty = jc.quantity_accepted ?? jc.quantity_original ?? 0;
+  const rejectedQty = jc.quantity_rejected ?? 0;
+  const originalQty = jc.quantity_original ?? 0;
+  const costPerUnit = acceptedQty > 0 ? totalCost / acceptedQty : 0;
+  const standardCost = jc.standard_cost ?? 0;
+  const variance = costPerUnit - standardCost;
+  const variancePct = standardCost > 0 ? (variance / standardCost) * 100 : null;
+
+  // Cost absorbed by rejections — proportional estimate
+  const rejectionCost = originalQty > 0 && rejectedQty > 0
+    ? (totalCost / originalQty) * rejectedQty
+    : 0;
+
+  return (
+    <div className="paper-card space-y-4">
+      <div className="flex items-center gap-2">
+        <TrendingUp className="h-4 w-4 text-slate-500" />
+        <h2 className="text-sm font-semibold text-slate-700">Cost Accumulation</h2>
+        {jc.batch_ref && (
+          <span className="text-xs text-muted-foreground">— Batch {jc.batch_ref}</span>
+        )}
+      </div>
+
+      <div className="font-mono text-xs space-y-1 text-slate-700">
+        {/* Raw material */}
+        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mt-2">Raw Material Cost</div>
+        {rawMaterialCost > 0 ? (
+          <div className="flex justify-between">
+            <span className="text-slate-600">{jc.item_code ?? jc.item_description ?? "Item"} × {originalQty} {jc.unit ?? ""}</span>
+            <span className="font-medium">{fmt(rawMaterialCost)}</span>
+          </div>
+        ) : (
+          <div className="text-slate-400 italic">No raw material cost recorded</div>
+        )}
+
+        {/* Processing steps */}
+        {processingRows.length > 0 && (
+          <>
+            <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mt-3">Processing Costs</div>
+            {processingRows.map(({ step, total }) => (
+              <div key={step.id} className="flex justify-between">
+                <span className="text-slate-600 flex-1 min-w-0 pr-2 truncate">
+                  {step.step_number}. {step.name}
+                  {step.step_type === "internal" && " (Internal)"}
+                  {step.step_type === "external" && ` (External${step.vendor_name ? " — " + step.vendor_name : ""})`}
+                </span>
+                <span className={total > 0 ? "font-medium" : "text-slate-400"}>{total > 0 ? fmt(total) : "—"}</span>
+              </div>
+            ))}
+          </>
+        )}
+
+        {/* Non-conformance deductions */}
+        {rejectedQty > 0 && (
+          <>
+            <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mt-3">Non-Conformance Deductions</div>
+            <div className="flex justify-between text-amber-700">
+              <span>{rejectedQty} unit{rejectedQty !== 1 ? "s" : ""} rejected — cost absorbed</span>
+              <span>{fmt(rejectionCost)}</span>
+            </div>
+          </>
+        )}
+
+        {/* Divider + totals */}
+        <div className="border-t border-slate-200 mt-3 pt-3 space-y-1">
+          <div className="flex justify-between font-semibold">
+            <span>Total Cost (all stages)</span>
+            <span>{fmt(totalCost)}</span>
+          </div>
+          <div className="flex justify-between text-slate-500">
+            <span>Accepted Qty</span>
+            <span>{acceptedQty} {jc.unit ?? ""}</span>
+          </div>
+          <div className="flex justify-between font-semibold text-blue-700">
+            <span>Cost Per Accepted Unit</span>
+            <span>{acceptedQty > 0 ? fmt(costPerUnit) : "—"}</span>
+          </div>
+          {standardCost > 0 && (
+            <>
+              <div className="flex justify-between text-slate-500">
+                <span>Standard Cost (Items Master)</span>
+                <span>{fmt(standardCost)}</span>
+              </div>
+              <div className={`flex justify-between font-medium ${variance > 0 ? "text-red-600" : variance < 0 ? "text-emerald-600" : "text-slate-500"}`}>
+                <span>Variance</span>
+                <span>
+                  {variance >= 0 ? "+" : ""}{fmt(variance)}
+                  {variancePct !== null && ` (${variance >= 0 ? "+" : ""}${variancePct.toFixed(1)}%)`}
+                </span>
+              </div>
+            </>
+          )}
+          {standardCost === 0 && (
+            <div className="text-slate-400 text-[11px]">Standard cost not set in Items Master</div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -160,6 +283,9 @@ export default function JobCardDetail() {
           <StageProgressBar steps={steps} />
         </div>
       </div>
+
+      {/* ── Cost Summary ── */}
+      <CostSummaryPanel jc={data} steps={steps} />
 
       {/* ── Steps list ── */}
       <div className="paper-card space-y-3">

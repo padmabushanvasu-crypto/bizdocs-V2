@@ -2473,6 +2473,7 @@ export default function DataImport() {
   }, [location.state]);
   const [clearTarget, setClearTarget] = useState<ClearTarget | null>(null);
   const [clearLoading, setClearLoading] = useState(false);
+  const [clearConfirmText, setClearConfirmText] = useState("");
 
   const { data: partiesCount = 0, refetch: refetchPartiesCount } = useQuery({
     queryKey: ["count", "parties"],
@@ -2587,6 +2588,10 @@ export default function DataImport() {
       else if (clearTarget.type === "mould_items") { refetchMouldItemsCount(); }
       else if (clearTarget.type === "process_codes") { refetchProcessCodesCount(); }
       toast({ title: `All ${count} ${clearTarget.noun} cleared successfully` });
+      if (clearTarget.type === "stock") {
+        await (supabase as any).from("audit_log").insert([{ company_id: companyId, document_type: "import", document_id: null, action: "All opening stock cleared", details: { cleared_count: count } }]);
+      }
+      setClearConfirmText("");
       setClearTarget(null);
     } catch (err: any) {
       const isFkError = String(err?.message ?? "").includes("violates foreign key constraint");
@@ -2948,17 +2953,40 @@ export default function DataImport() {
       )}
 
       {/* Clear All Confirmation Dialog */}
-      <Dialog open={!!clearTarget} onOpenChange={(open) => { if (!open && !clearLoading) setClearTarget(null); }}>
+      <Dialog open={!!clearTarget} onOpenChange={(open) => { if (!open && !clearLoading) { setClearTarget(null); setClearConfirmText(""); } }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Clear All {clearTarget?.noun}</DialogTitle>
             <DialogDescription>
-              You are about to delete all {clearTarget?.count} {clearTarget?.noun}. This cannot be undone.
+              {clearTarget?.type === "stock" ? (
+                <>
+                  This will remove ALL opening stock entries entered via import. This will <strong>not</strong> affect stock updated through GRNs, DCs, or Assembly Orders. This action cannot be undone.
+                </>
+              ) : (
+                <>You are about to delete all {clearTarget?.count} {clearTarget?.noun}. This cannot be undone.</>
+              )}
             </DialogDescription>
           </DialogHeader>
+          {clearTarget?.type === "stock" && (
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-slate-700">Type <span className="font-mono font-bold">CONFIRM</span> to proceed</label>
+              <input
+                type="text"
+                value={clearConfirmText}
+                onChange={(e) => setClearConfirmText(e.target.value)}
+                placeholder="CONFIRM"
+                className="w-full rounded-md border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                autoComplete="off"
+              />
+            </div>
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setClearTarget(null)} disabled={clearLoading}>Cancel</Button>
-            <Button variant="destructive" onClick={doClear} disabled={clearLoading}>
+            <Button variant="outline" onClick={() => { setClearTarget(null); setClearConfirmText(""); }} disabled={clearLoading}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={doClear}
+              disabled={clearLoading || (clearTarget?.type === "stock" && clearConfirmText !== "CONFIRM")}
+            >
               {clearLoading ? "Clearing…" : `Delete All ${clearTarget?.count}`}
             </Button>
           </DialogFooter>

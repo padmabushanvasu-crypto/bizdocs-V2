@@ -176,6 +176,8 @@ export default function DeliveryChallanForm() {
   // Change 4: full all-stage route (internal + external) for read-only display
   const [lineAllRoutes, setLineAllRoutes] = useState<Map<number, ProcessingRoute[]>>(new Map());
   const [lineRouteExpanded, setLineRouteExpanded] = useState<Map<number, boolean>>(new Map());
+  // Stock warning: track current_stock per line index
+  const [lineItemStock, setLineItemStock] = useState<Map<number, number>>(new Map());
 
   const selectStage = (lineIndex: number, stage: ProcessingRoute) => {
     setLineSelectedStageId(prev => { const m = new Map(prev); m.set(lineIndex, stage.id); return m; });
@@ -839,8 +841,9 @@ export default function DeliveryChallanForm() {
                           updated[index].amount = Math.round((updated[index].quantity || 0) * (selectedItem.sale_price || 0) * 100) / 100;
                           return updated;
                         });
-                        // Track item_id
+                        // Track item_id and current_stock for over-stock warning
                         setItemIdByIndex(prev => { const m = new Map(prev); m.set(index, selectedItem.id); return m; });
+                        setLineItemStock(prev => { const m = new Map(prev); m.set(index, selectedItem.current_stock ?? 0); return m; });
                         // Load BOM stages for this item
                         fetchBomStagesForItemDC(selectedItem.id).then(stages => {
                           setLineBomStages(prev => { const m = new Map(prev); m.set(index, stages); return m; });
@@ -1232,6 +1235,23 @@ export default function DeliveryChallanForm() {
                     </td>
                   </tr>
                 )}
+                {/* Stock warning row */}
+                {(() => {
+                  const stock = lineItemStock.get(index);
+                  const qty = item.quantity || 0;
+                  if (stock === undefined || qty <= stock) return null;
+                  return (
+                    <tr key={`stock-warn-${index}`} className="bg-amber-50/60">
+                      <td />
+                      <td colSpan={10} className="px-3 pb-2">
+                        <p className="text-xs text-amber-700 flex items-center gap-1.5">
+                          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                          Current stock: {stock} {item.unit || "NOS"}. You are issuing {qty} {item.unit || "NOS"}. Stock will go negative after this DC is issued. Please verify before proceeding.
+                        </p>
+                      </td>
+                    </tr>
+                  );
+                })()}
                 </React.Fragment>
               ))}
             </tbody>

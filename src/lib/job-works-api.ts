@@ -282,7 +282,10 @@ export async function createJobWork(
       quantity_original: data.quantity_original ?? 1,
       quantity_accepted: data.quantity_accepted ?? data.quantity_original ?? 1,
       quantity_rejected: 0,
-      initial_cost: data.initial_cost ?? 0,
+      // If initial_cost not explicitly provided, derive from standard_cost × qty (raw material cost at issue time)
+      initial_cost: data.initial_cost != null && data.initial_cost > 0
+        ? data.initial_cost
+        : standardCost * (data.quantity_original ?? 1),
       standard_cost: standardCost,
       current_location: "in_house",
       status: "in_progress",
