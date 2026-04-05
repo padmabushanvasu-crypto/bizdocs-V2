@@ -62,19 +62,31 @@ function ComponentsReady({ lines }: { lines: AssemblyOrderWithLines["lines"] }) 
 
 // ── Stage progress dots ───────────────────────────────────────────────────────
 
-function StageProgressBar({ current, total }: { current: number | null; total: number | null }) {
+function StageProgressBar({
+  current,
+  total,
+  stageName,
+}: {
+  current: number | null;
+  total: number | null;
+  stageName?: string | null;
+}) {
   if (!total || total <= 1) return <span className="text-muted-foreground text-xs">—</span>;
   const cur = current ?? 0;
   return (
     <div className="flex items-center gap-0.5">
       {Array.from({ length: total }).map((_, i) => {
         const stageNum = i + 1;
-        const done = stageNum < cur;
+        const done   = stageNum < cur;
         const active = stageNum === cur;
+        const tooltip =
+          active && stageName
+            ? `Step ${stageNum} of ${total} — ${stageName}`
+            : `Step ${stageNum} of ${total}`;
         return (
-          <div key={i} className="flex items-center">
+          <div key={i} className="flex items-center" title={tooltip}>
             <div
-              className={`h-2 w-2 rounded-full shrink-0 ${
+              className={`h-2 w-2 rounded-full shrink-0 cursor-default ${
                 done   ? "bg-blue-500" :
                 active ? "bg-amber-500 animate-pulse" :
                          "bg-slate-200"
@@ -434,7 +446,7 @@ export default function WipRegister() {
                               {li.stage_number ? `Stage ${li.stage_number}${li.stage_name ? `: ${li.stage_name}` : ''}` : '—'}
                             </td>
                             <td>
-                              <StageProgressBar current={li.stage_number ?? null} total={li.total_stages ?? null} />
+                              <StageProgressBar current={li.stage_number ?? null} total={li.total_stages ?? null} stageName={li.stage_name} />
                             </td>
                             <td className="text-xs">{li.nature_of_process ?? '—'}</td>
                             <td className="text-sm">{liIdx === 0 ? (row.party_name ?? '—') : ''}</td>
