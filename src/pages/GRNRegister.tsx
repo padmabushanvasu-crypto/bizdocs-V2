@@ -1,6 +1,6 @@
 import { useState, useMemo, Component, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { PackageCheck, Plus, Search, Eye, ClipboardCheck, AlertTriangle, Package, Download, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,7 @@ const stageConfig: Record<string, { label: string; cls: string; pulse?: boolean 
   quantitative_done:              { label: 'Receipt Done',      cls: 'bg-blue-100 text-blue-800 border border-blue-300' },
   quality_pending:                { label: 'Awaiting QC',       cls: 'bg-amber-50 text-amber-700 border border-amber-200', pulse: true },
   quality_done:                   { label: 'QC Done',           cls: 'bg-teal-50 text-teal-700 border border-teal-200' },
+  awaiting_store:                 { label: '📦 Awaiting Store', cls: 'bg-orange-50 text-orange-700 border border-orange-200', pulse: true },
   closed_fully_accepted:          { label: '✓ Fully Accepted',  cls: 'bg-green-50 text-green-700 border border-green-200' },
   closed_conditionally_accepted:  { label: '⚠ Conditional',    cls: 'bg-amber-50 text-amber-700 border border-amber-200' },
   closed_partially_returned:      { label: '↩ Partial Return',  cls: 'bg-amber-50 text-amber-700 border border-amber-200' },
@@ -60,12 +61,14 @@ const STAGE_PILLS = [
   { label: 'All',              value: 'all' },
   { label: 'Awaiting Receipt', value: 'quantitative_pending' },
   { label: 'Awaiting QC',      value: 'quality_pending' },
+  { label: 'Awaiting Store',   value: 'awaiting_store' },
   { label: 'Accepted',         value: 'closed_accepted' },
   { label: 'Non-Conforming',   value: 'closed_nonconforming' },
 ];
 
 function GRNRegisterInner() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -81,7 +84,7 @@ function GRNRegisterInner() {
     return opts;
   }, []);
 
-  const [stageFilter, setStageFilter] = useState('all');
+  const [stageFilter, setStageFilter] = useState(searchParams.get('stage') ?? 'all');
   const [filters, setFilters] = useState<GRNFilters>({
     search: "",
     status: "all",
@@ -110,6 +113,7 @@ function GRNRegisterInner() {
     const f = { ...filters };
     if (stageFilter === 'quantitative_pending') (f as any).grn_stage = 'quantitative_pending';
     else if (stageFilter === 'quality_pending') (f as any).grn_stage = 'quality_pending';
+    else if (stageFilter === 'awaiting_store') (f as any).grn_stage = 'awaiting_store';
     else if (stageFilter === 'closed_accepted') (f as any).grn_stage = 'closed';
     else if (stageFilter === 'closed_nonconforming') (f as any).grn_stage = 'closed';
     else delete (f as any).grn_stage;

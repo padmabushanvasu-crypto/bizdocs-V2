@@ -20,6 +20,7 @@ import {
   getNextGRNNumber,
   fetchOpenPOs,
   fetchPOLineItemsForGRN,
+  fetchDCReceiptSummary,
   recordGRNAndUpdatePO,
   fetchGRN,
   type GRNLineItem,
@@ -391,30 +392,41 @@ function GRNFormInner({ defaultGrnType }: Props) {
     setVendorName(dc.party_name ?? '');
     try {
       const { supabase } = await import("@/integrations/supabase/client");
-      const { getCompanyId } = await import("@/lib/auth-helpers");
-      const companyId = await getCompanyId();
-      const { data: dcItems } = await (supabase as any)
-        .from("dc_line_items")
-        .select("*")
-        .eq("dc_id", dc.id)
-        .order("serial_number", { ascending: true });
-      const items: LineItemState[] = (dcItems ?? []).map((item: any, idx: number) => {
-        const base: GRNLineItem = {
-          serial_number: idx + 1,
-          description: item.description,
-          drawing_number: item.drawing_number || "",
-          unit: item.unit || "NOS",
-          po_quantity: item.quantity || 0,
-          previously_received: 0,
-          pending_quantity: item.quantity || 0,
-          receiving_now: 0,
-          accepted_quantity: 0,
-          rejected_quantity: 0,
-        };
-        const state = toLineState(base, idx);
-        (state as any).ordered_qty = item.quantity || 0;
-        return state;
-      });
+      const [{ data: dcItems }, prevReceivedMap] = await Promise.all([
+        (supabase as any)
+          .from("dc_line_items")
+          .select("*")
+          .eq("dc_id", dc.id)
+          .order("serial_number", { ascending: true }),
+        fetchDCReceiptSummary(dc.id),
+      ]);
+      const items: LineItemState[] = (dcItems ?? [])
+        .filter((item: any) => {
+          const alreadyReceived = prevReceivedMap[item.id] ?? 0;
+          return (item.quantity || 0) - alreadyReceived > 0;
+        })
+        .map((item: any, idx: number) => {
+          const alreadyReceived = prevReceivedMap[item.id] ?? 0;
+          const pending = Math.max(0, (item.quantity || 0) - alreadyReceived);
+          const base: GRNLineItem = {
+            serial_number: idx + 1,
+            description: item.description,
+            drawing_number: item.drawing_number || "",
+            unit: item.unit || "NOS",
+            po_quantity: item.quantity || 0,
+            previously_received: alreadyReceived,
+            pending_quantity: pending,
+            receiving_now: 0,
+            accepted_quantity: 0,
+            rejected_quantity: 0,
+            dc_line_item_id: item.id,
+          };
+          const state = toLineState(base, idx);
+          (state as any).ordered_qty = item.quantity || 0;
+          (state as any).previously_received_qty = alreadyReceived;
+          (state as any).dc_line_item_id = item.id;
+          return state;
+        });
       setLineItems(items);
     } catch (err: any) {
       toast({ title: "Error loading DC items", description: err.message, variant: "destructive" });
@@ -460,8 +472,11 @@ function GRNFormInner({ defaultGrnType }: Props) {
       const grnData = {
         grn_number: grnNumber,
         grn_date: format(grnDate, "yyyy-MM-dd"),
+        grn_type: grnType,
         po_id: selectedPO?.id || null,
         po_number: selectedPO?.po_number || null,
+        linked_dc_id: selectedDC?.id || null,
+        linked_dc_number: selectedDC?.dc_number || null,
         vendor_id: selectedPO?.vendor_id || selectedDC?.party_id || null,
         vendor_name: selectedPO?.vendor_name || selectedDC?.party_name || vendorName || null,
         vendor_invoice_number: vendorInvoiceNumber || null,
@@ -469,6 +484,8 @@ function GRNFormInner({ defaultGrnType }: Props) {
         transporter_name: transporterName || null,
         vehicle_number: vehicleNumber || null,
         lr_reference: lrReference || null,
+        driver_name: driverName || null,
+        driver_contact: driverContact || null,
         received_by: receivedBy || null,
         notes: notes || null,
         total_received: totals.totalReceiving,
@@ -493,6 +510,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
           rejected_quantity: 0,
           rejection_reason: undefined,
           rejection_action: null,
+          dc_line_item_id: (i as any).dc_line_item_id || null,
         }));
 
       return await recordGRNAndUpdatePO({ grn: grnData, lineItems: items });

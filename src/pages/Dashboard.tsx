@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { Activity, CheckCircle2 } from "lucide-react";
-import { fetchPendingQCGRNs } from "@/lib/grn-api";
+import { fetchPendingQCGRNs, fetchAwaitingStoreCount } from "@/lib/grn-api";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatCurrency } from "@/lib/gst-utils";
 import { fetchAssemblyOrderStats } from "@/lib/assembly-orders-api";
@@ -269,6 +269,13 @@ export default function Dashboard() {
   });
   const pendingQCCount = pendingQCGrns.length;
 
+  const { data: awaitingStoreCount = 0 } = useQuery({
+    queryKey: ['awaiting-store-count'],
+    queryFn: fetchAwaitingStoreCount,
+    staleTime: STALE,
+    refetchInterval: STALE,
+  });
+
   // Derived alert counts
   const overdueDCReturns  = dashData?.overdueDCCount ?? 0;
   const zeroStockItems    = dashData?.zeroStockCount ?? 0;
@@ -445,6 +452,14 @@ export default function Dashboard() {
                 count={pendingQCCount}
                 colour="amber"
                 onClick={() => navigate('/grn?stage=quality_pending')}
+              />
+            )}
+            {awaitingStoreCount > 0 && (
+              <AlertPill
+                label="Awaiting Store"
+                count={awaitingStoreCount}
+                colour="amber"
+                onClick={() => navigate('/grn?stage=awaiting_store')}
               />
             )}
             {fatPending > 0 && (

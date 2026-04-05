@@ -4,7 +4,7 @@ import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
 import { getNextDocNumber } from "@/lib/doc-number-utils";
 import { updateStockBucket } from "@/lib/items-api";
 
-export type GRNStage = 'draft' | 'quantitative_pending' | 'quantitative_done' | 'quality_pending' | 'quality_done' | 'closed';
+export type GRNStage = 'draft' | 'quantitative_pending' | 'quantitative_done' | 'quality_pending' | 'quality_done' | 'closed' | 'awaiting_store';
 export type QualityVerdict = 'fully_accepted' | 'conditionally_accepted' | 'partially_returned' | 'returned';
 export type NonConformanceType = 'dimensional' | 'surface_finish' | 'material_grade' | 'functional' | 'packaging' | 'documentation' | 'other';
 export type Disposition = 'accept_as_is' | 'conditional_accept' | 'return_to_vendor' | 'scrap';
@@ -14,6 +14,7 @@ export interface GRNLineItem {
   id?: string;
   serial_number: number;
   po_line_item_id?: string;
+  dc_line_item_id?: string | null;
   description: string;
   drawing_number?: string;
   unit: string;
@@ -154,6 +155,8 @@ export interface GRNQCMeasurement {
   result?: 'conforming' | 'non_conforming';
   measuring_instrument?: string;
   remarks?: string;
+  conforming_qty?: number;
+  non_conforming_qty?: number;
 }
 
 export interface GRNFilters {
@@ -244,11 +247,16 @@ export async function createGRN({ grn, lineItems }: CreateGRNData) {
   const { data: newGRN, error } = await supabase.from("grns").insert({
     company_id: companyId,
     grn_number: grn.grn_number, grn_date: grn.grn_date,
+    grn_type: (grn as any).grn_type ?? 'po_grn',
     po_id: grn.po_id || null, po_number: grn.po_number || null,
+    linked_dc_id: (grn as any).linked_dc_id ?? null,
+    linked_dc_number: (grn as any).linked_dc_number ?? null,
     vendor_id: grn.vendor_id || null, vendor_name: grn.vendor_name || null,
     vendor_invoice_number: grn.vendor_invoice_number || null, vendor_invoice_date: grn.vendor_invoice_date || null,
     transporter_name: grn.transporter_name || null,
     vehicle_number: grn.vehicle_number || null, lr_reference: grn.lr_reference || null,
+    driver_name: (grn as any).driver_name ?? null,
+    driver_contact: (grn as any).driver_contact ?? null,
     received_by: grn.received_by || null, notes: grn.notes || null,
     total_received: grn.total_received, total_accepted: grn.total_accepted, total_rejected: grn.total_rejected,
     status: grn.status, recorded_at: grn.recorded_at,
@@ -266,9 +274,12 @@ export async function createGRN({ grn, lineItems }: CreateGRNData) {
     const itemsToInsert = lineItems.map((item) => ({
       company_id: companyId,
       grn_id: (newGRN as any).id, po_line_item_id: item.po_line_item_id || null,
+      dc_line_item_id: item.dc_line_item_id || null,
       serial_number: item.serial_number, description: item.description,
       drawing_number: item.drawing_number || null, unit: item.unit,
       po_quantity: item.po_quantity, previously_received: item.previously_received,
+      previously_received_qty: item.previously_received || 0,
+      ordered_qty: item.po_quantity || 0,
       pending_quantity: item.pending_quantity, receiving_now: item.receiving_now,
       accepted_quantity: item.accepted_quantity, rejected_quantity: item.rejected_quantity,
       rejection_reason: item.rejection_reason || null, remarks: item.remarks || null,
@@ -288,13 +299,21 @@ export async function recordGRNAndUpdatePO(grnData: CreateGRNData) {
   const today = new Date().toISOString().split("T")[0];
 
   for (const item of grnData.lineItems) {
-    // Update PO line item received quantities
+    // Update PO line item received quantities — validate first, then update atomically
     if (item.po_line_item_id && item.accepted_quantity > 0) {
       const { data: poItem } = await supabase.from("po_line_items").select("received_quantity, quantity").eq("id", item.po_line_item_id).single();
       if (poItem) {
         const pi = poItem as any;
-        const newReceived = (pi.received_quantity || 0) + item.accepted_quantity;
-        const newPending = Math.max(0, pi.quantity - newReceived);
+        const currentReceived = pi.received_quantity || 0;
+        const ordered = pi.quantity || 0;
+        const maxAllowed = ordered - currentReceived;
+        if (item.accepted_quantity > maxAllowed) {
+          throw new Error(
+            `Over-receipt for "${item.description}": trying to receive ${item.accepted_quantity} but only ${maxAllowed} pending (ordered ${ordered}, already received ${currentReceived}). Reduce the quantity or split into a separate GRN.`
+          );
+        }
+        const newReceived = currentReceived + item.accepted_quantity;
+        const newPending = Math.max(0, ordered - newReceived);
         await supabase.from("po_line_items").update({ received_quantity: newReceived, pending_quantity: newPending } as any).eq("id", item.po_line_item_id);
       }
     }
@@ -782,6 +801,9 @@ export async function saveQualityStage(
   inspectedBy: string,
   qualityRemarks?: string | null,
   inspectionDate?: string | null,
+  approvedBy?: string | null,
+  isFinalGrn?: boolean,
+  finalGrnReason?: string | null,
 ): Promise<void> {
   const now = inspectionDate ? new Date(inspectionDate).toISOString() : new Date().toISOString();
   for (const line of lines) {
@@ -814,9 +836,46 @@ export async function saveQualityStage(
       quality_completed_by: inspectedBy,
       total_accepted: totalConforming,
       total_rejected: totalNonConforming,
+      qc_approved_by: approvedBy ?? null,
+      is_final_grn: isFinalGrn ?? false,
+      final_grn_reason: finalGrnReason ?? null,
     })
     .eq('id', grnId);
   if (grnErr) throw grnErr;
+  // If this is a final GRN, override stage to awaiting_store
+  if (isFinalGrn) {
+    const { error: stageErr } = await (supabase as any)
+      .from('grns')
+      .update({ grn_stage: 'awaiting_store' })
+      .eq('id', grnId);
+    if (stageErr) throw stageErr;
+  }
+}
+
+/**
+ * Returns a map of { dc_line_item_id → total_received_now } across all
+ * non-deleted GRNs that were created against the given DC. Used to
+ * compute previously_received quantities when creating a new DC-GRN.
+ */
+export async function fetchDCReceiptSummary(dcId: string): Promise<Record<string, number>> {
+  const { data: grns } = await (supabase as any)
+    .from('grns')
+    .select('id')
+    .eq('linked_dc_id', dcId)
+    .neq('status', 'deleted');
+  if (!grns?.length) return {};
+  const grnIds = (grns as any[]).map((g: any) => g.id);
+  const { data: items } = await (supabase as any)
+    .from('grn_line_items')
+    .select('dc_line_item_id, received_now, receiving_now')
+    .in('grn_id', grnIds);
+  const summary: Record<string, number> = {};
+  for (const item of (items ?? []) as any[]) {
+    const key: string | null = item.dc_line_item_id;
+    if (!key) continue;
+    summary[key] = (summary[key] ?? 0) + (item.received_now ?? item.receiving_now ?? 0);
+  }
+  return summary;
 }
 
 export async function fetchGRNWithStages(id: string): Promise<GRN> {
@@ -886,9 +945,83 @@ export async function saveGRNQCMeasurements(
     result: m.result ?? null,
     measuring_instrument: m.measuring_instrument ?? null,
     remarks: m.remarks ?? null,
+    conforming_qty: m.conforming_qty ?? null,
+    non_conforming_qty: m.non_conforming_qty ?? null,
   }));
   const { error } = await (supabase as any)
     .from('grn_qc_measurements')
     .insert(rows);
   if (error) throw error;
+}
+
+export interface GRNScrapItem {
+  material_type: string;
+  quantity?: number | null;
+  unit?: string;
+  notes?: string;
+}
+
+export async function saveGRNScrapItems(
+  grnId: string,
+  scrapReturned: boolean,
+  scrapNotes: string | null,
+  items: GRNScrapItem[]
+): Promise<void> {
+  const companyId = await getCompanyId();
+  // Update grn header flags
+  const { error: grnErr } = await (supabase as any)
+    .from('grns')
+    .update({ scrap_returned: scrapReturned, scrap_notes: scrapNotes })
+    .eq('id', grnId);
+  if (grnErr) throw grnErr;
+  // Delete then re-insert scrap items
+  const { error: delErr } = await (supabase as any)
+    .from('grn_scrap_items')
+    .delete()
+    .eq('grn_id', grnId);
+  if (delErr) throw delErr;
+  if (scrapReturned && items.length > 0) {
+    const rows = items.map((item) => ({
+      company_id: companyId,
+      grn_id: grnId,
+      material_type: item.material_type,
+      quantity: item.quantity ?? null,
+      unit: item.unit || null,
+      notes: item.notes || null,
+    }));
+    const { error: insErr } = await (supabase as any)
+      .from('grn_scrap_items')
+      .insert(rows);
+    if (insErr) throw insErr;
+  }
+}
+
+export async function storeConfirmGRN(
+  grnId: string,
+  data: { confirmedBy: string; confirmedAt: string; location?: string | null; notes?: string | null }
+): Promise<void> {
+  const { error } = await (supabase as any)
+    .from('grns')
+    .update({
+      store_confirmed:    true,
+      store_confirmed_by: data.confirmedBy,
+      store_confirmed_at: new Date(data.confirmedAt).toISOString(),
+      store_location:     data.location ?? null,
+      store_notes:        data.notes ?? null,
+      grn_stage:          'closed',
+    })
+    .eq('id', grnId);
+  if (error) throw error;
+}
+
+export async function fetchAwaitingStoreCount(): Promise<number> {
+  const companyId = await getCompanyId();
+  if (!companyId) return 0;
+  const { count } = await (supabase as any)
+    .from('grns')
+    .select('id', { count: 'exact', head: true })
+    .eq('company_id', companyId)
+    .eq('grn_stage', 'awaiting_store')
+    .eq('store_confirmed', false);
+  return count ?? 0;
 }

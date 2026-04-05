@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  ChevronLeft, Printer, CheckCircle2, Clock, AlertTriangle, Trash2, Plus,
+  ChevronLeft, Printer, CheckCircle2, Clock, AlertTriangle, Trash2, Plus, PackageCheck,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,8 @@ import {
   saveQualityStage,
   fetchGRNQCMeasurements,
   saveGRNQCMeasurements,
+  saveGRNScrapItems,
+  storeConfirmGRN,
   type QuantitativeLineData,
   type QualitativeLineData,
   type InspectionMethod,
@@ -23,7 +25,11 @@ import {
   type Disposition,
   type GRNQCMeasurement,
   type GRNLineItem,
+  type GRNScrapItem,
 } from "@/lib/grn-api";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
 import { DocumentHeader } from "@/components/DocumentHeader";
 import { AuditTimeline } from "@/components/AuditTimeline";
 import { logAudit } from "@/lib/audit-api";
@@ -83,7 +89,8 @@ interface QCRow {
   sample_3: string;
   sample_4: string;
   sample_5: string;
-  result: 'conforming' | 'non_conforming' | '';
+  conforming_qty: string;
+  non_conforming_qty: string;
   measuring_instrument: string;
 }
 
@@ -91,6 +98,7 @@ interface QCRow {
 
 interface NCSummary {
   lineItemId: string;
+  qty_inspected: number;
   conforming_qty: number;
   non_conforming_qty: number;
   disposition: Disposition | '';
@@ -322,7 +330,7 @@ function QCMeasurementEditor({
         const itemRows = qcRows
           .map((r, globalIdx) => ({ ...r, globalIdx }))
           .filter((r) => r.lineItemId === item.id);
-        const hasNC = itemRows.some((r) => r.result === "non_conforming");
+        const hasNC = itemRows.some((r) => Number(r.non_conforming_qty) > 0);
 
         return (
           <div key={item.id} className="rounded-lg border border-slate-200 overflow-hidden">
@@ -356,7 +364,8 @@ function QCMeasurementEditor({
                     <th className="px-2 py-2 text-center font-semibold" style={{width: 62}}>S3</th>
                     <th className="px-2 py-2 text-center font-semibold" style={{width: 62}}>S4</th>
                     <th className="px-2 py-2 text-center font-semibold" style={{width: 62}}>S5</th>
-                    <th className="px-2 py-2 text-center font-semibold" style={{width: 110}}>Result</th>
+                    <th className="px-2 py-2 text-center font-semibold" style={{width: 60}}>Conf.</th>
+                    <th className="px-2 py-2 text-center font-semibold" style={{width: 60}}>NC</th>
                     <th className="px-2 py-2 text-left font-semibold" style={{minWidth: 130}}>Measuring Instrument</th>
                     <th className="px-2 py-2 text-center font-semibold" style={{width: 30}}></th>
                   </tr>
@@ -364,13 +373,17 @@ function QCMeasurementEditor({
                 <tbody className="divide-y divide-slate-100">
                   {itemRows.length === 0 ? (
                     <tr>
-                      <td colSpan={12} className="px-4 py-3 text-center text-slate-400 italic text-xs">
+                      <td colSpan={13} className="px-4 py-3 text-center text-slate-400 italic text-xs">
                         No measurements yet — click "+ Add Row"
                       </td>
                     </tr>
                   ) : (
                     itemRows.map(({ globalIdx, ...row }) => {
-                      const isNC = row.result === "non_conforming";
+                      const confNum = Number(row.conforming_qty) || 0;
+                      const ncNum = Number(row.non_conforming_qty) || 0;
+                      const qtyNum = Number(row.qty_checked) || 0;
+                      const sumMismatch = qtyNum > 0 && (confNum + ncNum) !== qtyNum;
+                      const isNC = ncNum > 0;
                       return (
                         <tr key={globalIdx} className={isNC ? "bg-amber-50" : "bg-white hover:bg-slate-50/50"}>
                           <td className="px-2 py-1.5 text-center text-slate-400">{row.sl_no}</td>
@@ -396,6 +409,8 @@ function QCMeasurementEditor({
                               className="w-full text-center bg-transparent border-b border-slate-200 focus:outline-none focus:border-purple-400 text-xs py-0.5"
                               value={row.qty_checked}
                               placeholder="5"
+                              min={0}
+                              max={item.received_qty}
                               onChange={(e) => onChangeRow(globalIdx, "qty_checked", e.target.value)}
                             />
                           </td>
@@ -410,27 +425,41 @@ function QCMeasurementEditor({
                             </td>
                           ))}
                           <td className="px-2 py-1.5">
-                            <select
-                              className={`w-full border rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 ${
-                                isNC
-                                  ? "border-red-300 bg-red-50 text-red-700 focus:ring-red-400"
-                                  : "border-slate-200 text-slate-700 focus:ring-purple-400"
-                              }`}
-                              value={row.result}
-                              onChange={(e) => onChangeRow(globalIdx, "result", e.target.value)}
-                            >
-                              <option value="">— Select —</option>
-                              <option value="conforming">✓ Conforming</option>
-                              <option value="non_conforming">✗ Non-Conforming</option>
-                            </select>
+                            <input
+                              type="number"
+                              className="w-full text-center border border-green-200 bg-green-50 rounded px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-green-400"
+                              value={row.conforming_qty}
+                              placeholder="0"
+                              min={0}
+                              onChange={(e) => onChangeRow(globalIdx, "conforming_qty", e.target.value)}
+                            />
                           </td>
                           <td className="px-2 py-1.5">
                             <input
-                              className="w-full bg-transparent border-b border-slate-200 focus:outline-none focus:border-purple-400 text-xs py-0.5"
-                              value={row.measuring_instrument}
-                              placeholder="e.g. Vernier Caliper"
-                              onChange={(e) => onChangeRow(globalIdx, "measuring_instrument", e.target.value)}
+                              type="number"
+                              className={`w-full text-center border rounded px-1 py-0.5 text-xs focus:outline-none focus:ring-1 ${
+                                isNC
+                                  ? "border-red-300 bg-red-50 text-red-700 focus:ring-red-400"
+                                  : "border-slate-200 focus:ring-purple-400"
+                              }`}
+                              value={row.non_conforming_qty}
+                              placeholder="0"
+                              min={0}
+                              onChange={(e) => onChangeRow(globalIdx, "non_conforming_qty", e.target.value)}
                             />
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <div>
+                              <input
+                                className="w-full bg-transparent border-b border-slate-200 focus:outline-none focus:border-purple-400 text-xs py-0.5"
+                                value={row.measuring_instrument}
+                                placeholder="e.g. Vernier Caliper"
+                                onChange={(e) => onChangeRow(globalIdx, "measuring_instrument", e.target.value)}
+                              />
+                              {sumMismatch && (
+                                <p className="text-red-500 text-[10px] mt-0.5">Conf+NC ≠ Qty ({confNum + ncNum} ≠ {qtyNum})</p>
+                              )}
+                            </div>
                           </td>
                           <td className="px-2 py-1.5 text-center">
                             <button
@@ -541,6 +570,7 @@ function GRNPrintView({
   qcMeasurements,
   ncSummaries,
   s2InspectedBy,
+  s2ApprovedBy,
   s2Date,
   s2Remarks,
   verdict,
@@ -550,6 +580,7 @@ function GRNPrintView({
   qcMeasurements: GRNQCMeasurement[];
   ncSummaries: NCSummary[];
   s2InspectedBy: string;
+  s2ApprovedBy: string;
   s2Date: string;
   s2Remarks: string;
   verdict: string | undefined;
@@ -603,7 +634,7 @@ function GRNPrintView({
           fontFamily: "Arial",
           color: "#1E40AF",
         }}>
-          SECTION A — GOODS RECEIPT · Inventory Team
+          SECTION A — GOODS RECEIPT · Inward Team
         </div>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "7.5pt", fontFamily: "Arial" }}>
           <thead>
@@ -793,9 +824,9 @@ function GRNPrintView({
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6pt" }}>
           {[
-            { role: "RECEIVED BY (STORE)", name: grn.quantitative_completed_by, date: grn.quantitative_completed_at ? new Date(grn.quantitative_completed_at).toLocaleDateString("en-IN") : "" },
-            { role: "INSPECTED BY (QC)", name: s2InspectedBy, date: s2Date ? new Date(s2Date).toLocaleDateString("en-IN") : "" },
-            { role: "APPROVED BY (MANAGER)", name: "", date: "" },
+            { role: "RECEIVED BY (INWARD TEAM)", name: grn.quantitative_completed_by, date: grn.quantitative_completed_at ? new Date(grn.quantitative_completed_at).toLocaleDateString("en-IN") : "" },
+            { role: "INSPECTED BY (QC TEAM)", name: s2InspectedBy, date: s2Date ? new Date(s2Date).toLocaleDateString("en-IN") : "" },
+            { role: "APPROVED BY", name: s2ApprovedBy, date: "" },
           ].map(({ role, name, date }) => (
             <div key={role} style={{ border: "0.5pt solid #E2E8F0", padding: "6pt", textAlign: "center", fontFamily: "Arial" }}>
               <div style={{ fontSize: "6pt", textTransform: "uppercase", color: "#64748B", letterSpacing: "0.5pt", marginBottom: "4pt" }}>{role}</div>
@@ -848,8 +879,25 @@ export default function GRNDetail() {
   const [qcRows,        setQcRows]        = useState<QCRow[]>([]);
   const [ncSummaries,   setNcSummaries]   = useState<NCSummary[]>([]);
   const [s2InspectedBy, setS2InspectedBy] = useState("");
+  const [s2ApprovedBy,  setS2ApprovedBy]  = useState("");
   const [s2Date,        setS2Date]        = useState(format(new Date(), "yyyy-MM-dd"));
   const [s2Remarks,     setS2Remarks]     = useState("");
+
+  // ── Scrap return state (Stage 1 — DC-GRN only) ────────────────────────────
+  const [scrapReturned, setScrapReturned] = useState(false);
+  const [scrapNotes,    setScrapNotes]    = useState("");
+  const [scrapItems,    setScrapItems]    = useState<{material_type:string; quantity:string; unit:string; notes:string}[]>([]);
+
+  // ── Final GRN / store confirmation state ──────────────────────────────────
+  const [isFinalGrn,        setIsFinalGrn]        = useState(false);
+  const [finalGrnReason,    setFinalGrnReason]     = useState("");
+  const [showUntickDialog,  setShowUntickDialog]   = useState(false);
+  const [untickReason,      setUntickReason]       = useState("");
+  const [storeDialogOpen,   setStoreDialogOpen]    = useState(false);
+  const [storeConfirmedBy,  setStoreConfirmedBy]   = useState("");
+  const [storeDateStr,      setStoreDateStr]       = useState(format(new Date(), "yyyy-MM-dd"));
+  const [storeLocation,     setStoreLocation]      = useState("");
+  const [storeNotes,        setStoreNotes]         = useState("");
 
   // ── Initialise from loaded GRN ────────────────────────────────────────────
 
@@ -881,20 +929,31 @@ export default function GRNDetail() {
     const existingMeasurements = grn.qc_measurements ?? [];
     if (existingMeasurements.length > 0) {
       setQcRows(
-        existingMeasurements.map((m) => ({
-          lineItemId:           m.grn_line_item_id,
-          sl_no:                m.sl_no,
-          characteristic:       m.characteristic,
-          specification:        m.specification ?? "",
-          qty_checked:          m.qty_checked != null ? String(m.qty_checked) : "",
-          sample_1:             m.sample_1 ?? "",
-          sample_2:             m.sample_2 ?? "",
-          sample_3:             m.sample_3 ?? "",
-          sample_4:             m.sample_4 ?? "",
-          sample_5:             m.sample_5 ?? "",
-          result:               (m.result as QCRow["result"]) ?? "",
-          measuring_instrument: m.measuring_instrument ?? "",
-        }))
+        existingMeasurements.map((m) => {
+          const am = m as any;
+          // Support both new conforming_qty/non_conforming_qty and legacy result field
+          const confQty = am.conforming_qty != null
+            ? String(am.conforming_qty)
+            : (m.result === 'conforming' && m.qty_checked != null ? String(m.qty_checked) : '');
+          const ncQty = am.non_conforming_qty != null
+            ? String(am.non_conforming_qty)
+            : (m.result === 'non_conforming' && m.qty_checked != null ? String(m.qty_checked) : '');
+          return {
+            lineItemId:           m.grn_line_item_id,
+            sl_no:                m.sl_no,
+            characteristic:       m.characteristic,
+            specification:        m.specification ?? "",
+            qty_checked:          m.qty_checked != null ? String(m.qty_checked) : "",
+            sample_1:             m.sample_1 ?? "",
+            sample_2:             m.sample_2 ?? "",
+            sample_3:             m.sample_3 ?? "",
+            sample_4:             m.sample_4 ?? "",
+            sample_5:             m.sample_5 ?? "",
+            conforming_qty:       confQty,
+            non_conforming_qty:   ncQty,
+            measuring_instrument: m.measuring_instrument ?? "",
+          };
+        })
       );
     }
 
@@ -905,6 +964,7 @@ export default function GRNDetail() {
         const recv = a.received_qty ?? a.receiving_now ?? 0;
         return {
           lineItemId:         item.id ?? "",
+          qty_inspected:      recv,
           conforming_qty:     a.conforming_qty ?? recv,
           non_conforming_qty: a.non_conforming_qty ?? 0,
           disposition:        (a.disposition as Disposition) ?? "",
@@ -916,7 +976,11 @@ export default function GRNDetail() {
     setS1InvoiceNumber(g.vendor_invoice_number ?? "");
     setS1InvoiceDate(g.vendor_invoice_date ?? "");
     setS2InspectedBy(g.quality_completed_by ?? "");
+    setS2ApprovedBy(g.qc_approved_by ?? "");
     setS2Remarks(g.quality_remarks ?? "");
+    setIsFinalGrn(g.is_final_grn ?? false);
+    setScrapReturned(g.scrap_returned ?? false);
+    setScrapNotes(g.scrap_notes ?? "");
   }, [grn]);
 
   // ── NC summary auto-update from QC rows ──────────────────────────────────
@@ -928,22 +992,28 @@ export default function GRNDetail() {
       items.map((item) => {
         const existing = prev.find((s) => s.lineItemId === item.id);
         const itemRows = qcRows.filter((r) => r.lineItemId === item.id);
-        const hasNCRow = itemRows.some((r) => r.result === "non_conforming");
+        const hasNCRow = itemRows.some((r) => Number(r.non_conforming_qty) > 0);
         const recv = (item as any).received_qty ?? (item as any).receiving_now ?? item.po_quantity ?? 0;
         if (!hasNCRow) {
           return {
             lineItemId:         item.id ?? "",
+            qty_inspected:      recv,
             conforming_qty:     recv,
             non_conforming_qty: 0,
             disposition:        "",
           };
         }
-        return existing ?? {
-          lineItemId:         item.id ?? "",
-          conforming_qty:     recv,
-          non_conforming_qty: 0,
-          disposition:        "",
-        };
+        // Derive nc qty from the max across rows for this item
+        const totalNC = itemRows.reduce((s, r) => s + (Number(r.non_conforming_qty) || 0), 0);
+        return existing
+          ? { ...existing, non_conforming_qty: totalNC, conforming_qty: Math.max(0, recv - totalNC) }
+          : {
+              lineItemId:         item.id ?? "",
+              qty_inspected:      recv,
+              conforming_qty:     Math.max(0, recv - totalNC),
+              non_conforming_qty: totalNC,
+              disposition:        "",
+            };
       })
     );
   }, [qcRows, grn?.line_items]);
@@ -961,6 +1031,15 @@ export default function GRNDetail() {
         quantitative_notes:   l.notes || null,
       }));
       await saveQuantitativeStage(id!, lines, s1VerifiedBy, s1InvoiceNumber || null, s1InvoiceDate || null);
+      // Save scrap data for DC-GRNs
+      await saveGRNScrapItems(id!, scrapReturned, scrapNotes || null,
+        scrapItems.filter((r) => r.material_type.trim()).map((r) => ({
+          material_type: r.material_type,
+          quantity: r.quantity ? Number(r.quantity) : null,
+          unit: r.unit || undefined,
+          notes: r.notes || undefined,
+        }))
+      );
       await logAudit("grn", id!, "GRN Stage 1 Complete");
     },
     onSuccess: () => {
@@ -989,7 +1068,8 @@ export default function GRNDetail() {
         sample_3:            r.sample_3 || undefined,
         sample_4:            r.sample_4 || undefined,
         sample_5:            r.sample_5 || undefined,
-        result:              (r.result as 'conforming' | 'non_conforming' | undefined) || undefined,
+        conforming_qty:      r.conforming_qty ? Number(r.conforming_qty) : undefined,
+        non_conforming_qty:  r.non_conforming_qty ? Number(r.non_conforming_qty) : undefined,
         measuring_instrument: r.measuring_instrument || undefined,
       }));
       await saveGRNQCMeasurements(id!, measurements);
@@ -997,7 +1077,7 @@ export default function GRNDetail() {
       // Save qualitative stage with nc summaries
       const lines: QualitativeLineData[] = ncSummaries.map((nc) => ({
         id:                   nc.lineItemId,
-        qty_inspected:        nc.conforming_qty + nc.non_conforming_qty,
+        qty_inspected:        nc.qty_inspected ?? (nc.conforming_qty + nc.non_conforming_qty),
         inspection_method:    "100_percent" as InspectionMethod,
         conforming_qty:       nc.conforming_qty,
         non_conforming_qty:   nc.non_conforming_qty,
@@ -1007,17 +1087,44 @@ export default function GRNDetail() {
         reference_drawing:    null,
         qc_notes:             null,
       }));
-      await saveQualityStage(id!, lines, s2InspectedBy, s2Remarks || null, s2Date);
-      await logAudit("grn", id!, "GRN Stage 2 Complete");
+      await saveQualityStage(
+        id!, lines, s2InspectedBy, s2Remarks || null, s2Date,
+        s2ApprovedBy || null, isFinalGrn, finalGrnReason || null
+      );
+      await logAudit("grn", id!, isFinalGrn ? "GRN Stage 2 Complete — Final GRN" : "GRN Stage 2 Complete");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["grn-stages", id] });
       queryClient.invalidateQueries({ queryKey: ["grns"] });
       queryClient.invalidateQueries({ queryKey: ["pending-qc-grns"] });
-      toast({ title: "Quality inspection complete", description: "GRN is now closed." });
+      toast({
+        title: "Quality inspection complete",
+        description: isFinalGrn ? "GRN is awaiting store confirmation." : "GRN is now closed.",
+      });
     },
     onError: (err: any) =>
       toast({ title: "Error saving Stage 2", description: err.message, variant: "destructive" }),
+  });
+
+  const storeMutation = useMutation({
+    mutationFn: async () => {
+      if (!storeConfirmedBy.trim()) throw new Error("Confirmed By is required");
+      await storeConfirmGRN(id!, {
+        confirmedBy: storeConfirmedBy,
+        confirmedAt: storeDateStr,
+        location: storeLocation || null,
+        notes: storeNotes || null,
+      });
+      await logAudit("grn", id!, "Store receipt confirmed", { confirmedBy: storeConfirmedBy, location: storeLocation });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["grn-stages", id] });
+      queryClient.invalidateQueries({ queryKey: ["grns"] });
+      setStoreDialogOpen(false);
+      toast({ title: "Store receipt confirmed", description: "GRN is now closed." });
+    },
+    onError: (err: any) =>
+      toast({ title: "Error confirming store receipt", description: err.message, variant: "destructive" }),
   });
 
   // ── Handlers ──────────────────────────────────────────────────────────────
@@ -1082,7 +1189,8 @@ export default function GRNDetail() {
       specification: "",
       qty_checked: "",
       sample_1: "", sample_2: "", sample_3: "", sample_4: "", sample_5: "",
-      result: "",
+      conforming_qty: "",
+      non_conforming_qty: "",
       measuring_instrument: "",
     };
     setQcRows((prev) => [...prev, newRow]);
@@ -1126,9 +1234,10 @@ export default function GRNDetail() {
   const g         = grn as any;
   const stage     = g.grn_stage ?? "draft";
   const verdict   = g.overall_quality_verdict as string | undefined;
-  const s1Done    = ["quality_pending", "quality_done", "closed"].includes(stage);
-  const s2Visible = ["quality_pending", "quality_done", "closed"].includes(stage);
-  const s2Done    = ["quality_done", "closed"].includes(stage);
+  const s1Done    = ["quality_pending", "quality_done", "closed", "awaiting_store"].includes(stage);
+  const s2Visible = ["quality_pending", "quality_done", "closed", "awaiting_store"].includes(stage);
+  const s2Done    = ["quality_done", "closed", "awaiting_store"].includes(stage);
+  const showStorePanel = stage === "awaiting_store" && !g.store_confirmed;
   const s1Editable = !s1Done || s1Editing;
 
   const qtyMismatches = s1Lines.filter((l) => l.received_qty > 0 && l.received_qty !== l.po_quantity);
@@ -1160,7 +1269,8 @@ export default function GRNDetail() {
           sample_3: r.sample_3 || undefined,
           sample_4: r.sample_4 || undefined,
           sample_5: r.sample_5 || undefined,
-          result: (r.result as 'conforming' | 'non_conforming' | undefined) || undefined,
+          conforming_qty: r.conforming_qty ? Number(r.conforming_qty) : undefined,
+          non_conforming_qty: r.non_conforming_qty ? Number(r.non_conforming_qty) : undefined,
           measuring_instrument: r.measuring_instrument || undefined,
         }));
 
@@ -1245,7 +1355,7 @@ export default function GRNDetail() {
         <div className="px-5 py-4 bg-blue-50/50 flex items-center justify-between">
           <div>
             <h2 className="text-base font-bold text-blue-900">Stage 1 — Goods Receipt</h2>
-            <p className="text-xs text-blue-600 mt-0.5">Inventory Team</p>
+            <p className="text-xs text-blue-600 mt-0.5">Inward Team</p>
           </div>
           <div className="flex items-center gap-3">
             {s1Done && !s1Editing && (
@@ -1277,6 +1387,97 @@ export default function GRNDetail() {
 
           {s1Editable && (
             <>
+              {/* Scrap Return section — DC-GRN only */}
+              {g.linked_dc_id && (
+                <div className="border border-slate-200 rounded-lg p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="scrap-returned"
+                      checked={scrapReturned}
+                      onChange={(e) => setScrapReturned(e.target.checked)}
+                      className="h-4 w-4 accent-blue-600 cursor-pointer"
+                    />
+                    <label htmlFor="scrap-returned" className="text-xs font-medium text-slate-700 cursor-pointer">
+                      Has scrap been returned by the vendor?
+                    </label>
+                  </div>
+                  {scrapReturned && (
+                    <div className="space-y-2">
+                      <div className="overflow-x-auto rounded border border-slate-200">
+                        <table className="w-full text-xs border-collapse">
+                          <thead>
+                            <tr className="bg-slate-50 text-slate-500 uppercase tracking-wide">
+                              <th className="text-left px-3 py-2 font-semibold">Material Type</th>
+                              <th className="text-right px-3 py-2 font-semibold w-24">Qty</th>
+                              <th className="text-center px-3 py-2 font-semibold w-28">Unit</th>
+                              <th className="text-left px-3 py-2 font-semibold">Notes</th>
+                              <th className="px-2 py-2 w-8"></th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {scrapItems.map((row, idx) => (
+                              <tr key={idx} className="bg-white">
+                                <td className="px-3 py-1.5">
+                                  <input
+                                    className="w-full bg-transparent border-b border-slate-200 focus:outline-none focus:border-blue-400 text-xs py-0.5"
+                                    value={row.material_type}
+                                    placeholder="e.g. Steel offcuts"
+                                    onChange={(e) => setScrapItems((prev) => prev.map((r, i) => i === idx ? { ...r, material_type: e.target.value } : r))}
+                                  />
+                                </td>
+                                <td className="px-3 py-1.5">
+                                  <input
+                                    type="number"
+                                    className="w-full text-right bg-transparent border-b border-slate-200 focus:outline-none focus:border-blue-400 text-xs py-0.5"
+                                    value={row.quantity}
+                                    min={0}
+                                    onChange={(e) => setScrapItems((prev) => prev.map((r, i) => i === idx ? { ...r, quantity: e.target.value } : r))}
+                                  />
+                                </td>
+                                <td className="px-3 py-1.5">
+                                  <select
+                                    className="w-full border border-slate-200 rounded px-1.5 py-0.5 text-xs focus:outline-none"
+                                    value={row.unit}
+                                    onChange={(e) => setScrapItems((prev) => prev.map((r, i) => i === idx ? { ...r, unit: e.target.value } : r))}
+                                  >
+                                    <option value="">—</option>
+                                    {["NOS","KG","KGS","MTR","SFT","SET","ROLL","SHEET","LTR","BOX","COIL","PAIR","LOT"].map((u) => (
+                                      <option key={u} value={u}>{u}</option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td className="px-3 py-1.5">
+                                  <input
+                                    className="w-full bg-transparent border-b border-slate-200 focus:outline-none focus:border-blue-400 text-xs py-0.5"
+                                    value={row.notes}
+                                    placeholder="Optional notes…"
+                                    onChange={(e) => setScrapItems((prev) => prev.map((r, i) => i === idx ? { ...r, notes: e.target.value } : r))}
+                                  />
+                                </td>
+                                <td className="px-2 py-1.5 text-center">
+                                  <button type="button" onClick={() => setScrapItems((prev) => prev.filter((_, i) => i !== idx))} className="text-slate-300 hover:text-red-500">
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setScrapItems((prev) => [...prev, { material_type: "", quantity: "", unit: "", notes: "" }])}
+                        className="text-xs px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-50 text-slate-600 font-medium flex items-center gap-1"
+                      >
+                        <Plus className="h-3 w-3" /> Add Material
+                      </button>
+                      <p className="text-xs text-slate-400">Scrap details will be recorded in the Scrap Register.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-3 border-t border-blue-100">
                 <div>
                   <Label className="text-xs font-medium text-slate-600">Vendor Invoice No.</Label>
@@ -1437,6 +1638,51 @@ export default function GRNDetail() {
                       className="mt-1 text-sm"
                     />
                   </div>
+                  <div>
+                    <Label className="text-xs font-medium text-slate-600">Approved By</Label>
+                    <Input
+                      value={s2ApprovedBy}
+                      onChange={(e) => setS2ApprovedBy(e.target.value)}
+                      className="mt-1 text-sm"
+                      placeholder="Name of approving manager"
+                    />
+                  </div>
+                </div>
+
+                {/* DC deduction alert — job work NC items */}
+                {g.linked_dc_id && ncItemsWithData.some((s) => s.non_conforming_qty > 0 && s.disposition !== 'return_to_vendor') && (
+                  <div className="border border-amber-200 bg-amber-50 rounded-lg p-4 space-y-2 text-xs">
+                    <p className="font-semibold text-amber-800">⚠ Deduction Alert — {ncItemsWithData.filter((s) => s.non_conforming_qty > 0).reduce((t, s) => t + s.non_conforming_qty, 0)} non-conforming unit(s) found on job work return.</p>
+                    {ncItemsWithData.filter((s) => s.non_conforming_qty > 0 && s.disposition !== 'return_to_vendor').map((nc) => {
+                      const item = s1Lines.find((l) => l.id === nc.lineItemId);
+                      return item ? (
+                        <div key={nc.lineItemId} className="text-amber-700">
+                          {item.description} × {nc.non_conforming_qty} unit(s) — Amount: To be determined
+                        </div>
+                      ) : null;
+                    })}
+                    <p className="text-amber-600 italic">Reflect this deduction on vendor's next payment or PO.</p>
+                  </div>
+                )}
+
+                {/* Final GRN checkbox */}
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="checkbox"
+                    id="is-final-grn"
+                    checked={isFinalGrn}
+                    onChange={(e) => {
+                      if (!e.target.checked && g.is_final_grn) {
+                        setShowUntickDialog(true);
+                      } else {
+                        setIsFinalGrn(e.target.checked);
+                      }
+                    }}
+                    className="h-4 w-4 accent-purple-600 cursor-pointer"
+                  />
+                  <label htmlFor="is-final-grn" className="text-xs font-medium text-slate-700 cursor-pointer">
+                    Mark as Final GRN — goods will move to store after QC
+                  </label>
                 </div>
 
                 <Button
@@ -1446,6 +1692,39 @@ export default function GRNDetail() {
                 >
                   {s2Mutation.isPending ? "Saving…" : "Save — Stage 2 Complete"}
                 </Button>
+
+                {/* Untick protection dialog */}
+                <Dialog open={showUntickDialog} onOpenChange={setShowUntickDialog}>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Remove Final GRN Status?</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-3 py-2">
+                      <p className="text-sm text-slate-600">Please provide a reason for removing the Final GRN flag:</p>
+                      <Input
+                        value={untickReason}
+                        onChange={(e) => setUntickReason(e.target.value)}
+                        placeholder="Reason (e.g. partial delivery expected)"
+                        className="text-sm"
+                      />
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setShowUntickDialog(false)}>Cancel</Button>
+                      <Button
+                        variant="destructive"
+                        onClick={async () => {
+                          setIsFinalGrn(false);
+                          setFinalGrnReason(untickReason);
+                          await logAudit("grn", id!, "Final GRN status removed", { reason: untickReason });
+                          setUntickReason("");
+                          setShowUntickDialog(false);
+                        }}
+                      >
+                        Confirm
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
               </>
             ) : (
               <>
@@ -1525,6 +1804,74 @@ export default function GRNDetail() {
         </div>
       )}
 
+      {/* ── Store Confirmation Panel ── */}
+      {showStorePanel && (
+        <div className="border border-amber-200 bg-amber-50/30 rounded-xl overflow-hidden no-print">
+          <div className="px-5 py-4 flex items-start gap-3">
+            <PackageCheck className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="text-sm font-bold text-amber-900">Awaiting Store Receipt Confirmation</h3>
+              <p className="text-xs text-amber-700 mt-0.5">QC has cleared these items. Inward team must confirm physical receipt into store.</p>
+            </div>
+            <Button
+              size="sm"
+              className="bg-amber-600 hover:bg-amber-700 text-white shrink-0"
+              onClick={() => setStoreDialogOpen(true)}
+            >
+              Confirm Store Receipt
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Store confirmation dialog */}
+      <Dialog open={storeDialogOpen} onOpenChange={setStoreDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm Store Receipt</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            {ncSummaries.filter((s) => s.conforming_qty > 0).map((nc) => {
+              const item = s1Lines.find((l) => l.id === nc.lineItemId);
+              if (!item) return null;
+              const unit = (grn.line_items ?? []).find((li) => li.id === nc.lineItemId)?.unit ?? "";
+              return (
+                <div key={nc.lineItemId} className="text-xs text-slate-600 flex justify-between">
+                  <span>{item.description}</span>
+                  <span className="font-semibold">{nc.conforming_qty} {unit}</span>
+                </div>
+              );
+            })}
+            <div>
+              <Label className="text-xs font-medium text-slate-600">Received By (Inward to Store) <span className="text-red-400">*</span></Label>
+              <Input value={storeConfirmedBy} onChange={(e) => setStoreConfirmedBy(e.target.value)} className="mt-1 text-sm" placeholder="Full name" />
+            </div>
+            <div>
+              <Label className="text-xs font-medium text-slate-600">Date Received in Store <span className="text-red-400">*</span></Label>
+              <Input type="date" value={storeDateStr} onChange={(e) => setStoreDateStr(e.target.value)} className="mt-1 text-sm" />
+            </div>
+            <div>
+              <Label className="text-xs font-medium text-slate-600">Physical Location / Rack</Label>
+              <Input value={storeLocation} onChange={(e) => setStoreLocation(e.target.value)} className="mt-1 text-sm" placeholder="e.g. Rack A3, Bin 7" />
+            </div>
+            <div>
+              <Label className="text-xs font-medium text-slate-600">Notes</Label>
+              <Textarea value={storeNotes} onChange={(e) => setStoreNotes(e.target.value)} className="mt-1 text-sm" rows={2} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStoreDialogOpen(false)}>Cancel</Button>
+            <Button
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              disabled={storeMutation.isPending}
+              onClick={() => storeMutation.mutate()}
+            >
+              {storeMutation.isPending ? "Saving…" : "Confirm Receipt"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ── Audit trail ── */}
       <div className="no-print">
         <AuditTimeline documentId={id!} />
@@ -1537,6 +1884,7 @@ export default function GRNDetail() {
         qcMeasurements={printMeasurements}
         ncSummaries={ncSummaries}
         s2InspectedBy={s2InspectedBy}
+        s2ApprovedBy={s2ApprovedBy}
         s2Date={s2Date}
         s2Remarks={s2Remarks}
         verdict={verdict}
