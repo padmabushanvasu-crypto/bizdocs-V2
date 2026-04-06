@@ -229,23 +229,21 @@ export default function PartyDetail() {
               <div className="px-5 py-3 border-b border-slate-100">
                 <h3 className="text-sm font-semibold text-slate-900">DC History</h3>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full data-table">
+              <div className="overflow-x-auto rounded-lg border border-slate-200">
+                <table className="w-full border-collapse text-sm">
                   <thead>
                     <tr>
-                      <th>DC Number</th>
-                      <th>Date</th>
-                      <th>Type</th>
-                      <th>Status</th>
-                      <th className="text-right">Items</th>
+                      <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">DC Number</th>
+                      <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Date</th>
+                      <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Type</th>
+                      <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
+                      <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Items</th>
                     </tr>
                   </thead>
                   <tbody>
                     {(vendorDCs as any[]).length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="text-center py-8 text-muted-foreground text-sm">
-                          No DCs recorded for this vendor.
-                        </td>
+                        <td colSpan={5} className="px-3 py-8 text-center text-sm text-slate-400">No data found</td>
                       </tr>
                     ) : (
                       (vendorDCs as any[]).map((dc: any) => (
@@ -254,11 +252,11 @@ export default function PartyDetail() {
                           className="cursor-pointer hover:bg-muted/30 transition-colors"
                           onClick={() => navigate(`/delivery-challans/${dc.id}`)}
                         >
-                          <td className="font-mono text-xs font-medium text-blue-600">{dc.dc_number}</td>
-                          <td className="text-sm">{dc.dc_date ? format(new Date(dc.dc_date), "dd MMM yyyy") : "—"}</td>
-                          <td className="text-sm">{dc.dc_type}</td>
-                          <td className="text-sm">{dc.status}</td>
-                          <td className="text-right font-mono text-sm">{(dc.dc_line_items ?? []).length}</td>
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium text-blue-600">{dc.dc_number}</td>
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{dc.dc_date ? format(new Date(dc.dc_date), "dd MMM yyyy") : "—"}</td>
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{dc.dc_type}</td>
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">{dc.status}</td>
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{(dc.dc_line_items ?? []).length}</td>
                         </tr>
                       ))
                     )}

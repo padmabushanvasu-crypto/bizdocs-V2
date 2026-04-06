@@ -103,27 +103,27 @@ export default function JobWorks() {
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="overflow-x-auto rounded-lg border border-slate-200">
         <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 z-10 bg-white border-b border-slate-200">
+          <table className="w-full border-collapse text-sm">
+            <thead className="sticky top-0 z-10">
               <tr>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">JC #</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Item</th>
-                <th className="text-left px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                <th className="text-left px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Priority</th>
-                <th className="text-left px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Location</th>
-                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Qty</th>
-                <th className="text-left px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Progress</th>
-                <th className="text-left px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Due Date</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left whitespace-nowrap">JC #</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Priority</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left whitespace-nowrap">Location</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right whitespace-nowrap">Qty</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left whitespace-nowrap">Progress</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left whitespace-nowrap">Due Date</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
-                <tr><td colSpan={8} className="text-center py-10 text-slate-400 text-sm">Loading…</td></tr>
+                <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-400">Loading…</td></tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-16">
+                  <td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-400">
                     <div className="flex flex-col items-center gap-3">
                       <Activity className="h-10 w-10 text-slate-300" />
                       <p className="font-medium text-slate-600">No job cards found</p>
@@ -140,10 +140,10 @@ export default function JobWorks() {
                       className="hover:bg-blue-50/40 cursor-pointer transition-colors"
                       onClick={() => navigate(`/job-works/${row.id}`)}
                     >
-                      <td className="px-4 py-3 font-mono text-xs font-medium text-slate-700 whitespace-nowrap">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium whitespace-nowrap">
                         {row.jc_number}
                       </td>
-                      <td className="px-4 py-3 max-w-[240px]">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left max-w-[240px]">
                         {row.item_code && (
                           <p className="text-[11px] text-slate-400 font-mono leading-none mb-0.5">{row.item_code}</p>
                         )}
@@ -154,27 +154,27 @@ export default function JobWorks() {
                           <p className="text-[11px] text-blue-600 mt-0.5">At: {row.current_vendor_name}</p>
                         )}
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${statusCls[row.status] ?? "bg-slate-50 text-slate-600 border-slate-200"}`}>
                           {row.status.replace(/_/g, " ")}
                         </span>
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${priorityCls[row.priority] ?? "bg-slate-50 text-slate-600 border-slate-200"}`}>
                           {row.priority}
                         </span>
                       </td>
-                      <td className="px-3 py-3 text-xs text-slate-600 whitespace-nowrap">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left whitespace-nowrap">
                         {row.current_location === "at_vendor" ? "At Vendor" : "In-House"}
                       </td>
-                      <td className="px-3 py-3 text-right font-mono tabular-nums text-sm text-slate-700">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                         {row.quantity_original}
                         {row.unit ? <span className="text-slate-400 text-xs ml-0.5">{row.unit}</span> : null}
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                         <MiniProgress done={row.completed_steps ?? 0} total={row.step_count ?? 0} />
                       </td>
-                      <td className="px-3 py-3 whitespace-nowrap">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left whitespace-nowrap">
                         {row.due_date ? (
                           <span className={`text-xs ${overdue ? "text-red-600 font-semibold flex items-center gap-1" : "text-slate-600"}`}>
                             {overdue && <AlertTriangle className="h-3 w-3" />}
@@ -194,6 +194,7 @@ export default function JobWorks() {
       </div>
 
       {/* Pagination */}
+
       {total > PAGE_SIZE && (
         <div className="flex justify-center gap-2">
           <button

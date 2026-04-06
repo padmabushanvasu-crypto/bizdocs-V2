@@ -521,7 +521,7 @@ export default function TemplateEditor() {
                   <thead>
                     <tr>
                       {sortedColumns.filter(c => c.enabled).map(col => (
-                        <th key={col.id} className="text-left text-[8px] font-semibold text-muted-foreground pb-0.5 pr-1">
+                        <th key={col.id} className="text-left text-[8px] font-semibold text-slate-500 pb-0.5 pr-1 border-b border-slate-200">
                           {col.label}
                         </th>
                       ))}

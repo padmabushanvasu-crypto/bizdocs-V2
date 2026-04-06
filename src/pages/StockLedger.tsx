@@ -243,27 +243,27 @@ export default function StockLedger() {
       {/* Table */}
       <div className="paper-card !p-0">
         <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
-          <table className="w-full data-table">
+          <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10">
               <tr>
-                <th>Date</th>
-                <th>Item Code</th>
-                <th>Description</th>
-                <th>Type</th>
-                <th>Reference</th>
-                <th>From State</th>
-                <th>To State</th>
-                <th className="text-right">Qty In</th>
-                <th className="text-right">Qty Out</th>
-                <th className="text-right">Balance</th>
-                <th className="text-right">Unit Cost</th>
-                <th className="text-right">Total Value</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Date</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item Code</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Type</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Reference</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">From State</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">To State</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty In</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty Out</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Balance</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Unit Cost</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Total Value</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={12} className="text-center py-8 text-muted-foreground">Loading...</td>
+                  <td colSpan={12} className="px-3 py-8 text-center text-sm text-slate-400">Loading...</td>
                 </tr>
               ) : entries.length === 0 ? (
                 <tr>
@@ -283,21 +283,21 @@ export default function StockLedger() {
                     : null;
                   return (
                     <tr key={entry.id} className="hover:bg-muted/30 transition-colors">
-                      <td className="text-sm text-muted-foreground whitespace-nowrap">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left whitespace-nowrap">
                         {format(new Date(entry.transaction_date), "dd MMM yyyy")}
                       </td>
-                      <td className="font-mono text-xs text-slate-600">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-xs text-slate-600">
                         {entry.item_code ?? "—"}
                       </td>
-                      <td className="text-sm max-w-[200px] truncate">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left max-w-[200px] truncate">
                         {entry.item_description ?? "—"}
                       </td>
-                      <td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${txn?.cls ?? "bg-slate-100 text-slate-600"}`}>
                           {txn?.label ?? entry.transaction_type}
                         </span>
                       </td>
-                      <td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                         {entry.reference_number && refRoute && entry.reference_id ? (
                           <button
                             className="font-mono text-xs text-blue-600 hover:text-blue-800 hover:underline"
@@ -311,41 +311,41 @@ export default function StockLedger() {
                           </span>
                         )}
                       </td>
-                      <td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                         {(entry as any).from_state ? (
                           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${STATE_LABELS[(entry as any).from_state]?.cls ?? "bg-slate-100 text-slate-600"}`}>
                             {STATE_LABELS[(entry as any).from_state]?.label ?? (entry as any).from_state}
                           </span>
                         ) : <span className="text-muted-foreground text-xs">—</span>}
                       </td>
-                      <td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                         {(entry as any).to_state ? (
                           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${STATE_LABELS[(entry as any).to_state]?.cls ?? "bg-slate-100 text-slate-600"}`}>
                             {STATE_LABELS[(entry as any).to_state]?.label ?? (entry as any).to_state}
                           </span>
                         ) : <span className="text-muted-foreground text-xs">—</span>}
                       </td>
-                      <td className="text-right font-mono tabular-nums text-sm">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right font-mono tabular-nums">
                         {entry.qty_in > 0 ? (
                           <span className="text-green-600 font-semibold">+{entry.qty_in}</span>
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
                       </td>
-                      <td className="text-right font-mono tabular-nums text-sm">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right font-mono tabular-nums">
                         {entry.qty_out > 0 ? (
                           <span className="text-red-600 font-semibold">−{entry.qty_out}</span>
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
                       </td>
-                      <td className="text-right font-mono tabular-nums text-sm font-semibold text-slate-900">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right font-mono tabular-nums font-semibold text-slate-900">
                         {entry.balance_qty}
                       </td>
-                      <td className="text-right font-mono tabular-nums text-sm text-muted-foreground">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right font-mono tabular-nums text-muted-foreground">
                         {entry.unit_cost > 0 ? formatCurrency(entry.unit_cost) : "—"}
                       </td>
-                      <td className="text-right font-mono tabular-nums text-sm font-medium">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right font-mono tabular-nums font-medium">
                         {entry.total_value > 0 ? formatCurrency(entry.total_value) : "—"}
                       </td>
                     </tr>

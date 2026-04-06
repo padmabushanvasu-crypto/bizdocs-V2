@@ -119,14 +119,14 @@ export default function UserManagement() {
       {isLoading && <p className="text-sm text-muted-foreground">Loading users...</p>}
 
       {!isLoading && (
-        <div className="rounded-xl border border-border overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50">
+        <div className="overflow-x-auto rounded-lg border border-slate-200">
+          <table className="w-full border-collapse text-sm">
+            <thead>
               <tr>
-                <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Name</th>
-                <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Email</th>
-                <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Role</th>
-                <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Active</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Name</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Email</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Role</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Active</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -135,7 +135,7 @@ export default function UserManagement() {
                 const name = u.display_name || u.full_name || "—";
                 return (
                   <tr key={u.id} className="bg-white hover:bg-muted/20 transition-colors">
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{name}</span>
                         {isSelf && (
@@ -143,8 +143,8 @@ export default function UserManagement() {
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">{u.email}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">{u.email}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                       <Select
                         value={u.role ?? 'admin'}
                         onValueChange={(val) =>
@@ -164,7 +164,7 @@ export default function UserManagement() {
                         </SelectContent>
                       </Select>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                       <Switch
                         checked={u.is_active !== false}
                         onCheckedChange={(checked) =>
@@ -178,8 +178,8 @@ export default function UserManagement() {
               })}
               {users.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
-                    No users found
+                  <td colSpan={4} className="px-3 py-8 text-center text-sm text-slate-400">
+                    No data found
                   </td>
                 </tr>
               )}

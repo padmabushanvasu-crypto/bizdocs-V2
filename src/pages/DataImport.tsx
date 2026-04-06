@@ -445,13 +445,13 @@ function PreviewTable({ rows, errorRows }: { rows: Record<string, string>[]; err
   if (rows.length === 0) return null;
   const headers = Object.keys(rows[0]);
   return (
-    <div className="overflow-auto max-h-64 border border-border rounded-lg">
-      <table className="w-full text-xs">
-        <thead className="bg-muted sticky top-0">
+    <div className="overflow-auto max-h-64 overflow-x-auto rounded-lg border border-slate-200">
+      <table className="w-full border-collapse text-sm">
+        <thead className="sticky top-0">
           <tr>
-            <th className="px-2 py-1.5 text-left text-muted-foreground font-semibold">#</th>
+            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">#</th>
             {headers.map((h) => (
-              <th key={h} className="px-2 py-1.5 text-left text-muted-foreground font-semibold whitespace-nowrap">
+              <th key={h} className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left whitespace-nowrap">
                 {h}
               </th>
             ))}
@@ -460,9 +460,9 @@ function PreviewTable({ rows, errorRows }: { rows: Record<string, string>[]; err
         <tbody>
           {rows.map((row, i) => (
             <tr key={i} className={errorRows.has(i) ? "bg-red-50" : i % 2 === 0 ? "bg-white" : "bg-muted/20"}>
-              <td className="px-2 py-1 text-muted-foreground">{i + 1}</td>
+              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">{i + 1}</td>
               {headers.map((h) => (
-                <td key={h} className="px-2 py-1 max-w-[160px] truncate">{String(row[h] ?? "")}</td>
+                <td key={h} className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left max-w-[160px] truncate">{String(row[h] ?? "")}</td>
               ))}
             </tr>
           ))}
@@ -486,17 +486,17 @@ function PreviewTableWithErrors({
   if (rows.length === 0) return null;
   const headers = Object.keys(rows[0]);
   return (
-    <div className="overflow-auto max-h-64 border border-border rounded-lg">
-      <table className="w-full text-xs">
-        <thead className="bg-muted sticky top-0">
+    <div className="overflow-auto max-h-64 overflow-x-auto rounded-lg border border-slate-200">
+      <table className="w-full border-collapse text-sm">
+        <thead className="sticky top-0">
           <tr>
-            <th className="px-2 py-1.5 text-left text-muted-foreground font-semibold">#</th>
+            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">#</th>
             {headers.map((h) => (
-              <th key={h} className="px-2 py-1.5 text-left text-muted-foreground font-semibold whitespace-nowrap">
+              <th key={h} className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left whitespace-nowrap">
                 {h}
               </th>
             ))}
-            <th className="px-2 py-1.5 text-left text-muted-foreground font-semibold">Issue</th>
+            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Issue</th>
           </tr>
         </thead>
         <tbody>
@@ -504,11 +504,11 @@ function PreviewTableWithErrors({
             const hasError = errorRows.has(i);
             return (
               <tr key={i} className={hasError ? "bg-red-50" : i % 2 === 0 ? "bg-white" : "bg-muted/20"}>
-                <td className="px-2 py-1 text-muted-foreground">{i + 1}</td>
+                <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">{i + 1}</td>
                 {headers.map((h) => (
-                  <td key={h} className="px-2 py-1 max-w-[140px] truncate">{String(row[h] ?? "")}</td>
+                  <td key={h} className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left max-w-[140px] truncate">{String(row[h] ?? "")}</td>
                 ))}
-                <td className="px-2 py-1 text-red-700 text-[10px] max-w-[160px]">
+                <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-red-700 text-[10px] max-w-[160px]">
                   {hasError ? errorMessages.get(i) : ""}
                 </td>
               </tr>
@@ -535,21 +535,21 @@ function SkipReasonsPanel({ reasons }: { reasons: SkipReason[] }) {
         <span>{reasons.length} row{reasons.length !== 1 ? "s" : ""} skipped — click to see reasons</span>
       </button>
       {open && (
-        <div className="overflow-auto max-h-56">
-          <table className="w-full">
-            <thead className="bg-muted sticky top-0">
+        <div className="overflow-auto max-h-56 overflow-x-auto rounded-lg border border-slate-200">
+          <table className="w-full border-collapse text-sm">
+            <thead className="sticky top-0">
               <tr>
-                <th className="px-2 py-1.5 text-left font-semibold text-muted-foreground w-12">Row</th>
-                <th className="px-2 py-1.5 text-left font-semibold text-muted-foreground w-32">Value</th>
-                <th className="px-2 py-1.5 text-left font-semibold text-muted-foreground">Reason</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-12">Row</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-32">Value</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Reason</th>
               </tr>
             </thead>
             <tbody>
               {reasons.map((r, i) => (
                 <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-muted/20"}>
-                  <td className="px-2 py-1 text-muted-foreground">{r.row}</td>
-                  <td className="px-2 py-1 font-medium max-w-[8rem] truncate">{r.value || "(blank)"}</td>
-                  <td className="px-2 py-1 text-slate-600">{r.reason}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-muted-foreground">{r.row}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium max-w-[8rem] truncate">{r.value || "(blank)"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-slate-600">{r.reason}</td>
                 </tr>
               ))}
             </tbody>

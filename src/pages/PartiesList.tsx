@@ -360,10 +360,10 @@ export default function PartiesList() {
       ) : (
         <div className="paper-card !p-0">
           <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
-            <table className="w-full data-table">
+            <table className="w-full border-collapse text-sm">
               <thead className="sticky top-0 z-10">
                 <tr>
-                  <th className="w-8">
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center w-8">
                     <button onClick={toggleAll} className="flex items-center justify-center">
                       {allSelected
                         ? <CheckSquare className="h-4 w-4 text-blue-600" />
@@ -371,14 +371,14 @@ export default function PartiesList() {
                       }
                     </button>
                   </th>
-                  <th>Name</th>
-                  <th>Type</th>
-                  <th className="hidden md:table-cell">City</th>
-                  <th className="hidden lg:table-cell">State</th>
-                  <th className="hidden lg:table-cell font-mono">GSTIN</th>
-                  <th className="hidden md:table-cell">Phone</th>
-                  <th>Status</th>
-                  <th className="text-right">Actions</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Name</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Type</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left hidden md:table-cell">City</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left hidden lg:table-cell">State</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left hidden lg:table-cell font-mono">GSTIN</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left hidden md:table-cell">Phone</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -388,13 +388,13 @@ export default function PartiesList() {
                     className={`hover:bg-muted/50 cursor-pointer transition-colors ${selected.has(party.id) ? "bg-blue-50/60" : ""}`}
                     onClick={() => navigate(`/parties/${party.id}`)}
                   >
-                    <td onClick={(e) => { e.stopPropagation(); toggleSelect(party.id); }}>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center" onClick={(e) => { e.stopPropagation(); toggleSelect(party.id); }}>
                       {selected.has(party.id)
                         ? <CheckSquare className="h-4 w-4 text-blue-600 mx-auto" />
                         : <Square className="h-4 w-4 text-slate-300 mx-auto" />
                       }
                     </td>
-                    <td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                       <div>
                         <span className="font-medium text-foreground">{party.name}</span>
                         {party.contact_person && (
@@ -402,8 +402,8 @@ export default function PartiesList() {
                         )}
                       </div>
                     </td>
-                    <td>
-                      <div className="flex items-center gap-1.5 flex-wrap">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
+                      <div className="flex items-center gap-1.5 flex-wrap justify-center">
                         <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${typeBadge[party.party_type] || typeBadge.both}`}>
                           {party.party_type === "both" ? "Both" : party.party_type === "vendor" ? "Vendor" : "Customer"}
                         </span>
@@ -414,12 +414,12 @@ export default function PartiesList() {
                         )}
                       </div>
                     </td>
-                    <td className="hidden md:table-cell text-muted-foreground">{party.city || "—"}</td>
-                    <td className="hidden lg:table-cell text-muted-foreground">{party.state || "—"}</td>
-                    <td className="hidden lg:table-cell font-mono text-xs">{party.gstin || "—"}</td>
-                    <td className="hidden md:table-cell">{party.phone1 || "—"}</td>
-                    <td>
-                      <div className="flex items-center gap-1.5">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left hidden md:table-cell">{party.city || "—"}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left hidden lg:table-cell">{party.state || "—"}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left hidden lg:table-cell font-mono">{party.gstin || "—"}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left hidden md:table-cell">{party.phone1 || "—"}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
+                      <div className="flex items-center gap-1.5 justify-center">
                         <span
                           className={`h-2 w-2 rounded-full ${
                             party.status === "active" ? "bg-emerald-500" : "bg-muted-foreground/40"
@@ -428,8 +428,8 @@ export default function PartiesList() {
                         <span className="text-xs text-muted-foreground capitalize">{party.status}</span>
                       </div>
                     </td>
-                    <td className="text-right" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center justify-end gap-1">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-center gap-1">
                         <Button
                           variant="ghost"
                           size="icon"

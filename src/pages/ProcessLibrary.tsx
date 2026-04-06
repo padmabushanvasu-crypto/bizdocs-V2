@@ -439,16 +439,16 @@ export default function ProcessLibrary() {
       ) : (
         <div className="paper-card !p-0">
           <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
-            <table className="w-full data-table">
+            <table className="w-full border-collapse text-sm">
               <thead className="sticky top-0 z-10">
                 <tr>
-                  <th className="w-6" />
-                  <th>Code</th>
-                  <th>Process Name</th>
-                  <th>Type</th>
-                  <th className="hidden md:table-cell">Approved Vendors</th>
-                  <th>Active</th>
-                  <th className="text-right">Actions</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center w-6" />
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Code</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Process Name</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Type</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left hidden md:table-cell">Approved Vendors</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Active</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -465,39 +465,39 @@ export default function ProcessLibrary() {
                           setExpandedId(isExpanded ? null : pc.id)
                         }
                       >
-                        <td className="text-center text-muted-foreground">
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center text-muted-foreground">
                           {isExpanded ? (
                             <ChevronDown className="h-3.5 w-3.5 mx-auto" />
                           ) : (
                             <ChevronRight className="h-3.5 w-3.5 mx-auto" />
                           )}
                         </td>
-                        <td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                           <span className="font-mono text-sm font-medium text-slate-700">
                             {pc.process_code || (
                               <span className="text-muted-foreground">—</span>
                             )}
                           </span>
                         </td>
-                        <td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                           <span className="font-medium text-foreground">
                             {pc.process_name}
                           </span>
                         </td>
-                        <td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                           <TypeBadge type={pc.stage_type} />
                         </td>
-                        <td className="hidden md:table-cell">
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left hidden md:table-cell">
                           <VendorChips vendors={pc.vendors} />
                         </td>
-                        <td onClick={(e) => e.stopPropagation()}>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center" onClick={(e) => e.stopPropagation()}>
                           <ActiveToggle
                             active={pc.is_active}
                             onChange={() => toggleActiveMutation.mutate(pc)}
                           />
                         </td>
                         <td
-                          className="text-right"
+                          className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right"
                           onClick={(e) => e.stopPropagation()}
                         >
                           <div className="flex items-center justify-end gap-1">
@@ -533,8 +533,8 @@ export default function ProcessLibrary() {
                       {/* Expanded row */}
                       {isExpanded && (
                         <tr key={`${pc.id}-expanded`} className="bg-slate-50/60">
-                          <td />
-                          <td colSpan={6} className="py-3 pr-4">
+                          <td className="px-3 py-2 border-b border-slate-100" />
+                          <td colSpan={6} className="px-3 py-3 border-b border-slate-100 pr-4">
                             <div className="space-y-3">
                               {/* Full vendor list */}
                               {(pc.vendors?.length ?? 0) > 0 ? (

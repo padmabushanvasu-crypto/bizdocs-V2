@@ -108,25 +108,25 @@ function JigTab() {
       ) : filtered.length === 0 ? (
         <p className="text-sm text-muted-foreground py-8 text-center">No jig records found</p>
       ) : (
-        <div className="rounded-lg border border-slate-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50">
+        <div className="overflow-x-auto rounded-lg border border-slate-200">
+          <table className="w-full border-collapse text-sm">
+            <thead>
               <tr>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Drawing Number</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Jig Number</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Notes</th>
-                <th className="px-4 py-2.5" />
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Drawing Number</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Jig Number</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Notes</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filtered.map(jig => (
                 <tr key={jig.id} className="hover:bg-slate-50/50">
-                  <td className="px-4 py-2.5 font-mono text-sm">{jig.drawing_number}</td>
-                  <td className="px-4 py-2.5 font-mono text-sm">{jig.jig_number || "—"}</td>
-                  <td className="px-4 py-2.5"><JigStatusBadge status={jig.status} /></td>
-                  <td className="px-4 py-2.5 text-slate-500 text-xs max-w-[200px] truncate">{jig.notes || "—"}</td>
-                  <td className="px-4 py-2.5">
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{jig.drawing_number}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{jig.jig_number || "—"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center"><JigStatusBadge status={jig.status} /></td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-slate-500 max-w-[200px] truncate">{jig.notes || "—"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                     <div className="flex gap-1 justify-end">
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(jig)}><Pencil className="h-3.5 w-3.5" /></Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => deleteMutation.mutate(jig.id)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>
@@ -273,25 +273,25 @@ function MouldTab() {
       ) : filtered.length === 0 ? (
         <p className="text-sm text-muted-foreground py-8 text-center">No mould items found</p>
       ) : (
-        <div className="rounded-lg border border-slate-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50">
+        <div className="overflow-x-auto rounded-lg border border-slate-200">
+          <table className="w-full border-collapse text-sm">
+            <thead>
               <tr>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Drawing Number</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Description</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Vendor</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Alert Message</th>
-                <th className="px-4 py-2.5" />
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Drawing Number</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Vendor</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Alert Message</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filtered.map(m => (
                 <tr key={m.id} className="hover:bg-slate-50/50">
-                  <td className="px-4 py-2.5 font-mono text-sm">{m.drawing_number}</td>
-                  <td className="px-4 py-2.5 text-sm max-w-[180px] truncate">{m.description}</td>
-                  <td className="px-4 py-2.5 text-sm text-slate-600">{m.vendor_name}</td>
-                  <td className="px-4 py-2.5 text-xs text-slate-500 max-w-[200px] truncate">{m.alert_message || "—"}</td>
-                  <td className="px-4 py-2.5">
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{m.drawing_number}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left max-w-[180px] truncate">{m.description}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-slate-600">{m.vendor_name}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-slate-500 max-w-[200px] truncate">{m.alert_message || "—"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                     <div className="flex gap-1 justify-end">
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(m)}><Pencil className="h-3.5 w-3.5" /></Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => deleteMutation.mutate(m.id)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>

@@ -229,54 +229,54 @@ export default function SerialNumbers() {
             <p className="text-xs text-muted-foreground mt-1">Serial numbers are generated automatically when a Production Run is started.</p>
           </div>
         ) : (
-          <table className="w-full data-table">
+          <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10">
               <tr>
-                <th>Serial Number</th>
-                <th>Item</th>
-                <th>Production Run</th>
-                <th>Status</th>
-                <th>FAT</th>
-                <th>Customer</th>
-                <th>Dispatch Date</th>
-                <th>Warranty Expiry</th>
-                <th className="print:hidden">Actions</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Serial Number</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Production Run</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">FAT</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Customer</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Dispatch Date</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Warranty Expiry</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center print:hidden">Actions</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((row) => (
                 <tr key={row.id}>
-                  <td className="font-mono font-semibold text-primary">{row.serial_number}</td>
-                  <td>
-                    <p className="font-medium text-sm">{row.item_description ?? "—"}</p>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-semibold text-primary">{row.serial_number}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
+                    <p className="font-medium">{row.item_description ?? "—"}</p>
                     {row.item_code && (
                       <p className="font-mono text-xs text-muted-foreground">{row.item_code}</p>
                     )}
                   </td>
-                  <td className="font-mono text-sm text-muted-foreground">
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-muted-foreground">
                     {row.assembly_order_id ? (
                       <span className="text-primary text-xs">{row.assembly_order_id.slice(0, 8)}…</span>
                     ) : "—"}
                   </td>
-                  <td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                     <span className={statusClass[row.status] || "status-draft"}>
                       {statusLabels[row.status] ?? row.status}
                     </span>
                   </td>
-                  <td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                     <FatBadge fatCompleted={row.fat_completed} />
                   </td>
-                  <td className="text-sm">{row.customer_name ?? "—"}</td>
-                  <td className="text-sm font-mono">
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{row.customer_name ?? "—"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left tabular-nums font-mono">
                     {row.dispatch_date
                       ? format(new Date(row.dispatch_date), "dd MMM yyyy")
                       : "—"}
                   </td>
-                  <td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                     <WarrantyDate expiry={row.warranty_expiry} />
                   </td>
-                  <td className="print:hidden">
-                    <div className="flex gap-1.5">
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center print:hidden">
+                    <div className="flex gap-1.5 justify-center">
                       {row.fat_completed ? (
                         <Button
                           variant="outline"

@@ -204,36 +204,36 @@ export default function SalesOrderDetail() {
         )}
 
         {/* Line Items */}
-        <div className="overflow-x-auto">
-          <table className="w-full data-table">
+        <div className="overflow-x-auto rounded-lg border border-slate-200">
+          <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
-                <th className="w-10">#</th>
-                <th>Description</th>
-                <th>HSN/SAC</th>
-                <th className="text-right">Qty</th>
-                <th>Unit</th>
-                <th className="text-right">Unit Price</th>
-                <th className="text-right">GST %</th>
-                <th className="text-right">Amount</th>
-                <th>Delivery Date</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-10">#</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">HSN/SAC</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Unit</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Unit Price</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">GST %</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Amount</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Delivery Date</th>
               </tr>
             </thead>
             <tbody>
               {items.map((item: any) => (
                 <tr key={item.serial_number}>
-                  <td className="font-mono text-muted-foreground">{item.serial_number}</td>
-                  <td className="font-medium">
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{item.serial_number}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">
                     {item.description}
                     {item.item_code && <p className="text-xs text-muted-foreground font-mono">{item.item_code}</p>}
                   </td>
-                  <td className="font-mono text-sm">{item.hsn_sac_code || "—"}</td>
-                  <td className="text-right font-mono tabular-nums">{item.quantity}</td>
-                  <td>{item.unit}</td>
-                  <td className="text-right font-mono tabular-nums">{formatCurrency(item.unit_price)}</td>
-                  <td className="text-right font-mono tabular-nums">{item.gst_rate}%</td>
-                  <td className="text-right font-mono tabular-nums">{formatCurrency(item.line_total)}</td>
-                  <td className="text-sm">
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{item.hsn_sac_code || "—"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.quantity}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.unit}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(item.unit_price)}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.gst_rate}%</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(item.line_total)}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                     {item.delivery_date ? format(new Date(item.delivery_date), "dd MMM yyyy") : "—"}
                   </td>
                 </tr>
@@ -306,13 +306,14 @@ export default function SalesOrderDetail() {
             <p className="text-sm text-muted-foreground">No dispatch notes yet</p>
           </div>
         ) : (
-          <table className="w-full data-table">
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+          <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
-                <th>DN Number</th>
-                <th>Date</th>
-                <th className="text-right">Amount</th>
-                <th>Status</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">DN Number</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Date</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Amount</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
               </tr>
             </thead>
             <tbody>
@@ -322,14 +323,14 @@ export default function SalesOrderDetail() {
                   className="cursor-pointer"
                   onClick={() => navigate(`/dispatch-notes/${dn.id}`)}
                 >
-                  <td className="font-mono text-sm font-medium text-primary">{dn.dn_number}</td>
-                  <td className="text-sm">
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium text-primary">{dn.dn_number}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                     {dn.dn_date ? format(new Date(dn.dn_date), "dd MMM yyyy") : "—"}
                   </td>
-                  <td className="text-right font-mono text-sm tabular-nums">
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                     {formatCurrency(dn.grand_total ?? 0)}
                   </td>
-                  <td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                     <span className={`text-xs font-medium px-2.5 py-0.5 rounded-full border ${
                       dn.status === "issued"    ? "bg-blue-50 text-blue-700 border-blue-200" :
                       dn.status === "cancelled" ? "bg-red-50 text-red-700 border-red-200" :
@@ -342,6 +343,7 @@ export default function SalesOrderDetail() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

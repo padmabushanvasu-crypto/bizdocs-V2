@@ -173,16 +173,16 @@ export default function FatCertificates() {
             </Button>
           </div>
         ) : (
-          <table className="w-full data-table">
+          <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10">
               <tr>
-                <th>FAT Number</th>
-                <th>Item</th>
-                <th>Serial Number</th>
-                <th>Customer</th>
-                <th>Test Date</th>
-                <th>Status</th>
-                <th>Actions</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">FAT Number</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Serial Number</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Customer</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Test Date</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -192,28 +192,28 @@ export default function FatCertificates() {
                   className="cursor-pointer"
                   onClick={() => navigate(`/fat-certificates/${cert.id}`)}
                 >
-                  <td className="font-mono font-semibold text-primary">{cert.fat_number}</td>
-                  <td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-semibold text-primary">{cert.fat_number}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                     <p className="font-medium text-sm">{cert.item_description ?? "—"}</p>
                     {cert.item_code && (
                       <p className="font-mono text-xs text-muted-foreground">{cert.item_code}</p>
                     )}
                   </td>
-                  <td className="font-mono text-sm">{cert.serial_number ?? "—"}</td>
-                  <td className="text-sm">{cert.customer_name ?? "—"}</td>
-                  <td className="text-sm">
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{cert.serial_number ?? "—"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{cert.customer_name ?? "—"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                     {cert.test_date
                       ? format(new Date(cert.test_date), "dd MMM yyyy")
                       : cert.fat_date
                       ? format(new Date(cert.fat_date), "dd MMM yyyy")
                       : "—"}
                   </td>
-                  <td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                     <span className={statusClass[cert.status] || "status-draft"}>
                       {statusLabels[cert.status] ?? cert.status}
                     </span>
                   </td>
-                  <td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                     <Button
                       variant="outline"
                       size="sm"

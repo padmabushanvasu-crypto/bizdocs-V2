@@ -350,19 +350,19 @@ export default function PurchaseOrderDetail() {
 
         {/* ── Line Items (shared screen + print) ── */}
         <div className="overflow-x-auto po-section">
-          <table className="w-full data-table po-line-items-table">
+          <table className="w-full border-collapse text-sm po-line-items-table">
             <thead>
               <tr>
-                <th style={{ width: '5%' }}>#</th>
-                <th style={{ width: '36%' }}>Description</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left" style={{ width: '5%' }}>#</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left" style={{ width: '36%' }}>Description</th>
                 {/* Drawing No: visible on screen, hidden in print (shown inline in description) */}
-                <th className="print:hidden" style={{ width: '12%' }}>Drawing No.</th>
-                <th className="text-right print:hidden" style={{ width: '7%' }}>Rcvd</th>
-                <th className="text-right print:hidden" style={{ width: '7%' }}>Pending</th>
-                <th className="text-right" style={{ width: '8%' }}>Qty</th>
-                <th style={{ width: '7%' }}>Unit</th>
-                <th className="text-right" style={{ width: '17%' }}>Unit Price</th>
-                <th className="text-right" style={{ width: '20%' }}>Amount</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left print:hidden" style={{ width: '12%' }}>Drawing No.</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right print:hidden" style={{ width: '7%' }}>Rcvd</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right print:hidden" style={{ width: '7%' }}>Pending</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right" style={{ width: '8%' }}>Qty</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left" style={{ width: '7%' }}>Unit</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right" style={{ width: '17%' }}>Unit Price</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right" style={{ width: '20%' }}>Amount</th>
               </tr>
             </thead>
             <tbody>
@@ -371,8 +371,8 @@ export default function PurchaseOrderDetail() {
                 const pending = (item.quantity || 0) - received;
                 return (
                   <tr key={item.serial_number}>
-                    <td className="font-mono text-muted-foreground">{item.serial_number}</td>
-                    <td className="font-medium">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-muted-foreground">{item.serial_number}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">
                       {item.description}
                       {/* Drawing No. shown inline below description only in print */}
                       {item.drawing_number && (
@@ -381,25 +381,25 @@ export default function PurchaseOrderDetail() {
                         </div>
                       )}
                     </td>
-                    <td className="font-mono text-sm print:hidden">{item.drawing_number || "—"}</td>
-                    <td className="text-right font-mono tabular-nums print:hidden">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono print:hidden">{item.drawing_number || "—"}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono print:hidden">
                       {received > 0 ? (
                         <span className="text-emerald-600">{received}</span>
                       ) : (
                         <span className="text-muted-foreground">0</span>
                       )}
                     </td>
-                    <td className="text-right font-mono tabular-nums print:hidden">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono print:hidden">
                       {pending > 0 ? (
                         <span className="text-amber-600 font-medium">{pending}</span>
                       ) : (
                         <span className="text-emerald-600">✓</span>
                       )}
                     </td>
-                    <td className="text-right font-mono tabular-nums">{item.quantity}</td>
-                    <td>{item.unit}</td>
-                    <td className="text-right font-mono tabular-nums">{formatCurrency(item.unit_price)}</td>
-                    <td className="text-right font-mono tabular-nums">{formatCurrency(item.line_total)}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.quantity}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.unit}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(item.unit_price)}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(item.line_total)}</td>
                   </tr>
                 );
               })}
@@ -532,14 +532,14 @@ export default function PurchaseOrderDetail() {
             <p className="text-sm text-muted-foreground">No receipts recorded yet</p>
           </div>
         ) : (
-          <table className="w-full data-table">
+          <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
-                <th>GRN #</th>
-                <th>Date</th>
-                <th className="text-right">Accepted</th>
-                <th className="text-right">Rejected</th>
-                <th>Status</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">GRN #</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Date</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Accepted</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Rejected</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
               </tr>
             </thead>
             <tbody>
@@ -549,17 +549,17 @@ export default function PurchaseOrderDetail() {
                   className="hover:bg-muted/50 cursor-pointer transition-colors"
                   onClick={() => navigate(`/grn/${grn.id}`)}
                 >
-                  <td className="font-mono text-sm font-medium text-primary">{grn.grn_number}</td>
-                  <td className="text-muted-foreground">
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium text-primary">{grn.grn_number}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">
                     {new Date(grn.grn_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
                   </td>
-                  <td className="text-right font-mono tabular-nums text-emerald-600">{grn.total_accepted}</td>
-                  <td className="text-right font-mono tabular-nums">
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-emerald-600">{grn.total_accepted}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                     {grn.total_rejected > 0 ? (
                       <span className="text-destructive">{grn.total_rejected}</span>
                     ) : "0"}
                   </td>
-                  <td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                     <span className={grn.status === "recorded" ? "bg-blue-50 text-blue-700 border border-blue-200 text-xs font-medium px-2.5 py-0.5 rounded-full" : "status-paid"}>
                       {grn.status === "recorded" ? "Recorded" : "Verified"}
                     </span>

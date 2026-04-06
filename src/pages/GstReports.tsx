@@ -734,12 +734,12 @@ function PreviewDialog({
               </p>
               <p className="text-xs text-amber-600 font-medium">{DISCLAIMER}</p>
             </div>
-            <div className="overflow-x-auto rounded-lg border border-border">
-              <table className="w-full text-xs">
-                <thead className="bg-slate-800 text-white">
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="w-full border-collapse text-sm">
+                <thead>
                   <tr>
                     {sheet.headers.map((h) => (
-                      <th key={h} className="px-2 py-1.5 text-left whitespace-nowrap font-medium">
+                      <th key={h} className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left whitespace-nowrap">
                         {h}
                       </th>
                     ))}
@@ -749,7 +749,7 @@ function PreviewDialog({
                   {sheet.rows.slice(0, PREVIEW_LIMIT).map((row, i) => (
                     <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-slate-50"}>
                       {row.map((cell, j) => (
-                        <td key={j} className="px-2 py-1 border-b border-border/50 whitespace-nowrap">
+                        <td key={j} className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left whitespace-nowrap">
                           {cell ?? ""}
                         </td>
                       ))}
@@ -757,8 +757,8 @@ function PreviewDialog({
                   ))}
                   {sheet.rows.length === 0 && (
                     <tr>
-                      <td colSpan={sheet.headers.length} className="text-center py-8 text-muted-foreground">
-                        No data for this period
+                      <td colSpan={sheet.headers.length} className="px-3 py-8 text-center text-sm text-slate-400">
+                        No data found
                       </td>
                     </tr>
                   )}

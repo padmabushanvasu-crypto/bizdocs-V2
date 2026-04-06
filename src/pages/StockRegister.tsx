@@ -1,12 +1,13 @@
 import { useState, useMemo, Component, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Package, Shield } from "lucide-react";
+import { Package, Shield, ArrowDownCircle, ArrowUpCircle, BarChart2, Database, X } from "lucide-react";
+import { format } from "date-fns";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { StockStatusBadge } from "@/components/StockStatusBadge";
-import { fetchStockStatus, type StockStatusRow } from "@/lib/items-api";
+import { fetchStockStatus, fetchStockMovements, type StockStatusRow, type StockMovement } from "@/lib/items-api";
 import { fetchReorderAlerts, type ReorderAlert } from "@/lib/reorder-api";
 import { fetchPendingQCGRNs } from "@/lib/grn-api";
 
@@ -190,9 +191,18 @@ function StockRegisterInner() {
     return "all";
   });
 
+  const [selectedItem, setSelectedItem] = useState<StockStatusRow | null>(null);
+  const [ledgerOpen, setLedgerOpen] = useState(false);
+
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ["stock_status"],
     queryFn: fetchStockStatus,
+  });
+
+  const { data: movements = [], isLoading: movementsLoading } = useQuery({
+    queryKey: ["stock-movements", selectedItem?.id],
+    queryFn: () => fetchStockMovements(selectedItem!.id),
+    enabled: !!selectedItem?.id && ledgerOpen,
   });
 
   const { data: reorderAlerts = [] } = useQuery({
@@ -505,7 +515,7 @@ function StockRegisterInner() {
                     <tr
                       key={row.id}
                       className="hover:bg-blue-50/40 cursor-pointer transition-colors"
-                      onClick={() => navigate(`/stock-ledger?item_id=${row.id}`)}
+                      onClick={() => { setSelectedItem(row); setLedgerOpen(true); }}
                     >
                       {/* Item */}
                       <td className="px-4 py-3 max-w-[280px]">
@@ -630,40 +640,78 @@ function StockRegisterInner() {
 
                       {/* Action */}
                       <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                        {(() => {
-                          const t = row.item_type;
-                          if (t === "raw_material" || t === "bought_out" || t === "consumable") {
-                            return (
-                              <button
-                                className="text-xs font-medium text-blue-700 border border-blue-200 rounded px-2 py-1 hover:bg-blue-50 transition-colors whitespace-nowrap"
-                                onClick={() => navigate(`/purchase-orders/new?item_id=${row.id}`)}
-                              >
-                                Raise PO
-                              </button>
-                            );
-                          }
-                          if (t === "component") {
-                            return (
-                              <button
-                                className="text-xs font-medium text-slate-700 border border-slate-200 rounded px-2 py-1 hover:bg-slate-50 transition-colors whitespace-nowrap"
-                                onClick={() => navigate(`/delivery-challans/new?item_id=${row.id}`)}
-                              >
-                                Raise Job Card
-                              </button>
-                            );
-                          }
-                          if (t === "sub_assembly" || t === "finished_good") {
-                            return (
-                              <button
-                                className="text-xs font-medium text-emerald-700 border border-emerald-200 rounded px-2 py-1 hover:bg-emerald-50 transition-colors whitespace-nowrap"
-                                onClick={() => navigate(`/assembly-orders?item_id=${row.id}`)}
-                              >
-                                Assembly Order
-                              </button>
-                            );
-                          }
-                          return null;
-                        })()}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <button
+                            className="text-xs font-medium text-slate-500 border border-slate-200 rounded px-2 py-1 hover:bg-slate-50 transition-colors whitespace-nowrap flex items-center gap-1"
+                            onClick={() => { setSelectedItem(row); setLedgerOpen(true); }}
+                          >
+                            <BarChart2 className="h-3 w-3" /> Ledger
+                          </button>
+                          {(() => {
+                            const t = row.item_type;
+                            if (t === "raw_material" || t === "bought_out" || t === "consumable") {
+                              return (
+                                <button
+                                  className="text-xs font-medium text-blue-700 border border-blue-200 rounded px-2 py-1 hover:bg-blue-50 transition-colors whitespace-nowrap"
+                                  onClick={() => navigate("/purchase-orders/new", {
+                                    state: {
+                                      prefillItem: {
+                                        item_id: row.id,
+                                        item_code: row.item_code,
+                                        description: row.description,
+                                        unit: row.unit,
+                                        hsn_sac_code: row.hsn_sac_code,
+                                      },
+                                    },
+                                  })}
+                                >
+                                  Raise PO
+                                </button>
+                              );
+                            }
+                            if (t === "component") {
+                              return (
+                                <button
+                                  className="text-xs font-medium text-slate-700 border border-slate-200 rounded px-2 py-1 hover:bg-slate-50 transition-colors whitespace-nowrap"
+                                  onClick={() => navigate("/delivery-challans/new", {
+                                    state: {
+                                      prefillItem: {
+                                        item_id: row.id,
+                                        item_code: row.item_code,
+                                        description: row.description,
+                                        unit: row.unit,
+                                        hsn_sac_code: row.hsn_sac_code,
+                                      },
+                                    },
+                                  })}
+                                >
+                                  Raise Job Card
+                                </button>
+                              );
+                            }
+                            if (t === "sub_assembly" || t === "finished_good") {
+                              return (
+                                <button
+                                  className="text-xs font-medium text-emerald-700 border border-emerald-200 rounded px-2 py-1 hover:bg-emerald-50 transition-colors whitespace-nowrap"
+                                  onClick={() => navigate("/delivery-challans/new", {
+                                    state: {
+                                      prefillItem: {
+                                        item_id: row.id,
+                                        item_code: row.item_code,
+                                        description: row.description,
+                                        unit: row.unit,
+                                        hsn_sac_code: row.hsn_sac_code,
+                                      },
+                                    },
+                                  })}
+                                >
+                                  Assembly Order
+                                </button>
+                              );
+                            }
+                            return null;
+                          })()}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -680,6 +728,154 @@ function StockRegisterInner() {
           Showing {filtered.length} of {rows.length} items
         </p>
       )}
+
+      {/* Overlay */}
+      {ledgerOpen && (
+        <div
+          className="fixed inset-0 bg-black/30 z-40"
+          onClick={() => setLedgerOpen(false)}
+        />
+      )}
+
+      {/* Stock Ledger Side Panel */}
+      <div
+        className={`fixed right-0 top-0 h-full w-[420px] bg-white shadow-2xl z-50 flex flex-col transition-transform duration-300 ease-in-out ${
+          ledgerOpen ? "translate-x-0" : "translate-x-full"
+        }`}
+      >
+        {selectedItem && (
+          <>
+            {/* Panel header */}
+            <div className="flex items-start justify-between px-4 py-3 border-b border-slate-200 shrink-0">
+              <div className="min-w-0 pr-2">
+                <p className="text-[11px] font-mono text-slate-400 leading-none mb-1">{selectedItem.item_code}</p>
+                <p className="text-sm font-semibold text-slate-800 leading-snug">{selectedItem.description}</p>
+              </div>
+              <button
+                onClick={() => setLedgerOpen(false)}
+                className="text-slate-400 hover:text-slate-700 p-1 shrink-0 mt-0.5"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Stock summary */}
+            <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 shrink-0">
+              <div className="flex items-baseline gap-1.5">
+                <span className={`text-2xl font-bold tabular-nums ${
+                  selectedItem.stock_free === 0 ? "text-red-600" :
+                  selectedItem.effective_min_stock > 0 && selectedItem.stock_free <= selectedItem.effective_min_stock ? "text-amber-600" :
+                  "text-emerald-600"
+                }`}>
+                  {selectedItem.stock_free}
+                </span>
+                <span className="text-sm text-slate-500">{selectedItem.unit} in store</span>
+              </div>
+              {(selectedItem.stock_in_process > 0 || (selectedItem.stock_in_subassembly_wip + selectedItem.stock_in_fg_wip) > 0) && (
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {selectedItem.stock_in_process > 0 && `${selectedItem.stock_in_process} at vendor`}
+                  {selectedItem.stock_in_process > 0 && (selectedItem.stock_in_subassembly_wip + selectedItem.stock_in_fg_wip) > 0 && " · "}
+                  {(selectedItem.stock_in_subassembly_wip + selectedItem.stock_in_fg_wip) > 0 && `${selectedItem.stock_in_subassembly_wip + selectedItem.stock_in_fg_wip} in production`}
+                </p>
+              )}
+              <button
+                className="text-xs text-blue-600 hover:underline mt-1.5"
+                onClick={() => { setLedgerOpen(false); navigate(`/stock-ledger?item_id=${selectedItem.id}`); }}
+              >
+                View full ledger →
+              </button>
+            </div>
+
+            {/* Movements table */}
+            <div className="flex-1 overflow-y-auto">
+              {movementsLoading ? (
+                <p className="text-sm text-slate-400 p-4 animate-pulse">Loading movements…</p>
+              ) : movements.length === 0 ? (
+                <div className="p-8 text-center text-slate-400">
+                  <p className="text-sm">No stock movements recorded yet for this item</p>
+                </div>
+              ) : (
+                <table className="w-full border-collapse text-xs">
+                  <colgroup>
+                    <col style={{ width: "90px" }} />
+                    <col />
+                    <col style={{ width: "56px" }} />
+                    <col style={{ width: "56px" }} />
+                    <col style={{ width: "70px" }} />
+                  </colgroup>
+                  <thead className="sticky top-0 bg-slate-50 border-b border-slate-200 z-10">
+                    <tr>
+                      <th className="text-left px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">Date</th>
+                      <th className="text-left px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">Reference</th>
+                      <th className="text-right px-3 py-2 text-xs font-semibold text-emerald-600 uppercase tracking-wide">In</th>
+                      <th className="text-right px-3 py-2 text-xs font-semibold text-red-500 uppercase tracking-wide">Out</th>
+                      <th className="text-right px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {movements.map((m: StockMovement) => {
+                      const docIconMap: Record<StockMovement['document_type'], React.ReactNode> = {
+                        grn:           <ArrowDownCircle className="h-3 w-3 text-emerald-500 shrink-0" />,
+                        dc:            <ArrowUpCircle className="h-3 w-3 text-amber-500 shrink-0" />,
+                        assembly_order:<Package className="h-3 w-3 text-blue-500 shrink-0" />,
+                        adjustment:    <BarChart2 className="h-3 w-3 text-slate-400 shrink-0" />,
+                        opening_stock: <Database className="h-3 w-3 text-slate-400 shrink-0" />,
+                      };
+                      const refHrefMap: Record<StockMovement['document_type'], string | null> = {
+                        grn:           m.document_id ? `/grn/${m.document_id}` : null,
+                        dc:            m.document_id ? `/delivery-challans/${m.document_id}` : null,
+                        assembly_order:m.document_id ? `/assembly-orders/${m.document_id}` : null,
+                        adjustment:    null,
+                        opening_stock: null,
+                      };
+                      const refHref = refHrefMap[m.document_type];
+                      const balanceColor =
+                        m.running_balance === 0 ? "text-red-600" :
+                        selectedItem.effective_min_stock > 0 && m.running_balance <= selectedItem.effective_min_stock ? "text-amber-600" :
+                        "text-slate-800";
+                      return (
+                        <tr key={m.id} className="border-b border-slate-50 hover:bg-slate-50/50">
+                          <td className="px-3 py-2 text-slate-500 whitespace-nowrap">
+                            {format(new Date(m.movement_date), "dd MMM yy")}
+                          </td>
+                          <td className="px-3 py-2 max-w-[140px]">
+                            <div className="flex items-center gap-1 min-w-0">
+                              {docIconMap[m.document_type]}
+                              {refHref ? (
+                                <button
+                                  className="font-mono text-blue-700 hover:underline truncate text-left leading-tight"
+                                  onClick={() => { setLedgerOpen(false); navigate(refHref); }}
+                                >
+                                  {m.document_number}
+                                </button>
+                              ) : (
+                                <span className="font-mono text-slate-500 truncate">{m.document_number}</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono tabular-nums">
+                            {m.movement_type === "in"
+                              ? <span className="text-emerald-600 font-semibold">+{m.quantity}</span>
+                              : <span className="text-slate-300">—</span>}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono tabular-nums">
+                            {m.movement_type === "out"
+                              ? <span className="text-red-500 font-semibold">−{m.quantity}</span>
+                              : <span className="text-slate-300">—</span>}
+                          </td>
+                          <td className={`px-3 py-2 text-right font-mono tabular-nums font-semibold ${balanceColor}`}>
+                            {m.running_balance}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

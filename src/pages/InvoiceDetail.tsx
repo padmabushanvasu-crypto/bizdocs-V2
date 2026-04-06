@@ -277,41 +277,41 @@ export default function InvoiceDetail() {
         </EditableSection>
 
         {/* Line items */}
-        <div className="overflow-x-auto po-section">
-          <table className="w-full data-table po-line-items-table">
+        <div className="overflow-x-auto rounded-lg border border-slate-200 po-section">
+          <table className="w-full border-collapse text-sm po-line-items-table">
             <thead>
               <tr>
-                <th style={{ width: '4%' }}>#</th>
-                <th style={{ width: allDiscountsZero ? '28%' : '24%' }}>Description</th>
-                <th style={{ width: '8%' }}>HSN/SAC</th>
-                <th className="text-right" style={{ width: '6%' }}>Qty</th>
-                <th style={{ width: '5%' }}>Unit</th>
-                <th className="text-right" style={{ width: '12%' }}>Rate</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left" style={{ width: '4%' }}>#</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left" style={{ width: allDiscountsZero ? '28%' : '24%' }}>Description</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left" style={{ width: '8%' }}>HSN/SAC</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right" style={{ width: '6%' }}>Qty</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left" style={{ width: '5%' }}>Unit</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right" style={{ width: '12%' }}>Rate</th>
                 {/* Hide Disc% column in print when all zero */}
-                <th className={`text-right${allDiscountsZero ? " print:hidden" : ""}`} style={{ width: allDiscountsZero ? undefined : '7%' }}>Disc%</th>
-                <th className="text-right" style={{ width: allDiscountsZero ? '14%' : '12%' }}>Taxable</th>
-                <th className="text-right" style={{ width: '6%' }}>GST%</th>
-                <th className="text-right" style={{ width: allDiscountsZero ? '17%' : '14%' }}>Amount</th>
+                <th className={`px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right${allDiscountsZero ? " print:hidden" : ""}`} style={{ width: allDiscountsZero ? undefined : '7%' }}>Disc%</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right" style={{ width: allDiscountsZero ? '14%' : '12%' }}>Taxable</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right" style={{ width: '6%' }}>GST%</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right" style={{ width: allDiscountsZero ? '17%' : '14%' }}>Amount</th>
               </tr>
             </thead>
             <tbody>
               {items.map((li: any) => (
                 <tr key={li.id}>
-                  <td>{li.serial_number}</td>
-                  <td className="font-medium">
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{li.serial_number}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">
                     {li.description}
                     {li.drawing_number && <div className="text-xs text-muted-foreground font-normal">Dwg: {li.drawing_number}</div>}
                   </td>
-                  <td className="text-muted-foreground">{li.hsn_sac_code || "—"}</td>
-                  <td className="text-right font-mono tabular-nums">{li.quantity}</td>
-                  <td>{li.unit}</td>
-                  <td className="text-right font-mono tabular-nums">{formatCurrency(li.unit_price)}</td>
-                  <td className={`text-right${allDiscountsZero ? " print:hidden" : ""}`}>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">{li.hsn_sac_code || "—"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{li.quantity}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{li.unit}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(li.unit_price)}</td>
+                  <td className={`px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right${allDiscountsZero ? " print:hidden" : ""}`}>
                     {li.discount_percent > 0 ? `${li.discount_percent}%` : "—"}
                   </td>
-                  <td className="text-right font-mono tabular-nums">{formatCurrency(li.taxable_amount)}</td>
-                  <td className="text-right">{li.gst_rate}%</td>
-                  <td className="text-right font-mono tabular-nums font-semibold">{formatCurrency(li.line_total)}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(li.taxable_amount)}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{li.gst_rate}%</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-semibold">{formatCurrency(li.line_total)}</td>
                 </tr>
               ))}
             </tbody>
@@ -392,27 +392,27 @@ export default function InvoiceDetail() {
         {(!payments || payments.length === 0) ? (
           <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full data-table">
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="w-full border-collapse text-sm">
               <thead>
                 <tr>
-                  <th>Receipt #</th>
-                  <th>Date</th>
-                  <th>Mode</th>
-                  <th>Reference</th>
-                  <th className="text-right">Amount</th>
-                  <th>Notes</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Receipt #</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Date</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Mode</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Reference</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Amount</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Notes</th>
                 </tr>
               </thead>
               <tbody>
                 {payments.map((p: any) => (
                   <tr key={p.id}>
-                    <td className="font-mono text-sm">{p.receipt_number}</td>
-                    <td>{p.payment_date}</td>
-                    <td className="capitalize">{p.payment_mode}</td>
-                    <td className="text-muted-foreground">{p.reference_number || "—"}</td>
-                    <td className="text-right font-mono tabular-nums font-semibold">{formatCurrency(p.amount)}</td>
-                    <td className="text-muted-foreground text-sm">{p.notes || "—"}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{p.receipt_number}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{p.payment_date}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left capitalize">{p.payment_mode}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">{p.reference_number || "—"}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-semibold">{formatCurrency(p.amount)}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">{p.notes || "—"}</td>
                   </tr>
                 ))}
               </tbody>

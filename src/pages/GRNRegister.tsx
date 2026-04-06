@@ -210,25 +210,25 @@ function GRNRegisterInner() {
       {/* Table */}
       <div className="paper-card !p-0">
         <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
-          <table className="w-full data-table">
+          <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10">
               <tr>
-                <th>GRN #</th>
-                <th>Date</th>
-                <th>Vendor</th>
-                <th>Linked PO</th>
-                <th className="text-right">Accepted</th>
-                <th className="text-right">Non-Conforming</th>
-                <th>Stage</th>
-                <th>Actions</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">GRN #</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Date</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Vendor</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Linked PO</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Accepted</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Non-Conforming</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Stage</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">Loading...</td></tr>
+                <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-400">Loading...</td></tr>
               ) : grns.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-12">
+                  <td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-400">
                     <PackageCheck className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
                     <p className="text-muted-foreground font-medium">No GRNs found</p>
                   </td>
@@ -238,28 +238,28 @@ function GRNRegisterInner() {
                   const isDeleted = (grn as any).status === 'deleted';
                   return (
                     <tr key={grn.id} className={`hover:bg-muted/50 transition-colors ${isDeleted ? 'opacity-50' : 'cursor-pointer'}`} onClick={() => !isDeleted && navigate(`/grn/${grn.id}`)}>
-                      <td className={`font-mono text-sm font-medium ${isDeleted ? 'line-through text-muted-foreground' : 'text-foreground'}`}>{grn.grn_number}</td>
-                      <td className="text-muted-foreground">{new Date(grn.grn_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</td>
-                      <td className="font-medium">{grn.vendor_name || "—"}</td>
-                      <td>
+                      <td className={`px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium ${isDeleted ? 'line-through text-muted-foreground' : 'text-foreground'}`}>{grn.grn_number}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{new Date(grn.grn_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">{grn.vendor_name || "—"}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                         {grn.po_number ? (
                           <button className="font-mono text-xs text-primary hover:underline" onClick={(e) => { e.stopPropagation(); navigate(`/purchase-orders/${grn.po_id}`); }}>
                             {grn.po_number}
                           </button>
                         ) : "—"}
                       </td>
-                      <td className="text-right font-mono tabular-nums">{grn.total_accepted}</td>
-                      <td className="text-right font-mono tabular-nums">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{grn.total_accepted}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                         {grn.total_rejected > 0 ? <span className="text-destructive font-medium">{grn.total_rejected}</span> : grn.total_rejected}
                       </td>
-                      <td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                         {isDeleted
                           ? <span className="text-xs px-2.5 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200 line-through">Deleted</span>
                           : <StageBadge grn={grn} />
                         }
                       </td>
-                      <td>
-                        <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
+                        <div className="flex gap-1 justify-center" onClick={(e) => e.stopPropagation()}>
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate(`/grn/${grn.id}`)}><Eye className="h-3.5 w-3.5" /></Button>
                           {!isDeleted && (
                             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => deleteMutation.mutate(grn)}>

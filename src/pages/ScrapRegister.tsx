@@ -374,74 +374,74 @@ export default function ScrapRegister() {
       {/* Table */}
       <div className="paper-card !p-0">
         <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
-          <table className="w-full data-table text-sm">
+          <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10">
               <tr>
-                <th>Scrap No.</th>
-                <th>Date</th>
-                <th>Item</th>
-                <th>Drawing No.</th>
-                <th className="text-right">Qty</th>
-                <th>Reason</th>
-                <th>Category</th>
-                <th className="text-right">Cost/Unit</th>
-                <th className="text-right">Scrap Value</th>
-                <th>Disposal</th>
-                <th>Vendor/Buyer</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Scrap No.</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Date</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Drawing No.</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Reason</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Category</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Cost/Unit</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Scrap Value</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Disposal</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Vendor/Buyer</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={11} className="text-center py-10 text-muted-foreground">
+                  <td colSpan={11} className="px-3 py-8 text-center text-sm text-slate-400">
                     Loading…
                   </td>
                 </tr>
               ) : entries.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="text-center py-10 text-muted-foreground">
+                  <td colSpan={11} className="px-3 py-8 text-center text-sm text-slate-400">
                     No scrap entries found. Click "Record Scrap" to add the first entry.
                   </td>
                 </tr>
               ) : (
                 entries.map((entry) => (
                   <tr key={entry.id} className="hover:bg-muted/30 transition-colors">
-                    <td className="font-mono text-xs font-medium">{entry.scrap_number}</td>
-                    <td className="text-sm text-muted-foreground whitespace-nowrap">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium">{entry.scrap_number}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left whitespace-nowrap">
                       {format(new Date(entry.scrap_date), "dd MMM yyyy")}
                     </td>
-                    <td>
-                      <p className="font-medium text-sm leading-tight">{entry.item_code ?? "—"}</p>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
+                      <p className="font-medium leading-tight">{entry.item_code ?? "—"}</p>
                       {entry.item_description && (
                         <p className="text-xs text-muted-foreground truncate max-w-[150px]">
                           {entry.item_description}
                         </p>
                       )}
                     </td>
-                    <td className="font-mono text-xs text-muted-foreground">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-muted-foreground">
                       {entry.drawing_number ?? "—"}
                     </td>
-                    <td className="text-right font-mono tabular-nums">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                       {entry.qty_scrapped} {entry.unit}
                     </td>
-                    <td className="text-sm max-w-[160px] truncate">{entry.scrap_reason}</td>
-                    <td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left max-w-[160px] truncate">{entry.scrap_reason}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                       <span className="text-xs text-muted-foreground">
                         {categoryLabels[entry.scrap_category] ?? entry.scrap_category}
                       </span>
                     </td>
-                    <td className="text-right font-mono tabular-nums text-muted-foreground">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-muted-foreground">
                       {formatCurrency(entry.cost_per_unit)}
                     </td>
-                    <td className="text-right font-mono tabular-nums font-medium text-destructive">
+                    <td className="px-3 py-2 text-sm border-b border-slate-100 text-right tabular-nums font-mono font-medium text-destructive">
                       {formatCurrency(entry.total_scrap_value)}
                     </td>
-                    <td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                       <span className="text-xs text-muted-foreground">
                         {disposalLabels[entry.disposal_method] ?? entry.disposal_method}
                       </span>
                     </td>
-                    <td className="text-sm text-muted-foreground">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">
                       {entry.vendor_name ?? "—"}
                     </td>
                   </tr>

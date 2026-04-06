@@ -799,13 +799,13 @@ function GRNFormInner({ defaultGrnType }: Props) {
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr className="bg-slate-50 text-xs text-slate-600 uppercase tracking-wide">
-                  <th className="text-left px-3 py-2.5 font-semibold w-8">#</th>
-                  <th className="text-left px-3 py-2.5 font-semibold">Description</th>
-                  <th className="text-right px-3 py-2.5 font-semibold w-20">Ordered</th>
-                  <th className="text-right px-3 py-2.5 font-semibold w-20">Prev Rcvd</th>
-                  <th className="text-right px-3 py-2.5 font-semibold w-20">Pending</th>
-                  <th className="text-right px-3 py-2.5 font-semibold w-32">Receiving Now *</th>
-                  <th className="text-left px-3 py-2.5 font-semibold w-16">Unit</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-8">#</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-20">Ordered</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-20">Prev Rcvd</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-20">Pending</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-32">Receiving Now *</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-16">Unit</th>
                 </tr>
               </thead>
               <tbody>

@@ -121,17 +121,17 @@ export default function DispatchNotes() {
             </Button>
           </div>
         ) : (
-          <table className="w-full data-table">
+          <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
-                <th>DN Number</th>
-                <th>Customer</th>
-                <th>SO Reference</th>
-                <th>Date</th>
-                <th>Vehicle / Transporter</th>
-                <th className="text-right">Amount</th>
-                <th>Status</th>
-                <th>Actions</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">DN Number</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Customer</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">SO Reference</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Date</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Vehicle / Transporter</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Amount</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -141,24 +141,24 @@ export default function DispatchNotes() {
                   className="cursor-pointer"
                   onClick={() => navigate(`/dispatch-notes/${dn.id}`)}
                 >
-                  <td className="font-mono font-semibold text-primary">{dn.dn_number}</td>
-                  <td className="text-sm">{dn.customer_name ?? "—"}</td>
-                  <td className="font-mono text-sm text-muted-foreground">{dn.so_number ?? "—"}</td>
-                  <td className="text-sm">
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-semibold text-primary">{dn.dn_number}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{dn.customer_name ?? "—"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{dn.so_number ?? "—"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                     {dn.dn_date ? format(new Date(dn.dn_date), "dd MMM yyyy") : "—"}
                   </td>
-                  <td className="text-sm">
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                     {dn.vehicle_number ?? dn.transporter ?? "—"}
                   </td>
-                  <td className="text-right font-mono text-sm tabular-nums">
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                     {formatCurrency(dn.grand_total)}
                   </td>
-                  <td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                     <span className={statusClass[dn.status] || "status-draft"}>
                       {statusLabels[dn.status] ?? dn.status}
                     </span>
                   </td>
-                  <td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                     <Button
                       variant="outline"
                       size="sm"

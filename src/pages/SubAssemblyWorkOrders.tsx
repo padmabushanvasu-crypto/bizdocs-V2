@@ -208,27 +208,27 @@ export default function SubAssemblyWorkOrders() {
       {/* Table */}
       <div className="paper-card !p-0">
         <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
-          <table className="w-full data-table">
+          <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10">
               <tr>
-                <th>WO Number</th>
-                <th>Item</th>
-                <th className="text-right">Qty</th>
-                <th>Raised By</th>
-                <th>Status</th>
-                <th>Planned Date</th>
-                <th className="text-right">Days Open</th>
-                <th>Actions</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">WO Number</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Raised By</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Planned Date</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Days Open</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-10 text-muted-foreground">Loading…</td>
+                  <td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-400">Loading…</td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-10 text-muted-foreground">
+                  <td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-400">
                     {awos.length === 0 ? "No sub-assembly work orders yet." : "No results match search."}
                   </td>
                 </tr>
@@ -239,23 +239,23 @@ export default function SubAssemblyWorkOrders() {
                     className="cursor-pointer hover:bg-muted/30 transition-colors"
                     onClick={() => navigate(`/assembly-work-orders/${awo.id}`)}
                   >
-                    <td className="font-mono text-xs font-medium">{awo.awo_number}</td>
-                    <td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-xs font-medium">{awo.awo_number}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                       <p className="font-medium text-sm">{awo.item_code ?? "—"}</p>
                       {awo.item_description && (
                         <p className="text-xs text-muted-foreground truncate max-w-[180px]">{awo.item_description}</p>
                       )}
                     </td>
-                    <td className="text-right font-mono tabular-nums text-sm">{awo.quantity_to_build}</td>
-                    <td className="text-sm">{awo.raised_by ?? "—"}</td>
-                    <td>{statusBadge(awo.status)}</td>
-                    <td className="text-sm">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{awo.quantity_to_build}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{awo.raised_by ?? "—"}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">{statusBadge(awo.status)}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                       {awo.planned_date ? format(parseISO(awo.planned_date), "dd MMM yyyy") : <span className="text-muted-foreground">—</span>}
                     </td>
-                    <td className="text-right text-sm text-slate-500">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-slate-500">
                       {differenceInDays(new Date(), parseISO(awo.created_at))}d
                     </td>
-                    <td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                       <Button
                         variant="ghost"
                         size="sm"

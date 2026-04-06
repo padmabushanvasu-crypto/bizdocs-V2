@@ -221,40 +221,40 @@ export default function VendorScorecards() {
       {/* Table */}
       <div className="paper-card !p-0">
         <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
-          <table className="w-full data-table">
+          <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10">
               <tr>
-                <th className="text-left min-w-[180px] max-w-[260px] px-3 py-2 whitespace-nowrap">Vendor</th>
-                <th className="text-left min-w-[90px] max-w-[140px] px-3 py-2 whitespace-nowrap">City</th>
-                <th className="text-left min-w-[70px] px-3 py-2 whitespace-nowrap">Source</th>
-                <th className="text-right min-w-[80px] w-[80px] px-3 py-2 whitespace-nowrap">GRN NC%</th>
-                <th className="text-right min-w-[80px] w-[80px] px-3 py-2 whitespace-nowrap">DC NC%</th>
-                <th className="text-right min-w-[72px] w-[72px] px-3 py-2 whitespace-nowrap">JW Steps</th>
-                <th className="text-right min-w-[72px] w-[72px] px-3 py-2 whitespace-nowrap">JW Rej%</th>
-                <th className="text-right min-w-[76px] w-[76px] px-3 py-2 whitespace-nowrap">Avg Days</th>
-                <th className="text-right min-w-[76px] w-[76px] px-3 py-2 whitespace-nowrap">Accept%</th>
-                <th className="text-right min-w-[82px] w-[82px] px-3 py-2 whitespace-nowrap">ID Match%</th>
-                <th className="text-right min-w-[80px] w-[80px] px-3 py-2 whitespace-nowrap">First Pass</th>
-                <th className="text-right min-w-[68px] w-[68px] px-3 py-2 whitespace-nowrap">Rework%</th>
-                <th className="text-right min-w-[88px] w-[88px] px-3 py-2 whitespace-nowrap">Replacements</th>
-                <th className="text-right min-w-[76px] w-[76px] px-3 py-2 whitespace-nowrap">On-Time %</th>
-                <th className="text-right min-w-[72px] w-[72px] px-3 py-2 whitespace-nowrap">Overdue</th>
-                <th className="text-right min-w-[100px] w-[110px] px-3 py-2 whitespace-nowrap">Total Charges</th>
-                <th className="text-center min-w-[88px] w-[88px] px-3 py-2 whitespace-nowrap">Rating</th>
-                <th className="text-right min-w-[96px] w-[96px] px-3 py-2 whitespace-nowrap">Last Used</th>
-                <th className="text-center min-w-[80px] w-[80px] px-3 py-2 whitespace-nowrap">History</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left min-w-[180px] max-w-[260px] whitespace-nowrap">Vendor</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left min-w-[90px] max-w-[140px] whitespace-nowrap">City</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left min-w-[70px] whitespace-nowrap">Source</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right min-w-[80px] w-[80px] whitespace-nowrap">GRN NC%</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right min-w-[80px] w-[80px] whitespace-nowrap">DC NC%</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right min-w-[72px] w-[72px] whitespace-nowrap">JW Steps</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right min-w-[72px] w-[72px] whitespace-nowrap">JW Rej%</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right min-w-[76px] w-[76px] whitespace-nowrap">Avg Days</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right min-w-[76px] w-[76px] whitespace-nowrap">Accept%</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right min-w-[82px] w-[82px] whitespace-nowrap">ID Match%</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right min-w-[80px] w-[80px] whitespace-nowrap">First Pass</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right min-w-[68px] w-[68px] whitespace-nowrap">Rework%</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right min-w-[88px] w-[88px] whitespace-nowrap">Replacements</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right min-w-[76px] w-[76px] whitespace-nowrap">On-Time %</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right min-w-[72px] w-[72px] whitespace-nowrap">Overdue</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right min-w-[100px] w-[110px] whitespace-nowrap">Total Charges</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center min-w-[88px] w-[88px] whitespace-nowrap">Rating</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right min-w-[96px] w-[96px] whitespace-nowrap">Last Used</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center min-w-[80px] w-[80px] whitespace-nowrap">History</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={19} className="text-center py-10 text-muted-foreground">
+                  <td colSpan={19} className="px-3 py-8 text-center text-sm text-slate-400">
                     Loading scorecards…
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={19} className="text-center py-10 text-muted-foreground">
+                  <td colSpan={19} className="px-3 py-8 text-center text-sm text-slate-400">
                     {rows.length === 0 ? "No active vendors found." : "No vendors match your search."}
                   </td>
                 </tr>
@@ -271,7 +271,7 @@ export default function VendorScorecards() {
                     }`}
                     onClick={() => navigate(`/vendor-scorecards/${row.vendor_id}`)}
                   >
-                    <td className="text-left px-3 py-2">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                       <p className="font-medium text-sm">{row.vendor_name}</p>
                       {row.gstin && (
                         <p className="text-xs text-muted-foreground font-mono">{row.gstin}</p>
@@ -284,24 +284,24 @@ export default function VendorScorecards() {
                         ].filter(Boolean).join(" · ")}
                       </p>
                     </td>
-                    <td className="text-left px-3 py-2 text-sm text-muted-foreground">{row.city ?? "—"}</td>
-                    <td className="text-left px-3 py-2"><DataSourceBadge row={row} /></td>
-                    <td className="text-right px-3 py-2">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{row.city ?? "—"}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left"><DataSourceBadge row={row} /></td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                       <RatePct value={row.grn_rejection_rate_pct != null ? Number(row.grn_rejection_rate_pct) : null} greenBelow={3} redAbove={5} />
                     </td>
-                    <td className="text-right px-3 py-2">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                       <RatePct value={row.dc_rejection_rate_pct != null ? Number(row.dc_rejection_rate_pct) : null} greenBelow={3} redAbove={5} />
                     </td>
-                    <td className="text-right px-3 py-2 font-mono tabular-nums text-sm">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                       {row.total_steps > 0 ? row.total_steps : <span className="text-muted-foreground">—</span>}
                     </td>
-                    <td className="text-right px-3 py-2">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                       <RatePct value={row.rejection_rate_pct != null ? Number(row.rejection_rate_pct) : null} greenBelow={3} redAbove={5} />
                     </td>
-                    <td className="text-right px-3 py-2 font-mono tabular-nums text-sm text-muted-foreground">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                       {row.avg_turnaround_days != null ? `${row.avg_turnaround_days}d` : "—"}
                     </td>
-                    <td className="text-right px-3 py-2">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                       {(() => {
                         const m = grnMetricsMap?.[row.vendor_id];
                         if (!m || m.acceptance_rate === null) return <span className="text-muted-foreground text-sm">—</span>;
@@ -309,7 +309,7 @@ export default function VendorScorecards() {
                         return <span className={`text-sm tabular-nums ${cls}`}>{m.acceptance_rate.toFixed(1)}%</span>;
                       })()}
                     </td>
-                    <td className="text-right px-3 py-2">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                       {(() => {
                         const m = grnMetricsMap?.[row.vendor_id];
                         if (!m || m.identity_match_rate === null) return <span className="text-muted-foreground text-sm">—</span>;
@@ -317,23 +317,23 @@ export default function VendorScorecards() {
                         return <span className={`text-sm tabular-nums ${cls}`}>{m.identity_match_rate.toFixed(1)}%</span>;
                       })()}
                     </td>
-                    <td className="text-right px-3 py-2">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                       <FirstPassYield value={row.first_pass_yield_pct != null ? Number(row.first_pass_yield_pct) : null} />
                     </td>
-                    <td className="text-right px-3 py-2">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                       <RatePct value={row.rework_rate_pct != null ? Number(row.rework_rate_pct) : null} greenBelow={5} redAbove={10} />
                     </td>
-                    <td className="text-right px-3 py-2 font-mono tabular-nums text-sm">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                       {(row.replacement_count ?? 0) > 0 ? (
                         <span className="text-amber-700 font-medium">{row.replacement_count}</span>
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}
                     </td>
-                    <td className="text-right px-3 py-2">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                       <OnTimePct value={row.on_time_rate_pct != null ? Number(row.on_time_rate_pct) : null} />
                     </td>
-                    <td className="text-right px-3 py-2">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                       {Number(row.overdue_steps) > 0 ? (
                         <span className="inline-flex items-center gap-1 text-red-600 font-semibold text-sm">
                           <AlertTriangle className="h-3.5 w-3.5" />
@@ -343,18 +343,18 @@ export default function VendorScorecards() {
                         <span className="text-muted-foreground text-sm">—</span>
                       )}
                     </td>
-                    <td className="text-right px-3 py-2 font-mono tabular-nums text-sm font-medium">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-medium">
                       {formatCurrency(Number(row.total_charges))}
                     </td>
-                    <td className="text-center px-3 py-2">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                       <RatingBadge rating={row.performance_rating} />
                     </td>
-                    <td className="text-right px-3 py-2 text-sm text-muted-foreground">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right">
                       {row.last_used_at
                         ? format(new Date(row.last_used_at), "dd MMM yyyy")
                         : "—"}
                     </td>
-                    <td className="text-center px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center" onClick={(e) => e.stopPropagation()}>
                       <button
                         className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors whitespace-nowrap"
                         onClick={() => navigate(`/vendor-scorecards/${row.vendor_id}`)}

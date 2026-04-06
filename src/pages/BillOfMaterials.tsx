@@ -1534,10 +1534,10 @@ function BillOfMaterialsInner() {
                       </div>
                     ) : (
                       <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)] flex-1">
-                        <table className="w-full data-table text-sm">
+                        <table className="w-full border-collapse text-sm">
                           <thead className="sticky top-0 z-10">
                             <tr>
-                              <th className="w-6">
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center w-6">
                                 <button
                                   className="flex items-center justify-center"
                                   onClick={() => {
@@ -1554,21 +1554,21 @@ function BillOfMaterialsInner() {
                                     : <Square className="h-3.5 w-3.5 text-slate-400" />}
                                 </button>
                               </th>
-                              <th className="w-6"></th>
-                              <th>#</th>
-                              <th className="min-w-[110px]">Drawing No.</th>
-                              <th>Item Code</th>
-                              <th>Description</th>
-                              <th>Type</th>
-                              <th>Make/Buy</th>
-                              <th className="text-right">Qty</th>
-                              <th>Unit</th>
-                              <th className="text-right">Scrap%</th>
-                              <th className="text-center">Critical</th>
-                              <th className="text-right">Stock</th>
-                              <th className="text-right">Lead Time</th>
-                              <th className="text-right">Line Cost</th>
-                              <th className="w-20">Actions</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center w-6"></th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">#</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left min-w-[110px]">Drawing No.</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item Code</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Type</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Make/Buy</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Unit</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Scrap%</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Critical</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Stock</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Lead Time</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Line Cost</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center w-20">Actions</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1822,14 +1822,14 @@ function BillOfMaterialsInner() {
                                             ) : (
                                               <table className="w-full text-xs mb-2">
                                                 <thead>
-                                                  <tr className="text-left text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
-                                                    <th className="pb-1.5 pr-3 font-semibold w-6">Pref.</th>
-                                                    <th className="pb-1.5 pr-4 font-semibold">Vendor</th>
-                                                    <th className="pb-1.5 pr-4 font-semibold">Type</th>
-                                                    <th className="pb-1.5 pr-4 font-semibold">Process</th>
-                                                    <th className="pb-1.5 pr-4 font-semibold text-right">Lead Time</th>
-                                                    <th className="pb-1.5 pr-4 font-semibold text-right">Unit Cost</th>
-                                                    <th className="pb-1.5 font-semibold">Actions</th>
+                                                  <tr>
+                                                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center w-6">Pref.</th>
+                                                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Vendor</th>
+                                                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Type</th>
+                                                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Process</th>
+                                                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Lead Time</th>
+                                                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Unit Cost</th>
+                                                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Actions</th>
                                                   </tr>
                                                 </thead>
                                                 <tbody>
@@ -1933,14 +1933,14 @@ function BillOfMaterialsInner() {
                                             ) : (
                                               <table className="w-full text-xs mb-2">
                                                 <thead>
-                                                  <tr className="text-left text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
-                                                    <th className="pb-1.5 pr-2 font-semibold w-8">#</th>
-                                                    <th className="pb-1.5 pr-4 font-semibold">Process</th>
-                                                    <th className="pb-1.5 pr-4 font-semibold">Type</th>
-                                                    <th className="pb-1.5 pr-4 font-semibold">Vendor</th>
-                                                    <th className="pb-1.5 pr-4 font-semibold text-right">Lead Time</th>
-                                                    <th className="pb-1.5 pr-4 font-semibold">Notes</th>
-                                                    <th className="pb-1.5 font-semibold">Actions</th>
+                                                  <tr>
+                                                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-8">#</th>
+                                                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Process</th>
+                                                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Type</th>
+                                                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Vendor</th>
+                                                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Lead Time</th>
+                                                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Notes</th>
+                                                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Actions</th>
                                                   </tr>
                                                 </thead>
                                                 <tbody>
@@ -2115,16 +2115,16 @@ function BillOfMaterialsInner() {
                     ) : (
                       <>
                         <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)] flex-1">
-                          <table className="w-full data-table text-sm">
+                          <table className="w-full border-collapse text-sm">
                             <thead className="sticky top-0 z-10">
                               <tr>
-                                <th>Item Code</th>
-                                <th>Description</th>
-                                <th>Type</th>
-                                <th className="text-right">Qty Required</th>
-                                <th className="text-right">Unit Cost</th>
-                                <th className="text-right">Total Cost</th>
-                                <th className="text-center">Stock</th>
+                                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item Code</th>
+                                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Type</th>
+                                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty Required</th>
+                                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Unit Cost</th>
+                                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Total Cost</th>
+                                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Stock</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -2208,17 +2208,17 @@ function BillOfMaterialsInner() {
                         <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] flex-1">
                           {/* Left: table */}
                           <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
-                            <table className="w-full data-table text-sm">
+                            <table className="w-full border-collapse text-sm">
                               <thead className="sticky top-0 z-10">
                                 <tr>
-                                  <th>Item Code</th>
-                                  <th>Description</th>
-                                  <th>Type</th>
-                                  <th className="text-right">Level</th>
-                                  <th className="text-right">Qty</th>
-                                  <th>Unit</th>
-                                  <th className="text-right">Unit Cost</th>
-                                  <th className="text-right">Extended Cost</th>
+                                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item Code</th>
+                                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Type</th>
+                                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Level</th>
+                                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty</th>
+                                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Unit</th>
+                                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Unit Cost</th>
+                                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Extended Cost</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -2375,18 +2375,18 @@ function BillOfMaterialsInner() {
                       </div>
                     ) : (
                       <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)] flex-1">
-                        <table className="w-full data-table text-sm">
+                        <table className="w-full border-collapse text-sm">
                           <thead className="sticky top-0 z-10">
                             <tr>
-                              <th>Finished Item Code</th>
-                              <th>Description</th>
-                              <th>Type</th>
-                              <th className="text-right">Qty Used</th>
-                              <th>Unit</th>
-                              <th>Variant</th>
-                              <th className="text-right">BOM Level</th>
-                              <th className="text-right">Coverage</th>
-                              <th>Top Vendors</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Finished Item Code</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Type</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty Used</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Unit</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Variant</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">BOM Level</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Coverage</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Top Vendors</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -2462,15 +2462,15 @@ function BillOfMaterialsInner() {
                       </div>
                     ) : (
                       <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
-                        <table className="w-full data-table text-sm">
+                        <table className="w-full border-collapse text-sm">
                           <thead className="sticky top-0 z-10">
                             <tr>
-                              <th>Variant Name</th>
-                              <th>Code</th>
-                              <th>Description</th>
-                              <th className="text-center">Default</th>
-                              <th className="text-center">Active</th>
-                              <th className="w-32">Actions</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Variant Name</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Code</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Default</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Active</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center w-32">Actions</th>
                             </tr>
                           </thead>
                           <tbody>

@@ -377,28 +377,28 @@ export default function FatCertificateDetail() {
               />
             </div>
           )}
-          <div className="overflow-x-auto border border-border rounded-lg">
-            <table className="w-full text-sm">
-              <thead className="bg-secondary text-muted-foreground text-xs uppercase tracking-wider">
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="w-full border-collapse text-sm">
+              <thead>
                 <tr>
-                  <th className="px-3 py-2 text-left w-8">#</th>
-                  <th className="px-3 py-2 text-left min-w-[160px]">Test Parameter</th>
-                  <th className="px-3 py-2 text-left w-28">Standard</th>
-                  <th className="px-3 py-2 text-left w-28">Required</th>
-                  <th className="px-3 py-2 text-left w-28">Actual</th>
-                  <th className="px-3 py-2 text-left w-16">Unit</th>
-                  <th className="px-3 py-2 text-left w-36 print:hidden">Result</th>
-                  <th className="px-3 py-2 text-left hidden print:table-cell">Result</th>
-                  <th className="px-3 py-2 text-left min-w-[100px]">Remarks</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-8">#</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left min-w-[160px]">Test Parameter</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-28">Standard</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-28">Required</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-28">Actual</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-16">Unit</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-36 print:hidden">Result</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left hidden print:table-cell">Result</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left min-w-[100px]">Remarks</th>
                 </tr>
               </thead>
               <tbody>
                 {localResults.map((r, i) => (
                   <tr key={r.id} className="border-t border-border">
-                    <td className="px-3 py-2 text-muted-foreground font-mono">{i + 1}</td>
-                    <td className="px-3 py-2 font-medium">{r.test_name}</td>
-                    <td className="px-3 py-2 text-muted-foreground text-xs">{r.test_standard ?? "—"}</td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{i + 1}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">{r.test_name}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-xs">{r.test_standard ?? "—"}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                       {isCompleted ? (
                         <span>{r.required_value ?? "—"}</span>
                       ) : (
@@ -410,7 +410,7 @@ export default function FatCertificateDetail() {
                         />
                       )}
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                       {isCompleted ? (
                         <span className="font-mono font-semibold">{r.actual_value ?? "—"}</span>
                       ) : (
@@ -422,7 +422,7 @@ export default function FatCertificateDetail() {
                         />
                       )}
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                       {isCompleted ? (
                         <span className="text-muted-foreground">{r.unit ?? "—"}</span>
                       ) : (
@@ -434,7 +434,7 @@ export default function FatCertificateDetail() {
                         />
                       )}
                     </td>
-                    <td className="px-3 py-2 print:hidden">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left print:hidden">
                       {isCompleted ? (
                         <span
                           className={
@@ -463,10 +463,10 @@ export default function FatCertificateDetail() {
                         </div>
                       )}
                     </td>
-                    <td className="px-3 py-2 hidden print:table-cell text-xs font-medium">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left hidden print:table-cell text-xs font-medium">
                       {r.result === "pass" ? "PASS" : r.result === "fail" ? "FAIL" : r.result === "na" ? "N/A" : "—"}
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                       {isCompleted ? (
                         <span className="text-muted-foreground text-xs">{r.remarks ?? "—"}</span>
                       ) : (

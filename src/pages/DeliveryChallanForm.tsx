@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, ChevronDown, Info, ChevronLeft, AlertTriangle } from "lucide-react";
@@ -133,6 +133,7 @@ export default function DeliveryChallanForm() {
   const [returnDueDate, setReturnDueDate] = useState<Date | undefined>();
   const [natureOfJobWork, setNatureOfJobWork] = useState("");
   const [lineItems, setLineItems] = useState<DCLineItem[]>([emptyLineItem(1)]);
+  const firstQtyRef = useRef<HTMLInputElement | null>(null);
   const [successDialogOpen, setSuccessDialogOpen] = useState(false);
   const [savedDCId, setSavedDCId] = useState<string | null>(null);
   const [jcDialogOpen, setJcDialogOpen] = useState(false);
@@ -303,6 +304,23 @@ export default function DeliveryChallanForm() {
       setLineItems(items);
     }
   }, [location.state, parties, isEdit]);
+
+  // Pre-fill from Stock Register (single item via prefillItem state)
+  useEffect(() => {
+    if (isEdit) return;
+    const prefillItem = (location.state as any)?.prefillItem;
+    if (!prefillItem) return;
+    setLineItems([{
+      ...emptyLineItem(1),
+      item_id: prefillItem.item_id || null,
+      item_code: prefillItem.item_code || "",
+      description: prefillItem.description || "",
+      unit: prefillItem.unit || "NOS",
+      hsn_sac_code: prefillItem.hsn_sac_code || "",
+    }]);
+    setPrefillBanner(`Pre-filled with ${prefillItem.item_code || prefillItem.description} — enter quantity and select vendor.`);
+    setTimeout(() => { firstQtyRef.current?.focus(); firstQtyRef.current?.select(); }, 150);
+  }, [isEdit, location.state]);
 
   const handlePartySelect = (party: Party) => {
     setPartyId(party.id);
@@ -844,6 +862,7 @@ export default function DeliveryChallanForm() {
                   <td className="p-0 w-24">
                     <input
                       type="number"
+                      ref={(el) => { if (index === 0) firstQtyRef.current = el; }}
                       value={item.quantity || ""}
                       onChange={(e) => updateLineItem(index, "quantity", Number(e.target.value))}
                       className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm text-right font-mono tabular-nums"

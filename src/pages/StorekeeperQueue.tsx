@@ -226,15 +226,15 @@ export default function StorekeeperQueue() {
       {/* Line items table */}
       <div className="paper-card !p-0">
         <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
-          <table className="w-full data-table">
+          <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10">
               <tr>
-                <th>Drawing No</th>
-                <th>Description</th>
-                <th className="text-right">Required Qty</th>
-                <th className="text-right">Available Stock</th>
-                <th className="text-right">Issued Qty</th>
-                <th>Shortage Notes</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Drawing No</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Required Qty</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Available Stock</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Issued Qty</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Shortage Notes</th>
               </tr>
             </thead>
             <tbody>
@@ -244,22 +244,22 @@ export default function StorekeeperQueue() {
 
                 return (
                   <tr key={li.id}>
-                    <td className="font-mono text-xs text-blue-700">{li.drawing_number ?? "—"}</td>
-                    <td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-blue-700">{li.drawing_number ?? "—"}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                       <p className="text-sm font-medium">{li.item_code ?? "—"}</p>
                       {li.item_description && (
                         <p className="text-xs text-muted-foreground">{li.item_description}</p>
                       )}
                     </td>
-                    <td className="text-right font-mono tabular-nums text-sm">{li.requested_qty}</td>
-                    <td className="text-right font-mono tabular-nums text-sm">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{li.requested_qty}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                       {li.stock_free != null ? (
                         <span className={li.stock_free >= li.requested_qty ? "text-green-600" : "text-amber-600"}>
                           {li.stock_free}
                         </span>
                       ) : "—"}
                     </td>
-                    <td className="text-right">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right">
                       {mirDetail.status === "issued" ? (
                         <span className="font-mono tabular-nums text-sm">{edit.issued_qty}</span>
                       ) : (
@@ -279,7 +279,7 @@ export default function StorekeeperQueue() {
                         />
                       )}
                     </td>
-                    <td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                       {mirDetail.status === "issued" ? (
                         <span className="text-muted-foreground text-sm">{edit.shortage_notes || "—"}</span>
                       ) : hasShortage ? (

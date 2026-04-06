@@ -168,28 +168,28 @@ export default function DeliveryChallansRegister() {
       {/* Table */}
       <div className="paper-card !p-0">
         <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
-          <table className="w-full data-table">
+          <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10">
               <tr>
-                <th>DC #</th>
-                <th>Date</th>
-                <th>Party</th>
-                <th>Type</th>
-                <th className="text-right">Items</th>
-                <th>Return Due</th>
-                <th>Status</th>
-                <th className="text-right">Days Open</th>
-                <th>Actions</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">DC #</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Date</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Party</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Type</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Items</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Return Due</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Days Open</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={9} className="text-center py-8 text-muted-foreground">Loading...</td>
+                  <td colSpan={9} className="px-3 py-8 text-center text-sm text-slate-400">Loading...</td>
                 </tr>
               ) : dcs.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="text-center py-12">
+                  <td colSpan={9} className="px-3 py-8 text-center text-sm text-slate-400">
                     <Truck className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
                     <p className="text-muted-foreground font-medium">No delivery challans yet</p>
                     <p className="text-sm text-muted-foreground">Create your first DC to get started</p>
@@ -208,12 +208,12 @@ export default function DeliveryChallansRegister() {
                       className={`hover:bg-muted/50 cursor-pointer transition-colors ${overdue || rule45Status === "overdue" ? "bg-destructive/5" : ""} ${isDeleted ? "opacity-50" : ""}`}
                       onClick={() => !isDeleted && navigate(`/delivery-challans/${dc.id}`)}
                     >
-                      <td className="font-mono text-sm font-medium text-foreground">{dc.dc_number}</td>
-                      <td className="text-muted-foreground">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium">{dc.dc_number}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                         {new Date(dc.dc_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
                       </td>
-                      <td className="font-medium">{dc.party_name || "—"}</td>
-                      <td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">{dc.party_name || "—"}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                         <span className="text-muted-foreground">{typeLabels[dc.dc_type] || dc.dc_type}</span>
                         {rule45Status === "overdue" && (
                           <span className="ml-1.5 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">R45 OVERDUE</span>
@@ -222,8 +222,8 @@ export default function DeliveryChallansRegister() {
                           <span className="ml-1.5 bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">R45 DUE SOON</span>
                         )}
                       </td>
-                      <td className="text-right font-mono tabular-nums">{dc.total_items}</td>
-                      <td className="text-muted-foreground">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{dc.total_items}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                         {dc.return_due_date ? (
                           <span className={overdue ? "text-destructive font-medium" : ""}>
                             {new Date(dc.return_due_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
@@ -233,16 +233,16 @@ export default function DeliveryChallansRegister() {
                           "—"
                         )}
                       </td>
-                      <td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                         <span className={statusClass[dc.status] || "status-draft"}>
                           {overdue && dc.status !== "cancelled" ? "Overdue" : statusLabels[dc.status] || dc.status}
                         </span>
                       </td>
-                      <td className="text-right">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                         {days !== null ? <span className={daysClass}>{days}d</span> : "—"}
                       </td>
-                      <td>
-                        <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
+                        <div className="flex gap-1 justify-center" onClick={(e) => e.stopPropagation()}>
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate(`/delivery-challans/${dc.id}`)}>
                             <Eye className="h-3.5 w-3.5" />
                           </Button>

@@ -253,44 +253,42 @@ export default function AssemblyWorkOrderDetail() {
       <div className="no-print space-y-3">
         <h2 className="text-lg font-semibold">BOM Checklist</h2>
         <div className="paper-card !p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full data-table">
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="w-full border-collapse text-sm">
               <thead>
                 <tr>
-                  <th>Item Code</th>
-                  <th>Description</th>
-                  <th>Type</th>
-                  <th className="text-right">Required Qty</th>
-                  <th className="text-right">Issued Qty</th>
-                  <th className="text-right">Available</th>
-                  <th>Status</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item Code</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Type</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Required Qty</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Issued Qty</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Available</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {(awo.line_items ?? []).length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-8 text-muted-foreground">
-                      No BOM lines for this work order.
-                    </td>
+                    <td colSpan={7} className="px-3 py-8 text-center text-sm text-slate-400">No data found</td>
                   </tr>
                 ) : (
                   (awo.line_items ?? []).map((li) => (
                     <tr key={li.id}>
-                      <td className="font-mono text-xs text-blue-700">{li.drawing_number}</td>
-                      <td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-blue-700">{li.drawing_number}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                         <p className="text-sm font-medium">{li.item_description}</p>
                       </td>
-                      <td className="text-sm text-muted-foreground">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                         {li.is_critical ? (
                           <span className="text-red-600 font-medium flex items-center gap-1">
                             <AlertTriangle className="w-3 h-3" /> Critical
                           </span>
                         ) : "Standard"}
                       </td>
-                      <td className="text-right font-mono tabular-nums text-sm">{li.required_qty}</td>
-                      <td className="text-right font-mono tabular-nums text-sm">{li.issued_qty}</td>
-                      <td className="text-right font-mono tabular-nums text-sm">{li.stock_free ?? 0}</td>
-                      <td><AvailabilityCell line={li} /></td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{li.required_qty}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{li.issued_qty}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{li.stock_free ?? 0}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center"><AvailabilityCell line={li} /></td>
                     </tr>
                   ))
                 )}
@@ -312,25 +310,25 @@ export default function AssemblyWorkOrderDetail() {
                 <span className="text-sm text-muted-foreground">Requested by: {latestMir.requested_by}</span>
               )}
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full data-table">
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="w-full border-collapse text-sm">
                 <thead>
                   <tr>
-                    <th>Drawing No</th>
-                    <th>Description</th>
-                    <th className="text-right">Required Qty</th>
-                    <th className="text-right">Issued Qty</th>
-                    <th className="text-right">Shortage</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Drawing No</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Required Qty</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Issued Qty</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Shortage</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(latestMir.line_items ?? []).map((li) => (
                     <tr key={li.id}>
-                      <td className="font-mono text-xs text-blue-700">{li.drawing_number ?? "—"}</td>
-                      <td className="text-sm">{li.item_description ?? "—"}</td>
-                      <td className="text-right font-mono tabular-nums text-sm">{li.requested_qty}</td>
-                      <td className="text-right font-mono tabular-nums text-sm">{li.issued_qty}</td>
-                      <td className="text-right font-mono tabular-nums text-sm text-red-600">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-blue-700">{li.drawing_number ?? "—"}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{li.item_description ?? "—"}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{li.requested_qty}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{li.issued_qty}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-red-600">
                         {li.shortage_qty > 0 ? li.shortage_qty : "—"}
                       </td>
                     </tr>

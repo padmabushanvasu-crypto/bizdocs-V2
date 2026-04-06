@@ -144,27 +144,27 @@ function DcGrnInner() {
       {/* Table */}
       <div className="paper-card !p-0">
         <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
-          <table className="w-full data-table">
+          <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10">
               <tr>
-                <th>DC Number</th>
-                <th>DC Return #</th>
-                <th>Vendor / Party</th>
-                <th>DC Date</th>
-                <th>Items</th>
-                <th>GRN Status</th>
-                <th>Days Open</th>
-                <th>Actions</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">DC Number</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">DC Return #</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Vendor / Party</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">DC Date</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Items</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">GRN Status</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Days Open</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-8 text-muted-foreground">Loading...</td>
+                  <td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-400">Loading...</td>
                 </tr>
               ) : grns.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-12">
+                  <td colSpan={8} className="px-3 py-12 text-center text-sm text-slate-400">
                     <PackageCheck className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
                     <p className="text-muted-foreground font-medium">No DC-GRNs yet</p>
                     <p className="text-sm text-muted-foreground">Record goods returned from vendors</p>
@@ -180,7 +180,7 @@ function DcGrnInner() {
                       className={`hover:bg-muted/50 transition-colors ${isDeletedRow ? 'opacity-50 cursor-default' : 'cursor-pointer'}`}
                       onClick={() => !isDeletedRow && navigate(`/dc-grn/${grn.id}`)}
                     >
-                      <td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                         {g.linked_dc_number ? (
                           <button
                             className="font-mono text-sm font-medium text-primary hover:underline"
@@ -195,15 +195,15 @@ function DcGrnInner() {
                           <span className="text-muted-foreground">—</span>
                         )}
                       </td>
-                      <td className="font-mono text-sm font-medium text-foreground">{grn.grn_number}</td>
-                      <td className="font-medium">{grn.vendor_name || "—"}</td>
-                      <td className="text-muted-foreground">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium">{grn.grn_number}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">{grn.vendor_name || "—"}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                         {new Date(grn.grn_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
                       </td>
-                      <td className="text-center text-sm text-muted-foreground">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                         {(g as any).items_count ?? (g as any).line_items_count ?? "—"}
                       </td>
-                      <td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                         {isDeletedRow ? (
                           <span className="bg-red-50 text-red-700 border border-red-200 text-xs font-medium px-2.5 py-0.5 rounded-full">Deleted</span>
                         ) : (
@@ -212,11 +212,11 @@ function DcGrnInner() {
                           </span>
                         )}
                       </td>
-                      <td className="text-sm text-muted-foreground tabular-nums">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                         {grn.status !== "verified" ? `${daysOpen(grn.grn_date)}d` : <span className="text-green-600 font-medium">Done</span>}
                       </td>
-                      <td>
-                        <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
+                        <div className="flex gap-1 justify-center" onClick={(e) => e.stopPropagation()}>
                           <Button
                             variant="ghost"
                             size="icon"

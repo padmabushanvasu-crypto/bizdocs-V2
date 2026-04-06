@@ -431,16 +431,16 @@ export default function SalesOrderForm() {
           <table className="w-full">
             <thead>
               <tr className="bg-secondary text-muted-foreground text-xs uppercase tracking-wider">
-                <th className="px-3 py-2 text-left w-8">#</th>
-                <th className="px-3 py-2 text-left w-[100px]">Item Code</th>
-                <th className="px-3 py-2 text-left min-w-[200px]">Description</th>
-                <th className="px-3 py-2 text-left w-[90px]">HSN/SAC</th>
-                <th className="px-3 py-2 text-left w-[60px]">Unit</th>
-                <th className="px-3 py-2 text-right w-[75px]">Qty</th>
-                <th className="px-3 py-2 text-right w-[100px]">Unit Price</th>
-                <th className="px-3 py-2 text-right w-[70px]">GST %</th>
-                <th className="px-3 py-2 text-right w-[100px]">Line Total</th>
-                <th className="px-3 py-2 text-left w-[110px]">Delivery Date</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-8">#</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-[100px]">Item Code</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left min-w-[200px]">Description</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-[90px]">HSN/SAC</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-[60px]">Unit</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-[75px]">Qty</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-[100px]">Unit Price</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-[70px]">GST %</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-[100px]">Line Total</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-[110px]">Delivery Date</th>
                 <th className="px-3 py-2 w-8"></th>
               </tr>
             </thead>

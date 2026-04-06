@@ -127,25 +127,25 @@ export default function InvoiceRegister() {
 
       <div className="paper-card !p-0">
         <div className="overflow-x-auto">
-          <table className="w-full data-table">
+          <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
-                <th>Invoice #</th>
-                <th>Date</th>
-                <th>Customer</th>
-                <th className="text-right">Total</th>
-                <th>Due Date</th>
-                <th className="text-right">Outstanding</th>
-                <th>Status</th>
-                <th className="text-right">Days Open</th>
-                <th>Actions</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Invoice #</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Date</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Customer</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Total</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Due Date</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Outstanding</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Days Open</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={9} className="text-center py-8 text-muted-foreground">Loading...</td></tr>
+                <tr><td colSpan={9} className="px-3 py-8 text-center text-sm text-slate-400">Loading...</td></tr>
               ) : invoices.length === 0 ? (
-                <tr><td colSpan={9} className="text-center py-8 text-muted-foreground">No invoices found. Create your first invoice.</td></tr>
+                <tr><td colSpan={9} className="px-3 py-8 text-center text-sm text-slate-400">No invoices found. Create your first invoice.</td></tr>
               ) : (
                 invoices.map((inv: any) => {
                   const displayStatus = getDisplayStatus(inv);
@@ -159,20 +159,22 @@ export default function InvoiceRegister() {
                       onClick={() => !isDeleted && navigate(`/invoices/${inv.id}`)}
                       className={`hover:bg-muted/50 cursor-pointer transition-colors ${isOverdue ? "bg-rose-50/50" : ""} ${isDeleted ? "opacity-50" : ""}`}
                     >
-                      <td className="font-mono text-sm font-medium text-foreground">{inv.invoice_number}</td>
-                      <td className="text-muted-foreground">{inv.invoice_date}</td>
-                      <td className="font-medium">{inv.customer_name}</td>
-                      <td className="text-right font-mono tabular-nums font-semibold">{formatCurrency(inv.grand_total ?? 0)}</td>
-                      <td className="text-muted-foreground">{inv.due_date || "—"}</td>
-                      <td className={`text-right font-mono tabular-nums ${(inv.amount_outstanding ?? 0) > 0 ? "text-amber-600 font-semibold" : ""}`}>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium">{inv.invoice_number}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{inv.invoice_date}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">{inv.customer_name}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-semibold">{formatCurrency(inv.grand_total ?? 0)}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{inv.due_date || "—"}</td>
+                      <td className={`px-3 py-2 text-sm border-b border-slate-100 text-right tabular-nums font-mono ${(inv.amount_outstanding ?? 0) > 0 ? "text-amber-600 font-semibold" : "text-slate-700"}`}>
                         {formatCurrency(inv.amount_outstanding ?? 0)}
                       </td>
-                      <td><span className={statusClass[displayStatus] || "status-draft"}>{statusLabels[displayStatus] || displayStatus}</span></td>
-                      <td className="text-right">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
+                        <span className={statusClass[displayStatus] || "status-draft"}>{statusLabels[displayStatus] || displayStatus}</span>
+                      </td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                         {days !== null ? <span className={daysClass}>{days}d</span> : "—"}
                       </td>
-                      <td>
-                        <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
+                        <div className="flex gap-1 justify-center" onClick={(e) => e.stopPropagation()}>
                           {!["cancelled", "deleted"].includes(inv.status) && (
                             <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => {
                               if (confirm("Delete this invoice? It will be hidden from the register.")) deleteMutation.mutate(inv);

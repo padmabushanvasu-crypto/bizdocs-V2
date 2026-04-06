@@ -1191,3 +1191,64 @@ export async function storeConfirmLineItem(
 export async function fetchAwaitingStoreGRNs(): Promise<any[]> {
   return [];
 }
+
+export interface StoreConfirmedItem {
+  id: string;
+  grn_id: string;
+  grn_number: string;
+  grn_date: string;
+  vendor_name: string | null;
+  description: string;
+  drawing_number: string | null;
+  conforming_qty: number | null;
+  unit: string | null;
+  store_confirmed_by: string | null;
+  store_confirmed_at: string | null;
+  store_location: string | null;
+  is_final_grn: boolean;
+  linked_dc_id: string | null;
+  linked_dc_number: string | null;
+}
+
+export async function fetchStoreConfirmedHistory(): Promise<StoreConfirmedItem[]> {
+  const companyId = await getCompanyId();
+  if (!companyId) return [];
+  const { data: lineItems, error } = await (supabase as any)
+    .from('grn_line_items')
+    .select('id, grn_id, description, drawing_number, conforming_qty, unit, store_confirmed_by, store_confirmed_at, store_location, is_final_grn')
+    .eq('company_id', companyId)
+    .eq('store_confirmed', true)
+    .order('store_confirmed_at', { ascending: false })
+    .limit(100);
+  if (error) throw error;
+  if (!lineItems?.length) return [];
+
+  const grnIds = [...new Set((lineItems as any[]).map((l: any) => l.grn_id as string))];
+  const { data: grns } = await (supabase as any)
+    .from('grns')
+    .select('id, grn_number, grn_date, vendor_name, linked_dc_id, linked_dc_number')
+    .in('id', grnIds)
+    .neq('status', 'deleted');
+  const grnMap: Record<string, any> = {};
+  for (const g of (grns ?? []) as any[]) grnMap[g.id] = g;
+
+  return (lineItems as any[])
+    .filter((l: any) => grnMap[l.grn_id])
+    .map((l: any) => ({
+      id: l.id,
+      grn_id: l.grn_id,
+      grn_number: grnMap[l.grn_id]?.grn_number ?? '—',
+      grn_date: grnMap[l.grn_id]?.grn_date ?? '',
+      vendor_name: grnMap[l.grn_id]?.vendor_name ?? null,
+      description: l.description,
+      drawing_number: l.drawing_number ?? null,
+      conforming_qty: l.conforming_qty ?? null,
+      unit: l.unit ?? null,
+      store_confirmed_by: l.store_confirmed_by ?? null,
+      store_confirmed_at: l.store_confirmed_at ?? null,
+      store_location: l.store_location ?? null,
+      is_final_grn: l.is_final_grn ?? false,
+      linked_dc_id: grnMap[l.grn_id]?.linked_dc_id ?? null,
+      linked_dc_number: grnMap[l.grn_id]?.linked_dc_number ?? null,
+    }));
+}

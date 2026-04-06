@@ -355,33 +355,33 @@ export default function WipRegister() {
           {/* DC WIP table */}
           <div className="paper-card !p-0">
             <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
-              <table className="w-full data-table">
+              <table className="w-full border-collapse text-sm">
                 <thead className="sticky top-0 z-10">
                   <tr>
-                    <th>DC Number</th>
-                    <th>Drawing No</th>
-                    <th>Description</th>
-                    <th>Stage</th>
-                    <th>Progress</th>
-                    <th>Process</th>
-                    <th>Vendor</th>
-                    <th className="text-right">Qty Sent</th>
-                    <th className="text-right">Returned</th>
-                    <th className="text-right">Pending</th>
-                    <th className="text-right">Due Date</th>
-                    <th>Status</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">DC Number</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Drawing No</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Stage</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Progress</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Process</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Vendor</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty Sent</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Returned</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Pending</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Due Date</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {dcLoading ? (
                     <tr>
-                      <td colSpan={12} className="text-center py-10 text-muted-foreground">
+                      <td colSpan={12} className="px-3 py-8 text-center text-sm text-slate-400">
                         Loading DC WIP…
                       </td>
                     </tr>
                   ) : filteredDcs.length === 0 ? (
                     <tr>
-                      <td colSpan={12} className="text-center py-10 text-muted-foreground">
+                      <td colSpan={12} className="px-3 py-8 text-center text-sm text-slate-400">
                         {(wipData as any[]).length === 0
                           ? "No open returnable DCs. All clear!"
                           : "No DCs match current search."}
@@ -397,9 +397,9 @@ export default function WipRegister() {
                         return [(
                           <tr key={row.id} className={`cursor-pointer transition-colors ${rowBg}`}
                               onClick={() => navigate(`/delivery-challans/${row.id}`)}>
-                            <td className="font-mono text-xs font-medium">{row.dc_number}</td>
-                            <td colSpan={9} className="text-sm text-muted-foreground">No line items</td>
-                            <td className="text-right text-sm">
+                            <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium">{row.dc_number}</td>
+                            <td colSpan={9} className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">No line items</td>
+                            <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right">
                               {row.return_before_date ? (() => {
                                 const days = differenceInDays(new Date(row.return_before_date), new Date());
                                 return (
@@ -409,7 +409,7 @@ export default function WipRegister() {
                                 );
                               })() : '—'}
                             </td>
-                            <td></td>
+                            <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center"></td>
                           </tr>
                         )];
                       }
@@ -437,23 +437,23 @@ export default function WipRegister() {
 
                         return (
                           <tr key={`${row.id}-${liIdx}`} className={`cursor-pointer transition-colors ${rowBg}`} onClick={handleRowClick}>
-                            <td className="font-mono text-xs font-medium text-foreground">
+                            <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium">
                               {liIdx === 0 ? row.dc_number : ''}
                             </td>
-                            <td className="font-mono text-xs text-blue-700">{li.drawing_number ?? '—'}</td>
-                            <td className="text-sm max-w-[160px] truncate">{li.description ?? '—'}</td>
-                            <td className="text-xs text-muted-foreground">
+                            <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-blue-700">{li.drawing_number ?? '—'}</td>
+                            <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left max-w-[160px] truncate">{li.description ?? '—'}</td>
+                            <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">
                               {li.stage_number ? `Stage ${li.stage_number}${li.stage_name ? `: ${li.stage_name}` : ''}` : '—'}
                             </td>
-                            <td>
+                            <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                               <StageProgressBar current={li.stage_number ?? null} total={li.total_stages ?? null} stageName={li.stage_name} />
                             </td>
-                            <td className="text-xs">{li.nature_of_process ?? '—'}</td>
-                            <td className="text-sm">{liIdx === 0 ? (row.party_name ?? '—') : ''}</td>
-                            <td className="text-right font-mono tabular-nums text-sm">{qtySent}</td>
-                            <td className="text-right font-mono tabular-nums text-sm">{qtyReturned || '—'}</td>
-                            <td className="text-right font-mono tabular-nums text-sm font-medium">{qtyPending}</td>
-                            <td className="text-right">
+                            <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{li.nature_of_process ?? '—'}</td>
+                            <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{liIdx === 0 ? (row.party_name ?? '—') : ''}</td>
+                            <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{qtySent}</td>
+                            <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{qtyReturned || '—'}</td>
+                            <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-medium">{qtyPending}</td>
+                            <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right">
                               {liIdx === 0 && row.return_before_date ? (() => {
                                 const days = differenceInDays(new Date(row.return_before_date), new Date());
                                 return (
@@ -464,7 +464,7 @@ export default function WipRegister() {
                                 );
                               })() : liIdx === 0 ? <span className="text-muted-foreground text-sm">—</span> : null}
                             </td>
-                            <td>{statusBadge}</td>
+                            <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">{statusBadge}</td>
                           </tr>
                         );
                       });
@@ -506,24 +506,24 @@ export default function WipRegister() {
           {/* Sub-Assembly table */}
           <div className="paper-card !p-0">
             <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
-              <table className="w-full data-table">
+              <table className="w-full border-collapse text-sm">
                 <thead className="sticky top-0 z-10">
                   <tr>
-                    <th>Run #</th>
-                    <th>Item Being Built</th>
-                    <th className="text-right">Qty to Build</th>
-                    <th className="text-right">Serials</th>
-                    <th>Work Order Ref</th>
-                    <th>Planned Date</th>
-                    <th className="text-right">Days in Progress</th>
-                    <th>Components Ready</th>
-                    <th>Status</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Run #</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item Being Built</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty to Build</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Serials</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Work Order Ref</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Planned Date</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Days in Progress</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Components Ready</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {aoLoading ? (
                     <tr>
-                      <td colSpan={9} className="text-center py-10 text-muted-foreground">
+                      <td colSpan={9} className="px-3 py-8 text-center text-sm text-slate-400">
                         Loading production runs…
                       </td>
                     </tr>
@@ -558,21 +558,21 @@ export default function WipRegister() {
                         className="cursor-pointer hover:bg-muted/30 transition-colors"
                         onClick={() => navigate(`/assembly-orders/${ao.id}`)}
                       >
-                        <td className="font-mono text-xs font-medium text-foreground">
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium">
                           {ao.ao_number}
                         </td>
-                        <td>
-                          <p className="font-medium text-sm leading-tight">{ao.item_code ?? "—"}</p>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
+                          <p className="font-medium leading-tight">{ao.item_code ?? "—"}</p>
                           {ao.item_description && (
                             <p className="text-xs text-muted-foreground truncate max-w-[180px]">
                               {ao.item_description}
                             </p>
                           )}
                         </td>
-                        <td className="text-right font-mono tabular-nums text-sm">
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                           {ao.quantity_to_build}
                         </td>
-                        <td className="text-right">
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right">
                           {(ao as any).serial_numbers_generated ? (
                             <span className="text-xs font-mono text-amber-700 font-medium">
                               {ao.quantity_to_build}
@@ -581,21 +581,21 @@ export default function WipRegister() {
                             <span className="text-muted-foreground text-sm">—</span>
                           )}
                         </td>
-                        <td className="font-mono text-sm text-muted-foreground">
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-muted-foreground">
                           {ao.work_order_ref ?? "—"}
                         </td>
-                        <td className="text-sm">
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                           {ao.planned_date
                             ? format(new Date(ao.planned_date), "dd MMM yyyy")
                             : <span className="text-muted-foreground">—</span>}
                         </td>
-                        <td className="text-right">
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right">
                           <DaysInProgress createdAt={ao.created_at} />
                         </td>
-                        <td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                           <ComponentsReady lines={ao.lines} />
                         </td>
-                        <td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border bg-blue-50 text-blue-800 border-blue-200">
                             <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
                             In Progress
@@ -613,24 +613,24 @@ export default function WipRegister() {
                         className="cursor-pointer hover:bg-muted/30 transition-colors"
                         onClick={() => navigate(`/assembly-work-orders/${awo.id}`)}
                       >
-                        <td className="font-mono text-xs font-medium text-foreground">{awo.awo_number}</td>
-                        <td>
-                          <p className="font-medium text-sm leading-tight">{awo.item_code ?? "—"}</p>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium">{awo.awo_number}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
+                          <p className="font-medium leading-tight">{awo.item_code ?? "—"}</p>
                           {awo.item_description && (
                             <p className="text-xs text-muted-foreground truncate max-w-[180px]">{awo.item_description}</p>
                           )}
                         </td>
-                        <td className="text-right font-mono tabular-nums text-sm">{awo.quantity_to_build}</td>
-                        <td className="text-right"><span className="text-muted-foreground text-sm">—</span></td>
-                        <td className="font-mono text-sm text-muted-foreground">{awo.work_order_ref ?? "—"}</td>
-                        <td className="text-sm">
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{awo.quantity_to_build}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right"><span className="text-muted-foreground text-sm">—</span></td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-muted-foreground">{awo.work_order_ref ?? "—"}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                           {awo.planned_date ? format(parseISO(awo.planned_date), "dd MMM yyyy") : <span className="text-muted-foreground">—</span>}
                         </td>
-                        <td className="text-right">
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right">
                           <DaysInProgress createdAt={awo.created_at} />
                         </td>
-                        <td><span className="text-muted-foreground text-sm">—</span></td>
-                        <td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left"><span className="text-muted-foreground text-sm">—</span></td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${awo.status === 'pending_materials' ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-blue-50 text-blue-800 border-blue-200'}`}>
                             <span className={`h-1.5 w-1.5 rounded-full ${awo.status === 'pending_materials' ? 'bg-amber-500' : 'bg-blue-500 animate-pulse'}`} />
                             {awo.status === 'pending_materials' ? 'Pending Materials' : 'In Progress'}
@@ -659,23 +659,23 @@ export default function WipRegister() {
           </div>
           <div className="paper-card !p-0">
             <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
-              <table className="w-full data-table">
+              <table className="w-full border-collapse text-sm">
                 <thead className="sticky top-0 z-10">
                   <tr>
-                    <th>WO Number</th>
-                    <th>Serial Number</th>
-                    <th>Item</th>
-                    <th className="text-right">Qty</th>
-                    <th>Raised By</th>
-                    <th>Status</th>
-                    <th>Planned Date</th>
-                    <th className="text-right">Days Open</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">WO Number</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Serial Number</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Raised By</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Planned Date</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Days Open</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(fgWorkOrders as any[]).length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="text-center py-10">
+                      <td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-400">
                         <div className="flex flex-col items-center gap-2 text-muted-foreground">
                           <Layers className="h-8 w-8 opacity-30" />
                           <p>No finished good work orders in progress.</p>
@@ -701,27 +701,27 @@ export default function WipRegister() {
                           className="cursor-pointer hover:bg-muted/30 transition-colors"
                           onClick={() => navigate(`/assembly-work-orders/${awo.id}`)}
                         >
-                          <td className="font-mono text-xs font-medium text-foreground">{awo.awo_number}</td>
-                          <td className="font-mono text-xs">{awo.serial_number ?? "—"}</td>
-                          <td>
-                            <p className="font-medium text-sm">{awo.item_code ?? "—"}</p>
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium">{awo.awo_number}</td>
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{awo.serial_number ?? "—"}</td>
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
+                            <p className="font-medium">{awo.item_code ?? "—"}</p>
                             {awo.item_description && (
                               <p className="text-xs text-muted-foreground truncate max-w-[160px]">{awo.item_description}</p>
                             )}
                           </td>
-                          <td className="text-right font-mono tabular-nums text-sm">{awo.quantity_to_build}</td>
-                          <td className="text-sm">{awo.raised_by ?? "—"}</td>
-                          <td>
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{awo.quantity_to_build}</td>
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{awo.raised_by ?? "—"}</td>
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${s.cls}`}>
                               {s.label}
                             </span>
                           </td>
-                          <td className="text-sm">
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                             {awo.planned_date
                               ? format(parseISO(awo.planned_date), "dd MMM yyyy")
                               : <span className="text-muted-foreground">—</span>}
                           </td>
-                          <td className="text-right">
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right">
                             <span className="flex items-center justify-end gap-1 text-sm text-muted-foreground">
                               <Clock className="h-3.5 w-3.5 shrink-0" />
                               {differenceInDays(new Date(), parseISO(awo.created_at))}d

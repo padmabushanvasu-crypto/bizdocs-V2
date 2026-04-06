@@ -590,42 +590,42 @@ export default function DeliveryChallanDetail() {
         </div>
 
         {/* Line Items Table */}
-        <div className="overflow-x-auto po-section">
-          <table className="w-full data-table po-line-items-table">
+        <div className="overflow-x-auto rounded-lg border border-slate-200 po-section">
+          <table className="w-full border-collapse text-sm po-line-items-table">
             <thead>
               <tr>
-                <th className="w-10">#</th>
-                <th className="min-w-[110px]">Drawing No.</th>
-                <th>Description</th>
-                {hasNatureOfProcess && <th>Nature of Process</th>}
-                <th>Unit</th>
-                <th className="text-right">Qty (NOS)</th>
-                {hasQtyKgs && <th className="text-right">Qty (KGS)</th>}
-                {hasQtySft && <th className="text-right">Qty (SFT)</th>}
-                <th className="text-right">Rate (₹)</th>
-                <th className="text-right">Amount (₹)</th>
-                <th>Remarks</th>
-                {isReturnable && ["issued", "partially_returned"].includes(dc.status) && <th className="print:hidden">Actions</th>}
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-10">#</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left min-w-[110px]">Drawing No.</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                {hasNatureOfProcess && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Nature of Process</th>}
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Unit</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty (NOS)</th>
+                {hasQtyKgs && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty (KGS)</th>}
+                {hasQtySft && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty (SFT)</th>}
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Rate (₹)</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Amount (₹)</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Remarks</th>
+                {isReturnable && ["issued", "partially_returned"].includes(dc.status) && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center print:hidden">Actions</th>}
               </tr>
             </thead>
             <tbody>
               {items.map((item) => (
                 <tr key={item.serial_number}>
-                  <td className="font-mono text-muted-foreground">{item.serial_number}</td>
-                  <td className="font-mono text-sm font-semibold text-blue-700">
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-muted-foreground">{item.serial_number}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-semibold text-blue-700">
                     {item.drawing_number || item.item_code || "—"}
                   </td>
-                  <td className="font-medium">{item.description}</td>
-                  {hasNatureOfProcess && <td className="text-sm">{(item as any).nature_of_process || "—"}</td>}
-                  <td className="text-muted-foreground">{item.unit || "NOS"}</td>
-                  <td className="text-right font-mono tabular-nums">{formatNumber(item.quantity || item.qty_nos || 0)}</td>
-                  {hasQtyKgs && <td className="text-right font-mono tabular-nums">{(item as any).qty_kgs != null ? formatNumber((item as any).qty_kgs) : "—"}</td>}
-                  {hasQtySft && <td className="text-right font-mono tabular-nums">{(item as any).qty_sft != null ? formatNumber((item as any).qty_sft) : "—"}</td>}
-                  <td className="text-right font-mono tabular-nums">{formatCurrency(item.rate || 0)}</td>
-                  <td className="text-right font-mono tabular-nums font-medium">{formatCurrency(item.amount || 0)}</td>
-                  <td className="text-muted-foreground text-sm">{item.remarks || "—"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">{item.description}</td>
+                  {hasNatureOfProcess && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{(item as any).nature_of_process || "—"}</td>}
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">{item.unit || "NOS"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(item.quantity || item.qty_nos || 0)}</td>
+                  {hasQtyKgs && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{(item as any).qty_kgs != null ? formatNumber((item as any).qty_kgs) : "—"}</td>}
+                  {hasQtySft && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{(item as any).qty_sft != null ? formatNumber((item as any).qty_sft) : "—"}</td>}
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(item.rate || 0)}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-medium">{formatCurrency(item.amount || 0)}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">{item.remarks || "—"}</td>
                   {isReturnable && ["issued", "partially_returned"].includes(dc.status) && (
-                    <td className="print:hidden">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center print:hidden">
                       <Button size="sm" variant="outline" className="h-7 text-xs"
                         onClick={() => openReturnDialog(item)}>
                         Return
@@ -758,21 +758,28 @@ export default function DeliveryChallanDetail() {
                 <p className="text-sm text-muted-foreground">No returns recorded yet</p>
               </div>
             ) : (
-              <table className="w-full data-table">
+              <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="w-full border-collapse text-sm">
                 <thead>
-                  <tr><th>Date</th><th>Received By</th><th>Items Returned</th><th>Notes</th></tr>
+                  <tr>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Date</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Received By</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Items Returned</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Notes</th>
+                  </tr>
                 </thead>
                 <tbody>
                   {filteredReturns.map((ret) => (
                     <tr key={ret.id} className={(ret as any).status === "deleted" ? "opacity-50" : ""}>
-                      <td>{new Date(ret.return_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</td>
-                      <td>{ret.received_by || "—"}</td>
-                      <td className="font-mono text-sm">{ret.items?.length ?? 0} items</td>
-                      <td className="text-muted-foreground">{ret.notes || "—"}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{new Date(ret.return_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{ret.received_by || "—"}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{ret.items?.length ?? 0} items</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">{ret.notes || "—"}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              </div>
             );
           })()}
       </div>

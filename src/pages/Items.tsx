@@ -324,10 +324,10 @@ export default function Items() {
 
       <div className="paper-card !p-0">
         <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
-          <table className="w-full data-table">
+          <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10">
               <tr>
-                <th className="w-8">
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center w-8">
                   <button onClick={toggleAll} className="flex items-center justify-center">
                     {allSelected
                       ? <CheckSquare className="h-4 w-4 text-blue-600" />
@@ -335,26 +335,32 @@ export default function Items() {
                     }
                   </button>
                 </th>
-                <th>Drawing No.</th><th>Code</th><th>Description</th><th>Type</th>
-                <th>Unit</th><th>HSN</th><th className="text-right">Min Stock</th>
-                <th className="text-right">GST%</th><th className="w-20">Actions</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Drawing No.</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Code</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Type</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Unit</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">HSN</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Min Stock</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">GST%</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center w-20">Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={10} className="text-center py-8 text-muted-foreground">Loading...</td></tr>
+                <tr><td colSpan={10} className="px-3 py-8 text-center text-sm text-slate-400">Loading...</td></tr>
               ) : items.length === 0 ? (
-                <tr><td colSpan={10} className="text-center py-8 text-muted-foreground">No items found. Add your first item.</td></tr>
+                <tr><td colSpan={10} className="px-3 py-8 text-center text-sm text-slate-400">No items found. Add your first item.</td></tr>
               ) : (
                 items.map((item) => (
                   <tr key={item.id} className={`hover:bg-muted/50 cursor-pointer transition-colors ${selected.has(item.id) ? "bg-blue-50/60" : ""}`} onClick={() => openEdit(item)}>
-                    <td onClick={(e) => { e.stopPropagation(); toggleSelect(item.id); }}>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center" onClick={(e) => { e.stopPropagation(); toggleSelect(item.id); }}>
                       {selected.has(item.id)
                         ? <CheckSquare className="h-4 w-4 text-blue-600 mx-auto" />
                         : <Square className="h-4 w-4 text-slate-300 mx-auto" />
                       }
                     </td>
-                    <td onClick={(e) => e.stopPropagation()}>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left" onClick={(e) => e.stopPropagation()}>
                       {item.drawing_revision ? (
                         <button
                           className="font-mono text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors"
@@ -367,19 +373,19 @@ export default function Items() {
                         <span className="font-mono text-xs text-slate-400">{item.drawing_number}</span>
                       ) : <span className="text-muted-foreground">—</span>}
                     </td>
-                    <td className="font-mono text-xs text-slate-400">{item.item_code}</td>
-                    <td className="font-medium">{item.description}</td>
-                    <td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{item.item_code}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">{item.description}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                       <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${TYPE_BADGE[item.item_type] || "bg-slate-100 text-slate-600"}`}>
                         {typeLabel[item.item_type] || item.item_type}
                       </span>
                     </td>
-                    <td>{item.unit}</td>
-                    <td className="font-mono text-xs">{item.hsn_sac_code || "—"}</td>
-                    <td className="text-right font-mono tabular-nums">{item.min_stock || "—"}</td>
-                    <td className="text-right font-mono tabular-nums">{item.gst_rate}%</td>
-                    <td>
-                      <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.unit}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{item.hsn_sac_code || "—"}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.min_stock || "—"}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.gst_rate}%</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
+                      <div className="flex gap-1 justify-center" onClick={(e) => e.stopPropagation()}>
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(item)}>
                           <Edit className="h-3.5 w-3.5" />
                         </Button>

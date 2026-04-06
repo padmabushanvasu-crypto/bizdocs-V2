@@ -84,6 +84,7 @@ export interface StockStatusRow {
   description: string;
   unit: string;
   item_type: string;
+  hsn_sac_code?: string | null;
   current_stock: number;
   stock_raw_material: number;
   stock_wip: number;
@@ -241,7 +242,7 @@ export async function fetchStockStatus() {
   if (!companyId) return [] as StockStatusRow[];
   const { data, error } = await (supabase as any)
     .from("items")
-    .select("id, item_code, description, unit, item_type, current_stock, stock_raw_material, stock_wip, stock_finished_goods, min_stock, min_stock_override, standard_cost, parent_item_id, company_id, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, stock_alert_level, min_finished_stock, stock_finished_goods")
+    .select("id, item_code, description, unit, item_type, hsn_sac_code, current_stock, stock_raw_material, stock_wip, stock_finished_goods, min_stock, min_stock_override, standard_cost, parent_item_id, company_id, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, stock_alert_level, min_finished_stock, stock_finished_goods")
     .eq("company_id", companyId)
     .eq("status", "active")
     .order("item_code", { ascending: true });
@@ -260,6 +261,57 @@ export async function fetchStockStatus() {
     } as StockStatusRow;
   });
   return rows;
+}
+
+export interface StockMovement {
+  id: string;
+  movement_date: string;
+  movement_type: 'in' | 'out';
+  document_type: 'grn' | 'dc' | 'assembly_order' | 'adjustment' | 'opening_stock';
+  document_number: string;
+  document_id: string | null;
+  quantity: number;
+  running_balance: number;
+  party_name: string | null;
+  performed_by: string | null;
+  notes: string | null;
+}
+
+function mapTransactionType(type: string): StockMovement['document_type'] {
+  if (type === 'grn_receipt') return 'grn';
+  if (type === 'opening_stock') return 'opening_stock';
+  if (type === 'assembly_consumption' || type === 'assembly_output') return 'assembly_order';
+  if (type === 'manual_adjustment' || type === 'rejection_writeoff') return 'adjustment';
+  return 'dc';
+}
+
+export async function fetchStockMovements(itemId: string): Promise<StockMovement[]> {
+  const companyId = await getCompanyId();
+  if (!companyId) return [];
+  const { data, error } = await (supabase as any)
+    .from('stock_ledger')
+    .select('id, transaction_date, transaction_type, qty_in, qty_out, balance_qty, reference_id, reference_number, notes, created_by')
+    .eq('company_id', companyId)
+    .eq('item_id', itemId)
+    .order('transaction_date', { ascending: true })
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return ((data ?? []) as any[]).map((row) => {
+    const isIn = (row.qty_in ?? 0) > 0;
+    return {
+      id: row.id,
+      movement_date: row.transaction_date,
+      movement_type: isIn ? 'in' as const : 'out' as const,
+      document_type: mapTransactionType(row.transaction_type),
+      document_number: row.reference_number ?? '—',
+      document_id: row.reference_id ?? null,
+      quantity: isIn ? (row.qty_in ?? 0) : (row.qty_out ?? 0),
+      running_balance: row.balance_qty ?? 0,
+      party_name: null,
+      performed_by: row.created_by ?? null,
+      notes: row.notes ?? null,
+    };
+  });
 }
 
 export async function bulkUpdateItemStatus(ids: string[], status: string) {

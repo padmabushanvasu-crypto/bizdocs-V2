@@ -169,24 +169,24 @@ export default function DispatchRecordDetail() {
         {(dr.items?.length ?? 0) === 0 ? (
           <p className="text-sm text-slate-400 text-center py-8">No items in this dispatch record.</p>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="border-b border-slate-100">
-                <th className="text-left px-4 py-2.5 font-semibold text-slate-600 text-xs uppercase tracking-wide">Serial Number</th>
-                <th className="text-left px-4 py-2.5 font-semibold text-slate-600 text-xs uppercase tracking-wide">Item Code</th>
-                <th className="text-left px-4 py-2.5 font-semibold text-slate-600 text-xs uppercase tracking-wide">Description</th>
-                <th className="text-right px-4 py-2.5 font-semibold text-slate-600 text-xs uppercase tracking-wide">Qty</th>
-                <th className="text-center px-4 py-2.5 font-semibold text-slate-600 text-xs uppercase tracking-wide">Unit</th>
+              <tr>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Serial Number</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item Code</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Unit</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
+            <tbody>
               {dr.items?.map((item) => (
                 <tr key={item.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 font-mono text-slate-800">{item.serial_number ?? "—"}</td>
-                  <td className="px-4 py-3 text-slate-600">{item.item_code ?? "—"}</td>
-                  <td className="px-4 py-3 text-slate-700">{item.item_description ?? "—"}</td>
-                  <td className="px-4 py-3 text-right text-slate-700">{item.quantity}</td>
-                  <td className="px-4 py-3 text-center text-slate-600">{item.unit}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{item.serial_number ?? "—"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.item_code ?? "—"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.item_description ?? "—"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.quantity}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">{item.unit}</td>
                 </tr>
               ))}
             </tbody>

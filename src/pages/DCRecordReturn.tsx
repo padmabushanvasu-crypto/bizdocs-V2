@@ -186,17 +186,17 @@ export default function DCRecordReturn() {
           <h2 className="text-sm uppercase text-muted-foreground font-bold tracking-wider">Items</h2>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full">
+        <div className="overflow-x-auto rounded-lg border border-slate-200">
+          <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="bg-secondary text-muted-foreground text-xs uppercase tracking-wider">
-                <th className="px-3 py-2 text-left">Description</th>
-                <th className="px-3 py-2 text-left">Drawing</th>
-                <th className="px-3 py-2 text-right">Sent</th>
-                <th className="px-3 py-2 text-right">Prev Ret</th>
-                <th className="px-3 py-2 text-right">Pending</th>
-                <th className="px-3 py-2 text-right">Returning Now *</th>
-                <th className="px-3 py-2 text-left">Remarks</th>
+              <tr>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Drawing</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Sent</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Prev Ret</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Pending</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Returning Now *</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Remarks</th>
               </tr>
             </thead>
             <tbody>

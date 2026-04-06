@@ -144,17 +144,17 @@ export default function WarrantyTracker() {
             <p className="text-xs text-muted-foreground mt-1">Dispatched serial numbers appear here once they have dispatch dates.</p>
           </div>
         ) : (
-          <table className="w-full data-table">
+          <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
-                <th>Serial Number</th>
-                <th>Item</th>
-                <th>Customer</th>
-                <th>Dispatch Date</th>
-                <th className="text-right">Warranty</th>
-                <th>Expiry Date</th>
-                <th>Status</th>
-                <th>Days Remaining</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Serial Number</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Customer</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Dispatch Date</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Warranty</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Expiry Date</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Days Remaining</th>
               </tr>
             </thead>
             <tbody>
@@ -163,26 +163,26 @@ export default function WarrantyTracker() {
                 const isExpiring = row.warranty_expiry && row.warranty_expiry >= today && row.warranty_expiry <= in30Str;
                 return (
                   <tr key={row.id} className={getRowStyle(row.warranty_expiry)}>
-                    <td className="font-mono font-semibold">{row.serial_number}</td>
-                    <td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-semibold">{row.serial_number}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                       <p className="font-medium text-sm">{row.item_description ?? "—"}</p>
                       {row.item_code && (
                         <p className="text-xs text-muted-foreground font-mono">{row.item_code}</p>
                       )}
                     </td>
-                    <td className="text-sm">{row.customer_name ?? "—"}</td>
-                    <td className="text-sm">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{row.customer_name ?? "—"}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                       {row.dispatch_date ? format(new Date(row.dispatch_date), "dd MMM yyyy") : "—"}
                     </td>
-                    <td className="text-right text-sm">{row.warranty_months} months</td>
-                    <td className="text-sm">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{row.warranty_months} months</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                       {row.warranty_expiry ? (
                         <span className={isExpired ? "text-red-700 font-semibold" : isExpiring ? "text-amber-700 font-semibold" : ""}>
                           {format(new Date(row.warranty_expiry), "dd MMM yyyy")}
                         </span>
                       ) : "—"}
                     </td>
-                    <td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                       {isExpired ? (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-200">
                           Expired
@@ -197,7 +197,7 @@ export default function WarrantyTracker() {
                         </span>
                       )}
                     </td>
-                    <td className={`text-sm font-mono ${isExpired ? "text-red-700" : isExpiring ? "text-amber-700" : "text-muted-foreground"}`}>
+                    <td className={`px-3 py-2 text-sm border-b border-slate-100 text-left font-mono ${isExpired ? "text-red-700" : isExpiring ? "text-amber-700" : "text-muted-foreground"}`}>
                       {getDaysRemaining(row.warranty_expiry)}
                     </td>
                   </tr>

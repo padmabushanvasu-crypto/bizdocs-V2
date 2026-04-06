@@ -298,34 +298,34 @@ function Stage1ReadOnly({ lines }: { lines: S1Line[] }) {
       <table className="w-full text-sm border-collapse">
         <thead>
           <tr className="bg-blue-50 text-xs text-slate-600 uppercase tracking-wide">
-            <th className="text-left px-3 py-2.5 font-semibold w-8">#</th>
-            <th className="text-left px-3 py-2.5 font-semibold">Item Code</th>
-            <th className="text-left px-3 py-2.5 font-semibold">Description</th>
-            <th className="text-right px-3 py-2.5 font-semibold">Ordered</th>
-            <th className="text-right px-3 py-2.5 font-semibold">Received</th>
-            <th className="text-center px-3 py-2.5 font-semibold">Matched</th>
-            <th className="text-center px-3 py-2.5 font-semibold">Condition</th>
-            <th className="text-center px-3 py-2.5 font-semibold">Packing</th>
-            <th className="text-left px-3 py-2.5 font-semibold">Notes</th>
-            {hasStoreTracking && <th className="text-center px-3 py-2.5 font-semibold">Store</th>}
+            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-8">#</th>
+            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item Code</th>
+            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Ordered</th>
+            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Received</th>
+            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Matched</th>
+            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Condition</th>
+            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Packing</th>
+            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Notes</th>
+            {hasStoreTracking && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Store</th>}
           </tr>
         </thead>
         <tbody className="divide-y divide-blue-50">
           {lines.map((l, idx) => (
             <tr key={l.id} className={l.received_qty !== l.po_quantity ? "bg-yellow-50/40" : "bg-white"}>
-              <td className="px-3 py-2 text-slate-400 text-xs">{idx + 1}</td>
-              <td className="px-3 py-2 font-mono text-xs text-slate-500">{l.item_code || "—"}</td>
-              <td className="px-3 py-2 font-medium text-slate-800">{l.description}</td>
-              <td className="px-3 py-2 text-right font-mono tabular-nums text-slate-500">{l.po_quantity}</td>
-              <td className="px-3 py-2 text-right font-mono tabular-nums font-semibold text-slate-800">{l.received_qty}</td>
-              <td className="px-3 py-2 text-center text-xs">
+              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{idx + 1}</td>
+              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-xs text-slate-500">{l.item_code || "—"}</td>
+              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium text-slate-800">{l.description}</td>
+              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-slate-500">{l.po_quantity}</td>
+              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-semibold text-slate-800">{l.received_qty}</td>
+              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center text-xs">
                 {l.qty_matched ? <span className="text-green-600 font-semibold">✓</span> : <span className="text-amber-600 font-semibold">⚠</span>}
               </td>
-              <td className="px-3 py-2 text-center text-xs capitalize">{(l.condition_on_arrival || "good").replace(/_/g, " ")}</td>
-              <td className="px-3 py-2 text-center text-xs">{l.packing_intact ? "✓" : "✗"}</td>
-              <td className="px-3 py-2 text-xs text-slate-500">{l.notes || "—"}</td>
+              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center text-xs capitalize">{(l.condition_on_arrival || "good").replace(/_/g, " ")}</td>
+              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center text-xs">{l.packing_intact ? "✓" : "✗"}</td>
+              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-xs text-slate-500">{l.notes || "—"}</td>
               {hasStoreTracking && (
-                <td className="px-3 py-2 text-center text-xs">
+                <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center text-xs">
                   {!l.is_final_grn ? (
                     <span className="text-slate-300">—</span>
                   ) : l.store_confirmed ? (
@@ -601,21 +601,21 @@ function QCMeasurementReadOnly({
                 <span className="font-normal ml-2">· Received: {item.received_qty} {item.unit}</span>
               </span>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs border-collapse">
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="w-full border-collapse text-sm">
                 <thead>
-                  <tr className="bg-slate-50 text-slate-500 uppercase tracking-wide">
-                    <th className="px-2 py-2 text-center font-semibold" style={{width: 36}}>Sl</th>
-                    <th className="px-2 py-2 text-left font-semibold">Characteristics</th>
-                    <th className="px-2 py-2 text-left font-semibold">Specification</th>
-                    <th className="px-2 py-2 text-center font-semibold" style={{width: 52}}>Qty</th>
-                    <th className="px-2 py-2 text-center font-semibold" style={{width: 62}}>S1</th>
-                    <th className="px-2 py-2 text-center font-semibold" style={{width: 62}}>S2</th>
-                    <th className="px-2 py-2 text-center font-semibold" style={{width: 62}}>S3</th>
-                    <th className="px-2 py-2 text-center font-semibold" style={{width: 62}}>S4</th>
-                    <th className="px-2 py-2 text-center font-semibold" style={{width: 62}}>S5</th>
-                    <th className="px-2 py-2 text-center font-semibold" style={{width: 110}}>Result</th>
-                    <th className="px-2 py-2 text-left font-semibold">Measuring Instrument</th>
+                  <tr>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center" style={{width: 36}}>Sl</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Characteristics</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Specification</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center" style={{width: 52}}>Qty</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center" style={{width: 62}}>S1</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center" style={{width: 62}}>S2</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center" style={{width: 62}}>S3</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center" style={{width: 62}}>S4</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center" style={{width: 62}}>S5</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center" style={{width: 110}}>Result</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Measuring Instrument</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -623,16 +623,16 @@ function QCMeasurementReadOnly({
                     const isNC = row.result === "non_conforming";
                     return (
                       <tr key={idx} className={isNC ? "bg-amber-50/60" : idx % 2 === 0 ? "bg-white" : "bg-slate-50/40"}>
-                        <td className="px-2 py-1.5 text-center text-slate-400">{row.sl_no}</td>
-                        <td className="px-2 py-1.5 font-medium text-slate-800">{row.characteristic}</td>
-                        <td className="px-2 py-1.5 text-slate-600">{row.specification || "—"}</td>
-                        <td className="px-2 py-1.5 text-center tabular-nums">{row.qty_checked ?? "—"}</td>
-                        <td className="px-2 py-1.5 text-center font-mono text-xs">{row.sample_1 || "—"}</td>
-                        <td className="px-2 py-1.5 text-center font-mono text-xs">{row.sample_2 || "—"}</td>
-                        <td className="px-2 py-1.5 text-center font-mono text-xs">{row.sample_3 || "—"}</td>
-                        <td className="px-2 py-1.5 text-center font-mono text-xs">{row.sample_4 || "—"}</td>
-                        <td className="px-2 py-1.5 text-center font-mono text-xs">{row.sample_5 || "—"}</td>
-                        <td className="px-2 py-1.5 text-center">
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center text-slate-400">{row.sl_no}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium text-slate-800">{row.characteristic}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-slate-600">{row.specification || "—"}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center tabular-nums font-mono">{row.qty_checked ?? "—"}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center font-mono text-xs">{row.sample_1 || "—"}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center font-mono text-xs">{row.sample_2 || "—"}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center font-mono text-xs">{row.sample_3 || "—"}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center font-mono text-xs">{row.sample_4 || "—"}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center font-mono text-xs">{row.sample_5 || "—"}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                           {row.result === "conforming" ? (
                             <span className="text-green-700 font-semibold text-xs">✓ OK</span>
                           ) : row.result === "non_conforming" ? (
@@ -641,7 +641,7 @@ function QCMeasurementReadOnly({
                             <span className="text-slate-300">—</span>
                           )}
                         </td>
-                        <td className="px-2 py-1.5 text-slate-600">{row.measuring_instrument || "—"}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-slate-600">{row.measuring_instrument || "—"}</td>
                       </tr>
                     );
                   })}
@@ -1894,14 +1894,15 @@ export default function GRNDetail() {
             <h3 className="text-sm font-bold text-amber-900">Non-Conformance Report</h3>
           </div>
           <div className="px-4 py-3 space-y-3">
-            <table className="w-full text-xs border-collapse">
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="w-full border-collapse text-sm">
               <thead>
-                <tr className="text-amber-800 border-b border-amber-200">
-                  <th className="text-left px-2 py-2 font-semibold">Item Code</th>
-                  <th className="text-left px-2 py-2 font-semibold">Description</th>
-                  <th className="text-right px-2 py-2 font-semibold">Conforming</th>
-                  <th className="text-right px-2 py-2 font-semibold">NC Qty</th>
-                  <th className="text-center px-2 py-2 font-semibold">Disposition</th>
+                <tr>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item Code</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Conforming</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">NC Qty</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Disposition</th>
                 </tr>
               </thead>
               <tbody>
@@ -1909,16 +1910,17 @@ export default function GRNDetail() {
                   const item = s1Lines.find((l) => l.id === nc.lineItemId);
                   return (
                     <tr key={idx} className="border-b border-amber-100">
-                      <td className="px-2 py-1.5 font-mono text-slate-500">{item?.item_code || "—"}</td>
-                      <td className="px-2 py-1.5 font-medium text-slate-800">{item?.description || "—"}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums text-green-700 font-semibold">{nc.conforming_qty}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums text-amber-700 font-semibold">{nc.non_conforming_qty}</td>
-                      <td className="px-2 py-1.5 text-center capitalize">{(nc.disposition || "—").replace(/_/g, " ")}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-slate-500">{item?.item_code || "—"}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium text-slate-800">{item?.description || "—"}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-green-700 font-semibold">{nc.conforming_qty}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-amber-700 font-semibold">{nc.non_conforming_qty}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center capitalize">{(nc.disposition || "—").replace(/_/g, " ")}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
+            </div>
             {ncItemsWithData.some((nc) => nc.disposition === "return_to_vendor") && (
               <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded px-3 py-2 text-xs text-red-800 font-medium">
                 <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />

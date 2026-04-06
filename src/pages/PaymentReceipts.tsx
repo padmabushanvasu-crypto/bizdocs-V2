@@ -158,23 +158,23 @@ export default function PaymentReceipts() {
 
       <div className="paper-card !p-0">
         <div className="overflow-x-auto">
-          <table className="w-full data-table">
+          <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
-                <th>Receipt #</th>
-                <th>Date</th>
-                <th>Customer</th>
-                <th className="text-right">Amount</th>
-                <th>Mode</th>
-                <th>Reference / UTR</th>
-                <th>Invoice</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Receipt #</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Date</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Customer</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Amount</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Mode</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Reference / UTR</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Invoice</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={7} className="text-center py-8 text-muted-foreground">Loading...</td></tr>
+                <tr><td colSpan={7} className="px-3 py-8 text-center text-sm text-slate-400">Loading...</td></tr>
               ) : receipts.length === 0 ? (
-                <tr><td colSpan={7} className="text-center py-8 text-muted-foreground">No receipts found.</td></tr>
+                <tr><td colSpan={7} className="px-3 py-8 text-center text-sm text-slate-400">No receipts found.</td></tr>
               ) : (
                 receipts.map((r: any) => (
                   <tr
@@ -182,13 +182,13 @@ export default function PaymentReceipts() {
                     className="hover:bg-muted/50 cursor-pointer transition-colors"
                     onClick={() => r.invoice_id && navigate(`/invoices/${r.invoice_id}`)}
                   >
-                    <td className="font-mono text-sm font-medium">{r.receipt_number}</td>
-                    <td className="text-muted-foreground">{r.payment_date}</td>
-                    <td className="font-medium">{r.customer_name}</td>
-                    <td className="text-right font-mono tabular-nums font-semibold">{formatCurrency(r.amount)}</td>
-                    <td className="capitalize">{(r.payment_mode ?? "").replace(/_/g, " ")}</td>
-                    <td className="text-muted-foreground font-mono text-sm">{r.reference_number || "—"}</td>
-                    <td className="font-mono text-sm text-blue-600">{r.invoice_number || "—"}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium">{r.receipt_number}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">{r.payment_date}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">{r.customer_name}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-semibold">{formatCurrency(r.amount)}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left capitalize">{(r.payment_mode ?? "").replace(/_/g, " ")}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-muted-foreground">{r.reference_number || "—"}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-blue-600">{r.invoice_number || "—"}</td>
                   </tr>
                 ))
               )}

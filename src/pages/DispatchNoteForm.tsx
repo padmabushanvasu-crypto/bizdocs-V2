@@ -496,14 +496,14 @@ export default function DispatchNoteForm() {
           <table className="w-full">
             <thead>
               <tr className="bg-secondary text-muted-foreground text-xs uppercase tracking-wider">
-                <th className="px-3 py-2 text-left w-8">#</th>
-                <th className="px-3 py-2 text-left w-[100px]">Item Code</th>
-                <th className="px-3 py-2 text-left min-w-[200px]">Description</th>
-                <th className="px-3 py-2 text-left w-[60px]">Unit</th>
-                <th className="px-3 py-2 text-right w-[75px]">Qty</th>
-                <th className="px-3 py-2 text-right w-[100px]">Rate (₹)</th>
-                <th className="px-3 py-2 text-right w-[100px]">Amount (₹)</th>
-                <th className="px-3 py-2 text-left w-[110px]">Serial/Ref</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-8">#</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-[100px]">Item Code</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left min-w-[200px]">Description</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-[60px]">Unit</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-[75px]">Qty</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-[100px]">Rate (₹)</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-[100px]">Amount (₹)</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-[110px]">Serial/Ref</th>
                 <th className="px-3 py-2 w-8"></th>
               </tr>
             </thead>
@@ -604,13 +604,13 @@ export default function DispatchNoteForm() {
             <table className="w-full">
               <thead>
                 <tr className="bg-secondary text-muted-foreground text-xs uppercase tracking-wider">
-                  <th className="px-3 py-2 text-left w-8">#</th>
-                  <th className="px-3 py-2 text-left min-w-[160px]">Description</th>
-                  <th className="px-3 py-2 text-right w-[75px]">Qty</th>
-                  <th className="px-3 py-2 text-left w-[60px]">Unit</th>
-                  <th className="px-3 py-2 text-right w-[80px]">Weight (kg)</th>
-                  <th className="px-3 py-2 text-left w-[110px]">Dimensions</th>
-                  <th className="px-3 py-2 text-left w-[90px]">Box No.</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-8">#</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left min-w-[160px]">Description</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-[75px]">Qty</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-[60px]">Unit</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-[80px]">Weight (kg)</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-[110px]">Dimensions</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-[90px]">Box No.</th>
                   <th className="px-3 py-2 w-8"></th>
                 </tr>
               </thead>

@@ -632,15 +632,15 @@ export default function Dashboard() {
                 View all →
               </button>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full data-table">
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="w-full border-collapse text-sm">
                 <thead>
                   <tr>
-                    <th>Serial #</th>
-                    <th>Item Code</th>
-                    <th>Description</th>
-                    <th className="text-right">Age</th>
-                    <th className="w-36">Action</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Serial #</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item Code</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Age</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center w-36">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -648,15 +648,15 @@ export default function Dashboard() {
                     const age = daysSince(sn.fat_completed_at ?? sn.created_at);
                     return (
                       <tr key={sn.id} className={age > 30 ? "bg-amber-50/50" : ""}>
-                        <td className="font-mono text-sm font-semibold text-slate-800">{sn.serial_number}</td>
-                        <td className="font-mono text-xs text-slate-500">{sn.item_code ?? "—"}</td>
-                        <td className="text-sm text-slate-700">{sn.item_description ?? "—"}</td>
-                        <td className="text-right">
-                          <span className={`text-sm font-mono tabular-nums ${age > 30 ? "text-amber-700 font-semibold" : "text-slate-600"}`}>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-semibold text-slate-800">{sn.serial_number}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-xs text-slate-500">{sn.item_code ?? "—"}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{sn.item_description ?? "—"}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
+                          <span className={`${age > 30 ? "text-amber-700 font-semibold" : "text-slate-600"}`}>
                             {age}d
                           </span>
                         </td>
-                        <td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                           <button
                             className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors"
                             onClick={() => navigate("/invoices/new", { state: { serial_number_id: sn.id } })}

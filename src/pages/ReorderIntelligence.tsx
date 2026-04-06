@@ -250,29 +250,29 @@ export default function ReorderIntelligence() {
       {/* Table */}
       <div className="paper-card !p-0">
         <div className="overflow-x-auto">
-          <table className="w-full data-table text-sm">
+          <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
-                <th>Item Code</th>
-                <th>Description</th>
-                <th>Type</th>
-                <th className="text-right">Raw Stock</th>
-                <th className="text-right">Total Stock</th>
-                <th className="text-right">Min Stock</th>
-                <th className="text-right">Reorder Pt.</th>
-                <th className="text-right">Days Left</th>
-                <th className="text-right">Cons./Day</th>
-                <th className="text-right">AO Req.</th>
-                <th className="text-right">Rec. Order</th>
-                <th>Preferred Vendor</th>
-                <th>Level</th>
-                <th>Actions</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item Code</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Type</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Raw Stock</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Total Stock</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Min Stock</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Reorder Pt.</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Days Left</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Cons./Day</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">AO Req.</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Rec. Order</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Preferred Vendor</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Level</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={14} className="text-center py-12">
+                  <td colSpan={14} className="px-3 py-12 text-center text-sm text-slate-400">
                     <div className="flex flex-col items-center gap-2 text-muted-foreground">
                       <RefreshCw className="h-6 w-6 animate-spin opacity-40" />
                       <p>Computing reorder alerts…</p>
@@ -282,7 +282,7 @@ export default function ReorderIntelligence() {
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="text-center py-12">
+                  <td colSpan={14} className="px-3 py-12 text-center text-sm text-slate-400">
                     {alerts.length === 0 ? (
                       <div className="flex flex-col items-center gap-2">
                         <CheckCircle2 className="h-8 w-8 text-emerald-500 opacity-60" />
@@ -312,50 +312,50 @@ export default function ReorderIntelligence() {
 
                   return (
                     <tr key={alert.item_id} className={`transition-colors ${rowBg}`}>
-                      <td className="font-mono text-xs font-medium">{alert.item_code}</td>
-                      <td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium">{alert.item_code}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                         <p className="font-medium leading-tight truncate max-w-[180px]">
                           {alert.item_description}
                         </p>
                       </td>
-                      <td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                         <span className="text-xs text-muted-foreground capitalize">
                           {alert.item_type?.replace(/_/g, " ")}
                         </span>
                       </td>
-                      <td className={`text-right font-mono tabular-nums ${stockColor}`}>
+                      <td className={`px-3 py-2 text-sm border-b border-slate-100 text-right tabular-nums font-mono ${stockColor}`}>
                         {alert.raw_stock} {alert.item_unit}
                       </td>
-                      <td className="text-right font-mono tabular-nums text-muted-foreground">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-muted-foreground">
                         {alert.current_stock} {alert.item_unit}
                       </td>
-                      <td className="text-right font-mono tabular-nums text-muted-foreground">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-muted-foreground">
                         {alert.min_stock}
                       </td>
-                      <td className="text-right font-mono tabular-nums text-muted-foreground">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-muted-foreground">
                         {alert.reorder_point}
                       </td>
-                      <td className="text-right">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right">
                         <DaysCell days={alert.days_of_stock_remaining} />
                       </td>
-                      <td className="text-right text-xs text-muted-foreground tabular-nums font-mono">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-muted-foreground">
                         {alert.consumption_rate_per_day > 0
                           ? alert.consumption_rate_per_day.toFixed(2)
                           : "—"}
                       </td>
-                      <td className="text-right font-mono tabular-nums text-muted-foreground">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-muted-foreground">
                         {alert.open_ao_requirement > 0 ? alert.open_ao_requirement : "—"}
                       </td>
-                      <td className="text-right font-mono tabular-nums font-bold text-primary">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-bold text-primary">
                         {alert.recommended_order_qty}
                       </td>
-                      <td className="text-sm text-muted-foreground truncate max-w-[130px]">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground truncate max-w-[130px]">
                         {alert.preferred_vendor_name ?? "—"}
                       </td>
-                      <td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                         <AlertBadge level={alert.alert_level} />
                       </td>
-                      <td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                         <Button
                           size="sm"
                           variant="outline"
@@ -405,38 +405,38 @@ export default function ReorderIntelligence() {
           </div>
           <div className="paper-card !p-0">
             <div className="overflow-x-auto">
-              <table className="w-full data-table text-sm">
+              <table className="w-full border-collapse text-sm">
                 <thead>
                   <tr>
-                    <th>Item Code</th>
-                    <th>Description</th>
-                    <th className="text-right">Current Stock</th>
-                    <th className="text-right">Min Finished Stock</th>
-                    <th className="text-right">Shortage</th>
-                    <th className="text-right">Batch Size</th>
-                    <th>Action</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item Code</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Current Stock</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Min Finished Stock</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Shortage</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Batch Size</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {productionAlerts.map((pa) => (
                     <tr key={pa.item_id} className="bg-amber-50/40 hover:bg-amber-50 transition-colors">
-                      <td className="font-mono text-xs font-medium">{pa.item_code ?? "—"}</td>
-                      <td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium">{pa.item_code ?? "—"}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                         <p className="font-medium leading-tight truncate max-w-[200px]">{pa.item_description ?? "—"}</p>
                       </td>
-                      <td className="text-right font-mono tabular-nums text-destructive font-bold">
+                      <td className="px-3 py-2 text-sm border-b border-slate-100 text-right tabular-nums font-mono text-destructive font-bold">
                         {pa.current_stock} {pa.item_unit}
                       </td>
-                      <td className="text-right font-mono tabular-nums text-muted-foreground">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-muted-foreground">
                         {pa.min_finished_stock}
                       </td>
-                      <td className="text-right font-mono tabular-nums text-amber-700 font-semibold">
+                      <td className="px-3 py-2 text-sm border-b border-slate-100 text-right tabular-nums font-mono text-amber-700 font-semibold">
                         {pa.shortage}
                       </td>
-                      <td className="text-right font-mono tabular-nums text-muted-foreground">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-muted-foreground">
                         {pa.production_batch_size}
                       </td>
-                      <td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                         <Button
                           size="sm"
                           variant="outline"

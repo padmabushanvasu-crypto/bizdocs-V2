@@ -140,17 +140,17 @@ export default function SalesOrders() {
             </Button>
           </div>
         ) : (
-          <table className="w-full data-table">
+          <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
-                <th>SO Number</th>
-                <th>Customer</th>
-                <th>Date</th>
-                <th>Priority</th>
-                <th>Delivery Date</th>
-                <th className="text-right">Amount</th>
-                <th>Status</th>
-                <th>Actions</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">SO Number</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Customer</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Date</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Priority</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Delivery Date</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Amount</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -160,28 +160,28 @@ export default function SalesOrders() {
                   className="cursor-pointer"
                   onClick={() => navigate(`/sales-orders/${so.id}`)}
                 >
-                  <td className="font-mono font-semibold text-primary">{so.so_number}</td>
-                  <td className="text-sm">{so.customer_name ?? "—"}</td>
-                  <td className="text-sm">
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-semibold text-primary">{so.so_number}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{so.customer_name ?? "—"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                     {so.so_date ? format(new Date(so.so_date), "dd MMM yyyy") : "—"}
                   </td>
-                  <td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                     <span className={`text-xs capitalize ${priorityClass[so.priority] ?? ""}`}>
                       {so.priority}
                     </span>
                   </td>
-                  <td className="text-sm">
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                     {so.delivery_date ? format(new Date(so.delivery_date), "dd MMM yyyy") : "—"}
                   </td>
-                  <td className="text-right font-mono text-sm tabular-nums">
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                     {formatCurrency(so.grand_total)}
                   </td>
-                  <td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                     <span className={statusClass[so.status] || "status-draft"}>
                       {statusLabels[so.status] ?? so.status}
                     </span>
                   </td>
-                  <td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                     <Button
                       variant="outline"
                       size="sm"

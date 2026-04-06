@@ -269,27 +269,27 @@ export default function AuditLog() {
           )}
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full data-table text-sm">
+          <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
-                <th className="min-w-[160px]">Timestamp</th>
-                <th className="min-w-[140px]">User</th>
-                <th className="min-w-[100px]">Action</th>
-                <th className="min-w-[140px]">Entity</th>
-                <th>Details</th>
-                <th className="w-10"></th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left min-w-[160px]">Timestamp</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left min-w-[140px]">User</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center min-w-[100px]">Action</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left min-w-[140px]">Entity</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Details</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center w-10"></th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-10 text-muted-foreground">
+                  <td colSpan={6} className="px-3 py-8 text-center text-sm text-slate-400">
                     Loading…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-10 text-muted-foreground">
+                  <td colSpan={6} className="px-3 py-8 text-center text-sm text-slate-400">
                     No audit entries found
                   </td>
                 </tr>
@@ -302,13 +302,13 @@ export default function AuditLog() {
                       className={docUrl ? "cursor-pointer hover:bg-muted/40" : ""}
                       onClick={() => docUrl && navigate(docUrl)}
                     >
-                      <td className="text-xs text-muted-foreground whitespace-nowrap">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-xs text-muted-foreground whitespace-nowrap">
                         {new Date(row.created_at).toLocaleString("en-IN", {
                           day: "2-digit", month: "short", year: "numeric",
                           hour: "2-digit", minute: "2-digit",
                         })}
                       </td>
-                      <td className="text-xs">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-xs">
                         <p className="font-medium text-foreground truncate max-w-[130px]">
                           {row.user_name || "—"}
                         </p>
@@ -318,20 +318,20 @@ export default function AuditLog() {
                           </p>
                         )}
                       </td>
-                      <td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                         <span className={`inline-block text-[11px] font-medium px-2 py-0.5 rounded-full border capitalize ${ACTION_COLORS[row.action] ?? "bg-slate-50 text-slate-600 border-slate-100"}`}>
                           {row.action}
                         </span>
                       </td>
-                      <td className="text-xs">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-xs">
                         <p className="font-medium text-foreground">
                           {DOC_TYPE_LABELS[row.document_type] ?? row.document_type}
                         </p>
                       </td>
-                      <td className="text-xs text-muted-foreground max-w-[320px] truncate">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-xs text-muted-foreground max-w-[320px] truncate">
                         {detailSummary(row.details)}
                       </td>
-                      <td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                         {docUrl && (
                           <ExternalLink className="h-3.5 w-3.5 text-muted-foreground/50" />
                         )}

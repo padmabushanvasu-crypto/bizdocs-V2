@@ -178,31 +178,31 @@ export default function DispatchNoteDetail() {
         </div>
 
         {/* Line Items Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full data-table">
+        <div className="overflow-x-auto rounded-lg border border-slate-200">
+          <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
-                <th className="w-10">#</th>
-                <th>Drawing No.</th>
-                <th>Description</th>
-                <th>Unit</th>
-                <th className="text-right">Qty</th>
-                <th className="text-right">Rate (₹)</th>
-                <th className="text-right">Amount (₹)</th>
-                <th>Serial/Ref</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-10">#</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Drawing No.</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Unit</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Rate (₹)</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Amount (₹)</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Serial/Ref</th>
               </tr>
             </thead>
             <tbody>
               {items.map((item: any) => (
                 <tr key={item.serial_number}>
-                  <td className="font-mono text-muted-foreground">{item.serial_number}</td>
-                  <td className="font-mono text-sm font-semibold text-blue-700">{item.drawing_number || item.item_code || "—"}</td>
-                  <td className="font-medium">{item.description}</td>
-                  <td className="text-muted-foreground">{item.unit || "NOS"}</td>
-                  <td className="text-right font-mono tabular-nums">{item.quantity}</td>
-                  <td className="text-right font-mono tabular-nums">{formatCurrency(item.rate || 0)}</td>
-                  <td className="text-right font-mono tabular-nums font-medium">{formatCurrency(item.amount || 0)}</td>
-                  <td className="text-muted-foreground text-sm font-mono">{item.serial_number_ref || "—"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{item.serial_number}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-semibold text-blue-700">{item.drawing_number || item.item_code || "—"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">{item.description}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.unit || "NOS"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.quantity}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(item.rate || 0)}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-medium">{formatCurrency(item.amount || 0)}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{item.serial_number_ref || "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -288,32 +288,34 @@ export default function DispatchNoteDetail() {
           <h3 className="text-xs font-semibold text-slate-500 border-b border-border pb-2 mb-4">
             Packing List
           </h3>
-          <table className="w-full data-table">
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+          <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
-                <th>#</th>
-                <th>Description</th>
-                <th className="text-right">Qty</th>
-                <th>Unit</th>
-                <th className="text-right">Weight (kg)</th>
-                <th>Dimensions</th>
-                <th>Box No.</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">#</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Unit</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Weight (kg)</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Dimensions</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Box No.</th>
               </tr>
             </thead>
             <tbody>
               {packing.map((item: any) => (
                 <tr key={item.serial_number}>
-                  <td className="font-mono text-muted-foreground">{item.serial_number}</td>
-                  <td className="font-medium">{item.description}</td>
-                  <td className="text-right font-mono tabular-nums">{item.quantity}</td>
-                  <td>{item.unit}</td>
-                  <td className="text-right font-mono tabular-nums">{item.weight_kg ?? "—"}</td>
-                  <td className="text-sm">{item.dimensions || "—"}</td>
-                  <td className="font-mono text-sm">{item.box_number || "—"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{item.serial_number}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">{item.description}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.quantity}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.unit}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.weight_kg ?? "—"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.dimensions || "—"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{item.box_number || "—"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

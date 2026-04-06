@@ -160,35 +160,35 @@ export default function VendorScorecardDetail() {
                   )}
                   {/* Line items */}
                   {items.length > 0 && (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
+                    <div className="overflow-x-auto rounded-lg border border-slate-200">
+                      <table className="w-full border-collapse text-sm">
                         <thead>
-                          <tr className="bg-slate-50 text-slate-500">
-                            <th className="px-2 py-1.5 text-left font-semibold">Drawing No.</th>
-                            <th className="px-2 py-1.5 text-left font-semibold">Description</th>
-                            <th className="px-2 py-1.5 text-right font-semibold">Qty Sent</th>
-                            <th className="px-2 py-1.5 text-right font-semibold">Accepted</th>
-                            <th className="px-2 py-1.5 text-right font-semibold">Rejected</th>
-                            <th className="px-2 py-1.5 text-left font-semibold">Rejection Reason</th>
-                            <th className="px-2 py-1.5 text-left font-semibold">Action Taken</th>
-                            <th className="px-2 py-1.5 text-left font-semibold">Stage</th>
+                          <tr>
+                            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Drawing No.</th>
+                            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty Sent</th>
+                            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Accepted</th>
+                            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Rejected</th>
+                            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Rejection Reason</th>
+                            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Action Taken</th>
+                            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Stage</th>
                           </tr>
                         </thead>
                         <tbody>
                           {items.map((item: any) => (
-                            <tr key={item.id} className={`border-t border-slate-100 ${item.is_rework ? "bg-orange-50/50" : ""}`}>
-                              <td className="px-2 py-1.5 font-mono text-blue-700">{item.drawing_number || "—"}</td>
-                              <td className="px-2 py-1.5 text-slate-700">{item.description}</td>
-                              <td className="px-2 py-1.5 text-right font-mono tabular-nums">{item.quantity ?? item.qty_nos ?? 0}</td>
-                              <td className="px-2 py-1.5 text-right font-mono tabular-nums text-green-700">{item.qty_accepted ?? "—"}</td>
-                              <td className="px-2 py-1.5 text-right font-mono tabular-nums text-red-600">{item.qty_rejected ?? "—"}</td>
-                              <td className="px-2 py-1.5 text-slate-500">{item.rejection_reason || "—"}</td>
-                              <td className="px-2 py-1.5">
+                            <tr key={item.id} className={`${item.is_rework ? "bg-orange-50/50" : ""}`}>
+                              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-blue-700">{item.drawing_number || "—"}</td>
+                              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.description}</td>
+                              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.quantity ?? item.qty_nos ?? 0}</td>
+                              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-green-700">{item.qty_accepted ?? "—"}</td>
+                              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-red-600">{item.qty_rejected ?? "—"}</td>
+                              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.rejection_reason || "—"}</td>
+                              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                                 {item.rejection_action ? (
                                   <span className="text-slate-600">{DC_ACTION_LABELS[item.rejection_action] ?? item.rejection_action}</span>
                                 ) : "—"}
                               </td>
-                              <td className="px-2 py-1.5">
+                              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                                 <div className="flex items-center gap-1.5">
                                   {item.stage_number && (
                                     <span className="text-slate-500">Stage {item.stage_number}{item.stage_name ? `: ${item.stage_name}` : ""}{item.nature_of_process ? ` (${item.nature_of_process})` : ""}</span>
@@ -243,29 +243,29 @@ export default function VendorScorecardDetail() {
                   </div>
                   {/* Line items */}
                   {items.length > 0 && (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
+                    <div className="overflow-x-auto rounded-lg border border-slate-200">
+                      <table className="w-full border-collapse text-sm">
                         <thead>
-                          <tr className="bg-slate-50 text-slate-500">
-                            <th className="px-2 py-1.5 text-left font-semibold">Drawing No.</th>
-                            <th className="px-2 py-1.5 text-left font-semibold">Description</th>
-                            <th className="px-2 py-1.5 text-right font-semibold">Received</th>
-                            <th className="px-2 py-1.5 text-right font-semibold">Accepted</th>
-                            <th className="px-2 py-1.5 text-right font-semibold">Non-Conforming</th>
-                            <th className="px-2 py-1.5 text-left font-semibold">NC Reason</th>
-                            <th className="px-2 py-1.5 text-left font-semibold">Action Taken</th>
+                          <tr>
+                            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Drawing No.</th>
+                            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Received</th>
+                            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Accepted</th>
+                            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Non-Conforming</th>
+                            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">NC Reason</th>
+                            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Action Taken</th>
                           </tr>
                         </thead>
                         <tbody>
                           {items.map((item: any) => (
-                            <tr key={item.id} className={`border-t border-slate-100 ${(item.replacement_cycle ?? 1) > 1 ? "bg-orange-50/50" : ""}`}>
-                              <td className="px-2 py-1.5 font-mono text-blue-700">{item.drawing_number || "—"}</td>
-                              <td className="px-2 py-1.5 text-slate-700">{item.description}</td>
-                              <td className="px-2 py-1.5 text-right font-mono tabular-nums">{item.receiving_now ?? 0}</td>
-                              <td className="px-2 py-1.5 text-right font-mono tabular-nums text-green-700">{item.accepted_quantity ?? "—"}</td>
-                              <td className="px-2 py-1.5 text-right font-mono tabular-nums text-red-600">{item.rejected_quantity ?? "—"}</td>
-                              <td className="px-2 py-1.5 text-slate-500">{item.rejection_reason || "—"}</td>
-                              <td className="px-2 py-1.5">
+                            <tr key={item.id} className={`${(item.replacement_cycle ?? 1) > 1 ? "bg-orange-50/50" : ""}`}>
+                              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-blue-700">{item.drawing_number || "—"}</td>
+                              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.description}</td>
+                              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.receiving_now ?? 0}</td>
+                              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-green-700">{item.accepted_quantity ?? "—"}</td>
+                              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-red-600">{item.rejected_quantity ?? "—"}</td>
+                              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.rejection_reason || "—"}</td>
+                              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                                 <div className="flex items-center gap-1.5">
                                   {item.rejection_action ? (
                                     <span className="text-slate-600">{GRN_ACTION_LABELS[item.rejection_action] ?? item.rejection_action}</span>

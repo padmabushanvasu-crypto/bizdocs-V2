@@ -89,23 +89,23 @@ export default function AssetsRegister() {
 
       <div className="paper-card !p-0">
         <div className="overflow-x-auto">
-          <table className="w-full data-table">
+          <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
-                <th>Item Code</th>
-                <th>Description</th>
-                <th>Classification</th>
-                <th className="text-right">Cost ₹</th>
-                <th>Added</th>
-                <th>Status</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item Code</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Classification</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Cost ₹</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Added</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={6} className="text-center py-8 text-muted-foreground">Loading...</td></tr>
+                <tr><td colSpan={6} className="px-3 py-8 text-center text-sm text-slate-400">Loading...</td></tr>
               ) : assets.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-12">
+                  <td colSpan={6} className="px-3 py-12 text-center text-sm text-slate-400">
                     <Package2 className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
                     <p className="text-muted-foreground font-medium">No assets found</p>
                     <p className="text-xs text-muted-foreground mt-1">Items with a classification where Affects Stock = No will appear here.</p>
@@ -114,21 +114,21 @@ export default function AssetsRegister() {
               ) : (
                 assets.map(asset => (
                   <tr key={asset.id} className="hover:bg-muted/50 cursor-pointer" onClick={() => navigate(`/items`)}>
-                    <td className="font-mono text-xs font-medium">{asset.item_code}</td>
-                    <td className="font-medium">{asset.description}</td>
-                    <td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium">{asset.item_code}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">{asset.description}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                       <span className="flex items-center gap-1.5 text-xs">
                         <span className="h-2 w-2 rounded-full" style={{ backgroundColor: `#${asset.classification_color}` }} />
                         {asset.classification_name}
                       </span>
                     </td>
-                    <td className="text-right font-mono tabular-nums">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                       {asset.standard_cost != null ? `₹${Number(asset.standard_cost).toLocaleString("en-IN")}` : "—"}
                     </td>
-                    <td className="text-muted-foreground text-sm">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">
                       {new Date(asset.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
                     </td>
-                    <td onClick={e => e.stopPropagation()}>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center" onClick={e => e.stopPropagation()}>
                       <select
                         className={`text-xs font-medium px-2 py-0.5 rounded-full border cursor-pointer ${statusClass[getStatus(asset.id)]}`}
                         value={getStatus(asset.id)}

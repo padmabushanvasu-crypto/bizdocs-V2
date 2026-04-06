@@ -95,31 +95,37 @@ export default function OpenItems() {
             {dcs?.length ?? 0} DCs open | {overdueDCs} overdue | {formatCurrency(dcApproxValue)} of goods outside
           </p>
           <div className="paper-card !p-0 overflow-x-auto">
-            <table className="w-full data-table">
+            <table className="w-full border-collapse text-sm">
               <thead>
                 <tr>
-                  <th>DC No.</th><th>Date</th><th>Party</th><th className="text-right">Items</th>
-                  <th className="text-right">Qty Sent</th><th>Return Due</th><th>Days</th><th>Status</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">DC No.</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Date</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Party</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Items</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty Sent</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Return Due</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Days</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {(dcs ?? []).length === 0 ? (
-                  <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">No open DCs</td></tr>
+                  <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-400">No data found</td></tr>
                 ) : (
                   (dcs ?? []).map((dc) => {
                     const days = daysDiff(dc.return_due_date);
                     return (
                       <tr key={dc.id} onClick={() => navigate(`/delivery-challans/${dc.id}`)} className={`hover:bg-muted/50 cursor-pointer transition-colors ${rowBg(days)}`}>
-                        <td className="font-mono text-sm font-medium">{dc.dc_number}</td>
-                        <td className="text-muted-foreground">{dc.dc_date}</td>
-                        <td className="font-medium">{dc.party_name}</td>
-                        <td className="text-right">{dc.total_items ?? 0}</td>
-                        <td className="text-right font-mono tabular-nums">{dc.total_qty ?? 0}</td>
-                        <td className="text-muted-foreground">{dc.return_due_date || "—"}</td>
-                        <td className={days !== null && days < 0 ? "text-destructive font-semibold" : "text-muted-foreground"}>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium">{dc.dc_number}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{dc.dc_date}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">{dc.party_name}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{dc.total_items ?? 0}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{dc.total_qty ?? 0}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{dc.return_due_date || "—"}</td>
+                        <td className={`px-3 py-2 text-sm border-b border-slate-100 text-left ${days !== null && days < 0 ? "text-destructive font-semibold" : "text-muted-foreground"}`}>
                           {days !== null ? (days < 0 ? `${Math.abs(days)}d overdue` : `${days}d`) : "—"}
                         </td>
-                        <td><span className={dc.status === "partially_returned" ? "status-overdue" : "bg-blue-50 text-blue-700 border border-blue-200 text-xs font-medium px-2.5 py-0.5 rounded-full"}>{dc.status?.replace("_", " ")}</span></td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center"><span className={dc.status === "partially_returned" ? "status-overdue" : "bg-blue-50 text-blue-700 border border-blue-200 text-xs font-medium px-2.5 py-0.5 rounded-full"}>{dc.status?.replace("_", " ")}</span></td>
                       </tr>
                     );
                   })
@@ -135,30 +141,35 @@ export default function OpenItems() {
             {pos?.length ?? 0} POs awaiting full delivery | {formatCurrency(poValue)} worth of goods pending
           </p>
           <div className="paper-card !p-0 overflow-x-auto">
-            <table className="w-full data-table">
+            <table className="w-full border-collapse text-sm">
               <thead>
                 <tr>
-                  <th>PO No.</th><th>Date</th><th>Vendor</th><th className="text-right">Value</th>
-                  <th>PO Date</th><th>Days Open</th><th>Status</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">PO No.</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Date</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Vendor</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Value</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">PO Date</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Days Open</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {(pos ?? []).length === 0 ? (
-                  <tr><td colSpan={7} className="text-center py-8 text-muted-foreground">No open POs</td></tr>
+                  <tr><td colSpan={7} className="px-3 py-8 text-center text-sm text-slate-400">No data found</td></tr>
                 ) : (
                   (pos ?? []).map((po) => {
                     const daysOpen = po.issued_at ? Math.floor((Date.now() - new Date(po.issued_at).getTime()) / 86400000) : null;
                     return (
                       <tr key={po.id} onClick={() => navigate(`/purchase-orders/${po.id}`)} className="hover:bg-muted/50 cursor-pointer transition-colors">
-                        <td className="font-mono text-sm font-medium">{po.po_number}</td>
-                        <td className="text-muted-foreground">{po.po_date}</td>
-                        <td className="font-medium">{po.vendor_name}</td>
-                        <td className="text-right font-mono tabular-nums">{formatCurrency(po.grand_total ?? 0)}</td>
-                        <td className="text-muted-foreground">{po.po_date}</td>
-                        <td className={daysOpen !== null && daysOpen > 30 ? "text-destructive font-semibold" : "text-muted-foreground"}>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium">{po.po_number}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{po.po_date}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">{po.vendor_name}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(po.grand_total ?? 0)}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{po.po_date}</td>
+                        <td className={`px-3 py-2 text-sm border-b border-slate-100 text-left ${daysOpen !== null && daysOpen > 30 ? "text-destructive font-semibold" : "text-muted-foreground"}`}>
                           {daysOpen !== null ? `${daysOpen}d` : "—"}
                         </td>
-                        <td><span className={po.status === "partially_received" ? "status-overdue" : "bg-blue-50 text-blue-700 border border-blue-200 text-xs font-medium px-2.5 py-0.5 rounded-full"}>{po.status?.replace("_", " ")}</span></td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center"><span className={po.status === "partially_received" ? "status-overdue" : "bg-blue-50 text-blue-700 border border-blue-200 text-xs font-medium px-2.5 py-0.5 rounded-full"}>{po.status?.replace("_", " ")}</span></td>
                       </tr>
                     );
                   })
@@ -174,33 +185,39 @@ export default function OpenItems() {
             {formatCurrency(totalOutstanding)} unpaid | {formatCurrency(overdueAmt)} overdue
           </p>
           <div className="paper-card !p-0 overflow-x-auto">
-            <table className="w-full data-table">
+            <table className="w-full border-collapse text-sm">
               <thead>
                 <tr>
-                  <th>Invoice No.</th><th>Date</th><th>Customer</th><th className="text-right">Total</th>
-                  <th className="text-right">Paid</th><th className="text-right">Outstanding</th>
-                  <th>Due Date</th><th>Days</th><th>Status</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Invoice No.</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Date</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Customer</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Total</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Paid</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Outstanding</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Due Date</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Days</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {(invs ?? []).length === 0 ? (
-                  <tr><td colSpan={9} className="text-center py-8 text-muted-foreground">All invoices paid!</td></tr>
+                  <tr><td colSpan={9} className="px-3 py-8 text-center text-sm text-slate-400">No data found</td></tr>
                 ) : (
                   (invs ?? []).map((inv) => {
                     const days = daysDiff(inv.due_date);
                     return (
                       <tr key={inv.id} onClick={() => navigate(`/invoices/${inv.id}`)} className={`hover:bg-muted/50 cursor-pointer transition-colors ${rowBg(days)}`}>
-                        <td className="font-mono text-sm font-medium">{inv.invoice_number}</td>
-                        <td className="text-muted-foreground">{inv.invoice_date}</td>
-                        <td className="font-medium">{inv.customer_name}</td>
-                        <td className="text-right font-mono tabular-nums">{formatCurrency(inv.grand_total ?? 0)}</td>
-                        <td className="text-right font-mono tabular-nums">{formatCurrency(inv.amount_paid ?? 0)}</td>
-                        <td className="text-right font-mono tabular-nums font-semibold text-amber-600">{formatCurrency(inv.amount_outstanding ?? 0)}</td>
-                        <td className="text-muted-foreground">{inv.due_date || "—"}</td>
-                        <td className={days !== null && days < 0 ? "text-destructive font-semibold" : "text-muted-foreground"}>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium">{inv.invoice_number}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{inv.invoice_date}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">{inv.customer_name}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(inv.grand_total ?? 0)}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(inv.amount_paid ?? 0)}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-semibold text-amber-600">{formatCurrency(inv.amount_outstanding ?? 0)}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{inv.due_date || "—"}</td>
+                        <td className={`px-3 py-2 text-sm border-b border-slate-100 text-left ${days !== null && days < 0 ? "text-destructive font-semibold" : "text-muted-foreground"}`}>
                           {days !== null ? (days < 0 ? `${Math.abs(days)}d overdue` : `${days}d`) : "—"}
                         </td>
-                        <td><span className={inv.status === "partially_paid" ? "status-overdue" : "bg-blue-50 text-blue-700 border border-blue-200 text-xs font-medium px-2.5 py-0.5 rounded-full"}>{inv.status?.replace("_", " ")}</span></td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center"><span className={inv.status === "partially_paid" ? "status-overdue" : "bg-blue-50 text-blue-700 border border-blue-200 text-xs font-medium px-2.5 py-0.5 rounded-full"}>{inv.status?.replace("_", " ")}</span></td>
                       </tr>
                     );
                   })

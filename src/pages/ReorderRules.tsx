@@ -233,58 +233,58 @@ export default function ReorderRules() {
       {/* Table */}
       <div className="paper-card !p-0">
         <div className="overflow-x-auto">
-          <table className="w-full data-table">
+          <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
-                <th>Item Code</th>
-                <th>Description</th>
-                <th>Type</th>
-                <th className="text-right">Min Stock</th>
-                <th className="text-right">Reorder Pt.</th>
-                <th className="text-right">Reorder Qty</th>
-                <th className="text-right">Lead Time</th>
-                <th>Preferred Vendor</th>
-                <th>Active</th>
-                <th>Actions</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item Code</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Type</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Min Stock</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Reorder Pt.</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Reorder Qty</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Lead Time</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Preferred Vendor</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Active</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={10} className="text-center py-10 text-muted-foreground">
+                  <td colSpan={10} className="px-3 py-8 text-center text-sm text-slate-400">
                     Loading rules…
                   </td>
                 </tr>
               ) : rules.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="text-center py-10 text-muted-foreground">
+                  <td colSpan={10} className="px-3 py-8 text-center text-sm text-slate-400">
                     No reorder rules configured. Click "Add Rule" to get started.
                   </td>
                 </tr>
               ) : (
                 rules.map((rule) => (
                   <tr key={rule.id} className="hover:bg-muted/30 transition-colors">
-                    <td className="font-mono text-xs font-medium">{rule.item_code ?? "—"}</td>
-                    <td className="font-medium text-sm">{rule.item_description ?? "—"}</td>
-                    <td className="text-xs text-muted-foreground capitalize">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium">{rule.item_code ?? "—"}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">{rule.item_description ?? "—"}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground capitalize">
                       {rule.item_type?.replace(/_/g, " ") ?? "—"}
                     </td>
-                    <td className="text-right font-mono tabular-nums text-muted-foreground">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-muted-foreground">
                       {rule.item_min_stock ?? 0}
                     </td>
-                    <td className="text-right font-mono tabular-nums font-medium">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-medium">
                       {rule.reorder_point}
                     </td>
-                    <td className="text-right font-mono tabular-nums">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                       {rule.reorder_qty}
                     </td>
-                    <td className="text-right text-sm text-muted-foreground">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-muted-foreground">
                       {rule.lead_time_days}d
                     </td>
-                    <td className="text-sm text-muted-foreground">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">
                       {rule.preferred_vendor_name ?? "—"}
                     </td>
-                    <td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                         rule.is_active
                           ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
@@ -293,8 +293,8 @@ export default function ReorderRules() {
                         {rule.is_active ? "Active" : "Inactive"}
                       </span>
                     </td>
-                    <td>
-                      <div className="flex gap-1">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
+                      <div className="flex gap-1 justify-center">
                         <Button
                           variant="ghost"
                           size="icon"

@@ -74,34 +74,34 @@ export default function DispatchRecords() {
         </div>
       ) : (
         <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)] rounded-xl border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-sm">
+          <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10">
-              <tr className="bg-slate-50 border-b border-slate-200">
-                <th className="text-left px-4 py-3 font-semibold text-slate-600">DR Number</th>
-                <th className="text-left px-4 py-3 font-semibold text-slate-600">Customer</th>
-                <th className="text-left px-4 py-3 font-semibold text-slate-600">Vehicle</th>
-                <th className="text-left px-4 py-3 font-semibold text-slate-600">Dispatched By</th>
-                <th className="text-left px-4 py-3 font-semibold text-slate-600">Status</th>
-                <th className="text-left px-4 py-3 font-semibold text-slate-600">Dispatch Date</th>
-                <th className="px-4 py-3"></th>
+              <tr>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">DR Number</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Customer</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Vehicle</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Dispatched By</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Dispatch Date</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody>
               {records.map((dr) => (
                 <tr
                   key={dr.id}
                   className="hover:bg-slate-50 cursor-pointer transition-colors"
                   onClick={() => navigate(`/dispatch-records/${dr.id}`)}
                 >
-                  <td className="px-4 py-3 font-mono font-medium text-blue-700">{dr.dr_number}</td>
-                  <td className="px-4 py-3 text-slate-700">{dr.customer_name ?? "—"}</td>
-                  <td className="px-4 py-3 text-slate-600">{dr.vehicle_number ?? "—"}</td>
-                  <td className="px-4 py-3 text-slate-600">{dr.dispatched_by ?? "—"}</td>
-                  <td className="px-4 py-3">{statusBadge(dr.status)}</td>
-                  <td className="px-4 py-3 text-slate-600">
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium text-blue-700">{dr.dr_number}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{dr.customer_name ?? "—"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{dr.vehicle_number ?? "—"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{dr.dispatched_by ?? "—"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">{statusBadge(dr.status)}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                     {dr.dispatch_date ? format(parseISO(dr.dispatch_date), "dd MMM yyyy") : "—"}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                     <Button
                       variant="ghost"
                       size="sm"

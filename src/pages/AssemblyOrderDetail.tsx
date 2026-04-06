@@ -315,26 +315,26 @@ export default function AssemblyOrderDetail() {
           {serialRows.length === 0 ? (
             <div className="py-10 text-center text-sm text-muted-foreground">No serial numbers found.</div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full data-table">
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="w-full border-collapse text-sm">
                 <thead>
                   <tr>
-                    <th>Serial Number</th>
-                    <th>Status</th>
-                    <th>FAT</th>
-                    <th className="print:hidden">Actions</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Serial Number</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">FAT</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center print:hidden">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {serialRows.map((row) => (
                     <tr key={row.id}>
-                      <td className="font-mono font-semibold text-primary">{row.serial_number}</td>
-                      <td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-semibold text-primary">{row.serial_number}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${serialStatusClass[row.status] ?? "bg-slate-100 text-slate-600"}`}>
                           {row.status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                         </span>
                       </td>
-                      <td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                         {row.fat_completed ? (
                           <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
                             <CheckCircle2 className="h-3 w-3" /> FAT Passed
@@ -349,7 +349,7 @@ export default function AssemblyOrderDetail() {
                           </span>
                         )}
                       </td>
-                      <td className="print:hidden">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center print:hidden">
                         {row.fat_completed ? (
                           <Button
                             variant="outline"
@@ -426,16 +426,16 @@ export default function AssemblyOrderDetail() {
             </Button>
           </div>
         ) : (
-          <div className="overflow-x-auto px-5 pb-5 mt-4">
-            <table className="w-full data-table">
+          <div className="overflow-x-auto rounded-lg border border-slate-200 px-0 pb-0 mt-4 mx-5 mb-5">
+            <table className="w-full border-collapse text-sm">
               <thead>
                 <tr>
-                  <th>Component</th>
-                  <th className="text-right">Required Qty</th>
-                  <th className="text-right">In Stock</th>
-                  <th>Status</th>
-                  <th className="text-right">Unit Cost</th>
-                  <th className="text-right">Line Total</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Component</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Required Qty</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">In Stock</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Unit Cost</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Line Total</th>
                 </tr>
               </thead>
               <tbody>
@@ -443,21 +443,21 @@ export default function AssemblyOrderDetail() {
                   const lineTotal = line.consumed_qty * line.unit_cost;
                   return (
                     <tr key={line.id}>
-                      <td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                         <p className="font-medium text-sm">{line.item_description ?? "—"}</p>
                         {line.item_code && (
                           <p className="text-xs text-muted-foreground font-mono">{line.item_code}</p>
                         )}
                       </td>
-                      <td className="text-right font-mono tabular-nums text-sm">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                         {line.required_qty} {line.unit ?? ""}
                       </td>
-                      <td className="text-right font-mono tabular-nums text-sm">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                         <span className={line.available_qty >= line.required_qty ? "text-green-600 font-semibold" : "text-amber-600 font-semibold"}>
                           {line.available_qty}
                         </span>
                       </td>
-                      <td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                         {line.is_available ? (
                           <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
                             <CheckCircle2 className="h-3 w-3" /> OK
@@ -468,10 +468,10 @@ export default function AssemblyOrderDetail() {
                           </span>
                         )}
                       </td>
-                      <td className="text-right font-mono tabular-nums text-sm text-muted-foreground">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                         {formatCurrency(line.unit_cost)}
                       </td>
-                      <td className="text-right font-mono tabular-nums text-sm font-medium">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-medium">
                         {formatCurrency(lineTotal)}
                       </td>
                     </tr>
@@ -520,20 +520,20 @@ export default function AssemblyOrderDetail() {
             <h2 className="font-semibold text-slate-900">Serial Numbers</h2>
             <span className="text-xs text-slate-400">{serialRows.length}</span>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full data-table">
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="w-full border-collapse text-sm">
               <thead>
                 <tr>
-                  <th>Serial Number</th>
-                  <th>FAT</th>
-                  <th className="print:hidden">Actions</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Serial Number</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">FAT</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center print:hidden">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {serialRows.map((row) => (
                   <tr key={row.id}>
-                    <td className="font-mono font-semibold text-primary">{row.serial_number}</td>
-                    <td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-semibold text-primary">{row.serial_number}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                       {row.fat_completed ? (
                         <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
                           <CheckCircle2 className="h-3 w-3" /> FAT Passed
@@ -544,7 +544,7 @@ export default function AssemblyOrderDetail() {
                         </span>
                       )}
                     </td>
-                    <td className="print:hidden">
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center print:hidden">
                       {row.fat_completed ? (
                         <Button
                           variant="outline"

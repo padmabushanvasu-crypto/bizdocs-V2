@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, Search, Info, ChevronDown, ChevronLeft } from "lucide-react";
@@ -57,6 +57,7 @@ export default function PurchaseOrderForm() {
 
   const prefillState = location.state as { vendor_id?: string; prefill_items?: { item_id: string; description: string; qty: number; unit: string }[] } | null;
   const [prefillApplied, setPrefillApplied] = useState(false);
+  const firstQtyRef = useRef<HTMLInputElement | null>(null);
 
   // Form state
   const [poNumber, setPONumber] = useState("");
@@ -178,6 +179,26 @@ export default function PurchaseOrderForm() {
     }
     setPrefillApplied(true);
   }, [isEdit, prefillState, prefillApplied, vendors]);
+
+  // Pre-fill from Stock Register (single item)
+  useEffect(() => {
+    if (isEdit || prefillApplied) return;
+    const prefillItem = (location.state as any)?.prefillItem;
+    if (!prefillItem) return;
+    setLineItems([{
+      serial_number: 1,
+      description: prefillItem.description || "",
+      drawing_number: "",
+      quantity: 0,
+      unit: prefillItem.unit || "NOS",
+      unit_price: 0,
+      line_total: 0,
+      gst_rate: 18,
+      hsn_sac_code: prefillItem.hsn_sac_code || "",
+    }]);
+    setPrefillApplied(true);
+    setTimeout(() => { firstQtyRef.current?.focus(); firstQtyRef.current?.select(); }, 150);
+  }, [isEdit, prefillApplied, location.state]);
 
   useEffect(() => {
     if (!isEdit && !deliveryAddressAutoFilled && companyDeliveryAddress) {
@@ -559,14 +580,14 @@ export default function PurchaseOrderForm() {
           <table className="w-full min-w-[800px]">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
-                <th className="px-3 py-2 text-left w-8 text-xs font-medium text-slate-400 uppercase tracking-wider">#</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Description</th>
-                <th className="px-3 py-2 text-left w-32 text-xs font-medium text-slate-400 uppercase tracking-wider">Drawing No</th>
-                <th className="px-3 py-2 text-right w-20 text-xs font-medium text-slate-400 uppercase tracking-wider">Qty</th>
-                <th className="px-3 py-2 text-left w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Unit</th>
-                <th className="px-3 py-2 text-right w-28 text-xs font-medium text-slate-400 uppercase tracking-wider">Unit Price ₹</th>
-                <th className="px-3 py-2 text-left w-36 text-xs font-medium text-slate-400 uppercase tracking-wider">Delivery Date</th>
-                <th className="px-3 py-2 text-right w-28 text-xs font-medium text-slate-400 uppercase tracking-wider">Amount ₹</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-8">#</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-32">Drawing No</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-20">Qty</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-24">Unit</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-28">Unit Price ₹</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-36">Delivery Date</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-28">Amount ₹</th>
                 <th className="w-10"></th>
               </tr>
             </thead>
@@ -601,6 +622,7 @@ export default function PurchaseOrderForm() {
                   <td className="p-0 w-20">
                     <input
                       type="number"
+                      ref={(el) => { if (index === 0) firstQtyRef.current = el; }}
                       value={item.quantity || ""}
                       onChange={(e) => updateLineItem(index, "quantity", Number(e.target.value))}
                       step="any"

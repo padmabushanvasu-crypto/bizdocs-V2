@@ -228,11 +228,11 @@ export default function DocumentSettings() {
         <div className="px-5 py-3 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-xs font-medium text-slate-400 uppercase">
-                <th className="text-left pb-2 pr-4 font-medium">Document Type</th>
-                <th className="text-left pb-2 pr-4 w-28 font-medium">Prefix</th>
-                <th className="text-left pb-2 pr-4 w-28 font-medium">Current #</th>
-                <th className="text-left pb-2 w-44 font-medium">Next Preview</th>
+              <tr>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left pr-4">Document Type</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-28">Prefix</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-28">Current #</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-44">Next Preview</th>
               </tr>
             </thead>
             <tbody>

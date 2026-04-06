@@ -129,39 +129,39 @@ export default function JigMaster() {
 
       {/* Table */}
       <div className="paper-card !p-0">
-        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
-          <table className="w-full data-table">
+        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)] rounded-lg border border-slate-200">
+          <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10">
               <tr>
-                <th>Drawing No</th>
-                <th>Jig No</th>
-                <th>Status</th>
-                <th>Associated Process</th>
-                <th>Notes</th>
-                <th className="w-20">Actions</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Drawing No</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Jig No</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Associated Process</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Notes</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center w-20">Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={6} className="text-center py-10 text-muted-foreground">Loading…</td></tr>
+                <tr><td colSpan={6} className="px-3 py-8 text-center text-sm text-slate-400">Loading…</td></tr>
               ) : jigs.length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-10 text-muted-foreground">No jigs found. Add your first jig to get started.</td></tr>
+                <tr><td colSpan={6} className="px-3 py-8 text-center text-sm text-slate-400">No data found</td></tr>
               ) : (
                 jigs.map((jig) => {
                   const badge = STATUS_LABELS[jig.status] ?? STATUS_LABELS.ok;
                   return (
                     <tr key={jig.id} className="hover:bg-muted/30 transition-colors">
-                      <td className="font-mono text-sm font-medium">{jig.drawing_number}</td>
-                      <td className="font-mono text-sm">{jig.jig_number}</td>
-                      <td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium">{jig.drawing_number}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{jig.jig_number}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${badge.className}`}>
                           {badge.label}
                         </span>
                       </td>
-                      <td className="text-sm">{jig.associated_process ?? "—"}</td>
-                      <td className="text-sm text-muted-foreground max-w-[200px] truncate">{jig.notes ?? "—"}</td>
-                      <td>
-                        <div className="flex items-center gap-1">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{jig.associated_process ?? "—"}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground max-w-[200px] truncate">{jig.notes ?? "—"}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
+                        <div className="flex items-center gap-1 justify-center">
                           <button
                             onClick={() => openEdit(jig)}
                             className="p-1 rounded text-slate-400 hover:text-slate-700 transition-colors"

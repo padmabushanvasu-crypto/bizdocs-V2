@@ -172,15 +172,15 @@ export default function ImportDialog({ open, onOpenChange, config, onImport, exi
               </p>
             )}
 
-            <div className="overflow-x-auto border border-border rounded-md max-h-[300px] overflow-y-auto">
-              <table className="w-full text-xs">
-                <thead className="bg-secondary sticky top-0">
+            <div className="overflow-x-auto rounded-lg border border-slate-200 max-h-[300px] overflow-y-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead className="sticky top-0">
                   <tr>
-                    <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">#</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">#</th>
                     {config.columns.slice(0, 6).map((c) => (
-                      <th key={c.key} className="px-2 py-1.5 text-left font-medium text-muted-foreground">{c.label}</th>
+                      <th key={c.key} className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">{c.label}</th>
                     ))}
-                    <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">Status</th>
+                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -189,11 +189,11 @@ export default function ImportDialog({ open, onOpenChange, config, onImport, exi
                       row.status === "error" ? "bg-destructive/5" :
                       row.status === "warning" ? "bg-amber-50" : ""
                     }>
-                      <td className="px-2 py-1 text-muted-foreground">{i + 1}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">{i + 1}</td>
                       {config.columns.slice(0, 6).map((c) => (
-                        <td key={c.key} className="px-2 py-1 max-w-[120px] truncate">{row.data[c.label] || "—"}</td>
+                        <td key={c.key} className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left max-w-[120px] truncate">{row.data[c.label] || "—"}</td>
                       ))}
-                      <td className="px-2 py-1">
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                         {row.status === "valid" && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />}
                         {row.status === "warning" && (
                           <span className="flex items-center gap-1" title={row.messages.join(", ")}>
