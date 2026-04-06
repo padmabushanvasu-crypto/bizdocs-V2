@@ -21,6 +21,7 @@ import {
 import { createGrnFromDC } from "@/lib/grn-api";
 import { JobCardCreationDialog } from "@/components/JobCardCreationDialog";
 import { supabase } from "@/integrations/supabase/client";
+import { getCompanyId } from "@/lib/auth-helpers";
 import { formatCurrency, formatNumber, amountInWords } from "@/lib/gst-utils";
 import { DocumentHeader } from "@/components/DocumentHeader";
 import { DocumentActions } from "@/components/DocumentActions";
@@ -85,6 +86,30 @@ export default function DeliveryChallanDetail() {
   const [retSaving, setRetSaving] = useState(false);
   const [showDeletedReturns, setShowDeletedReturns] = useState(false);
   const [jcDialogOpen, setJcDialogOpen] = useState(false);
+  const [existingJobCards, setExistingJobCards] = useState<Record<string, { id: string; jc_number: string; current_stage: number; status: string }[]>>({});
+
+  const handleOpenJCDialog = async () => {
+    const lineItems = dc?.line_items ?? [];
+    const companyId = await getCompanyId();
+    const byItemId: Record<string, { id: string; jc_number: string; current_stage: number; status: string }[]> = {};
+    await Promise.all(
+      lineItems
+        .filter(li => (li as any).item_id)
+        .map(async (li) => {
+          const itemId = (li as any).item_id as string;
+          const { data } = await (supabase as any)
+            .from("job_cards")
+            .select("id, jc_number, current_stage, status")
+            .eq("item_id", itemId)
+            .eq("status", "in_progress")
+            .eq("company_id", companyId)
+            .limit(1);
+          if (data?.length) byItemId[itemId] = data;
+        })
+    );
+    setExistingJobCards(byItemId);
+    setJcDialogOpen(true);
+  };
 
   const { data: dc, isLoading } = useQuery({
     queryKey: ["delivery-challan", id],
@@ -170,7 +195,7 @@ export default function DeliveryChallanDetail() {
   const items = dc.line_items || [];
   const isReturnable = RETURNABLE_DC_TYPES.includes(dc.dc_type);
   const isDeleted = dc.status === "deleted";
-  const isJobWorkDC = dc.dc_type === "job_work_out" || dc.dc_type === "job_work_143";
+  const isJobWorkDC = ["job_work_out", "job_work_143", "returnable"].includes(dc.dc_type ?? "");
   const hasNatureOfProcess = items.some((i) => i.nature_of_process);
   const hasDrawingNumber = items.some((i) => i.drawing_number);
   const hasQtyKgs = items.some((i) => (i as any).qty_kgs != null);
@@ -394,7 +419,7 @@ export default function DeliveryChallanDetail() {
             </Button>
           )}
           {isJobWorkDC && ["issued", "partially_returned"].includes(dc.status) && !isDeleted && (
-            <Button variant="outline" size="sm" onClick={() => setJcDialogOpen(true)}>
+            <Button variant="outline" size="sm" onClick={handleOpenJCDialog}>
               <Plus className="h-3.5 w-3.5 mr-1" /> Create Job Cards
             </Button>
           )}
@@ -701,8 +726,7 @@ export default function DeliveryChallanDetail() {
       </div>
 
       {/* Return History */}
-      {isReturnable && (
-        <div className="paper-card print:hidden">
+      <div className="paper-card print:hidden">
           <div className="flex items-center justify-between border-b border-border pb-2 mb-4">
             <div>
               <h3 className="text-xs font-semibold text-slate-500">Return History</h3>
@@ -751,8 +775,7 @@ export default function DeliveryChallanDetail() {
               </table>
             );
           })()}
-        </div>
-      )}
+      </div>
 
       {/* Audit Trail */}
       <div className="print:hidden">
@@ -1073,9 +1096,13 @@ export default function DeliveryChallanDetail() {
         onOpenChange={setJcDialogOpen}
         dcId={id!}
         dcNumber={dc.dc_number}
-        lineItems={dc.line_items ?? []}
+        lineItems={(dc.line_items ?? []).map(li => ({
+          ...li,
+          item_id: (li as any).item_id ?? null,
+        }))}
         partyId={dc.party_id}
         partyName={dc.party_name}
+        existingJobCards={existingJobCards}
       />
     </div>
   );

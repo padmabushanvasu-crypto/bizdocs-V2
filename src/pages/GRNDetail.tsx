@@ -17,7 +17,6 @@ import {
   fetchGRNQCMeasurements,
   saveGRNQCMeasurements,
   saveGRNScrapItems,
-  storeConfirmGRN,
   type QuantitativeLineData,
   type QualitativeLineData,
   type InspectionMethod,
@@ -34,6 +33,7 @@ import { DocumentHeader } from "@/components/DocumentHeader";
 import { AuditTimeline } from "@/components/AuditTimeline";
 import { logAudit } from "@/lib/audit-api";
 import { UNITS } from "@/lib/constants";
+import { supabase } from "@/integrations/supabase/client";
 
 // ── Lookup tables ──────────────────────────────────────────────────────────────
 
@@ -69,11 +69,15 @@ interface S1Line {
   item_code: string;
   description: string;
   po_quantity: number;
+  pending_quantity: number;
   received_qty: number;
   qty_matched: boolean;
   condition_on_arrival: string;
   packing_intact: boolean;
   notes: string;
+  is_final_grn?: boolean;
+  store_confirmed?: boolean;
+  store_confirmed_by?: string | null;
 }
 
 // ── QC Measurement row state ───────────────────────────────────────────────────
@@ -175,9 +179,13 @@ function VerdictBadge({ verdict }: { verdict: string | null | undefined }) {
 function Stage1Table({
   lines,
   onChange,
+  disabled = false,
+  overQtyIds = [],
 }: {
   lines: S1Line[];
   onChange: (idx: number, field: keyof S1Line, value: unknown) => void;
+  disabled?: boolean;
+  overQtyIds?: string[];
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-blue-100">
@@ -188,7 +196,8 @@ function Stage1Table({
             <th className="text-left px-3 py-2.5 font-semibold">Item Code</th>
             <th className="text-left px-3 py-2.5 font-semibold">Description</th>
             <th className="text-right px-3 py-2.5 font-semibold w-24">Ordered</th>
-            <th className="text-right px-3 py-2.5 font-semibold w-28">Received Qty *</th>
+            <th className="text-right px-3 py-2.5 font-semibold w-28">Received Now *</th>
+            <th className="text-right px-3 py-2.5 font-semibold w-24">Pending</th>
             <th className="text-center px-3 py-2.5 font-semibold w-24">Qty Matched</th>
             <th className="text-center px-3 py-2.5 font-semibold w-36">Condition</th>
             <th className="text-center px-3 py-2.5 font-semibold w-24">Packing OK</th>
@@ -197,9 +206,10 @@ function Stage1Table({
         </thead>
         <tbody className="divide-y divide-blue-50">
           {lines.map((line, idx) => {
-            const mismatch = line.received_qty > 0 && line.received_qty !== line.po_quantity;
+            const isOverQty = overQtyIds.includes(line.id);
+            const pending = Math.max(0, line.pending_quantity - line.received_qty);
             return (
-              <tr key={line.id} className={`transition-colors ${mismatch ? "bg-yellow-50/70" : "bg-white hover:bg-blue-50/20"}`}>
+              <tr key={line.id} className={`transition-colors ${isOverQty ? "bg-yellow-50/70" : "bg-white hover:bg-blue-50/20"}`}>
                 <td className="px-3 py-2 text-slate-400 text-xs">{idx + 1}</td>
                 <td className="px-3 py-2 font-mono text-xs text-slate-500">{line.item_code || "—"}</td>
                 <td className="px-3 py-2 font-medium text-slate-800 max-w-[200px]">
@@ -213,19 +223,25 @@ function Stage1Table({
                       className="w-20 text-right border border-slate-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
                       value={line.received_qty || ""}
                       min={0}
+                      disabled={disabled}
                       onChange={(e) => {
                         const v = Number(e.target.value);
                         onChange(idx, "received_qty", v);
-                        onChange(idx, "qty_matched", v === line.po_quantity);
+                        onChange(idx, "qty_matched", v === line.pending_quantity);
                       }}
                     />
-                    {mismatch && <span className="text-amber-500 text-xs">⚠</span>}
+                    {isOverQty && <span className="text-amber-500 text-xs">⚠</span>}
                   </div>
+                  {isOverQty && (
+                    <p className="text-xs text-amber-700 mt-0.5">Max: {line.pending_quantity} {line.unit}</p>
+                  )}
                 </td>
+                <td className="px-3 py-2 text-right font-mono tabular-nums text-slate-600">{pending}</td>
                 <td className="px-3 py-2 text-center">
                   <input
                     type="checkbox"
                     checked={line.qty_matched}
+                    disabled={disabled}
                     onChange={(e) => onChange(idx, "qty_matched", e.target.checked)}
                     className="h-4 w-4 accent-blue-600 cursor-pointer"
                   />
@@ -234,6 +250,7 @@ function Stage1Table({
                   <select
                     className="w-full border border-slate-200 rounded px-1.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
                     value={line.condition_on_arrival}
+                    disabled={disabled}
                     onChange={(e) => onChange(idx, "condition_on_arrival", e.target.value)}
                   >
                     <option value="good">Good</option>
@@ -244,6 +261,7 @@ function Stage1Table({
                 <td className="px-3 py-2 text-center">
                   <button
                     type="button"
+                    disabled={disabled}
                     onClick={() => onChange(idx, "packing_intact", !line.packing_intact)}
                     className={`px-2 py-0.5 rounded-full text-xs font-medium border transition-colors ${
                       line.packing_intact ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"
@@ -257,6 +275,7 @@ function Stage1Table({
                     type="text"
                     className="w-full bg-transparent border-b border-slate-200 text-xs focus:outline-none focus:border-blue-400 py-0.5 px-0"
                     value={line.notes}
+                    disabled={disabled}
                     onChange={(e) => onChange(idx, "notes", e.target.value)}
                     placeholder="Optional…"
                   />
@@ -273,6 +292,7 @@ function Stage1Table({
 // ── Stage 1 — read-only table ──────────────────────────────────────────────────
 
 function Stage1ReadOnly({ lines }: { lines: S1Line[] }) {
+  const hasStoreTracking = lines.some(l => l.is_final_grn);
   return (
     <div className="overflow-x-auto rounded-lg border border-blue-100">
       <table className="w-full text-sm border-collapse">
@@ -287,6 +307,7 @@ function Stage1ReadOnly({ lines }: { lines: S1Line[] }) {
             <th className="text-center px-3 py-2.5 font-semibold">Condition</th>
             <th className="text-center px-3 py-2.5 font-semibold">Packing</th>
             <th className="text-left px-3 py-2.5 font-semibold">Notes</th>
+            {hasStoreTracking && <th className="text-center px-3 py-2.5 font-semibold">Store</th>}
           </tr>
         </thead>
         <tbody className="divide-y divide-blue-50">
@@ -303,6 +324,21 @@ function Stage1ReadOnly({ lines }: { lines: S1Line[] }) {
               <td className="px-3 py-2 text-center text-xs capitalize">{(l.condition_on_arrival || "good").replace(/_/g, " ")}</td>
               <td className="px-3 py-2 text-center text-xs">{l.packing_intact ? "✓" : "✗"}</td>
               <td className="px-3 py-2 text-xs text-slate-500">{l.notes || "—"}</td>
+              {hasStoreTracking && (
+                <td className="px-3 py-2 text-center text-xs">
+                  {!l.is_final_grn ? (
+                    <span className="text-slate-300">—</span>
+                  ) : l.store_confirmed ? (
+                    <span className="inline-flex items-center gap-1 text-green-700 font-medium">
+                      ✓ {l.store_confirmed_by ? <span className="font-normal text-slate-500">{l.store_confirmed_by}</span> : null}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-amber-600 font-medium">
+                      ⏳ Awaiting
+                    </span>
+                  )}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -319,12 +355,28 @@ function QCMeasurementEditor({
   onAddRow,
   onChangeRow,
   onDeleteRow,
+  disabled = false,
+  finalGrnPerLine = {},
+  autoFinalLines = new Set<string>(),
+  isDeletedOrCancelled = false,
+  setPendingUntickLineId,
+  setShowUntickDialog,
+  setFinalGrnPerLine,
+  isSavedFinalGrn = false,
 }: {
   lineItems: Array<{ id: string; item_code: string; description: string; received_qty: number; unit: string }>;
   qcRows: QCRow[];
   onAddRow: (lineItemId: string) => void;
   onChangeRow: (idx: number, field: keyof QCRow, value: string) => void;
   onDeleteRow: (idx: number) => void;
+  disabled?: boolean;
+  finalGrnPerLine?: Record<string, boolean>;
+  autoFinalLines?: Set<string>;
+  isDeletedOrCancelled?: boolean;
+  setPendingUntickLineId?: (id: string) => void;
+  setShowUntickDialog?: (open: boolean) => void;
+  setFinalGrnPerLine?: (map: Record<string, boolean>) => void;
+  isSavedFinalGrn?: boolean;
 }) {
   return (
     <div className="space-y-4">
@@ -345,12 +397,45 @@ function QCMeasurementEditor({
               </span>
               <button
                 type="button"
+                disabled={disabled}
                 onClick={() => onAddRow(item.id)}
                 className="text-xs px-2 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-50 text-slate-600 font-medium flex items-center gap-1"
               >
                 <Plus className="h-3 w-3" /> Add Row
               </button>
             </div>
+
+            {/* Per-item Final GRN checkbox */}
+            {!disabled && setFinalGrnPerLine && (() => {
+              const lineId = item.id;
+              const isAuto = autoFinalLines.has(lineId);
+              const checked = isAuto || (finalGrnPerLine[lineId] ?? false);
+              return (
+                <div className="flex items-center gap-2 px-4 py-2 border-t border-slate-100 bg-slate-50/50">
+                  <input
+                    type="checkbox"
+                    id={`final-grn-qc-${lineId}`}
+                    checked={checked}
+                    disabled={isAuto || isDeletedOrCancelled}
+                    onChange={(e) => {
+                      const newMap = { ...finalGrnPerLine, [lineId]: e.target.checked };
+                      const newAnyFinal = Object.values(newMap).some(v => v) || autoFinalLines.size > 0;
+                      if (!e.target.checked && isSavedFinalGrn && !newAnyFinal) {
+                        setPendingUntickLineId?.(lineId);
+                        setShowUntickDialog?.(true);
+                        return;
+                      }
+                      setFinalGrnPerLine(newMap);
+                    }}
+                    className="h-3.5 w-3.5 accent-purple-600 cursor-pointer disabled:cursor-default"
+                  />
+                  <label htmlFor={`final-grn-qc-${lineId}`} className="text-xs text-slate-600 cursor-pointer flex items-center gap-1.5">
+                    Final GRN — no further delivery expected
+                    {isAuto && <span className="text-[10px] text-purple-500 font-medium">(Bought-Out — auto)</span>}
+                  </label>
+                </div>
+              );
+            })()}
 
             {/* Measurement table */}
             <div className="overflow-x-auto">
@@ -394,6 +479,7 @@ function QCMeasurementEditor({
                               className="w-full bg-transparent border-b border-slate-200 focus:outline-none focus:border-purple-400 text-xs py-0.5"
                               value={row.characteristic}
                               placeholder="e.g. Diameter"
+                              disabled={disabled}
                               onChange={(e) => onChangeRow(globalIdx, "characteristic", e.target.value)}
                             />
                           </td>
@@ -402,6 +488,7 @@ function QCMeasurementEditor({
                               className="w-full bg-transparent border-b border-slate-200 focus:outline-none focus:border-purple-400 text-xs py-0.5"
                               value={row.specification}
                               placeholder="e.g. 25mm ± 0.05"
+                              disabled={disabled}
                               onChange={(e) => onChangeRow(globalIdx, "specification", e.target.value)}
                             />
                           </td>
@@ -413,6 +500,7 @@ function QCMeasurementEditor({
                               placeholder="5"
                               min={0}
                               max={item.received_qty}
+                              disabled={disabled}
                               onChange={(e) => onChangeRow(globalIdx, "qty_checked", e.target.value)}
                             />
                           </td>
@@ -422,6 +510,7 @@ function QCMeasurementEditor({
                                 className="w-full text-center bg-transparent border-b border-slate-200 focus:outline-none focus:border-purple-400 text-xs py-0.5"
                                 value={row[s]}
                                 placeholder="—"
+                                disabled={disabled}
                                 onChange={(e) => onChangeRow(globalIdx, s, e.target.value)}
                               />
                             </td>
@@ -433,6 +522,7 @@ function QCMeasurementEditor({
                               value={row.conforming_qty}
                               placeholder="0"
                               min={0}
+                              disabled={disabled}
                               onChange={(e) => onChangeRow(globalIdx, "conforming_qty", e.target.value)}
                             />
                           </td>
@@ -455,6 +545,7 @@ function QCMeasurementEditor({
                                 className="w-full bg-transparent border-b border-slate-200 focus:outline-none focus:border-purple-400 text-xs py-0.5"
                                 value={row.measuring_instrument}
                                 placeholder="e.g. Vernier Caliper"
+                                disabled={disabled}
                                 onChange={(e) => onChangeRow(globalIdx, "measuring_instrument", e.target.value)}
                               />
                               {sumMismatch && (
@@ -465,6 +556,7 @@ function QCMeasurementEditor({
                           <td className="px-2 py-1.5 text-center">
                             <button
                               type="button"
+                              disabled={disabled}
                               onClick={() => onDeleteRow(globalIdx)}
                               className="text-slate-300 hover:text-red-500 transition-colors"
                             >
@@ -865,6 +957,23 @@ export default function GRNDetail() {
     enabled: !!id,
   });
 
+  // ── Item type lookup for per-line Final GRN auto-detection ────────────────
+  const { data: lineItemTypes } = useQuery({
+    queryKey: ["grn-item-types", id],
+    queryFn: async () => {
+      const items = grn?.line_items ?? [];
+      if (!items.length) return {} as Record<string, string>;
+      const drawingNums = items.map((i) => (i as any).drawing_number).filter(Boolean) as string[];
+      if (!drawingNums.length) return {} as Record<string, string>;
+      const { data } = await (supabase as any)
+        .from("items")
+        .select("drawing_revision, item_type")
+        .in("drawing_revision", drawingNums);
+      return Object.fromEntries((data ?? []).map((r: any) => [r.drawing_revision, r.item_type])) as Record<string, string>;
+    },
+    enabled: !!grn?.line_items?.length,
+  });
+
   // ── Stage 1 state ─────────────────────────────────────────────────────────
 
   const [s1Lines,         setS1Lines]         = useState<S1Line[]>([]);
@@ -890,15 +999,11 @@ export default function GRNDetail() {
   const [scrapItems,    setScrapItems]    = useState<{material_type:string; quantity:string; unit:string; notes:string}[]>([]);
 
   // ── Final GRN / store confirmation state ──────────────────────────────────
-  const [isFinalGrn,        setIsFinalGrn]        = useState(false);
-  const [finalGrnReason,    setFinalGrnReason]     = useState("");
-  const [showUntickDialog,  setShowUntickDialog]   = useState(false);
-  const [untickReason,      setUntickReason]       = useState("");
-  const [storeDialogOpen,   setStoreDialogOpen]    = useState(false);
-  const [storeConfirmedBy,  setStoreConfirmedBy]   = useState("");
-  const [storeDateStr,      setStoreDateStr]       = useState(format(new Date(), "yyyy-MM-dd"));
-  const [storeLocation,     setStoreLocation]      = useState("");
-  const [storeNotes,        setStoreNotes]         = useState("");
+  const [finalGrnPerLine,    setFinalGrnPerLine]   = useState<Record<string, boolean>>({});
+  const [finalGrnReason,     setFinalGrnReason]    = useState("");
+  const [showUntickDialog,   setShowUntickDialog]  = useState(false);
+  const [untickReason,       setUntickReason]      = useState("");
+  const [pendingUntickLineId, setPendingUntickLineId] = useState<string | null>(null);
 
   // ── Initialise from loaded GRN ────────────────────────────────────────────
 
@@ -911,17 +1016,24 @@ export default function GRNDetail() {
     setS1Lines(
       items.map((item) => {
         const a = item as any;
-        const recv = a.received_qty ?? a.receiving_now ?? 0;
+        // For new GRNs (Stage 1 not yet saved), pre-fill received_qty with pending_quantity
+        const recv = (a.quantitative_verified_at == null && (a.received_qty === 0 || a.received_qty == null))
+          ? (a.pending_quantity ?? a.po_quantity ?? 0)
+          : (a.received_qty ?? 0);
         return {
           id:                   item.id ?? "",
           item_code:            a.drawing_number ?? "",
           description:          item.description,
           po_quantity:          item.po_quantity ?? 0,
+          pending_quantity:     a.pending_quantity ?? item.po_quantity ?? 0,
           received_qty:         recv,
-          qty_matched:          a.qty_matched !== false && recv === (item.po_quantity ?? 0),
+          qty_matched:          a.qty_matched !== false && recv === (a.pending_quantity ?? item.po_quantity ?? 0),
           condition_on_arrival: a.condition_on_arrival ?? "good",
           packing_intact:       a.packing_intact !== false,
           notes:                a.quantitative_notes ?? "",
+          is_final_grn:         a.is_final_grn ?? false,
+          store_confirmed:      a.store_confirmed ?? false,
+          store_confirmed_by:   a.store_confirmed_by ?? null,
         };
       })
     );
@@ -979,7 +1091,12 @@ export default function GRNDetail() {
     setS2InspectedBy(g.quality_completed_by ?? "");
     setS2ApprovedBy(g.qc_approved_by ?? "");
     setS2Remarks(g.quality_remarks ?? "");
-    setIsFinalGrn(g.is_final_grn ?? false);
+    // Initialize per-line Final GRN from line items (fall back to GRN-level flag)
+    const perLine: Record<string, boolean> = {};
+    items.forEach((item) => {
+      perLine[item.id ?? ""] = (item as any).is_final_grn ?? g.is_final_grn ?? false;
+    });
+    setFinalGrnPerLine(perLine);
     setScrapReturned(g.scrap_returned ?? false);
     setScrapNotes(g.scrap_notes ?? "");
   }, [grn]);
@@ -1088,11 +1205,20 @@ export default function GRNDetail() {
         reference_drawing:    null,
         qc_notes:             null,
       }));
+      const autoFinal = new Set<string>(
+        (grn?.line_items ?? [])
+          .filter((item) => ["bought_out", "consumable", "service"].includes(lineItemTypes?.[(item as any).drawing_number ?? ""] ?? ""))
+          .map((item) => item.id ?? "")
+      );
+      const anyFinalGrn = Object.values(finalGrnPerLine).some(v => v) || autoFinal.size > 0;
+      // Build the per-line map including auto-final lines
+      const perLineForSave: Record<string, boolean> = { ...finalGrnPerLine };
+      autoFinal.forEach(lid => { perLineForSave[lid] = true; });
       await saveQualityStage(
         id!, lines, s2InspectedBy, s2Remarks || null, s2Date,
-        s2ApprovedBy || null, isFinalGrn, finalGrnReason || null
+        s2ApprovedBy || null, anyFinalGrn, finalGrnReason || null, perLineForSave
       );
-      await logAudit("grn", id!, isFinalGrn ? "GRN Stage 2 Complete — Final GRN" : "GRN Stage 2 Complete");
+      await logAudit("grn", id!, anyFinalGrn ? "GRN Stage 2 Complete — Final GRN" : "GRN Stage 2 Complete");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["grn-stages", id] });
@@ -1100,32 +1226,11 @@ export default function GRNDetail() {
       queryClient.invalidateQueries({ queryKey: ["pending-qc-grns"] });
       toast({
         title: "Quality inspection complete",
-        description: isFinalGrn ? "GRN is awaiting store confirmation." : "GRN is now closed.",
+        description: (Object.values(finalGrnPerLine).some(v => v) || (grn?.line_items ?? []).some((item) => ["bought_out","consumable","service"].includes(lineItemTypes?.[(item as any).drawing_number ?? ""] ?? ""))) ? "GRN is awaiting store confirmation." : "GRN is now closed.",
       });
     },
     onError: (err: any) =>
       toast({ title: "Error saving Stage 2", description: err.message, variant: "destructive" }),
-  });
-
-  const storeMutation = useMutation({
-    mutationFn: async () => {
-      if (!storeConfirmedBy.trim()) throw new Error("Confirmed By is required");
-      await storeConfirmGRN(id!, {
-        confirmedBy: storeConfirmedBy,
-        confirmedAt: storeDateStr,
-        location: storeLocation || null,
-        notes: storeNotes || null,
-      });
-      await logAudit("grn", id!, "Store receipt confirmed", { confirmedBy: storeConfirmedBy, location: storeLocation });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["grn-stages", id] });
-      queryClient.invalidateQueries({ queryKey: ["grns"] });
-      setStoreDialogOpen(false);
-      toast({ title: "Store receipt confirmed", description: "GRN is now closed." });
-    },
-    onError: (err: any) =>
-      toast({ title: "Error confirming store receipt", description: err.message, variant: "destructive" }),
   });
 
   // ── Handlers ──────────────────────────────────────────────────────────────
@@ -1250,10 +1355,21 @@ export default function GRNDetail() {
   const s1Done    = ["quality_pending", "quality_done", "closed", "awaiting_store"].includes(stage);
   const s2Visible = ["quality_pending", "quality_done", "closed", "awaiting_store"].includes(stage);
   const s2Done    = ["quality_done", "closed", "awaiting_store"].includes(stage);
+
+  // ── Per-line Final GRN derived values ─────────────────────────────────────
+  const autoFinalLines = new Set<string>(
+    (grn.line_items ?? [])
+      .filter((item) => ["bought_out", "consumable", "service"].includes(lineItemTypes?.[(item as any).drawing_number ?? ""] ?? ""))
+      .map((item) => item.id ?? "")
+  );
+  const isFinalGrn = (grn.line_items ?? []).some((item) => {
+    const lineId = item.id ?? "";
+    return autoFinalLines.has(lineId) || (finalGrnPerLine[lineId] ?? false);
+  });
   const showStorePanel = stage === "awaiting_store" && !g.store_confirmed;
   const s1Editable = (!s1Done || s1Editing) && !isDeletedOrCancelled;
 
-  const qtyMismatches = s1Lines.filter((l) => l.received_qty > 0 && l.received_qty !== l.po_quantity);
+  const overQtyLines  = s1Lines.filter((l) => l.received_qty > 0 && l.pending_quantity > 0 && l.received_qty > l.pending_quantity);
   const ncItemsWithData = ncSummaries.filter((s) => s.non_conforming_qty > 0);
 
   // For QCMeasurementEditor lineItems
@@ -1318,21 +1434,6 @@ export default function GRNDetail() {
         <ChevronLeft className="h-4 w-4" /> Back to GRN Register
       </button>
 
-      {/* ── Deleted / Cancelled banner ── */}
-      {((grn as any).status === 'deleted' || (grn as any).status === 'cancelled') && (
-        <div className="no-print rounded-lg border border-red-200 bg-red-50 p-4 flex gap-3">
-          <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-semibold text-red-800 capitalize">
-              This GRN has been {(grn as any).status}
-            </p>
-            <p className="text-sm text-red-700 mt-0.5">
-              This document is read-only and cannot be edited. All stage actions are disabled.
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* ── Header ── */}
       <div className="paper-card space-y-4 no-print">
         <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -1377,6 +1478,14 @@ export default function GRNDetail() {
         </div>
       </div>
 
+      {/* ── Deleted / Cancelled banner ── */}
+      {isDeletedOrCancelled && (
+        <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 flex items-center gap-2 no-print">
+          <AlertTriangle className="h-4 w-4 text-red-600 flex-shrink-0" />
+          <span className="text-red-800 text-sm font-medium">This GRN has been deleted and is read-only. No changes can be made.</span>
+        </div>
+      )}
+
       {/* ═══════════════════════════════════════════════════════════════════
           STAGE 1 — GOODS RECEIPT
       ═══════════════════════════════════════════════════════════════════ */}
@@ -1401,15 +1510,8 @@ export default function GRNDetail() {
         </div>
 
         <div className="px-5 py-4 space-y-4">
-          {qtyMismatches.length > 0 && s1Editable && (
-            <div className="flex items-center gap-2 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 text-xs text-yellow-800">
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-              {qtyMismatches.length} item{qtyMismatches.length > 1 ? "s" : ""} with quantity discrepancies
-            </div>
-          )}
-
           {s1Editable ? (
-            <Stage1Table lines={s1Lines} onChange={updateS1Line} />
+            <Stage1Table lines={s1Lines} onChange={updateS1Line} disabled={isDeletedOrCancelled} overQtyIds={overQtyLines.map(l => l.id)} />
           ) : (
             <Stage1ReadOnly lines={s1Lines} />
           )}
@@ -1529,7 +1631,7 @@ export default function GRNDetail() {
                 <Label className="text-xs font-medium text-slate-600">Receipt Notes</Label>
                 <Textarea value={s1Notes} onChange={(e) => setS1Notes(e.target.value)} className="mt-1 text-sm" rows={2} placeholder="Overall notes for this delivery (optional)…" />
               </div>
-              <Button onClick={handleS1Save} disabled={s1Mutation.isPending || isDeletedOrCancelled} className="w-full bg-blue-600 hover:bg-blue-700 text-white">
+              <Button onClick={handleS1Save} disabled={s1Mutation.isPending || isDeletedOrCancelled || overQtyLines.length > 0} className="w-full bg-blue-600 hover:bg-blue-700 text-white">
                 {s1Mutation.isPending ? "Saving…" : "Save — Stage 1 Complete"}
               </Button>
             </>
@@ -1569,7 +1671,7 @@ export default function GRNDetail() {
           </div>
 
           <div className="px-5 py-4 space-y-5">
-            {!s2Done ? (
+            {(!s2Done && !isDeletedOrCancelled) ? (
               <>
                 {/* QC measurement tables per item */}
                 <QCMeasurementEditor
@@ -1578,6 +1680,14 @@ export default function GRNDetail() {
                   onAddRow={addQCRow}
                   onChangeRow={changeQCRow}
                   onDeleteRow={deleteQCRow}
+                  disabled={isDeletedOrCancelled}
+                  finalGrnPerLine={finalGrnPerLine}
+                  autoFinalLines={autoFinalLines}
+                  isDeletedOrCancelled={isDeletedOrCancelled}
+                  setPendingUntickLineId={setPendingUntickLineId}
+                  setShowUntickDialog={setShowUntickDialog}
+                  setFinalGrnPerLine={setFinalGrnPerLine}
+                  isSavedFinalGrn={g.is_final_grn ?? false}
                 />
 
                 {/* NC Summary — only for items with non_conforming rows */}
@@ -1697,26 +1807,6 @@ export default function GRNDetail() {
                   </div>
                 )}
 
-                {/* Final GRN checkbox */}
-                <div className="flex items-center gap-2 pt-1">
-                  <input
-                    type="checkbox"
-                    id="is-final-grn"
-                    checked={isFinalGrn}
-                    onChange={(e) => {
-                      if (!e.target.checked && g.is_final_grn) {
-                        setShowUntickDialog(true);
-                      } else {
-                        setIsFinalGrn(e.target.checked);
-                      }
-                    }}
-                    className="h-4 w-4 accent-purple-600 cursor-pointer"
-                  />
-                  <label htmlFor="is-final-grn" className="text-xs font-medium text-slate-700 cursor-pointer">
-                    Mark as Final GRN — goods will move to store after QC
-                  </label>
-                </div>
-
                 <Button
                   onClick={handleS2Save}
                   disabled={s2Mutation.isPending || isDeletedOrCancelled}
@@ -1745,10 +1835,13 @@ export default function GRNDetail() {
                       <Button
                         variant="destructive"
                         onClick={async () => {
-                          setIsFinalGrn(false);
+                          if (pendingUntickLineId) {
+                            setFinalGrnPerLine(prev => ({ ...prev, [pendingUntickLineId]: false }));
+                          }
                           setFinalGrnReason(untickReason);
                           await logAudit("grn", id!, "Final GRN status removed", { reason: untickReason });
                           setUntickReason("");
+                          setPendingUntickLineId(null);
                           setShowUntickDialog(false);
                         }}
                       >
@@ -1836,73 +1929,26 @@ export default function GRNDetail() {
         </div>
       )}
 
-      {/* ── Store Confirmation Panel ── */}
+      {/* ── Store Confirmation Panel (read-only — confirm from queue) ── */}
       {showStorePanel && (
         <div className="border border-amber-200 bg-amber-50/30 rounded-xl overflow-hidden no-print">
           <div className="px-5 py-4 flex items-start gap-3">
             <PackageCheck className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
             <div className="flex-1">
               <h3 className="text-sm font-bold text-amber-900">Awaiting Store Receipt Confirmation</h3>
-              <p className="text-xs text-amber-700 mt-0.5">QC has cleared these items. Inward team must confirm physical receipt into store.</p>
+              <p className="text-xs text-amber-700 mt-0.5">QC has cleared these items. Confirm physical receipt from the Store Receipt Queue.</p>
             </div>
             <Button
               size="sm"
-              className="bg-amber-600 hover:bg-amber-700 text-white shrink-0"
-              onClick={() => setStoreDialogOpen(true)}
+              variant="outline"
+              className="border-amber-400 text-amber-800 hover:bg-amber-50 shrink-0"
+              onClick={() => navigate("/storekeeper-queue")}
             >
-              Confirm Store Receipt
+              Go to Queue
             </Button>
           </div>
         </div>
       )}
-
-      {/* Store confirmation dialog */}
-      <Dialog open={storeDialogOpen} onOpenChange={setStoreDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Confirm Store Receipt</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            {ncSummaries.filter((s) => s.conforming_qty > 0).map((nc) => {
-              const item = s1Lines.find((l) => l.id === nc.lineItemId);
-              if (!item) return null;
-              const unit = (grn.line_items ?? []).find((li) => li.id === nc.lineItemId)?.unit ?? "";
-              return (
-                <div key={nc.lineItemId} className="text-xs text-slate-600 flex justify-between">
-                  <span>{item.description}</span>
-                  <span className="font-semibold">{nc.conforming_qty} {unit}</span>
-                </div>
-              );
-            })}
-            <div>
-              <Label className="text-xs font-medium text-slate-600">Received By (Inward to Store) <span className="text-red-400">*</span></Label>
-              <Input value={storeConfirmedBy} onChange={(e) => setStoreConfirmedBy(e.target.value)} className="mt-1 text-sm" placeholder="Full name" />
-            </div>
-            <div>
-              <Label className="text-xs font-medium text-slate-600">Date Received in Store <span className="text-red-400">*</span></Label>
-              <Input type="date" value={storeDateStr} onChange={(e) => setStoreDateStr(e.target.value)} className="mt-1 text-sm" />
-            </div>
-            <div>
-              <Label className="text-xs font-medium text-slate-600">Physical Location / Rack</Label>
-              <Input value={storeLocation} onChange={(e) => setStoreLocation(e.target.value)} className="mt-1 text-sm" placeholder="e.g. Rack A3, Bin 7" />
-            </div>
-            <div>
-              <Label className="text-xs font-medium text-slate-600">Notes</Label>
-              <Textarea value={storeNotes} onChange={(e) => setStoreNotes(e.target.value)} className="mt-1 text-sm" rows={2} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setStoreDialogOpen(false)}>Cancel</Button>
-            <Button
-              className="bg-amber-600 hover:bg-amber-700 text-white"
-              disabled={storeMutation.isPending}
-              onClick={() => storeMutation.mutate()}
-            >
-              {storeMutation.isPending ? "Saving…" : "Confirm Receipt"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* ── Audit trail ── */}
       <div className="no-print">

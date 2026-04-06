@@ -11,6 +11,7 @@ const RETURNABLE_DC_TYPES = new Set([
 export interface DCLineItem {
   id?: string;
   serial_number: number;
+  item_id?: string | null;
   item_code?: string;
   description: string;
   drawing_number?: string;
@@ -297,6 +298,7 @@ export async function createDeliveryChallan({ dc, lineItems }: CreateDCData) {
     const itemsToInsert = lineItems.map((item) => ({
       company_id: companyId,
       dc_id: (newDC as any).id, serial_number: item.serial_number, description: item.description,
+      item_id: item.item_id || null,
       item_code: item.item_code || null, hsn_sac_code: item.hsn_sac_code || null,
       unit: item.unit || "NOS", quantity: item.quantity || 0, rate: item.rate || 0, amount: item.amount || 0,
       drawing_number: item.drawing_number || null, remarks: item.remarks || null,
@@ -346,6 +348,7 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
     const itemsToInsert = lineItems.map((item) => ({
       company_id: companyId,
       dc_id: id, serial_number: item.serial_number, description: item.description,
+      item_id: item.item_id || null,
       item_code: item.item_code || null, hsn_sac_code: item.hsn_sac_code || null,
       unit: item.unit || "NOS", quantity: item.quantity || 0, rate: item.rate || 0, amount: item.amount || 0,
       drawing_number: item.drawing_number || null, remarks: item.remarks || null,

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, ChevronDown, Info, ChevronLeft, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Plus, Trash2, ChevronDown, Info, ChevronLeft, AlertTriangle } from "lucide-react";
 import { ItemSuggest } from "@/components/ItemSuggest";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,7 +28,7 @@ import {
   type DCLineItem,
 } from "@/lib/delivery-challans-api";
 import { getCompanyId } from "@/lib/auth-helpers";
-import { createJobWork, getNextJCNumber } from "@/lib/job-works-api";
+import { JobCardCreationDialog } from "@/components/JobCardCreationDialog";
 import { fetchProcessingRoute, fetchProcessingRouteAll, fetchJigsForDrawing, fetchStageVendors, fetchMouldItemsForDrawing, type ProcessingRoute, type JigMasterRecord, type MouldItem } from "@/lib/dc-intelligence-api";
 import { formatCurrency, amountInWords } from "@/lib/gst-utils";
 import { getGSTType, calculateLineTax, round2, resolveStateCode, type GSTType } from "@/lib/tax-utils";
@@ -135,22 +135,7 @@ export default function DeliveryChallanForm() {
   const [lineItems, setLineItems] = useState<DCLineItem[]>([emptyLineItem(1)]);
   const [successDialogOpen, setSuccessDialogOpen] = useState(false);
   const [savedDCId, setSavedDCId] = useState<string | null>(null);
-  // Job Card creation dialog
-  type JCItemState = {
-    lineItem: DCLineItem;
-    itemId: string | null;
-    routes: ProcessingRoute[];
-    selectedStageNumber: number | null;
-    skip: boolean;
-    existingMode: boolean; // stage 2+ flow
-    existingJCNumber: string;
-    useExisting: boolean;
-  };
   const [jcDialogOpen, setJcDialogOpen] = useState(false);
-  const [jcItems, setJcItems] = useState<JCItemState[]>([]);
-  const [jcCreating, setJcCreating] = useState(false);
-  const [jcResults, setJcResults] = useState<{ itemCode: string; jcNumber: string }[]>([]);
-  const [jcDone, setJcDone] = useState(false);
   const [vehicleNumber, setVehicleNumber] = useState("");
   const [driverName, setDriverName] = useState("");
   const [driverContact, setDriverContact] = useState("");
@@ -420,6 +405,7 @@ export default function DeliveryChallanForm() {
           return {
             ...i,
             serial_number: idx + 1,
+            item_id: i.item_id ?? itemIdByIndex.get(idx) ?? null,
             qty_nos: i.quantity,
             stage_number: selectedStage?.stage_number ?? (i as any).stage_number ?? null,
             stage_name: selectedStage?.process_name ?? (i as any).stage_name ?? null,
@@ -449,7 +435,13 @@ export default function DeliveryChallanForm() {
       queryClient.invalidateQueries({ queryKey: ["dc-stats"] });
       if (status === "issued") {
         setSavedDCId(dcId as string);
-        setSuccessDialogOpen(true);
+        const isJW = dcType === "job_work_out" || dcType === "job_work_143";
+        if (isJW) {
+          // Auto-open JC creation dialog for job work DCs
+          setTimeout(() => setJcDialogOpen(true), 0);
+        } else {
+          setSuccessDialogOpen(true);
+        }
       } else {
         toast({ title: "DC saved", description: `DC ${dcNumber} saved as draft.` });
         navigate("/delivery-challans");
@@ -513,68 +505,6 @@ export default function DeliveryChallanForm() {
       }
     }
     saveMutation.mutate(status);
-  };
-
-  const openJCDialog = () => {
-    const initial: JCItemState[] = lineItems
-      .filter(li => li.description?.trim() || li.item_code?.trim())
-      .map((li, idx) => ({
-        lineItem: li,
-        itemId: (li as any).item_id ?? itemIdByIndex.get(idx) ?? null,
-        routes: [],
-        selectedStageNumber: null,
-        skip: false,
-        existingMode: false,
-        existingJCNumber: "",
-        useExisting: false,
-      }));
-    setJcItems(initial);
-    setJcResults([]);
-    setJcDone(false);
-    setSuccessDialogOpen(false);
-    setJcDialogOpen(true);
-    // Fetch routes per item
-    initial.forEach((item, idx) => {
-      if (!item.itemId) return;
-      fetchProcessingRouteAll(item.itemId).then(routes => {
-        setJcItems(prev => {
-          const updated = [...prev];
-          updated[idx] = { ...updated[idx], routes };
-          return updated;
-        });
-      }).catch(() => {});
-    });
-  };
-
-  const handleCreateJC = async () => {
-    setJcCreating(true);
-    const results: { itemCode: string; jcNumber: string }[] = [];
-    try {
-      for (const item of jcItems) {
-        if (item.skip || item.selectedStageNumber === null) continue;
-        if (item.existingMode && item.useExisting && item.existingJCNumber.trim()) {
-          results.push({ itemCode: item.lineItem.item_code || item.lineItem.description || '?', jcNumber: item.existingJCNumber.trim() });
-          continue;
-        }
-        const jcNumber = await getNextJCNumber();
-        await createJobWork({
-          jc_number: jcNumber,
-          item_id: item.itemId ?? undefined,
-          item_code: item.lineItem.item_code || undefined,
-          item_description: item.lineItem.description || undefined,
-          quantity_original: Number(item.lineItem.quantity) || 1,
-          unit: item.lineItem.unit || "NOS",
-          notes: `Created from DC ${dcNumber}. Stage: ${item.selectedStageNumber}`,
-        } as any);
-        results.push({ itemCode: item.lineItem.item_code || item.lineItem.description || '?', jcNumber });
-      }
-      setJcResults(results);
-      setJcDone(true);
-    } catch (err: any) {
-      toast({ title: "Error creating job cards", description: err.message, variant: "destructive" });
-    } finally {
-      setJcCreating(false);
-    }
   };
 
   const isJobWorkDC = dcType === "job_work_out" || dcType === "job_work_143";
@@ -1379,7 +1309,7 @@ export default function DeliveryChallanForm() {
           <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button variant="outline" onClick={() => navigate(`/delivery-challans/${savedDCId}`)}>View DC</Button>
             {isJobWorkDC && (
-              <Button variant="outline" onClick={openJCDialog}>Create Job Cards →</Button>
+              <Button variant="outline" onClick={() => setJcDialogOpen(true)}>Create Job Cards →</Button>
             )}
             <Button onClick={() => { setSuccessDialogOpen(false); navigate("/delivery-challans/new"); }}>Create Another</Button>
           </DialogFooter>
@@ -1387,121 +1317,16 @@ export default function DeliveryChallanForm() {
       </Dialog>
 
       {/* Job Cards Creation Dialog */}
-      <Dialog open={jcDialogOpen} onOpenChange={v => { if (!jcCreating) setJcDialogOpen(v); }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Create Job Cards</DialogTitle>
-            <DialogDescription>Select the processing stage for each item sent for job work.</DialogDescription>
-          </DialogHeader>
-
-          {jcDone ? (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 text-emerald-700">
-                <CheckCircle2 className="h-5 w-5" />
-                <span className="font-medium">{jcResults.length} job card{jcResults.length !== 1 ? 's' : ''} created</span>
-              </div>
-              <div className="space-y-1">
-                {jcResults.map((r, i) => (
-                  <div key={i} className="flex items-center justify-between text-sm border rounded px-3 py-1.5">
-                    <span className="font-mono text-xs text-muted-foreground">{r.jcNumber}</span>
-                    <span className="font-medium">{r.itemCode}</span>
-                  </div>
-                ))}
-              </div>
-              <DialogFooter className="gap-2">
-                <Button variant="outline" onClick={() => { setJcDialogOpen(false); navigate("/delivery-challans/new"); }}>Create Another DC</Button>
-                <Button onClick={() => navigate("/job-works")}>View Job Cards →</Button>
-              </DialogFooter>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {jcItems.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-4">No line items to create job cards for.</p>
-              )}
-              {jcItems.map((item, idx) => (
-                <div key={idx} className={`border rounded-lg p-3 space-y-2 ${item.skip ? 'opacity-50' : ''}`}>
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <span className="font-medium text-sm">{item.lineItem.item_code || '—'}</span>
-                      {item.lineItem.description && <span className="text-xs text-muted-foreground ml-2">{item.lineItem.description}</span>}
-                      <span className="text-xs text-muted-foreground ml-2">× {item.lineItem.quantity} {item.lineItem.unit}</span>
-                    </div>
-                    <button
-                      className="text-xs text-muted-foreground underline hover:text-foreground"
-                      onClick={() => setJcItems(prev => { const u = [...prev]; u[idx] = { ...u[idx], skip: !u[idx].skip }; return u; })}
-                    >
-                      {item.skip ? 'Undo skip' : 'Skip'}
-                    </button>
-                  </div>
-
-                  {!item.skip && (
-                    <>
-                      {item.routes.length === 0 ? (
-                        <p className="text-xs text-muted-foreground italic">No BOM processing route found — job card will be created with no stage.</p>
-                      ) : (
-                        <div className="flex flex-wrap gap-1.5">
-                          {item.routes.map(route => (
-                            <button
-                              key={route.id}
-                              onClick={() => setJcItems(prev => {
-                                const u = [...prev];
-                                u[idx] = { ...u[idx], selectedStageNumber: route.stage_number, existingMode: route.stage_number > 1 };
-                                return u;
-                              })}
-                              className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
-                                item.selectedStageNumber === route.stage_number
-                                  ? 'bg-slate-900 text-white border-slate-900'
-                                  : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'
-                              }`}
-                            >
-                              {route.stage_number}. {route.process_name}
-                              <span className="ml-1 opacity-60">{route.stage_type === 'internal' ? '(internal)' : '(vendor)'}</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      {item.selectedStageNumber !== null && item.selectedStageNumber > 1 && (
-                        <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded text-xs space-y-2">
-                          <p className="font-medium text-amber-800">Stage {item.selectedStageNumber} — does an existing job card cover earlier stages?</p>
-                          <div className="flex gap-3">
-                            <label className="flex items-center gap-1.5 cursor-pointer">
-                              <input type="radio" name={`jc-mode-${idx}`} checked={item.existingMode && item.useExisting} onChange={() => setJcItems(prev => { const u = [...prev]; u[idx] = { ...u[idx], useExisting: true }; return u; })} />
-                              <span>Yes, link existing JC</span>
-                            </label>
-                            <label className="flex items-center gap-1.5 cursor-pointer">
-                              <input type="radio" name={`jc-mode-${idx}`} checked={!item.useExisting} onChange={() => setJcItems(prev => { const u = [...prev]; u[idx] = { ...u[idx], useExisting: false }; return u; })} />
-                              <span>No, create new JC</span>
-                            </label>
-                          </div>
-                          {item.useExisting && (
-                            <input
-                              className="w-full border rounded px-2 py-1 text-xs"
-                              placeholder="JC number (e.g. JW-0042)"
-                              value={item.existingJCNumber}
-                              onChange={e => setJcItems(prev => { const u = [...prev]; u[idx] = { ...u[idx], existingJCNumber: e.target.value }; return u; })}
-                            />
-                          )}
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              ))}
-
-              <DialogFooter className="gap-2 pt-2">
-                <Button variant="outline" onClick={() => { setJcDialogOpen(false); navigate(`/delivery-challans/${savedDCId}`); }}>Skip — View DC</Button>
-                <Button
-                  onClick={handleCreateJC}
-                  disabled={jcCreating || jcItems.every(i => i.skip || i.selectedStageNumber === null)}
-                >
-                  {jcCreating ? 'Creating…' : 'Create Job Cards'}
-                </Button>
-              </DialogFooter>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <JobCardCreationDialog
+        open={jcDialogOpen}
+        onOpenChange={setJcDialogOpen}
+        dcId={savedDCId || ""}
+        dcNumber={dcNumber}
+        lineItems={lineItems}
+        partyId={partyId}
+        partyName={selectedParty?.name ?? null}
+        itemIdByIndex={itemIdByIndex}
+      />
     </div>
   );
 }

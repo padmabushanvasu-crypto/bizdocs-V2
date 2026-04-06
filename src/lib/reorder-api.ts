@@ -277,7 +277,7 @@ export async function fetchReorderAlerts(): Promise<ReorderAlert[]> {
       .from("purchase_orders")
       .select("id, po_number, delivery_date")
       .eq("company_id", companyId)
-      .not("status", "in", "(received,cancelled,closed)");
+      .in("status", ["draft", "issued", "partially_received"]);
 
     const openPOIds = (openPOs || []).map((p: any) => p.id);
     const openPOMap: Record<string, { po_number: string; delivery_date: string | null }> = {};
@@ -334,7 +334,7 @@ export async function fetchReorderAlerts(): Promise<ReorderAlert[]> {
 export async function fetchReorderSummary(): Promise<{ critical: number; warning: number }> {
   const { data, error } = await (supabase as any)
     .from("stock_status")
-    .select("stock_status");
+    .select("*");
 
   if (error) return { critical: 0, warning: 0 };
 

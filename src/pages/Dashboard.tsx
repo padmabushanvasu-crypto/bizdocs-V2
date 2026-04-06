@@ -29,6 +29,7 @@ interface DashboardData {
   warningStockCount: number;
   lockedStockCount: number;
   overduePOCount: number;
+  criticalItems: Array<{ description: string; item_code: string; current_stock: number }>;
 }
 
 interface ReadyToShipRow {
@@ -67,10 +68,10 @@ async function fetchDashboardData(): Promise<DashboardData> {
       .from("items")
       .select("item_type, current_stock, stock_finished_goods, min_finished_stock, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, min_stock, stock_alert_level")
       .eq("status", "active"),
-    supabase
+    (supabase as any)
       .from("purchase_orders")
       .select("*", { count: "exact", head: true })
-      .not("status", "in", "(cancelled,closed,received)")
+      .in("status", ["draft", "issued", "partially_received"])
       .lt("delivery_date", todayStr),
   ]);
 
@@ -106,12 +107,20 @@ async function fetchDashboardData(): Promise<DashboardData> {
   const needsBuildingCount = items.filter(
     (i) => i.item_type === "finished_good" && (i.stock_finished_goods ?? 0) < (i.min_finished_stock ?? 0) && (i.min_finished_stock ?? 0) > 0
   ).length;
-  // Phase 13: critical/warning/locked counts using stock_alert_level
+  // Phase 13: critical/warning/locked counts — exclude assembly/component types from reorder alerts
+  const REORDER_EXCLUDE = ['sub_assembly', 'finished_good', 'component'];
   const criticalStockCount = items.filter(
-    (i) => i.stock_alert_level === 'critical' && i.item_type !== 'sub_assembly' && i.item_type !== 'finished_good'
+    (i) => i.stock_alert_level === 'critical' && !REORDER_EXCLUDE.includes(i.item_type)
   ).length;
-  const warningStockCount  = items.filter((i) => i.stock_alert_level === 'warning').length;
+  const warningStockCount  = items.filter(
+    (i) => i.stock_alert_level === 'warning' && !REORDER_EXCLUDE.includes(i.item_type)
+  ).length;
   const lockedStockCount   = items.filter((i) => i.stock_alert_level === 'locked').length;
+  // Top critical items for display
+  const criticalItems = items
+    .filter((i) => i.stock_alert_level === 'critical' && !REORDER_EXCLUDE.includes(i.item_type))
+    .slice(0, 5)
+    .map((i) => ({ description: i.description ?? i.item_code ?? '—', item_code: i.item_code ?? '', current_stock: i.current_stock ?? 0 }));
 
   const overduePOCount = overduePOsRes.count ?? 0;
 
@@ -120,7 +129,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
     openPOValue, overdueDCCount,
     rawMaterialCount, componentCount, finishedGoodCount, zeroStockCount,
     needsBuildingCount, criticalStockCount, warningStockCount, lockedStockCount,
-    overduePOCount,
+    overduePOCount, criticalItems,
   };
 }
 
@@ -463,7 +472,7 @@ export default function Dashboard() {
                 label="Awaiting Store"
                 count={awaitingStoreCount}
                 colour="amber"
-                onClick={() => navigate('/grn?stage=awaiting_store')}
+                onClick={() => navigate('/storekeeper-queue')}
               />
             )}
             {fatPending > 0 && (
@@ -506,13 +515,27 @@ export default function Dashboard() {
             {(dashData?.criticalStockCount ?? 0) > 0 || (dashData?.warningStockCount ?? 0) > 0 || (dashData?.lockedStockCount ?? 0) > 0 ? (
               <div className="mb-2 space-y-1">
                 {(dashData?.criticalStockCount ?? 0) > 0 && (
-                  <button
-                    className="w-full flex items-center justify-between hover:bg-red-50 -mx-1 px-1 rounded transition-colors"
-                    onClick={() => navigate("/stock-register?filter=critical")}
-                  >
-                    <span className="text-xs font-semibold text-red-700 uppercase tracking-wider">Reorder Now</span>
-                    <span className="text-lg font-extrabold font-mono tabular-nums text-red-600">{dashData?.criticalStockCount}</span>
-                  </button>
+                  <div>
+                    <button
+                      className="w-full flex items-center justify-between hover:bg-red-50 -mx-1 px-1 rounded transition-colors"
+                      onClick={() => navigate("/stock-register?filter=critical")}
+                    >
+                      <span className="text-xs font-semibold text-red-700 uppercase tracking-wider">Reorder Now</span>
+                      <span className="text-lg font-extrabold font-mono tabular-nums text-red-600">{dashData?.criticalStockCount}</span>
+                    </button>
+                    {(dashData?.criticalItems ?? []).length > 0 && (
+                      <div className="mt-1 space-y-0.5 pl-1">
+                        {(dashData?.criticalItems ?? []).map((item, i) => (
+                          <div key={i} className="flex items-center justify-between text-[10px] text-slate-500">
+                            <span className="truncate max-w-[140px]">{item.item_code || item.description}</span>
+                            <span className={`font-mono font-semibold ml-2 shrink-0 ${item.current_stock === 0 ? 'text-red-600' : 'text-amber-600'}`}>
+                              {item.current_stock === 0 ? 'Zero' : item.current_stock}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
                 {(dashData?.warningStockCount ?? 0) > 0 && (
                   <button

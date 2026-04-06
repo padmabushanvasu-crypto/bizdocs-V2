@@ -65,6 +65,8 @@ function DcGrnInner() {
     return opts;
   }, []);
 
+  const [showDeleted, setShowDeleted] = useState(false);
+
   const [filters, setFilters] = useState<GRNFilters>({
     search: "",
     status: "all",
@@ -74,8 +76,8 @@ function DcGrnInner() {
   });
 
   const { data, isLoading } = useQuery({
-    queryKey: ["dc-grns", filters],
-    queryFn: () => fetchDcGrns(filters),
+    queryKey: ["dc-grns", filters, showDeleted],
+    queryFn: () => fetchDcGrns({ ...filters, showDeleted }),
   });
 
   const grns = data?.data ?? [];
@@ -100,9 +102,19 @@ function DcGrnInner() {
           <h1 className="text-2xl font-bold text-slate-900">DC Returns — Goods Returned from Vendors</h1>
           <p className="text-sm text-slate-500 mt-1">GRNs for goods returning from job work / delivery challans</p>
         </div>
-        <Button onClick={() => navigate("/dc-grn/new")} className="active:scale-[0.98] transition-transform flex-shrink-0">
-          <Plus className="h-4 w-4 mr-1" /> New DC-GRN
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant={showDeleted ? "secondary" : "outline"}
+            size="sm"
+            onClick={() => setShowDeleted(v => !v)}
+          >
+            <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+            {showDeleted ? "Hide Deleted" : "Show Deleted"}
+          </Button>
+          <Button onClick={() => navigate("/dc-grn/new")} className="active:scale-[0.98] transition-transform flex-shrink-0">
+            <Plus className="h-4 w-4 mr-1" /> New DC-GRN
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -161,11 +173,12 @@ function DcGrnInner() {
               ) : (
                 grns.map((grn) => {
                   const g = grn as any;
+                  const isDeletedRow = grn.status === 'deleted';
                   return (
                     <tr
                       key={grn.id}
-                      className="hover:bg-muted/50 cursor-pointer transition-colors"
-                      onClick={() => navigate(`/dc-grn/${grn.id}`)}
+                      className={`hover:bg-muted/50 transition-colors ${isDeletedRow ? 'opacity-50 cursor-default' : 'cursor-pointer'}`}
+                      onClick={() => !isDeletedRow && navigate(`/dc-grn/${grn.id}`)}
                     >
                       <td>
                         {g.linked_dc_number ? (
@@ -191,9 +204,13 @@ function DcGrnInner() {
                         {(g as any).items_count ?? (g as any).line_items_count ?? "—"}
                       </td>
                       <td>
-                        <span className={STATUS_CLASS[grn.status] || STATUS_CLASS.draft}>
-                          {STATUS_LABEL[grn.status] || grn.status}
-                        </span>
+                        {isDeletedRow ? (
+                          <span className="bg-red-50 text-red-700 border border-red-200 text-xs font-medium px-2.5 py-0.5 rounded-full">Deleted</span>
+                        ) : (
+                          <span className={STATUS_CLASS[grn.status] || STATUS_CLASS.draft}>
+                            {STATUS_LABEL[grn.status] || grn.status}
+                          </span>
+                        )}
                       </td>
                       <td className="text-sm text-muted-foreground tabular-nums">
                         {grn.status !== "verified" ? `${daysOpen(grn.grn_date)}d` : <span className="text-green-600 font-medium">Done</span>}

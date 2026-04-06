@@ -71,6 +71,7 @@ import SubAssemblyWorkOrders from "@/pages/SubAssemblyWorkOrders";
 import FinishedGoodWorkOrders from "@/pages/FinishedGoodWorkOrders";
 import AssemblyWorkOrderDetail from "@/pages/AssemblyWorkOrderDetail";
 import StorekeeperQueue from "@/pages/StorekeeperQueue";
+import GrnStoreQueue from "@/pages/GrnStoreQueue";
 import GrnQueue from "@/pages/GrnQueue";
 import QcQueue from "@/pages/QcQueue";
 import UserManagement from "@/pages/UserManagement";
@@ -163,6 +164,7 @@ const App = () => (
               <Route path="/finished-good-work-orders" element={<FinishedGoodWorkOrders />} />
               <Route path="/assembly-work-orders/:id" element={<AssemblyWorkOrderDetail />} />
               <Route path="/storekeeper" element={<StorekeeperQueue />} />
+              <Route path="/storekeeper-queue" element={<GrnStoreQueue />} />
               <Route path="/grn-queue" element={<GrnQueue />} />
               <Route path="/qc-queue" element={<QcQueue />} />
               <Route path="/settings/users" element={<UserManagement />} />

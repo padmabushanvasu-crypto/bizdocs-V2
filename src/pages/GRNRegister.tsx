@@ -84,6 +84,7 @@ function GRNRegisterInner() {
     return opts;
   }, []);
 
+  const [showDeleted, setShowDeleted] = useState(false);
   const [stageFilter, setStageFilter] = useState(searchParams.get('stage') ?? 'all');
   const [filters, setFilters] = useState<GRNFilters>({
     search: "",
@@ -126,14 +127,17 @@ function GRNRegisterInner() {
   });
 
   const grns = useMemo(() => {
-    let list = data?.data ?? [];
+    const allGrns = data?.data ?? [];
+    let list = showDeleted
+      ? allGrns
+      : allGrns.filter((g: any) => g.status !== "deleted" && g.grn_stage !== "cancelled");
     if (stageFilter === 'closed_accepted') {
       list = list.filter(g => (g as any).overall_quality_verdict === 'fully_accepted');
     } else if (stageFilter === 'closed_nonconforming') {
       list = list.filter(g => ['conditionally_accepted','partially_returned','returned'].includes((g as any).overall_quality_verdict ?? ''));
     }
     return list;
-  }, [data, stageFilter]);
+  }, [data, stageFilter, showDeleted]);
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -143,6 +147,9 @@ function GRNRegisterInner() {
           <p className="text-sm text-slate-500 mt-1">Record incoming material against POs</p>
         </div>
         <div className="flex flex-wrap gap-2 flex-shrink-0">
+          <Button variant={showDeleted ? "secondary" : "outline"} size="sm" onClick={() => setShowDeleted(d => !d)}>
+            <Trash2 className="h-3.5 w-3.5 mr-1" /> {showDeleted ? "Hide Deleted" : "Show Deleted"}
+          </Button>
           <Button variant="outline" onClick={() => exportToExcel(grns, GRN_EXPORT_COLS, `GRNs_${new Date().toISOString().split("T")[0]}.xlsx`, "GRNs")} disabled={grns.length === 0}>
             <Download className="h-4 w-4 mr-1" /> Export
           </Button>
@@ -227,33 +234,43 @@ function GRNRegisterInner() {
                   </td>
                 </tr>
               ) : (
-                grns.map((grn) => (
-                  <tr key={grn.id} className="hover:bg-muted/50 cursor-pointer transition-colors" onClick={() => navigate(`/grn/${grn.id}`)}>
-                    <td className="font-mono text-sm font-medium text-foreground">{grn.grn_number}</td>
-                    <td className="text-muted-foreground">{new Date(grn.grn_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</td>
-                    <td className="font-medium">{grn.vendor_name || "—"}</td>
-                    <td>
-                      {grn.po_number ? (
-                        <button className="font-mono text-xs text-primary hover:underline" onClick={(e) => { e.stopPropagation(); navigate(`/purchase-orders/${grn.po_id}`); }}>
-                          {grn.po_number}
-                        </button>
-                      ) : "—"}
-                    </td>
-                    <td className="text-right font-mono tabular-nums">{grn.total_accepted}</td>
-                    <td className="text-right font-mono tabular-nums">
-                      {grn.total_rejected > 0 ? <span className="text-destructive font-medium">{grn.total_rejected}</span> : grn.total_rejected}
-                    </td>
-                    <td><StageBadge grn={grn} /></td>
-                    <td>
-                      <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate(`/grn/${grn.id}`)}><Eye className="h-3.5 w-3.5" /></Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" disabled={(grn as any).status === "deleted"} onClick={() => deleteMutation.mutate(grn)}>
-                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                grns.map((grn) => {
+                  const isDeleted = (grn as any).status === 'deleted';
+                  return (
+                    <tr key={grn.id} className={`hover:bg-muted/50 transition-colors ${isDeleted ? 'opacity-50' : 'cursor-pointer'}`} onClick={() => !isDeleted && navigate(`/grn/${grn.id}`)}>
+                      <td className={`font-mono text-sm font-medium ${isDeleted ? 'line-through text-muted-foreground' : 'text-foreground'}`}>{grn.grn_number}</td>
+                      <td className="text-muted-foreground">{new Date(grn.grn_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</td>
+                      <td className="font-medium">{grn.vendor_name || "—"}</td>
+                      <td>
+                        {grn.po_number ? (
+                          <button className="font-mono text-xs text-primary hover:underline" onClick={(e) => { e.stopPropagation(); navigate(`/purchase-orders/${grn.po_id}`); }}>
+                            {grn.po_number}
+                          </button>
+                        ) : "—"}
+                      </td>
+                      <td className="text-right font-mono tabular-nums">{grn.total_accepted}</td>
+                      <td className="text-right font-mono tabular-nums">
+                        {grn.total_rejected > 0 ? <span className="text-destructive font-medium">{grn.total_rejected}</span> : grn.total_rejected}
+                      </td>
+                      <td>
+                        {isDeleted
+                          ? <span className="text-xs px-2.5 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200 line-through">Deleted</span>
+                          : <StageBadge grn={grn} />
+                        }
+                      </td>
+                      <td>
+                        <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate(`/grn/${grn.id}`)}><Eye className="h-3.5 w-3.5" /></Button>
+                          {!isDeleted && (
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => deleteMutation.mutate(grn)}>
+                              <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

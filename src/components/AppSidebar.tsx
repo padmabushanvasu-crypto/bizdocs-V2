@@ -43,6 +43,7 @@ import { fetchFatStats } from "@/lib/fat-api";
 import { fetchReorderSummary } from "@/lib/reorder-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { fetchAwoStats } from "@/lib/production-api";
+import { fetchAwaitingStoreCount } from "@/lib/grn-api";
 import { fetchDispatchStats } from "@/lib/dispatch-api";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -163,7 +164,7 @@ const RAIL_MODE_KEY = "bizdocs_sidebar_mode";
 
 const GROUP_PATHS: Record<string, string[]> = {
   "Daily Work":       ["/", "/wip-register", "/job-works", "/delivery-challans", "/dc-grn"],
-  "Production":       ["/sub-assembly-work-orders", "/finished-good-work-orders", "/storekeeper"],
+  "Production":       ["/sub-assembly-work-orders", "/finished-good-work-orders", "/storekeeper", "/storekeeper-queue"],
   "Finished Goods":   ["/ready-to-dispatch", "/dispatch-records"],
   "Purchasing":       ["/purchase-orders", "/grn"],
   "Billing":          ["/invoices", "/receipts", "/sales-orders", "/dispatch-notes"],
@@ -480,16 +481,23 @@ export function AppSidebar() {
     queryFn: async () => {
       try {
         const todayStr = new Date().toISOString().split("T")[0];
-        const { count } = await supabase
+        const { count } = await (supabase as any)
           .from("purchase_orders")
           .select("*", { count: "exact", head: true })
-          .not("status", "in", "(cancelled,closed,received)")
+          .in("status", ["draft", "issued", "partially_received"])
           .lt("delivery_date", todayStr);
         return count ?? 0;
       } catch { return 0; }
     },
     staleTime: 120_000,
     refetchInterval: 120_000,
+  });
+
+  const { data: awaitingStoreCount = 0 } = useQuery({
+    queryKey: ["awaiting-store-count"],
+    queryFn: fetchAwaitingStoreCount,
+    staleTime: 60_000,
+    refetchInterval: 60_000,
   });
 
   const companyNeedsSetup = !companySettingsData?.gstin ||
@@ -513,6 +521,13 @@ export function AppSidebar() {
       badgeColor: "amber" as const,
     },
     { title: "Storekeeper Queue", url: "/storekeeper", icon: PackageCheck },
+    {
+      title: "Store Receipt Queue",
+      url: "/storekeeper-queue",
+      icon: PackageCheck,
+      badge: awaitingStoreCount > 0 ? awaitingStoreCount : undefined,
+      badgeColor: "amber" as const,
+    },
   ];
 
   // Finished Goods nav

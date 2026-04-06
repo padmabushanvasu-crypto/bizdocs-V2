@@ -3,6 +3,7 @@ import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
 import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
 import { getNextDocNumber } from "@/lib/doc-number-utils";
 import { updateStockBucket } from "@/lib/items-api";
+import { logAudit } from "@/lib/audit-api";
 
 export type GRNStage = 'draft' | 'quantitative_pending' | 'quantitative_done' | 'quality_pending' | 'quality_done' | 'closed' | 'awaiting_store';
 export type QualityVerdict = 'fully_accepted' | 'conditionally_accepted' | 'partially_returned' | 'returned';
@@ -167,6 +168,7 @@ export interface GRNFilters {
   month?: string;
   page?: number;
   pageSize?: number;
+  showDeleted?: boolean;
 }
 
 export interface GrnReceiptEvent {
@@ -188,6 +190,7 @@ export async function fetchGRNs(filters: GRNFilters = {}) {
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
   let query = (supabase as any).from("grns").select("*", { count: "exact" }).order("created_at", { ascending: false }).range(from, to);
+  if (!filters.showDeleted) query = query.neq("status", "deleted");
   if (status && status !== "all") query = query.eq("status", status);
   if (grn_type && grn_type !== "all") query = query.eq("grn_type", grn_type);
   if (filters.grn_stage && filters.grn_stage !== 'all') query = query.eq('grn_stage', filters.grn_stage);
@@ -574,12 +577,27 @@ export async function createGrnFromDC(data: CreateGrnFromDCData): Promise<GRN> {
   const { data: dcItems, error: liErr } = await (supabase as any).from("dc_line_items").select("*").eq("dc_id", data.dc_id).order("serial_number", { ascending: true });
   if (liErr) throw liErr;
 
-  // Create GRN header
+  // PROBLEM 3: compute already-received quantities per dc_line_item_id
+  const receiptSummary = await fetchDCReceiptSummary(data.dc_id);
+
+  // Build list of items that still have pending quantity — skip fully-received lines
+  const pendingItems = (dcItems ?? []).map((item: any) => {
+    const prevReceived = receiptSummary[item.id as string] ?? 0;
+    const pendingQty = Math.max(0, (item.quantity ?? 0) - prevReceived);
+    return { item, prevReceived, pendingQty };
+  }).filter(({ pendingQty }) => pendingQty > 0);
+
+  if (pendingItems.length === 0) {
+    throw new Error("This DC has been fully received. No pending quantity remaining.");
+  }
+
+  // Create GRN header — PROBLEM 1: set grn_stage: 'quantitative_pending'
   const { data: newGRN, error: grnErr } = await (supabase as any).from("grns").insert({
     company_id: companyId,
     grn_number: grnNumber,
     grn_date: data.date,
     grn_type: 'dc_grn',
+    grn_stage: 'quantitative_pending',
     linked_dc_id: data.dc_id,
     linked_dc_number: dcAny.dc_number,
     vendor_id: dcAny.party_id ?? null,
@@ -593,31 +611,38 @@ export async function createGrnFromDC(data: CreateGrnFromDCData): Promise<GRN> {
   }).select().single();
   if (grnErr) throw grnErr;
 
-  // Create line items from DC
+  // Create line items from pending DC items
+  // PROBLEM 2: dc_line_item_id set to item.id
+  // PROBLEM 3: previously_received and pending_quantity from receiptSummary
+  // PROBLEM 5: copy nature_of_process and unit_rate (rate) from dc_line_item
   const grnId = (newGRN as any).id;
-  if ((dcItems ?? []).length > 0) {
-    const lineItemsToInsert = (dcItems ?? []).map((item: any, idx: number) => ({
-      company_id: companyId,
-      grn_id: grnId,
-      serial_number: idx + 1,
-      description: item.description,
-      drawing_number: item.drawing_number ?? null,
-      unit: item.unit ?? 'NOS',
-      po_quantity: item.quantity ?? 0,
-      ordered_qty: item.quantity ?? 0,
-      previously_received: 0,
-      previously_received_qty: 0,
-      pending_quantity: item.quantity ?? 0,
-      receiving_now: 0,
-      received_now: 0,
-      accepted_quantity: 0,
-      accepted_qty: 0,
-      rejected_quantity: 0,
-      rejected_qty: 0,
-      stage1_complete: false,
-      stage2_complete: false,
-      jigs_sent: item.jigs_sent ?? null,
-    }));
+  const lineItemsToInsert = pendingItems.map(({ item, prevReceived, pendingQty }, idx) => ({
+    company_id: companyId,
+    grn_id: grnId,
+    dc_line_item_id: item.id,
+    serial_number: idx + 1,
+    description: item.description,
+    drawing_number: item.drawing_number ?? null,
+    unit: item.unit ?? 'NOS',
+    po_quantity: item.quantity ?? 0,
+    ordered_qty: item.quantity ?? 0,
+    previously_received: prevReceived,
+    previously_received_qty: prevReceived,
+    pending_quantity: pendingQty,
+    receiving_now: pendingQty,
+    received_now: 0,
+    accepted_quantity: 0,
+    accepted_qty: 0,
+    rejected_quantity: 0,
+    rejected_qty: 0,
+    stage1_complete: false,
+    stage2_complete: false,
+    jigs_sent: item.jigs_sent ?? null,
+    nature_of_process: item.nature_of_process ?? null,
+    unit_rate: item.rate ?? null,
+  }));
+
+  if (lineItemsToInsert.length > 0) {
     const { error: liInsertErr } = await (supabase as any).from("grn_line_items").insert(lineItemsToInsert);
     if (liInsertErr) throw liInsertErr;
   }
@@ -804,9 +829,11 @@ export async function saveQualityStage(
   approvedBy?: string | null,
   isFinalGrn?: boolean,
   finalGrnReason?: string | null,
+  finalGrnPerLine?: Record<string, boolean>,
 ): Promise<void> {
   const now = inspectionDate ? new Date(inspectionDate).toISOString() : new Date().toISOString();
   for (const line of lines) {
+    const lineIsFinal = finalGrnPerLine ? (finalGrnPerLine[line.id] ?? false) : (isFinalGrn ?? false);
     const { error } = await (supabase as any)
       .from('grn_line_items')
       .update({
@@ -823,10 +850,14 @@ export async function saveQualityStage(
         qc_inspected_at: now,
         accepted_qty: line.conforming_qty + (line.non_conforming_qty > 0 && ['accept_as_is','conditional_accept'].includes(line.disposition ?? '') ? line.non_conforming_qty : 0),
         rejected_qty: line.non_conforming_qty > 0 && ['return_to_vendor','scrap'].includes(line.disposition ?? '') ? line.non_conforming_qty : 0,
+        is_final_grn: lineIsFinal,
       })
       .eq('id', line.id);
     if (error) throw error;
   }
+  const anyFinalGrn = finalGrnPerLine
+    ? Object.values(finalGrnPerLine).some(v => v)
+    : (isFinalGrn ?? false);
   const totalConforming = lines.reduce((s, l) => s + l.conforming_qty, 0);
   const totalNonConforming = lines.reduce((s, l) => s + l.non_conforming_qty, 0);
   const { error: grnErr } = await (supabase as any)
@@ -837,18 +868,86 @@ export async function saveQualityStage(
       total_accepted: totalConforming,
       total_rejected: totalNonConforming,
       qc_approved_by: approvedBy ?? null,
-      is_final_grn: isFinalGrn ?? false,
+      is_final_grn: anyFinalGrn,
       final_grn_reason: finalGrnReason ?? null,
     })
     .eq('id', grnId);
   if (grnErr) throw grnErr;
-  // If this is a final GRN, override stage to awaiting_store
-  if (isFinalGrn) {
+  // If any line is final GRN, override stage to awaiting_store
+  if (anyFinalGrn) {
     const { error: stageErr } = await (supabase as any)
       .from('grns')
       .update({ grn_stage: 'awaiting_store' })
       .eq('id', grnId);
     if (stageErr) throw stageErr;
+  }
+
+  // Update linked Job Card step if this GRN is linked to a DC
+  try {
+    const { data: grnHeader } = await (supabase as any)
+      .from("grns")
+      .select("linked_dc_id, grn_stage, overall_quality_verdict")
+      .eq("id", grnId)
+      .single();
+
+    if (grnHeader?.linked_dc_id) {
+      const { data: linkedStep } = await (supabase as any)
+        .from("job_card_steps")
+        .select("id, job_card_id, step_number")
+        .eq("outward_dc_id", grnHeader.linked_dc_id)
+        .eq("status", "in_progress")
+        .single();
+
+      if (linkedStep) {
+        await (supabase as any)
+          .from("job_card_steps")
+          .update({
+            status: "completed",
+            completed_at: new Date().toISOString(),
+            qty_received: totalConforming,
+          })
+          .eq("id", linkedStep.id);
+
+        const { data: nextStep } = await (supabase as any)
+          .from("job_card_steps")
+          .select("id, step_number, name")
+          .eq("job_card_id", linkedStep.job_card_id)
+          .eq("status", "pending")
+          .neq("status", "pre_bizdocs")
+          .order("step_number", { ascending: true })
+          .limit(1)
+          .single();
+
+        if (nextStep) {
+          await (supabase as any)
+            .from("job_cards")
+            .update({
+              current_stage: nextStep.step_number,
+              current_stage_name: nextStep.name,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", linkedStep.job_card_id);
+        } else {
+          await (supabase as any)
+            .from("job_cards")
+            .update({
+              status: "completed",
+              completed_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", linkedStep.job_card_id);
+        }
+
+        await logAudit(
+          "job_card",
+          linkedStep.job_card_id,
+          "Job Card Step Completed via GRN",
+          { step_number: linkedStep.step_number, grn_id: grnId }
+        );
+      }
+    }
+  } catch (jcErr) {
+    console.error("Job Card step update failed (GRN save succeeded):", jcErr);
   }
 }
 
@@ -901,6 +1000,8 @@ export async function fetchPendingQCGRNs(): Promise<GRN[]> {
     .from('grns')
     .select('*')
     .eq('grn_stage', 'quality_pending')
+    .neq('status', 'deleted')
+    .neq('status', 'cancelled')
     .order('quantitative_completed_at', { ascending: true });
   if (error) throw error;
   return (data ?? []) as unknown as GRN[];
@@ -1018,10 +1119,75 @@ export async function fetchAwaitingStoreCount(): Promise<number> {
   const companyId = await getCompanyId();
   if (!companyId) return 0;
   const { count } = await (supabase as any)
-    .from('grns')
+    .from('grn_line_items')
     .select('id', { count: 'exact', head: true })
     .eq('company_id', companyId)
-    .eq('grn_stage', 'awaiting_store')
-    .eq('store_confirmed', false);
+    .eq('is_final_grn', true)
+    .neq('store_confirmed', true);
   return count ?? 0;
+}
+
+export interface AwaitingStoreLineItem {
+  id: string;
+  grn_id: string;
+  grn_number: string;
+  grn_date: string;
+  vendor_name: string | null;
+  description: string;
+  drawing_number: string | null;
+  conforming_qty: number | null;
+}
+
+export async function fetchAwaitingStoreLineItems(): Promise<AwaitingStoreLineItem[]> {
+  const companyId = await getCompanyId();
+  if (!companyId) return [];
+  const { data: lineItems, error } = await (supabase as any)
+    .from('grn_line_items')
+    .select('id, grn_id, description, drawing_number, conforming_qty')
+    .eq('company_id', companyId)
+    .eq('is_final_grn', true)
+    .neq('store_confirmed', true)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  if (!lineItems?.length) return [];
+
+  const grnIds = [...new Set((lineItems as any[]).map((l: any) => l.grn_id as string))];
+  const { data: grns } = await (supabase as any)
+    .from('grns')
+    .select('id, grn_number, grn_date, vendor_name')
+    .in('id', grnIds);
+  const grnMap: Record<string, any> = {};
+  for (const g of (grns ?? []) as any[]) grnMap[g.id] = g;
+
+  return (lineItems as any[]).map((l: any) => ({
+    id: l.id,
+    grn_id: l.grn_id,
+    grn_number: grnMap[l.grn_id]?.grn_number ?? '—',
+    grn_date: grnMap[l.grn_id]?.grn_date ?? '',
+    vendor_name: grnMap[l.grn_id]?.vendor_name ?? null,
+    description: l.description,
+    drawing_number: l.drawing_number ?? null,
+    conforming_qty: l.conforming_qty ?? null,
+  }));
+}
+
+export async function storeConfirmLineItem(
+  lineItemId: string,
+  data: { confirmedBy: string; confirmedAt: string; location?: string | null }
+): Promise<void> {
+  const { error } = await (supabase as any)
+    .from('grn_line_items')
+    .update({
+      store_confirmed:    true,
+      store_confirmed_by: data.confirmedBy,
+      store_confirmed_at: new Date(data.confirmedAt).toISOString(),
+      store_location:     data.location ?? null,
+    })
+    .eq('id', lineItemId);
+  if (error) throw error;
+}
+
+/** @deprecated Use fetchAwaitingStoreLineItems instead */
+export async function fetchAwaitingStoreGRNs(): Promise<any[]> {
+  return [];
 }
