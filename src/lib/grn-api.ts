@@ -499,12 +499,24 @@ export async function createGrnFromPO(data: CreateGrnFromPOData): Promise<GRN> {
   const { data: poItems, error: liErr } = await supabase.from("po_line_items").select("*").eq("po_id", data.po_id).order("serial_number", { ascending: true });
   if (liErr) throw liErr;
 
+  // Build pending items — filter out fully-received lines
+  const pendingItems = (poItems ?? []).map((item: any) => {
+    const prevReceived = item.received_quantity ?? 0;
+    const pendingQty = Math.max(0, (item.quantity ?? 0) - prevReceived);
+    return { item, prevReceived, pendingQty };
+  }).filter(({ pendingQty }) => pendingQty > 0);
+
+  if (pendingItems.length === 0) {
+    throw new Error("This PO has been fully received. No pending quantity remaining.");
+  }
+
   // Create GRN header
   const { data: newGRN, error: grnErr } = await (supabase as any).from("grns").insert({
     company_id: companyId,
     grn_number: grnNumber,
     grn_date: data.date,
     grn_type: 'po_grn',
+    grn_stage: 'quantitative_pending',
     po_id: data.po_id,
     po_number: poAny.po_number,
     vendor_id: poAny.vendor_id,
@@ -519,38 +531,33 @@ export async function createGrnFromPO(data: CreateGrnFromPOData): Promise<GRN> {
   }).select().single();
   if (grnErr) throw grnErr;
 
-  // Create line items from PO
+  // Create line items from pending PO lines only
   const grnId = (newGRN as any).id;
-  if ((poItems ?? []).length > 0) {
-    const lineItemsToInsert = (poItems ?? []).map((item: any, idx: number) => {
-      const prevReceived = item.received_quantity ?? 0;
-      const pending = Math.max(0, (item.quantity ?? 0) - prevReceived);
-      return {
-        company_id: companyId,
-        grn_id: grnId,
-        serial_number: idx + 1,
-        po_line_item_id: item.id,
-        description: item.description,
-        drawing_number: item.drawing_number ?? null,
-        unit: item.unit ?? 'NOS',
-        po_quantity: item.quantity ?? 0,
-        ordered_qty: item.quantity ?? 0,
-        previously_received: prevReceived,
-        previously_received_qty: prevReceived,
-        pending_quantity: pending,
-        receiving_now: 0,
-        received_now: 0,
-        accepted_quantity: 0,
-        accepted_qty: 0,
-        rejected_quantity: 0,
-        rejected_qty: 0,
-        stage1_complete: false,
-        stage2_complete: false,
-      };
-    });
-    const { error: liInsertErr } = await (supabase as any).from("grn_line_items").insert(lineItemsToInsert);
-    if (liInsertErr) throw liInsertErr;
-  }
+  const lineItemsToInsert = pendingItems.map(({ item, prevReceived, pendingQty }, idx) => ({
+    company_id: companyId,
+    grn_id: grnId,
+    serial_number: idx + 1,
+    po_line_item_id: item.id,
+    item_id: item.item_id ?? null,
+    description: item.description,
+    drawing_number: item.drawing_number ?? null,
+    unit: item.unit ?? 'NOS',
+    po_quantity: item.quantity ?? 0,
+    ordered_qty: item.quantity ?? 0,
+    previously_received: prevReceived,
+    previously_received_qty: prevReceived,
+    pending_quantity: pendingQty,
+    receiving_now: 0,
+    received_now: 0,
+    accepted_quantity: 0,
+    accepted_qty: 0,
+    rejected_quantity: 0,
+    rejected_qty: 0,
+    stage1_complete: false,
+    stage2_complete: false,
+  }));
+  const { error: liInsertErr } = await (supabase as any).from("grn_line_items").insert(lineItemsToInsert);
+  if (liInsertErr) throw liInsertErr;
 
   return newGRN as unknown as GRN;
 }
@@ -759,11 +766,16 @@ export async function recordGrnRejectionAction(
 export interface QuantitativeLineData {
   id: string;
   received_qty: number;
-  qty_matched: boolean;
+  qty_matched: number;
   condition_on_arrival: string;
   packing_intact: boolean;
   quantitative_notes?: string | null;
   vendor_invoice_ref?: string | null;
+  product_match?: 'yes' | 'partial' | 'no';
+  matching_units?: number | null;
+  non_matching_units?: number | null;
+  mismatch_reason?: string | null;
+  mismatch_disposition?: string | null;
 }
 
 export async function saveQuantitativeStage(
@@ -781,25 +793,44 @@ export async function saveQuantitativeStage(
       .update({
         received_qty: line.received_qty,
         receiving_now: line.received_qty, // keep legacy field in sync
-        qty_matched: line.qty_matched,
+        qty_matched: line.qty_matched >= line.received_qty, // legacy boolean: true if all received units matched
+        qty_matched_qty: line.qty_matched, // new numeric: exact count of matched units
         condition_on_arrival: line.condition_on_arrival,
         packing_intact: line.packing_intact,
         quantitative_notes: line.quantitative_notes ?? null,
         vendor_invoice_ref: line.vendor_invoice_ref ?? null,
         quantitative_verified_by: verifiedBy,
         quantitative_verified_at: now,
+        product_match: line.product_match ?? 'yes',
+        matching_units: line.matching_units ?? null,
+        non_matching_units: line.non_matching_units ?? null,
+        mismatch_reason: line.mismatch_reason ?? null,
+        mismatch_disposition: line.mismatch_disposition ?? null,
       })
       .eq('id', line.id);
     if (error) throw error;
   }
+
+  // Determine next stage based on product identity check outcomes
+  const allRejected = lines.length > 0 && lines.every(l => (l.product_match ?? 'yes') === 'no');
+
   // Update GRN header
   const updateData: any = {
-    grn_stage: 'quality_pending',
     quantitative_completed_at: now,
     quantitative_completed_by: verifiedBy,
   };
   if (vendorInvoiceNumber !== undefined) updateData.vendor_invoice_number = vendorInvoiceNumber;
   if (vendorInvoiceDate !== undefined) updateData.vendor_invoice_date = vendorInvoiceDate || null;
+
+  if (allRejected) {
+    // All items rejected at Stage 1 — close GRN without QC
+    updateData.grn_stage = 'closed';
+    updateData.overall_quality_verdict = 'returned';
+  } else {
+    // At least some items pass identity check — proceed to QC
+    updateData.grn_stage = 'quality_pending';
+  }
+
   const { error: grnErr } = await (supabase as any)
     .from('grns')
     .update(updateData)

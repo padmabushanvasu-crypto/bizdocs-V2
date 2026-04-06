@@ -19,7 +19,7 @@ import {
   updatePOPayment,
   type PurchaseOrder,
 } from "@/lib/purchase-orders-api";
-import { fetchGRNsForPO } from "@/lib/grn-api";
+import { fetchGRNsForPO, createGrnFromPO } from "@/lib/grn-api";
 import { formatCurrency, amountInWords } from "@/lib/gst-utils";
 import { AuditTimeline } from "@/components/AuditTimeline";
 import { logAudit } from "@/lib/audit-api";
@@ -120,6 +120,16 @@ export default function PurchaseOrderDetail() {
     },
   });
 
+  const createGrnMutation = useMutation({
+    mutationFn: () => createGrnFromPO({ po_id: id!, date: new Date().toISOString().split("T")[0] }),
+    onSuccess: (newGrn) => {
+      navigate(`/grn/${(newGrn as any).id}`);
+    },
+    onError: (err: any) => {
+      toast({ title: "Error creating GRN", description: err.message, variant: "destructive" });
+    },
+  });
+
   const paymentMutation = useMutation({
     mutationFn: () =>
       updatePOPayment(
@@ -183,8 +193,8 @@ export default function PurchaseOrderDetail() {
             </Button>
           )}
           {canRecordReceipt && (
-            <Button size="sm" onClick={() => navigate(`/grn/new?po=${id}`)}>
-              <Package className="h-3.5 w-3.5 mr-1" /> Record Receipt
+            <Button size="sm" disabled={createGrnMutation.isPending} onClick={() => createGrnMutation.mutate()}>
+              <Package className="h-3.5 w-3.5 mr-1" /> {createGrnMutation.isPending ? "Creating GRN…" : "Record Receipt"}
             </Button>
           )}
           {!["draft", "cancelled", "deleted"].includes(po.status) && (
@@ -521,8 +531,8 @@ export default function PurchaseOrderDetail() {
         <div className="flex items-center justify-between border-b border-border pb-2 mb-4">
           <h3 className="text-xs font-semibold text-slate-500">Receipt History</h3>
           {canRecordReceipt && (
-            <Button size="sm" variant="outline" onClick={() => navigate(`/grn/new?po=${id}`)}>
-              <Package className="h-3.5 w-3.5 mr-1" /> Record Receipt
+            <Button size="sm" variant="outline" disabled={createGrnMutation.isPending} onClick={() => createGrnMutation.mutate()}>
+              <Package className="h-3.5 w-3.5 mr-1" /> {createGrnMutation.isPending ? "Creating GRN…" : "Record Receipt"}
             </Button>
           )}
         </div>

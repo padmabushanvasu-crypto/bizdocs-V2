@@ -71,13 +71,19 @@ interface S1Line {
   po_quantity: number;
   pending_quantity: number;
   received_qty: number;
-  qty_matched: boolean;
+  qty_matched: number;
   condition_on_arrival: string;
   packing_intact: boolean;
   notes: string;
   is_final_grn?: boolean;
   store_confirmed?: boolean;
   store_confirmed_by?: string | null;
+  // Product identity check
+  product_match: 'yes' | 'partial' | 'no';
+  matching_units: number;
+  non_matching_units: number;
+  mismatch_reason: string;
+  mismatch_disposition: string;
 }
 
 // ── QC Measurement row state ───────────────────────────────────────────────────
@@ -198,89 +204,219 @@ function Stage1Table({
             <th className="text-right px-3 py-2.5 font-semibold w-24">Ordered</th>
             <th className="text-right px-3 py-2.5 font-semibold w-28">Received Now *</th>
             <th className="text-right px-3 py-2.5 font-semibold w-24">Pending</th>
-            <th className="text-center px-3 py-2.5 font-semibold w-24">Qty Matched</th>
+            <th className="text-right px-3 py-2.5 font-semibold w-28">Qty Matched</th>
+            <th className="text-right px-3 py-2.5 font-semibold w-24">Not Matched</th>
             <th className="text-center px-3 py-2.5 font-semibold w-36">Condition</th>
             <th className="text-center px-3 py-2.5 font-semibold w-24">Packing OK</th>
             <th className="text-left px-3 py-2.5 font-semibold">Notes</th>
+            <th className="text-center px-3 py-2.5 font-semibold w-36">Product Identity</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-blue-50">
           {lines.map((line, idx) => {
             const isOverQty = overQtyIds.includes(line.id);
             const pending = Math.max(0, line.pending_quantity - line.received_qty);
+            const pm = line.product_match ?? 'yes';
+            const rowBg = pm === 'no'
+              ? "bg-red-50"
+              : pm === 'partial'
+              ? "bg-amber-50"
+              : isOverQty
+              ? "bg-yellow-50/70"
+              : "bg-white hover:bg-blue-50/20";
             return (
-              <tr key={line.id} className={`transition-colors ${isOverQty ? "bg-yellow-50/70" : "bg-white hover:bg-blue-50/20"}`}>
-                <td className="px-3 py-2 text-slate-400 text-xs">{idx + 1}</td>
-                <td className="px-3 py-2 font-mono text-xs text-slate-500">{line.item_code || "—"}</td>
-                <td className="px-3 py-2 font-medium text-slate-800 max-w-[200px]">
-                  <span className="block truncate" title={line.description}>{line.description}</span>
-                </td>
-                <td className="px-3 py-2 text-right font-mono tabular-nums text-slate-500">{line.po_quantity}</td>
-                <td className="px-3 py-2">
-                  <div className="flex items-center justify-end gap-1">
+              <>
+                <tr key={line.id} className={`transition-colors ${rowBg}`}>
+                  <td className="px-3 py-2 text-slate-400 text-xs">{idx + 1}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-slate-500">{line.item_code || "—"}</td>
+                  <td className="px-3 py-2 font-medium text-slate-800 max-w-[200px]">
+                    <span className="block truncate" title={line.description}>{line.description}</span>
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono tabular-nums text-slate-500">{line.po_quantity}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center justify-end gap-1">
+                      <input
+                        type="number"
+                        className="w-20 text-right border border-slate-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                        value={line.received_qty || ""}
+                        min={0}
+                        disabled={disabled}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          onChange(idx, "received_qty", v);
+                          onChange(idx, "qty_matched", v);
+                          onChange(idx, "matching_units", v);
+                          onChange(idx, "non_matching_units", 0);
+                        }}
+                      />
+                      {isOverQty && <span className="text-amber-500 text-xs">⚠</span>}
+                    </div>
+                    {isOverQty && (
+                      <p className="text-xs text-amber-700 mt-0.5">Max: {line.pending_quantity} {(line as any).unit}</p>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono tabular-nums text-slate-600">{pending}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex flex-col items-end gap-0.5">
+                      <input
+                        type="number"
+                        className="w-20 text-right border border-slate-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                        value={line.qty_matched || ""}
+                        min={0}
+                        max={line.received_qty}
+                        disabled={disabled}
+                        onChange={(e) => {
+                          const v = Math.max(0, Math.min(line.received_qty, Number(e.target.value)));
+                          onChange(idx, "qty_matched", v);
+                        }}
+                      />
+                      {line.qty_matched < line.received_qty && line.received_qty > 0 && (
+                        <span className="text-[10px] text-amber-600">
+                          Not matched: {line.received_qty - line.qty_matched}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono tabular-nums text-sm">
+                    {line.received_qty > 0 && line.qty_matched < line.received_qty
+                      ? <span className="text-amber-600 font-semibold">{line.received_qty - line.qty_matched}</span>
+                      : <span className="text-slate-300">—</span>
+                    }
+                  </td>
+                  <td className="px-3 py-2">
+                    <select
+                      className="w-full border border-slate-200 rounded px-1.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      value={line.condition_on_arrival}
+                      disabled={disabled}
+                      onChange={(e) => onChange(idx, "condition_on_arrival", e.target.value)}
+                    >
+                      <option value="good">Good</option>
+                      <option value="damaged">Damaged</option>
+                      <option value="short_delivery">Short Delivery</option>
+                    </select>
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <button
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => onChange(idx, "packing_intact", !line.packing_intact)}
+                      className={`px-2 py-0.5 rounded-full text-xs font-medium border transition-colors ${
+                        line.packing_intact ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"
+                      }`}
+                    >
+                      {line.packing_intact ? "Yes" : "No"}
+                    </button>
+                  </td>
+                  <td className="px-3 py-2">
                     <input
-                      type="number"
-                      className="w-20 text-right border border-slate-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
-                      value={line.received_qty || ""}
-                      min={0}
+                      type="text"
+                      className="w-full bg-transparent border-b border-slate-200 text-xs focus:outline-none focus:border-blue-400 py-0.5 px-0"
+                      value={line.notes}
+                      disabled={disabled}
+                      onChange={(e) => onChange(idx, "notes", e.target.value)}
+                      placeholder="Optional…"
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <select
+                      className={`w-full border rounded px-1.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-400 ${
+                        pm === 'no' ? 'border-red-300 bg-red-50' : pm === 'partial' ? 'border-amber-300 bg-amber-50' : 'border-slate-200'
+                      }`}
+                      value={pm}
                       disabled={disabled}
                       onChange={(e) => {
-                        const v = Number(e.target.value);
-                        onChange(idx, "received_qty", v);
-                        onChange(idx, "qty_matched", v === line.pending_quantity);
+                        const val = e.target.value as 'yes' | 'partial' | 'no';
+                        onChange(idx, "product_match", val);
+                        if (val === 'yes') {
+                          onChange(idx, "matching_units", line.received_qty);
+                          onChange(idx, "non_matching_units", 0);
+                          onChange(idx, "mismatch_reason", "");
+                          onChange(idx, "mismatch_disposition", "");
+                        } else if (val === 'no') {
+                          onChange(idx, "matching_units", 0);
+                          onChange(idx, "non_matching_units", line.received_qty);
+                        }
                       }}
-                    />
-                    {isOverQty && <span className="text-amber-500 text-xs">⚠</span>}
-                  </div>
-                  {isOverQty && (
-                    <p className="text-xs text-amber-700 mt-0.5">Max: {line.pending_quantity} {line.unit}</p>
-                  )}
-                </td>
-                <td className="px-3 py-2 text-right font-mono tabular-nums text-slate-600">{pending}</td>
-                <td className="px-3 py-2 text-center">
-                  <input
-                    type="checkbox"
-                    checked={line.qty_matched}
-                    disabled={disabled}
-                    onChange={(e) => onChange(idx, "qty_matched", e.target.checked)}
-                    className="h-4 w-4 accent-blue-600 cursor-pointer"
-                  />
-                </td>
-                <td className="px-3 py-2">
-                  <select
-                    className="w-full border border-slate-200 rounded px-1.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
-                    value={line.condition_on_arrival}
-                    disabled={disabled}
-                    onChange={(e) => onChange(idx, "condition_on_arrival", e.target.value)}
-                  >
-                    <option value="good">Good</option>
-                    <option value="damaged">Damaged</option>
-                    <option value="short_delivery">Short Delivery</option>
-                  </select>
-                </td>
-                <td className="px-3 py-2 text-center">
-                  <button
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => onChange(idx, "packing_intact", !line.packing_intact)}
-                    className={`px-2 py-0.5 rounded-full text-xs font-medium border transition-colors ${
-                      line.packing_intact ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"
-                    }`}
-                  >
-                    {line.packing_intact ? "Yes" : "No"}
-                  </button>
-                </td>
-                <td className="px-3 py-2">
-                  <input
-                    type="text"
-                    className="w-full bg-transparent border-b border-slate-200 text-xs focus:outline-none focus:border-blue-400 py-0.5 px-0"
-                    value={line.notes}
-                    disabled={disabled}
-                    onChange={(e) => onChange(idx, "notes", e.target.value)}
-                    placeholder="Optional…"
-                  />
-                </td>
-              </tr>
+                    >
+                      <option value="yes">✓ Yes — All match</option>
+                      <option value="partial">⚠ Partial — Some match</option>
+                      <option value="no">✗ No — None match</option>
+                    </select>
+                  </td>
+                </tr>
+                {pm !== 'yes' && (
+                  <tr key={`${line.id}-identity`} className={pm === 'no' ? 'bg-red-50/80' : 'bg-amber-50/80'}>
+                    <td colSpan={12} className="px-4 py-3">
+                      <div className="flex flex-wrap gap-4 items-start">
+                        {pm === 'partial' && (
+                          <>
+                            <div className="flex flex-col gap-1 min-w-[120px]">
+                              <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Matching Units</label>
+                              <input
+                                type="number"
+                                min={0}
+                                max={line.received_qty}
+                                className="w-24 text-right border border-amber-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                value={line.matching_units || ""}
+                                disabled={disabled}
+                                onChange={(e) => {
+                                  const v = Math.max(0, Math.min(line.received_qty, Number(e.target.value)));
+                                  onChange(idx, "matching_units", v);
+                                  onChange(idx, "non_matching_units", Math.max(0, line.received_qty - v));
+                                }}
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1 min-w-[120px]">
+                              <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Non-Matching Units</label>
+                              <input
+                                type="number"
+                                className="w-24 text-right border border-slate-200 rounded px-2 py-1 text-sm font-mono bg-slate-50 text-slate-500"
+                                value={line.non_matching_units}
+                                readOnly
+                                disabled
+                              />
+                            </div>
+                          </>
+                        )}
+                        {pm === 'no' && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-red-700">No units will proceed to QC. GRN will close at Stage 1.</span>
+                          </div>
+                        )}
+                        <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
+                          <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Mismatch Reason</label>
+                          <input
+                            type="text"
+                            className="w-full border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
+                            value={line.mismatch_reason}
+                            disabled={disabled}
+                            placeholder="e.g. Wrong grade, different specification"
+                            onChange={(e) => onChange(idx, "mismatch_reason", e.target.value)}
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1 min-w-[180px]">
+                          <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
+                            Disposition {pm === 'partial' ? '(Non-Matching Units)' : '(All Units)'}
+                          </label>
+                          <select
+                            className="w-full border border-slate-200 rounded px-1.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
+                            value={line.mismatch_disposition}
+                            disabled={disabled}
+                            onChange={(e) => onChange(idx, "mismatch_disposition", e.target.value)}
+                          >
+                            <option value="">Select…</option>
+                            <option value="return_to_vendor">Return to Vendor</option>
+                            <option value="accept_as_is">Accept As-Is</option>
+                            <option value="conditional_accept">Conditional Accept</option>
+                            <option value="scrap">Scrap</option>
+                            <option value="rework_our_scope">Rework (Our Scope)</option>
+                          </select>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </>
             );
           })}
         </tbody>
@@ -303,7 +439,8 @@ function Stage1ReadOnly({ lines }: { lines: S1Line[] }) {
             <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
             <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Ordered</th>
             <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Received</th>
-            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Matched</th>
+            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Matched</th>
+            <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Not Matched</th>
             <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Condition</th>
             <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Packing</th>
             <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Notes</th>
@@ -318,8 +455,14 @@ function Stage1ReadOnly({ lines }: { lines: S1Line[] }) {
               <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium text-slate-800">{l.description}</td>
               <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-slate-500">{l.po_quantity}</td>
               <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-semibold text-slate-800">{l.received_qty}</td>
-              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center text-xs">
-                {l.qty_matched ? <span className="text-green-600 font-semibold">✓</span> : <span className="text-amber-600 font-semibold">⚠</span>}
+              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
+                {l.qty_matched}
+                {l.qty_matched >= l.received_qty ? <span className="ml-1 text-green-600">✓</span> : null}
+              </td>
+              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
+                {l.received_qty - l.qty_matched > 0 ? (
+                  <span className="text-amber-600 font-semibold">{l.received_qty - l.qty_matched}</span>
+                ) : <span className="text-slate-300">—</span>}
               </td>
               <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center text-xs capitalize">{(l.condition_on_arrival || "good").replace(/_/g, " ")}</td>
               <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center text-xs">{l.packing_intact ? "✓" : "✗"}</td>
@@ -364,7 +507,7 @@ function QCMeasurementEditor({
   setFinalGrnPerLine,
   isSavedFinalGrn = false,
 }: {
-  lineItems: Array<{ id: string; item_code: string; description: string; received_qty: number; unit: string }>;
+  lineItems: Array<{ id: string; item_code: string; description: string; received_qty: number; qty_matched: number; unit: string }>;
   qcRows: QCRow[];
   onAddRow: (lineItemId: string) => void;
   onChangeRow: (idx: number, field: keyof QCRow, value: string) => void;
@@ -393,7 +536,7 @@ function QCMeasurementEditor({
               <span className={`text-xs font-semibold ${hasNC ? "text-amber-800" : "text-blue-800"}`}>
                 <span className="font-mono">{item.item_code || "—"}</span>
                 {" — "}{item.description}
-                <span className="font-normal ml-2">· Received: {item.received_qty} {item.unit}</span>
+                <span className="font-normal ml-2">· Inspecting: {item.qty_matched} {item.unit} (matched in Stage 1)</span>
               </span>
               <button
                 type="button"
@@ -732,8 +875,8 @@ function GRNPrintView({
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "7.5pt", fontFamily: "Arial" }}>
           <thead>
             <tr style={{ background: "#0F4C81", color: "white" }}>
-              {["Sl", "Item Code", "Description", "Ordered Qty", "Received Qty", "Matched", "Condition", "Packing"].map((h) => (
-                <th key={h} style={{ padding: "3pt 4pt", textAlign: h === "Ordered Qty" || h === "Received Qty" ? "right" : "left", fontSize: "8pt", fontWeight: "bold" }}>{h}</th>
+              {["Sl", "Item Code", "Description", "Ordered Qty", "Received Qty", "Matched", "Not Matched", "Condition", "Packing"].map((h) => (
+                <th key={h} style={{ padding: "3pt 4pt", textAlign: h === "Ordered Qty" || h === "Received Qty" || h === "Matched" || h === "Not Matched" ? "right" : "left", fontSize: "8pt", fontWeight: "bold" }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -745,7 +888,8 @@ function GRNPrintView({
                 <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0" }}>{l.description}</td>
                 <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "right" }}>{l.po_quantity}</td>
                 <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "right", fontWeight: "bold" }}>{l.received_qty}</td>
-                <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "center" }}>{l.qty_matched ? "✓" : "⚠"}</td>
+                <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "right" }}>{l.qty_matched}{l.qty_matched >= l.received_qty ? " ✓" : ""}</td>
+                <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "right" }}>{l.received_qty - l.qty_matched > 0 ? l.received_qty - l.qty_matched : "—"}</td>
                 <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textTransform: "capitalize" }}>{(l.condition_on_arrival || "good").replace(/_/g, " ")}</td>
                 <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "center" }}>{l.packing_intact ? "Yes" : "No"}</td>
               </tr>
@@ -1034,6 +1178,11 @@ export default function GRNDetail() {
           is_final_grn:         a.is_final_grn ?? false,
           store_confirmed:      a.store_confirmed ?? false,
           store_confirmed_by:   a.store_confirmed_by ?? null,
+          product_match:        (a.product_match ?? 'yes') as 'yes' | 'partial' | 'no',
+          matching_units:       a.matching_units ?? recv,
+          non_matching_units:   a.non_matching_units ?? 0,
+          mismatch_reason:      a.mismatch_reason ?? "",
+          mismatch_disposition: a.mismatch_disposition ?? "",
         };
       })
     );
@@ -1074,7 +1223,7 @@ export default function GRNDetail() {
     setNcSummaries(
       items.map((item) => {
         const a = item as any;
-        const recv = a.received_qty ?? a.receiving_now ?? 0;
+        const recv = a.qty_matched_qty ?? a.received_qty ?? a.receiving_now ?? 0;
         return {
           lineItemId:         item.id ?? "",
           qty_inspected:      recv,
@@ -1111,7 +1260,7 @@ export default function GRNDetail() {
         const existing = prev.find((s) => s.lineItemId === item.id);
         const itemRows = qcRows.filter((r) => r.lineItemId === item.id);
         const hasNCRow = itemRows.some((r) => Number(r.non_conforming_qty) > 0);
-        const recv = (item as any).received_qty ?? (item as any).receiving_now ?? item.po_quantity ?? 0;
+        const recv = (item as any).qty_matched_qty ?? (item as any).received_qty ?? (item as any).receiving_now ?? item.po_quantity ?? 0;
         if (!hasNCRow) {
           return {
             lineItemId:         item.id ?? "",
@@ -1147,6 +1296,11 @@ export default function GRNDetail() {
         condition_on_arrival: l.condition_on_arrival,
         packing_intact:       l.packing_intact,
         quantitative_notes:   l.notes || null,
+        product_match:        l.product_match,
+        matching_units:       l.matching_units,
+        non_matching_units:   l.non_matching_units,
+        mismatch_reason:      l.mismatch_reason || null,
+        mismatch_disposition: l.mismatch_disposition || null,
       }));
       await saveQuantitativeStage(id!, lines, s1VerifiedBy, s1InvoiceNumber || null, s1InvoiceDate || null);
       // Save scrap data for DC-GRNs
@@ -1292,15 +1446,16 @@ export default function GRNDetail() {
 
   const addQCRow = (lineItemId: string) => {
     const itemRows = qcRows.filter((r) => r.lineItemId === lineItemId);
-    const receivedQty = editorLineItems.find((l) => l.id === lineItemId)?.received_qty ?? 0;
+    const editorItem = editorLineItems.find((l) => l.id === lineItemId);
+    const inspectQty = editorItem?.qty_matched ?? editorItem?.received_qty ?? 0;
     const newRow: QCRow = {
       lineItemId,
       sl_no: itemRows.length + 1,
       characteristic: "",
       specification: "",
-      qty_checked: receivedQty > 0 ? String(receivedQty) : "",
+      qty_checked: inspectQty > 0 ? String(inspectQty) : "",
       sample_1: "", sample_2: "", sample_3: "", sample_4: "", sample_5: "",
-      conforming_qty: receivedQty > 0 ? String(receivedQty) : "",
+      conforming_qty: inspectQty > 0 ? String(inspectQty) : "",
       non_conforming_qty: "0",
       measuring_instrument: "",
     };
@@ -1378,6 +1533,7 @@ export default function GRNDetail() {
     item_code: l.item_code,
     description: l.description,
     received_qty: l.received_qty,
+    qty_matched: l.qty_matched,
     unit: (grn.line_items ?? []).find((li) => li.id === l.id)?.unit ?? "",
   }));
 

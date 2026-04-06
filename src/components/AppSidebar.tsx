@@ -25,6 +25,7 @@ import {
   ChevronRight,
   ChevronDown,
   TrendingDown,
+  TrendingUp,
   Trash2,
   PanelLeft,
   PanelLeftClose,
@@ -573,6 +574,7 @@ export function AppSidebar() {
       icon: TrendingDown,
       badge: reorderCritical > 0 ? reorderCritical : undefined,
     },
+    { title: "Procurement Intelligence", url: "/procurement-intelligence", icon: TrendingUp },
     { title: "Scrap Register", url: "/scrap-register", icon: Trash2 },
     { title: "Serial Numbers", url: "/serial-numbers", icon: Hash },
     {

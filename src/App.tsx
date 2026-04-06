@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -82,7 +82,13 @@ import ReadyToDispatch from "@/pages/ReadyToDispatch";
 import ProcessLibrary from "@/pages/ProcessLibrary";
 import JigMouldSettings from "@/pages/JigMouldSettings";
 import AssetsRegister from "@/pages/AssetsRegister";
+import ProcurementIntelligence from "@/pages/ProcurementIntelligence";
 import { ImportQueueProvider } from "@/lib/import-queue";
+
+function DcGrnRedirect() {
+  const { id } = useParams<{ id: string }>();
+  return <Navigate to={`/grn/${id}`} replace />;
+}
 
 const queryClient = new QueryClient();
 
@@ -121,11 +127,11 @@ const App = () => (
               <Route path="/delivery-challans/:id/edit" element={<DeliveryChallanForm />} />
               <Route path="/delivery-challans/:id/record-return" element={<DCRecordReturn />} />
               <Route path="/grn" element={<GRNRegister />} />
-              <Route path="/grn/new" element={<GRNForm />} />
+              <Route path="/grn/new" element={<Navigate to="/grn" replace />} />
               <Route path="/grn/:id" element={<GRNDetail />} />
               <Route path="/dc-grn" element={<DcGrn />} />
-              <Route path="/dc-grn/new" element={<DcGrnForm />} />
-              <Route path="/dc-grn/:id" element={<DcGrnForm />} />
+              <Route path="/dc-grn/new" element={<Navigate to="/grn" replace />} />
+              <Route path="/dc-grn/:id" element={<DcGrnRedirect />} />
               <Route path="/receipts" element={<PaymentReceipts />} />
               <Route path="/job-works" element={<JobWorks />} />
               <Route path="/job-works/:id" element={<JobWorkDetail />} />
@@ -179,6 +185,7 @@ const App = () => (
               <Route path="/settings/jig-mould" element={<JigMouldSettings />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/assets-register" element={<AssetsRegister />} />
+              <Route path="/procurement-intelligence" element={<ProcurementIntelligence />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>

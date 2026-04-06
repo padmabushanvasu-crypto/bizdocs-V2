@@ -29,7 +29,21 @@ interface DashboardData {
   warningStockCount: number;
   lockedStockCount: number;
   overduePOCount: number;
-  criticalItems: Array<{ description: string; item_code: string; current_stock: number }>;
+  criticalItems: Array<{
+    id: string;
+    description: string;
+    item_code: string;
+    current_stock: number;
+    hasPO: boolean;
+    hasDC: boolean;
+    hasAO: boolean;
+  }>;
+  poRaisedCount: number;
+  dcRaisedCount: number;
+  aoRaisedCount: number;
+  actionNeededCount: number;
+  pendingAssemblyOrderCount: number;
+  wipCount: number;
 }
 
 interface ReadyToShipRow {
@@ -50,7 +64,8 @@ async function fetchDashboardData(): Promise<DashboardData> {
   const fyYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
   const fyStart = format(new Date(fyYear, 3, 1), "yyyy-MM-dd");
 
-  const [invsRes, openPOsRes, openDCsRes, itemsRes, overduePOsRes] = await Promise.all([
+  const [invsRes, openPOsRes, openDCsRes, itemsRes, overduePOsRes,
+         itemsWithOpenPORes, itemsWithOpenDCRes, itemsWithOpenAORes, pendingAORes] = await Promise.all([
     supabase
       .from("invoices")
       .select("grand_total, invoice_date, due_date, status")
@@ -66,13 +81,33 @@ async function fetchDashboardData(): Promise<DashboardData> {
       .eq("status", "issued"),
     (supabase as any)
       .from("items")
-      .select("item_type, current_stock, stock_finished_goods, min_finished_stock, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, min_stock, stock_alert_level")
+      .select("id, description, item_type, current_stock, stock_wip, stock_finished_goods, min_finished_stock, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, min_stock, stock_alert_level, item_code")
       .eq("status", "active"),
     (supabase as any)
       .from("purchase_orders")
       .select("*", { count: "exact", head: true })
       .in("status", ["draft", "issued", "partially_received"])
       .lt("delivery_date", todayStr),
+    // Query A — items with an open PO already raised
+    (supabase as any)
+      .from("po_line_items")
+      .select("item_id, purchase_orders!inner(status)")
+      .in("purchase_orders.status", ["draft", "issued", "partially_received"]),
+    // Query B — items with an open DC already sent out
+    (supabase as any)
+      .from("dc_line_items")
+      .select("item_id, delivery_challans!inner(status)")
+      .in("delivery_challans.status", ["issued", "partially_returned"]),
+    // Query C — items with an open Assembly Order
+    (supabase as any)
+      .from("assembly_orders")
+      .select("item_id")
+      .in("status", ["draft", "in_progress"]),
+    // Pending assembly order count
+    (supabase as any)
+      .from("assembly_orders")
+      .select("id", { count: "exact", head: true })
+      .in("status", ["draft", "in_progress"]),
   ]);
 
   const invoices = (invsRes.data ?? []) as any[];
@@ -116,11 +151,37 @@ async function fetchDashboardData(): Promise<DashboardData> {
     (i) => i.stock_alert_level === 'warning' && !REORDER_EXCLUDE.includes(i.item_type)
   ).length;
   const lockedStockCount   = items.filter((i) => i.stock_alert_level === 'locked').length;
+  const wipCount = items.filter((i) => (i.stock_wip ?? 0) > 0).length;
+
+  // Procurement intelligence: action tracking
+  const itemsWithPOIds = new Set((itemsWithOpenPORes.data ?? []).map((r: any) => r.item_id).filter(Boolean));
+  const itemsWithDCIds = new Set((itemsWithOpenDCRes.data ?? []).map((r: any) => r.item_id).filter(Boolean));
+  const itemsWithAOIds = new Set((itemsWithOpenAORes.data ?? []).map((r: any) => r.item_id).filter(Boolean));
+  const pendingAssemblyOrderCount = (pendingAORes as any).count ?? 0;
+
+  const lowStockItems = items.filter(
+    (i) => (i.stock_alert_level === 'critical' || i.stock_alert_level === 'warning') && !REORDER_EXCLUDE.includes(i.item_type)
+  );
+  const poRaisedCount = lowStockItems.filter((i) => itemsWithPOIds.has(i.id)).length;
+  const dcRaisedCount = lowStockItems.filter((i) => itemsWithDCIds.has(i.id)).length;
+  const aoRaisedCount = lowStockItems.filter((i) => itemsWithAOIds.has(i.id)).length;
+  const actionNeededCount = lowStockItems.filter(
+    (i) => !itemsWithPOIds.has(i.id) && !itemsWithDCIds.has(i.id) && !itemsWithAOIds.has(i.id)
+  ).length;
+
   // Top critical items for display
   const criticalItems = items
     .filter((i) => i.stock_alert_level === 'critical' && !REORDER_EXCLUDE.includes(i.item_type))
     .slice(0, 5)
-    .map((i) => ({ description: i.description ?? i.item_code ?? '—', item_code: i.item_code ?? '', current_stock: i.current_stock ?? 0 }));
+    .map((i) => ({
+      id: i.id ?? '',
+      description: i.description ?? i.item_code ?? '—',
+      item_code: i.item_code ?? '',
+      current_stock: i.current_stock ?? 0,
+      hasPO: itemsWithPOIds.has(i.id),
+      hasDC: itemsWithDCIds.has(i.id),
+      hasAO: itemsWithAOIds.has(i.id),
+    }));
 
   const overduePOCount = overduePOsRes.count ?? 0;
 
@@ -130,6 +191,8 @@ async function fetchDashboardData(): Promise<DashboardData> {
     rawMaterialCount, componentCount, finishedGoodCount, zeroStockCount,
     needsBuildingCount, criticalStockCount, warningStockCount, lockedStockCount,
     overduePOCount, criticalItems,
+    poRaisedCount, dcRaisedCount, aoRaisedCount, actionNeededCount,
+    pendingAssemblyOrderCount, wipCount,
   };
 }
 
@@ -371,7 +434,7 @@ export default function Dashboard() {
               {([
                 {
                   label: "Record GRN",
-                  route: "/grn/new",
+                  route: "/grn",
                   state: undefined as any,
                   title: "GRN — Goods Receipt",
                   body: "Use this when purchased materials arrive at the factory. Link to the original PO and record accepted vs rejected quantities. Stock updates automatically.",
@@ -501,94 +564,145 @@ export default function Dashboard() {
             <div className="divide-y divide-slate-100 mt-2">
               <LightStatRow label="Builds"   value={aoStats?.completedThisMonth ?? "—"}   onClick={() => navigate("/stock-register")} />
               <LightStatRow label="FAT Pending"  value={fatStats?.pending ?? "—"} highlight={(fatStats?.pending ?? 0) > 0} onClick={() => navigate("/fat-certificates")} />
+              <LightStatRow label="Pending Assembly" value={dashData?.pendingAssemblyOrderCount ?? "—"} highlight={(dashData?.pendingAssemblyOrderCount ?? 0) > 0} onClick={() => navigate("/assembly-orders")} />
+              <LightStatRow label="WIP Components" value={dashData?.wipCount ?? "—"} onClick={() => navigate("/wip-register")} />
             </div>
           </div>
 
-          {/* Stock card */}
-          <div className={`bg-white rounded-xl border shadow-sm p-4 lg:p-5 ${(dashData?.criticalStockCount ?? 0) > 0 ? 'border-red-300' : (dashData?.lockedStockCount ?? 0) > 0 ? 'border-amber-300' : 'border-slate-200'}`}>
-            <div className="flex items-center justify-between mb-1">
+          {/* Stock Alerts card */}
+          <div className={`bg-white rounded-xl border shadow-sm p-4 lg:p-5 ${(dashData?.criticalStockCount ?? 0) > 0 ? 'border-red-300' : (dashData?.warningStockCount ?? 0) > 0 ? 'border-amber-300' : 'border-slate-200'}`}>
+            <div className="flex items-center justify-between mb-3">
               <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Stock Alerts</p>
-              <button className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors" onClick={() => navigate("/stock-register")}>
-                View →
+              <button className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors" onClick={() => navigate("/procurement-intelligence")}>
+                View All →
               </button>
             </div>
-            {(dashData?.criticalStockCount ?? 0) > 0 || (dashData?.warningStockCount ?? 0) > 0 || (dashData?.lockedStockCount ?? 0) > 0 ? (
-              <div className="mb-2 space-y-1">
-                {(dashData?.criticalStockCount ?? 0) > 0 && (
-                  <div>
-                    <button
-                      className="w-full flex items-center justify-between hover:bg-red-50 -mx-1 px-1 rounded transition-colors"
-                      onClick={() => navigate("/stock-register?filter=critical")}
-                    >
-                      <span className="text-xs font-semibold text-red-700 uppercase tracking-wider">Reorder Now</span>
-                      <span className="text-lg font-extrabold font-mono tabular-nums text-red-600">{dashData?.criticalStockCount}</span>
-                    </button>
-                    {(dashData?.criticalItems ?? []).length > 0 && (
-                      <div className="mt-1 space-y-0.5 pl-1">
-                        {(dashData?.criticalItems ?? []).map((item, i) => (
-                          <div key={i} className="flex items-center justify-between text-[10px] text-slate-500">
-                            <span className="truncate max-w-[140px]">{item.item_code || item.description}</span>
-                            <span className={`font-mono font-semibold ml-2 shrink-0 ${item.current_stock === 0 ? 'text-red-600' : 'text-amber-600'}`}>
-                              {item.current_stock === 0 ? 'Zero' : item.current_stock}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-                {(dashData?.warningStockCount ?? 0) > 0 && (
-                  <button
-                    className="w-full flex items-center justify-between hover:bg-amber-50 -mx-1 px-1 rounded transition-colors"
-                    onClick={() => navigate("/stock-register?filter=warning")}
-                  >
-                    <span className="text-xs font-semibold text-amber-700 uppercase tracking-wider">Running Low</span>
-                    <span className="text-lg font-extrabold font-mono tabular-nums text-amber-600">{dashData?.warningStockCount}</span>
-                  </button>
-                )}
-                {(dashData?.lockedStockCount ?? 0) > 0 && (
-                  <button
-                    className="w-full flex items-center justify-between hover:bg-slate-100 -mx-1 px-1 rounded transition-colors"
-                    onClick={() => navigate("/stock-register?filter=locked")}
-                  >
-                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Engaged</span>
-                    <span className="text-lg font-extrabold font-mono tabular-nums text-slate-700">{dashData?.lockedStockCount}</span>
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="mb-2">
-                <p className="text-2xl font-extrabold tracking-tight font-mono tabular-nums text-green-600">0</p>
-                <p className="text-[10px] text-slate-400 uppercase tracking-wider">All healthy</p>
-              </div>
-            )}
-            <div className="divide-y divide-slate-100">
-              <LightStatRow label="Raw Materials (in stock)"  value={dashData?.rawMaterialCount  ?? "—"} onClick={() => navigate("/stock-register?type=raw_material")} />
-              <LightStatRow label="Components (in stock)"     value={dashData?.componentCount    ?? "—"} onClick={() => navigate("/stock-register?type=component")} />
-              <LightStatRow label="Finished Goods (in stock)" value={dashData?.finishedGoodCount ?? "—"} onClick={() => navigate("/stock-register?type=finished_good")} />
-              {reorderAlertCount === 0 ? (
-                <LightStatRow label="Reorder Alerts" value="0" />
-              ) : (
+
+            <div className="space-y-2">
+              {/* Group 1 — Zero Stock */}
+              {(dashData?.zeroStockCount ?? 0) > 0 && (
                 <div
-                  className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0 cursor-pointer hover:bg-slate-50 -mx-4 px-4 transition-colors"
+                  className="rounded-lg border-l-[3px] border-red-500 bg-red-50 px-3 py-2 cursor-pointer hover:bg-red-100 transition-colors"
                   onClick={() => navigate("/stock-register?filter=critical")}
                 >
-                  <span className="text-sm text-slate-600">Reorder Alerts</span>
-                  <div className="text-right">
-                    <span className={`text-sm font-semibold font-mono tabular-nums ${needActionCount > 0 ? 'text-red-600' : 'text-amber-600'}`}>
-                      {reorderAlertCount}
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-red-700 uppercase tracking-wider">Zero Stock</span>
+                    <span className="text-base font-extrabold font-mono tabular-nums text-red-600">{dashData?.zeroStockCount}</span>
+                  </div>
+                  <p className="text-[10px] text-red-500 mt-0.5">Immediate action required</p>
+                  {/* Top 3 critical items */}
+                  {(dashData?.criticalItems ?? []).length > 0 && (
+                    <div className="mt-2 space-y-1.5">
+                      {(dashData?.criticalItems ?? []).slice(0, 3).map((item, i) => (
+                        <div key={i} className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] text-red-800 truncate max-w-[100px] font-mono">{item.item_code || item.description}</span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {item.hasPO ? (
+                              <button
+                                className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors"
+                                onClick={(e) => { e.stopPropagation(); navigate("/purchase-orders"); }}
+                              >PO Raised</button>
+                            ) : item.hasDC ? (
+                              <button
+                                className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-teal-100 text-teal-700 hover:bg-teal-200 transition-colors"
+                                onClick={(e) => { e.stopPropagation(); navigate("/delivery-challans"); }}
+                              >DC Out</button>
+                            ) : item.hasAO ? (
+                              <button
+                                className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 hover:bg-purple-200 transition-colors"
+                                onClick={(e) => { e.stopPropagation(); navigate("/assembly-orders"); }}
+                              >AO Raised</button>
+                            ) : (
+                              <button
+                                className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-600 text-white hover:bg-red-700 transition-colors"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigate("/purchase-orders/new", { state: { prefillItem: { item_id: item.id, item_code: item.item_code, description: item.description } } });
+                                }}
+                              >Raise PO</button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Group 2 — Low Stock */}
+              {(dashData?.warningStockCount ?? 0) > 0 && (
+                <div
+                  className="rounded-lg border-l-[3px] border-amber-500 bg-amber-50 px-3 py-2 cursor-pointer hover:bg-amber-100 transition-colors"
+                  onClick={() => navigate("/stock-register?filter=warning")}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-amber-700 uppercase tracking-wider">Running Low</span>
+                    <span className="text-base font-extrabold font-mono tabular-nums text-amber-600">{dashData?.warningStockCount}</span>
+                  </div>
+                  <p className="text-[10px] text-amber-500 mt-0.5">Below minimum threshold</p>
+                </div>
+              )}
+
+              {/* Group 3 — Being Actioned */}
+              {((dashData?.poRaisedCount ?? 0) + (dashData?.dcRaisedCount ?? 0) + (dashData?.aoRaisedCount ?? 0)) > 0 && (
+                <div className="rounded-lg border-l-[3px] border-blue-400 bg-blue-50 px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-blue-700 uppercase tracking-wider">Being Actioned</span>
+                    <span className="text-base font-extrabold font-mono tabular-nums text-blue-600">
+                      {(dashData?.poRaisedCount ?? 0) + (dashData?.dcRaisedCount ?? 0) + (dashData?.aoRaisedCount ?? 0)}
                     </span>
-                    <p className="text-[10px] text-slate-400 leading-none mt-0.5">
-                      {needActionCount > 0 && actionedCount > 0
-                        ? `${needActionCount} need action · ${actionedCount} actioned`
-                        : needActionCount > 0
-                        ? `${needActionCount} need action`
-                        : `all ${actionedCount} actioned`}
-                    </p>
+                  </div>
+                  <p className="text-[10px] mt-1">
+                    {[
+                      (dashData?.poRaisedCount ?? 0) > 0 && (
+                        <button key="po" className="text-blue-600 hover:underline" onClick={(e) => { e.stopPropagation(); navigate("/purchase-orders?filter=open"); }}>
+                          {dashData!.poRaisedCount} PO raised
+                        </button>
+                      ),
+                      (dashData?.dcRaisedCount ?? 0) > 0 && (
+                        <button key="dc" className="text-teal-600 hover:underline" onClick={(e) => { e.stopPropagation(); navigate("/delivery-challans?filter=issued"); }}>
+                          {dashData!.dcRaisedCount} DC out
+                        </button>
+                      ),
+                      (dashData?.aoRaisedCount ?? 0) > 0 && (
+                        <button key="ao" className="text-purple-600 hover:underline" onClick={(e) => { e.stopPropagation(); navigate("/assembly-orders?filter=active"); }}>
+                          {dashData!.aoRaisedCount} AO in progress
+                        </button>
+                      ),
+                    ].filter(Boolean).reduce<React.ReactNode[]>((acc, el, i) => i === 0 ? [el] : [...acc, <span key={`dot-${i}`} className="text-blue-400"> · </span>, el], [])}
+                  </p>
+                </div>
+              )}
+
+              {/* Group 4 — Needs Action */}
+              {(dashData?.actionNeededCount ?? 0) > 0 && (
+                <div
+                  className="rounded-lg border-l-[3px] border-red-400 bg-red-50 px-3 py-2 cursor-pointer hover:bg-red-100 transition-colors"
+                  onClick={() => navigate("/procurement-intelligence")}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-red-700 uppercase tracking-wider">No Action Yet</span>
+                    <span className="text-base font-extrabold font-mono tabular-nums text-red-600">{dashData?.actionNeededCount}</span>
                   </div>
                 </div>
               )}
-              <LightStatRow label="Zero Stock Items"          value={dashData?.zeroStockCount ?? "—"} highlight={(dashData?.zeroStockCount ?? 0) > 0} onClick={() => navigate("/stock-register")} />
+
+              {/* All healthy */}
+              {(dashData?.zeroStockCount ?? 0) === 0 && (dashData?.warningStockCount ?? 0) === 0 && (
+                <div className="py-2">
+                  <p className="text-2xl font-extrabold tracking-tight font-mono tabular-nums text-green-600">0</p>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wider">All healthy</p>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-3 pt-2 border-t border-slate-100">
+              <button
+                className="text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors"
+                onClick={() => navigate("/procurement-intelligence")}
+              >
+                View full procurement intelligence →
+              </button>
             </div>
           </div>
 
