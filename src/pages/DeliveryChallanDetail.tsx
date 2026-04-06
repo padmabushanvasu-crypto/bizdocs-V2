@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Edit, X, Truck, CheckCircle2, RotateCcw, AlertTriangle, Printer, ChevronLeft } from "lucide-react";
+import { Edit, X, Truck, CheckCircle2, RotateCcw, AlertTriangle, Printer, ChevronLeft, Trash2, Plus } from "lucide-react";
 import { EditableSection } from "@/components/EditableSection";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -18,6 +18,8 @@ import {
   fetchComponentProcessingLog,
   type EnhancedReturnData,
 } from "@/lib/delivery-challans-api";
+import { createGrnFromDC } from "@/lib/grn-api";
+import { JobCardCreationDialog } from "@/components/JobCardCreationDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { formatCurrency, formatNumber, amountInWords } from "@/lib/gst-utils";
 import { DocumentHeader } from "@/components/DocumentHeader";
@@ -61,15 +63,6 @@ export default function DeliveryChallanDetail() {
   const [printDialogOpen, setPrintDialogOpen] = useState(false);
   const [printCopiesSelected, setPrintCopiesSelected] = useState(2);
   const DC_COPY_LABELS = ["ORIGINAL", "DUPLICATE", "TRIPLICATE"];
-  const triggerPrint = (totalCopies: number, index = 0) => {
-    if (index >= totalCopies) { setCopyLabel("ORIGINAL"); return; }
-    setCopyLabel(DC_COPY_LABELS[index]);
-    setTimeout(() => {
-      const handler = () => { window.removeEventListener("afterprint", handler); setTimeout(() => triggerPrint(totalCopies, index + 1), 50); };
-      window.addEventListener("afterprint", handler);
-      window.print();
-    }, 100);
-  };
   // Enhanced return dialog state
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
   const [returnLineItem, setReturnLineItem] = useState<any>(null);
@@ -90,6 +83,8 @@ export default function DeliveryChallanDetail() {
   const [retReworkVendorId, setRetReworkVendorId] = useState<string | null>(null);
   const [retReworkVendorName, setRetReworkVendorName] = useState('');
   const [retSaving, setRetSaving] = useState(false);
+  const [showDeletedReturns, setShowDeletedReturns] = useState(false);
+  const [jcDialogOpen, setJcDialogOpen] = useState(false);
 
   const { data: dc, isLoading } = useQuery({
     queryKey: ["delivery-challan", id],
@@ -159,11 +154,23 @@ export default function DeliveryChallanDetail() {
     },
   });
 
+  const createGrnMutation = useMutation({
+    mutationFn: () => createGrnFromDC({ dc_id: id!, date: new Date().toISOString().split("T")[0] }),
+    onSuccess: (newGrn) => {
+      navigate(`/grn/${(newGrn as any).id}`);
+    },
+    onError: (err: any) => {
+      toast({ title: "Error creating GRN", description: err.message, variant: "destructive" });
+    },
+  });
+
   if (isLoading) return <div className="p-6 text-muted-foreground">Loading...</div>;
   if (!dc) return <div className="p-6 text-muted-foreground">Delivery challan not found.</div>;
 
   const items = dc.line_items || [];
   const isReturnable = RETURNABLE_DC_TYPES.includes(dc.dc_type);
+  const isDeleted = dc.status === "deleted";
+  const isJobWorkDC = dc.dc_type === "job_work_out" || dc.dc_type === "job_work_143";
   const hasNatureOfProcess = items.some((i) => i.nature_of_process);
   const hasDrawingNumber = items.some((i) => i.drawing_number);
   const hasQtyKgs = items.some((i) => (i as any).qty_kgs != null);
@@ -175,8 +182,183 @@ export default function DeliveryChallanDetail() {
   const grandTotal = dc.grand_total || subTotal;
   const isCgstSgst = (dc.cgst_amount || 0) > 0;
 
+  // ── Compact A4 print copy renderer ────────────────────────────────────────
+  const renderDCPrintCopy = (label: string) => {
+    const co = companySettings;
+    const fromAddr = [co?.address_line1, co?.address_line2, [co?.city, co?.state].filter(Boolean).join(', '), co?.pin_code ? `PIN ${co.pin_code}` : ''].filter(Boolean).join(', ');
+    return (
+      <div className="dc-print-copy" style={{ fontFamily: 'Arial, sans-serif', fontSize: '7.5pt', color: '#000', lineHeight: 1.2 }}>
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1.5pt solid #1E3A5F', paddingBottom: '3pt', marginBottom: '3pt' }}>
+          <div>
+            {co?.logo_url && <img src={co.logo_url} alt="" style={{ height: '22pt', marginBottom: '1pt', objectFit: 'contain' }} />}
+            <div style={{ fontWeight: 700, fontSize: '9.5pt', lineHeight: 1.15 }}>{co?.company_name}</div>
+            <div style={{ fontSize: '6.5pt', color: '#475569' }}>{fromAddr}</div>
+            {co?.gstin && <div style={{ fontSize: '6.5pt', fontFamily: 'monospace' }}>GSTIN: {co.gstin}</div>}
+            {co?.phone && <div style={{ fontSize: '6.5pt', color: '#475569' }}>Ph: {co.phone}</div>}
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontWeight: 700, fontSize: '10pt', color: '#1E3A5F', letterSpacing: '0.03em' }}>DELIVERY CHALLAN</div>
+            <div style={{ fontSize: '6.5pt', color: '#64748b', marginBottom: '1pt' }}>cum Job Work Order · [{typeLabels[dc.dc_type] || dc.dc_type}]</div>
+            <div style={{ fontWeight: 700, fontSize: '7pt' }}>DC No: {dc.dc_number}</div>
+            <div style={{ fontSize: '7pt' }}>Date: {new Date(dc.dc_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+            {dc.vehicle_number && <div style={{ fontSize: '6.5pt' }}>Vehicle: {dc.vehicle_number}</div>}
+            {(dc as any).driver_name && <div style={{ fontSize: '6.5pt' }}>Driver: {(dc as any).driver_name}{(dc as any).driver_contact ? ` — ${(dc as any).driver_contact}` : ''}</div>}
+            <div style={{ fontWeight: 700, border: '0.75pt solid #1E3A5F', display: 'inline-block', padding: '1pt 4pt', marginTop: '1pt', fontSize: '7pt', letterSpacing: '0.05em' }}>{label}</div>
+          </div>
+        </div>
+
+        {/* From / To */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4pt', marginBottom: '3pt', fontSize: '7pt' }}>
+          <div style={{ border: '0.5pt solid #CBD5E1', padding: '3pt', borderRadius: '2pt' }}>
+            <div style={{ fontWeight: 700, fontSize: '6pt', color: '#64748b', textTransform: 'uppercase', marginBottom: '1pt' }}>From</div>
+            <div style={{ fontWeight: 700 }}>{co?.company_name}</div>
+            <div style={{ color: '#475569' }}>{fromAddr}</div>
+            {co?.gstin && <div style={{ fontFamily: 'monospace', fontSize: '6pt' }}>GSTIN: {co.gstin}</div>}
+          </div>
+          <div style={{ border: '0.5pt solid #CBD5E1', padding: '3pt', borderRadius: '2pt' }}>
+            <div style={{ fontWeight: 700, fontSize: '6pt', color: '#64748b', textTransform: 'uppercase', marginBottom: '1pt' }}>To</div>
+            <div style={{ fontWeight: 700 }}>{dc.party_name}</div>
+            {dc.party_address && <div style={{ color: '#475569' }}>{dc.party_address}</div>}
+            {dc.party_gstin && <div style={{ fontFamily: 'monospace', fontSize: '6pt' }}>GSTIN: {dc.party_gstin}</div>}
+            {dc.party_phone && <div style={{ color: '#475569' }}>Ph: {dc.party_phone}</div>}
+          </div>
+        </div>
+
+        {/* Reference row */}
+        {(dc.po_reference || dc.return_due_date || (dc as any).lo_number) && (
+          <div style={{ display: 'flex', gap: '10pt', fontSize: '7pt', marginBottom: '3pt', color: '#475569' }}>
+            {(dc as any).lo_number && <span>L.O. No: <strong style={{ color: '#000' }}>{(dc as any).lo_number}</strong></span>}
+            {dc.po_reference && <span>PO Ref: <strong style={{ color: '#000' }}>{dc.po_reference}</strong></span>}
+            {dc.return_due_date && <span>Return Due: <strong style={{ color: '#000' }}>{new Date(dc.return_due_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</strong></span>}
+            {(dc as any).approx_value > 0 && <span>Approx. Value: <strong style={{ color: '#000' }}>₹{formatCurrency((dc as any).approx_value)}</strong></span>}
+          </div>
+        )}
+
+        {/* Line Items */}
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '7pt', marginBottom: '3pt' }}>
+          <thead>
+            <tr style={{ background: '#1E3A5F', color: '#fff' }}>
+              <th style={{ padding: '2pt 3pt', textAlign: 'left', width: '16pt' }}>#</th>
+              {hasDrawingNumber && <th style={{ padding: '2pt 3pt', textAlign: 'left', minWidth: '55pt' }}>Drawing No.</th>}
+              <th style={{ padding: '2pt 3pt', textAlign: 'left' }}>Description</th>
+              {hasNatureOfProcess && <th style={{ padding: '2pt 3pt', textAlign: 'left', minWidth: '55pt' }}>Process</th>}
+              <th style={{ padding: '2pt 3pt', textAlign: 'center', width: '20pt' }}>Unit</th>
+              <th style={{ padding: '2pt 3pt', textAlign: 'right', width: '28pt' }}>Qty</th>
+              {hasQtyKgs && <th style={{ padding: '2pt 3pt', textAlign: 'right', width: '32pt' }}>KGS</th>}
+              {hasQtySft && <th style={{ padding: '2pt 3pt', textAlign: 'right', width: '32pt' }}>SFT</th>}
+              <th style={{ padding: '2pt 3pt', textAlign: 'right', width: '40pt' }}>Rate (₹)</th>
+              <th style={{ padding: '2pt 3pt', textAlign: 'right', width: '46pt' }}>Amount (₹)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item, idx) => (
+              <tr key={item.serial_number} style={{ background: idx % 2 === 0 ? '#F8FAFC' : '#fff', borderBottom: '0.5pt solid #E2E8F0' }}>
+                <td style={{ padding: '1.5pt 3pt', color: '#64748b' }}>{item.serial_number}</td>
+                {hasDrawingNumber && <td style={{ padding: '1.5pt 3pt', fontFamily: 'monospace', fontWeight: 700, color: '#1E3A5F' }}>{item.drawing_number || item.item_code || '—'}</td>}
+                <td style={{ padding: '1.5pt 3pt' }}>{item.description}</td>
+                {hasNatureOfProcess && <td style={{ padding: '1.5pt 3pt', color: '#475569' }}>{(item as any).nature_of_process || '—'}</td>}
+                <td style={{ padding: '1.5pt 3pt', textAlign: 'center', color: '#475569' }}>{item.unit || 'NOS'}</td>
+                <td style={{ padding: '1.5pt 3pt', textAlign: 'right', fontFamily: 'monospace' }}>{formatNumber(item.quantity || item.qty_nos || 0)}</td>
+                {hasQtyKgs && <td style={{ padding: '1.5pt 3pt', textAlign: 'right', fontFamily: 'monospace' }}>{(item as any).qty_kgs != null ? formatNumber((item as any).qty_kgs) : '—'}</td>}
+                {hasQtySft && <td style={{ padding: '1.5pt 3pt', textAlign: 'right', fontFamily: 'monospace' }}>{(item as any).qty_sft != null ? formatNumber((item as any).qty_sft) : '—'}</td>}
+                <td style={{ padding: '1.5pt 3pt', textAlign: 'right', fontFamily: 'monospace' }}>{formatCurrency(item.rate || 0)}</td>
+                <td style={{ padding: '1.5pt 3pt', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}>{formatCurrency(item.amount || 0)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {/* Totals + Instructions */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4pt' }}>
+          <div style={{ maxWidth: '55%', fontSize: '7pt' }}>
+            {dc.special_instructions && (
+              <div><span style={{ fontWeight: 700 }}>Special Instructions: </span>{dc.special_instructions}</div>
+            )}
+            {isReturnable && (
+              <div style={{ fontWeight: 700, fontSize: '6.5pt', borderTop: '0.75pt solid #1E3A5F', borderBottom: '0.75pt solid #1E3A5F', padding: '1.5pt 0', marginTop: '3pt', letterSpacing: '0.05em' }}>
+                NOT FOR SALE — GOODS FOR JOB WORK / RETURNABLE
+              </div>
+            )}
+          </div>
+          <div style={{ minWidth: '120pt', fontSize: '7pt' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5pt 0' }}>
+              <span style={{ color: '#475569' }}>Sub Total</span>
+              <span style={{ fontFamily: 'monospace' }}>{formatCurrency(subTotal)}</span>
+            </div>
+            {isCgstSgst ? (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5pt 0' }}>
+                  <span style={{ color: '#475569' }}>CGST @ {(dc.gst_rate || 18) / 2}%</span>
+                  <span style={{ fontFamily: 'monospace' }}>{formatCurrency(dc.cgst_amount || 0)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5pt 0' }}>
+                  <span style={{ color: '#475569' }}>SGST @ {(dc.gst_rate || 18) / 2}%</span>
+                  <span style={{ fontFamily: 'monospace' }}>{formatCurrency(dc.sgst_amount || 0)}</span>
+                </div>
+              </>
+            ) : (dc.igst_amount || 0) > 0 ? (
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5pt 0' }}>
+                <span style={{ color: '#475569' }}>IGST @ {dc.gst_rate || 18}%</span>
+                <span style={{ fontFamily: 'monospace' }}>{formatCurrency(dc.igst_amount || 0)}</span>
+              </div>
+            ) : null}
+            <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '0.75pt solid #000', paddingTop: '1.5pt', fontWeight: 700, fontSize: '8pt', marginTop: '1pt' }}>
+              <span>Total</span>
+              <span style={{ fontFamily: 'monospace' }}>{formatCurrency(grandTotal)}</span>
+            </div>
+            <div style={{ fontSize: '6pt', color: '#475569', fontStyle: 'italic', marginTop: '1pt' }}>{amountInWords(grandTotal)}</div>
+          </div>
+        </div>
+
+        {/* Signature + Receiver — single combined row */}
+        <div style={{ borderTop: '0.75pt solid #CBD5E1', paddingTop: '3pt' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6pt', fontSize: '7pt', textAlign: 'center' }}>
+            {[
+              { label: 'Prepared By', name: dc.prepared_by },
+              { label: 'Checked By', name: dc.checked_by },
+              { label: 'Authorised Signatory', name: '' },
+              { label: `Receiver (${dc.party_name})`, name: '' },
+            ].map(({ label, name }) => (
+              <div key={label} style={{ borderTop: '0.5pt solid #000', paddingTop: '2pt', marginTop: '10pt' }}>
+                {name && <div style={{ fontSize: '6pt', color: '#64748b', marginBottom: '1pt' }}>{name}</div>}
+                <div style={{ fontWeight: 700, fontSize: '6.5pt' }}>{label}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: '6.5pt', color: '#475569', textAlign: 'center', marginTop: '2pt' }}>
+            Received the above goods in good condition · Date: ___________
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-5xl mx-auto">
+      {/* Print CSS — hides everything except #dc-print-view */}
+      <style>{`
+        @media print {
+          * { visibility: hidden !important; }
+          #dc-print-view, #dc-print-view * { visibility: visible !important; }
+          #dc-print-view { display: block !important; position: absolute; left: 0; top: 0; width: 100%; }
+          .dc-page-break { page-break-before: always; break-before: always; }
+          .dc-print-copy { page-break-inside: avoid; }
+          @page { size: A4 portrait; margin: 10mm 12mm 8mm 12mm; }
+          body { font-size: 7.5pt !important; line-height: 1.2 !important; }
+        }
+      `}</style>
+
+      {/* Always-present A4 print view */}
+      <div id="dc-print-view" style={{ display: 'none' }}>
+        {DC_COPY_LABELS.slice(0, printCopiesSelected).map((label, idx) => (
+          <div key={label}>
+            {idx > 0 && <div className="dc-page-break" />}
+            {renderDCPrintCopy(label)}
+          </div>
+        ))}
+      </div>
+
       <button
         onClick={() => navigate("/delivery-challans")}
         className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 transition-colors mb-3 print:hidden"
@@ -184,6 +366,14 @@ export default function DeliveryChallanDetail() {
         <ChevronLeft className="h-4 w-4" />
         Back to DC / Job Work Orders
       </button>
+      {/* Deleted banner */}
+      {isDeleted && (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 print:hidden">
+          <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
+          <p className="text-sm text-destructive font-medium">This DC has been deleted and is read-only.</p>
+        </div>
+      )}
+
       {/* Top Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div className="flex items-center gap-3">
@@ -203,12 +393,18 @@ export default function DeliveryChallanDetail() {
               <Edit className="h-3.5 w-3.5 mr-1" /> Edit
             </Button>
           )}
-          {isReturnable && ["issued", "partially_returned"].includes(dc.status) && (
-            <Button size="sm" onClick={() => navigate(`/dc-grn/new?dc_id=${id}`)}>
-              <RotateCcw className="h-3.5 w-3.5 mr-1" /> Record Return
+          {isJobWorkDC && ["issued", "partially_returned"].includes(dc.status) && !isDeleted && (
+            <Button variant="outline" size="sm" onClick={() => setJcDialogOpen(true)}>
+              <Plus className="h-3.5 w-3.5 mr-1" /> Create Job Cards
             </Button>
           )}
-          {!["cancelled", "fully_returned"].includes(dc.status) && (
+          {isReturnable && ["issued", "partially_returned"].includes(dc.status) && !isDeleted && (
+            <Button size="sm" disabled={createGrnMutation.isPending} onClick={() => createGrnMutation.mutate()}>
+              <RotateCcw className="h-3.5 w-3.5 mr-1" />
+              {createGrnMutation.isPending ? "Creating GRN…" : "Record Return"}
+            </Button>
+          )}
+          {!["cancelled", "fully_returned", "deleted"].includes(dc.status) && (
             <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => setCancelOpen(true)}>
               <X className="h-3.5 w-3.5 mr-1" /> Cancel
             </Button>
@@ -512,34 +708,49 @@ export default function DeliveryChallanDetail() {
               <h3 className="text-xs font-semibold text-slate-500">Return History</h3>
               <p className="text-xs text-muted-foreground mt-0.5">Records material physically returned by the job worker. To send goods back to a <em>vendor</em>, raise a new DC with type "Return to Vendor".</p>
             </div>
-            {["issued", "partially_returned"].includes(dc.status) && (
-              <Button size="sm" variant="outline" onClick={() => navigate(`/delivery-challans/${id}/record-return`)}>
-                <RotateCcw className="h-3.5 w-3.5 mr-1" /> Record Return
+            <div className="flex items-center gap-2">
+              <Button
+                variant={showDeletedReturns ? "secondary" : "outline"}
+                size="sm"
+                onClick={() => setShowDeletedReturns(v => !v)}
+              >
+                <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                {showDeletedReturns ? "Hide Deleted" : "Show Deleted"}
               </Button>
-            )}
-          </div>
-          {(returns ?? []).length === 0 ? (
-            <div className="text-center py-6">
-              <AlertTriangle className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">No returns recorded yet</p>
+              {["issued", "partially_returned"].includes(dc.status) && !isDeleted && (
+                <Button size="sm" variant="outline" disabled={createGrnMutation.isPending} onClick={() => createGrnMutation.mutate()}>
+                  <RotateCcw className="h-3.5 w-3.5 mr-1" /> {createGrnMutation.isPending ? "Creating GRN…" : "Record Return"}
+                </Button>
+              )}
             </div>
-          ) : (
-            <table className="w-full data-table">
-              <thead>
-                <tr><th>Date</th><th>Received By</th><th>Items Returned</th><th>Notes</th></tr>
-              </thead>
-              <tbody>
-                {(returns ?? []).map((ret) => (
-                  <tr key={ret.id}>
-                    <td>{new Date(ret.return_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</td>
-                    <td>{ret.received_by || "—"}</td>
-                    <td className="font-mono text-sm">{ret.items?.length ?? 0} items</td>
-                    <td className="text-muted-foreground">{ret.notes || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          </div>
+          {(() => {
+            const filteredReturns = showDeletedReturns
+              ? (returns ?? [])
+              : (returns ?? []).filter(r => (r as any).status !== "deleted");
+            return filteredReturns.length === 0 ? (
+              <div className="text-center py-6">
+                <AlertTriangle className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground">No returns recorded yet</p>
+              </div>
+            ) : (
+              <table className="w-full data-table">
+                <thead>
+                  <tr><th>Date</th><th>Received By</th><th>Items Returned</th><th>Notes</th></tr>
+                </thead>
+                <tbody>
+                  {filteredReturns.map((ret) => (
+                    <tr key={ret.id} className={(ret as any).status === "deleted" ? "opacity-50" : ""}>
+                      <td>{new Date(ret.return_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</td>
+                      <td>{ret.received_by || "—"}</td>
+                      <td className="font-mono text-sm">{ret.items?.length ?? 0} items</td>
+                      <td className="text-muted-foreground">{ret.notes || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            );
+          })()}
         </div>
       )}
 
@@ -834,7 +1045,7 @@ export default function DeliveryChallanDetail() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPrintDialogOpen(false)}>Cancel</Button>
-            <Button onClick={() => { setPrintDialogOpen(false); triggerPrint(printCopiesSelected); }}>
+            <Button onClick={() => { setPrintDialogOpen(false); setTimeout(() => window.print(), 100); }}>
               <Printer className="h-3.5 w-3.5 mr-1" /> Print
             </Button>
           </DialogFooter>
@@ -855,6 +1066,17 @@ export default function DeliveryChallanDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Job Card Creation Dialog */}
+      <JobCardCreationDialog
+        open={jcDialogOpen}
+        onOpenChange={setJcDialogOpen}
+        dcId={id!}
+        dcNumber={dc.dc_number}
+        lineItems={dc.line_items ?? []}
+        partyId={dc.party_id}
+        partyName={dc.party_name}
+      />
     </div>
   );
 }
