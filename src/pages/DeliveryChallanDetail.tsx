@@ -212,7 +212,7 @@ export default function DeliveryChallanDetail() {
     const co = companySettings;
     const fromAddr = [co?.address_line1, co?.address_line2, [co?.city, co?.state].filter(Boolean).join(', '), co?.pin_code ? `PIN ${co.pin_code}` : ''].filter(Boolean).join(', ');
     return (
-      <div className="dc-print-copy" style={{ fontFamily: 'Arial, sans-serif', fontSize: '7.5pt', color: '#000', lineHeight: 1.2 }}>
+      <div className="dc-print-copy" style={{ fontFamily: 'Arial, sans-serif', fontSize: '7.5pt', color: '#000', lineHeight: 1.2, display: 'flex', flexDirection: 'column', minHeight: '270mm' }}>
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1.5pt solid #1E3A5F', paddingBottom: '3pt', marginBottom: '3pt' }}>
           <div>
@@ -336,8 +336,8 @@ export default function DeliveryChallanDetail() {
           </div>
         </div>
 
-        {/* Signature + Receiver — single combined row */}
-        <div style={{ borderTop: '0.75pt solid #CBD5E1', paddingTop: '3pt' }}>
+        {/* Signature + Receiver — pinned to bottom */}
+        <div style={{ borderTop: '0.75pt solid #CBD5E1', paddingTop: '3pt', marginTop: 'auto' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6pt', fontSize: '7pt', textAlign: 'center' }}>
             {[
               { label: 'Prepared By', name: dc.prepared_by },

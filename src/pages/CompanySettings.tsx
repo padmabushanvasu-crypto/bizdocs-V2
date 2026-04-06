@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { ArrowLeft, Save, Building2, Upload, X } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,6 +33,13 @@ export default function CompanySettings() {
     state: "",
     state_code: "",
     pin_code: "",
+    registered_address_line1: "",
+    registered_address_line2: "",
+    registered_address_line3: "",
+    registered_city: "",
+    registered_state: "",
+    registered_state_code: "",
+    registered_pin_code: "",
     gstin: "",
     pan: "",
     cin: "",
@@ -41,6 +49,7 @@ export default function CompanySettings() {
     authorized_signatory: "",
     logo_url: "",
   });
+  const [sameAsPhysical, setSameAsPhysical] = useState(false);
 
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string>("");
@@ -56,22 +65,43 @@ export default function CompanySettings() {
   useEffect(() => {
     if (existing) {
       const resolvedCode = resolveStateCode(existing.state_code, existing.gstin);
+      const e = existing as any;
+      const regLine1 = e.registered_address_line1 ?? "";
+      const regLine2 = e.registered_address_line2 ?? "";
+      const regLine3 = e.registered_address_line3 ?? "";
+      const regCity = e.registered_city ?? "";
+      const regState = e.registered_state ?? "";
+      const regStateCode = e.registered_state_code ?? "";
+      const regPin = e.registered_pin_code ?? "";
+      const physLine1 = existing.address_line1 ?? "";
+      const physLine2 = existing.address_line2 ?? "";
+      // Check if registered == physical (to pre-tick the checkbox)
+      const isMatch = regLine1 === physLine1 && regLine2 === physLine2 &&
+        regCity === (existing.city ?? "") && regStateCode === resolvedCode;
+      setSameAsPhysical(isMatch && physLine1 !== "");
       setForm({
         company_name: existing.company_name ?? "",
-        address_line1: existing.address_line1 ?? "",
-        address_line2: existing.address_line2 ?? "",
-        address_line3: (existing as any).address_line3 ?? "",
+        address_line1: physLine1,
+        address_line2: physLine2,
+        address_line3: e.address_line3 ?? "",
         city: existing.city ?? "",
         state: existing.state ?? (resolvedCode ? INDIA_STATE_CODES[resolvedCode] ?? "" : ""),
         state_code: resolvedCode,
         pin_code: existing.pin_code ?? "",
+        registered_address_line1: regLine1,
+        registered_address_line2: regLine2,
+        registered_address_line3: regLine3,
+        registered_city: regCity,
+        registered_state: regState,
+        registered_state_code: regStateCode,
+        registered_pin_code: regPin,
         gstin: existing.gstin ?? "",
         pan: existing.pan ?? "",
-        cin: (existing as any).cin ?? "",
+        cin: e.cin ?? "",
         phone: existing.phone ?? "",
         email: existing.email ?? "",
         website: existing.website ?? "",
-        authorized_signatory: (existing as any).authorized_signatory ?? "",
+        authorized_signatory: e.authorized_signatory ?? "",
         logo_url: existing.logo_url ?? "",
       });
       if (existing.logo_url) setLogoPreview(existing.logo_url);
@@ -154,6 +184,23 @@ export default function CompanySettings() {
       }
 
       // Step 3: Save extended company settings
+      const regAddr = sameAsPhysical ? {
+        registered_address_line1: form.address_line1 || null,
+        registered_address_line2: form.address_line2 || null,
+        registered_address_line3: form.address_line3 || null,
+        registered_city: form.city || null,
+        registered_state: form.state || null,
+        registered_state_code: form.state_code || null,
+        registered_pin_code: form.pin_code || null,
+      } : {
+        registered_address_line1: form.registered_address_line1 || null,
+        registered_address_line2: form.registered_address_line2 || null,
+        registered_address_line3: form.registered_address_line3 || null,
+        registered_city: form.registered_city || null,
+        registered_state: form.registered_state || null,
+        registered_state_code: form.registered_state_code || null,
+        registered_pin_code: form.registered_pin_code || null,
+      };
       return {
         result: await saveCompanySettings({
           company_name: form.company_name || null,
@@ -172,6 +219,7 @@ export default function CompanySettings() {
           ...(form.address_line3 ? { address_line3: form.address_line3 } : {}),
           ...(form.cin ? { cin: form.cin } : {}),
           ...(form.authorized_signatory ? { authorized_signatory: form.authorized_signatory } : {}),
+          ...regAddr,
         } as any),
         isFirstSetup,
       };
@@ -263,6 +311,14 @@ export default function CompanySettings() {
           <Label>Company Name *</Label>
           <Input value={form.company_name} onChange={set("company_name")} placeholder="e.g. Acme Manufacturing Pvt. Ltd." />
         </div>
+      </div>
+
+      {/* Physical / Factory Address */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-4 space-y-4">
+        <div>
+          <h2 className="text-xs font-bold uppercase text-slate-500 tracking-wider">Physical / Factory Address</h2>
+          <p className="text-xs text-slate-400 mt-0.5">Printed on Delivery Challans as the dispatch-from address</p>
+        </div>
 
         <div className="space-y-1.5">
           <Label>Address Line 1</Label>
@@ -314,6 +370,75 @@ export default function CompanySettings() {
             <Input value={form.pin_code} onChange={set("pin_code")} placeholder="400001" maxLength={6} className="font-mono" />
           </div>
         </div>
+      </div>
+
+      {/* Registered Office Address */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-4 space-y-4">
+        <div>
+          <h2 className="text-xs font-bold uppercase text-slate-500 tracking-wider">Registered Office Address</h2>
+          <p className="text-xs text-slate-400 mt-0.5">Printed on Purchase Orders as your official business address</p>
+        </div>
+
+        <div className="flex items-center gap-2 pb-1">
+          <Checkbox
+            id="same-as-physical"
+            checked={sameAsPhysical}
+            onCheckedChange={(v) => setSameAsPhysical(Boolean(v))}
+          />
+          <label htmlFor="same-as-physical" className="text-sm text-slate-600 cursor-pointer">
+            Same as Physical / Factory Address
+          </label>
+        </div>
+
+        {!sameAsPhysical && (
+          <>
+            <div className="space-y-1.5">
+              <Label>Address Line 1</Label>
+              <Input value={form.registered_address_line1} onChange={set("registered_address_line1")} placeholder="Building / Plot No." />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Address Line 2</Label>
+              <Input value={form.registered_address_line2} onChange={set("registered_address_line2")} placeholder="Street / Area" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Address Line 3</Label>
+              <Input value={form.registered_address_line3} onChange={set("registered_address_line3")} placeholder="Landmark" />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label>City</Label>
+                <Input value={form.registered_city} onChange={set("registered_city")} placeholder="Mumbai" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>State</Label>
+                <Select
+                  value={form.registered_state_code}
+                  onValueChange={(code) => {
+                    const name = INDIA_STATE_CODES[code] ?? "";
+                    setForm((f) => ({ ...f, registered_state_code: code, registered_state: name }));
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select state..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(INDIA_STATE_CODES)
+                      .sort(([, a], [, b]) => a.localeCompare(b))
+                      .map(([code, name]) => (
+                        <SelectItem key={code} value={code}>
+                          {name} ({code})
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>PIN Code</Label>
+                <Input value={form.registered_pin_code} onChange={set("registered_pin_code")} placeholder="400001" maxLength={6} className="font-mono" />
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Tax Registration */}

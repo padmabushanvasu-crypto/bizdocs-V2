@@ -71,6 +71,17 @@ export default function DocumentSettings() {
   });
   const [poTerms, setPoTerms] = useState("");
   const [dcTerms, setDcTerms] = useState("");
+  const [poColToggles, setPoColToggles] = useState({
+    show_hsn: true,
+    show_rate_amount: true,
+    show_drawing_number: true,
+  });
+  const [dcColToggles, setDcColToggles] = useState({
+    show_hsn: true,
+    show_rate_amount: true,
+    show_nature_of_process: true,
+    show_vehicle_details: true,
+  });
   const [sigFile, setSigFile] = useState<File | null>(null);
   const [sigPreview, setSigPreview] = useState("");
   const [sigUploading, setSigUploading] = useState(false);
@@ -127,8 +138,19 @@ export default function DocumentSettings() {
     });
     const poDs = allDocSettings.find((s) => s.document_type === "purchase_order");
     if (poDs?.terms_and_conditions) setPoTerms(poDs.terms_and_conditions);
+    if (poDs) setPoColToggles({
+      show_hsn: poDs.show_hsn ?? true,
+      show_rate_amount: poDs.show_rate_amount ?? true,
+      show_drawing_number: poDs.show_drawing_number ?? true,
+    });
     const dcDs = allDocSettings.find((s) => s.document_type === "delivery_challan");
     if (dcDs?.terms_and_conditions) setDcTerms(dcDs.terms_and_conditions);
+    if (dcDs) setDcColToggles({
+      show_hsn: dcDs.show_hsn ?? true,
+      show_rate_amount: dcDs.show_rate_amount ?? true,
+      show_nature_of_process: dcDs.show_nature_of_process ?? true,
+      show_vehicle_details: dcDs.show_vehicle_details ?? true,
+    });
   }, [allDocSettings]);
 
   const handleSigChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -163,9 +185,20 @@ export default function DocumentSettings() {
         } as any);
       }
 
-      // Save per-document T&C
-      await upsertDocumentSettings("purchase_order", { terms_and_conditions: poTerms || null } as any);
-      await upsertDocumentSettings("delivery_challan", { terms_and_conditions: dcTerms || null } as any);
+      // Save per-document T&C and column toggles
+      await upsertDocumentSettings("purchase_order", {
+        terms_and_conditions: poTerms || null,
+        show_hsn: poColToggles.show_hsn,
+        show_rate_amount: poColToggles.show_rate_amount,
+        show_drawing_number: poColToggles.show_drawing_number,
+      } as any);
+      await upsertDocumentSettings("delivery_challan", {
+        terms_and_conditions: dcTerms || null,
+        show_hsn: dcColToggles.show_hsn,
+        show_rate_amount: dcColToggles.show_rate_amount,
+        show_nature_of_process: dcColToggles.show_nature_of_process,
+        show_vehicle_details: dcColToggles.show_vehicle_details,
+      } as any);
 
       if (sigFile) {
         setSigUploading(true);
@@ -352,6 +385,53 @@ export default function DocumentSettings() {
             rows={4}
             placeholder="Terms & conditions printed on Delivery Challans…"
           />
+        </div>
+      </div>
+
+      {/* Section 4b: Document Column Customisation */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-4 space-y-4">
+        <div>
+          <h2 className="text-xs font-bold uppercase text-slate-500 tracking-wider">Document Column Customisation</h2>
+          <p className="text-sm text-slate-500 mt-0.5">Control which columns appear on printed documents</p>
+        </div>
+
+        <div>
+          <p className="text-xs font-semibold text-slate-600 mb-2">Purchase Order Columns</p>
+          <div className="space-y-2">
+            {[
+              { key: "show_drawing_number", label: "Show Drawing Number column" },
+              { key: "show_hsn", label: "Show HSN Code column" },
+              { key: "show_rate_amount", label: "Show Rate and Amount columns" },
+            ].map((t) => (
+              <div key={t.key} className="flex items-center justify-between py-0.5">
+                <span className="text-sm text-slate-700">{t.label}</span>
+                <Switch
+                  checked={poColToggles[t.key as keyof typeof poColToggles]}
+                  onCheckedChange={(v) => setPoColToggles((f) => ({ ...f, [t.key]: v }))}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="border-t border-slate-100 pt-3">
+          <p className="text-xs font-semibold text-slate-600 mb-2">Delivery Challan Columns</p>
+          <div className="space-y-2">
+            {[
+              { key: "show_hsn", label: "Show HSN Code column" },
+              { key: "show_rate_amount", label: "Show Rate and Amount columns" },
+              { key: "show_nature_of_process", label: "Show Nature of Process column" },
+              { key: "show_vehicle_details", label: "Show vehicle / driver details" },
+            ].map((t) => (
+              <div key={t.key} className="flex items-center justify-between py-0.5">
+                <span className="text-sm text-slate-700">{t.label}</span>
+                <Switch
+                  checked={dcColToggles[t.key as keyof typeof dcColToggles]}
+                  onCheckedChange={(v) => setDcColToggles((f) => ({ ...f, [t.key]: v }))}
+                />
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 

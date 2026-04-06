@@ -65,7 +65,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
   const fyStart = format(new Date(fyYear, 3, 1), "yyyy-MM-dd");
 
   const [invsRes, openPOsRes, openDCsRes, itemsRes, overduePOsRes,
-         itemsWithOpenPORes, itemsWithOpenDCRes, itemsWithOpenAORes, pendingAORes] = await Promise.all([
+         itemsWithOpenPORes, itemsWithOpenDCRes, itemsWithOpenAORes, pendingAORes, noReorderRes] = await Promise.all([
     supabase
       .from("invoices")
       .select("grand_total, invoice_date, due_date, status")
@@ -108,6 +108,11 @@ async function fetchDashboardData(): Promise<DashboardData> {
       .from("assembly_orders")
       .select("id", { count: "exact", head: true })
       .in("status", ["draft", "in_progress"]),
+    // Items whose classification has affects_reorder=false (exempt from reorder alerts)
+    (supabase as any)
+      .from("item_classifications")
+      .select("id")
+      .eq("affects_reorder", false),
   ]);
 
   const invoices = (invsRes.data ?? []) as any[];
@@ -136,19 +141,24 @@ async function fetchDashboardData(): Promise<DashboardData> {
   const finishedGoodCount = items.filter(
     (i) => i.item_type === "finished_good" && (i.current_stock ?? 0) > 0
   ).length;
-  const zeroStockCount = items.filter(
-    (i) => (i.current_stock ?? 0) === 0 && i.item_type !== 'sub_assembly' && i.item_type !== 'finished_good'
-  ).length;
   const needsBuildingCount = items.filter(
     (i) => i.item_type === "finished_good" && (i.stock_finished_goods ?? 0) < (i.min_finished_stock ?? 0) && (i.min_finished_stock ?? 0) > 0
   ).length;
-  // Phase 13: critical/warning/locked counts — exclude assembly/component types from reorder alerts
+  // Exclude item types manufactured in-house and classifications marked affects_reorder=false
   const REORDER_EXCLUDE = ['sub_assembly', 'finished_good', 'component'];
+  const noReorderClassIds = new Set(((noReorderRes as any).data ?? []).map((c: any) => c.id).filter(Boolean));
+  const isReorderExcluded = (i: any) =>
+    REORDER_EXCLUDE.includes(i.item_type) ||
+    (i.custom_classification_id && noReorderClassIds.has(i.custom_classification_id));
+
+  const zeroStockCount = items.filter(
+    (i) => (i.current_stock ?? 0) === 0 && (i.min_stock ?? 0) > 0 && !isReorderExcluded(i)
+  ).length;
   const criticalStockCount = items.filter(
-    (i) => i.stock_alert_level === 'critical' && !REORDER_EXCLUDE.includes(i.item_type)
+    (i) => i.stock_alert_level === 'critical' && !isReorderExcluded(i)
   ).length;
   const warningStockCount  = items.filter(
-    (i) => i.stock_alert_level === 'warning' && !REORDER_EXCLUDE.includes(i.item_type)
+    (i) => i.stock_alert_level === 'warning' && !isReorderExcluded(i)
   ).length;
   const lockedStockCount   = items.filter((i) => i.stock_alert_level === 'locked').length;
   const wipCount = items.filter((i) => (i.stock_wip ?? 0) > 0).length;
@@ -160,7 +170,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
   const pendingAssemblyOrderCount = (pendingAORes as any).count ?? 0;
 
   const lowStockItems = items.filter(
-    (i) => (i.stock_alert_level === 'critical' || i.stock_alert_level === 'warning') && !REORDER_EXCLUDE.includes(i.item_type)
+    (i) => (i.stock_alert_level === 'critical' || i.stock_alert_level === 'warning') && !isReorderExcluded(i)
   );
   const poRaisedCount = lowStockItems.filter((i) => itemsWithPOIds.has(i.id)).length;
   const dcRaisedCount = lowStockItems.filter((i) => itemsWithDCIds.has(i.id)).length;
@@ -171,7 +181,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
 
   // Top critical items for display
   const criticalItems = items
-    .filter((i) => i.stock_alert_level === 'critical' && !REORDER_EXCLUDE.includes(i.item_type))
+    .filter((i) => i.stock_alert_level === 'critical' && !isReorderExcluded(i))
     .slice(0, 5)
     .map((i) => ({
       id: i.id ?? '',

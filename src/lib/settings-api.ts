@@ -47,6 +47,14 @@ export interface CompanySettings {
   show_not_for_sale: boolean | null;
   show_original_duplicate: boolean | null;
   default_footer_text: string | null;
+  // Registered office address (separate from physical/factory address)
+  registered_address_line1: string | null;
+  registered_address_line2: string | null;
+  registered_address_line3: string | null;
+  registered_city: string | null;
+  registered_state: string | null;
+  registered_state_code: string | null;
+  registered_pin_code: string | null;
 }
 
 export interface DocumentSettings {
@@ -67,6 +75,10 @@ export interface DocumentSettings {
   numbering_prefix: string | null;
   numbering_start: number;
   numbering_current: number;
+  show_hsn: boolean | null;
+  show_rate_amount: boolean | null;
+  show_nature_of_process: boolean | null;
+  show_vehicle_details: boolean | null;
 }
 
 export interface CustomField {

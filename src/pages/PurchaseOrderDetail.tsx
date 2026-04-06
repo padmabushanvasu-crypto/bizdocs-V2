@@ -161,6 +161,14 @@ export default function PurchaseOrderDetail() {
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-5xl mx-auto">
+      <style>{`
+        @media print {
+          @page { size: A4 portrait; margin: 10mm 12mm 8mm 12mm; }
+          .po-print-wrapper { display: flex !important; flex-direction: column !important; min-height: 277mm !important; }
+          .po-footer { margin-top: auto !important; }
+          body { font-size: 8pt !important; }
+        }
+      `}</style>
       <button
         onClick={() => navigate("/purchase-orders")}
         className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 transition-colors mb-3 print:hidden"
@@ -252,7 +260,15 @@ export default function PurchaseOrderDetail() {
               )}
               <div style={{ fontWeight: '700', fontSize: '11pt', lineHeight: 1.2 }}>{company?.company_name}</div>
               <div style={{ fontSize: '8pt', color: '#475569', lineHeight: 1.4 }}>
-                {[company?.address_line1, company?.address_line2, [company?.city, company?.state].filter(Boolean).join(', '), company?.pin_code ? `PIN ${company.pin_code}` : ''].filter(Boolean).join(', ')}
+                {(() => {
+                  const c = company as any;
+                  const reg1 = c?.registered_address_line1 || company?.address_line1;
+                  const reg2 = c?.registered_address_line2 || company?.address_line2;
+                  const regCity = c?.registered_city || company?.city;
+                  const regState = c?.registered_state || company?.state;
+                  const regPin = c?.registered_pin_code || company?.pin_code;
+                  return [reg1, reg2, [regCity, regState].filter(Boolean).join(', '), regPin ? `PIN ${regPin}` : ''].filter(Boolean).join(', ');
+                })()}
               </div>
               {company?.gstin && <div style={{ fontSize: '8pt', fontFamily: 'monospace' }}>GSTIN: {company.gstin}</div>}
               {company?.phone && <div style={{ fontSize: '8pt', color: '#475569' }}>Ph: {company.phone}</div>}
