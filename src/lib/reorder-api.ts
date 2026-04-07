@@ -182,13 +182,13 @@ export async function fetchReorderAlerts(): Promise<ReorderAlert[]> {
   if (alertItemCodes.length > 0) {
     const { data: openPOs } = await (supabase as any)
       .from("purchase_orders")
-      .select("id, po_number, delivery_date")
+      .select("id, po_number, status")
       .eq("company_id", companyId)
       .in("status", ["draft", "issued", "partially_received"]);
 
     const openPOIds = (openPOs || []).map((p: any) => p.id);
-    const openPOMap: Record<string, { po_number: string; delivery_date: string | null }> = {};
-    for (const p of (openPOs || [])) openPOMap[p.id] = { po_number: p.po_number, delivery_date: p.delivery_date };
+    const openPOMap: Record<string, { po_number: string }> = {};
+    for (const p of (openPOs || [])) openPOMap[p.id] = { po_number: p.po_number };
 
     if (openPOIds.length > 0) {
       const { data: poLines } = await (supabase as any)
@@ -197,13 +197,13 @@ export async function fetchReorderAlerts(): Promise<ReorderAlert[]> {
         .in("purchase_order_id", openPOIds)
         .in("item_code", alertItemCodes);
 
-      const itemPoMap: Record<string, { qty: number; po_number: string; delivery_date: string | null }> = {};
+      const itemPoMap: Record<string, { qty: number; po_number: string }> = {};
       for (const line of (poLines || [])) {
         const code = line.item_code as string;
         if (!code) continue;
         const po = openPOMap[line.purchase_order_id];
         if (!po) continue;
-        if (!itemPoMap[code]) itemPoMap[code] = { qty: 0, po_number: po.po_number, delivery_date: po.delivery_date };
+        if (!itemPoMap[code]) itemPoMap[code] = { qty: 0, po_number: po.po_number };
         itemPoMap[code].qty += Number(line.qty_ordered) || 0;
       }
 
@@ -213,7 +213,6 @@ export async function fetchReorderAlerts(): Promise<ReorderAlert[]> {
           alert.open_po_qty = poData.qty;
           alert.actioned = true;
           alert.po_number = poData.po_number;
-          alert.po_expected_date = poData.delivery_date;
         }
       }
     }

@@ -84,13 +84,20 @@ async function fetchDashboardData(): Promise<DashboardData> {
     (supabase as any)
       .from("purchase_orders")
       .select("*", { count: "exact", head: true })
-      .in("status", ["draft", "issued", "partially_received"])
-      .lt("delivery_date", todayStr),
-    // Query A — items with an open PO already raised
-    (supabase as any)
-      .from("po_line_items")
-      .select("item_id, purchase_orders!inner(status)")
-      .in("purchase_orders.status", ["draft", "issued", "partially_received"]),
+      .in("status", ["draft", "issued", "partially_received"]),
+    // Query A — items with an open PO already raised (two-step: avoids invalid embedded filter)
+    (async () => {
+      const { data: openPOs } = await (supabase as any)
+        .from("purchase_orders")
+        .select("id")
+        .in("status", ["draft", "issued", "partially_received"]);
+      const ids = (openPOs ?? []).map((p: any) => p.id as string);
+      if (ids.length === 0) return { data: [] };
+      return (supabase as any)
+        .from("po_line_items")
+        .select("item_id, po_id")
+        .in("po_id", ids);
+    })(),
     // Query B — items with an open DC already sent out
     (supabase as any)
       .from("dc_line_items")

@@ -488,8 +488,7 @@ export function AppSidebar() {
         const { count } = await (supabase as any)
           .from("purchase_orders")
           .select("*", { count: "exact", head: true })
-          .in("status", ["draft", "issued", "partially_received"])
-          .lt("delivery_date", todayStr);
+          .in("status", ["draft", "issued", "partially_received"]);
         return count ?? 0;
       } catch { return 0; }
     },

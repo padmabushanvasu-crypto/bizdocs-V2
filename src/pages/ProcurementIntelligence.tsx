@@ -63,13 +63,27 @@ async function fetchProcurementItems(): Promise<ProcurementItem[]> {
 
   const itemIds = items.map((i: any) => i.id);
 
+  // Step 1: fetch open PO ids+numbers before parallel queries (avoids invalid embedded filter)
+  const { data: openPOsData } = await (supabase as any)
+    .from("purchase_orders")
+    .select("id, po_number")
+    .eq("company_id", companyId)
+    .in("status", ["draft", "issued", "partially_received"]);
+
+  const openPOIds = (openPOsData ?? []).map((p: any) => p.id as string);
+  const openPONumberMap = new Map<string, string>(
+    (openPOsData ?? []).map((p: any) => [p.id as string, (p.po_number ?? "") as string])
+  );
+
   // Parallel: fetch open PO lines, DC lines, and AO records for these items
   const [poLinesRes, dcLinesRes, aoRes] = await Promise.all([
-    (supabase as any)
-      .from("po_line_items")
-      .select("item_id, purchase_order_id, purchase_orders!inner(id, po_number, status)")
-      .in("item_id", itemIds)
-      .in("purchase_orders.status", ["draft", "issued", "partially_received"]),
+    openPOIds.length > 0
+      ? (supabase as any)
+          .from("po_line_items")
+          .select("item_id, po_id")
+          .in("item_id", itemIds)
+          .in("po_id", openPOIds)
+      : Promise.resolve({ data: [] }),
     (supabase as any)
       .from("dc_line_items")
       .select("item_id, delivery_challan_id, delivery_challans!inner(id, dc_number, status)")
@@ -87,8 +101,8 @@ async function fetchProcurementItems(): Promise<ProcurementItem[]> {
   ((poLinesRes.data ?? []) as any[]).forEach((row: any) => {
     if (row.item_id && !poMap.has(row.item_id)) {
       poMap.set(row.item_id, {
-        id: row.purchase_orders?.id ?? row.purchase_order_id ?? "",
-        number: row.purchase_orders?.po_number ?? "",
+        id: row.po_id ?? "",
+        number: openPONumberMap.get(row.po_id) ?? "",
       });
     }
   });
