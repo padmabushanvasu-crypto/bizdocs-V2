@@ -55,6 +55,7 @@ interface RuleFormState {
   item_code: string;
   item_description: string;
   reorder_point: number;
+  aimed_qty: number;
   reorder_qty: number;
   lead_time_days: number;
   preferred_vendor_id: string;
@@ -68,6 +69,7 @@ function emptyForm(): RuleFormState {
     item_code: "",
     item_description: "",
     reorder_point: 0,
+    aimed_qty: 0,
     reorder_qty: 0,
     lead_time_days: 7,
     preferred_vendor_id: "",
@@ -120,6 +122,7 @@ export default function ReorderRules() {
       const payload: Partial<ReorderRule> = {
         item_id: form.item_id,
         reorder_point: Number(form.reorder_point),
+        aimed_qty: Number(form.aimed_qty),
         reorder_qty: Number(form.reorder_qty),
         lead_time_days: Number(form.lead_time_days),
         preferred_vendor_id: form.preferred_vendor_id || null,
@@ -168,6 +171,7 @@ export default function ReorderRules() {
       item_code: rule.item_code ?? "",
       item_description: rule.item_description ?? "",
       reorder_point: rule.reorder_point,
+      aimed_qty: rule.aimed_qty ?? 0,
       reorder_qty: rule.reorder_qty,
       lead_time_days: rule.lead_time_days,
       preferred_vendor_id: rule.preferred_vendor_id ?? "",
@@ -241,6 +245,7 @@ export default function ReorderRules() {
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Type</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Min Stock</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Reorder Pt.</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right" title="The target stock level to maintain. Order enough to reach this quantity when restocking.">Aimed Qty</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Reorder Qty</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Lead Time</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Preferred Vendor</th>
@@ -251,13 +256,13 @@ export default function ReorderRules() {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={10} className="px-3 py-8 text-center text-sm text-slate-400">
+                  <td colSpan={11} className="px-3 py-8 text-center text-sm text-slate-400">
                     Loading rules…
                   </td>
                 </tr>
               ) : rules.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-3 py-8 text-center text-sm text-slate-400">
+                  <td colSpan={11} className="px-3 py-8 text-center text-sm text-slate-400">
                     No reorder rules configured. Click "Add Rule" to get started.
                   </td>
                 </tr>
@@ -274,6 +279,13 @@ export default function ReorderRules() {
                     </td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-medium">
                       {rule.reorder_point}
+                    </td>
+                    <td className="px-3 py-2 text-sm border-b border-slate-100 text-right tabular-nums font-mono">
+                      {rule.aimed_qty > 0 ? (
+                        <span className="text-blue-700 font-medium">{rule.aimed_qty}</span>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                       {rule.reorder_qty}
@@ -376,10 +388,10 @@ export default function ReorderRules() {
               </Popover>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-sm font-medium text-slate-700">
-                  Reorder Point
+                  Reorder Point (Min)
                 </Label>
                 <Input
                   type="number"
@@ -390,6 +402,24 @@ export default function ReorderRules() {
                   onChange={(e) => setForm((f) => ({ ...f, reorder_point: Number(e.target.value) }))}
                 />
               </div>
+              <div>
+                <Label className="text-sm font-medium text-slate-700">
+                  Aimed Qty
+                </Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="any"
+                  className="mt-1"
+                  value={form.aimed_qty}
+                  onChange={(e) => setForm((f) => ({ ...f, aimed_qty: Number(e.target.value) }))}
+                />
+                {form.aimed_qty > 0 && form.aimed_qty < form.reorder_point && (
+                  <p className="text-xs text-amber-600 mt-1">Aimed quantity should be higher than minimum quantity</p>
+                )}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-sm font-medium text-slate-700">
                   Reorder Qty

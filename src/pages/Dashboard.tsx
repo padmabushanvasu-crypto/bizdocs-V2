@@ -35,6 +35,8 @@ interface DashboardData {
     item_code: string;
     item_type: string;
     current_stock: number;
+    aimed_stock: number;
+    effective_stock: number;
     actionedWith: 'PO' | 'DC' | 'AO' | null;
   }>;
   pendingAssemblyOrderCount: number;
@@ -76,7 +78,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
       .eq("status", "issued"),
     (supabase as any)
       .from("items")
-      .select("id, description, item_type, current_stock, stock_finished_goods, min_finished_stock, stock_wip, min_stock, stock_alert_level, item_code")
+      .select("id, description, item_type, current_stock, stock_finished_goods, min_finished_stock, stock_wip, min_stock, stock_alert_level, item_code, aimed_stock, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready")
       .eq("status", "active"),
     (supabase as any)
       .from("purchase_orders")
@@ -159,12 +161,20 @@ async function fetchDashboardData(): Promise<DashboardData> {
         itemsWithPOIds.has(i.id) ? 'PO' :
         itemsWithDCIds.has(i.id) ? 'DC' :
         itemsWithAOIds.has(i.id) ? 'AO' : null;
+      const effectiveStock =
+        (i.stock_free ?? 0) +
+        (i.stock_in_process ?? 0) +
+        (i.stock_in_subassembly_wip ?? 0) +
+        (i.stock_in_fg_wip ?? 0) +
+        (i.stock_in_fg_ready ?? 0);
       return {
         id: i.id ?? '',
         description: i.description ?? i.item_code ?? '—',
         item_code: i.item_code ?? '',
         item_type: i.item_type ?? '',
         current_stock: i.current_stock ?? 0,
+        aimed_stock: i.aimed_stock ?? 0,
+        effective_stock: effectiveStock,
         actionedWith,
       };
     });
@@ -588,26 +598,33 @@ export default function Dashboard() {
                   <p className="text-[10px] text-red-500 mt-0.5">Critical stock — no open PO / DC / AO</p>
                   {/* Unactioned critical items */}
                   {(dashData?.criticalItems ?? []).filter(i => !i.actionedWith).slice(0, 3).map((item, i) => (
-                    <div key={i} className="flex items-center justify-between gap-2 mt-1.5">
-                      <span className="text-[10px] text-red-800 truncate max-w-[100px] font-mono">{item.item_code || item.description}</span>
-                      <div className="flex items-center gap-1 shrink-0">
-                        {item.item_type === 'raw_material' || item.item_type === 'bought_out' || item.item_type === 'consumable' ? (
-                          <button
-                            className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-blue-200 text-blue-700 hover:bg-blue-50 transition-colors"
-                            onClick={(e) => { e.stopPropagation(); navigate("/purchase-orders/new", { state: { prefillItem: { item_id: item.id, item_code: item.item_code, description: item.description } } }); }}
-                          >Raise PO</button>
-                        ) : item.item_type === 'component' ? (
-                          <button
-                            className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
-                            onClick={(e) => { e.stopPropagation(); navigate("/delivery-challans/new", { state: { prefillItem: { item_id: item.id, item_code: item.item_code, description: item.description } } }); }}
-                          >Raise DC</button>
-                        ) : item.item_type === 'sub_assembly' || item.item_type === 'finished_good' ? (
-                          <button
-                            className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-emerald-200 text-emerald-700 hover:bg-emerald-50 transition-colors"
-                            onClick={(e) => { e.stopPropagation(); navigate(item.item_type === 'sub_assembly' ? '/sub-assembly-work-orders' : '/finished-good-work-orders', { state: { prefillItem: { item_id: item.id, item_code: item.item_code, description: item.description } } }); }}
-                          >Raise AO</button>
-                        ) : null}
+                    <div key={i} className="mt-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] text-red-800 truncate max-w-[100px] font-mono">{item.item_code || item.description}</span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {item.item_type === 'raw_material' || item.item_type === 'bought_out' || item.item_type === 'consumable' ? (
+                            <button
+                              className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-blue-200 text-blue-700 hover:bg-blue-50 transition-colors"
+                              onClick={(e) => { e.stopPropagation(); navigate("/purchase-orders/new", { state: { prefillItem: { item_id: item.id, item_code: item.item_code, description: item.description } } }); }}
+                            >Raise PO</button>
+                          ) : item.item_type === 'component' ? (
+                            <button
+                              className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
+                              onClick={(e) => { e.stopPropagation(); navigate("/delivery-challans/new", { state: { prefillItem: { item_id: item.id, item_code: item.item_code, description: item.description } } }); }}
+                            >Raise DC</button>
+                          ) : item.item_type === 'sub_assembly' || item.item_type === 'finished_good' ? (
+                            <button
+                              className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-emerald-200 text-emerald-700 hover:bg-emerald-50 transition-colors"
+                              onClick={(e) => { e.stopPropagation(); navigate(item.item_type === 'sub_assembly' ? '/sub-assembly-work-orders' : '/finished-good-work-orders', { state: { prefillItem: { item_id: item.id, item_code: item.item_code, description: item.description } } }); }}
+                            >Raise AO</button>
+                          ) : null}
+                        </div>
                       </div>
+                      {item.aimed_stock > 0 && (item.aimed_stock - item.effective_stock) > 0 && (
+                        <p className="text-[9px] text-red-500 mt-0.5">
+                          Order {Math.ceil(item.aimed_stock - item.effective_stock)} to reach aimed {item.aimed_stock}
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -623,11 +640,18 @@ export default function Dashboard() {
                   <p className="text-[10px] text-blue-500 mt-0.5">Open PO / DC / AO already raised</p>
                   {/* Actioned critical items with document badge */}
                   {(dashData?.criticalItems ?? []).filter(i => !!i.actionedWith).slice(0, 3).map((item, i) => (
-                    <div key={i} className="flex items-center justify-between gap-2 mt-1.5">
-                      <span className="text-[10px] text-blue-800 truncate max-w-[110px] font-mono opacity-70">{item.item_code || item.description}</span>
-                      {item.actionedWith === 'PO' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">PO Raised</span>}
-                      {item.actionedWith === 'DC' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-teal-100 text-teal-700">DC Out</span>}
-                      {item.actionedWith === 'AO' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">AO Raised</span>}
+                    <div key={i} className="mt-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] text-blue-800 truncate max-w-[110px] font-mono opacity-70">{item.item_code || item.description}</span>
+                        {item.actionedWith === 'PO' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">PO Raised</span>}
+                        {item.actionedWith === 'DC' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-teal-100 text-teal-700">DC Out</span>}
+                        {item.actionedWith === 'AO' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">AO Raised</span>}
+                      </div>
+                      {item.aimed_stock > 0 && (item.aimed_stock - item.effective_stock) > 0 && (
+                        <p className="text-[9px] text-blue-400 mt-0.5">
+                          Order {Math.ceil(item.aimed_stock - item.effective_stock)} to reach aimed {item.aimed_stock}
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>

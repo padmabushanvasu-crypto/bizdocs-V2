@@ -708,6 +708,7 @@ export const REORDER_FIELD_MAP: Record<string, string[]> = {
   drawing_revision: ["drawing revision", "drawing number", "drawing no", "dwg no", "dwg number", "dwg rev", "drg no"],
   item_code: ["item code", "code", "sku", "part number"],
   reorder_point: ["reorder point", "minimum stock", "min stock", "reorder level", "reorder trigger", "minimum level"],
+  aimed_qty: ["aimed qty", "aimed quantity", "target stock", "target qty", "target quantity", "aimed stock"],
   reorder_qty: ["reorder quantity", "reorder qty", "order quantity", "order qty", "quantity to order"],
   lead_time_days: ["lead time days", "lead time", "lead days", "delivery days", "vendor lead time"],
   preferred_vendor_code: ["preferred vendor code", "vendor code", "vendor", "preferred vendor"],

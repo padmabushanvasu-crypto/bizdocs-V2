@@ -281,14 +281,14 @@ async function downloadReorderRulesTemplate() {
     return ad.localeCompare(bd);
   });
 
-  const titleRow  = ["BizDocs — Reorder Rules", "", "", "", "", "", "", "", "", ""];
+  const titleRow  = ["BizDocs — Reorder Rules", "", "", "", "", "", "", "", "", "", ""];
   const noteRow   = [
-    "Fill in Reorder Point, Reorder Qty and Lead Time for each item. Preferred Vendor Code must match your Parties master. Leave blank to skip an item.",
-    "", "", "", "", "", "", "", "", "",
+    "Fill in Reorder Point, Aimed Qty (optional — target stock level to maintain), Reorder Qty and Lead Time. Preferred Vendor Code must match your Parties master. Leave blank to skip an item.",
+    "", "", "", "", "", "", "", "", "", "",
   ];
   const headerRow = [
     "Drawing Number", "Item Code", "Description", "Item Type", "Unit",
-    "Reorder Point", "Reorder Qty", "Lead Time Days", "Preferred Vendor Code", "Notes",
+    "Reorder Point", "Aimed Qty", "Reorder Qty", "Lead Time Days", "Preferred Vendor Code", "Notes",
   ];
   const dataRows = items.map((item: any) => [
     item.drawing_revision ?? "",
@@ -296,7 +296,7 @@ async function downloadReorderRulesTemplate() {
     item.description ?? "",
     item.item_type ?? "",
     item.unit ?? "",
-    "", "", "", "", "",
+    "", "", "", "", "", "",
   ]);
 
   const aoa = [titleRow, noteRow, headerRow, ...dataRows];
@@ -304,8 +304,8 @@ async function downloadReorderRulesTemplate() {
   const ws  = (XLSX as any).utils.aoa_to_sheet(aoa);
 
   ws["!merges"] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 9 } },
-    { s: { r: 1, c: 0 }, e: { r: 1, c: 9 } },
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 10 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: 10 } },
   ];
   ws["!freeze"] = { xSplit: 0, ySplit: 3 };
   ws["!cols"] = [
@@ -315,10 +315,11 @@ async function downloadReorderRulesTemplate() {
     { wch: 14 }, // D: Item Type
     { wch: 8  }, // E: Unit
     { wch: 16 }, // F: Reorder Point
-    { wch: 14 }, // G: Reorder Qty
-    { wch: 16 }, // H: Lead Time Days
-    { wch: 22 }, // I: Preferred Vendor Code
-    { wch: 22 }, // J: Notes
+    { wch: 14 }, // G: Aimed Qty
+    { wch: 14 }, // H: Reorder Qty
+    { wch: 16 }, // I: Lead Time Days
+    { wch: 22 }, // J: Preferred Vendor Code
+    { wch: 22 }, // K: Notes
   ];
   ws["!rows"] = [{ hpt: 26 }, { hpt: 36 }, { hpt: 18 }];
 
@@ -380,21 +381,21 @@ async function downloadReorderRulesTemplate() {
     },
   };
 
-  const cols = ["A","B","C","D","E","F","G","H","I","J"];
+  const cols = ["A","B","C","D","E","F","G","H","I","J","K"];
 
   if (ws["A1"]) ws["A1"].s = titleStyle;
   if (ws["A2"]) ws["A2"].s = noteStyle;
-  // A-E grey (read-only), F-I yellow (editable), J white (notes)
+  // A-E grey (read-only), F-J yellow (editable), K white (notes)
   cols.forEach((col, i) => {
     const ref = `${col}3`;
-    if (ws[ref]) ws[ref].s = i < 5 ? hdrGrey : i < 9 ? hdrYellow : hdrWhite;
+    if (ws[ref]) ws[ref].s = i < 5 ? hdrGrey : i < 10 ? hdrYellow : hdrWhite;
   });
   for (let r = 0; r < items.length; r++) {
     const excelRow = r + 4;
     cols.forEach((col, c) => {
       const ref = `${col}${excelRow}`;
       if (!ws[ref]) ws[ref] = { v: "", t: "s" };
-      ws[ref].s = c < 5 ? greyCell : c < 9 ? yellowCell : whiteCell;
+      ws[ref].s = c < 5 ? greyCell : c < 10 ? yellowCell : whiteCell;
     });
   }
 
@@ -1622,6 +1623,8 @@ function ReorderRulesTab() {
         }
 
         const reorderPoint = parseFloat(row["reorder_point"] || "0") || 0;
+        const aimedQtyStr = row["aimed_qty"]?.trim();
+        const aimedQty = aimedQtyStr ? (parseFloat(aimedQtyStr) || 0) : 0;
         const reorderQty = parseFloat(row["reorder_qty"] || "0") || 0;
         const ltStr = row["lead_time_days"]?.trim();
         const leadTimeDays = ltStr ? (Math.max(1, parseInt(ltStr) || 7)) : 7;
@@ -1637,6 +1640,7 @@ function ReorderRulesTab() {
           company_id: companyId,
           item_id: itemId,
           reorder_point: reorderPoint,
+          aimed_qty: aimedQty,
           reorder_qty: reorderQty,
           lead_time_days: leadTimeDays,
           preferred_vendor_id,
@@ -1651,7 +1655,7 @@ function ReorderRulesTab() {
         } else {
           newRules.push(ruleData);
         }
-        minStockUpdates.push({ id: itemId, min_stock: reorderPoint });
+        minStockUpdates.push({ id: itemId, min_stock: reorderPoint, ...(aimedQty > 0 ? { aimed_stock: aimedQty } : {}) });
       }
 
       // Batch insert new rules in chunks of 500

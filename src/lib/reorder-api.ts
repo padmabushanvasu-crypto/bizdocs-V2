@@ -11,6 +11,7 @@ export interface ReorderRule {
   item_id: string;
   reorder_point: number;
   reorder_qty: number;
+  aimed_qty: number;
   preferred_vendor_id: string | null;
   lead_time_days: number;
   is_active: boolean;
@@ -294,6 +295,7 @@ export async function fetchReorderRules(): Promise<ReorderRule[]> {
 
 export async function createReorderRule(data: Partial<ReorderRule>): Promise<ReorderRule> {
   const companyId = await getCompanyId();
+  const aimedQty = data.aimed_qty ?? 0;
   const { data: rule, error } = await (supabase as any)
     .from("reorder_rules")
     .insert({
@@ -301,6 +303,7 @@ export async function createReorderRule(data: Partial<ReorderRule>): Promise<Reo
       item_id: data.item_id,
       reorder_point: data.reorder_point ?? 0,
       reorder_qty: data.reorder_qty ?? 0,
+      aimed_qty: aimedQty,
       preferred_vendor_id: data.preferred_vendor_id ?? null,
       lead_time_days: data.lead_time_days ?? 7,
       is_active: data.is_active ?? true,
@@ -309,6 +312,16 @@ export async function createReorderRule(data: Partial<ReorderRule>): Promise<Reo
     .select()
     .single();
   if (error) throw error;
+
+  // Sync aimed_stock on the item
+  if (data.item_id && aimedQty > 0) {
+    await (supabase as any)
+      .from("items")
+      .update({ aimed_stock: aimedQty })
+      .eq("id", data.item_id)
+      .eq("company_id", companyId);
+  }
+
   return rule as ReorderRule;
 }
 
@@ -322,6 +335,16 @@ export async function updateReorderRule(id: string, data: Partial<ReorderRule>):
     .select()
     .single();
   if (error) throw error;
+
+  // Sync aimed_stock on the item
+  if (data.item_id && data.aimed_qty != null) {
+    await (supabase as any)
+      .from("items")
+      .update({ aimed_stock: data.aimed_qty })
+      .eq("id", data.item_id)
+      .eq("company_id", companyId);
+  }
+
   return rule as ReorderRule;
 }
 
