@@ -39,6 +39,7 @@ type FilterPill = "all" | "needs_action" | "po_raised" | "dc_out" | "ao_raised" 
 
 async function fetchProcurementItems(): Promise<ProcurementItem[]> {
   const companyId = await getCompanyId();
+  console.log('PI: companyId =', companyId);
   if (!companyId) {
     console.error('PI: companyId is null');
     return [];
@@ -53,6 +54,10 @@ async function fetchProcurementItems(): Promise<ProcurementItem[]> {
     .neq("item_type", "service")
     .eq("stock_alert_level", "critical");
 
+  console.log('PI: itemsData length =', itemsData?.length);
+  console.log('PI: itemsError =', itemsError);
+  console.log('PI: first item =', itemsData?.[0]);
+
   if (itemsError) {
     console.error('PI items query error:', itemsError);
     return [];
@@ -62,6 +67,7 @@ async function fetchProcurementItems(): Promise<ProcurementItem[]> {
   if (items.length === 0) return [];
 
   const itemIds = items.map((i: any) => i.id);
+  console.log('PI: itemIds count =', itemIds.length);
 
   // Step 1: fetch open PO ids+numbers before parallel queries (avoids invalid embedded filter)
   const { data: openPOsData } = await (supabase as any)
@@ -74,6 +80,8 @@ async function fetchProcurementItems(): Promise<ProcurementItem[]> {
   const openPONumberMap = new Map<string, string>(
     (openPOsData ?? []).map((p: any) => [p.id as string, (p.po_number ?? "") as string])
   );
+
+  console.log('PI: openPOIds =', openPOIds?.length);
 
   // Parallel: fetch open PO lines, DC lines, and AO records for these items
   const [poLinesRes, dcLinesRes, aoRes] = await Promise.all([
@@ -95,6 +103,8 @@ async function fetchProcurementItems(): Promise<ProcurementItem[]> {
       .in("item_id", itemIds)
       .in("status", ["draft", "in_progress"]),
   ]);
+
+  console.log('PI: poLines =', poLinesRes.data?.length);
 
   // Build lookup maps (first open document per item)
   const poMap = new Map<string, { id: string; number: string }>();
@@ -124,7 +134,7 @@ async function fetchProcurementItems(): Promise<ProcurementItem[]> {
     }
   });
 
-  return items.map((item: any): ProcurementItem => ({
+  const result = items.map((item: any): ProcurementItem => ({
     id: item.id,
     item_code: item.item_code ?? "",
     description: item.description ?? "",
@@ -146,6 +156,8 @@ async function fetchProcurementItems(): Promise<ProcurementItem[]> {
     openAOId: aoMap.get(item.id)?.id ?? null,
     openAONumber: aoMap.get(item.id)?.number ?? null,
   }));
+  console.log('PI: final items returned =', result?.length);
+  return result;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

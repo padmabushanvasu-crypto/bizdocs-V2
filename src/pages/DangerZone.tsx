@@ -4,7 +4,7 @@ import { ShieldAlert, Trash2, AlertTriangle } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { getCompanyId } from "@/lib/auth-helpers";
+import { getCompanyId, clearCompanyIdCache } from "@/lib/auth-helpers";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -50,8 +50,9 @@ export default function DangerZone() {
         throw error;
       }
 
-      // Clear React Query cache
+      // Clear React Query cache and module-level company ID cache
       queryClient.clear();
+      clearCompanyIdCache();
 
       // Clear local storage alerts flag
       localStorage.removeItem("bizdocs_alert_recalc_v2");
