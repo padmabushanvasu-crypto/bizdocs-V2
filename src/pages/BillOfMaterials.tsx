@@ -886,7 +886,7 @@ function BillOfMaterialsInner() {
   // ── Queries ─────────────────────────────────────────────────────────────────
 
   const { data: allItemsData } = useQuery({
-    queryKey: ["items-all-bom"],
+    queryKey: ["items-all-bom", "finished_good", "sub_assembly", "component"],
     queryFn: () => fetchItems({ status: "active", pageSize: 500, types: ["finished_good", "sub_assembly", "component"] }),
   });
   const allItems = allItemsData?.data ?? [];
