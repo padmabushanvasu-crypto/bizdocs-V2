@@ -887,7 +887,18 @@ function BillOfMaterialsInner() {
 
   const { data: allItemsData } = useQuery({
     queryKey: ["items-all-bom", "finished_good", "sub_assembly", "component"],
-    queryFn: () => fetchItems({ status: "active", pageSize: 500, types: ["finished_good", "sub_assembly", "component"] }),
+    queryFn: async () => {
+      const companyId = await getCompanyId();
+      const { data, error } = await (supabase as any)
+        .from("items")
+        .select("id, item_code, description, item_type, unit, current_stock, min_stock, aimed_stock, stock_alert_level, drawing_number, hsn_sac_code, drawing_revision, status, standard_cost")
+        .eq("company_id", companyId)
+        .eq("status", "active")
+        .in("item_type", ["finished_good", "sub_assembly", "component"])
+        .order("item_code", { ascending: true });
+      if (error) throw error;
+      return { data: (data ?? []) as Item[], count: (data ?? []).length };
+    },
   });
   const allItems = allItemsData?.data ?? [];
 
