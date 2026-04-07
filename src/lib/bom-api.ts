@@ -840,57 +840,120 @@ export async function calculateBomCost(
 // ============================================================
 
 export async function fetchWhereUsed(itemId: string): Promise<WhereUsedResult[]> {
-  const { data: directLines } = await (supabase as any)
-    .from("bom_lines")
-    .select("*")
-    .eq("child_item_id", itemId);
+  // BFS upward traversal to find all ancestors (direct parents, grandparents, etc.)
+  // pathMap: child item id → path from that child DOWN to the searched item
+  const pathMap = new Map<string, string[]>();
+  pathMap.set(itemId, []);
 
-  if (!directLines || directLines.length === 0) return [];
+  const results: WhereUsedResult[] = [];
+  const processedAsChild = new Set<string>([itemId]);
+  const linesSeen = new Set<string>();
 
-  const parentIds = [
-    ...new Set((directLines as any[]).map((l: any) => l.parent_item_id)),
-  ];
-  const variantIds = [
-    ...new Set(
-      (directLines as any[])
-        .map((l: any) => l.variant_id)
-        .filter(Boolean) as string[]
-    ),
-  ];
+  // Representative bom_line per parent (to surface qty_used, unit, variant)
+  const lineByParent = new Map<string, any>();
 
-  const { data: parentItems } = await (supabase as any)
-    .from("items")
-    .select("id, item_code, description, item_type, current_stock")
-    .in("id", parentIds);
+  let currentLevelIds = [itemId];
+  let depth = 0;
+  const maxDepth = 6;
 
-  const parentMap = new Map(((parentItems ?? []) as any[]).map((i: any) => [i.id, i]));
+  while (currentLevelIds.length > 0 && depth < maxDepth) {
+    depth++;
 
-  let variantMap = new Map<string, string>();
-  if (variantIds.length > 0) {
-    const { data: variants } = await (supabase as any)
-      .from("bom_variants")
-      .select("id, variant_name")
-      .in("id", variantIds);
-    variantMap = new Map(((variants ?? []) as any[]).map((v: any) => [v.id, v.variant_name]));
+    // Batch-fetch bom_lines where child_item_id is in current level
+    const CHUNK = 50;
+    const allLines: any[] = [];
+    for (let i = 0; i < currentLevelIds.length; i += CHUNK) {
+      const chunk = currentLevelIds.slice(i, i + CHUNK);
+      const { data } = await (supabase as any)
+        .from("bom_lines")
+        .select("*")
+        .in("child_item_id", chunk);
+      if (data) allLines.push(...data);
+    }
+
+    if (allLines.length === 0) break;
+
+    // Collect new parent ids not already processed
+    const newParentIds = [
+      ...new Set(
+        (allLines as any[])
+          .map((l: any) => l.parent_item_id)
+          .filter((pid: string) => !processedAsChild.has(pid))
+      ),
+    ];
+
+    if (newParentIds.length === 0) break;
+
+    // Fetch parent item details
+    const { data: parentItems } = await (supabase as any)
+      .from("items")
+      .select("id, item_code, description, item_type, current_stock")
+      .in("id", newParentIds);
+    const parentMap = new Map(((parentItems ?? []) as any[]).map((i: any) => [i.id, i]));
+
+    // Fetch variant names
+    const variantIds = [
+      ...new Set(
+        (allLines as any[])
+          .map((l: any) => l.variant_id)
+          .filter(Boolean) as string[]
+      ),
+    ];
+    let variantMap = new Map<string, string>();
+    if (variantIds.length > 0) {
+      const { data: variants } = await (supabase as any)
+        .from("bom_variants")
+        .select("id, variant_name")
+        .in("id", variantIds);
+      variantMap = new Map(((variants ?? []) as any[]).map((v: any) => [v.id, v.variant_name]));
+    }
+
+    const nextLevelIds: string[] = [];
+
+    for (const line of allLines as any[]) {
+      const parentId: string = line.parent_item_id;
+      const childId: string = line.child_item_id;
+
+      if (processedAsChild.has(parentId)) continue; // cycle guard
+      if (linesSeen.has(line.id)) continue;
+      linesSeen.add(line.id);
+
+      const parent = parentMap.get(parentId) as any;
+      if (!parent) continue;
+
+      // Build path: [ancestor descriptions... , parent description, ...childPath toward searched item]
+      const childPath = pathMap.get(childId) ?? [];
+      const thisPath = [parent.description ?? "—", ...childPath];
+      // Only set path for this parent if not already set (first time we reach it = shortest path)
+      if (!pathMap.has(parentId)) {
+        pathMap.set(parentId, thisPath);
+        nextLevelIds.push(parentId);
+        lineByParent.set(parentId, line);
+      }
+
+      // Record result for this bom_line
+      results.push({
+        parent_item_id: parentId,
+        parent_item_code: parent.item_code ?? "—",
+        parent_item_description: parent.description ?? "—",
+        parent_item_type: parent.item_type ?? "—",
+        quantity_used: line.quantity ?? 0,
+        unit: line.unit ?? "",
+        variant_id: line.variant_id ?? null,
+        variant_name: line.variant_id ? (variantMap.get(line.variant_id) ?? null) : null,
+        bom_level: depth,
+        path: thisPath,
+        bom_line_id: line.id as string,
+        parent_current_stock: parent.current_stock ?? 0,
+      });
+    }
+
+    // Mark new parents as processed so we don't re-traverse them as children
+    for (const pid of newParentIds) processedAsChild.add(pid);
+    currentLevelIds = nextLevelIds;
   }
 
-  return (directLines as any[]).map((line: any) => {
-    const parent = parentMap.get(line.parent_item_id) as any;
-    return {
-      parent_item_id: line.parent_item_id,
-      parent_item_code: parent?.item_code ?? "—",
-      parent_item_description: parent?.description ?? "—",
-      parent_item_type: parent?.item_type ?? "—",
-      quantity_used: line.quantity ?? 0,
-      unit: line.unit ?? "",
-      variant_id: line.variant_id ?? null,
-      variant_name: line.variant_id ? (variantMap.get(line.variant_id) ?? null) : null,
-      bom_level: line.bom_level ?? 1,
-      path: [parent?.description ?? "—"],
-      bom_line_id: line.id as string,
-      parent_current_stock: parent?.current_stock ?? 0,
-    };
-  });
+  return results;
 }
 
 // ============================================================

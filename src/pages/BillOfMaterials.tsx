@@ -509,6 +509,8 @@ function BillOfMaterialsInner() {
 
   // ── Tab 4: Where Used ──────────────────────────────────────────────────────
   const [whereUsedItemId, setWhereUsedItemId] = useState<string>("");
+  const [whereUsedPopoverOpen, setWhereUsedPopoverOpen] = useState(false);
+  const [whereUsedSearch, setWhereUsedSearch] = useState("");
 
   // ── Tab 5: Variants ─────────────────────────────────────────────────────────
   const [compareV1, setCompareV1] = useState("");
@@ -624,7 +626,7 @@ function BillOfMaterialsInner() {
     enabled: !!selectedItem,
   });
 
-  const { data: explosionData, isLoading: exploding, refetch: refetchExplosion } = useQuery({
+  const { data: explosionData, isLoading: exploding, isError: explodeError, error: explodeQueryError, refetch: refetchExplosion } = useQuery({
     queryKey: ["bom-explosion", selectedItem?.id, explosionQty, selectedVariantId],
     queryFn: () => explodeBom(selectedItem!.id, explosionQty, variantFilter),
     enabled: !!selectedItem && activeTab === "explosion",
@@ -639,7 +641,7 @@ function BillOfMaterialsInner() {
   });
 
   const whereUsedTarget = whereUsedItemId || selectedItem?.id || "";
-  const { data: whereUsed = [], isLoading: whereUsedLoading } = useQuery({
+  const { data: whereUsed = [], isLoading: whereUsedLoading, isError: whereUsedError, error: whereUsedQueryError } = useQuery({
     queryKey: ["bom-where-used", whereUsedTarget],
     queryFn: () => fetchWhereUsed(whereUsedTarget),
     enabled: !!whereUsedTarget && activeTab === "where-used",
@@ -2106,6 +2108,13 @@ function BillOfMaterialsInner() {
                         <RefreshCw className="h-6 w-6 animate-spin opacity-40" />
                         <p className="text-sm">Exploding BOM…</p>
                       </div>
+                    ) : explodeError ? (
+                      <div className="py-12 text-center">
+                        <AlertCircle className="h-8 w-8 text-red-300 mx-auto mb-3" />
+                        <p className="text-sm text-slate-500 font-medium">Failed to load BOM explosion</p>
+                        <p className="text-xs text-red-500 mt-1">{(explodeQueryError as any)?.message ?? "Unknown error"}</p>
+                        <Button size="sm" variant="outline" className="mt-4" onClick={() => refetchExplosion()}>Try again</Button>
+                      </div>
                     ) : !explosionData || explosionData.children.length === 0 ? (
                       <div className="py-12 text-center">
                         <GitFork className="h-8 w-8 text-slate-200 mx-auto mb-3" />
@@ -2341,27 +2350,63 @@ function BillOfMaterialsInner() {
                     <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-3 flex-wrap">
                       <div className="flex items-center gap-2 flex-1">
                         <Label className="text-xs whitespace-nowrap shrink-0">Find where used:</Label>
-                        <Select
-                          value={whereUsedItemId}
-                          onValueChange={setWhereUsedItemId}
-                        >
-                          <SelectTrigger className="h-8 text-sm flex-1 max-w-xs">
-                            <SelectValue placeholder="Select item..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {whereUsedItems.map((i) => (
-                              <SelectItem key={i.id} value={i.id}>
-                                {i.item_code} — {i.description}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <Popover open={whereUsedPopoverOpen} onOpenChange={setWhereUsedPopoverOpen}>
+                          <PopoverTrigger asChild>
+                            <Button variant="outline" role="combobox" className="h-8 text-sm flex-1 max-w-xs justify-between font-normal">
+                              {whereUsedItemId
+                                ? (() => { const it = allItems.find(i => i.id === whereUsedItemId); return it ? `${it.item_code} — ${it.description}` : "Select item..."; })()
+                                : "Select item..."}
+                              <ChevronDown className="ml-2 h-3 w-3 opacity-50" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-[380px] p-0" align="start">
+                            <Command>
+                              <CommandInput
+                                placeholder="Search by code or description..."
+                                value={whereUsedSearch}
+                                onValueChange={setWhereUsedSearch}
+                              />
+                              <CommandList>
+                                <CommandEmpty>No items found.</CommandEmpty>
+                                <CommandGroup>
+                                  {allItems
+                                    .filter(i =>
+                                      !whereUsedSearch.trim() ||
+                                      i.item_code.toLowerCase().includes(whereUsedSearch.toLowerCase()) ||
+                                      i.description.toLowerCase().includes(whereUsedSearch.toLowerCase())
+                                    )
+                                    .slice(0, 100)
+                                    .map(i => (
+                                      <CommandItem
+                                        key={i.id}
+                                        value={`${i.item_code} ${i.description}`}
+                                        onSelect={() => {
+                                          setWhereUsedItemId(i.id);
+                                          setWhereUsedSearch("");
+                                          setWhereUsedPopoverOpen(false);
+                                        }}
+                                      >
+                                        <span className="font-mono text-xs text-blue-600 mr-2">{i.item_code}</span>
+                                        {i.description}
+                                      </CommandItem>
+                                    ))}
+                                </CommandGroup>
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
                       </div>
                     </div>
 
                     {whereUsedLoading ? (
                       <div className="flex justify-center py-12">
                         <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : whereUsedError ? (
+                      <div className="py-12 text-center">
+                        <AlertCircle className="h-8 w-8 text-red-300 mx-auto mb-3" />
+                        <p className="text-sm text-slate-500 font-medium">Failed to load where-used data</p>
+                        <p className="text-xs text-red-500 mt-1">{(whereUsedQueryError as any)?.message ?? "Unknown error"}</p>
                       </div>
                     ) : whereUsed.length === 0 ? (
                       <div className="py-12 text-center">
@@ -2385,6 +2430,7 @@ function BillOfMaterialsInner() {
                               <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Unit</th>
                               <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Variant</th>
                               <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">BOM Level</th>
+                              <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Path</th>
                               <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Coverage</th>
                               <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Top Vendors</th>
                             </tr>
@@ -2392,31 +2438,36 @@ function BillOfMaterialsInner() {
                           <tbody>
                             {whereUsed.map((r, i) => (
                               <tr key={i}>
-                                <td className="font-mono text-xs text-blue-600 font-medium">
+                                <td className="px-3 py-2 border-b border-slate-100 font-mono text-xs text-blue-600 font-medium">
                                   {r.parent_item_code}
                                 </td>
-                                <td className="font-medium text-sm">{r.parent_item_description}</td>
-                                <td>
+                                <td className="px-3 py-2 border-b border-slate-100 font-medium text-sm">{r.parent_item_description}</td>
+                                <td className="px-3 py-2 border-b border-slate-100 text-center">
                                   <TypeBadge type={r.parent_item_type} />
                                 </td>
-                                <td className="text-right font-mono tabular-nums">{r.quantity_used}</td>
-                                <td className="text-xs text-muted-foreground">{r.unit}</td>
-                                <td className="text-xs text-muted-foreground">
+                                <td className="px-3 py-2 border-b border-slate-100 text-right font-mono tabular-nums">{r.quantity_used}</td>
+                                <td className="px-3 py-2 border-b border-slate-100 text-xs text-muted-foreground">{r.unit}</td>
+                                <td className="px-3 py-2 border-b border-slate-100 text-xs text-muted-foreground">
                                   {r.variant_name ?? (
                                     <span className="text-slate-400">Default</span>
                                   )}
                                 </td>
-                                <td className="text-right text-xs text-muted-foreground">
+                                <td className="px-3 py-2 border-b border-slate-100 text-right text-xs text-muted-foreground">
                                   L{r.bom_level}
                                 </td>
-                                <td className="text-right">
+                                <td className="px-3 py-2 border-b border-slate-100 text-xs text-slate-500 max-w-[200px]">
+                                  {r.path.length > 1
+                                    ? r.path.join(" → ")
+                                    : <span className="text-slate-400">Direct</span>}
+                                </td>
+                                <td className="px-3 py-2 border-b border-slate-100 text-right">
                                   {r.quantity_used > 0 ? (
                                     <span className={`text-xs font-medium ${Math.floor(whereUsedComponentStock / r.quantity_used) > 0 ? "text-green-600" : "text-red-600"}`}>
                                       {Math.floor(whereUsedComponentStock / r.quantity_used)} units
                                     </span>
                                   ) : "—"}
                                 </td>
-                                <td className="text-xs text-slate-600">
+                                <td className="px-3 py-2 border-b border-slate-100 text-xs text-slate-600">
                                   {(() => {
                                     const lineVendors = r.bom_line_id ? (whereUsedVendorsByLine.get(r.bom_line_id) ?? []) : [];
                                     if (!lineVendors.length) return <span className="text-slate-400">No vendors</span>;
