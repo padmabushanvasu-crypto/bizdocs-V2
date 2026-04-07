@@ -39,16 +39,24 @@ type FilterPill = "all" | "needs_action" | "po_raised" | "dc_out" | "ao_raised" 
 
 async function fetchProcurementItems(): Promise<ProcurementItem[]> {
   const companyId = await getCompanyId();
-  if (!companyId) return [];
+  if (!companyId) {
+    console.error('PI: companyId is null');
+    return [];
+  }
 
   // Fetch critical items only — stock_alert_level is the single source of truth
-  const { data: itemsData } = await (supabase as any)
+  const { data: itemsData, error: itemsError } = await (supabase as any)
     .from("items")
     .select("id, item_code, description, item_type, unit, hsn_sac_code, current_stock, min_stock, stock_alert_level, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready")
     .eq("company_id", companyId)
     .eq("status", "active")
     .neq("item_type", "service")
     .eq("stock_alert_level", "critical");
+
+  if (itemsError) {
+    console.error('PI items query error:', itemsError);
+    return [];
+  }
 
   const items = (itemsData ?? []) as any[];
   if (items.length === 0) return [];
@@ -163,10 +171,11 @@ export default function ProcurementIntelligence() {
   const [filter, setFilter] = useState<FilterPill>("all");
   const [search, setSearch] = useState("");
 
-  const { data: items = [], isLoading, refetch, isFetching } = useQuery({
+  const { data: items = [], isLoading, refetch, isFetching, isError, error } = useQuery({
     queryKey: ["procurement-intelligence"],
     queryFn: fetchProcurementItems,
-    staleTime: 60_000,
+    staleTime: 0,
+    refetchOnMount: true,
   });
 
   // Summary counts — all from stock_alert_level = 'critical' items only
@@ -309,6 +318,16 @@ export default function ProcurementIntelligence() {
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-visible">
         {isLoading ? (
           <div className="p-12 text-center text-sm text-slate-400 animate-pulse">Loading…</div>
+        ) : isError ? (
+          <div className="p-12 text-center">
+            <p className="text-sm font-medium text-red-500">Failed to load procurement data</p>
+            <p className="text-xs text-slate-400 mt-1">
+              {error instanceof Error ? error.message : 'Unknown error'}
+            </p>
+            <button onClick={() => refetch()} className="mt-4 text-xs text-blue-500 underline">
+              Try again
+            </button>
+          </div>
         ) : filtered.length === 0 ? (
           <div className="p-12 text-center">
             <TrendingUp className="h-8 w-8 mx-auto mb-3 text-slate-300" />
