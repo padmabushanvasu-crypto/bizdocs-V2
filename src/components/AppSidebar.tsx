@@ -35,6 +35,7 @@ import {
   RotateCcw,
   CheckCircle,
   Activity,
+  Archive,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -144,6 +145,7 @@ const ALL_SEARCH_ITEMS: { title: string; url: string }[] = [
   { title: "Dispatch Notes", url: "/dispatch-notes" },
   { title: "Stock Register", url: "/stock-register" },
   { title: "Stock Ledger", url: "/stock-ledger" },
+  { title: "Opening Stock", url: "/opening-stock" },
   { title: "Reorder Alerts", url: "/reorder-intelligence" },
   { title: "Scrap Register", url: "/scrap-register" },
   { title: "Serial Numbers", url: "/serial-numbers" },
@@ -168,7 +170,7 @@ const GROUP_PATHS: Record<string, string[]> = {
   "DAILY WORK":             ["/job-works", "/delivery-challans", "/dc-grn"],
   "PURCHASING & RECEIVING": ["/purchase-orders", "/grn"],
   "PRODUCTION":             ["/wip-register", "/sub-assembly-work-orders", "/finished-good-work-orders"],
-  "STORE":                  ["/storekeeper", "/storekeeper-queue", "/stock-register", "/stock-ledger", "/ready-to-dispatch", "/dispatch-records"],
+  "STORE":                  ["/storekeeper", "/storekeeper-queue", "/stock-register", "/stock-ledger", "/opening-stock", "/ready-to-dispatch", "/dispatch-records"],
   "REPORTS":                ["/reorder-intelligence", "/scrap-register", "/serial-numbers", "/fat-certificates", "/gst-reports", "/vendor-scorecards"],
   "MASTER DATA":            ["/parties", "/items", "/bill-of-materials", "/jig-master", "/assets-register", "/settings"],
 };
@@ -557,6 +559,7 @@ export function AppSidebar() {
     },
     { title: "Stock Register", url: "/stock-register", icon: BarChart3 },
     { title: "Stock Ledger", url: "/stock-ledger", icon: BookOpen },
+    { title: "Opening Stock", url: "/opening-stock", icon: Archive },
     {
       title: "Ready to Dispatch",
       url: "/ready-to-dispatch",
