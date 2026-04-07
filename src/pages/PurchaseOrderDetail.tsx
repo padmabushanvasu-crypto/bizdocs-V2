@@ -160,10 +160,17 @@ export default function PurchaseOrderDetail() {
   const canRecordReceipt = ["issued", "partially_received"].includes(po.status) && po.status !== "deleted";
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-5xl mx-auto">
+    <div className="p-4 md:p-6 space-y-6 max-w-5xl mx-auto po-page-wrapper">
       <style>{`
         @media print {
           @page { size: A4 portrait; margin: 10mm 12mm 8mm 12mm; }
+
+          /* Outer page wrapper — strip screen padding/max-width */
+          .po-page-wrapper {
+            padding: 0 !important;
+            margin: 0 !important;
+            max-width: 100% !important;
+          }
 
           /* Page wrapper — flex column so footer pins to bottom */
           .po-print-wrapper {
@@ -183,8 +190,7 @@ export default function PurchaseOrderDetail() {
           /* Footer pins to bottom */
           .po-footer { margin-top: auto !important; }
 
-          /* Hide all screen chrome */
-          body > *, header, nav, aside, footer { display: none !important; }
+          /* Body base */
           body { font-size: 9pt !important; line-height: 1.3 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
           /* Section spacing */
@@ -382,29 +388,42 @@ export default function PurchaseOrderDetail() {
         </div>
 
         {/* ── PRINT: Vendor + Delivery 2-col ── */}
-        <div className="hidden print:block po-section" style={{ borderBottom: '0.5pt solid #E2E8F0', paddingBottom: '3mm' }}>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <div style={{ flex: '1', borderRight: po.delivery_address ? '0.5pt solid #E2E8F0' : undefined, paddingRight: po.delivery_address ? '8px' : undefined }}>
-              <div style={{ fontSize: '7pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>Vendor / Bill To</div>
-              <div style={{ fontWeight: '600', fontSize: '9pt' }}>{po.vendor_name}</div>
-              {po.vendor_address && <div style={{ fontSize: '8pt', color: '#475569' }}>{po.vendor_address}</div>}
-              {po.vendor_gstin && <div style={{ fontSize: '8pt', fontFamily: 'monospace' }}>GSTIN: {po.vendor_gstin}</div>}
-              {po.vendor_phone && <div style={{ fontSize: '8pt', color: '#475569' }}>Ph: {po.vendor_phone}</div>}
-              {(po as any).vendor_email && <div style={{ fontSize: '8pt', color: '#475569' }}>{(po as any).vendor_email}</div>}
-            </div>
-            {po.delivery_address && (
-              <div style={{ flex: '1', paddingLeft: '8px' }}>
-                <div style={{ fontSize: '7pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>Deliver To</div>
-                <div style={{ fontSize: '8pt', whiteSpace: 'pre-line' }}>{po.delivery_address}</div>
-                {(po.delivery_contact_person || po.delivery_contact_phone) && (
-                  <div style={{ fontSize: '7pt', color: '#64748b' }}>
-                    Contact: {[po.delivery_contact_person, po.delivery_contact_phone].filter(Boolean).join(" — ")}
+        {(() => {
+          // Deliver To: use po.delivery_address if specified; else company physical address; never registered address
+          const co = company as any;
+          const physAddr = [
+            company?.address_line1,
+            company?.address_line2,
+            [company?.city, company?.state].filter(Boolean).join(', '),
+            company?.pin_code ? `PIN ${company.pin_code}` : '',
+          ].filter(Boolean).join(', ');
+          const deliverAddr = po.delivery_address || physAddr || null;
+          return (
+            <div className="hidden print:block po-section" style={{ borderBottom: '0.5pt solid #E2E8F0', paddingBottom: '3mm' }}>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ flex: '1', borderRight: deliverAddr ? '0.5pt solid #E2E8F0' : undefined, paddingRight: deliverAddr ? '8px' : undefined }}>
+                  <div style={{ fontSize: '7pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>Vendor / Bill To</div>
+                  <div style={{ fontWeight: '600', fontSize: '9pt' }}>{po.vendor_name}</div>
+                  {po.vendor_address && <div style={{ fontSize: '8pt', color: '#475569' }}>{po.vendor_address}</div>}
+                  {po.vendor_gstin && <div style={{ fontSize: '8pt', fontFamily: 'monospace' }}>GSTIN: {po.vendor_gstin}</div>}
+                  {po.vendor_phone && <div style={{ fontSize: '8pt', color: '#475569' }}>Ph: {po.vendor_phone}</div>}
+                  {(po as any).vendor_email && <div style={{ fontSize: '8pt', color: '#475569' }}>{(po as any).vendor_email}</div>}
+                </div>
+                {deliverAddr && (
+                  <div style={{ flex: '1', paddingLeft: '8px' }}>
+                    <div style={{ fontSize: '7pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>Deliver To</div>
+                    <div style={{ fontSize: '8pt', whiteSpace: 'pre-line' }}>{deliverAddr}</div>
+                    {(po.delivery_contact_person || po.delivery_contact_phone) && (
+                      <div style={{ fontSize: '7pt', color: '#64748b' }}>
+                        Contact: {[po.delivery_contact_person, po.delivery_contact_phone].filter(Boolean).join(" — ")}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            )}
-          </div>
-        </div>
+            </div>
+          );
+        })()}
 
         {/* ── Line Items (shared screen + print) ── */}
         <div className="overflow-x-auto po-section">
