@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId } from "@/lib/auth-helpers";
-import { fetchItems, updateStockBucket, recalcStockAlertLevel, type Item } from "@/lib/items-api";
+import { fetchItems, updateStockBucket, type Item } from "@/lib/items-api";
 import {
   fetchNotificationSettings,
   saveNotificationSettings,
@@ -171,8 +171,6 @@ export default function OpeningStock() {
       if (diff !== 0) {
         await updateStockBucket(state.item.id, "free", diff);
       }
-      await recalcStockAlertLevel(state.item.id);
-
       return { editorName: state.editedBy, itemDescription: state.item.description };
     },
     onSuccess: ({ editorName, itemDescription }) => {

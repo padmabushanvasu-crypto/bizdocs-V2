@@ -227,16 +227,14 @@ export async function fetchReorderAlerts(): Promise<ReorderAlert[]> {
   return alerts;
 }
 
-/** Fast summary for dashboard and sidebar badge — reads stock_alert_level from items table. */
+/** Fast summary for sidebar badge — counts rows in the live stock_alerts view. */
 export async function fetchReorderSummary(): Promise<{ critical: number; warning: number }> {
   const companyId = await getCompanyId();
+  if (!companyId) return { critical: 0, warning: 0 };
   const { count, error } = await (supabase as any)
-    .from("items")
-    .select("id", { count: "exact", head: true })
-    .eq("company_id", companyId)
-    .eq("status", "active")
-    .eq("stock_alert_level", "critical")
-    .neq("item_type", "service");
+    .from("stock_alerts")
+    .select("*", { count: "exact", head: true })
+    .eq("company_id", companyId);
 
   if (error) return { critical: 0, warning: 0 };
   return { critical: count ?? 0, warning: 0 };

@@ -17,14 +17,16 @@ interface ProcurementItem {
   item_type: string;
   unit: string;
   hsn_sac_code: string | null;
-  current_stock: number;
   min_stock: number;
-  stock_alert_level: string;
+  aimed_stock: number;
   stock_free: number;
   stock_in_process: number;
   stock_in_subassembly_wip: number;
   stock_in_fg_wip: number;
   stock_in_fg_ready: number;
+  effective_stock: number;
+  shortage: number;
+  alert_type: string;
   openPOId: string | null;
   openPONumber: string | null;
   openDCId: string | null;
@@ -39,125 +41,103 @@ type FilterPill = "all" | "needs_action" | "po_raised" | "dc_out" | "ao_raised" 
 
 async function fetchProcurementItems(): Promise<ProcurementItem[]> {
   const companyId = await getCompanyId();
-  console.log('PI: companyId =', companyId);
-  if (!companyId) {
-    console.error('PI: companyId is null');
-    return [];
-  }
+  if (!companyId) return [];
 
-  // Fetch critical items only — stock_alert_level is the single source of truth
-  const { data: itemsData, error: itemsError } = await (supabase as any)
-    .from("items")
-    .select("id, item_code, description, item_type, unit, hsn_sac_code, current_stock, min_stock, stock_alert_level, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready")
+  const { data: alertData, error } = await (supabase as any)
+    .from("stock_alerts")
+    .select("*")
     .eq("company_id", companyId)
-    .eq("status", "active")
-    .neq("item_type", "service")
-    .eq("stock_alert_level", "critical");
+    .order("shortage", { ascending: false });
 
-  console.log('PI: itemsData length =', itemsData?.length);
-  console.log('PI: itemsError =', itemsError);
-  console.log('PI: first item =', itemsData?.[0]);
-
-  if (itemsError) {
-    console.error('PI items query error:', itemsError);
+  if (error) {
+    console.error("PI fetch error:", error);
     return [];
   }
 
-  const items = (itemsData ?? []) as any[];
-  if (items.length === 0) return [];
+  if (!alertData?.length) return [];
 
-  const itemIds = items.map((i: any) => i.id);
-  console.log('PI: itemIds count =', itemIds.length);
+  const itemIds = alertData.map((i: any) => i.id);
 
-  // Step 1: fetch open PO ids+numbers before parallel queries (avoids invalid embedded filter)
-  const { data: openPOsData } = await (supabase as any)
+  // Fetch open POs (two-step)
+  const { data: openPOs } = await (supabase as any)
     .from("purchase_orders")
     .select("id, po_number")
     .eq("company_id", companyId)
     .in("status", ["draft", "issued", "partially_received"]);
 
-  const openPOIds = (openPOsData ?? []).map((p: any) => p.id as string);
-  const openPONumberMap = new Map<string, string>(
-    (openPOsData ?? []).map((p: any) => [p.id as string, (p.po_number ?? "") as string])
-  );
+  const openPOIds = (openPOs ?? []).map((p: any) => p.id);
 
-  console.log('PI: openPOIds =', openPOIds?.length);
+  const { data: poLines } = await (supabase as any)
+    .from("po_line_items")
+    .select("item_id, po_id")
+    .in("item_id", itemIds)
+    .in("po_id", openPOIds.length > 0 ? openPOIds : ["00000000-0000-0000-0000-000000000000"]);
 
-  // Parallel: fetch open PO lines, DC lines, and AO records for these items
-  const [poLinesRes, dcLinesRes, aoRes] = await Promise.all([
-    openPOIds.length > 0
-      ? (supabase as any)
-          .from("po_line_items")
-          .select("item_id, po_id")
-          .in("item_id", itemIds)
-          .in("po_id", openPOIds)
-      : Promise.resolve({ data: [] }),
-    (supabase as any)
-      .from("dc_line_items")
-      .select("item_id, delivery_challan_id, delivery_challans!inner(id, dc_number, status)")
-      .in("item_id", itemIds)
-      .in("delivery_challans.status", ["issued", "partially_returned"]),
-    (supabase as any)
-      .from("assembly_orders")
-      .select("id, item_id, ao_number, status")
-      .in("item_id", itemIds)
-      .in("status", ["draft", "in_progress"]),
-  ]);
+  // Fetch open DCs (two-step)
+  const { data: openDCs } = await (supabase as any)
+    .from("delivery_challans")
+    .select("id, dc_number")
+    .eq("company_id", companyId)
+    .in("status", ["issued", "partially_returned"]);
 
-  console.log('PI: poLines =', poLinesRes.data?.length);
+  const openDCIds = (openDCs ?? []).map((d: any) => d.id);
 
-  // Build lookup maps (first open document per item)
-  const poMap = new Map<string, { id: string; number: string }>();
-  ((poLinesRes.data ?? []) as any[]).forEach((row: any) => {
-    if (row.item_id && !poMap.has(row.item_id)) {
-      poMap.set(row.item_id, {
-        id: row.po_id ?? "",
-        number: openPONumberMap.get(row.po_id) ?? "",
-      });
-    }
+  const { data: dcLines } = await (supabase as any)
+    .from("dc_line_items")
+    .select("item_id, delivery_challan_id")
+    .in("item_id", itemIds)
+    .in("delivery_challan_id", openDCIds.length > 0 ? openDCIds : ["00000000-0000-0000-0000-000000000000"]);
+
+  // Fetch open AOs
+  const { data: openAOs } = await (supabase as any)
+    .from("assembly_orders")
+    .select("id, ao_number, item_id")
+    .eq("company_id", companyId)
+    .in("status", ["draft", "in_progress"])
+    .in("item_id", itemIds);
+
+  // Build lookup maps
+  const poMap = new Map<string, string>();
+  (poLines ?? []).forEach((l: any) => {
+    const po = (openPOs ?? []).find((p: any) => p.id === l.po_id);
+    if (po && !poMap.has(l.item_id)) poMap.set(l.item_id, po.po_number);
   });
 
-  const dcMap = new Map<string, { id: string; number: string }>();
-  ((dcLinesRes.data ?? []) as any[]).forEach((row: any) => {
-    if (row.item_id && !dcMap.has(row.item_id)) {
-      dcMap.set(row.item_id, {
-        id: row.delivery_challans?.id ?? row.delivery_challan_id ?? "",
-        number: row.delivery_challans?.dc_number ?? "",
-      });
-    }
+  const dcMap = new Map<string, string>();
+  (dcLines ?? []).forEach((l: any) => {
+    const dc = (openDCs ?? []).find((d: any) => d.id === l.delivery_challan_id);
+    if (dc && !dcMap.has(l.item_id)) dcMap.set(l.item_id, dc.dc_number);
   });
 
-  const aoMap = new Map<string, { id: string; number: string }>();
-  ((aoRes.data ?? []) as any[]).forEach((row: any) => {
-    if (row.item_id && !aoMap.has(row.item_id)) {
-      aoMap.set(row.item_id, { id: row.id ?? "", number: row.ao_number ?? "" });
-    }
+  const aoMap = new Map<string, string>();
+  (openAOs ?? []).forEach((ao: any) => {
+    if (!aoMap.has(ao.item_id)) aoMap.set(ao.item_id, ao.ao_number);
   });
 
-  const result = items.map((item: any): ProcurementItem => ({
+  return alertData.map((item: any): ProcurementItem => ({
     id: item.id,
     item_code: item.item_code ?? "",
     description: item.description ?? "",
     item_type: item.item_type ?? "",
     unit: item.unit ?? "",
     hsn_sac_code: item.hsn_sac_code ?? null,
-    current_stock: item.current_stock ?? 0,
     min_stock: item.min_stock ?? 0,
-    stock_alert_level: item.stock_alert_level ?? "healthy",
+    aimed_stock: item.aimed_stock ?? 0,
     stock_free: item.stock_free ?? 0,
     stock_in_process: item.stock_in_process ?? 0,
     stock_in_subassembly_wip: item.stock_in_subassembly_wip ?? 0,
     stock_in_fg_wip: item.stock_in_fg_wip ?? 0,
     stock_in_fg_ready: item.stock_in_fg_ready ?? 0,
-    openPOId: poMap.get(item.id)?.id ?? null,
-    openPONumber: poMap.get(item.id)?.number ?? null,
-    openDCId: dcMap.get(item.id)?.id ?? null,
-    openDCNumber: dcMap.get(item.id)?.number ?? null,
-    openAOId: aoMap.get(item.id)?.id ?? null,
-    openAONumber: aoMap.get(item.id)?.number ?? null,
+    effective_stock: item.effective_stock ?? 0,
+    shortage: item.shortage ?? 0,
+    alert_type: item.alert_type ?? "low",
+    openPOId: poMap.has(item.id) ? "yes" : null,
+    openPONumber: poMap.get(item.id) ?? null,
+    openDCId: dcMap.has(item.id) ? "yes" : null,
+    openDCNumber: dcMap.get(item.id) ?? null,
+    openAOId: aoMap.has(item.id) ? "yes" : null,
+    openAONumber: aoMap.get(item.id) ?? null,
   }));
-  console.log('PI: final items returned =', result?.length);
-  return result;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -184,9 +164,9 @@ const EXPORT_COLS: ExportColumn[] = [
   { key: "item_code", label: "Item Code" },
   { key: "description", label: "Description", width: 30 },
   { key: "item_type", label: "Type" },
-  { key: "current_stock", label: "Current Stock", type: "number" },
+  { key: "effective_stock", label: "Effective Stock", type: "number" },
   { key: "min_stock", label: "Min Stock", type: "number" },
-  { key: "stock_alert_level", label: "Alert Level" },
+  { key: "alert_type", label: "Alert Type" },
   { key: "action_taken", label: "Action Taken" },
 ];
 
@@ -204,8 +184,8 @@ export default function ProcurementIntelligence() {
     refetchOnMount: true,
   });
 
-  // Summary counts — all from stock_alert_level = 'critical' items only
-  const zeroStockCount  = useMemo(() => items.filter((i) => (i.stock_free + i.stock_in_process + i.stock_in_subassembly_wip + i.stock_in_fg_wip + i.stock_in_fg_ready) === 0).length, [items]);
+  // Summary counts — from live stock_alerts view
+  const zeroStockCount  = useMemo(() => items.filter((i) => i.alert_type === "zero").length, [items]);
   const needsActionCount = useMemo(() => items.filter((i) => !hasAction(i)).length, [items]);
   const actionedCount   = useMemo(() => items.filter((i) => hasAction(i)).length, [items]);
 
@@ -217,7 +197,7 @@ export default function ProcurementIntelligence() {
       case "po_raised":    result = result.filter((i) => !!i.openPOId); break;
       case "dc_out":       result = result.filter((i) => !!i.openDCId); break;
       case "ao_raised":    result = result.filter((i) => !!i.openAOId); break;
-      case "zero_stock":   result = result.filter((i) => (i.stock_free + i.stock_in_process + i.stock_in_subassembly_wip + i.stock_in_fg_wip + i.stock_in_fg_ready) === 0); break;
+      case "zero_stock":   result = result.filter((i) => i.alert_type === "zero"); break;
     }
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -368,7 +348,7 @@ export default function ProcurementIntelligence() {
                   <th className="bg-white">Item Code</th>
                   <th className="bg-white">Description</th>
                   <th className="bg-white">Type</th>
-                  <th className="text-right bg-white">Current Stock</th>
+                  <th className="text-right bg-white">Effective Stock</th>
                   <th className="text-right bg-white">Min Stock</th>
                   <th className="bg-white">Status</th>
                   <th className="bg-white">Action Taken</th>
@@ -377,7 +357,7 @@ export default function ProcurementIntelligence() {
               </thead>
               <tbody>
                 {filtered.map((item) => {
-                  const isZero = (item.stock_free + item.stock_in_process + item.stock_in_subassembly_wip + item.stock_in_fg_wip + item.stock_in_fg_ready) === 0;
+                  const isZero = item.alert_type === "zero";
                   const isActioned = hasAction(item);
                   return (
                     <tr key={item.id}>
@@ -388,7 +368,7 @@ export default function ProcurementIntelligence() {
                       <td className="text-xs text-slate-500">{typeLabel(item.item_type)}</td>
                       <td className="text-right tabular-nums font-mono">
                         <span className={isZero ? "font-bold text-red-600" : "text-slate-700"}>
-                          {item.current_stock}
+                          {item.effective_stock}
                         </span>
                       </td>
                       <td className="text-right tabular-nums font-mono text-slate-500">{item.min_stock}</td>

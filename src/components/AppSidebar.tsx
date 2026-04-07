@@ -42,12 +42,12 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchFatStats } from "@/lib/fat-api";
-import { fetchReorderSummary } from "@/lib/reorder-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { fetchAwoStats } from "@/lib/production-api";
 import { fetchAwaitingStoreCount } from "@/lib/grn-api";
 import { fetchDispatchStats } from "@/lib/dispatch-api";
 import { supabase } from "@/integrations/supabase/client";
+import { getCompanyId } from "@/lib/auth-helpers";
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -441,7 +441,14 @@ export function AppSidebar() {
     queryKey: ["reorder-summary-sidebar"],
     queryFn: async () => {
       try {
-        return await fetchReorderSummary();
+        const companyId = await getCompanyId();
+        if (!companyId) return { critical: 0, warning: 0 };
+        const { count, error } = await (supabase as any)
+          .from("stock_alerts")
+          .select("*", { count: "exact", head: true })
+          .eq("company_id", companyId);
+        if (error) return { critical: 0, warning: 0 };
+        return { critical: count ?? 0, warning: 0 };
       } catch {
         return { critical: 0, warning: 0 };
       }
@@ -484,7 +491,6 @@ export function AppSidebar() {
     queryKey: ["overdue-po-count-sidebar"],
     queryFn: async () => {
       try {
-        const todayStr = new Date().toISOString().split("T")[0];
         const { count } = await (supabase as any)
           .from("purchase_orders")
           .select("*", { count: "exact", head: true })

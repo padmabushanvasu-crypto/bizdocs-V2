@@ -1,8 +1,6 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
-import { Activity, CheckCircle2, RefreshCw } from "lucide-react";
-import { toast } from "sonner";
+import { Activity, CheckCircle2 } from "lucide-react";
 import { fetchPendingQCGRNs, fetchAwaitingStoreCount } from "@/lib/grn-api";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatCurrency } from "@/lib/gst-utils";
@@ -10,7 +8,6 @@ import { fetchAssemblyOrderStats } from "@/lib/assembly-orders-api";
 import { fetchFatStats } from "@/lib/fat-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { fetchAllAuditLog, type AuditEntry } from "@/lib/audit-api";
-import { recalcAllStockAlertLevels } from "@/lib/items-api";
 import { getCompanyId } from "@/lib/auth-helpers";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
@@ -27,21 +24,20 @@ interface DashboardData {
   componentCount: number;
   finishedGoodCount: number;
   needsBuildingCount: number;
-  criticalCount: number;
-  actionedCount: number;
   overduePOCount: number;
-  criticalItems: Array<{
-    id: string;
-    description: string;
-    item_code: string;
-    item_type: string;
-    current_stock: number;
-    aimed_stock: number;
-    effective_stock: number;
-    actionedWith: 'PO' | 'DC' | 'AO' | null;
-  }>;
   pendingAssemblyOrderCount: number;
   wipCount: number;
+}
+
+interface StockAlertItem {
+  id: string;
+  item_code: string;
+  description: string;
+  item_type: string;
+  aimed_stock: number;
+  effective_stock: number;
+  alert_type: string;
+  actionedWith: 'PO' | 'DC' | 'AO' | null;
 }
 
 interface ReadyToShipRow {
@@ -62,8 +58,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
   const fyYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
   const fyStart = format(new Date(fyYear, 3, 1), "yyyy-MM-dd");
 
-  const [invsRes, openPOsRes, openDCsRes, itemsRes, overduePOsRes,
-         itemsWithOpenPORes, itemsWithOpenDCRes, itemsWithOpenAORes, pendingAORes] = await Promise.all([
+  const [invsRes, openPOsRes, openDCsRes, itemsRes, overduePOsRes, pendingAORes] = await Promise.all([
     supabase
       .from("invoices")
       .select("grand_total, invoice_date, due_date, status")
@@ -79,35 +74,12 @@ async function fetchDashboardData(): Promise<DashboardData> {
       .eq("status", "issued"),
     (supabase as any)
       .from("items")
-      .select("id, description, item_type, current_stock, stock_finished_goods, min_finished_stock, stock_wip, min_stock, stock_alert_level, item_code, aimed_stock, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready")
+      .select("id, item_type, current_stock, stock_finished_goods, min_finished_stock, stock_wip")
       .eq("status", "active"),
     (supabase as any)
       .from("purchase_orders")
       .select("*", { count: "exact", head: true })
       .in("status", ["draft", "issued", "partially_received"]),
-    // Query A — items with an open PO already raised (two-step: avoids invalid embedded filter)
-    (async () => {
-      const { data: openPOs } = await (supabase as any)
-        .from("purchase_orders")
-        .select("id")
-        .in("status", ["draft", "issued", "partially_received"]);
-      const ids = (openPOs ?? []).map((p: any) => p.id as string);
-      if (ids.length === 0) return { data: [] };
-      return (supabase as any)
-        .from("po_line_items")
-        .select("item_id, po_id")
-        .in("po_id", ids);
-    })(),
-    // Query B — items with an open DC already sent out
-    (supabase as any)
-      .from("dc_line_items")
-      .select("item_id, delivery_challans!inner(status)")
-      .in("delivery_challans.status", ["issued", "partially_returned"]),
-    // Query C — items with an open Assembly Order
-    (supabase as any)
-      .from("assembly_orders")
-      .select("item_id")
-      .in("status", ["draft", "in_progress"]),
     // Pending assembly order count
     (supabase as any)
       .from("assembly_orders")
@@ -146,55 +118,14 @@ async function fetchDashboardData(): Promise<DashboardData> {
   ).length;
   const wipCount = items.filter((i) => (i.stock_wip ?? 0) > 0).length;
 
-  // Single source of truth: critical items from stock_alert_level column
-  const itemsWithPOIds = new Set((itemsWithOpenPORes.data ?? []).map((r: any) => r.item_id).filter(Boolean));
-  const itemsWithDCIds = new Set((itemsWithOpenDCRes.data ?? []).map((r: any) => r.item_id).filter(Boolean));
-  const itemsWithAOIds = new Set((itemsWithOpenAORes.data ?? []).map((r: any) => r.item_id).filter(Boolean));
   const pendingAssemblyOrderCount = (pendingAORes as any).count ?? 0;
-
-  const allCritical = items.filter(
-    (i) => i.stock_alert_level === 'critical' && i.item_type !== 'service'
-  );
-  const criticalCount = allCritical.filter(
-    (i) => !itemsWithPOIds.has(i.id) && !itemsWithDCIds.has(i.id) && !itemsWithAOIds.has(i.id)
-  ).length;
-  const actionedCount = allCritical.filter(
-    (i) => itemsWithPOIds.has(i.id) || itemsWithDCIds.has(i.id) || itemsWithAOIds.has(i.id)
-  ).length;
-
-  const criticalItems = allCritical
-    .slice(0, 6)
-    .map((i) => {
-      const actionedWith: 'PO' | 'DC' | 'AO' | null =
-        itemsWithPOIds.has(i.id) ? 'PO' :
-        itemsWithDCIds.has(i.id) ? 'DC' :
-        itemsWithAOIds.has(i.id) ? 'AO' : null;
-      const effectiveStock =
-        (i.stock_free ?? 0) +
-        (i.stock_in_process ?? 0) +
-        (i.stock_in_subassembly_wip ?? 0) +
-        (i.stock_in_fg_wip ?? 0) +
-        (i.stock_in_fg_ready ?? 0);
-      return {
-        id: i.id ?? '',
-        description: i.description ?? i.item_code ?? '—',
-        item_code: i.item_code ?? '',
-        item_type: i.item_type ?? '',
-        current_stock: i.current_stock ?? 0,
-        aimed_stock: i.aimed_stock ?? 0,
-        effective_stock: effectiveStock,
-        actionedWith,
-      };
-    });
-
   const overduePOCount = overduePOsRes.count ?? 0;
 
   return {
     thisMonthRevenue, fyRevenue, overdueInvoiceCount,
     openPOValue, overdueDCCount,
     rawMaterialCount, componentCount, finishedGoodCount,
-    needsBuildingCount, criticalCount, actionedCount,
-    overduePOCount, criticalItems,
+    needsBuildingCount, overduePOCount,
     pendingAssemblyOrderCount, wipCount,
   };
 }
@@ -296,47 +227,7 @@ function LightStatRow({
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const STALE = 5 * 60 * 1000;
-
-  const [recalcLoading, setRecalcLoading] = useState(false);
-
-  // Daily recalc of stock_alert_level — runs once per 24 hours automatically
-  useEffect(() => {
-    const RECALC_KEY = 'bizdocs_alert_recalc_v3';
-    const lastRecalc = localStorage.getItem(RECALC_KEY);
-    const now = Date.now();
-    const shouldRecalc = !lastRecalc || (now - parseInt(lastRecalc)) > 24 * 60 * 60 * 1000;
-    if (!shouldRecalc) return;
-    (async () => {
-      try {
-        const companyId = await getCompanyId();
-        if (!companyId) return;
-        await recalcAllStockAlertLevels(companyId);
-        localStorage.setItem(RECALC_KEY, now.toString());
-        queryClient.invalidateQueries();
-      } catch {
-        // Non-fatal — will retry on next mount
-      }
-    })();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function handleManualRecalc() {
-    setRecalcLoading(true);
-    try {
-      const companyId = await getCompanyId();
-      if (!companyId) return;
-      localStorage.removeItem('bizdocs_alert_recalc_v3');
-      await recalcAllStockAlertLevels(companyId);
-      localStorage.setItem('bizdocs_alert_recalc_v3', Date.now().toString());
-      queryClient.invalidateQueries();
-      toast.success("Stock alerts recalculated");
-    } catch {
-      toast.error("Recalculation failed — please try again");
-    } finally {
-      setRecalcLoading(false);
-    }
-  }
 
   const { data: companySettings } = useQuery({
     queryKey: ["company-settings-db"],
@@ -389,10 +280,87 @@ export default function Dashboard() {
     refetchInterval: STALE,
   });
 
-  // Derived alert counts — single source: stock_alert_level column
+  // Live stock alerts from view
+  const { data: stockAlertData = { unactioned: [] as StockAlertItem[], actioned: [] as StockAlertItem[] } } = useQuery({
+    queryKey: ['stock-alerts-dashboard'],
+    queryFn: async () => {
+      const companyId = await getCompanyId();
+      if (!companyId) return { unactioned: [] as StockAlertItem[], actioned: [] as StockAlertItem[] };
+
+      const { data, error } = await (supabase as any)
+        .from('stock_alerts')
+        .select('*')
+        .eq('company_id', companyId)
+        .neq('item_type', 'service')
+        .order('shortage', { ascending: false });
+
+      if (error) {
+        console.error('Stock alerts error:', error);
+        return { unactioned: [] as StockAlertItem[], actioned: [] as StockAlertItem[] };
+      }
+
+      const alertItems = (data ?? []) as any[];
+      if (alertItems.length === 0) return { unactioned: [] as StockAlertItem[], actioned: [] as StockAlertItem[] };
+
+      const itemIds = alertItems.map((i: any) => i.id);
+
+      // Open POs (two-step)
+      const { data: openPOs } = await (supabase as any)
+        .from('purchase_orders')
+        .select('id')
+        .eq('company_id', companyId)
+        .in('status', ['draft', 'issued', 'partially_received']);
+      const openPOIds = (openPOs ?? []).map((p: any) => p.id);
+      const { data: poLines } = openPOIds.length > 0
+        ? await (supabase as any).from('po_line_items').select('item_id').in('item_id', itemIds).in('po_id', openPOIds)
+        : { data: [] };
+      const itemsWithPO = new Set((poLines ?? []).map((l: any) => l.item_id));
+
+      // Open DCs (two-step)
+      const { data: openDCs } = await (supabase as any)
+        .from('delivery_challans')
+        .select('id')
+        .eq('company_id', companyId)
+        .in('status', ['issued', 'partially_returned']);
+      const openDCIds = (openDCs ?? []).map((d: any) => d.id);
+      const { data: dcLines } = openDCIds.length > 0
+        ? await (supabase as any).from('dc_line_items').select('item_id').in('item_id', itemIds).in('delivery_challan_id', openDCIds)
+        : { data: [] };
+      const itemsWithDC = new Set((dcLines ?? []).map((l: any) => l.item_id));
+
+      // Open AOs
+      const { data: openAOs } = await (supabase as any)
+        .from('assembly_orders')
+        .select('item_id')
+        .eq('company_id', companyId)
+        .in('status', ['draft', 'in_progress'])
+        .in('item_id', itemIds);
+      const itemsWithAO = new Set((openAOs ?? []).map((ao: any) => ao.item_id));
+
+      const enriched: StockAlertItem[] = alertItems.map((item: any) => ({
+        id: item.id ?? '',
+        item_code: item.item_code ?? '',
+        description: item.description ?? item.item_code ?? '—',
+        item_type: item.item_type ?? '',
+        aimed_stock: item.aimed_stock ?? 0,
+        effective_stock: item.effective_stock ?? 0,
+        alert_type: item.alert_type ?? 'low',
+        actionedWith: itemsWithPO.has(item.id) ? 'PO' : itemsWithDC.has(item.id) ? 'DC' : itemsWithAO.has(item.id) ? 'AO' : null,
+      }));
+
+      return {
+        unactioned: enriched.filter((i) => !i.actionedWith),
+        actioned: enriched.filter((i) => !!i.actionedWith),
+      };
+    },
+    staleTime: 30_000,
+    refetchOnMount: true,
+  });
+
+  // Derived alert counts
   const overdueDCReturns  = dashData?.overdueDCCount ?? 0;
-  const criticalCount     = dashData?.criticalCount ?? 0;
-  const actionedCount     = dashData?.actionedCount ?? 0;
+  const criticalCount     = stockAlertData.unactioned.length;
+  const actionedCount     = stockAlertData.actioned.length;
   const fatPending        = fatStats?.pending ?? 0;
   const uninvoicedUnits   = readyToShip.length;
 
@@ -608,24 +576,13 @@ export default function Dashboard() {
           <div className={`bg-white rounded-xl border shadow-sm p-4 lg:p-5 ${criticalCount > 0 ? 'border-red-300' : actionedCount > 0 ? 'border-blue-300' : 'border-slate-200'}`}>
             <div className="flex items-center justify-between mb-3">
               <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Stock Alerts</p>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleManualRecalc}
-                  disabled={recalcLoading}
-                  className="flex items-center gap-1 text-xs text-slate-500 font-medium hover:text-slate-700 transition-colors disabled:opacity-50"
-                  title="Recalculate stock alert levels"
-                >
-                  <RefreshCw className={`h-3 w-3 ${recalcLoading ? "animate-spin" : ""}`} />
-                  {recalcLoading ? "Recalculating…" : "Recalculate"}
-                </button>
-                <button className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors" onClick={() => navigate("/procurement-intelligence")}>
-                  View All →
-                </button>
-              </div>
+              <button className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors" onClick={() => navigate("/procurement-intelligence")}>
+                View All →
+              </button>
             </div>
 
             <div className="space-y-2">
-              {/* Group 1 — Needs Action (unactioned critical items) */}
+              {/* Group 1 — Needs Action (unactioned items) */}
               {criticalCount > 0 && (
                 <div
                   className="rounded-lg border-l-[3px] border-red-500 bg-red-50 px-3 py-2 cursor-pointer hover:bg-red-100 transition-colors"
@@ -635,9 +592,8 @@ export default function Dashboard() {
                     <span className="text-xs font-semibold text-red-700 uppercase tracking-wider">Needs Action</span>
                     <span className="text-base font-extrabold font-mono tabular-nums text-red-600">{criticalCount}</span>
                   </div>
-                  <p className="text-[10px] text-red-500 mt-0.5">Critical stock — no open PO / DC / AO</p>
-                  {/* Unactioned critical items */}
-                  {(dashData?.criticalItems ?? []).filter(i => !i.actionedWith).slice(0, 3).map((item, i) => (
+                  <p className="text-[10px] text-red-500 mt-0.5">Below min stock — no open PO / DC / AO</p>
+                  {stockAlertData.unactioned.slice(0, 3).map((item, i) => (
                     <div key={i} className="mt-1.5">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[10px] text-red-800 truncate max-w-[100px] font-mono">{item.item_code || item.description}</span>
@@ -662,7 +618,7 @@ export default function Dashboard() {
                       </div>
                       {item.aimed_stock > 0 && (item.aimed_stock - item.effective_stock) > 0 && (
                         <p className="text-[9px] text-red-500 mt-0.5">
-                          Order {Math.ceil(item.aimed_stock - item.effective_stock)} to reach aimed {item.aimed_stock}
+                          Order {Math.ceil(item.aimed_stock - item.effective_stock)} to reach aimed qty of {item.aimed_stock}
                         </p>
                       )}
                     </div>
@@ -670,26 +626,25 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {/* Group 2 — Being Actioned (critical items with open PO/DC/AO) */}
+              {/* Group 2 — Being Actioned (items with open PO/DC/AO) */}
               {actionedCount > 0 && (
-                <div className="rounded-lg border-l-[3px] border-blue-400 bg-blue-50 px-3 py-2">
+                <div className="rounded-lg border-l-[3px] border-amber-400 bg-amber-50 px-3 py-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-blue-700 uppercase tracking-wider">Being Actioned</span>
-                    <span className="text-base font-extrabold font-mono tabular-nums text-blue-600">{actionedCount}</span>
+                    <span className="text-xs font-semibold text-amber-700 uppercase tracking-wider">Being Actioned</span>
+                    <span className="text-base font-extrabold font-mono tabular-nums text-amber-600">{actionedCount}</span>
                   </div>
-                  <p className="text-[10px] text-blue-500 mt-0.5">Open PO / DC / AO already raised</p>
-                  {/* Actioned critical items with document badge */}
-                  {(dashData?.criticalItems ?? []).filter(i => !!i.actionedWith).slice(0, 3).map((item, i) => (
+                  <p className="text-[10px] text-amber-500 mt-0.5">Open PO / DC / AO already raised</p>
+                  {stockAlertData.actioned.slice(0, 3).map((item, i) => (
                     <div key={i} className="mt-1.5">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] text-blue-800 truncate max-w-[110px] font-mono opacity-70">{item.item_code || item.description}</span>
+                        <span className="text-[10px] text-amber-800 truncate max-w-[110px] font-mono opacity-70">{item.item_code || item.description}</span>
                         {item.actionedWith === 'PO' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">PO Raised</span>}
                         {item.actionedWith === 'DC' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-teal-100 text-teal-700">DC Out</span>}
                         {item.actionedWith === 'AO' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">AO Raised</span>}
                       </div>
                       {item.aimed_stock > 0 && (item.aimed_stock - item.effective_stock) > 0 && (
-                        <p className="text-[9px] text-blue-400 mt-0.5">
-                          Order {Math.ceil(item.aimed_stock - item.effective_stock)} to reach aimed {item.aimed_stock}
+                        <p className="text-[9px] text-amber-500 mt-0.5">
+                          Order {Math.ceil(item.aimed_stock - item.effective_stock)} to reach aimed qty of {item.aimed_stock}
                         </p>
                       )}
                     </div>
