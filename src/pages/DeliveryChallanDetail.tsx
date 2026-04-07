@@ -209,16 +209,25 @@ export default function DeliveryChallanDetail() {
 
   // ── Compact A4 print copy renderer ────────────────────────────────────────
   const renderDCPrintCopy = (label: string) => {
-    const co = companySettings;
-    const fromAddr = [co?.address_line1, co?.address_line2, [co?.city, co?.state].filter(Boolean).join(', '), co?.pin_code ? `PIN ${co.pin_code}` : ''].filter(Boolean).join(', ');
+    const co = companySettings as any;
+    // Physical/factory address — used in "From" dispatch block
+    const physAddrParts = [co?.address_line1, co?.address_line2, [co?.city, co?.state].filter(Boolean).join(', '), co?.pin_code ? `PIN ${co.pin_code}` : ''].filter(Boolean);
+    const physAddr = physAddrParts.join(', ');
+    // Registered address — used in document header (falls back to physical if not set)
+    const regLine1 = co?.registered_address_line1 || co?.address_line1;
+    const regLine2 = co?.registered_address_line2 || co?.address_line2;
+    const regCity  = co?.registered_city  || co?.city;
+    const regState = co?.registered_state || co?.state;
+    const regPin   = co?.registered_pin_code || co?.pin_code;
+    const regAddr  = [regLine1, regLine2, [regCity, regState].filter(Boolean).join(', '), regPin ? `PIN ${regPin}` : ''].filter(Boolean).join(', ');
     return (
       <div className="dc-print-copy" style={{ fontFamily: 'Arial, sans-serif', fontSize: '7.5pt', color: '#000', lineHeight: 1.2, display: 'flex', flexDirection: 'column', minHeight: '270mm' }}>
-        {/* Header */}
+        {/* Header — company name + registered address */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1.5pt solid #1E3A5F', paddingBottom: '3pt', marginBottom: '3pt' }}>
           <div>
             {co?.logo_url && <img src={co.logo_url} alt="" style={{ height: '22pt', marginBottom: '1pt', objectFit: 'contain' }} />}
             <div style={{ fontWeight: 700, fontSize: '9.5pt', lineHeight: 1.15 }}>{co?.company_name}</div>
-            <div style={{ fontSize: '6.5pt', color: '#475569' }}>{fromAddr}</div>
+            <div style={{ fontSize: '6.5pt', color: '#475569' }}>{regAddr}</div>
             {co?.gstin && <div style={{ fontSize: '6.5pt', fontFamily: 'monospace' }}>GSTIN: {co.gstin}</div>}
             {co?.phone && <div style={{ fontSize: '6.5pt', color: '#475569' }}>Ph: {co.phone}</div>}
           </div>
@@ -236,9 +245,9 @@ export default function DeliveryChallanDetail() {
         {/* From / To */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4pt', marginBottom: '3pt', fontSize: '7pt' }}>
           <div style={{ border: '0.5pt solid #CBD5E1', padding: '3pt', borderRadius: '2pt' }}>
-            <div style={{ fontWeight: 700, fontSize: '6pt', color: '#64748b', textTransform: 'uppercase', marginBottom: '1pt' }}>From</div>
+            <div style={{ fontWeight: 700, fontSize: '6pt', color: '#64748b', textTransform: 'uppercase', marginBottom: '1pt' }}>From (Dispatch)</div>
             <div style={{ fontWeight: 700 }}>{co?.company_name}</div>
-            <div style={{ color: '#475569' }}>{fromAddr}</div>
+            <div style={{ color: '#475569' }}>{physAddr}</div>
             {co?.gstin && <div style={{ fontFamily: 'monospace', fontSize: '6pt' }}>GSTIN: {co.gstin}</div>}
           </div>
           <div style={{ border: '0.5pt solid #CBD5E1', padding: '3pt', borderRadius: '2pt' }}>

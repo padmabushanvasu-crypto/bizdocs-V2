@@ -33,6 +33,7 @@ interface DashboardData {
     id: string;
     description: string;
     item_code: string;
+    item_type: string;
     current_stock: number;
     hasPO: boolean;
     hasDC: boolean;
@@ -187,6 +188,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
       id: i.id ?? '',
       description: i.description ?? i.item_code ?? '—',
       item_code: i.item_code ?? '',
+      item_type: i.item_type ?? '',
       current_stock: i.current_stock ?? 0,
       hasPO: itemsWithPOIds.has(i.id),
       hasDC: itemsWithDCIds.has(i.id),
@@ -622,15 +624,31 @@ export default function Dashboard() {
                                 className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 hover:bg-purple-200 transition-colors"
                                 onClick={(e) => { e.stopPropagation(); navigate("/assembly-orders"); }}
                               >AO Raised</button>
-                            ) : (
+                            ) : item.item_type === 'raw_material' || item.item_type === 'bought_out' || item.item_type === 'consumable' ? (
                               <button
-                                className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-600 text-white hover:bg-red-700 transition-colors"
+                                className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-blue-200 text-blue-700 hover:bg-blue-50 transition-colors"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   navigate("/purchase-orders/new", { state: { prefillItem: { item_id: item.id, item_code: item.item_code, description: item.description } } });
                                 }}
                               >Raise PO</button>
-                            )}
+                            ) : item.item_type === 'component' ? (
+                              <button
+                                className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigate("/delivery-challans/new", { state: { prefillItem: { item_id: item.id, item_code: item.item_code, description: item.description } } });
+                                }}
+                              >Raise DC</button>
+                            ) : item.item_type === 'sub_assembly' || item.item_type === 'finished_good' ? (
+                              <button
+                                className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-emerald-200 text-emerald-700 hover:bg-emerald-50 transition-colors"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigate(item.item_type === 'sub_assembly' ? '/sub-assembly-work-orders' : '/finished-good-work-orders', { state: { prefillItem: { item_id: item.id, item_code: item.item_code, description: item.description } } });
+                                }}
+                              >Raise Assembly Order</button>
+                            ) : null}
                           </div>
                         </div>
                       ))}

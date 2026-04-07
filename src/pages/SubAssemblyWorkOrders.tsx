@@ -1,6 +1,6 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Layers, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -68,11 +68,26 @@ const defaultForm: FormState = {
 
 export default function SubAssemblyWorkOrders() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<FormState>(defaultForm);
+
+  // Pre-populate from route state (e.g. "Raise Assembly Order" from Dashboard/StockRegister)
+  useEffect(() => {
+    const prefill = (location.state as any)?.prefillItem;
+    if (prefill?.item_id) {
+      setForm((f) => ({
+        ...f,
+        item_id: prefill.item_id,
+        item_code: prefill.item_code ?? "",
+        item_description: prefill.description ?? "",
+      }));
+      setDialogOpen(true);
+    }
+  }, []);
   const [search, setSearch] = useState("");
 
   const monthOptions = useMemo(() => {

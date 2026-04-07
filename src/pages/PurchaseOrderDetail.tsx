@@ -164,9 +164,41 @@ export default function PurchaseOrderDetail() {
       <style>{`
         @media print {
           @page { size: A4 portrait; margin: 10mm 12mm 8mm 12mm; }
-          .po-print-wrapper { display: flex !important; flex-direction: column !important; min-height: 277mm !important; }
+
+          /* Page wrapper — flex column so footer pins to bottom */
+          .po-print-wrapper {
+            display: flex !important;
+            flex-direction: column !important;
+            min-height: 277mm !important;
+            box-shadow: none !important;
+            border: none !important;
+            border-radius: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+
+          /* Middle content grows to fill available space */
+          .po-section { page-break-inside: avoid; }
+
+          /* Footer pins to bottom */
           .po-footer { margin-top: auto !important; }
-          body { font-size: 8pt !important; }
+
+          /* Hide all screen chrome */
+          body > *, header, nav, aside, footer { display: none !important; }
+          body { font-size: 9pt !important; line-height: 1.3 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+          /* Section spacing */
+          .po-print-wrapper .po-section { margin-bottom: 3mm !important; }
+
+          /* Line items table — compress row height for print */
+          .po-line-items-table th { font-size: 7.5pt !important; padding: 3px 5px !important; }
+          .po-line-items-table td { font-size: 8pt !important; padding: 3px 5px !important; line-height: 1.3 !important; }
+          .po-line-items-table tr { page-break-inside: avoid; }
+
+          /* Totals block — compact */
+          .po-totals-block { font-size: 8pt !important; }
+          .po-totals-block .po-totals-row { padding: 1.5px 0 !important; }
+          .po-totals-block .po-amount-words { font-size: 7.5pt !important; }
         }
       `}</style>
       <button
@@ -434,21 +466,20 @@ export default function PurchaseOrderDetail() {
         </div>
 
         {/* ── Totals (shared screen + print) ── */}
-        <div className="flex justify-end">
-          <div className="w-full max-w-xs space-y-1.5 text-sm">
-            <div className="flex justify-between">
+        <div className="flex justify-end po-section">
+          <div className="w-full max-w-xs space-y-1.5 text-sm po-totals-block">
+            <div className="flex justify-between po-totals-row">
               <span className="text-muted-foreground">Sub Total</span>
               <span className="font-mono tabular-nums">{formatCurrency(po.sub_total)}</span>
             </div>
             {charges.length > 0 && charges.map((c: any, i: number) => (
-              <div key={i} className="flex justify-between">
+              <div key={i} className="flex justify-between po-totals-row">
                 <span className="text-muted-foreground">{c.label || "Additional"}</span>
                 <span className="font-mono tabular-nums">{formatCurrency(c.amount)}</span>
               </div>
             ))}
-            {/* Only show Taxable Value when it differs from Sub Total (i.e. there are charges or discounts) */}
             {Math.abs((po.taxable_value || 0) - (po.sub_total || 0)) > 0.005 && (
-              <div className="flex justify-between">
+              <div className="flex justify-between po-totals-row">
                 <span className="text-muted-foreground">Taxable Value</span>
                 <span className="font-mono tabular-nums">{formatCurrency(po.taxable_value)}</span>
               </div>
@@ -456,27 +487,27 @@ export default function PurchaseOrderDetail() {
             <div className="border-t border-border my-1" />
             {isSameState ? (
               <>
-                <div className="flex justify-between">
+                <div className="flex justify-between po-totals-row">
                   <span className="text-muted-foreground">CGST @ {(po.gst_rate || 18) / 2}%</span>
                   <span className="font-mono tabular-nums">{formatCurrency(po.cgst_amount)}</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between po-totals-row">
                   <span className="text-muted-foreground">SGST @ {(po.gst_rate || 18) / 2}%</span>
                   <span className="font-mono tabular-nums">{formatCurrency(po.sgst_amount)}</span>
                 </div>
               </>
             ) : (
-              <div className="flex justify-between">
+              <div className="flex justify-between po-totals-row">
                 <span className="text-muted-foreground">IGST @ {po.gst_rate || 18}%</span>
                 <span className="font-mono tabular-nums">{formatCurrency(po.igst_amount)}</span>
               </div>
             )}
             <div className="border-t border-border my-1" />
-            <div className="flex justify-between text-base font-bold">
+            <div className="flex justify-between text-base font-bold po-totals-row">
               <span>Grand Total</span>
               <span className="font-mono tabular-nums text-primary">{formatCurrency(po.grand_total)}</span>
             </div>
-            <p className="text-[10px] text-muted-foreground italic pt-1">{amountInWords(po.grand_total)}</p>
+            <p className="text-[10px] text-muted-foreground italic pt-1 po-amount-words">{amountInWords(po.grand_total)}</p>
           </div>
         </div>
 
@@ -494,44 +525,49 @@ export default function PurchaseOrderDetail() {
           </div>
         </div>
 
-        {/* ── PRINT: 3-col footer (T&C | Bank | Signature) ── */}
-        <div className="hidden print:block po-footer" style={{ borderTop: '0.5pt solid #CBD5E1', paddingTop: '4mm', marginTop: '4mm' }}>
-          <div style={{ display: 'flex', gap: '12px' }}>
-            {/* T&C */}
-            <div style={{ flex: '1' }}>
-              <div style={{ fontSize: '7pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>Terms &amp; Conditions</div>
+        {/* ── PRINT: footer — [T&C | Bank Details] + Signatory ── */}
+        <div className="hidden print:block po-footer" style={{ borderTop: '0.75pt solid #CBD5E1', paddingTop: '3mm' }}>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+            {/* Left 50%: T&C */}
+            <div style={{ flex: '1 1 50%' }}>
+              <div style={{ fontSize: '7pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px', letterSpacing: '0.04em' }}>Terms &amp; Conditions</div>
               {(poDocSettings?.terms_and_conditions || company?.default_terms_conditions) ? (
-                <div style={{ fontSize: '7pt', color: '#475569', lineHeight: 1.4, maxHeight: '18mm', overflow: 'hidden' }}>
+                <div style={{ fontSize: '7pt', color: '#475569', lineHeight: 1.4, maxHeight: '20mm', overflow: 'hidden', whiteSpace: 'pre-line' }}>
                   {poDocSettings?.terms_and_conditions || company?.default_terms_conditions}
                 </div>
               ) : (
-                <div style={{ fontSize: '7pt', color: '#94a3b8' }}>
+                <div style={{ fontSize: '7pt', color: '#475569', lineHeight: 1.5 }}>
                   1. Payment due as per agreed terms.<br />
                   2. Goods to be delivered as per PO specifications.<br />
                   3. Invoice must reference this PO number.
                 </div>
               )}
             </div>
-            {/* Bank Details */}
-            <div style={{ flex: '1' }}>
-              <div style={{ fontSize: '7pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>Bank Details</div>
-              {company?.bank_name ? (
-                <>
-                  <div style={{ fontSize: '7pt' }}>{company.bank_name}</div>
-                  {company.bank_account && <div style={{ fontSize: '7pt' }}>A/C: {company.bank_account}</div>}
-                  {company.bank_ifsc && <div style={{ fontSize: '7pt' }}>IFSC: {company.bank_ifsc}</div>}
-                  {company.bank_branch && <div style={{ fontSize: '7pt' }}>Branch: {company.bank_branch}</div>}
-                </>
-              ) : (
-                <div style={{ fontSize: '7pt', color: '#94a3b8' }}>—</div>
-              )}
-            </div>
-            {/* Authorised Signatory */}
-            <div style={{ flex: '1', textAlign: 'center' }}>
-              <div style={{ fontSize: '7pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>Authorised Signatory</div>
-              <div style={{ fontSize: '8pt', color: '#475569' }}>for {company?.company_name}</div>
-              <div style={{ borderBottom: '0.5pt solid #94a3b8', marginTop: '16mm', marginBottom: '2mm', marginLeft: '8mm', marginRight: '8mm' }} />
-              <div style={{ fontSize: '7pt', color: '#64748b' }}>Signature</div>
+            {/* Divider */}
+            <div style={{ width: '0.5pt', backgroundColor: '#E2E8F0', alignSelf: 'stretch' }} />
+            {/* Right 50%: Bank Details + Signatory side by side */}
+            <div style={{ flex: '1 1 50%', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+              {/* Bank Details */}
+              <div style={{ flex: '1' }}>
+                <div style={{ fontSize: '7pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px', letterSpacing: '0.04em' }}>Bank Details</div>
+                {company?.bank_name ? (
+                  <div style={{ fontSize: '7pt', color: '#475569', lineHeight: 1.5 }}>
+                    <div>{company.bank_name}</div>
+                    {company.bank_account && <div>A/C: {company.bank_account}</div>}
+                    {company.bank_ifsc && <div>IFSC: {company.bank_ifsc}</div>}
+                    {company.bank_branch && <div>Branch: {company.bank_branch}</div>}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '7pt', color: '#94a3b8' }}>—</div>
+                )}
+              </div>
+              {/* Authorised Signatory */}
+              <div style={{ flex: '0 0 90pt', textAlign: 'center' }}>
+                <div style={{ fontSize: '7pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px', letterSpacing: '0.04em' }}>Authorised Signatory</div>
+                <div style={{ fontSize: '7.5pt', color: '#475569' }}>for {company?.company_name}</div>
+                <div style={{ borderBottom: '0.5pt solid #94a3b8', marginTop: '14mm', marginBottom: '2mm', marginLeft: '4mm', marginRight: '4mm' }} />
+                <div style={{ fontSize: '7pt', color: '#64748b' }}>Signature</div>
+              </div>
             </div>
           </div>
         </div>
