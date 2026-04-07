@@ -45,7 +45,10 @@ export default function DangerZone() {
       const { error } = await supabase.rpc("clear_all_company_data", {
         p_company_id: companyId,
       });
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase RPC error:', error);
+        throw error;
+      }
 
       // Clear React Query cache
       queryClient.clear();
@@ -58,7 +61,14 @@ export default function DangerZone() {
 
       setTimeout(() => navigate("/"), 2000);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Unknown error";
+      console.error('Clear all data error:', err);
+      let message = "Unknown error";
+      if (err instanceof Error) {
+        message = err.message;
+      } else if (typeof err === 'object' && err !== null) {
+        const pgErr = err as { message?: string; details?: string; hint?: string; code?: string };
+        message = pgErr.message || pgErr.details || pgErr.hint || JSON.stringify(err);
+      }
       toast.error(`Failed to clear data: ${message}`);
     } finally {
       setLoading(false);
