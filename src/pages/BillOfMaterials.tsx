@@ -778,6 +778,18 @@ function BillOfMaterialsInner() {
   // ── Left panel state ────────────────────────────────────────────────────────
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [itemSearch, setItemSearch] = useState("");
+  const [activeTypes, setActiveTypes] = useState<Set<string>>(
+    () => new Set(["component", "sub_assembly", "finished_good"])
+  );
+
+  function toggleTypeFilter(type: string) {
+    setActiveTypes((prev) => {
+      if (prev.has(type) && prev.size === 1) return prev; // keep at least one active
+      const next = new Set(prev);
+      next.has(type) ? next.delete(type) : next.add(type);
+      return next;
+    });
+  }
 
   // ── Tab / variant state ─────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState("structure");
@@ -882,14 +894,24 @@ function BillOfMaterialsInner() {
   const parentCandidates = allItems.filter((i) =>
     ["finished_good", "sub_assembly", "component"].includes(i.item_type)
   );
-  const filteredParents = itemSearch.trim()
-    ? parentCandidates.filter(
-        (i) =>
-          i.item_code.toLowerCase().includes(itemSearch.toLowerCase()) ||
-          i.description.toLowerCase().includes(itemSearch.toLowerCase()) ||
-          (i.drawing_revision ?? "").toLowerCase().includes(itemSearch.toLowerCase())
-      )
-    : parentCandidates;
+
+  const typeCounts = useMemo(() => ({
+    component:    parentCandidates.filter((i) => i.item_type === "component").length,
+    sub_assembly: parentCandidates.filter((i) => i.item_type === "sub_assembly").length,
+    finished_good: parentCandidates.filter((i) => i.item_type === "finished_good").length,
+  }), [parentCandidates]);
+
+  const filteredParents = useMemo(() => {
+    const byType = parentCandidates.filter((i) => activeTypes.has(i.item_type));
+    if (!itemSearch.trim()) return byType;
+    const q = itemSearch.toLowerCase();
+    return byType.filter(
+      (i) =>
+        i.item_code.toLowerCase().includes(q) ||
+        i.description.toLowerCase().includes(q) ||
+        (i.drawing_revision ?? "").toLowerCase().includes(q)
+    );
+  }, [parentCandidates, activeTypes, itemSearch]);
 
   const variantFilter = selectedVariantId === "__default_bom__" ? null : selectedVariantId;
 
@@ -1664,6 +1686,42 @@ function BillOfMaterialsInner() {
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col h-[calc(100vh-200px)] min-h-[400px]">
             <div className="px-4 py-3 border-b border-slate-100">
               <h2 className="text-sm font-semibold text-slate-700">Items</h2>
+              {/* Type filter pills */}
+              <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                {([
+                  {
+                    key: "component",
+                    label: "Component",
+                    count: typeCounts.component,
+                    activeClass: "bg-slate-700 text-white",
+                    inactiveClass: "border border-slate-300 text-slate-500",
+                  },
+                  {
+                    key: "sub_assembly",
+                    label: "Sub-Assembly",
+                    count: typeCounts.sub_assembly,
+                    activeClass: "bg-amber-500 text-white",
+                    inactiveClass: "border border-amber-300 text-amber-600",
+                  },
+                  {
+                    key: "finished_good",
+                    label: "Finished Good",
+                    count: typeCounts.finished_good,
+                    activeClass: "bg-emerald-600 text-white",
+                    inactiveClass: "border border-emerald-300 text-emerald-600",
+                  },
+                ] as const).map((f) => (
+                  <button
+                    key={f.key}
+                    onClick={() => toggleTypeFilter(f.key)}
+                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                      activeTypes.has(f.key) ? f.activeClass : f.inactiveClass
+                    }`}
+                  >
+                    {f.label}{f.count > 0 ? ` (${f.count})` : ""}
+                  </button>
+                ))}
+              </div>
               <div className="relative mt-2">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
