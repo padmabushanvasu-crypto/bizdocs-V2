@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { StockStatusBadge } from "@/components/StockStatusBadge";
 import { fetchStockStatus, fetchStockMovements, type StockStatusRow, type StockMovement } from "@/lib/items-api";
-import { fetchReorderAlerts, type ReorderAlert } from "@/lib/reorder-api";
 import { fetchPendingQCGRNs } from "@/lib/grn-api";
 
 // ── Error boundary ─────────────────────────────────────────────────────────────
@@ -204,17 +203,6 @@ function StockRegisterInner() {
     queryFn: () => fetchStockMovements(selectedItem!.id),
     enabled: !!selectedItem?.id && ledgerOpen,
   });
-
-  const { data: reorderAlerts = [] } = useQuery({
-    queryKey: ["reorder-alerts"],
-    queryFn: fetchReorderAlerts,
-  });
-
-  const reorderMap = useMemo(() => {
-    const m = new Map<string, ReorderAlert>();
-    for (const a of reorderAlerts) m.set(a.item_id, a);
-    return m;
-  }, [reorderAlerts]);
 
   const { data: pendingQCGrns = [] } = useQuery({
     queryKey: ['pending-qc-grns'],
@@ -596,46 +584,22 @@ function StockRegisterInner() {
 
                       {/* Status */}
                       <td className="px-3 py-3">
-                        {(() => {
-                          const alert = reorderMap.get(row.id);
-                          if (alert) {
-                            if (alert.actioned) {
-                              return (
-                                <div>
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap bg-amber-50 text-amber-700 border-amber-200">
-                                    PO Raised
-                                  </span>
-                                  {alert.po_number && (
-                                    <p className="text-[10px] text-slate-500 mt-0.5 font-mono leading-tight">
-                                      PO #{alert.po_number} · {alert.open_po_qty} units
-                                      {alert.po_expected_date
-                                        ? ` · Due ${new Date(alert.po_expected_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}`
-                                        : ''}
-                                    </p>
-                                  )}
-                                </div>
-                              );
-                            } else {
-                              return (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap bg-red-50 text-red-700 border-red-200">
-                                  Action Required
-                                </span>
-                              );
+                        {row.stock_alert_level === 'critical' ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap bg-red-50 text-red-700 border-red-200">
+                            Action Required
+                          </span>
+                        ) : (
+                          <StockStatusBadge
+                            alertLevel={row.stock_alert_level ?? "healthy"}
+                            totalStock={
+                              row.stock_free +
+                              row.stock_in_process +
+                              row.stock_in_subassembly_wip +
+                              row.stock_in_fg_wip +
+                              row.stock_in_fg_ready
                             }
-                          }
-                          return (
-                            <StockStatusBadge
-                              alertLevel={row.stock_alert_level ?? "healthy"}
-                              totalStock={
-                                row.stock_free +
-                                row.stock_in_process +
-                                row.stock_in_subassembly_wip +
-                                row.stock_in_fg_wip +
-                                row.stock_in_fg_ready
-                              }
-                            />
-                          );
-                        })()}
+                          />
+                        )}
                       </td>
 
                       {/* Action */}

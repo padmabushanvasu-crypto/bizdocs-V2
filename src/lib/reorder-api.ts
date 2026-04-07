@@ -102,16 +102,26 @@ export interface ScrapStats {
 // ============================================================
 
 /**
- * The main intelligence function — computes per-item reorder alerts
- * using stock levels, reorder rules, consumption rates, and AO demand.
+ * Returns all active items where stock_alert_level = 'critical'.
+ * The DB column is the source of truth — updated on every stock movement via updateStockBucket.
  */
 export async function fetchReorderAlerts(): Promise<ReorderAlert[]> {
   const companyId = await getCompanyId();
-  const today = new Date();
-  const ninetyDaysAgo = new Date(today.getTime() - 90 * 24 * 60 * 60 * 1000);
-  const ninetyDaysAgoStr = ninetyDaysAgo.toISOString().split("T")[0];
 
-  // 1. Fetch active reorder rules
+  // 1. Fetch all critical items from DB (single query, no JS threshold calc)
+  const { data: itemsRaw, error: itemsError } = await (supabase as any)
+    .from("items")
+    .select("id, item_code, description, item_type, unit, current_stock, stock_raw_material, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, min_stock, stock_alert_level")
+    .eq("company_id", companyId)
+    .eq("status", "active")
+    .eq("stock_alert_level", "critical")
+    .neq("item_type", "service");
+  if (itemsError) throw itemsError;
+
+  const items = (itemsRaw || []) as any[];
+  if (items.length === 0) return [];
+
+  // 2. Fetch active reorder rules for enrichment (vendor names, reorder qty)
   const { data: rulesRaw, error: rulesError } = await (supabase as any)
     .from("reorder_rules")
     .select("*")
@@ -119,158 +129,54 @@ export async function fetchReorderAlerts(): Promise<ReorderAlert[]> {
     .eq("is_active", true);
   if (rulesError) throw rulesError;
 
-  const rules = (rulesRaw || []) as ReorderRule[];
   const ruleMap: Record<string, ReorderRule> = {};
-  const ruleItemIds: string[] = [];
-  for (const r of rules) {
-    ruleMap[r.item_id] = r;
-    ruleItemIds.push(r.item_id);
-  }
+  for (const r of (rulesRaw || []) as ReorderRule[]) ruleMap[r.item_id] = r;
 
-  // Resolve preferred vendor names for rules
-  const vendorIds = [...new Set(rules.map((r) => r.preferred_vendor_id).filter(Boolean) as string[])];
+  // Resolve preferred vendor names
+  const vendorIds = [...new Set((rulesRaw || []).map((r: any) => r.preferred_vendor_id).filter(Boolean) as string[])];
   const vendorMap: Record<string, string> = {};
   if (vendorIds.length > 0) {
-    const { data: vendors } = await (supabase as any)
-      .from("parties")
-      .select("id, name")
-      .in("id", vendorIds);
+    const { data: vendors } = await (supabase as any).from("parties").select("id, name").in("id", vendorIds);
     for (const v of vendors || []) vendorMap[v.id] = v.name;
   }
 
-  // 2. Fetch items that might need reordering (min_stock > 0 OR has a rule)
-  let itemsQuery = (supabase as any)
-    .from("items")
-    .select("id, item_code, description, item_type, unit, current_stock, stock_raw_material, stock_free, stock_in_process, min_stock, standard_cost")
-    .eq("status", "active");
-
-  if (ruleItemIds.length > 0) {
-    itemsQuery = itemsQuery.or(`min_stock.gt.0,id.in.(${ruleItemIds.join(",")})`);
-  } else {
-    itemsQuery = itemsQuery.gt("min_stock", 0);
-  }
-
-  const { data: itemsRaw, error: itemsError } = await itemsQuery;
-  if (itemsError) throw itemsError;
-  // Exclude sub-assemblies from reorder alerts — they are planned via Assembly Orders, not POs
-  const items = ((itemsRaw || []) as any[]).filter((i) => i.item_type !== 'sub_assembly');
-
-  if (items.length === 0) return [];
-
-  // 3. Fetch in-progress assembly order IDs
-  const { data: inProgressAOs } = await (supabase as any)
-    .from("assembly_orders")
-    .select("id")
-    .eq("status", "in_progress");
-  const aoIds = (inProgressAOs || []).map((ao: any) => ao.id);
-
-  // 4. Fetch AO component requirements (aggregate by item_id)
-  const aoRequirements: Record<string, number> = {};
-  if (aoIds.length > 0) {
-    const { data: aoLines } = await (supabase as any)
-      .from("assembly_order_lines")
-      .select("item_id, required_qty")
-      .in("assembly_order_id", aoIds);
-    for (const line of aoLines || []) {
-      aoRequirements[line.item_id] = (aoRequirements[line.item_id] || 0) + (line.required_qty || 0);
-    }
-  }
-
-  // 5. Fetch stock ledger consumption from last 90 days (qty_out movements)
-  const { data: ledgerRaw } = await (supabase as any)
-    .from("stock_ledger")
-    .select("item_id, qty_out, transaction_type")
-    .gte("transaction_date", ninetyDaysAgoStr)
-    .gt("qty_out", 0);
-
-  const consumptionMap: Record<string, number> = {};
-  for (const entry of ledgerRaw || []) {
-    // Exclude manual adjustments and opening stock from consumption calc
-    if (entry.transaction_type === "manual_adjustment" || entry.transaction_type === "opening_stock") continue;
-    consumptionMap[entry.item_id] = (consumptionMap[entry.item_id] || 0) + (entry.qty_out || 0);
-  }
-
-  // 6. Compute alerts
-  const alerts: ReorderAlert[] = [];
-
-  for (const item of items) {
+  // 3. Build alert objects
+  const alerts: ReorderAlert[] = items.map((item: any) => {
     const rule = ruleMap[item.id];
-    const reorderPoint: number = rule ? Number(rule.reorder_point) : Number(item.min_stock);
-    const reorderQty: number = rule ? Number(rule.reorder_qty) : Number(item.min_stock);
-    const leadTimeDays: number = rule ? (rule.lead_time_days ?? 7) : 7;
+    const minStock = Number(item.min_stock) || 0;
+    const reorderPoint = rule ? Number(rule.reorder_point) : minStock;
+    const reorderQty = rule ? Number(rule.reorder_qty) : minStock;
+    const leadTimeDays = rule ? (rule.lead_time_days ?? 7) : 7;
     const preferredVendorId: string | null = rule?.preferred_vendor_id ?? null;
     const preferredVendorName: string | null = preferredVendorId ? (vendorMap[preferredVendorId] ?? null) : null;
 
-    const currentStock: number = Number(item.current_stock) || 0;
-    const rawStock: number = Number(item.stock_raw_material) || 0;
-    const minStock: number = Number(item.min_stock) || 0;
-    // Phase 13: use stock_free + stock_in_process as effective available
-    const effective: number = (Number(item.stock_free) || currentStock) + (Number(item.stock_in_process) || 0);
-    // For raw material / bought-out items, use stock_raw_material for alert calculation (legacy fallback)
-    const useRawStock = item.item_type === "raw_material" || item.item_type === "bought_out";
-    const alertStock: number = effective > 0 ? effective : (useRawStock ? rawStock : currentStock);
-
-    if (reorderPoint <= 0 && minStock <= 0) continue;
-
-    const totalConsumption: number = consumptionMap[item.id] || 0;
-    const consumptionRatePerDay: number = totalConsumption / 90;
-    const daysOfStockRemaining: number =
-      consumptionRatePerDay > 0 ? Math.floor(alertStock / consumptionRatePerDay) : 999;
-
-    const openAOReq: number = aoRequirements[item.id] || 0;
-    const rawRecommended: number = Math.max(
-      reorderQty,
-      Math.max(0, consumptionRatePerDay * leadTimeDays - alertStock + openAOReq)
-    );
-    const recommendedOrderQty: number = Math.ceil(rawRecommended);
-
-    const threshold: number = reorderPoint > 0 ? reorderPoint : minStock;
-    let alertLevel: "critical" | "warning" | "watch" | null = null;
-    if (alertStock < threshold) {
-      alertLevel = "critical";
-    } else if (threshold > 0 && alertStock <= threshold) {
-      alertLevel = "warning";
-    } else if (threshold > 0 && alertStock <= threshold * 1.2) {
-      alertLevel = "watch";
-    }
-
-    if (!alertLevel) continue;
-
-    alerts.push({
+    return {
       item_id: item.id,
       item_code: item.item_code,
       item_description: item.description,
       item_type: item.item_type,
       item_unit: item.unit || "NOS",
-      current_stock: currentStock,
-      raw_stock: rawStock,
+      current_stock: Number(item.current_stock) || 0,
+      raw_stock: Number(item.stock_raw_material) || 0,
       min_stock: minStock,
       reorder_point: reorderPoint,
       reorder_qty: reorderQty,
       preferred_vendor_id: preferredVendorId,
       preferred_vendor_name: preferredVendorName,
       lead_time_days: leadTimeDays,
-      days_of_stock_remaining: daysOfStockRemaining,
-      consumption_rate_per_day: Math.round(consumptionRatePerDay * 1000) / 1000,
-      recommended_order_qty: recommendedOrderQty,
-      alert_level: alertLevel,
-      open_po_qty: 0, // PO line items don't track item_id FK
-      open_ao_requirement: openAOReq,
+      days_of_stock_remaining: 0,
+      consumption_rate_per_day: 0,
+      recommended_order_qty: reorderQty,
+      alert_level: "critical" as const,
+      open_po_qty: 0,
+      open_ao_requirement: 0,
       actioned: false,
       po_number: null,
       po_expected_date: null,
-    });
-  }
-
-  // Sort: critical → warning → watch; within level, lowest days remaining first
-  const levelOrder: Record<string, number> = { critical: 0, warning: 1, watch: 2 };
-  alerts.sort((a, b) => {
-    const ld = levelOrder[a.alert_level] - levelOrder[b.alert_level];
-    if (ld !== 0) return ld;
-    return a.days_of_stock_remaining - b.days_of_stock_remaining;
+    };
   });
 
-  // Enrich alerts with open PO data
+  // 4. Enrich with open PO data (for actioned flag)
   const alertItemCodes = alerts.map(a => a.item_code).filter(Boolean) as string[];
   if (alertItemCodes.length > 0) {
     const { data: openPOs } = await (supabase as any)
@@ -281,9 +187,7 @@ export async function fetchReorderAlerts(): Promise<ReorderAlert[]> {
 
     const openPOIds = (openPOs || []).map((p: any) => p.id);
     const openPOMap: Record<string, { po_number: string; delivery_date: string | null }> = {};
-    for (const p of (openPOs || [])) {
-      openPOMap[p.id] = { po_number: p.po_number, delivery_date: p.delivery_date };
-    }
+    for (const p of (openPOs || [])) openPOMap[p.id] = { po_number: p.po_number, delivery_date: p.delivery_date };
 
     if (openPOIds.length > 0) {
       const { data: poLines } = await (supabase as any)
@@ -298,9 +202,7 @@ export async function fetchReorderAlerts(): Promise<ReorderAlert[]> {
         if (!code) continue;
         const po = openPOMap[line.purchase_order_id];
         if (!po) continue;
-        if (!itemPoMap[code]) {
-          itemPoMap[code] = { qty: 0, po_number: po.po_number, delivery_date: po.delivery_date };
-        }
+        if (!itemPoMap[code]) itemPoMap[code] = { qty: 0, po_number: po.po_number, delivery_date: po.delivery_date };
         itemPoMap[code].qty += Number(line.qty_ordered) || 0;
       }
 
@@ -311,38 +213,33 @@ export async function fetchReorderAlerts(): Promise<ReorderAlert[]> {
           alert.actioned = true;
           alert.po_number = poData.po_number;
           alert.po_expected_date = poData.delivery_date;
-        } else {
-          alert.open_po_qty = 0;
-          alert.actioned = false;
-          alert.po_number = null;
-          alert.po_expected_date = null;
         }
-      }
-    } else {
-      for (const alert of alerts) {
-        alert.actioned = false;
-        alert.po_number = null;
-        alert.po_expected_date = null;
       }
     }
   }
 
+  // Sort: actioned last, then by item_code
+  alerts.sort((a, b) => {
+    if (a.actioned !== b.actioned) return a.actioned ? 1 : -1;
+    return (a.item_code || "").localeCompare(b.item_code || "");
+  });
+
   return alerts;
 }
 
-/** Fast summary for dashboard and sidebar badge — uses stock_status view. */
+/** Fast summary for dashboard and sidebar badge — reads stock_alert_level from items table. */
 export async function fetchReorderSummary(): Promise<{ critical: number; warning: number }> {
-  const { data, error } = await (supabase as any)
-    .from("stock_status")
-    .select("*");
+  const companyId = await getCompanyId();
+  const { count, error } = await (supabase as any)
+    .from("items")
+    .select("id", { count: "exact", head: true })
+    .eq("company_id", companyId)
+    .eq("status", "active")
+    .eq("stock_alert_level", "critical")
+    .neq("item_type", "service");
 
   if (error) return { critical: 0, warning: 0 };
-
-  const entries = (data || []) as Array<{ stock_status: string }>;
-  return {
-    critical: entries.filter((e) => e.stock_status === "red").length,
-    warning: entries.filter((e) => e.stock_status === "amber").length,
-  };
+  return { critical: count ?? 0, warning: 0 };
 }
 
 // ============================================================

@@ -1,14 +1,16 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
+import { useEffect } from "react";
 import { Activity, CheckCircle2 } from "lucide-react";
 import { fetchPendingQCGRNs, fetchAwaitingStoreCount } from "@/lib/grn-api";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatCurrency } from "@/lib/gst-utils";
 import { fetchAssemblyOrderStats } from "@/lib/assembly-orders-api";
 import { fetchFatStats } from "@/lib/fat-api";
-import { fetchReorderAlerts } from "@/lib/reorder-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { fetchAllAuditLog, type AuditEntry } from "@/lib/audit-api";
+import { recalcAllStockAlertLevels } from "@/lib/items-api";
+import { getCompanyId } from "@/lib/auth-helpers";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
 
@@ -23,11 +25,9 @@ interface DashboardData {
   rawMaterialCount: number;
   componentCount: number;
   finishedGoodCount: number;
-  zeroStockCount: number;
   needsBuildingCount: number;
-  criticalStockCount: number;
-  warningStockCount: number;
-  lockedStockCount: number;
+  criticalCount: number;
+  actionedCount: number;
   overduePOCount: number;
   criticalItems: Array<{
     id: string;
@@ -35,14 +35,8 @@ interface DashboardData {
     item_code: string;
     item_type: string;
     current_stock: number;
-    hasPO: boolean;
-    hasDC: boolean;
-    hasAO: boolean;
+    actionedWith: 'PO' | 'DC' | 'AO' | null;
   }>;
-  poRaisedCount: number;
-  dcRaisedCount: number;
-  aoRaisedCount: number;
-  actionNeededCount: number;
   pendingAssemblyOrderCount: number;
   wipCount: number;
 }
@@ -66,7 +60,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
   const fyStart = format(new Date(fyYear, 3, 1), "yyyy-MM-dd");
 
   const [invsRes, openPOsRes, openDCsRes, itemsRes, overduePOsRes,
-         itemsWithOpenPORes, itemsWithOpenDCRes, itemsWithOpenAORes, pendingAORes, noReorderRes] = await Promise.all([
+         itemsWithOpenPORes, itemsWithOpenDCRes, itemsWithOpenAORes, pendingAORes] = await Promise.all([
     supabase
       .from("invoices")
       .select("grand_total, invoice_date, due_date, status")
@@ -82,7 +76,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
       .eq("status", "issued"),
     (supabase as any)
       .from("items")
-      .select("id, description, item_type, current_stock, stock_wip, stock_finished_goods, min_finished_stock, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, min_stock, stock_alert_level, item_code")
+      .select("id, description, item_type, current_stock, stock_finished_goods, min_finished_stock, stock_wip, min_stock, stock_alert_level, item_code")
       .eq("status", "active"),
     (supabase as any)
       .from("purchase_orders")
@@ -109,11 +103,6 @@ async function fetchDashboardData(): Promise<DashboardData> {
       .from("assembly_orders")
       .select("id", { count: "exact", head: true })
       .in("status", ["draft", "in_progress"]),
-    // Items whose classification has affects_reorder=false (exempt from reorder alerts)
-    (supabase as any)
-      .from("item_classifications")
-      .select("id")
-      .eq("affects_reorder", false),
   ]);
 
   const invoices = (invsRes.data ?? []) as any[];
@@ -145,65 +134,49 @@ async function fetchDashboardData(): Promise<DashboardData> {
   const needsBuildingCount = items.filter(
     (i) => i.item_type === "finished_good" && (i.stock_finished_goods ?? 0) < (i.min_finished_stock ?? 0) && (i.min_finished_stock ?? 0) > 0
   ).length;
-  // Exclude item types manufactured in-house and classifications marked affects_reorder=false
-  const REORDER_EXCLUDE = ['sub_assembly', 'finished_good', 'component'];
-  const noReorderClassIds = new Set(((noReorderRes as any).data ?? []).map((c: any) => c.id).filter(Boolean));
-  const isReorderExcluded = (i: any) =>
-    REORDER_EXCLUDE.includes(i.item_type) ||
-    (i.custom_classification_id && noReorderClassIds.has(i.custom_classification_id));
-
-  const zeroStockCount = items.filter(
-    (i) => (i.current_stock ?? 0) === 0 && (i.min_stock ?? 0) > 0 && !isReorderExcluded(i)
-  ).length;
-  const criticalStockCount = items.filter(
-    (i) => i.stock_alert_level === 'critical' && !isReorderExcluded(i)
-  ).length;
-  const warningStockCount  = items.filter(
-    (i) => i.stock_alert_level === 'warning' && !isReorderExcluded(i)
-  ).length;
-  const lockedStockCount   = items.filter((i) => i.stock_alert_level === 'locked').length;
   const wipCount = items.filter((i) => (i.stock_wip ?? 0) > 0).length;
 
-  // Procurement intelligence: action tracking
+  // Single source of truth: critical items from stock_alert_level column
   const itemsWithPOIds = new Set((itemsWithOpenPORes.data ?? []).map((r: any) => r.item_id).filter(Boolean));
   const itemsWithDCIds = new Set((itemsWithOpenDCRes.data ?? []).map((r: any) => r.item_id).filter(Boolean));
   const itemsWithAOIds = new Set((itemsWithOpenAORes.data ?? []).map((r: any) => r.item_id).filter(Boolean));
   const pendingAssemblyOrderCount = (pendingAORes as any).count ?? 0;
 
-  const lowStockItems = items.filter(
-    (i) => (i.stock_alert_level === 'critical' || i.stock_alert_level === 'warning') && !isReorderExcluded(i)
+  const allCritical = items.filter(
+    (i) => i.stock_alert_level === 'critical' && i.item_type !== 'service'
   );
-  const poRaisedCount = lowStockItems.filter((i) => itemsWithPOIds.has(i.id)).length;
-  const dcRaisedCount = lowStockItems.filter((i) => itemsWithDCIds.has(i.id)).length;
-  const aoRaisedCount = lowStockItems.filter((i) => itemsWithAOIds.has(i.id)).length;
-  const actionNeededCount = lowStockItems.filter(
+  const criticalCount = allCritical.filter(
     (i) => !itemsWithPOIds.has(i.id) && !itemsWithDCIds.has(i.id) && !itemsWithAOIds.has(i.id)
   ).length;
+  const actionedCount = allCritical.filter(
+    (i) => itemsWithPOIds.has(i.id) || itemsWithDCIds.has(i.id) || itemsWithAOIds.has(i.id)
+  ).length;
 
-  // Top critical items for display
-  const criticalItems = items
-    .filter((i) => i.stock_alert_level === 'critical' && !isReorderExcluded(i))
-    .slice(0, 5)
-    .map((i) => ({
-      id: i.id ?? '',
-      description: i.description ?? i.item_code ?? '—',
-      item_code: i.item_code ?? '',
-      item_type: i.item_type ?? '',
-      current_stock: i.current_stock ?? 0,
-      hasPO: itemsWithPOIds.has(i.id),
-      hasDC: itemsWithDCIds.has(i.id),
-      hasAO: itemsWithAOIds.has(i.id),
-    }));
+  const criticalItems = allCritical
+    .slice(0, 6)
+    .map((i) => {
+      const actionedWith: 'PO' | 'DC' | 'AO' | null =
+        itemsWithPOIds.has(i.id) ? 'PO' :
+        itemsWithDCIds.has(i.id) ? 'DC' :
+        itemsWithAOIds.has(i.id) ? 'AO' : null;
+      return {
+        id: i.id ?? '',
+        description: i.description ?? i.item_code ?? '—',
+        item_code: i.item_code ?? '',
+        item_type: i.item_type ?? '',
+        current_stock: i.current_stock ?? 0,
+        actionedWith,
+      };
+    });
 
   const overduePOCount = overduePOsRes.count ?? 0;
 
   return {
     thisMonthRevenue, fyRevenue, overdueInvoiceCount,
     openPOValue, overdueDCCount,
-    rawMaterialCount, componentCount, finishedGoodCount, zeroStockCount,
-    needsBuildingCount, criticalStockCount, warningStockCount, lockedStockCount,
+    rawMaterialCount, componentCount, finishedGoodCount,
+    needsBuildingCount, criticalCount, actionedCount,
     overduePOCount, criticalItems,
-    poRaisedCount, dcRaisedCount, aoRaisedCount, actionNeededCount,
     pendingAssemblyOrderCount, wipCount,
   };
 }
@@ -305,7 +278,26 @@ function LightStatRow({
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const STALE = 5 * 60 * 1000;
+
+  // One-time recalc of stock_alert_level for all items (runs once per deployment)
+  useEffect(() => {
+    const FLAG = 'bizdocs_alert_recalc_v2';
+    if (localStorage.getItem(FLAG)) return;
+    (async () => {
+      try {
+        const companyId = await getCompanyId();
+        if (!companyId) return;
+        await recalcAllStockAlertLevels(companyId);
+        localStorage.setItem(FLAG, '1');
+        queryClient.invalidateQueries({ queryKey: ["dashboard-data-v3"] });
+        queryClient.invalidateQueries({ queryKey: ["reorder-summary-sidebar"] });
+      } catch {
+        // Non-fatal — will retry on next mount
+      }
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data: companySettings } = useQuery({
     queryKey: ["company-settings-db"],
@@ -321,12 +313,6 @@ export default function Dashboard() {
   const { data: fatStats } = useQuery({
     queryKey: ["fat-stats-db"],
     queryFn: fetchFatStats,
-    staleTime: STALE,
-    refetchInterval: STALE,
-  });
-  const { data: reorderAlerts = [] } = useQuery({
-    queryKey: ["reorder-alerts-db"],
-    queryFn: fetchReorderAlerts,
     staleTime: STALE,
     refetchInterval: STALE,
   });
@@ -364,16 +350,14 @@ export default function Dashboard() {
     refetchInterval: STALE,
   });
 
-  // Derived alert counts
+  // Derived alert counts — single source: stock_alert_level column
   const overdueDCReturns  = dashData?.overdueDCCount ?? 0;
-  const zeroStockItems    = dashData?.zeroStockCount ?? 0;
-  const reorderAlertCount = reorderAlerts.length;
-  const actionedCount   = reorderAlerts.filter(a => a.actioned).length;
-  const needActionCount = reorderAlertCount - actionedCount;
+  const criticalCount     = dashData?.criticalCount ?? 0;
+  const actionedCount     = dashData?.actionedCount ?? 0;
   const fatPending        = fatStats?.pending ?? 0;
   const uninvoicedUnits   = readyToShip.length;
 
-  const totalAlerts = overdueDCReturns + zeroStockItems + reorderAlertCount + fatPending + uninvoicedUnits + (dashData?.needsBuildingCount ?? 0) + (dashData?.overduePOCount ?? 0);
+  const totalAlerts = overdueDCReturns + criticalCount + actionedCount + fatPending + uninvoicedUnits + (dashData?.needsBuildingCount ?? 0) + (dashData?.overduePOCount ?? 0);
   const allClear = totalAlerts === 0;
 
   // Company info
@@ -528,11 +512,11 @@ export default function Dashboard() {
             {(dashData?.overduePOCount ?? 0) > 0 && (
               <AlertPill label="Overdue POs" count={dashData!.overduePOCount} colour="red" onClick={() => navigate("/purchase-orders")} />
             )}
-            {zeroStockItems > 0 && (
-              <AlertPill label="Zero Stock Items"   count={zeroStockItems}   colour="red"   onClick={() => navigate("/stock-register")} />
+            {criticalCount > 0 && (
+              <AlertPill label="Needs Action"       count={criticalCount}   colour="red"   onClick={() => navigate("/procurement-intelligence?filter=needs_action")} />
             )}
-            {reorderAlertCount > 0 && (
-              <AlertPill label="Reorder Alerts"     count={reorderAlertCount} colour="amber" onClick={() => navigate("/reorder-intelligence")} />
+            {actionedCount > 0 && (
+              <AlertPill label="Being Actioned"     count={actionedCount}   colour="amber" onClick={() => navigate("/procurement-intelligence")} />
             )}
             {pendingQCCount > 0 && (
               <AlertPill
@@ -582,7 +566,7 @@ export default function Dashboard() {
           </div>
 
           {/* Stock Alerts card */}
-          <div className={`bg-white rounded-xl border shadow-sm p-4 lg:p-5 ${(dashData?.criticalStockCount ?? 0) > 0 ? 'border-red-300' : (dashData?.warningStockCount ?? 0) > 0 ? 'border-amber-300' : 'border-slate-200'}`}>
+          <div className={`bg-white rounded-xl border shadow-sm p-4 lg:p-5 ${criticalCount > 0 ? 'border-red-300' : actionedCount > 0 ? 'border-blue-300' : 'border-slate-200'}`}>
             <div className="flex items-center justify-between mb-3">
               <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Stock Alerts</p>
               <button className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors" onClick={() => navigate("/procurement-intelligence")}>
@@ -591,132 +575,66 @@ export default function Dashboard() {
             </div>
 
             <div className="space-y-2">
-              {/* Group 1 — Zero Stock */}
-              {(dashData?.zeroStockCount ?? 0) > 0 && (
+              {/* Group 1 — Needs Action (unactioned critical items) */}
+              {criticalCount > 0 && (
                 <div
                   className="rounded-lg border-l-[3px] border-red-500 bg-red-50 px-3 py-2 cursor-pointer hover:bg-red-100 transition-colors"
-                  onClick={() => navigate("/stock-register?filter=critical")}
+                  onClick={() => navigate("/procurement-intelligence?filter=needs_action")}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-red-700 uppercase tracking-wider">Zero Stock</span>
-                    <span className="text-base font-extrabold font-mono tabular-nums text-red-600">{dashData?.zeroStockCount}</span>
+                    <span className="text-xs font-semibold text-red-700 uppercase tracking-wider">Needs Action</span>
+                    <span className="text-base font-extrabold font-mono tabular-nums text-red-600">{criticalCount}</span>
                   </div>
-                  <p className="text-[10px] text-red-500 mt-0.5">Immediate action required</p>
-                  {/* Top 3 critical items */}
-                  {(dashData?.criticalItems ?? []).length > 0 && (
-                    <div className="mt-2 space-y-1.5">
-                      {(dashData?.criticalItems ?? []).slice(0, 3).map((item, i) => (
-                        <div key={i} className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] text-red-800 truncate max-w-[100px] font-mono">{item.item_code || item.description}</span>
-                          <div className="flex items-center gap-1 shrink-0">
-                            {item.hasPO ? (
-                              <button
-                                className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors"
-                                onClick={(e) => { e.stopPropagation(); navigate("/purchase-orders"); }}
-                              >PO Raised</button>
-                            ) : item.hasDC ? (
-                              <button
-                                className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-teal-100 text-teal-700 hover:bg-teal-200 transition-colors"
-                                onClick={(e) => { e.stopPropagation(); navigate("/delivery-challans"); }}
-                              >DC Out</button>
-                            ) : item.hasAO ? (
-                              <button
-                                className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 hover:bg-purple-200 transition-colors"
-                                onClick={(e) => { e.stopPropagation(); navigate("/assembly-orders"); }}
-                              >AO Raised</button>
-                            ) : item.item_type === 'raw_material' || item.item_type === 'bought_out' || item.item_type === 'consumable' ? (
-                              <button
-                                className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-blue-200 text-blue-700 hover:bg-blue-50 transition-colors"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  navigate("/purchase-orders/new", { state: { prefillItem: { item_id: item.id, item_code: item.item_code, description: item.description } } });
-                                }}
-                              >Raise PO</button>
-                            ) : item.item_type === 'component' ? (
-                              <button
-                                className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  navigate("/delivery-challans/new", { state: { prefillItem: { item_id: item.id, item_code: item.item_code, description: item.description } } });
-                                }}
-                              >Raise DC</button>
-                            ) : item.item_type === 'sub_assembly' || item.item_type === 'finished_good' ? (
-                              <button
-                                className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-emerald-200 text-emerald-700 hover:bg-emerald-50 transition-colors"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  navigate(item.item_type === 'sub_assembly' ? '/sub-assembly-work-orders' : '/finished-good-work-orders', { state: { prefillItem: { item_id: item.id, item_code: item.item_code, description: item.description } } });
-                                }}
-                              >Raise Assembly Order</button>
-                            ) : null}
-                          </div>
-                        </div>
-                      ))}
+                  <p className="text-[10px] text-red-500 mt-0.5">Critical stock — no open PO / DC / AO</p>
+                  {/* Unactioned critical items */}
+                  {(dashData?.criticalItems ?? []).filter(i => !i.actionedWith).slice(0, 3).map((item, i) => (
+                    <div key={i} className="flex items-center justify-between gap-2 mt-1.5">
+                      <span className="text-[10px] text-red-800 truncate max-w-[100px] font-mono">{item.item_code || item.description}</span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {item.item_type === 'raw_material' || item.item_type === 'bought_out' || item.item_type === 'consumable' ? (
+                          <button
+                            className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-blue-200 text-blue-700 hover:bg-blue-50 transition-colors"
+                            onClick={(e) => { e.stopPropagation(); navigate("/purchase-orders/new", { state: { prefillItem: { item_id: item.id, item_code: item.item_code, description: item.description } } }); }}
+                          >Raise PO</button>
+                        ) : item.item_type === 'component' ? (
+                          <button
+                            className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
+                            onClick={(e) => { e.stopPropagation(); navigate("/delivery-challans/new", { state: { prefillItem: { item_id: item.id, item_code: item.item_code, description: item.description } } }); }}
+                          >Raise DC</button>
+                        ) : item.item_type === 'sub_assembly' || item.item_type === 'finished_good' ? (
+                          <button
+                            className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-emerald-200 text-emerald-700 hover:bg-emerald-50 transition-colors"
+                            onClick={(e) => { e.stopPropagation(); navigate(item.item_type === 'sub_assembly' ? '/sub-assembly-work-orders' : '/finished-good-work-orders', { state: { prefillItem: { item_id: item.id, item_code: item.item_code, description: item.description } } }); }}
+                          >Raise AO</button>
+                        ) : null}
+                      </div>
                     </div>
-                  )}
+                  ))}
                 </div>
               )}
 
-              {/* Group 2 — Low Stock */}
-              {(dashData?.warningStockCount ?? 0) > 0 && (
-                <div
-                  className="rounded-lg border-l-[3px] border-amber-500 bg-amber-50 px-3 py-2 cursor-pointer hover:bg-amber-100 transition-colors"
-                  onClick={() => navigate("/stock-register?filter=warning")}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-amber-700 uppercase tracking-wider">Running Low</span>
-                    <span className="text-base font-extrabold font-mono tabular-nums text-amber-600">{dashData?.warningStockCount}</span>
-                  </div>
-                  <p className="text-[10px] text-amber-500 mt-0.5">Below minimum threshold</p>
-                </div>
-              )}
-
-              {/* Group 3 — Being Actioned */}
-              {((dashData?.poRaisedCount ?? 0) + (dashData?.dcRaisedCount ?? 0) + (dashData?.aoRaisedCount ?? 0)) > 0 && (
+              {/* Group 2 — Being Actioned (critical items with open PO/DC/AO) */}
+              {actionedCount > 0 && (
                 <div className="rounded-lg border-l-[3px] border-blue-400 bg-blue-50 px-3 py-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-blue-700 uppercase tracking-wider">Being Actioned</span>
-                    <span className="text-base font-extrabold font-mono tabular-nums text-blue-600">
-                      {(dashData?.poRaisedCount ?? 0) + (dashData?.dcRaisedCount ?? 0) + (dashData?.aoRaisedCount ?? 0)}
-                    </span>
+                    <span className="text-base font-extrabold font-mono tabular-nums text-blue-600">{actionedCount}</span>
                   </div>
-                  <p className="text-[10px] mt-1">
-                    {[
-                      (dashData?.poRaisedCount ?? 0) > 0 && (
-                        <button key="po" className="text-blue-600 hover:underline" onClick={(e) => { e.stopPropagation(); navigate("/purchase-orders?filter=open"); }}>
-                          {dashData!.poRaisedCount} PO raised
-                        </button>
-                      ),
-                      (dashData?.dcRaisedCount ?? 0) > 0 && (
-                        <button key="dc" className="text-teal-600 hover:underline" onClick={(e) => { e.stopPropagation(); navigate("/delivery-challans?filter=issued"); }}>
-                          {dashData!.dcRaisedCount} DC out
-                        </button>
-                      ),
-                      (dashData?.aoRaisedCount ?? 0) > 0 && (
-                        <button key="ao" className="text-purple-600 hover:underline" onClick={(e) => { e.stopPropagation(); navigate("/assembly-orders?filter=active"); }}>
-                          {dashData!.aoRaisedCount} AO in progress
-                        </button>
-                      ),
-                    ].filter(Boolean).reduce<React.ReactNode[]>((acc, el, i) => i === 0 ? [el] : [...acc, <span key={`dot-${i}`} className="text-blue-400"> · </span>, el], [])}
-                  </p>
-                </div>
-              )}
-
-              {/* Group 4 — Needs Action */}
-              {(dashData?.actionNeededCount ?? 0) > 0 && (
-                <div
-                  className="rounded-lg border-l-[3px] border-red-400 bg-red-50 px-3 py-2 cursor-pointer hover:bg-red-100 transition-colors"
-                  onClick={() => navigate("/procurement-intelligence")}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-red-700 uppercase tracking-wider">No Action Yet</span>
-                    <span className="text-base font-extrabold font-mono tabular-nums text-red-600">{dashData?.actionNeededCount}</span>
-                  </div>
+                  <p className="text-[10px] text-blue-500 mt-0.5">Open PO / DC / AO already raised</p>
+                  {/* Actioned critical items with document badge */}
+                  {(dashData?.criticalItems ?? []).filter(i => !!i.actionedWith).slice(0, 3).map((item, i) => (
+                    <div key={i} className="flex items-center justify-between gap-2 mt-1.5">
+                      <span className="text-[10px] text-blue-800 truncate max-w-[110px] font-mono opacity-70">{item.item_code || item.description}</span>
+                      {item.actionedWith === 'PO' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">PO Raised</span>}
+                      {item.actionedWith === 'DC' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-teal-100 text-teal-700">DC Out</span>}
+                      {item.actionedWith === 'AO' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">AO Raised</span>}
+                    </div>
+                  ))}
                 </div>
               )}
 
               {/* All healthy */}
-              {(dashData?.zeroStockCount ?? 0) === 0 && (dashData?.warningStockCount ?? 0) === 0 && (
+              {criticalCount === 0 && actionedCount === 0 && (
                 <div className="py-2">
                   <p className="text-2xl font-extrabold tracking-tight font-mono tabular-nums text-green-600">0</p>
                   <p className="text-[10px] text-slate-400 uppercase tracking-wider">All healthy</p>

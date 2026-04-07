@@ -20,6 +20,11 @@ interface ProcurementItem {
   current_stock: number;
   min_stock: number;
   stock_alert_level: string;
+  stock_free: number;
+  stock_in_process: number;
+  stock_in_subassembly_wip: number;
+  stock_in_fg_wip: number;
+  stock_in_fg_ready: number;
   openPOId: string | null;
   openPONumber: string | null;
   openDCId: string | null;
@@ -28,7 +33,7 @@ interface ProcurementItem {
   openAONumber: string | null;
 }
 
-type FilterPill = "all" | "needs_action" | "po_raised" | "dc_out" | "ao_raised" | "zero_stock" | "low_stock";
+type FilterPill = "all" | "needs_action" | "po_raised" | "dc_out" | "ao_raised" | "zero_stock";
 
 // ── Data fetching ─────────────────────────────────────────────────────────────
 
@@ -36,14 +41,14 @@ async function fetchProcurementItems(): Promise<ProcurementItem[]> {
   const companyId = await getCompanyId();
   if (!companyId) return [];
 
-  // Fetch low-stock items (critical or warning, excluding sub_assembly/finished_good)
+  // Fetch critical items only — stock_alert_level is the single source of truth
   const { data: itemsData } = await (supabase as any)
     .from("items")
-    .select("id, item_code, description, item_type, unit, hsn_sac_code, current_stock, min_stock, stock_alert_level")
+    .select("id, item_code, description, item_type, unit, hsn_sac_code, current_stock, min_stock, stock_alert_level, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready")
     .eq("company_id", companyId)
     .eq("status", "active")
-    .not("item_type", "in", "(sub_assembly,finished_good)")
-    .in("stock_alert_level", ["critical", "warning"]);
+    .neq("item_type", "service")
+    .eq("stock_alert_level", "critical");
 
   const items = (itemsData ?? []) as any[];
   if (items.length === 0) return [];
@@ -107,6 +112,11 @@ async function fetchProcurementItems(): Promise<ProcurementItem[]> {
     current_stock: item.current_stock ?? 0,
     min_stock: item.min_stock ?? 0,
     stock_alert_level: item.stock_alert_level ?? "healthy",
+    stock_free: item.stock_free ?? 0,
+    stock_in_process: item.stock_in_process ?? 0,
+    stock_in_subassembly_wip: item.stock_in_subassembly_wip ?? 0,
+    stock_in_fg_wip: item.stock_in_fg_wip ?? 0,
+    stock_in_fg_ready: item.stock_in_fg_ready ?? 0,
     openPOId: poMap.get(item.id)?.id ?? null,
     openPONumber: poMap.get(item.id)?.number ?? null,
     openDCId: dcMap.get(item.id)?.id ?? null,
@@ -159,9 +169,8 @@ export default function ProcurementIntelligence() {
     staleTime: 60_000,
   });
 
-  // Summary counts
-  const zeroStockCount  = useMemo(() => items.filter((i) => i.current_stock === 0).length, [items]);
-  const lowStockCount   = useMemo(() => items.filter((i) => i.stock_alert_level === "warning").length, [items]);
+  // Summary counts — all from stock_alert_level = 'critical' items only
+  const zeroStockCount  = useMemo(() => items.filter((i) => (i.stock_free + i.stock_in_process + i.stock_in_subassembly_wip + i.stock_in_fg_wip + i.stock_in_fg_ready) === 0).length, [items]);
   const needsActionCount = useMemo(() => items.filter((i) => !hasAction(i)).length, [items]);
   const actionedCount   = useMemo(() => items.filter((i) => hasAction(i)).length, [items]);
 
@@ -173,8 +182,7 @@ export default function ProcurementIntelligence() {
       case "po_raised":    result = result.filter((i) => !!i.openPOId); break;
       case "dc_out":       result = result.filter((i) => !!i.openDCId); break;
       case "ao_raised":    result = result.filter((i) => !!i.openAOId); break;
-      case "zero_stock":   result = result.filter((i) => i.current_stock === 0); break;
-      case "low_stock":    result = result.filter((i) => i.stock_alert_level === "warning"); break;
+      case "zero_stock":   result = result.filter((i) => (i.stock_free + i.stock_in_process + i.stock_in_subassembly_wip + i.stock_in_fg_wip + i.stock_in_fg_ready) === 0); break;
     }
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -209,7 +217,6 @@ export default function ProcurementIntelligence() {
     { label: "DC Out", value: "dc_out", count: items.filter((i) => !!i.openDCId).length },
     { label: "AO Raised", value: "ao_raised", count: items.filter((i) => !!i.openAOId).length },
     { label: "Zero Stock", value: "zero_stock", count: zeroStockCount },
-    { label: "Low Stock", value: "low_stock", count: lowStockCount },
   ];
 
   return (
@@ -245,14 +252,14 @@ export default function ProcurementIntelligence() {
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-3">
-          <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Total Items</p>
+          <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Total Critical</p>
           <p className="text-2xl font-extrabold font-mono tabular-nums text-slate-900 mt-1">{items.length}</p>
-          <p className="text-[10px] text-slate-400 mt-0.5">needing attention</p>
+          <p className="text-[10px] text-slate-400 mt-0.5">items below min stock</p>
         </div>
         <div className={`bg-white rounded-xl border shadow-sm px-4 py-3 ${needsActionCount > 0 ? "border-red-300" : "border-slate-200"}`}>
-          <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">No Action Yet</p>
+          <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Needs Action</p>
           <p className={`text-2xl font-extrabold font-mono tabular-nums mt-1 ${needsActionCount > 0 ? "text-red-600" : "text-slate-900"}`}>{needsActionCount}</p>
-          <p className="text-[10px] text-slate-400 mt-0.5">items unactioned</p>
+          <p className="text-[10px] text-slate-400 mt-0.5">no open PO / DC / AO</p>
         </div>
         <div className="bg-white rounded-xl border border-blue-200 shadow-sm px-4 py-3">
           <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Being Actioned</p>
@@ -262,7 +269,7 @@ export default function ProcurementIntelligence() {
         <div className={`bg-white rounded-xl border shadow-sm px-4 py-3 ${zeroStockCount > 0 ? "border-red-300" : "border-slate-200"}`}>
           <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Zero Stock</p>
           <p className={`text-2xl font-extrabold font-mono tabular-nums mt-1 ${zeroStockCount > 0 ? "text-red-600" : "text-slate-900"}`}>{zeroStockCount}</p>
-          <p className="text-[10px] text-slate-400 mt-0.5">critical — no stock at all</p>
+          <p className="text-[10px] text-slate-400 mt-0.5">all buckets empty</p>
         </div>
       </div>
 
@@ -325,7 +332,7 @@ export default function ProcurementIntelligence() {
               </thead>
               <tbody>
                 {filtered.map((item) => {
-                  const isZero = item.current_stock === 0;
+                  const isZero = (item.stock_free + item.stock_in_process + item.stock_in_subassembly_wip + item.stock_in_fg_wip + item.stock_in_fg_ready) === 0;
                   const isActioned = hasAction(item);
                   return (
                     <tr key={item.id}>
@@ -346,8 +353,8 @@ export default function ProcurementIntelligence() {
                             Zero Stock
                           </span>
                         ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200">
-                            Low Stock
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200">
+                            Critical
                           </span>
                         )}
                       </td>

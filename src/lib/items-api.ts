@@ -622,16 +622,13 @@ function computeAlertLevel(
   stock_in_subassembly_wip: number,
   stock_in_fg_wip: number,
   stock_in_fg_ready: number,
-  min_stock: number
+  min_stock: number,
+  item_type?: string
 ): Item['stock_alert_level'] {
-  const effective_available = stock_free + stock_in_process;
-  if (min_stock > 0 && stock_free <= min_stock) return 'critical';
-  if (min_stock > 0 && effective_available <= min_stock) return 'warning';
-  if (min_stock > 0 && effective_available <= min_stock * 1.2) return 'watch';
-  if (
-    stock_free === 0 &&
-    (stock_in_process + stock_in_subassembly_wip + stock_in_fg_wip + stock_in_fg_ready) > 0
-  ) return 'locked';
+  if (!min_stock || min_stock <= 0) return 'healthy';
+  if (item_type === 'service') return 'healthy';
+  const effective = stock_free + stock_in_process + stock_in_subassembly_wip + stock_in_fg_wip + stock_in_fg_ready;
+  if (effective < min_stock) return 'critical';
   return 'healthy';
 }
 
@@ -694,7 +691,7 @@ export async function updateStockBucket(
 export async function recalcStockAlertLevel(itemId: string): Promise<void> {
   const { data: itemData, error: fetchErr } = await (supabase as any)
     .from('items')
-    .select('stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, min_stock')
+    .select('stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, min_stock, item_type')
     .eq('id', itemId)
     .single();
   if (fetchErr) throw fetchErr;
@@ -706,7 +703,8 @@ export async function recalcStockAlertLevel(itemId: string): Promise<void> {
     item.stock_in_subassembly_wip ?? 0,
     item.stock_in_fg_wip ?? 0,
     item.stock_in_fg_ready ?? 0,
-    item.min_stock ?? 0
+    item.min_stock ?? 0,
+    item.item_type ?? undefined
   );
 
   const { error: updateErr } = await (supabase as any)
@@ -714,4 +712,39 @@ export async function recalcStockAlertLevel(itemId: string): Promise<void> {
     .update({ stock_alert_level: alertLevel, last_stock_check: new Date().toISOString() })
     .eq('id', itemId);
   if (updateErr) throw updateErr;
+}
+
+/** Bulk-recalculate stock_alert_level for all active items in the company.
+ *  Run once after migrating the alert logic to resync all existing items. */
+export async function recalcAllStockAlertLevels(companyId: string): Promise<void> {
+  const { data, error } = await (supabase as any)
+    .from('items')
+    .select('id, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, min_stock, item_type')
+    .eq('company_id', companyId)
+    .eq('status', 'active');
+  if (error) throw error;
+
+  const items = (data ?? []) as any[];
+  const now = new Date().toISOString();
+
+  // Process in parallel batches of 50 to avoid rate limits
+  const BATCH = 50;
+  for (let i = 0; i < items.length; i += BATCH) {
+    const chunk = items.slice(i, i + BATCH);
+    await Promise.all(chunk.map(async (item: any) => {
+      const alertLevel = computeAlertLevel(
+        item.stock_free ?? 0,
+        item.stock_in_process ?? 0,
+        item.stock_in_subassembly_wip ?? 0,
+        item.stock_in_fg_wip ?? 0,
+        item.stock_in_fg_ready ?? 0,
+        item.min_stock ?? 0,
+        item.item_type ?? undefined
+      );
+      await (supabase as any)
+        .from('items')
+        .update({ stock_alert_level: alertLevel, last_stock_check: now })
+        .eq('id', item.id);
+    }));
+  }
 }
