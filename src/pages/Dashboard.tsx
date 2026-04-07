@@ -1,7 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { useEffect } from "react";
-import { Activity, CheckCircle2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Activity, CheckCircle2, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
 import { fetchPendingQCGRNs, fetchAwaitingStoreCount } from "@/lib/grn-api";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatCurrency } from "@/lib/gst-utils";
@@ -291,23 +292,44 @@ export default function Dashboard() {
   const queryClient = useQueryClient();
   const STALE = 5 * 60 * 1000;
 
-  // One-time recalc of stock_alert_level for all items (runs once per deployment)
+  const [recalcLoading, setRecalcLoading] = useState(false);
+
+  // Daily recalc of stock_alert_level — runs once per 24 hours automatically
   useEffect(() => {
-    const FLAG = 'bizdocs_alert_recalc_v2';
-    if (localStorage.getItem(FLAG)) return;
+    const RECALC_KEY = 'bizdocs_alert_recalc_v3';
+    const lastRecalc = localStorage.getItem(RECALC_KEY);
+    const now = Date.now();
+    const shouldRecalc = !lastRecalc || (now - parseInt(lastRecalc)) > 24 * 60 * 60 * 1000;
+    if (!shouldRecalc) return;
     (async () => {
       try {
         const companyId = await getCompanyId();
         if (!companyId) return;
         await recalcAllStockAlertLevels(companyId);
-        localStorage.setItem(FLAG, '1');
-        queryClient.invalidateQueries({ queryKey: ["dashboard-data-v3"] });
-        queryClient.invalidateQueries({ queryKey: ["reorder-summary-sidebar"] });
+        localStorage.setItem(RECALC_KEY, now.toString());
+        queryClient.invalidateQueries();
       } catch {
         // Non-fatal — will retry on next mount
       }
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleManualRecalc() {
+    setRecalcLoading(true);
+    try {
+      const companyId = await getCompanyId();
+      if (!companyId) return;
+      localStorage.removeItem('bizdocs_alert_recalc_v3');
+      await recalcAllStockAlertLevels(companyId);
+      localStorage.setItem('bizdocs_alert_recalc_v3', Date.now().toString());
+      queryClient.invalidateQueries();
+      toast.success("Stock alerts recalculated");
+    } catch {
+      toast.error("Recalculation failed — please try again");
+    } finally {
+      setRecalcLoading(false);
+    }
+  }
 
   const { data: companySettings } = useQuery({
     queryKey: ["company-settings-db"],
@@ -579,9 +601,20 @@ export default function Dashboard() {
           <div className={`bg-white rounded-xl border shadow-sm p-4 lg:p-5 ${criticalCount > 0 ? 'border-red-300' : actionedCount > 0 ? 'border-blue-300' : 'border-slate-200'}`}>
             <div className="flex items-center justify-between mb-3">
               <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Stock Alerts</p>
-              <button className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors" onClick={() => navigate("/procurement-intelligence")}>
-                View All →
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleManualRecalc}
+                  disabled={recalcLoading}
+                  className="flex items-center gap-1 text-xs text-slate-500 font-medium hover:text-slate-700 transition-colors disabled:opacity-50"
+                  title="Recalculate stock alert levels"
+                >
+                  <RefreshCw className={`h-3 w-3 ${recalcLoading ? "animate-spin" : ""}`} />
+                  {recalcLoading ? "Recalculating…" : "Recalculate"}
+                </button>
+                <button className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors" onClick={() => navigate("/procurement-intelligence")}>
+                  View All →
+                </button>
+              </div>
             </div>
 
             <div className="space-y-2">
