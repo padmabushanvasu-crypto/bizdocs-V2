@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Building2, FileText, Bell, Upload, FileSpreadsheet, Users, History, BookOpen, ChevronRight, AlertTriangle, Receipt, Cog, Wrench, UserCheck } from "lucide-react";
+import { Building2, FileText, Bell, Upload, FileSpreadsheet, Users, History, BookOpen, ChevronRight, AlertTriangle, Receipt, Cog, Wrench, UserCheck, ShieldAlert } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { fetchProcessCodesCount } from "@/lib/process-library-api";
@@ -185,6 +185,24 @@ export default function SettingsPage() {
             <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-slate-500 transition-colors shrink-0 mt-0.5" />
           </button>
         ))}
+      </div>
+
+      {/* Danger Zone */}
+      <div>
+        <p className="text-xs font-semibold text-red-500 uppercase tracking-wider mb-3">Danger Zone</p>
+        <button
+          onClick={() => navigate("/settings/danger-zone")}
+          className="group flex items-start gap-4 bg-white rounded-xl border-2 border-red-200 shadow-sm p-5 text-left transition-all duration-200 hover:shadow-md hover:border-red-400 active:scale-[0.99] w-full sm:w-auto"
+        >
+          <div className="h-11 w-11 rounded-lg bg-red-50 flex items-center justify-center shrink-0">
+            <ShieldAlert className="h-5 w-5 text-red-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-red-800">Clear All Account Data</p>
+            <p className="text-sm text-red-600 mt-0.5 leading-snug">Permanently delete all items, parties, bills, GRNs, and every other record. Cannot be undone.</p>
+          </div>
+          <ChevronRight className="h-4 w-4 text-red-300 group-hover:text-red-500 transition-colors shrink-0 mt-0.5" />
+        </button>
       </div>
     </div>
   );

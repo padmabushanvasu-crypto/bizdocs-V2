@@ -84,6 +84,7 @@ import JigMouldSettings from "@/pages/JigMouldSettings";
 import AssetsRegister from "@/pages/AssetsRegister";
 import ProcurementIntelligence from "@/pages/ProcurementIntelligence";
 import OpeningStock from "@/pages/OpeningStock";
+import DangerZone from "@/pages/DangerZone";
 import { ImportQueueProvider } from "@/lib/import-queue";
 
 function DcGrnRedirect() {
@@ -184,6 +185,7 @@ const App = () => (
               <Route path="/settings/company" element={<CompanySettings />} />
               <Route path="/settings/process-library" element={<ProcessLibrary />} />
               <Route path="/settings/jig-mould" element={<JigMouldSettings />} />
+              <Route path="/settings/danger-zone" element={<DangerZone />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/assets-register" element={<AssetsRegister />} />
               <Route path="/procurement-intelligence" element={<ProcurementIntelligence />} />
