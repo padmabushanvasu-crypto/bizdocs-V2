@@ -181,6 +181,8 @@ export interface NotificationSettings {
   // Phase 19: Weekly PO email
   po_email_enabled: boolean;
   po_email_recipients: string[];
+  // Stock editor names for opening stock audit trail
+  stock_editor_names: string[];
 }
 
 const NS_KEY = "bizdocs_notification_settings";
@@ -197,6 +199,7 @@ const NS_DEFAULTS: NotificationSettings = {
   weekly_summary_recipients: [],
   po_email_enabled: true,
   po_email_recipients: [],
+  stock_editor_names: [],
 };
 
 export async function fetchNotificationSettings(): Promise<NotificationSettings> {

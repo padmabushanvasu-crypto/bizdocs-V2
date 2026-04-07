@@ -318,7 +318,7 @@ export default function ProcurementIntelligence() {
         ) : (
           <div className="overflow-x-auto">
             <table className="data-table w-full">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-white">
                 <tr>
                   <th>Item Code</th>
                   <th>Description</th>

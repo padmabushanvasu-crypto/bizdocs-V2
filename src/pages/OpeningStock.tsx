@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Archive, Search, Edit2 } from "lucide-react";
+import { Archive, Search, Edit2, Plus, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,6 +10,11 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId } from "@/lib/auth-helpers";
 import { fetchItems, updateStockBucket, recalcStockAlertLevel, type Item } from "@/lib/items-api";
+import {
+  fetchNotificationSettings,
+  saveNotificationSettings,
+  type NotificationSettings,
+} from "@/lib/settings-api";
 import { format } from "date-fns";
 
 const ITEM_TYPE_LABELS: Record<string, { label: string; cls: string }> = {
@@ -64,6 +69,7 @@ async function fetchLatestOpeningStock(): Promise<Record<string, OpeningStockEnt
 
 interface EditState {
   item: Item;
+  editedBy: string;
   newQty: string;
   costPerUnit: string;
   reason: string;
@@ -78,6 +84,11 @@ export default function OpeningStock() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [editState, setEditState] = useState<EditState | null>(null);
 
+  // Inline "add your name" UI state
+  const [showAddName, setShowAddName] = useState(false);
+  const [addNameDraft, setAddNameDraft] = useState("");
+  const [addNameError, setAddNameError] = useState("");
+
   const { data: itemsData, isLoading: itemsLoading } = useQuery({
     queryKey: ["items-opening-stock"],
     queryFn: () => fetchItems({ status: "active", pageSize: 1000 }),
@@ -89,6 +100,45 @@ export default function OpeningStock() {
     queryFn: fetchLatestOpeningStock,
   });
 
+  const { data: notifSettings } = useQuery({
+    queryKey: ["notification-settings-os"],
+    queryFn: fetchNotificationSettings,
+  });
+  const editorNames: string[] = notifSettings?.stock_editor_names ?? [];
+
+  // Mutation to add a name on-the-fly
+  const addNameMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const current: NotificationSettings = await fetchNotificationSettings();
+      const existing = current.stock_editor_names ?? [];
+      if (existing.map(n => n.toLowerCase()).includes(name.toLowerCase())) {
+        throw new Error("Name already exists");
+      }
+      const updated: NotificationSettings = {
+        ...current,
+        stock_editor_names: [...existing, name],
+      };
+      await saveNotificationSettings(updated);
+      return name;
+    },
+    onSuccess: (name) => {
+      queryClient.invalidateQueries({ queryKey: ["notification-settings-os"] });
+      setEditState(s => s ? { ...s, editedBy: name } : s);
+      setShowAddName(false);
+      setAddNameDraft("");
+      setAddNameError("");
+    },
+    onError: (err: any) => {
+      setAddNameError(err.message ?? "Failed to add name");
+    },
+  });
+
+  const handleAddName = () => {
+    const name = addNameDraft.trim();
+    if (!name) { setAddNameError("Name cannot be blank"); return; }
+    addNameMutation.mutate(name);
+  };
+
   const saveMutation = useMutation({
     mutationFn: async (state: EditState) => {
       const companyId = await getCompanyId();
@@ -97,8 +147,9 @@ export default function OpeningStock() {
       const costPerUnit = parseFloat(state.costPerUnit) || 0;
       const currentFree = state.item.stock_free ?? 0;
       const reasonText = state.reason === "Other" ? state.otherReason.trim() || "Other" : state.reason;
+      const notesText = `Reason: ${reasonText} | Edited by: ${state.editedBy}`;
 
-      // Insert stock_ledger entry
+      // Insert stock_ledger entry (created_by is uuid — do not write name string to it)
       const { error: ledgerError } = await (supabase as any)
         .from("stock_ledger")
         .insert({
@@ -111,7 +162,7 @@ export default function OpeningStock() {
           unit_cost: costPerUnit,
           reference_type: "manual",
           transaction_date: format(new Date(), "yyyy-MM-dd"),
-          notes: reasonText,
+          notes: notesText,
         });
       if (ledgerError) throw ledgerError;
 
@@ -121,10 +172,14 @@ export default function OpeningStock() {
         await updateStockBucket(state.item.id, "free", diff);
       }
       await recalcStockAlertLevel(state.item.id);
+
+      return { editorName: state.editedBy, itemDescription: state.item.description };
     },
-    onSuccess: () => {
-      toast({ title: "Opening stock updated" });
+    onSuccess: ({ editorName, itemDescription }) => {
+      toast({ title: `Opening stock updated by ${editorName} for ${itemDescription}` });
       setEditState(null);
+      setShowAddName(false);
+      setAddNameDraft("");
       queryClient.invalidateQueries({ queryKey: ["items-opening-stock"] });
       queryClient.invalidateQueries({ queryKey: ["opening-stock-entries"] });
       queryClient.invalidateQueries({ queryKey: ["items"] });
@@ -151,8 +206,12 @@ export default function OpeningStock() {
 
   const openEdit = (item: Item) => {
     const entry = openingMap[item.id];
+    setShowAddName(false);
+    setAddNameDraft("");
+    setAddNameError("");
     setEditState({
       item,
+      editedBy: "",
       newQty: String(item.stock_free ?? 0),
       costPerUnit: entry ? String(entry.unit_cost) : String(item.purchase_price ?? 0),
       reason: "Initial stock entry",
@@ -160,15 +219,17 @@ export default function OpeningStock() {
     });
   };
 
+  const canSave =
+    editState !== null &&
+    editState.editedBy.trim() !== "" &&
+    editState.reason !== "" &&
+    !(editState.reason === "Other" && !editState.otherReason.trim());
+
   const handleSave = () => {
     if (!editState) return;
     const qty = parseFloat(editState.newQty);
     if (isNaN(qty) || qty < 0) {
       toast({ title: "Invalid quantity", variant: "destructive" });
-      return;
-    }
-    if (editState.reason === "Other" && !editState.otherReason.trim()) {
-      toast({ title: "Please specify a reason", variant: "destructive" });
       return;
     }
     saveMutation.mutate(editState);
@@ -214,9 +275,9 @@ export default function OpeningStock() {
       </div>
 
       {/* Table */}
-      <div className="border rounded-lg overflow-hidden">
+      <div className="border rounded-lg overflow-auto">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 border-b">
+          <thead className="sticky top-0 z-10 bg-slate-50 border-b">
             <tr>
               <th className="text-left px-4 py-3 font-medium text-slate-600">Item Code</th>
               <th className="text-left px-4 py-3 font-medium text-slate-600">Description</th>
@@ -292,7 +353,7 @@ export default function OpeningStock() {
       )}
 
       {/* Edit Dialog */}
-      <Dialog open={!!editState} onOpenChange={open => { if (!open) setEditState(null); }}>
+      <Dialog open={!!editState} onOpenChange={open => { if (!open) { setEditState(null); setShowAddName(false); setAddNameDraft(""); setAddNameError(""); } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Edit Opening Stock</DialogTitle>
@@ -302,6 +363,80 @@ export default function OpeningStock() {
               <div className="text-sm">
                 <p className="font-medium text-slate-800">{editState.item.description}</p>
                 <p className="text-slate-500 font-mono text-xs">{editState.item.item_code}</p>
+              </div>
+
+              {/* Edited By — first and mandatory */}
+              <div className="space-y-1.5">
+                <Label htmlFor="os-editor">
+                  Edited By <span className="text-red-500">*</span>
+                </Label>
+                {editorNames.length === 0 ? (
+                  <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                    <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                    <span>
+                      No editor names configured. Please add names in{" "}
+                      <strong>Settings → Notifications → Stock Editors</strong>.
+                    </span>
+                  </div>
+                ) : (
+                  <Select
+                    value={editState.editedBy}
+                    onValueChange={v => setEditState(s => s ? { ...s, editedBy: v } : s)}
+                  >
+                    <SelectTrigger id="os-editor">
+                      <SelectValue placeholder="Select your name…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {editorNames.map(name => (
+                        <SelectItem key={name} value={name}>{name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+
+                {/* Inline add name */}
+                {!showAddName ? (
+                  <button
+                    type="button"
+                    className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 mt-1"
+                    onClick={() => { setShowAddName(true); setAddNameDraft(""); setAddNameError(""); }}
+                  >
+                    <Plus className="h-3 w-3" />
+                    Add your name
+                  </button>
+                ) : (
+                  <div className="space-y-1 mt-1">
+                    <div className="flex gap-2">
+                      <Input
+                        autoFocus
+                        value={addNameDraft}
+                        onChange={e => { setAddNameDraft(e.target.value); setAddNameError(""); }}
+                        onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleAddName(); } if (e.key === "Escape") { setShowAddName(false); } }}
+                        placeholder="Your name…"
+                        className="h-8 text-sm"
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-8 shrink-0"
+                        onClick={handleAddName}
+                        disabled={addNameMutation.isPending}
+                      >
+                        {addNameMutation.isPending ? "…" : "Add"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 shrink-0"
+                        onClick={() => { setShowAddName(false); setAddNameError(""); }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                    {addNameError && <p className="text-xs text-red-500">{addNameError}</p>}
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -338,7 +473,9 @@ export default function OpeningStock() {
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="os-reason">Reason</Label>
+                <Label htmlFor="os-reason">
+                  Reason <span className="text-red-500">*</span>
+                </Label>
                 <Select
                   value={editState.reason}
                   onValueChange={v => setEditState(s => s ? { ...s, reason: v } : s)}
@@ -372,8 +509,8 @@ export default function OpeningStock() {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditState(null)}>Cancel</Button>
-            <Button onClick={handleSave} disabled={saveMutation.isPending}>
+            <Button variant="outline" onClick={() => { setEditState(null); setShowAddName(false); }}>Cancel</Button>
+            <Button onClick={handleSave} disabled={saveMutation.isPending || !canSave}>
               {saveMutation.isPending ? "Saving…" : "Save"}
             </Button>
           </DialogFooter>

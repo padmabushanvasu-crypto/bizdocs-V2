@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bell, Save, X, ChevronLeft } from "lucide-react";
+import { Bell, Save, X, ChevronLeft, UserCheck, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,6 +28,7 @@ const DEFAULTS: NotificationSettings = {
   weekly_summary_recipients: [],
   po_email_enabled: true,
   po_email_recipients: [],
+  stock_editor_names: [],
 };
 
 // ── Email Tag Input ───────────────────────────────────────────────────────────
@@ -89,6 +90,84 @@ function EmailTagInput({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Stock Editors Section ─────────────────────────────────────────────────────
+
+function StockEditorsSection({
+  names,
+  onChange,
+}: {
+  names: string[];
+  onChange: (v: string[]) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState("");
+
+  const add = () => {
+    const name = draft.trim();
+    if (!name) { setError("Name cannot be blank"); return; }
+    if (names.map(n => n.toLowerCase()).includes(name.toLowerCase())) {
+      setError("Name already exists");
+      return;
+    }
+    onChange([...names, name]);
+    setDraft("");
+    setError("");
+  };
+
+  const remove = (name: string) => onChange(names.filter(n => n !== name));
+
+  return (
+    <div className="paper-card space-y-4">
+      <div className="flex items-center gap-2">
+        <UserCheck className="h-4 w-4 text-slate-600" />
+        <div>
+          <h3 className="font-semibold text-slate-900 text-sm">Stock Editor Names</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            These names appear in the Opening Stock edit dialog. Anyone editing stock must select their name.
+          </p>
+        </div>
+      </div>
+
+      {names.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {names.map(name => (
+            <span
+              key={name}
+              className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 border border-slate-200 rounded-full text-xs px-2.5 py-0.5"
+            >
+              {name}
+              <button
+                type="button"
+                onClick={() => remove(name)}
+                className="text-slate-400 hover:text-slate-700 transition-colors"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="space-y-1">
+        <div className="flex gap-2">
+          <Input
+            value={draft}
+            onChange={e => { setDraft(e.target.value); setError(""); }}
+            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
+            placeholder="Enter a name — press Enter to add"
+            className="h-9 text-sm"
+          />
+          <Button type="button" variant="outline" size="sm" className="h-9 shrink-0" onClick={add}>
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            Add
+          </Button>
+        </div>
+        {error && <p className="text-xs text-red-500">{error}</p>}
+      </div>
     </div>
   );
 }
@@ -320,6 +399,12 @@ export default function NotificationsSettings() {
           </div>
         </div>
       </div>
+
+      {/* Section 4 — Stock Editors */}
+      <StockEditorsSection
+        names={settings.stock_editor_names ?? []}
+        onChange={(names) => set({ stock_editor_names: names })}
+      />
 
       {/* Save */}
       <div className="space-y-2">
