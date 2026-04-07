@@ -163,7 +163,7 @@ export default function PurchaseOrderDetail() {
     <div className="p-4 md:p-6 space-y-6 max-w-5xl mx-auto po-page-wrapper">
       <style>{`
         @media print {
-          @page { size: A4 portrait; margin: 10mm 12mm 8mm 12mm; }
+          @page { size: A4 portrait; margin: 8mm 10mm; }
 
           /* Outer page wrapper — strip screen padding/max-width */
           .po-page-wrapper {
@@ -182,29 +182,31 @@ export default function PurchaseOrderDetail() {
             border-radius: 0 !important;
             padding: 0 !important;
             margin: 0 !important;
+            gap: 4px !important;
           }
 
-          /* Middle content grows to fill available space */
-          .po-section { page-break-inside: avoid; }
+          /* Override Tailwind space-y-4 which adds 16px between every child */
+          .po-print-wrapper > :not([hidden]) ~ :not([hidden]) { margin-top: 4px !important; }
+
+          /* Section dividers */
+          .po-section { page-break-inside: avoid; margin-bottom: 2px !important; }
 
           /* Footer pins to bottom */
           .po-footer { margin-top: auto !important; }
 
           /* Body base */
-          body { font-size: 9pt !important; line-height: 1.3 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-
-          /* Section spacing */
-          .po-print-wrapper .po-section { margin-bottom: 3mm !important; }
+          body { font-size: 7.5pt !important; line-height: 1.3 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
           /* Line items table — compress row height for print */
-          .po-line-items-table th { font-size: 7.5pt !important; padding: 3px 5px !important; }
-          .po-line-items-table td { font-size: 8pt !important; padding: 3px 5px !important; line-height: 1.3 !important; }
+          .po-line-items-table th { font-size: 7.5pt !important; padding: 2px 4px !important; }
+          .po-line-items-table td { font-size: 7.5pt !important; padding: 2px 4px !important; line-height: 1.25 !important; white-space: nowrap !important; }
+          .po-line-items-table td:nth-child(2) { white-space: normal !important; }
           .po-line-items-table tr { page-break-inside: avoid; }
 
           /* Totals block — compact */
-          .po-totals-block { font-size: 8pt !important; }
-          .po-totals-block .po-totals-row { padding: 1.5px 0 !important; }
-          .po-totals-block .po-amount-words { font-size: 7.5pt !important; }
+          .po-totals-block { font-size: 7.5pt !important; }
+          .po-totals-block .po-totals-row { padding: 2px 4px !important; }
+          .po-totals-block .po-amount-words { font-size: 7pt !important; }
         }
       `}</style>
       <button
@@ -289,15 +291,15 @@ export default function PurchaseOrderDetail() {
         </div>
 
         {/* ── PRINT: compact 2-col header ── */}
-        <div className="hidden print:block po-section" style={{ borderBottom: '0.5pt solid #CBD5E1', paddingBottom: '4mm' }}>
+        <div className="hidden print:block po-section" style={{ borderBottom: '0.5pt solid #CBD5E1', paddingBottom: '3px' }}>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
             {/* Left: Company info */}
             <div style={{ flex: '0 0 58%' }}>
               {company?.logo_url && (
-                <img src={company.logo_url} alt="Logo" style={{ height: '32px', marginBottom: '3px', objectFit: 'contain' }} />
+                <img src={company.logo_url} alt="Logo" style={{ height: '24px', marginBottom: '2px', objectFit: 'contain' }} />
               )}
               <div style={{ fontWeight: '700', fontSize: '11pt', lineHeight: 1.2 }}>{company?.company_name}</div>
-              <div style={{ fontSize: '8pt', color: '#475569', lineHeight: 1.4 }}>
+              <div style={{ fontSize: '7.5pt', color: '#475569', lineHeight: 1.3 }}>
                 {(() => {
                   const c = company as any;
                   const reg1 = c?.registered_address_line1 || company?.address_line1;
@@ -308,18 +310,18 @@ export default function PurchaseOrderDetail() {
                   return [reg1, reg2, [regCity, regState].filter(Boolean).join(', '), regPin ? `PIN ${regPin}` : ''].filter(Boolean).join(', ');
                 })()}
               </div>
-              {company?.gstin && <div style={{ fontSize: '8pt', fontFamily: 'monospace' }}>GSTIN: {company.gstin}</div>}
-              {company?.phone && <div style={{ fontSize: '8pt', color: '#475569' }}>Ph: {company.phone}</div>}
-              {company?.email && <div style={{ fontSize: '8pt', color: '#475569' }}>{company.email}</div>}
+              {company?.gstin && <div style={{ fontSize: '7.5pt', fontFamily: 'monospace' }}>GSTIN: {company.gstin}</div>}
+              {company?.phone && <div style={{ fontSize: '7.5pt', color: '#475569' }}>Ph: {company.phone}</div>}
+              {company?.email && <div style={{ fontSize: '7.5pt', color: '#475569' }}>{company.email}</div>}
             </div>
             {/* Right: PO title + details */}
             <div style={{ flex: '0 0 42%', textAlign: 'right' }}>
               <div style={{ fontWeight: '700', fontSize: '13pt', color: '#1E3A5F', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Purchase Order</div>
-              <div style={{ fontWeight: '700', fontSize: '9pt' }}>PO No: {po.po_number}</div>
-              <div style={{ fontSize: '9pt' }}>Date: {new Date(po.po_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
-              {po.payment_terms && <div style={{ fontSize: '9pt' }}>Terms: {po.payment_terms}</div>}
-              {(po as any).vendor_reference && <div style={{ fontSize: '9pt' }}>Vendor Ref: {(po as any).vendor_reference}</div>}
-              {po.reference_number && <div style={{ fontSize: '9pt' }}>Ref: {po.reference_number}</div>}
+              <div style={{ fontWeight: '700', fontSize: '7.5pt' }}>PO No: {po.po_number}</div>
+              <div style={{ fontSize: '7.5pt' }}>Date: {new Date(po.po_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
+              {po.payment_terms && <div style={{ fontSize: '7.5pt' }}>Terms: {po.payment_terms}</div>}
+              {(po as any).vendor_reference && <div style={{ fontSize: '7.5pt' }}>Vendor Ref: {(po as any).vendor_reference}</div>}
+              {po.reference_number && <div style={{ fontSize: '7.5pt' }}>Ref: {po.reference_number}</div>}
             </div>
           </div>
         </div>
@@ -399,22 +401,22 @@ export default function PurchaseOrderDetail() {
           ].filter(Boolean).join(', ');
           const deliverAddr = po.delivery_address || physAddr || null;
           return (
-            <div className="hidden print:block po-section" style={{ borderBottom: '0.5pt solid #E2E8F0', paddingBottom: '3mm' }}>
+            <div className="hidden print:block po-section" style={{ borderBottom: '0.5pt solid #E2E8F0', paddingBottom: '2px' }}>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <div style={{ flex: '1', borderRight: deliverAddr ? '0.5pt solid #E2E8F0' : undefined, paddingRight: deliverAddr ? '8px' : undefined }}>
                   <div style={{ fontSize: '7pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>Vendor / Bill To</div>
-                  <div style={{ fontWeight: '600', fontSize: '9pt' }}>{po.vendor_name}</div>
-                  {po.vendor_address && <div style={{ fontSize: '8pt', color: '#475569' }}>{po.vendor_address}</div>}
-                  {po.vendor_gstin && <div style={{ fontSize: '8pt', fontFamily: 'monospace' }}>GSTIN: {po.vendor_gstin}</div>}
-                  {po.vendor_phone && <div style={{ fontSize: '8pt', color: '#475569' }}>Ph: {po.vendor_phone}</div>}
-                  {(po as any).vendor_email && <div style={{ fontSize: '8pt', color: '#475569' }}>{(po as any).vendor_email}</div>}
+                  <div style={{ fontWeight: '600', fontSize: '7.5pt', lineHeight: 1.3 }}>{po.vendor_name}</div>
+                  {po.vendor_address && <div style={{ fontSize: '7.5pt', color: '#475569', lineHeight: 1.3 }}>{po.vendor_address}</div>}
+                  {po.vendor_gstin && <div style={{ fontSize: '7.5pt', fontFamily: 'monospace', lineHeight: 1.3 }}>GSTIN: {po.vendor_gstin}</div>}
+                  {po.vendor_phone && <div style={{ fontSize: '7.5pt', color: '#475569', lineHeight: 1.3 }}>Ph: {po.vendor_phone}</div>}
+                  {(po as any).vendor_email && <div style={{ fontSize: '7.5pt', color: '#475569', lineHeight: 1.3 }}>{(po as any).vendor_email}</div>}
                 </div>
                 {deliverAddr && (
                   <div style={{ flex: '1', paddingLeft: '8px' }}>
                     <div style={{ fontSize: '7pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>Deliver To</div>
-                    <div style={{ fontSize: '8pt', whiteSpace: 'pre-line' }}>{deliverAddr}</div>
+                    <div style={{ fontSize: '7.5pt', lineHeight: 1.3, whiteSpace: 'pre-line' }}>{deliverAddr}</div>
                     {(po.delivery_contact_person || po.delivery_contact_phone) && (
-                      <div style={{ fontSize: '7pt', color: '#64748b' }}>
+                      <div style={{ fontSize: '7pt', color: '#64748b', lineHeight: 1.3 }}>
                         Contact: {[po.delivery_contact_person, po.delivery_contact_phone].filter(Boolean).join(" — ")}
                       </div>
                     )}
@@ -545,17 +547,17 @@ export default function PurchaseOrderDetail() {
         </div>
 
         {/* ── PRINT: footer — [T&C | Bank Details] + Signatory ── */}
-        <div className="hidden print:block po-footer" style={{ borderTop: '0.75pt solid #CBD5E1', paddingTop: '3mm' }}>
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+        <div className="hidden print:block po-footer" style={{ borderTop: '0.75pt solid #CBD5E1', paddingTop: '4px' }}>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
             {/* Left 50%: T&C */}
             <div style={{ flex: '1 1 50%' }}>
               <div style={{ fontSize: '7pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px', letterSpacing: '0.04em' }}>Terms &amp; Conditions</div>
               {(poDocSettings?.terms_and_conditions || company?.default_terms_conditions) ? (
-                <div style={{ fontSize: '7pt', color: '#475569', lineHeight: 1.4, maxHeight: '20mm', overflow: 'hidden', whiteSpace: 'pre-line' }}>
+                <div style={{ fontSize: '7pt', color: '#475569', lineHeight: 1.3, maxHeight: '20mm', overflow: 'hidden', whiteSpace: 'pre-line' }}>
                   {poDocSettings?.terms_and_conditions || company?.default_terms_conditions}
                 </div>
               ) : (
-                <div style={{ fontSize: '7pt', color: '#475569', lineHeight: 1.5 }}>
+                <div style={{ fontSize: '7pt', color: '#475569', lineHeight: 1.3 }}>
                   1. Payment due as per agreed terms.<br />
                   2. Goods to be delivered as per PO specifications.<br />
                   3. Invoice must reference this PO number.
@@ -565,12 +567,12 @@ export default function PurchaseOrderDetail() {
             {/* Divider */}
             <div style={{ width: '0.5pt', backgroundColor: '#E2E8F0', alignSelf: 'stretch' }} />
             {/* Right 50%: Bank Details + Signatory side by side */}
-            <div style={{ flex: '1 1 50%', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+            <div style={{ flex: '1 1 50%', display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
               {/* Bank Details */}
               <div style={{ flex: '1' }}>
                 <div style={{ fontSize: '7pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px', letterSpacing: '0.04em' }}>Bank Details</div>
                 {company?.bank_name ? (
-                  <div style={{ fontSize: '7pt', color: '#475569', lineHeight: 1.5 }}>
+                  <div style={{ fontSize: '7pt', color: '#475569', lineHeight: 1.3 }}>
                     <div>{company.bank_name}</div>
                     {company.bank_account && <div>A/C: {company.bank_account}</div>}
                     {company.bank_ifsc && <div>IFSC: {company.bank_ifsc}</div>}
@@ -584,7 +586,7 @@ export default function PurchaseOrderDetail() {
               <div style={{ flex: '0 0 90pt', textAlign: 'center' }}>
                 <div style={{ fontSize: '7pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px', letterSpacing: '0.04em' }}>Authorised Signatory</div>
                 <div style={{ fontSize: '7.5pt', color: '#475569' }}>for {company?.company_name}</div>
-                <div style={{ borderBottom: '0.5pt solid #94a3b8', marginTop: '14mm', marginBottom: '2mm', marginLeft: '4mm', marginRight: '4mm' }} />
+                <div style={{ borderBottom: '0.5pt solid #94a3b8', marginTop: '10mm', marginBottom: '2mm', marginLeft: '4mm', marginRight: '4mm' }} />
                 <div style={{ fontSize: '7pt', color: '#64748b' }}>Signature</div>
               </div>
             </div>
