@@ -249,7 +249,7 @@ export default function ReorderIntelligence() {
 
       {/* Table */}
       <div className="paper-card !p-0">
-        <div className="overflow-x-auto">
+        <div className="overflow-auto max-h-[calc(100vh-280px)]">
           <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10 bg-slate-50">
               <tr>
@@ -404,7 +404,7 @@ export default function ReorderIntelligence() {
             <span className="text-xs text-muted-foreground">— Finished goods below minimum stock level</span>
           </div>
           <div className="paper-card !p-0">
-            <div className="overflow-x-auto">
+            <div className="overflow-auto max-h-[calc(100vh-280px)]">
               <table className="w-full border-collapse text-sm">
                 <thead className="sticky top-0 z-10 bg-slate-50">
                   <tr>

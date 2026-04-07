@@ -306,7 +306,7 @@ export default function ProcurementIntelligence() {
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-visible">
         {isLoading ? (
           <div className="p-12 text-center text-sm text-slate-400 animate-pulse">Loading…</div>
         ) : filtered.length === 0 ? (
@@ -316,18 +316,18 @@ export default function ProcurementIntelligence() {
             <p className="text-xs text-slate-400 mt-1">All items in this category are healthy</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[calc(100vh-280px)]">
             <table className="data-table w-full">
               <thead className="sticky top-0 z-10 bg-white">
                 <tr>
-                  <th>Item Code</th>
-                  <th>Description</th>
-                  <th>Type</th>
-                  <th className="text-right">Current Stock</th>
-                  <th className="text-right">Min Stock</th>
-                  <th>Status</th>
-                  <th>Action Taken</th>
-                  <th>Quick Action</th>
+                  <th className="bg-white">Item Code</th>
+                  <th className="bg-white">Description</th>
+                  <th className="bg-white">Type</th>
+                  <th className="text-right bg-white">Current Stock</th>
+                  <th className="text-right bg-white">Min Stock</th>
+                  <th className="bg-white">Status</th>
+                  <th className="bg-white">Action Taken</th>
+                  <th className="bg-white">Quick Action</th>
                 </tr>
               </thead>
               <tbody>

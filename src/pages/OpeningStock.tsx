@@ -275,7 +275,7 @@ export default function OpeningStock() {
       </div>
 
       {/* Table */}
-      <div className="border rounded-lg overflow-auto">
+      <div className="border rounded-lg overflow-auto max-h-[calc(100vh-280px)]">
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-10 bg-slate-50 border-b">
             <tr>
