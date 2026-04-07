@@ -1,10 +1,17 @@
-import React, { useState, useMemo, useRef, useEffect, Component, type ReactNode } from "react";
+import React, { useState, useMemo, useRef, useEffect, useCallback, Component, type ReactNode } from "react";
+import '@xyflow/react/dist/style.css';
+import {
+  ReactFlow, Background, Controls, MiniMap, ReactFlowProvider, BackgroundVariant, useReactFlow,
+  type Node, type Edge, type NodeTypes, type NodeProps,
+} from '@xyflow/react';
+import { Handle, Position } from '@xyflow/react';
+import dagre from 'dagre';
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   GitFork, Plus, Trash2, Search, ChevronDown, ChevronRight, ChevronUp,
   Pencil, RefreshCw, Download, Printer, CheckCircle2, Star,
   AlertTriangle, AlertCircle, BarChart3, Users, X, Square, CheckSquare,
-  ListOrdered, ArrowUp, ArrowDown, ZoomIn, ZoomOut, Upload,
+  ListOrdered, ArrowUp, ArrowDown, Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,7 +42,7 @@ import {
   fetchBomProcessStepsBatch, addBomProcessStep, updateBomProcessStep, deleteBomProcessStep, reorderBomProcessSteps,
   importBomBatch,
   fetchBomProcessingStages, saveBomProcessingStages,
-  type BomLine, type BomVariant, type BomNode, type BomLineVendor, type BomProcessStep, type BomProcessingStage,
+  type BomLine, type BomVariant, type BomNode, type BomExplosion, type BomLineVendor, type BomProcessStep, type BomProcessingStage,
 } from "@/lib/bom-api";
 import BackgroundImportDialog from "@/components/BackgroundImportDialog";
 import { BOM_FIELD_MAP } from "@/lib/import-utils";
@@ -275,6 +282,283 @@ function VisualTreeNode({
         </>
       )}
     </div>
+  );
+}
+
+// ── React Flow Visual Tree ─────────────────────────────────────────────────────
+
+const RF_NODE_WIDTH = 200;
+const RF_NODE_HEIGHT = 130;
+
+interface BomFlowNodeData extends Record<string, unknown> {
+  item_code: string;
+  item_description: string;
+  item_type: string;
+  effective_qty: number;
+  unit: string;
+  unit_cost: number;
+  is_sufficient: boolean;
+  has_children: boolean;
+  is_collapsed: boolean;
+  is_root: boolean;
+}
+
+const RF_NODE_COLORS: Record<string, { border: string; bg: string }> = {
+  finished_good: { border: "#3b82f6", bg: "#eff6ff" },
+  sub_assembly:  { border: "#f59e0b", bg: "#fffbeb" },
+  component:     { border: "#64748b", bg: "#f8fafc" },
+  bought_out:    { border: "#8b5cf6", bg: "#f5f3ff" },
+  raw_material:  { border: "#6366f1", bg: "#eef2ff" },
+  consumable:    { border: "#f97316", bg: "#fff7ed" },
+  service:       { border: "#6b7280", bg: "#f9fafb" },
+};
+
+function BomFlowNodeCard({ data, selected }: NodeProps) {
+  const d = data as BomFlowNodeData;
+  const colors = RF_NODE_COLORS[d.item_type] ?? { border: "#94a3b8", bg: "#f8fafc" };
+  return (
+    <div
+      style={{
+        border: `2px solid ${selected ? "#2563eb" : colors.border}`,
+        borderRadius: 10,
+        background: colors.bg,
+        width: RF_NODE_WIDTH,
+        minHeight: RF_NODE_HEIGHT,
+        padding: "10px 12px",
+        boxShadow: selected
+          ? "0 0 0 3px rgba(37,99,235,0.18), 0 2px 8px rgba(0,0,0,0.10)"
+          : "0 1px 4px rgba(0,0,0,0.07)",
+        cursor: d.has_children ? "pointer" : "default",
+        transition: "box-shadow 0.15s",
+        fontFamily: "system-ui, sans-serif",
+        boxSizing: "border-box",
+      }}
+    >
+      {!d.is_root && (
+        <Handle type="target" position={Position.Top} style={{ background: colors.border, width: 8, height: 8 }} />
+      )}
+
+      {/* Type badge */}
+      <div style={{
+        display: "inline-block", fontSize: 9, fontWeight: 700,
+        padding: "1px 6px", borderRadius: 9999,
+        background: colors.border + "22", color: colors.border,
+        marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em",
+      }}>
+        {d.item_type.replace(/_/g, " ")}
+      </div>
+
+      {/* Item code */}
+      <div style={{
+        fontFamily: "monospace", fontSize: 10, fontWeight: 700,
+        color: "#1e40af", marginBottom: 2,
+        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+      }}>
+        {d.item_code}
+      </div>
+
+      {/* Description */}
+      <div style={{
+        fontSize: 12, fontWeight: 600, color: "#1e293b", lineHeight: 1.3,
+        display: "-webkit-box", WebkitLineClamp: 2,
+        WebkitBoxOrient: "vertical" as const,
+        overflow: "hidden", marginBottom: 6,
+      }}>
+        {d.item_description}
+      </div>
+
+      {/* Qty + stock dot */}
+      <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 3 }}>
+        <div style={{
+          width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
+          background: d.is_sufficient ? "#22c55e" : "#ef4444",
+        }} />
+        <span style={{ fontFamily: "monospace", fontSize: 11, color: "#374151" }}>
+          Qty: {d.effective_qty % 1 === 0 ? d.effective_qty.toFixed(0) : d.effective_qty.toFixed(2)} {d.unit}
+        </span>
+      </div>
+
+      {/* Unit cost */}
+      {d.unit_cost > 0 && (
+        <div style={{ fontSize: 10, color: "#64748b", fontFamily: "monospace" }}>
+          ₹{d.unit_cost.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </div>
+      )}
+
+      {/* Expand/collapse hint */}
+      {d.has_children && (
+        <div style={{ display: "flex", justifyContent: "center", marginTop: 6 }}>
+          <div style={{
+            fontSize: 9, color: colors.border, fontWeight: 700,
+            background: colors.border + "18", borderRadius: 4, padding: "1px 7px",
+            letterSpacing: "0.03em",
+          }}>
+            {d.is_collapsed ? "▶ expand" : "▼ collapse"}
+          </div>
+        </div>
+      )}
+
+      {d.has_children && (
+        <Handle type="source" position={Position.Bottom} style={{ background: colors.border, width: 8, height: 8 }} />
+      )}
+    </div>
+  );
+}
+
+const BOM_FLOW_NODE_TYPES: NodeTypes = { bomNode: BomFlowNodeCard };
+
+function runDagreLayout(
+  nodes: Node[],
+  edges: Edge[],
+): { nodes: Node[]; edges: Edge[] } {
+  const g = new dagre.graphlib.Graph();
+  g.setDefaultEdgeLabel(() => ({}));
+  g.setGraph({ rankdir: "TB", ranksep: 80, nodesep: 40 });
+  nodes.forEach((n) => g.setNode(n.id, { width: RF_NODE_WIDTH, height: RF_NODE_HEIGHT }));
+  edges.forEach((e) => g.setEdge(e.source, e.target));
+  dagre.layout(g);
+  return {
+    nodes: nodes.map((n) => {
+      const p = g.node(n.id);
+      return { ...n, position: { x: p.x - RF_NODE_WIDTH / 2, y: p.y - RF_NODE_HEIGHT / 2 } };
+    }),
+    edges,
+  };
+}
+
+function buildFlowFromBomExplosion(
+  treeData: BomExplosion,
+  collapsedNodes: Set<string>,
+  rootItemType: string,
+  rootUnit: string,
+): { nodes: Node[]; edges: Edge[] } {
+  const rawNodes: Node[] = [];
+  const rawEdges: Edge[] = [];
+  const rootId = `rf_root__${treeData.item_id}`;
+
+  rawNodes.push({
+    id: rootId,
+    type: "bomNode",
+    data: {
+      item_code: treeData.item_code,
+      item_description: treeData.item_description,
+      item_type: rootItemType,
+      effective_qty: treeData.quantity,
+      unit: rootUnit,
+      unit_cost: 0,
+      is_sufficient: true,
+      has_children: treeData.children.length > 0,
+      is_collapsed: false,
+      is_root: true,
+    } as BomFlowNodeData,
+    position: { x: 0, y: 0 },
+  });
+
+  function walk(parentId: string, children: BomNode[]) {
+    for (const child of children) {
+      const nodeId = child.id;
+      const isCollapsed = collapsedNodes.has(nodeId);
+      rawNodes.push({
+        id: nodeId,
+        type: "bomNode",
+        data: {
+          item_code: child.item_code,
+          item_description: child.item_description,
+          item_type: child.item_type,
+          effective_qty: child.effective_qty,
+          unit: child.unit,
+          unit_cost: child.unit_cost,
+          is_sufficient: child.is_sufficient,
+          has_children: child.has_children,
+          is_collapsed: isCollapsed,
+          is_root: false,
+        } as BomFlowNodeData,
+        position: { x: 0, y: 0 },
+      });
+      rawEdges.push({
+        id: `rf_e__${parentId}__${nodeId}`,
+        source: parentId,
+        target: nodeId,
+        type: "smoothstep",
+        style: { stroke: "#94a3b8", strokeWidth: 1.5 },
+      });
+      if (!isCollapsed && child.children.length > 0) {
+        walk(nodeId, child.children);
+      }
+    }
+  }
+
+  walk(rootId, treeData.children);
+  return runDagreLayout(rawNodes, rawEdges);
+}
+
+function BomFlowCanvas({
+  treeData,
+  collapsedNodes,
+  onToggleNode,
+  rootItemType,
+  rootUnit,
+  fitViewRef,
+}: {
+  treeData: BomExplosion;
+  collapsedNodes: Set<string>;
+  onToggleNode: (id: string) => void;
+  rootItemType: string;
+  rootUnit: string;
+  fitViewRef: React.MutableRefObject<(() => void) | null>;
+}) {
+  const { fitView } = useReactFlow();
+
+  const { nodes, edges } = useMemo(
+    () => buildFlowFromBomExplosion(treeData, collapsedNodes, rootItemType, rootUnit),
+    [treeData, collapsedNodes, rootItemType, rootUnit],
+  );
+
+  useEffect(() => {
+    fitViewRef.current = () => fitView({ padding: 0.15, duration: 400 });
+  }, [fitView, fitViewRef]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => fitView({ padding: 0.15, duration: 300 }), 60);
+    return () => clearTimeout(timer);
+  }, [nodes.length, fitView]);
+
+  const onNodeClick = useCallback(
+    (_evt: React.MouseEvent, node: Node) => {
+      const d = node.data as BomFlowNodeData;
+      if (d.has_children && !d.is_root) onToggleNode(node.id);
+    },
+    [onToggleNode],
+  );
+
+  const miniMapColor = useCallback((node: Node) => {
+    const palette: Record<string, string> = {
+      finished_good: "#3b82f6", sub_assembly: "#f59e0b", component: "#64748b",
+      bought_out: "#8b5cf6", raw_material: "#6366f1", consumable: "#f97316", service: "#6b7280",
+    };
+    return palette[(node.data as BomFlowNodeData).item_type] ?? "#94a3b8";
+  }, []);
+
+  return (
+    <ReactFlow
+      nodes={nodes}
+      edges={edges}
+      nodeTypes={BOM_FLOW_NODE_TYPES}
+      onNodeClick={onNodeClick}
+      fitView
+      fitViewOptions={{ padding: 0.15 }}
+      minZoom={0.08}
+      maxZoom={2.5}
+      nodesDraggable={false}
+      nodesConnectable={false}
+      elementsSelectable={true}
+      proOptions={{ hideAttribution: true }}
+      style={{ background: "#f8fafc" }}
+    >
+      <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#cbd5e1" />
+      <Controls />
+      <MiniMap nodeColor={miniMapColor} pannable zoomable style={{ background: "#f1f5f9" }} />
+    </ReactFlow>
   );
 }
 
@@ -518,8 +802,8 @@ function BillOfMaterialsInner() {
 
   // ── Tab 6: Visual Tree ───────────────────────────────────────────────────────
   const [treeQty, setTreeQty] = useState(1);
-  const [treeZoom, setTreeZoom] = useState(1);
   const [treeCollapsedNodes, setTreeCollapsedNodes] = useState<Set<string>>(new Set());
+  const flowFitViewRef = useRef<(() => void) | null>(null);
 
   // ── Dialogs ─────────────────────────────────────────────────────────────────
   const [importBomOpen, setImportBomOpen] = useState(false);
@@ -2736,32 +3020,21 @@ function BillOfMaterialsInner() {
                       <div className="flex items-center gap-2">
                         <Button
                           variant="outline"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => setTreeZoom((z) => Math.max(0.25, +(z - 0.1).toFixed(2)))}
-                          title="Zoom out"
+                          size="sm"
+                          className="h-8 text-xs gap-1.5"
+                          onClick={() => flowFitViewRef.current?.()}
+                          disabled={!treeData || treeData.children.length === 0}
                         >
-                          <ZoomOut className="h-3.5 w-3.5" />
-                        </Button>
-                        <span className="text-xs text-muted-foreground w-10 text-center tabular-nums">
-                          {Math.round(treeZoom * 100)}%
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => setTreeZoom((z) => Math.min(2, +(z + 0.1).toFixed(2)))}
-                          title="Zoom in"
-                        >
-                          <ZoomIn className="h-3.5 w-3.5" />
+                          Fit View
                         </Button>
                         <Button
                           variant="outline"
                           size="sm"
                           className="h-8 text-xs gap-1.5"
-                          onClick={() => setTreeZoom(1)}
+                          onClick={() => setTreeCollapsedNodes(new Set())}
+                          disabled={!treeData || treeData.children.length === 0}
                         >
-                          Reset
+                          Expand All
                         </Button>
                         <Button
                           variant="outline"
@@ -2787,71 +3060,17 @@ function BillOfMaterialsInner() {
                         <p className="text-xs text-slate-400 mt-1">Add components in the Structure tab first</p>
                       </div>
                     ) : (
-                      <div className="overflow-auto flex-1 p-8 bg-slate-50/50">
-                        <div
-                          style={{
-                            transform: `scale(${treeZoom})`,
-                            transformOrigin: "top center",
-                            transition: "transform 0.15s ease",
-                            display: "inline-flex",
-                            minWidth: "100%",
-                            justifyContent: "center",
-                          }}
-                        >
-                          {/* Root node (the finished good) */}
-                          <div className="flex flex-col items-center">
-                            <div className="rounded-lg border-2 border-blue-500 bg-blue-50 p-3 w-44 shrink-0 shadow-sm">
-                              <TypeBadge type={selectedItem.item_type} />
-                              {selectedItem.drawing_revision && (
-                                <p className="font-mono text-[10px] font-bold text-blue-700 mt-0.5 truncate">
-                                  {selectedItem.drawing_revision}
-                                </p>
-                              )}
-                              <p
-                                className="font-semibold text-sm text-slate-900 mt-0.5 leading-tight overflow-hidden"
-                                style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const }}
-                              >
-                                {selectedItem.description}
-                              </p>
-                              <p className="font-mono text-[10px] text-slate-400 mt-0.5 truncate">
-                                {selectedItem.item_code}
-                              </p>
-                              <p className="text-[10px] text-blue-600 font-mono mt-1">
-                                × {treeQty} {selectedItem.unit ?? ""}
-                              </p>
-                            </div>
-
-                            {/* Stem to children */}
-                            <div style={{ width: 2, height: 28, background: "#60a5fa", flexShrink: 0 }} />
-
-                            {/* Top-level children */}
-                            {treeData.children.length === 1 ? (
-                              <VisualTreeNode
-                                node={treeData.children[0]}
-                                collapsed={treeCollapsedNodes}
-                                onToggle={toggleTreeNode}
-                                stepsByLine={treeStepsByLine}
-                              />
-                            ) : (
-                              <div className="flex flex-col">
-                                <div style={{ height: 2, background: "#60a5fa" }} />
-                                <div className="flex gap-6">
-                                  {treeData.children.map((child) => (
-                                    <div key={child.id} className="flex flex-col items-center">
-                                      <div style={{ width: 2, height: 28, background: "#60a5fa", flexShrink: 0 }} />
-                                      <VisualTreeNode
-                                        node={child}
-                                        collapsed={treeCollapsedNodes}
-                                        onToggle={toggleTreeNode}
-                                        stepsByLine={treeStepsByLine}
-                                      />
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
+                      <div style={{ height: "calc(100vh - 280px)", width: "100%" }}>
+                        <ReactFlowProvider>
+                          <BomFlowCanvas
+                            treeData={treeData}
+                            collapsedNodes={treeCollapsedNodes}
+                            onToggleNode={toggleTreeNode}
+                            rootItemType={selectedItem.item_type}
+                            rootUnit={selectedItem.unit ?? ""}
+                            fitViewRef={flowFitViewRef}
+                          />
+                        </ReactFlowProvider>
                       </div>
                     )}
                   </TabsContent>
