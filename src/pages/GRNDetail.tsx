@@ -522,7 +522,7 @@ function QCMeasurementEditor({
   setFinalGrnPerLine,
   isSavedFinalGrn = false,
 }: {
-  lineItems: Array<{ id: string; item_code: string; description: string; received_qty: number; qty_matched: number; unit: string }>;
+  lineItems: Array<{ id: string; item_code: string; description: string; received_qty: number; qty_matched: number; matching_units?: number; unit: string }>;
   qcRows: QCRow[];
   onAddRow: (lineItemId: string) => void;
   onChangeRow: (idx: number, field: keyof QCRow, value: string) => void;
@@ -551,7 +551,7 @@ function QCMeasurementEditor({
               <span className={`text-xs font-semibold ${hasNC ? "text-amber-800" : "text-blue-800"}`}>
                 <span className="font-mono">{item.item_code || "—"}</span>
                 {" — "}{item.description}
-                <span className="font-normal ml-2">· Inspecting: {item.qty_matched} {item.unit} (matched in Stage 1)</span>
+                <span className="font-normal ml-2">· Inspecting: {item.matching_units ?? item.received_qty} {item.unit} (matched in Stage 1)</span>
               </span>
               <button
                 type="button"
@@ -1463,7 +1463,7 @@ export default function GRNDetail() {
   const addQCRow = (lineItemId: string) => {
     const itemRows = qcRows.filter((r) => r.lineItemId === lineItemId);
     const editorItem = editorLineItems.find((l) => l.id === lineItemId);
-    const inspectQty = editorItem?.qty_matched ?? editorItem?.received_qty ?? 0;
+    const inspectQty = editorItem?.matching_units ?? editorItem?.received_qty ?? 0;
     const newRow: QCRow = {
       lineItemId,
       sl_no: itemRows.length + 1,
@@ -1550,6 +1550,7 @@ export default function GRNDetail() {
     description: l.description,
     received_qty: l.received_qty,
     qty_matched: l.qty_matched,
+    matching_units: l.matching_units,
     unit: (grn.line_items ?? []).find((li) => li.id === l.id)?.unit ?? "",
   }));
 
@@ -1578,7 +1579,7 @@ export default function GRNDetail() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="p-4 md:p-6 pb-16 space-y-6 max-w-5xl mx-auto">
+    <div className="p-4 md:p-6 pb-16 space-y-6 w-full">
 
       {/* Print CSS */}
       <style>{`

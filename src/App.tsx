@@ -82,7 +82,6 @@ import ReadyToDispatch from "@/pages/ReadyToDispatch";
 import ProcessLibrary from "@/pages/ProcessLibrary";
 import JigMouldSettings from "@/pages/JigMouldSettings";
 import AssetsRegister from "@/pages/AssetsRegister";
-import ProcurementIntelligence from "@/pages/ProcurementIntelligence";
 import OpeningStock from "@/pages/OpeningStock";
 import DangerZone from "@/pages/DangerZone";
 import { ImportQueueProvider } from "@/lib/import-queue";
@@ -189,7 +188,6 @@ const App = () => (
               <Route path="/settings/danger-zone" element={<DangerZone />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/assets-register" element={<AssetsRegister />} />
-              <Route path="/procurement-intelligence" element={<ProcurementIntelligence />} />
               <Route path="/opening-stock" element={<OpeningStock />} />
             </Route>
             <Route path="*" element={<NotFound />} />

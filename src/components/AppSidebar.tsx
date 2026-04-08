@@ -715,7 +715,6 @@ export function AppSidebar() {
       icon: TrendingDown,
       badge: reorderCritical > 0 ? reorderCritical : undefined,
     },
-    { title: "Procurement Intelligence", url: "/procurement-intelligence", icon: TrendingUp },
     { title: "Serial Numbers", url: "/serial-numbers", icon: Hash },
     {
       title: "FAT Certificates",

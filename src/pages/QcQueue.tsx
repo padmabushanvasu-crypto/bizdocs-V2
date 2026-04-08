@@ -46,7 +46,7 @@ export default function QcQueue() {
   });
 
   return (
-    <div className="p-4 max-w-2xl mx-auto">
+    <div className="p-4 w-full">
       <div className="flex items-center gap-3 mb-6">
         <ClipboardCheck className="h-6 w-6 text-primary" />
         <div>
