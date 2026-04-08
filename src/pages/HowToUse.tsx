@@ -213,7 +213,8 @@ function DailyOpsTab() {
             "Vendor Processes",
             "DC Return Stage 1",
             "DC Return Stage 2 QC",
-            "Stock Re-enters",
+            "Storekeeper Confirmation",
+            "Stock Returns to Free",
           ]}
         />
         <p>
@@ -221,31 +222,37 @@ function DailyOpsTab() {
           stock, the Dashboard shows a Needs Action alert with a Raise DC button.
           Click it — the DC / Job Work Order form opens with the item pre-filled.
           Select the vendor, enter quantity, specify job work type, and issue the
-          DC. The material leaves your facility.
+          DC. The material leaves your facility and moves from free stock into
+          in-process stock.
         </p>
         <p>
           After the DC is issued, go to Job Cards and manually create a Job Card
           linked to that DC. The Job Card tracks the component through every
           processing stage — turning, drilling, heat treatment, plating, or
           whatever your process requires. Each stage is marked complete as work
-          progresses. The Job Card stays open until the material is fully
-          returned and inspected.
+          progresses. The Job Card step auto-closes when Stage 2 QC is saved.
         </p>
         <p>
           When the vendor returns the processed component, the Inward Team
           creates a DC Return GRN. Stage 1 is a quantity check on what came
-          back. Once saved, it moves to QC.
+          back. Once saved, it moves to QC pending — the same as a regular PO
+          GRN.
         </p>
         <p>
-          The QC Team inspects the returned material and checks the quality of
-          the vendor's processing work. Once QC Stage 2 approves, the stock
-          re-enters automatically as a processed component.
+          The QC Team inspects the returned material and approves the conforming
+          quantity. Once Stage 2 is saved, the DC Return GRN moves to the
+          Storekeeper Queue — exactly like a regular GRN.
+        </p>
+        <p>
+          The Storekeeper confirms receipt via the Store Receipt Queue. At this
+          point the stock moves from in-process back to free stock, and the
+          alert disappears if stock is now above minimum.
         </p>
         <p className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-blue-800">
-          <strong>Important:</strong> DC returns do NOT go through the
-          Storekeeper Queue. They go directly back into stock after QC Stage 2.
-          This keeps the Job Card tracking clean across multiple processing
-          cycles where material goes back and forth to vendors.
+          <strong>Note:</strong> If material is going back out for more
+          processing (not marked as Final GRN), the GRN moves to quality_done
+          status and can be sent out again via a new DC without entering the
+          Storekeeper Queue.
         </p>
       </AccordionItem>
 
@@ -343,7 +350,7 @@ const ROLES: RoleItem[] = [
     iconBg: "bg-purple-50",
     iconColor: "text-purple-600",
     content:
-      "Handles Stage 2 GRN for all incoming goods — both PO receipts and DC job work returns. Opens the GRN list, filters by Quality Pending, and records inspection results for each line item. Approves or rejects quantities based on quality. Their approval is the gate that decides what enters stock and what gets rejected. Once Stage 2 is saved, PO GRNs move to the Storekeeper Queue. DC return GRNs go directly back into stock.",
+      "Handles Stage 2 GRN for all incoming goods — both PO receipts and DC job work returns. Opens the GRN list, filters by Quality Pending, and records inspection results for each line item. Approves or rejects quantities based on quality. Their approval is the gate that decides what enters stock and what gets rejected. Once Stage 2 is saved, both PO GRNs and DC Return GRNs move to the Storekeeper Queue for final confirmation.",
   },
   {
     title: "Storekeeper",
@@ -351,7 +358,7 @@ const ROLES: RoleItem[] = [
     iconBg: "bg-amber-50",
     iconColor: "text-amber-600",
     content:
-      "Has two main responsibilities. First — after QC clears a PO GRN, confirms physical receipt into store via the Storekeeper Queue. This is the final step before stock enters the system for PO receipts. Second — when an Assembly Order is raised, a Material Issue Request appears in the Storekeeper Queue. The Storekeeper picks the required components from the shelf and confirms the issue. This releases materials to the Assembly Team and reduces component stock.",
+      "Has two main responsibilities. First — after QC clears a GRN (both PO receipts and DC job work returns), confirms physical receipt via the Store Receipt Queue. For PO GRNs this adds new stock to free stock. For DC Return GRNs this moves processed material from in-process back to free stock. Second — when an Assembly Order is raised, a Material Issue Request appears in the Storekeeper Queue. The Storekeeper picks the required components from the shelf and confirms the issue. This releases materials to the Assembly Team and reduces component stock.",
   },
   {
     title: "Assembly Team",
