@@ -125,6 +125,13 @@ const TOOLTIP_TEXT: Record<string, string> = {
     "The recipe for every product — what components go in, how many, and which vendors make them.",
   "Settings":
     "Company profile, document settings, data import, notifications and more.",
+  "Sub-Assembly": "Manage sub-assembly work orders",
+  "Finished Goods": "Manage finished good work orders",
+  "Storekeeper Queue": "Issue materials from store to production",
+  "Store Receipt Queue": "Confirm received materials into store",
+  "Opening Stock": "Set and edit opening stock quantities",
+  "Procurement Intelligence": "Smart view of what needs to be procured",
+  "Jig Master": "Manage jigs and drilling tools",
 };
 
 // ── Search items (all pages) ──────────────────────────────────────────────────
@@ -509,6 +516,101 @@ export function AppSidebar() {
     refetchInterval: 60_000,
   });
 
+  const { data: grnQCCount = 0 } = useQuery({
+    queryKey: ["grn-qc-count-sidebar"],
+    queryFn: async () => {
+      try {
+        const companyId = await getCompanyId();
+        if (!companyId) return 0;
+        const { count } = await (supabase as any)
+          .from("grns")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .eq("grn_stage", "quality_pending")
+          .neq("status", "deleted")
+          .neq("status", "cancelled");
+        return count ?? 0;
+      } catch { return 0; }
+    },
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  });
+
+  const { data: openDCCount = 0 } = useQuery({
+    queryKey: ["open-dc-count-sidebar"],
+    queryFn: async () => {
+      try {
+        const companyId = await getCompanyId();
+        if (!companyId) return 0;
+        const { count } = await (supabase as any)
+          .from("delivery_challans")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .in("status", ["issued", "partially_returned"]);
+        return count ?? 0;
+      } catch { return 0; }
+    },
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  });
+
+  const { data: dcReturnQCCount = 0 } = useQuery({
+    queryKey: ["dc-return-qc-count-sidebar"],
+    queryFn: async () => {
+      try {
+        const companyId = await getCompanyId();
+        if (!companyId) return 0;
+        const { count } = await (supabase as any)
+          .from("grns")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .eq("grn_type", "dc_grn")
+          .eq("grn_stage", "quality_pending")
+          .neq("status", "deleted")
+          .neq("status", "cancelled");
+        return count ?? 0;
+      } catch { return 0; }
+    },
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  });
+
+  const { data: jobCardCount = 0 } = useQuery({
+    queryKey: ["job-card-count-sidebar"],
+    queryFn: async () => {
+      try {
+        const companyId = await getCompanyId();
+        if (!companyId) return 0;
+        const { count } = await (supabase as any)
+          .from("job_cards")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .eq("status", "in_progress");
+        return count ?? 0;
+      } catch { return 0; }
+    },
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  });
+
+  const { data: pendingMIRCount = 0 } = useQuery({
+    queryKey: ["pending-mir-count-sidebar"],
+    queryFn: async () => {
+      try {
+        const companyId = await getCompanyId();
+        if (!companyId) return 0;
+        const { count } = await (supabase as any)
+          .from("material_issue_requests")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .eq("status", "pending");
+        return count ?? 0;
+      } catch { return 0; }
+    },
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  });
+
   const companyNeedsSetup = !companySettingsData?.gstin ||
     !companySettingsData?.company_name ||
     companySettingsData.company_name === "My Company";
@@ -519,9 +621,27 @@ export function AppSidebar() {
   ];
 
   const dailyWorkNav: NavItem[] = [
-    { title: "Job Cards", url: "/job-works", icon: Activity },
-    { title: "DC / Job Work Order", url: "/delivery-challans", icon: Truck },
-    { title: "DC Returns", url: "/dc-grn", icon: RotateCcw },
+    {
+      title: "Job Cards",
+      url: "/job-works",
+      icon: Activity,
+      badge: jobCardCount > 0 ? jobCardCount : undefined,
+      badgeColor: "amber" as const,
+    },
+    {
+      title: "DC / Job Work Order",
+      url: "/delivery-challans",
+      icon: Truck,
+      badge: openDCCount > 0 ? openDCCount : undefined,
+      badgeColor: "amber" as const,
+    },
+    {
+      title: "DC Returns",
+      url: "/dc-grn",
+      icon: RotateCcw,
+      badge: dcReturnQCCount > 0 ? dcReturnQCCount : undefined,
+      badgeColor: "amber" as const,
+    },
   ];
 
   const purchasingReceivingNav: NavItem[] = [
@@ -532,7 +652,13 @@ export function AppSidebar() {
       badge: overduePOCount && overduePOCount > 0 ? overduePOCount : undefined,
       badgeColor: "red" as const,
     },
-    { title: "GRN", url: "/grn", icon: PackageCheck },
+    {
+      title: "GRN",
+      url: "/grn",
+      icon: PackageCheck,
+      badge: grnQCCount > 0 ? grnQCCount : undefined,
+      badgeColor: "red" as const,
+    },
   ];
 
   const productionNav: NavItem[] = [
@@ -554,7 +680,13 @@ export function AppSidebar() {
   ];
 
   const storeNav: NavItem[] = [
-    { title: "Storekeeper Queue", url: "/storekeeper", icon: PackageCheck },
+    {
+      title: "Storekeeper Queue",
+      url: "/storekeeper",
+      icon: PackageCheck,
+      badge: pendingMIRCount > 0 ? pendingMIRCount : undefined,
+      badgeColor: "amber" as const,
+    },
     {
       title: "Store Receipt Queue",
       url: "/storekeeper-queue",

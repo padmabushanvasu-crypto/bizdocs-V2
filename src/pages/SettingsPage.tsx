@@ -86,7 +86,7 @@ export default function SettingsPage() {
       iconColor: "text-blue-600",
       title: "How to Use BizDocs",
       description: "Step-by-step guide — what to do first, what comes after, and when to use each feature",
-      action: () => navigate("/how-to-use"),
+      action: () => navigate("/settings/how-to-use"),
     },
     {
       icon: Receipt,

@@ -165,6 +165,7 @@ const App = () => (
               <Route path="/scrap-register" element={<ScrapRegister />} />
               <Route path="/audit-log" element={<AuditLog />} />
               <Route path="/how-to-use" element={<HowToUse />} />
+              <Route path="/settings/how-to-use" element={<HowToUse />} />
               <Route path="/stage-templates" element={<StageTemplates />} />
               <Route path="/component-journey" element={<ComponentJourney />} />
               <Route path="/jig-master" element={<JigMaster />} />
