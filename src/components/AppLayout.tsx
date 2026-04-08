@@ -51,7 +51,7 @@ export function AppLayout() {
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full">
+      <div className="h-screen flex w-full overflow-hidden">
         {!isFocused && (
           <div className="hidden md:block print:hidden">
             <AppSidebar />
@@ -112,7 +112,7 @@ export function AppLayout() {
             </div>
           </header>
 
-          <main className="flex-1 overflow-auto pb-16 md:pb-0 bg-white min-h-screen">
+          <main className="flex-1 overflow-y-auto pb-16 md:pb-0 bg-white">
             <div className="animate-fade-in">
               <Outlet />
             </div>
