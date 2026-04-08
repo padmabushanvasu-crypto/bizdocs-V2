@@ -1,660 +1,428 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Building2, Users, Package, GitFork, Database, FileText,
-  Truck, ShoppingCart, ShoppingBag, Layers, CheckCircle2,
-  Factory, Hash, BookOpen, ClipboardList, ArrowRight,
-  ChevronLeft, Search, Wrench, AlertTriangle, Trash2,
-  Receipt, BarChart2, Clock, AlertCircle, RefreshCw,
+  BookOpen, ChevronLeft, ChevronDown, ChevronRight,
+  ArrowRight, ShoppingCart, Truck, Layers, Package,
+  Users, Settings, Shield, Briefcase, ClipboardList,
+  PackageCheck, Wrench,
 } from "lucide-react";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 
-// ── Tab 1: Setup Steps ────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-interface SetupStep {
-  icon: React.ElementType;
-  iconBg: string;
-  iconColor: string;
-  stepNum: number;
-  title: string;
-  description: string;
-  whyMatters: string;
-  timeNeeded: string;
-  tag: string;
-  tagOnce: boolean; // true = "Do this once" style (blue), false = "regularly" style (green)
-  buttonLabel: string;
-  route: string;
+type TabId = "getting-started" | "daily-ops" | "role-guide";
+
+// ── Flow pill component ────────────────────────────────────────────────────────
+
+function FlowPills({ steps }: { steps: string[] }) {
+  return (
+    <div className="flex items-center flex-wrap gap-1.5 mb-4">
+      {steps.map((step, idx) => (
+        <div key={step} className="flex items-center gap-1.5">
+          <span className="px-2.5 py-1 rounded-full bg-slate-100 border border-slate-200 text-xs font-medium text-slate-700 whitespace-nowrap">
+            {step}
+          </span>
+          {idx < steps.length - 1 && (
+            <ArrowRight className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+          )}
+        </div>
+      ))}
+    </div>
+  );
 }
 
-const SETUP_STEPS: SetupStep[] = [
-  {
-    icon: Building2,
-    iconBg: "bg-blue-50",
-    iconColor: "text-blue-600",
-    stepNum: 1,
-    title: "Set up your Company Profile",
-    description:
-      "Add your company name, address, GSTIN, state code and PAN. Upload your company logo.",
-    whyMatters:
-      "Your GSTIN, state code and address print on every document. Your logo makes documents look professional. Wrong details = invalid GST documents.",
-    timeNeeded: "5 minutes — do this first, before anything else",
-    tag: "Do this once",
-    tagOnce: true,
-    buttonLabel: "Go to Company Profile →",
-    route: "/settings/company",
-  },
-  {
-    icon: FileText,
-    iconBg: "bg-blue-50",
-    iconColor: "text-blue-600",
-    stepNum: 2,
-    title: "Configure Document Settings",
-    description:
-      "Set your document number prefixes (INV-, PO-, DC-), starting numbers, financial year and standard payment terms. Add your bank account details for invoices.",
-    whyMatters:
-      "Document numbers auto-generate from here. Bank details auto-fill on every invoice. Do this before you raise your first document.",
-    timeNeeded: "10 minutes",
-    tag: "Do this once — update each financial year",
-    tagOnce: false,
-    buttonLabel: "Go to Document Settings →",
-    route: "/settings/documents",
-  },
-  {
-    icon: Users,
-    iconBg: "bg-green-50",
-    iconColor: "text-green-600",
-    stepNum: 3,
-    title: "Add Your Parties",
-    description:
-      "Add every vendor you buy from and every customer you sell to. Include their GSTIN — the system auto-calculates CGST/SGST vs IGST based on state codes.",
-    whyMatters:
-      "Every PO, DC and Invoice pulls party details from here. If a party is missing you cannot raise a document for them.",
-    timeNeeded:
-      "20–30 minutes. Use the Excel import to add many parties at once.",
-    tag: "Do once — add new parties as needed",
-    tagOnce: true,
-    buttonLabel: "Go to Parties →",
-    route: "/parties",
-  },
-  {
-    icon: Package,
-    iconBg: "bg-amber-50",
-    iconColor: "text-amber-600",
-    stepNum: 4,
-    title: "Add Your Items",
-    description:
-      "Add every raw material, component, sub-assembly and finished product. Set HSN codes, units, drawing numbers and minimum raw-material stock levels.",
-    whyMatters:
-      "Every document and Production Run uses items from this catalogue. Missing items = blocked workflows.",
-    timeNeeded:
-      "30–60 minutes. Download the Items template from Data Import, fill it in Excel, upload in one go.",
-    tag: "Do once — add new items as needed",
-    tagOnce: true,
-    buttonLabel: "Go to Items →",
-    route: "/items",
-  },
-  {
-    icon: GitFork,
-    iconBg: "bg-purple-50",
-    iconColor: "text-purple-600",
-    stepNum: 5,
-    title: "Build Your Bills of Materials",
-    description:
-      "For each finished product and sub-assembly, define what goes into it — every component, its quantity and its source vendor with a preferred vendor ranking.",
-    whyMatters:
-      "Production Runs use the BOM to auto-load components and suggest vendors. Without a BOM every production run is manual.",
-    timeNeeded:
-      "1–2 hours for a typical product range. Done once per product.",
-    tag: "Do once per product",
-    tagOnce: true,
-    buttonLabel: "Go to Bill of Materials →",
-    route: "/bill-of-materials",
-  },
-  {
-    icon: Factory,
-    iconBg: "bg-purple-50",
-    iconColor: "text-purple-600",
-    stepNum: 6,
-    title: "Set Minimum Finished Stock",
-    description:
-      "For each finished product set a Minimum Finished Stock and a Production Batch Size on the Items page. When stock falls below this level the system alerts you. Use Stock Register → Finished Goods → Record Build to log what was assembled.",
-    whyMatters:
-      "This is the pull trigger for your assembly process. When finished goods fall below the minimum, the system alerts you. Record Build in Stock Register does everything in one click: serial numbers, FAT drafts, and stock update.",
-    timeNeeded: "15 minutes — one setting per finished product",
-    tag: "Do this once",
-    tagOnce: true,
-    buttonLabel: "Go to Items →",
-    route: "/items",
-  },
-  {
-    icon: Database,
-    iconBg: "bg-teal-50",
-    iconColor: "text-teal-600",
-    stepNum: 7,
-    title: "Enter Opening Stock",
-    description:
-      "Download the pre-filled template from Data Import — it lists every item. Fill in current quantities and unit costs and upload.",
-    whyMatters:
-      "Without opening stock the system thinks you have zero of everything. Reorder alerts, production checks and all stock reports will be wrong until this is done.",
-    timeNeeded:
-      "30 minutes — the template is pre-filled, you only enter quantities and costs.",
-    tag: "Do this once at go-live",
-    tagOnce: true,
-    buttonLabel: "Go to Data Import →",
-    route: "/settings/import",
-  },
-  {
-    icon: BarChart2,
-    iconBg: "bg-amber-50",
-    iconColor: "text-amber-600",
-    stepNum: 8,
-    title: "Set Reorder Rules",
-    description:
-      "Go to Reorder Intelligence → Manage Rules. For every raw material and component, set a reorder point (when to buy) and a reorder quantity (how much to buy).",
-    whyMatters:
-      "Reorder Intelligence watches stock levels 24/7. Without rules it cannot alert you when materials run low.",
-    timeNeeded: "30–45 minutes — one rule per stocked item",
-    tag: "Do once — review quarterly",
-    tagOnce: true,
-    buttonLabel: "Go to Reorder Intelligence →",
-    route: "/reorder-intelligence",
-  },
-];
+// ── Accordion ─────────────────────────────────────────────────────────────────
+
+function AccordionItem({
+  title,
+  children,
+  defaultOpen = false,
+}: {
+  title: string;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-slate-50 transition-colors"
+      >
+        <span className="font-semibold text-slate-800 text-sm">{title}</span>
+        {open ? (
+          <ChevronDown className="h-4 w-4 text-slate-400 shrink-0 transition-transform" />
+        ) : (
+          <ChevronRight className="h-4 w-4 text-slate-400 shrink-0 transition-transform" />
+        )}
+      </button>
+      {open && (
+        <div className="px-4 pb-4 pt-1 border-t border-slate-100 text-sm text-slate-600 leading-relaxed space-y-3">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Tab 1: Getting Started ────────────────────────────────────────────────────
 
 function GettingStartedTab() {
-  const navigate = useNavigate();
   return (
-    <div className="space-y-1 relative">
-      {/* Vertical connecting line */}
-      <div
-        className="absolute left-[23px] top-6 bottom-6 w-0.5 bg-slate-200"
-        aria-hidden="true"
-      />
-      {SETUP_STEPS.map((step) => (
-        <div key={step.stepNum} className="relative flex gap-4 pb-4 last:pb-0">
-          {/* Icon circle */}
-          <div
-            className={`relative z-10 h-12 w-12 rounded-full border-2 border-slate-200 bg-white flex items-center justify-center shrink-0 ${step.iconBg}`}
-          >
-            <step.icon className={`h-5 w-5 ${step.iconColor}`} />
-          </div>
+    <div className="space-y-3">
+      <p className="text-sm text-slate-600 bg-amber-50 border border-amber-100 rounded-lg px-4 py-3">
+        Complete these steps in order before your team starts using BizDocs.
+        Skipping steps will cause imports to fail.
+      </p>
 
-          {/* Card */}
-          <div className="flex-1 bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-3">
-            {/* Header row */}
-            <div className="flex flex-col sm:flex-row sm:items-start gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap mb-1">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                    Step {step.stepNum}
-                  </span>
-                  <span
-                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
-                      step.tagOnce
-                        ? "bg-blue-50 text-blue-700 border-blue-100"
-                        : "bg-green-50 text-green-700 border-green-100"
-                    }`}
-                  >
-                    {step.tag}
-                  </span>
-                </div>
-                <p className="font-semibold text-slate-900">{step.title}</p>
-                <p className="text-sm text-slate-500 mt-0.5 leading-snug">
-                  {step.description}
-                </p>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="shrink-0 whitespace-nowrap self-start"
-                onClick={() => navigate(step.route)}
-              >
-                {step.buttonLabel}
-              </Button>
-            </div>
-
-            {/* Why this matters */}
-            <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-100 px-3 py-2">
-              <AlertCircle className="h-3.5 w-3.5 text-amber-600 shrink-0 mt-0.5" />
-              <p className="text-xs text-amber-800 leading-snug">
-                <span className="font-semibold">Why this matters: </span>
-                {step.whyMatters}
-              </p>
-            </div>
-
-            {/* Time needed */}
-            <div className="flex items-center gap-2">
-              <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-              <p className="text-xs text-slate-500">{step.timeNeeded}</p>
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ── Tab 2: Daily Operations Flow ──────────────────────────────────────────────
-
-interface FlowStep {
-  label: string;
-  route?: string;
-}
-
-interface FlowRow {
-  zone: string;
-  zoneClass: string;
-  pillBg: string;
-  pillBorder: string;
-  pillText: string;
-  pillHover: string;
-  arrowColor: string;
-  steps: FlowStep[];
-  explanation: string;
-  rules: string[];
-}
-
-const FLOW_ROWS: FlowRow[] = [
-  {
-    zone: "BUY",
-    zoneClass: "bg-blue-600 text-white",
-    pillBg: "bg-blue-50",
-    pillBorder: "border-blue-200",
-    pillText: "text-blue-800",
-    pillHover: "hover:bg-blue-100",
-    arrowColor: "text-blue-400",
-    steps: [
-      { label: "Reorder Alert", route: "/reorder-intelligence" },
-      { label: "Purchase Order", route: "/purchase-orders/new" },
-      { label: "GRN", route: "/grn/new" },
-      { label: "Raw Mat. Stock ↑" },
-    ],
-    explanation:
-      "The system monitors raw material and bought-out stock continuously. When any item falls below its minimum level a Reorder Alert fires. Open the Reorder Intelligence page — it shows exactly what to buy, from which vendor, and in what quantity. Raise a Purchase Order directly from the alert. When materials arrive at the factory, record a GRN linked to the PO. The GRN is what actually moves stock in — without it the system thinks nothing arrived.",
-    rules: [
-      "Never buy on a hunch — check Reorder Alerts first",
-      "Always raise a PO before materials arrive — it's your authorisation",
-      "Always record a GRN when materials arrive — this is the only thing that updates stock",
-      "GRN updates stock_raw_material automatically — no manual entry needed",
-    ],
-  },
-  {
-    zone: "MAKE",
-    zoneClass: "bg-amber-500 text-white",
-    pillBg: "bg-amber-50",
-    pillBorder: "border-amber-200",
-    pillText: "text-amber-900",
-    pillHover: "hover:bg-amber-100",
-    arrowColor: "text-amber-400",
-    steps: [
-      { label: "Stock Register", route: "/stock-register" },
-      { label: "Raise DC (Returnable)", route: "/delivery-challans/new" },
-      { label: "Material Returns" },
-      { label: "Record Return → Stock ↑" },
-    ],
-    explanation:
-      "For processing: raise a Delivery Challan (Returnable type) when goods leave the factory. The DC is your legal proof of dispatch and tracks where material is and when it's due back. When material returns, record the return on the DC. Stock updates automatically.",
-    rules: [
-      "Check the Stock Register to identify low-stock components",
-      "Always raise a DC when material goes out — it's your legal proof of dispatch",
-      "GST Rule 45: goods sent for processing must return within 365 days or GST is payable",
-    ],
-  },
-  {
-    zone: "PRODUCE",
-    zoneClass: "bg-purple-600 text-white",
-    pillBg: "bg-purple-50",
-    pillBorder: "border-purple-200",
-    pillText: "text-purple-900",
-    pillHover: "hover:bg-purple-100",
-    arrowColor: "text-purple-400",
-    steps: [
-      { label: "Stock Alert", route: "/reorder-intelligence" },
-      { label: "Assembly on Floor" },
-      { label: "Record Build", route: "/stock-register" },
-      { label: "FAT Testing", route: "/fat-certificates" },
-    ],
-    explanation:
-      "Production is triggered by stock level, not by a customer order. When finished goods stock falls below the minimum you set, an alert appears on the Dashboard and Reorder Intelligence page. Assembly happens on the shop floor — no system interaction needed during assembly. When done, go to Stock Register → Finished Goods tab → click Record Build. In one click: serial numbers are generated, FAT certificate drafts are created, and BOM components are deducted from stock (backflush). No separate Start/Mark Complete steps needed.",
-    rules: [
-      "Set Minimum Finished Stock on every finished good item — this is the pull trigger",
-      "Assembly happens on the shop floor — no system steps during assembly",
-      "Record Build in Stock Register does all steps in one click after assembly is done",
-      "Serial numbers and FAT drafts are created at Record Build",
-      "A unit cannot be invoiced until its FAT certificate is passed",
-    ],
-  },
-  {
-    zone: "SELL",
-    zoneClass: "bg-green-600 text-white",
-    pillBg: "bg-green-50",
-    pillBorder: "border-green-200",
-    pillText: "text-green-900",
-    pillHover: "hover:bg-green-100",
-    arrowColor: "text-green-400",
-    steps: [
-      { label: "FAT Certificate", route: "/fat-certificates" },
-      { label: "Invoice", route: "/invoices/new" },
-      { label: "Dispatch Note", route: "/dispatch-notes/new" },
-      { label: "Payment Receipt", route: "/receipts" },
-      { label: "Warranty Tracking", route: "/warranty-tracker" },
-    ],
-    explanation:
-      "The unit is built, tested and in finished goods stock. Complete the FAT Certificate for the unit — only FAT-passed serial numbers appear in the invoice dropdown so you cannot accidentally bill an untested unit. Once invoiced, create a Dispatch Note for the physical delivery — it has vehicle number, driver details, LR number and packing list. When the customer pays, record a Payment Receipt against the invoice. The outstanding balance updates automatically. Warranty tracking begins from the dispatch date.",
-    rules: [
-      "FAT must be passed before invoicing — the system enforces this",
-      "Create a Dispatch Note for every customer delivery — it's your lorry receipt",
-      "Always record Payment Receipts — your accounts team needs the outstanding balance report",
-      "Warranty starts from the invoice/dispatch date automatically",
-    ],
-  },
-];
-
-function OperationsFlowTab() {
-  const navigate = useNavigate();
-  return (
-    <div className="space-y-5">
-      {FLOW_ROWS.map((row) => (
-        <div
-          key={row.zone}
-          className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-4"
-        >
-          {/* Zone label */}
-          <span
-            className={`inline-block text-[11px] font-bold px-3 py-1 rounded-full tracking-widest ${row.zoneClass}`}
-          >
-            {row.zone}
+      <AccordionItem title="Step 1 — Import Items Master">
+        <p>
+          Go to Settings → Data Import → Items tab. Upload{" "}
+          <span className="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">
+            01_Items_Master.xlsx
           </span>
+          . This brings in all your raw materials, components, and bought-out
+          items. Every other import depends on this existing first — do not skip
+          it.
+        </p>
+      </AccordionItem>
 
-          {/* Clickable step pills */}
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {row.steps.map((step, idx) => (
-              <div key={step.label} className="flex items-center gap-1.5">
-                <button
-                  onClick={() => step.route && navigate(step.route)}
-                  disabled={!step.route}
-                  className={`px-3 py-1.5 rounded-full text-sm font-medium border whitespace-nowrap transition-colors
-                    ${row.pillBg} ${row.pillBorder} ${row.pillText}
-                    ${step.route ? `${row.pillHover} cursor-pointer` : "cursor-default opacity-70"}`}
-                >
-                  {step.label}
-                  {step.route && (
-                    <span className="ml-1 text-[10px] opacity-60">↗</span>
-                  )}
-                </button>
-                {idx < row.steps.length - 1 && (
-                  <ArrowRight className={`h-4 w-4 shrink-0 ${row.arrowColor}`} />
-                )}
-              </div>
-            ))}
-          </div>
+      <AccordionItem title="Step 2 — Import Sub-Assembly Master">
+        <p>
+          Still in Data Import → Sub-Assembly tab. Upload{" "}
+          <span className="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">
+            02_SubAssembly_Master.xlsx
+          </span>
+          . This adds your sub-assemblies with their reorder points and aimed
+          quantities. These drive the stock alerts for production planning.
+        </p>
+      </AccordionItem>
 
-          {/* Expanded explanation */}
-          <p className="text-sm text-slate-600 leading-relaxed border-t border-slate-100 pt-3">
-            {row.explanation}
-          </p>
+      <AccordionItem title="Step 3 — Import Parties">
+        <p>
+          Data Import → Parties tab. Upload{" "}
+          <span className="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">
+            03_Parties.xlsx
+          </span>
+          . This brings in all your vendors and customers. Vendor names will
+          appear in POs and DCs automatically once this is done.
+        </p>
+      </AccordionItem>
 
-          {/* Key rules */}
-          <div className="space-y-1.5">
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-              Key Rules
-            </p>
-            <ul className="space-y-1">
-              {row.rules.map((rule) => (
-                <li key={rule} className="flex items-start gap-2">
-                  <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-slate-400 shrink-0" />
-                  <span className="text-sm text-slate-700">{rule}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      ))}
+      <AccordionItem title="Step 4 — Import BOM">
+        <p>
+          Data Import → BOM tab. Upload{" "}
+          <span className="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">
+            04_BOM.xlsx
+          </span>
+          . This defines which components go into which sub-assembly and in what
+          quantity. The BOM explosion tree and cost rollup will not work until
+          this is imported.
+        </p>
+      </AccordionItem>
+
+      <AccordionItem title="Step 5 — Import Opening Stock">
+        <p>
+          Data Import → Opening Stock tab. Upload{" "}
+          <span className="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">
+            07_Opening_Stock.xlsx
+          </span>
+          . This sets the current physical stock for every item. Get this right
+          — it is the baseline everything else is measured against.
+        </p>
+      </AccordionItem>
+
+      <AccordionItem title="Step 6 — Import Reorder Rules">
+        <p>
+          This step is different. Do <strong>NOT</strong> use a pre-filled
+          template. Go to Data Import → Reorder Rules → Download Template. The
+          downloaded file will have your actual item codes. Fill in the Reorder
+          Point (minimum quantity) and Aimed Qty (target to maintain) for each
+          item. Upload it back. This is what powers the stock alerts — without
+          this, no alerts will fire.
+        </p>
+      </AccordionItem>
+
+      <AccordionItem title="Step 7 — Configure Settings">
+        <p>
+          Go to Settings → Company Profile. Add your company name, registered
+          address, physical address, GSTIN, PAN, phone, logo, and authorised
+          signatory. Then go to Document Settings and set your document numbering
+          prefixes (e.g.{" "}
+          <span className="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">
+            PO/-26-27/
+          </span>
+          ,{" "}
+          <span className="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">
+            DC/-26-27/
+          </span>
+          ). This prints on every document you send to vendors and customers.
+        </p>
+      </AccordionItem>
     </div>
   );
 }
 
-// ── Tab 3: Feature Reference ──────────────────────────────────────────────────
+// ── Tab 2: Daily Operations ───────────────────────────────────────────────────
 
-interface FeatureCard {
+function DailyOpsTab() {
+  return (
+    <div className="space-y-3">
+      <AccordionItem title="Procurement Flow" defaultOpen>
+        <FlowPills
+          steps={[
+            "Reorder Alert",
+            "Raise PO",
+            "Stage 1 GRN",
+            "Stage 2 QC",
+            "Storekeeper Confirmation",
+            "Stock Enters",
+          ]}
+        />
+        <p>
+          When any item's stock drops below its minimum quantity, a red alert
+          appears on the Dashboard under Needs Action. The Purchase Team sees
+          this and clicks Raise PO directly from the alert — the PO form opens
+          with the item pre-filled.
+        </p>
+        <p>
+          When the vendor delivers, the Inward Team creates a GRN against the PO
+          and enters quantities received. This is Stage 1 — quantity check only,
+          no quality judgement here. Once saved, a red badge appears on the GRN
+          sidebar link and the GRN moves to QC pending.
+        </p>
+        <p>
+          The QC Team opens the GRN list, filters for Quality Pending, and
+          records their inspection for each line item. They approve or reject
+          quantities. Only approved quantities move forward. Once Stage 2 is
+          saved, the GRN moves to the Storekeeper Queue.
+        </p>
+        <p>
+          The Storekeeper opens the Storekeeper Queue, physically verifies the
+          goods are in the right location, and confirms receipt. At this point —
+          and only at this point — the stock enters the system. If stock is now
+          above minimum, the alert disappears automatically.
+        </p>
+      </AccordionItem>
+
+      <AccordionItem title="Job Work Flow (DC)">
+        <FlowPills
+          steps={[
+            "Alert fires",
+            "Raise DC",
+            "Create Job Card",
+            "Vendor Processes",
+            "DC Return Stage 1",
+            "DC Return Stage 2 QC",
+            "Stock Re-enters",
+          ]}
+        />
+        <p>
+          When a component that requires external processing drops below minimum
+          stock, the Dashboard shows a Needs Action alert with a Raise DC button.
+          Click it — the DC / Job Work Order form opens with the item pre-filled.
+          Select the vendor, enter quantity, specify job work type, and issue the
+          DC. The material leaves your facility.
+        </p>
+        <p>
+          After the DC is issued, go to Job Cards and manually create a Job Card
+          linked to that DC. The Job Card tracks the component through every
+          processing stage — turning, drilling, heat treatment, plating, or
+          whatever your process requires. Each stage is marked complete as work
+          progresses. The Job Card stays open until the material is fully
+          returned and inspected.
+        </p>
+        <p>
+          When the vendor returns the processed component, the Inward Team
+          creates a DC Return GRN. Stage 1 is a quantity check on what came
+          back. Once saved, it moves to QC.
+        </p>
+        <p>
+          The QC Team inspects the returned material and checks the quality of
+          the vendor's processing work. Once QC Stage 2 approves, the stock
+          re-enters automatically as a processed component.
+        </p>
+        <p className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-blue-800">
+          <strong>Important:</strong> DC returns do NOT go through the
+          Storekeeper Queue. They go directly back into stock after QC Stage 2.
+          This keeps the Job Card tracking clean across multiple processing
+          cycles where material goes back and forth to vendors.
+        </p>
+      </AccordionItem>
+
+      <AccordionItem title="Assembly & Production Flow">
+        <FlowPills
+          steps={[
+            "Raise Assembly Order",
+            "Storekeeper Issues Materials",
+            "Assembly Complete",
+            "Stock Enters",
+          ]}
+        />
+        <p>
+          When sub-assembly or finished good stock drops below minimum, the
+          Dashboard shows a Raise Assembly Order button. Click it — the Assembly
+          Order form opens with the BOM automatically showing which components
+          are needed and in what quantity.
+        </p>
+        <p>
+          Once the Assembly Order is raised, a Material Issue Request appears in
+          the Storekeeper Queue. The Storekeeper physically picks the components
+          from the shelf and confirms the issue in the system. This reduces the
+          component stock and signals the Assembly Team that materials are ready.
+        </p>
+        <p>
+          The Assembly Team works on the shop floor. Once the sub-assembly or
+          finished good is built, they open the Assembly Order and mark it
+          complete. The completed quantity enters stock. If this was a
+          sub-assembly going into a larger assembly, it is now available for the
+          next Assembly Order that needs it.
+        </p>
+      </AccordionItem>
+
+      <AccordionItem title="Dispatch Flow">
+        <FlowPills
+          steps={[
+            "Invoice Raised",
+            "Serial Numbers",
+            "FAT Certificate",
+            "Ready to Dispatch",
+            "Dispatch Record",
+          ]}
+        />
+        <p>
+          Admin or the Purchase Team raises a GST invoice for the customer. The
+          invoice pulls GSTIN, HSN codes, and tax rates automatically.
+        </p>
+        <p>
+          For each finished good unit being dispatched, assign a serial number in
+          the Serial Numbers page. If the customer requires a Factory Acceptance
+          Test certificate, create it in FAT Certificates and link it to the
+          serial number.
+        </p>
+        <p>
+          The finished goods appear in Ready to Dispatch once serialised. The
+          amber badge on the sidebar shows how many units are waiting to go out.
+          Create a Dispatch Record for the shipment. Once saved, the goods leave
+          your stock and the delivery is documented.
+        </p>
+      </AccordionItem>
+    </div>
+  );
+}
+
+// ── Tab 3: Role Guide ─────────────────────────────────────────────────────────
+
+interface RoleItem {
+  title: string;
   icon: React.ElementType;
   iconBg: string;
   iconColor: string;
-  name: string;
-  whenToUse: string;
-  thinkOfItAs: string;
-  commonMistake: string;
+  content: string;
 }
 
-const FEATURES: FeatureCard[] = [
+const ROLES: RoleItem[] = [
   {
-    icon: Factory,
-    iconBg: "bg-purple-50",
-    iconColor: "text-purple-600",
-    name: "Record Build",
-    whenToUse: "When finished goods stock falls below the minimum level. Assembly has already happened on the shop floor. Go to Stock Register → Finished Goods tab → click Record Build on the item.",
-    thinkOfItAs: "One-click assembly completion — generates serial numbers, FAT drafts, and updates stock in a single action after physical assembly is done.",
-    commonMistake:
-      "Do not wait for a customer order to record a build. This is a pull-based system — build to stock, sell from stock. The trigger is your finished goods minimum level, not an order.",
-  },
-  {
-    icon: Truck,
-    iconBg: "bg-blue-50",
-    iconColor: "text-blue-600",
-    name: "Delivery Challans",
-    whenToUse: "When goods leave the factory — either for processing (returnable) or customer delivery (non-returnable).",
-    thinkOfItAs: "Gate pass",
-    commonMistake:
-      "Not recording the Return when material comes back — DC stays open forever, GST Rule 45 clock keeps ticking.",
-  },
-  {
+    title: "Purchase Team",
     icon: ShoppingCart,
     iconBg: "bg-blue-50",
     iconColor: "text-blue-600",
-    name: "Purchase Orders",
-    whenToUse: "When a Reorder Alert fires for raw materials or bought-out items. Raise directly from the Reorder Intelligence page — never buy on a hunch.",
-    thinkOfItAs: "Formal buy request",
-    commonMistake:
-      "Skipping the PO and going straight to GRN — you lose the paper trail and cannot track vendor delivery performance.",
+    content:
+      "Monitors Dashboard reorder alerts. Raises POs when stock falls below minimum using the Raise PO button on the alert. Tracks open POs via the Purchase Orders page. Raises DCs for job work when components need external processing. Also raises invoices for customer dispatches.",
   },
   {
-    icon: ClipboardList,
-    iconBg: "bg-green-50",
-    iconColor: "text-green-600",
-    name: "GRN",
-    whenToUse: "When purchased goods arrive at the factory. Link to the original PO. Record accepted vs rejected quantities.",
-    thinkOfItAs: "Inward register",
-    commonMistake:
-      "Forgetting to record the GRN — stock stays at zero, reorder alerts keep firing even though material is in the store room.",
-  },
-  {
-    icon: FileText,
-    iconBg: "bg-emerald-50",
-    iconColor: "text-emerald-600",
-    name: "Invoices",
-    whenToUse: "When billing a customer after goods are assembled, FAT-passed and ready to dispatch.",
-    thinkOfItAs: "The bill",
-    commonMistake:
-      "Raising an invoice before FAT — the system prevents this but some users try to bypass by not recording the FAT.",
-  },
-  {
-    icon: ShoppingBag,
-    iconBg: "bg-indigo-50",
-    iconColor: "text-indigo-600",
-    name: "Sales Orders",
-    whenToUse: "To record a customer's formal order for your files. In pull-based manufacturing this is a demand capture record — it does not trigger production. Check finished goods stock availability before committing a delivery date.",
-    thinkOfItAs: "Order book entry",
-    commonMistake:
-      "Skipping the Sales Order and going straight to Invoice — you lose the customer PO reference and delivery date tracking.",
-  },
-  {
-    icon: Truck,
-    iconBg: "bg-slate-100",
-    iconColor: "text-slate-600",
-    name: "Dispatch Notes",
-    whenToUse: "When goods go to a customer with a truck. Has vehicle number, driver, LR number and packing list.",
-    thinkOfItAs: "Lorry receipt",
-    commonMistake:
-      "Not creating a Dispatch Note — you have no record of which vehicle carried which goods.",
-  },
-  {
-    icon: CheckCircle2,
+    title: "Inward Team",
+    icon: PackageCheck,
     iconBg: "bg-teal-50",
     iconColor: "text-teal-600",
-    name: "FAT Certificates",
-    whenToUse: "FAT drafts are created automatically when you Record Build. The quality team fills in test results at any time — during or after assembly. No need to wait.",
-    thinkOfItAs: "The test report — pre-created at Record Build and waiting to be filled in.",
-    commonMistake:
-      "Do not create FAT certificates manually. They are auto-created when you Record Build. Just open the draft and fill in the test results.",
+    content:
+      "Creates Stage 1 GRN when goods arrive from a vendor against a PO — records quantities received, no quality check at this stage. Also creates Stage 1 DC Return GRN when processed components come back from job work vendors — again, quantity check only. Once saved, the GRN automatically moves to the QC Team.",
   },
   {
-    icon: BookOpen,
-    iconBg: "bg-blue-50",
-    iconColor: "text-blue-600",
-    name: "Stock Ledger",
-    whenToUse: "View the complete history of every stock movement — purchases, assemblies, dispatches.",
-    thinkOfItAs: "Stock passbook",
-    commonMistake:
-      "Using this to try to manually adjust stock — use it to read, not to write. Stock adjustments should come from proper documents.",
+    title: "QC Team",
+    icon: ClipboardList,
+    iconBg: "bg-purple-50",
+    iconColor: "text-purple-600",
+    content:
+      "Handles Stage 2 GRN for all incoming goods — both PO receipts and DC job work returns. Opens the GRN list, filters by Quality Pending, and records inspection results for each line item. Approves or rejects quantities based on quality. Their approval is the gate that decides what enters stock and what gets rejected. Once Stage 2 is saved, PO GRNs move to the Storekeeper Queue. DC return GRNs go directly back into stock.",
   },
   {
-    icon: Factory,
-    iconBg: "bg-orange-50",
-    iconColor: "text-orange-600",
-    name: "WIP Register",
-    whenToUse: "See everything in progress across all vendors at a glance — quantities, days out, overdue.",
-    thinkOfItAs: "Factory floor board",
-    commonMistake:
-      "Not checking this daily — overdue vendor returns go unnoticed and GST Rule 45 deadlines are missed.",
+    title: "Storekeeper",
+    icon: Package,
+    iconBg: "bg-amber-50",
+    iconColor: "text-amber-600",
+    content:
+      "Has two main responsibilities. First — after QC clears a PO GRN, confirms physical receipt into store via the Storekeeper Queue. This is the final step before stock enters the system for PO receipts. Second — when an Assembly Order is raised, a Material Issue Request appears in the Storekeeper Queue. The Storekeeper picks the required components from the shelf and confirms the issue. This releases materials to the Assembly Team and reduces component stock.",
   },
   {
-    icon: AlertTriangle,
-    iconBg: "bg-red-50",
-    iconColor: "text-red-600",
-    name: "Reorder Alerts",
-    whenToUse: "The primary production trigger — check this page every morning. When any item falls below minimum stock the system fires an alert here. Everything starts here: raise POs for raw materials, raise DCs for processing.",
-    thinkOfItAs: "Smart purchase reminder",
-    commonMistake:
-      "Ignoring amber alerts — by the time it turns red you may already have a production stoppage.",
-  },
-  {
-    icon: BarChart2,
-    iconBg: "bg-violet-50",
-    iconColor: "text-violet-600",
-    name: "Vendor Scorecards",
-    whenToUse: "Review vendor performance — on-time delivery rate, rejection rate, response time.",
-    thinkOfItAs: "Report card",
-    commonMistake:
-      "Not recording receipts — your outstanding debtors report will show everyone as unpaid even when they have paid.",
-  },
-  {
-    icon: Receipt,
+    title: "Assembly Team",
+    icon: Layers,
     iconBg: "bg-green-50",
     iconColor: "text-green-600",
-    name: "Receipts",
-    whenToUse: "When a customer pays an invoice. Records payment mode, UTR number and updates invoice status.",
-    thinkOfItAs: "Payment acknowledgment",
-    commonMistake:
-      "Not recording receipts — your outstanding debtors report will show everyone as unpaid even when they have paid.",
+    content:
+      "Raises Assembly Orders for sub-assemblies and finished goods when stock falls below minimum — using the Raise Assembly Order button on the Dashboard alert. Monitors the Assembly Order for material availability — once the Storekeeper confirms the MIR, materials are ready. Marks the Assembly Order complete once production is done. Completed goods enter stock automatically.",
   },
   {
-    icon: Trash2,
-    iconBg: "bg-red-50",
-    iconColor: "text-red-600",
-    name: "Scrap Register",
-    whenToUse: "When material is rejected, damaged or scrapped during production.",
-    thinkOfItAs: "Rejection log",
-    commonMistake:
-      "Not recording scrap — you lose track of cost of poor quality and your stock counts are wrong.",
-  },
-  {
-    icon: Hash,
+    title: "Admin",
+    icon: Settings,
     iconBg: "bg-slate-100",
     iconColor: "text-slate-600",
-    name: "Serial Numbers",
-    whenToUse: "They are created automatically when you click Record Build in Stock Register — you never need to create them manually. Each finished unit gets a unique serial number at the moment of Record Build.",
-    thinkOfItAs: "The unit's birth certificate — created when you Record Build, tracks the unit through FAT, invoice, dispatch, and warranty.",
-    commonMistake:
-      "Serial numbers are created at Record Build, not manually. They exist from the moment you record the build so FAT testing can begin immediately.",
+    content:
+      "Manages all master data — Items, Parties, BOM, Reorder Rules. Handles all Settings including company profile, document numbering, and customisation. Runs Data Imports for initial setup and updates. Downloads GST Reports. Manages the Danger Zone for data resets before go-live or at the start of a new financial year.",
+  },
+  {
+    title: "Finance Team (Coming Soon)",
+    icon: Briefcase,
+    iconBg: "bg-indigo-50",
+    iconColor: "text-indigo-600",
+    content:
+      "Will have access to Invoices, Receipts, and GST Reports for accounting and compliance purposes. Role-based access controls for Finance are planned for a future update.",
   },
 ];
 
-function FeatureReferenceTab() {
-  const [q, setQ] = useState("");
-  const lower = q.toLowerCase();
-  const filtered = FEATURES.filter(
-    (f) =>
-      !q ||
-      f.name.toLowerCase().includes(lower) ||
-      f.whenToUse.toLowerCase().includes(lower) ||
-      f.thinkOfItAs.toLowerCase().includes(lower) ||
-      f.commonMistake.toLowerCase().includes(lower)
-  );
-
+function RoleGuideTab() {
   return (
-    <div className="space-y-4">
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search features..."
-          className="pl-9"
-        />
-      </div>
-
-      {/* Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filtered.map((f) => (
-          <div
-            key={f.name}
-            className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-2.5"
-          >
-            {/* Icon + name */}
-            <div className="flex items-center gap-2.5">
-              <div
-                className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 ${f.iconBg}`}
-              >
-                <f.icon className={`h-4 w-4 ${f.iconColor}`} />
-              </div>
-              <p className="font-bold text-slate-900 leading-tight">{f.name}</p>
+    <div className="space-y-3">
+      <p className="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
+        Each team has a defined set of actions in BizDocs. Use this as a
+        reference for who does what.
+      </p>
+      {ROLES.map((role) => (
+        <div
+          key={role.title}
+          className="border border-slate-200 rounded-xl overflow-hidden bg-white"
+        >
+          <div className="flex items-center gap-3 px-4 py-3.5">
+            <div
+              className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${role.iconBg}`}
+            >
+              <role.icon className={`h-4 w-4 ${role.iconColor}`} />
             </div>
-
-            {/* When to use */}
-            <p className="text-sm text-slate-600 leading-snug">{f.whenToUse}</p>
-
-            {/* Think of it as */}
-            <p className="text-sm text-blue-600 italic">"{f.thinkOfItAs}"</p>
-
-            {/* Common mistake */}
-            <div className="flex items-start gap-1.5 pt-1 border-t border-slate-100">
-              <AlertCircle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />
-              <p className="text-xs text-red-600 italic leading-snug">
-                {f.commonMistake}
-              </p>
-            </div>
+            <p className="font-semibold text-slate-800 text-sm">{role.title}</p>
           </div>
-        ))}
-        {filtered.length === 0 && (
-          <p className="col-span-3 text-sm text-muted-foreground py-8 text-center">
-            No features match "{q}"
-          </p>
-        )}
-      </div>
+          <div className="px-4 pb-4 pt-1 border-t border-slate-100 text-sm text-slate-600 leading-relaxed">
+            {role.content}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
+const TABS: { id: TabId; label: string }[] = [
+  { id: "getting-started", label: "Getting Started" },
+  { id: "daily-ops", label: "Daily Operations" },
+  { id: "role-guide", label: "Role Guide" },
+];
+
 export default function HowToUse() {
   const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState<TabId>("getting-started");
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-5xl mx-auto">
+    <div className="p-4 md:p-6 space-y-6 max-w-3xl mx-auto">
+      {/* Back */}
       <button
         onClick={() => navigate("/settings")}
         className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 transition-colors"
@@ -663,75 +431,44 @@ export default function HowToUse() {
         Back to Settings
       </button>
 
+      {/* Header */}
       <div className="flex items-center gap-3">
-        <div className="h-10 w-10 rounded-lg bg-blue-50 flex items-center justify-center">
+        <div className="h-10 w-10 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
           <BookOpen className="h-5 w-5 text-blue-600" />
         </div>
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">
             How to Use BizDocs
           </h1>
-          <p className="text-sm text-muted-foreground">
-            Step-by-step guide — what to do first, what comes after, and when
-            to use each feature
+          <p className="text-sm text-slate-500 mt-0.5">
+            Setup guide, daily operations, and role responsibilities
           </p>
         </div>
       </div>
 
-      <Tabs defaultValue="getting-started">
-        <TabsList className="w-full sm:w-auto">
-          <TabsTrigger value="getting-started">Getting Started</TabsTrigger>
-          <TabsTrigger value="daily-ops">Daily Operations</TabsTrigger>
-          <TabsTrigger value="reference">Feature Reference</TabsTrigger>
-        </TabsList>
+      {/* Tab buttons */}
+      <div className="flex gap-1 border-b border-slate-200">
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+              activeTab === tab.id
+                ? "border-blue-600 text-blue-700"
+                : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-        <TabsContent value="getting-started" className="mt-6">
-          <div className="mb-5 rounded-xl bg-blue-50 border border-blue-200 px-4 py-3 flex items-start gap-3">
-            <CheckCircle2 className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-semibold text-blue-900">Complete these steps in order before going live.</p>
-              <p className="text-sm text-blue-800 mt-0.5">
-                Steps 1–8 are one-time setup — after that the system runs itself.
-              </p>
-            </div>
-          </div>
-          <div className="mb-5">
-            <h2 className="text-base font-semibold text-slate-900">
-              Setup checklist — follow this order when you first start
-            </h2>
-            <p className="text-sm text-slate-500 mt-0.5">
-              Each step depends on the one before it. Follow the order and
-              you'll be fully operational in under two hours.
-            </p>
-          </div>
-          <GettingStartedTab />
-        </TabsContent>
-
-        <TabsContent value="daily-ops" className="mt-6">
-          <div className="mb-5">
-            <h2 className="text-base font-semibold text-slate-900">
-              The Production Cycle
-            </h2>
-            <p className="text-sm text-slate-500 mt-0.5">
-              Production is driven by stock levels, not by customer orders — buy and make when stock is low, sell from what is built. Click any pill to open that feature.
-            </p>
-          </div>
-          <OperationsFlowTab />
-        </TabsContent>
-
-        <TabsContent value="reference" className="mt-6">
-          <div className="mb-5">
-            <h2 className="text-base font-semibold text-slate-900">
-              Feature Reference
-            </h2>
-            <p className="text-sm text-slate-500 mt-0.5">
-              Quick lookup — when to use each feature, what it's analogous to,
-              and the most common mistake to avoid.
-            </p>
-          </div>
-          <FeatureReferenceTab />
-        </TabsContent>
-      </Tabs>
+      {/* Tab content */}
+      <div>
+        {activeTab === "getting-started" && <GettingStartedTab />}
+        {activeTab === "daily-ops" && <DailyOpsTab />}
+        {activeTab === "role-guide" && <RoleGuideTab />}
+      </div>
     </div>
   );
 }
