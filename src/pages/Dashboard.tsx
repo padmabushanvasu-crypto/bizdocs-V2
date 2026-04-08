@@ -520,10 +520,10 @@ export default function Dashboard() {
               <AlertPill label="Overdue POs" count={dashData!.overduePOCount} colour="red" onClick={() => navigate("/purchase-orders")} />
             )}
             {criticalCount > 0 && (
-              <AlertPill label="Needs Action"       count={criticalCount}   colour="red"   onClick={() => navigate("/procurement-intelligence?filter=needs_action")} />
+              <AlertPill label="Needs Action"       count={criticalCount}   colour="red"   onClick={() => navigate("/reorder-alerts?filter=needs_action")} />
             )}
             {actionedCount > 0 && (
-              <AlertPill label="Being Actioned"     count={actionedCount}   colour="amber" onClick={() => navigate("/procurement-intelligence")} />
+              <AlertPill label="Being Actioned"     count={actionedCount}   colour="amber" onClick={() => navigate("/reorder-alerts")} />
             )}
             {pendingQCCount > 0 && (
               <AlertPill
@@ -576,7 +576,7 @@ export default function Dashboard() {
           <div className={`bg-white rounded-xl border shadow-sm p-4 lg:p-5 ${criticalCount > 0 ? 'border-red-300' : actionedCount > 0 ? 'border-blue-300' : 'border-slate-200'}`}>
             <div className="flex items-center justify-between mb-3">
               <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Stock Alerts</p>
-              <button className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors" onClick={() => navigate("/procurement-intelligence")}>
+              <button className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors" onClick={() => navigate("/reorder-alerts")}>
                 View All →
               </button>
             </div>
@@ -586,7 +586,7 @@ export default function Dashboard() {
               {criticalCount > 0 && (
                 <div
                   className="rounded-lg border-l-[3px] border-red-500 bg-red-50 px-3 py-2 cursor-pointer hover:bg-red-100 transition-colors"
-                  onClick={() => navigate("/procurement-intelligence?filter=needs_action")}
+                  onClick={() => navigate("/reorder-alerts?filter=needs_action")}
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-red-700 uppercase tracking-wider">Needs Action</span>
@@ -664,7 +664,7 @@ export default function Dashboard() {
             <div className="mt-3 pt-2 border-t border-slate-100">
               <button
                 className="text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors"
-                onClick={() => navigate("/procurement-intelligence")}
+                onClick={() => navigate("/reorder-alerts")}
               >
                 View full procurement intelligence →
               </button>
