@@ -336,13 +336,36 @@ export default function JobCardDetail() {
                 {completedSteps}/{totalSteps}
               </span>
             </div>
-            {/* Mini progress bar */}
-            <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-emerald-500 transition-all"
-                style={{ width: totalSteps > 0 ? `${Math.round((completedSteps / totalSteps) * 100)}%` : "0%" }}
-              />
-            </div>
+            {/* Segmented progress bar */}
+            {totalSteps > 0 && (() => {
+              const pct = Math.round((completedSteps / totalSteps) * 100);
+              const pillColor = pct === 100 ? "bg-emerald-100 text-emerald-700" : pct > 0 ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500";
+              return (
+                <div className="space-y-1.5">
+                  <div className="flex gap-0.5 h-3">
+                    {Array.from({ length: totalSteps }).map((_, i) => {
+                      const filled = i < completedSteps;
+                      const isFirst = i === 0;
+                      const isLast = i === totalSteps - 1;
+                      return (
+                        <div
+                          key={i}
+                          className={`flex-1 h-full transition-colors ${filled ? "bg-emerald-500" : "bg-slate-100"} ${isFirst ? "rounded-l-full" : ""} ${isLast ? "rounded-r-full" : ""}`}
+                        />
+                      );
+                    })}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-500">
+                      {completedSteps} of {totalSteps} stages complete
+                    </span>
+                    <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded ${pillColor}`}>
+                      {pct}%
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
       </div>
