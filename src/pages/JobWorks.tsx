@@ -29,17 +29,25 @@ const priorityCls: Record<string, string> = {
 function MiniProgress({ done, total }: { done: number; total: number }) {
   if (total === 0) return <span className="text-slate-300 text-xs">—</span>;
   const pct = Math.round((done / total) * 100);
+  const pillColor = pct === 100
+    ? "bg-emerald-100 text-emerald-700"
+    : pct > 0
+    ? "bg-amber-100 text-amber-700"
+    : "bg-slate-100 text-slate-500";
   return (
-    <div className="flex items-center gap-1.5 min-w-[80px]">
-      <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
-        <div
-          className="h-full rounded-full bg-blue-500 transition-all"
-          style={{ width: `${pct}%` }}
-        />
+    <div className="min-w-[80px] space-y-1">
+      <div className="flex gap-0.5 h-2">
+        {Array.from({ length: total }).map((_, i) => (
+          <div
+            key={i}
+            className={`flex-1 h-full transition-colors ${i < done ? "bg-emerald-500" : "bg-slate-100"} ${i === 0 ? "rounded-l-full" : ""} ${i === total - 1 ? "rounded-r-full" : ""}`}
+          />
+        ))}
       </div>
-      <span className="text-[11px] text-slate-500 tabular-nums whitespace-nowrap">
-        {done}/{total}
-      </span>
+      <div className="flex items-center justify-between gap-1">
+        <span className="text-[10px] text-slate-500 tabular-nums">{done}/{total}</span>
+        <span className={`text-[10px] font-semibold px-1 py-px rounded ${pillColor}`}>{pct}%</span>
+      </div>
     </div>
   );
 }
