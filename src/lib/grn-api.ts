@@ -1313,6 +1313,7 @@ export interface AwaitingStoreLineItem {
   description: string;
   drawing_number: string | null;
   conforming_qty: number | null;
+  unit: string | null;
 }
 
 export async function fetchAwaitingStoreLineItems(): Promise<AwaitingStoreLineItem[]> {
@@ -1320,7 +1321,7 @@ export async function fetchAwaitingStoreLineItems(): Promise<AwaitingStoreLineIt
   if (!companyId) return [];
   const { data: lineItems, error } = await (supabase as any)
     .from('grn_line_items')
-    .select('id, grn_id, description, drawing_number, conforming_qty')
+    .select('id, grn_id, description, drawing_number, conforming_qty, unit')
     .eq('company_id', companyId)
     .eq('is_final_grn', true)
     .neq('store_confirmed', true)
@@ -1345,7 +1346,29 @@ export async function fetchAwaitingStoreLineItems(): Promise<AwaitingStoreLineIt
     description: l.description,
     drawing_number: l.drawing_number ?? null,
     conforming_qty: l.conforming_qty ?? null,
+    unit: l.unit ?? null,
   }));
+}
+
+export async function storeConfirmGRNItems(
+  grnId: string,
+  items: Array<{ id: string; storeQty?: number | null; location?: string | null }>,
+  data: { confirmedBy: string; confirmedAt: string }
+): Promise<void> {
+  const confirmedAt = new Date(data.confirmedAt).toISOString();
+  for (const item of items) {
+    const { error } = await (supabase as any)
+      .from('grn_line_items')
+      .update({
+        store_confirmed:    true,
+        store_confirmed_by: data.confirmedBy,
+        store_confirmed_at: confirmedAt,
+        store_location:     item.location ?? null,
+      })
+      .eq('id', item.id);
+    if (error) throw error;
+  }
+  await storeConfirmGRN(grnId, { confirmedBy: data.confirmedBy, confirmedAt: data.confirmedAt });
 }
 
 export async function storeConfirmLineItem(

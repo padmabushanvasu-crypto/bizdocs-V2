@@ -1,35 +1,61 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { PackageCheck, ArrowRight, Search, History } from "lucide-react";
+import { PackageCheck, ArrowRight, Search, History, CheckCircle2 } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import {
   fetchAwaitingStoreLineItems,
-  storeConfirmLineItem,
+  storeConfirmGRNItems,
   fetchStoreConfirmedHistory,
   type AwaitingStoreLineItem,
   type StoreConfirmedItem,
 } from "@/lib/grn-api";
 import { logAudit } from "@/lib/audit-api";
 
+// ── per-item editable state ──────────────────────────────────────────────────
+type ItemState = {
+  storeQty: string;
+  location: string;
+  checked: boolean;
+};
+
+// ── per-GRN form state ───────────────────────────────────────────────────────
+type GrnFormState = {
+  confirmedBy: string;
+  confirmedAt: string;
+  items: Record<string, ItemState>; // key = line item id
+};
+
+function buildInitialGrnForms(
+  grouped: Record<string, AwaitingStoreLineItem[]>
+): Record<string, GrnFormState> {
+  const today = format(new Date(), "yyyy-MM-dd");
+  const result: Record<string, GrnFormState> = {};
+  for (const [grnId, items] of Object.entries(grouped)) {
+    const itemStates: Record<string, ItemState> = {};
+    for (const item of items) {
+      itemStates[item.id] = {
+        storeQty: item.conforming_qty != null ? String(item.conforming_qty) : "",
+        location: "",
+        checked: true,
+      };
+    }
+    result[grnId] = { confirmedBy: "", confirmedAt: today, items: itemStates };
+  }
+  return result;
+}
+
 export default function GrnStoreQueue() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-
-  const [selectedLine, setSelectedLine] = useState<AwaitingStoreLineItem | null>(null);
-  const [confirmedBy, setConfirmedBy] = useState("");
-  const [confirmedAt, setConfirmedAt] = useState(format(new Date(), "yyyy-MM-dd"));
-  const [location, setLocation]       = useState("");
   const [historySearch, setHistorySearch] = useState("");
 
+  // ── data ──────────────────────────────────────────────────────────────────
   const { data: lineItems = [], isLoading } = useQuery({
     queryKey: ["awaiting-store-line-items"],
     queryFn: fetchAwaitingStoreLineItems,
@@ -42,6 +68,47 @@ export default function GrnStoreQueue() {
     staleTime: 30_000,
   });
 
+  // Group by GRN
+  const grouped = lineItems.reduce<Record<string, AwaitingStoreLineItem[]>>((acc, item) => {
+    if (!acc[item.grn_id]) acc[item.grn_id] = [];
+    acc[item.grn_id].push(item);
+    return acc;
+  }, {});
+
+  // ── per-GRN form state ────────────────────────────────────────────────────
+  const [grnForms, setGrnForms] = useState<Record<string, GrnFormState>>({});
+
+  useEffect(() => {
+    setGrnForms(buildInitialGrnForms(grouped));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lineItems]);
+
+  // ── helpers to update state ───────────────────────────────────────────────
+  function setGrnField<K extends keyof Omit<GrnFormState, "items">>(
+    grnId: string,
+    field: K,
+    value: GrnFormState[K]
+  ) {
+    setGrnForms((prev) => ({
+      ...prev,
+      [grnId]: { ...prev[grnId], [field]: value },
+    }));
+  }
+
+  function setItemField(grnId: string, itemId: string, patch: Partial<ItemState>) {
+    setGrnForms((prev) => ({
+      ...prev,
+      [grnId]: {
+        ...prev[grnId],
+        items: {
+          ...prev[grnId]?.items,
+          [itemId]: { ...prev[grnId]?.items?.[itemId], ...patch },
+        },
+      },
+    }));
+  }
+
+  // ── stats ─────────────────────────────────────────────────────────────────
   const today = format(new Date(), "yyyy-MM-dd");
   const confirmedTodayCount = history.filter(
     (item) => item.store_confirmed_at?.startsWith(today)
@@ -56,64 +123,87 @@ export default function GrnStoreQueue() {
       )
     : history;
 
-  const confirmMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedLine) throw new Error("No item selected");
-      if (!confirmedBy.trim()) throw new Error("Received By is required");
-      await storeConfirmLineItem(selectedLine.id, {
-        confirmedBy,
-        confirmedAt,
-        location: location || null,
+  // ── per-GRN confirm mutation factory ─────────────────────────────────────
+  const [confirming, setConfirming] = useState<Record<string, boolean>>({});
+
+  async function handleConfirmGRN(grnId: string, grnItems: AwaitingStoreLineItem[]) {
+    const form = grnForms[grnId];
+    if (!form) return;
+
+    if (!form.confirmedBy.trim()) {
+      toast({ title: "Received By is required", variant: "destructive" });
+      return;
+    }
+
+    const checkedItems = grnItems.filter((item) => form.items[item.id]?.checked);
+    if (checkedItems.length === 0) {
+      toast({ title: "No items selected", description: "Check at least one item to confirm.", variant: "destructive" });
+      return;
+    }
+
+    setConfirming((prev) => ({ ...prev, [grnId]: true }));
+    try {
+      await storeConfirmGRNItems(
+        grnId,
+        checkedItems.map((item) => ({
+          id: item.id,
+          storeQty: form.items[item.id]?.storeQty
+            ? Number(form.items[item.id].storeQty)
+            : item.conforming_qty,
+          location: form.items[item.id]?.location || null,
+        })),
+        { confirmedBy: form.confirmedBy, confirmedAt: form.confirmedAt }
+      );
+      await logAudit("grn", grnId, "Store receipt confirmed (batch)", {
+        itemCount: checkedItems.length,
+        confirmedBy: form.confirmedBy,
       });
-      await logAudit("grn", selectedLine.grn_id, "Store receipt confirmed for line item", {
-        lineItemId: selectedLine.id,
-        description: selectedLine.description,
-        confirmedBy,
-        location,
-      });
-    },
-    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["awaiting-store-line-items"] });
       queryClient.invalidateQueries({ queryKey: ["awaiting-store-count"] });
       queryClient.invalidateQueries({ queryKey: ["store-confirmed-history"] });
       queryClient.invalidateQueries({ queryKey: ["grns"] });
-      setSelectedLine(null);
-      setConfirmedBy("");
-      setLocation("");
-      toast({ title: "Store receipt confirmed", description: "Item marked as received in store." });
-    },
-    onError: (err: any) =>
-      toast({ title: "Error confirming receipt", description: err.message, variant: "destructive" }),
-  });
+      toast({
+        title: "Store receipt confirmed",
+        description: `${checkedItems.length} item${checkedItems.length !== 1 ? "s" : ""} received in store.`,
+      });
+    } catch (err: any) {
+      toast({ title: "Error confirming receipt", description: err.message, variant: "destructive" });
+    } finally {
+      setConfirming((prev) => ({ ...prev, [grnId]: false }));
+    }
+  }
 
-  // Group line items by GRN for display
-  const grouped = lineItems.reduce<Record<string, AwaitingStoreLineItem[]>>((acc, item) => {
-    if (!acc[item.grn_id]) acc[item.grn_id] = [];
-    acc[item.grn_id].push(item);
-    return acc;
-  }, {});
+  const pendingGrnCount = Object.keys(grouped).length;
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
+    <div className="p-6 max-w-5xl mx-auto space-y-6">
       {/* Page header */}
       <div className="flex items-center gap-3">
         <PackageCheck className="h-6 w-6 text-amber-600" />
         <div>
           <h1 className="text-xl font-bold text-slate-900">Store Receipt Queue</h1>
-          <p className="text-xs text-slate-500">Final GRN items cleared by QC and awaiting physical receipt confirmation</p>
+          <p className="text-xs text-slate-500">
+            GRNs cleared by QC and awaiting physical receipt confirmation
+          </p>
         </div>
       </div>
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 gap-4">
         <div className="border border-amber-200 bg-amber-50 rounded-xl px-5 py-4">
-          <p className="text-xs font-medium text-amber-700 uppercase tracking-wide">Pending Confirmation</p>
-          <p className="text-3xl font-bold text-amber-900 mt-1 tabular-nums">{lineItems.length}</p>
-          <p className="text-xs text-amber-600 mt-0.5">items awaiting store receipt</p>
+          <p className="text-xs font-medium text-amber-700 uppercase tracking-wide">
+            Pending Confirmation
+          </p>
+          <p className="text-3xl font-bold text-amber-900 mt-1 tabular-nums">{pendingGrnCount}</p>
+          <p className="text-xs text-amber-600 mt-0.5">GRNs awaiting store receipt</p>
         </div>
         <div className="border border-emerald-200 bg-emerald-50 rounded-xl px-5 py-4">
-          <p className="text-xs font-medium text-emerald-700 uppercase tracking-wide">Confirmed Today</p>
-          <p className="text-3xl font-bold text-emerald-900 mt-1 tabular-nums">{confirmedTodayCount}</p>
+          <p className="text-xs font-medium text-emerald-700 uppercase tracking-wide">
+            Confirmed Today
+          </p>
+          <p className="text-3xl font-bold text-emerald-900 mt-1 tabular-nums">
+            {confirmedTodayCount}
+          </p>
           <p className="text-xs text-emerald-600 mt-0.5">items received in store today</p>
         </div>
       </div>
@@ -121,79 +211,189 @@ export default function GrnStoreQueue() {
       {/* Pending queue */}
       {isLoading ? (
         <p className="text-sm text-slate-400 animate-pulse">Loading…</p>
-      ) : lineItems.length === 0 ? (
-        <div className="border border-dashed border-slate-200 rounded-xl p-12 text-center text-slate-400">
-          <PackageCheck className="h-8 w-8 mx-auto mb-3 text-slate-300" />
-          <p className="text-sm font-medium">No items awaiting store confirmation</p>
+      ) : pendingGrnCount === 0 ? (
+        <div className="border border-dashed border-emerald-200 bg-emerald-50/40 rounded-xl p-14 text-center">
+          <CheckCircle2 className="h-10 w-10 mx-auto mb-3 text-emerald-500" />
+          <p className="text-sm font-semibold text-emerald-800">All caught up</p>
+          <p className="text-xs text-emerald-600 mt-1">No items awaiting store receipt</p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-6">
           {Object.entries(grouped).map(([grnId, items]) => {
             const first = items[0];
+            const form = grnForms[grnId];
+            const checkedCount = form
+              ? Object.values(form.items).filter((s) => s.checked).length
+              : 0;
+            const isSubmitting = confirming[grnId] ?? false;
+
             return (
-              <div key={grnId} className="border border-slate-200 rounded-xl overflow-hidden">
-                {/* GRN header */}
-                <div className="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center justify-between">
+              <div
+                key={grnId}
+                className="border border-slate-200 rounded-xl overflow-hidden shadow-sm"
+              >
+                {/* GRN card header */}
+                <div className="bg-slate-800 px-4 py-3 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <button
-                      className="font-mono font-semibold text-blue-700 text-sm hover:underline"
+                      className="font-mono font-bold text-white text-sm hover:underline"
                       onClick={() => navigate(`/grn/${grnId}`)}
                     >
                       {first.grn_number}
                     </button>
                     {first.vendor_name && (
-                      <span className="text-xs text-slate-500">{first.vendor_name}</span>
+                      <span className="text-xs text-slate-300">{first.vendor_name}</span>
                     )}
                     {first.grn_date && (
                       <span className="text-xs text-slate-400">
                         {format(new Date(first.grn_date), "dd MMM yyyy")}
                       </span>
                     )}
+                    <span className="text-xs bg-amber-500 text-white px-2 py-0.5 rounded-full font-medium tabular-nums">
+                      {items.length} item{items.length !== 1 ? "s" : ""}
+                    </span>
                   </div>
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="text-slate-500"
+                    className="text-slate-300 hover:text-white hover:bg-slate-700"
                     onClick={() => navigate(`/grn/${grnId}`)}
                   >
                     View GRN <ArrowRight className="h-3.5 w-3.5 ml-1" />
                   </Button>
                 </div>
 
-                {/* Line items */}
-                <table className="w-full border-collapse text-sm">
-                  <thead className="bg-white border-b border-slate-100">
-                    <tr>
-                      <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
-                      <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Drawing No.</th>
-                      <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Conforming Qty</th>
-                      <th className="px-3 py-2 bg-slate-50 border-b border-slate-200" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((item) => (
-                      <tr key={item.id} className="border-b border-slate-100 last:border-0">
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.description}</td>
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{item.drawing_number || "—"}</td>
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-semibold">
-                          {item.conforming_qty != null ? item.conforming_qty : "—"}
-                        </td>
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right">
-                          <Button
-                            size="sm"
-                            className="bg-amber-600 hover:bg-amber-700 text-white"
-                            onClick={() => {
-                              setSelectedLine(item);
-                              setConfirmedAt(format(new Date(), "yyyy-MM-dd"));
-                            }}
-                          >
-                            Confirm Receipt
-                          </Button>
-                        </td>
+                {/* Items table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200">
+                        <th className="px-3 py-2 w-8" />
+                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-left">
+                          Description
+                        </th>
+                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-left">
+                          Drawing No.
+                        </th>
+                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">
+                          QC Accepted
+                        </th>
+                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">
+                          Store Qty
+                        </th>
+                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-left">
+                          Location / Rack
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {items.map((item) => {
+                        const itemState = form?.items[item.id];
+                        return (
+                          <tr
+                            key={item.id}
+                            className={`border-b border-slate-100 last:border-0 transition-colors ${
+                              itemState?.checked ? "bg-white" : "bg-slate-50/60 opacity-60"
+                            }`}
+                          >
+                            {/* Confirm checkbox */}
+                            <td className="px-3 py-2.5 text-center">
+                              <input
+                                type="checkbox"
+                                checked={itemState?.checked ?? true}
+                                onChange={(e) =>
+                                  setItemField(grnId, item.id, { checked: e.target.checked })
+                                }
+                                className="h-4 w-4 accent-emerald-600 cursor-pointer"
+                              />
+                            </td>
+                            {/* Description */}
+                            <td className="px-3 py-2.5 text-slate-800">
+                              <p className="font-medium leading-snug">{item.description}</p>
+                            </td>
+                            {/* Drawing number */}
+                            <td className="px-3 py-2.5 text-slate-500 font-mono text-xs">
+                              {item.drawing_number || "—"}
+                            </td>
+                            {/* QC accepted qty */}
+                            <td className="px-3 py-2.5 text-right tabular-nums font-mono font-semibold text-slate-800">
+                              {item.conforming_qty != null ? (
+                                <>
+                                  {item.conforming_qty}
+                                  {item.unit && (
+                                    <span className="text-xs text-slate-400 ml-1 font-normal">
+                                      {item.unit}
+                                    </span>
+                                  )}
+                                </>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+                            {/* Store qty input */}
+                            <td className="px-3 py-2.5 text-right">
+                              <Input
+                                type="number"
+                                min={0}
+                                value={itemState?.storeQty ?? ""}
+                                onChange={(e) =>
+                                  setItemField(grnId, item.id, { storeQty: e.target.value })
+                                }
+                                disabled={!itemState?.checked}
+                                className="w-24 h-7 text-sm text-right tabular-nums ml-auto"
+                              />
+                            </td>
+                            {/* Location input */}
+                            <td className="px-3 py-2.5">
+                              <Input
+                                value={itemState?.location ?? ""}
+                                onChange={(e) =>
+                                  setItemField(grnId, item.id, { location: e.target.value })
+                                }
+                                disabled={!itemState?.checked}
+                                placeholder="e.g. Rack A3, Bin 7"
+                                className="h-7 text-sm min-w-[160px]"
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Card footer — confirm fields + button */}
+                <div className="bg-slate-50 border-t border-slate-200 px-4 py-3 flex flex-wrap items-end gap-4">
+                  <div className="flex-1 min-w-[180px]">
+                    <Label className="text-xs font-medium text-slate-600">
+                      Received By <span className="text-red-400">*</span>
+                    </Label>
+                    <Input
+                      value={form?.confirmedBy ?? ""}
+                      onChange={(e) => setGrnField(grnId, "confirmedBy", e.target.value)}
+                      placeholder="Full name"
+                      className="mt-1 h-8 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-medium text-slate-600">Date Received</Label>
+                    <Input
+                      type="date"
+                      value={form?.confirmedAt ?? ""}
+                      onChange={(e) => setGrnField(grnId, "confirmedAt", e.target.value)}
+                      className="mt-1 h-8 text-sm w-40"
+                    />
+                  </div>
+                  <Button
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 self-end"
+                    disabled={isSubmitting || checkedCount === 0 || !form?.confirmedBy.trim()}
+                    onClick={() => handleConfirmGRN(grnId, items)}
+                  >
+                    {isSubmitting
+                      ? "Saving…"
+                      : `Confirm ${checkedCount} Item${checkedCount !== 1 ? "s" : ""}`}
+                  </Button>
+                </div>
               </div>
             );
           })}
@@ -221,35 +421,58 @@ export default function GrnStoreQueue() {
 
         {filteredHistory.length === 0 ? (
           <div className="border border-dashed border-slate-200 rounded-xl p-8 text-center text-slate-400">
-            <p className="text-sm">{history.length === 0 ? "No store receipts confirmed yet" : "No results match your search"}</p>
+            <p className="text-sm">
+              {history.length === 0
+                ? "No store receipts confirmed yet"
+                : "No results match your search"}
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-slate-200">
             <table className="w-full border-collapse text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
-                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
-                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty</th>
-                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">GRN Reference</th>
-                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Confirmed By</th>
-                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Date & Time</th>
-                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Location</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-left">
+                    Description
+                  </th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">
+                    Qty
+                  </th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-left">
+                    GRN Reference
+                  </th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-left">
+                    Confirmed By
+                  </th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-left">
+                    Date &amp; Time
+                  </th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-left">
+                    Location
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {filteredHistory.map((item: StoreConfirmedItem) => (
-                  <tr key={item.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50">
-                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
+                  <tr
+                    key={item.id}
+                    className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50"
+                  >
+                    <td className="px-3 py-2 text-sm text-slate-700 text-left">
                       <p className="font-medium leading-snug">{item.description}</p>
                       {item.drawing_number && (
-                        <p className="text-xs text-slate-400 font-mono mt-0.5">{item.drawing_number}</p>
+                        <p className="text-xs text-slate-400 font-mono mt-0.5">
+                          {item.drawing_number}
+                        </p>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-semibold">
+                    <td className="px-3 py-2 text-sm text-slate-700 text-right tabular-nums font-mono font-semibold">
                       {item.conforming_qty != null ? item.conforming_qty : "—"}
-                      {item.unit && <span className="text-xs text-slate-400 ml-1 font-normal">{item.unit}</span>}
+                      {item.unit && (
+                        <span className="text-xs text-slate-400 ml-1 font-normal">{item.unit}</span>
+                      )}
                     </td>
-                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
+                    <td className="px-3 py-2 text-sm text-slate-700 text-left">
                       <button
                         className="font-mono text-xs font-semibold text-blue-700 hover:underline"
                         onClick={() => navigate(`/grn/${item.grn_id}`)}
@@ -257,12 +480,12 @@ export default function GrnStoreQueue() {
                         {item.grn_number}
                       </button>
                       {item.grn_date && (
-                        <span className="text-xs text-slate-400 mx-1">·</span>
-                      )}
-                      {item.grn_date && (
-                        <span className="text-xs text-slate-400">
-                          {format(new Date(item.grn_date), "dd MMM yyyy")}
-                        </span>
+                        <>
+                          <span className="text-xs text-slate-400 mx-1">·</span>
+                          <span className="text-xs text-slate-400">
+                            {format(new Date(item.grn_date), "dd MMM yyyy")}
+                          </span>
+                        </>
                       )}
                       {item.vendor_name && (
                         <>
@@ -271,15 +494,15 @@ export default function GrnStoreQueue() {
                         </>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
+                    <td className="px-3 py-2 text-sm text-slate-700 text-left">
                       {item.store_confirmed_by || "—"}
                     </td>
-                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left tabular-nums whitespace-nowrap">
+                    <td className="px-3 py-2 text-sm text-slate-700 text-left tabular-nums whitespace-nowrap">
                       {item.store_confirmed_at
                         ? format(new Date(item.store_confirmed_at), "dd MMM yyyy, hh:mm a")
                         : "—"}
                     </td>
-                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
+                    <td className="px-3 py-2 text-sm text-slate-700 text-left">
                       {item.store_location || "—"}
                     </td>
                   </tr>
@@ -289,71 +512,6 @@ export default function GrnStoreQueue() {
           </div>
         )}
       </div>
-
-      {/* Confirm dialog */}
-      <Dialog open={!!selectedLine} onOpenChange={(open) => { if (!open) setSelectedLine(null); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Confirm Store Receipt</DialogTitle>
-          </DialogHeader>
-          {selectedLine && (
-            <div className="space-y-3 py-2">
-              <div className="text-sm text-slate-700 bg-slate-50 rounded-lg px-3 py-2">
-                <p className="font-medium">{selectedLine.description}</p>
-                {selectedLine.drawing_number && (
-                  <p className="text-xs text-slate-500 font-mono mt-0.5">{selectedLine.drawing_number}</p>
-                )}
-                {selectedLine.conforming_qty != null && (
-                  <p className="text-xs text-slate-600 mt-0.5">
-                    Conforming Qty: <span className="font-semibold">{selectedLine.conforming_qty} units</span>
-                  </p>
-                )}
-              </div>
-              <div>
-                <Label className="text-xs font-medium text-slate-600">
-                  Received By (Inward to Store) <span className="text-red-400">*</span>
-                </Label>
-                <Input
-                  value={confirmedBy}
-                  onChange={(e) => setConfirmedBy(e.target.value)}
-                  className="mt-1 text-sm"
-                  placeholder="Full name"
-                />
-              </div>
-              <div>
-                <Label className="text-xs font-medium text-slate-600">
-                  Date Received in Store <span className="text-red-400">*</span>
-                </Label>
-                <Input
-                  type="date"
-                  value={confirmedAt}
-                  onChange={(e) => setConfirmedAt(e.target.value)}
-                  className="mt-1 text-sm"
-                />
-              </div>
-              <div>
-                <Label className="text-xs font-medium text-slate-600">Physical Location / Rack</Label>
-                <Input
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  className="mt-1 text-sm"
-                  placeholder="e.g. Rack A3, Bin 7"
-                />
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSelectedLine(null)}>Cancel</Button>
-            <Button
-              className="bg-amber-600 hover:bg-amber-700 text-white"
-              disabled={confirmMutation.isPending}
-              onClick={() => confirmMutation.mutate()}
-            >
-              {confirmMutation.isPending ? "Saving…" : "Confirm Receipt"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
