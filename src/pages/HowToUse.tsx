@@ -226,11 +226,20 @@ function DailyOpsTab() {
           in-process stock.
         </p>
         <p>
-          After the DC is issued, go to Job Cards and manually create a Job Card
-          linked to that DC. The Job Card tracks the component through every
-          processing stage — turning, drilling, heat treatment, plating, or
-          whatever your process requires. Each stage is marked complete as work
-          progresses. The Job Card step auto-closes when Stage 2 QC is saved.
+          After issuing the DC, open the DC detail page and click{" "}
+          <strong>Create Job Cards</strong>. A dialog will appear showing the
+          BOM processing stages for each line item that has stages defined.
+          Select the applicable stages and confirm — Job Cards are then created
+          for those items. Job Cards track the component through every processing
+          stage — turning, drilling, heat treatment, plating, or whatever your
+          process requires. Each stage is marked complete as work progresses. The
+          Job Card step auto-closes when Stage 2 QC is saved.
+        </p>
+        <p className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 text-amber-800">
+          <strong>Important:</strong> Job Cards are NOT created automatically.
+          After issuing a DC, you must go back into the DC detail page and click
+          "Create Job Cards". Only items with BOM processing stages defined will
+          require a Job Card — items with no stages do not need one.
         </p>
         <p>
           When the vendor returns the processed component, the Inward Team
@@ -334,7 +343,7 @@ const ROLES: RoleItem[] = [
     iconBg: "bg-blue-50",
     iconColor: "text-blue-600",
     content:
-      "Monitors Dashboard reorder alerts. Raises POs when stock falls below minimum using the Raise PO button on the alert. Tracks open POs via the Purchase Orders page. Raises DCs for job work when components need external processing. Also raises invoices for customer dispatches.",
+      "Monitors Dashboard reorder alerts. Raises POs when stock falls below minimum using the Raise PO button on the alert. Tracks open POs via the Purchase Orders page. Raises DCs for job work when components need external processing. After issuing a DC, must go back into the DC detail page and click 'Create Job Cards' to set up processing stage tracking — this is not automatic. Also raises invoices for customer dispatches.",
   },
   {
     title: "Inward Team",

@@ -136,6 +136,22 @@ export default function DeliveryChallanDetail() {
   });
   const processorParties = (processorPartiesData?.data ?? []).filter((p: any) => p.vendor_type === 'processor' || p.vendor_type === 'both');
 
+  const { data: dcJobCardCount } = useQuery({
+    queryKey: ['job-cards-for-dc', id],
+    queryFn: async () => {
+      const companyId = await getCompanyId();
+      if (!companyId) return 0;
+      const { count } = await (supabase as any)
+        .from('job_cards')
+        .select('id', { count: 'exact', head: true })
+        .eq('company_id', companyId)
+        .eq('dc_id', id);
+      return count ?? 0;
+    },
+    enabled: !!id,
+    staleTime: 30_000,
+  });
+
   const openReturnDialog = async (lineItem: any) => {
     setReturnLineItem(lineItem);
     setRetQtyReturning(0);
@@ -445,6 +461,23 @@ export default function DeliveryChallanDetail() {
           )}
         </div>
       </div>
+
+      {/* Job Card reminder banner — shown when DC is issued but no Job Cards created yet */}
+      {dc.status === "issued" && isJobWorkDC && dcJobCardCount === 0 && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 print:hidden">
+          <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-amber-800">Job Cards not yet created</p>
+            <p className="text-sm text-amber-700 mt-0.5">
+              This DC has been issued but no Job Cards have been created yet. If any items require
+              processing stages, click 'Create Job Cards' to track their progress through production.
+            </p>
+          </div>
+          <Button size="sm" variant="outline" className="shrink-0 border-amber-300 text-amber-800 hover:bg-amber-100" onClick={handleOpenJCDialog}>
+            Create Job Cards →
+          </Button>
+        </div>
+      )}
 
       {/* Document Preview */}
       <div className="paper-card space-y-4 po-print-wrapper">
