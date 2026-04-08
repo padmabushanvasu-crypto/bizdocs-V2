@@ -248,8 +248,8 @@ export default function DeliveryChallanDetail() {
             {co?.phone && <div style={{ fontSize: '6.5pt', color: '#475569' }}>Ph: {co.phone}</div>}
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontWeight: 700, fontSize: '10pt', color: '#1E3A5F', letterSpacing: '0.03em' }}>DELIVERY CHALLAN</div>
-            <div style={{ fontSize: '6.5pt', color: '#64748b', marginBottom: '1pt' }}>cum Job Work Order · [{typeLabels[dc.dc_type] || dc.dc_type}]</div>
+            <div style={{ fontWeight: 700, fontSize: '10pt', color: '#1E3A5F', letterSpacing: '0.03em' }}>DELIVERY CHALLAN cum Job Work Order</div>
+            <div style={{ fontWeight: 700, fontSize: '6pt', color: '#1E3A5F', marginBottom: '1pt', letterSpacing: '0.03em' }}>[{typeLabels[dc.dc_type] || dc.dc_type}]</div>
             <div style={{ fontWeight: 700, fontSize: '7pt' }}>DC No: {dc.dc_number}</div>
             <div style={{ fontSize: '7pt' }}>Date: {new Date(dc.dc_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
             {dc.vehicle_number && <div style={{ fontSize: '6.5pt' }}>Vehicle: {dc.vehicle_number}</div>}
@@ -511,7 +511,7 @@ export default function DeliveryChallanDetail() {
             </div>
             <div style={{ flex: '0 0 42%', textAlign: 'right' }}>
               <div style={{ fontWeight: '700', fontSize: '13pt', color: '#1E3A5F', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Delivery Challan cum Job Work Order</div>
-              <div style={{ fontSize: '8pt', color: '#64748b' }}>[{typeLabels[dc.dc_type] || dc.dc_type}]</div>
+              <div style={{ fontWeight: '700', fontSize: '8pt', color: '#1E3A5F' }}>[{typeLabels[dc.dc_type] || dc.dc_type}]</div>
               <div style={{ fontWeight: '700', fontSize: '9pt' }}>DC No: {dc.dc_number}</div>
               <div style={{ fontSize: '9pt' }}>Date: {new Date(dc.dc_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
               {dc.vehicle_number && <div style={{ fontSize: '9pt' }}>Vehicle: {dc.vehicle_number}</div>}

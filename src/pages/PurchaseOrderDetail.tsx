@@ -203,6 +203,11 @@ export default function PurchaseOrderDetail() {
           .po-line-items-table td:nth-child(2) { white-space: normal !important; }
           .po-line-items-table tr { page-break-inside: avoid; }
 
+          /* Navy/white alternating rows for print */
+          .po-line-items-table thead tr th { background: #1E3A5F !important; color: #fff !important; border-color: #1E3A5F !important; }
+          .po-line-items-table tbody tr:nth-child(odd) td { background: #fff !important; color: #000 !important; border-color: #e2e8f0 !important; }
+          .po-line-items-table tbody tr:nth-child(even) td { background: #1E3A5F !important; color: #fff !important; border-color: #1E3A5F !important; }
+
           /* Totals block — compact */
           .po-totals-block { font-size: 7.5pt !important; }
           .po-totals-block .po-totals-row { padding: 2px 4px !important; }
@@ -292,9 +297,9 @@ export default function PurchaseOrderDetail() {
 
         {/* ── PRINT: compact 2-col header ── */}
         <div className="hidden print:block po-section" style={{ borderBottom: '0.5pt solid #CBD5E1', paddingBottom: '3px' }}>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '56fr 44fr', gap: '8px', alignItems: 'flex-start' }}>
             {/* Left: Company info */}
-            <div style={{ flex: '0 0 58%' }}>
+            <div>
               {company?.logo_url && (
                 <img src={company.logo_url} alt="Logo" style={{ height: '24px', marginBottom: '2px', objectFit: 'contain' }} />
               )}
@@ -315,7 +320,7 @@ export default function PurchaseOrderDetail() {
               {company?.email && <div style={{ fontSize: '7.5pt', color: '#475569' }}>{company.email}</div>}
             </div>
             {/* Right: PO title + details */}
-            <div style={{ flex: '0 0 42%', textAlign: 'right' }}>
+            <div style={{ textAlign: 'right' }}>
               <div style={{ fontWeight: '700', fontSize: '13pt', color: '#1E3A5F', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Purchase Order</div>
               <div style={{ fontWeight: '700', fontSize: '7.5pt' }}>PO No: {po.po_number}</div>
               <div style={{ fontSize: '7.5pt' }}>Date: {new Date(po.po_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
