@@ -84,6 +84,8 @@ interface S1Line {
   non_matching_units: number;
   mismatch_reason: string;
   mismatch_disposition: string;
+  // Jig / mould return confirmation
+  jig_confirmed?: boolean;
 }
 
 // ── QC Measurement row state ───────────────────────────────────────────────────
@@ -427,8 +429,9 @@ function Stage1Table({
 
 // ── Stage 1 — read-only table ──────────────────────────────────────────────────
 
-function Stage1ReadOnly({ lines }: { lines: S1Line[] }) {
+function Stage1ReadOnly({ lines, isDcGrn }: { lines: S1Line[]; isDcGrn?: boolean }) {
   const hasStoreTracking = lines.some(l => l.is_final_grn);
+  const hasJigData = isDcGrn && lines.some(l => l.jig_confirmed === true);
   return (
     <div className="overflow-x-auto rounded-lg border border-blue-100">
       <table className="w-full text-sm border-collapse">
@@ -445,6 +448,7 @@ function Stage1ReadOnly({ lines }: { lines: S1Line[] }) {
             <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Packing</th>
             <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Notes</th>
             {hasStoreTracking && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Store</th>}
+            {hasJigData && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Jig</th>}
           </tr>
         </thead>
         <tbody className="divide-y divide-blue-50">
@@ -479,6 +483,17 @@ function Stage1ReadOnly({ lines }: { lines: S1Line[] }) {
                     <span className="inline-flex items-center gap-1 text-amber-600 font-medium">
                       ⏳ Awaiting
                     </span>
+                  )}
+                </td>
+              )}
+              {hasJigData && (
+                <td className="px-3 py-2 text-sm border-b border-slate-100 text-center text-xs">
+                  {l.jig_confirmed ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-800 font-medium border border-green-200">
+                      ✓ Jig Returned
+                    </span>
+                  ) : (
+                    <span className="text-slate-300">—</span>
                   )}
                 </td>
               )}
@@ -1183,6 +1198,7 @@ export default function GRNDetail() {
           non_matching_units:   a.non_matching_units ?? 0,
           mismatch_reason:      a.mismatch_reason ?? "",
           mismatch_disposition: a.mismatch_disposition ?? "",
+          jig_confirmed:        a.jig_confirmed ?? false,
         };
       })
     );
@@ -1669,7 +1685,7 @@ export default function GRNDetail() {
           {s1Editable ? (
             <Stage1Table lines={s1Lines} onChange={updateS1Line} disabled={isDeletedOrCancelled} overQtyIds={overQtyLines.map(l => l.id)} />
           ) : (
-            <Stage1ReadOnly lines={s1Lines} />
+            <Stage1ReadOnly lines={s1Lines} isDcGrn={!!g.linked_dc_id} />
           )}
 
           {s1Editable && (

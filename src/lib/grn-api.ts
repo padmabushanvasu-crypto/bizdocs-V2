@@ -73,6 +73,8 @@ export interface GRNLineItem {
   qc_inspected_by?: string | null;
   qc_inspected_at?: string | null;
   qc_notes?: string | null;
+  // Jig / mould return confirmation (DC-GRN only)
+  jig_confirmed?: boolean;
 }
 
 export interface GRN {
@@ -289,6 +291,7 @@ export async function createGRN({ grn, lineItems }: CreateGRNData) {
       rejection_action: item.rejection_action || null,
       replacement_cycle: item.replacement_cycle || 1,
       is_replacement: item.is_replacement || false,
+      jig_confirmed: item.jig_confirmed ?? false,
     }));
     const { error: itemsError } = await supabase.from("grn_line_items").insert(itemsToInsert as any);
     if (itemsError) throw itemsError;

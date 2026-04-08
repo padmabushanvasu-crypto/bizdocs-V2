@@ -44,8 +44,8 @@ interface LineItemState extends GRNLineItem {
   s1_identity_matched_qty: number;
   s1_identity_not_matched_qty: number;
   s1_admin_override: boolean;
-  // Jig return check (Phase 15)
-  jigsReturnChecked?: string[];
+  // Jig / mould return confirmation (DC-GRN only)
+  jig_confirmed?: boolean;
   // Stage 2 local state
   s2_accepted_qty: number;
   s2_rejected_qty: number;
@@ -84,6 +84,7 @@ function toLineState(item: GRNLineItem, idx: number): LineItemState {
       ? a.identity_not_matched_qty
       : (a.item_identity_match === false ? (a.received_now ?? item.receiving_now ?? 0) : 0),
     s1_admin_override: false,
+    jig_confirmed: a.jig_confirmed ?? false,
     s2_accepted_qty: a.accepted_qty ?? item.accepted_quantity ?? 0,
     s2_rejected_qty: a.rejected_qty ?? item.rejected_quantity ?? 0,
     s2_rejection_reason: a.rejection_reason ?? '',
@@ -103,11 +104,13 @@ function GrnLineItemRow({
   index,
   isAdmin,
   onChange,
+  jigs,
 }: {
   item: LineItemState;
   index: number;
   isAdmin: boolean;
   onChange: (index: number, update: Partial<LineItemState>) => void;
+  jigs?: Array<{ id: string; jig_number: string; drawing_number: string; status: string }>;
 }) {
   const orderedQty = (item as any).ordered_qty ?? item.po_quantity ?? 0;
   const prevReceived = (item as any).previously_received_qty ?? item.previously_received ?? 0;
@@ -163,6 +166,34 @@ function GrnLineItemRow({
                 Override (Admin)
               </button>
             )}
+          </td>
+        </tr>
+      )}
+      {jigs && jigs.length > 0 && item.s1_received_now > 0 && (
+        <tr className="bg-amber-50/60 border-b border-amber-100">
+          <td colSpan={7} className="px-3 py-2">
+            <div className="flex flex-col gap-1.5">
+              {jigs.map((jig) => (
+                <label
+                  key={jig.id}
+                  className="flex items-center gap-2 cursor-pointer text-sm select-none"
+                >
+                  <input
+                    type="checkbox"
+                    checked={item.jig_confirmed ?? false}
+                    onChange={(e) => onChange(index, { jig_confirmed: e.target.checked })}
+                    className="h-4 w-4 accent-amber-600"
+                  />
+                  <span className={item.jig_confirmed ? "text-green-700 font-medium" : "text-amber-800 font-medium"}>
+                    {item.jig_confirmed ? "✓" : "⚠"} Confirm jig/mould returned:{" "}
+                    <span className="font-mono">{jig.jig_number}</span>
+                    {jig.status !== 'ok' && (
+                      <span className="ml-1 text-xs text-slate-500">({jig.status})</span>
+                    )}
+                  </span>
+                </label>
+              ))}
+            </div>
           </td>
         </tr>
       )}
@@ -254,6 +285,9 @@ function GRNFormInner({ defaultGrnType }: Props) {
   // Line items
   const [lineItems, setLineItems] = useState<LineItemState[]>([]);
   const [fullyReceived, setFullyReceived] = useState(false);
+
+  // Jig/mould map: drawing_number → jig records (DC-GRN only)
+  const [jigsByDrawing, setJigsByDrawing] = useState<Record<string, Array<{ id: string; jig_number: string; drawing_number: string; status: string }>>>({});
 
   // Success dialog
   const [successDialogOpen, setSuccessDialogOpen] = useState(false);
@@ -442,6 +476,33 @@ function GRNFormInner({ defaultGrnType }: Props) {
           return state;
         });
       setLineItems(items);
+
+      // Fetch jigs/moulds for all drawing numbers in this DC
+      const drawingNums = items.map((i) => i.drawing_number).filter(Boolean) as string[];
+      if (drawingNums.length > 0) {
+        try {
+          const { getCompanyId } = await import("@/lib/auth-helpers");
+          const companyId = await getCompanyId();
+          if (companyId) {
+            const { data: jigData } = await (supabase as any)
+              .from("jig_master")
+              .select("id, drawing_number, jig_number, status")
+              .eq("company_id", companyId)
+              .in("drawing_number", drawingNums);
+            const jigMap: Record<string, Array<{ id: string; jig_number: string; drawing_number: string; status: string }>> = {};
+            for (const jig of (jigData ?? []) as any[]) {
+              const dn = jig.drawing_number as string;
+              if (!jigMap[dn]) jigMap[dn] = [];
+              jigMap[dn].push(jig);
+            }
+            setJigsByDrawing(jigMap);
+          }
+        } catch (_e) {
+          // Jig fetch failure is non-fatal — form still works without jig data
+        }
+      } else {
+        setJigsByDrawing({});
+      }
     } catch (err: any) {
       toast({ title: "Error loading DC items", description: err.message, variant: "destructive" });
     }
@@ -558,6 +619,22 @@ function GRNFormInner({ defaultGrnType }: Props) {
       toast({ title: "No items", description: "Enter receiving quantities for at least one item.", variant: "destructive" });
       return;
     }
+    // DC-GRN: block save if any received item has unconfirmed jig/mould
+    if (grnType === 'dc_grn' && !isExistingGrn) {
+      const unconfirmed = lineItems.filter((item) => {
+        if (item.s1_received_now <= 0) return false;
+        const jigs = jigsByDrawing[item.drawing_number ?? ''] ?? [];
+        return jigs.length > 0 && !item.jig_confirmed;
+      });
+      if (unconfirmed.length > 0) {
+        toast({
+          title: "Jig confirmation required",
+          description: "Please confirm all jigs/moulds have been returned before saving.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
     if (!isExistingGrn) saveMutation.mutate(status);
     else {
       toast({ title: "Saved" });
@@ -618,7 +695,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
               {(['po_grn', 'dc_grn'] as GrnType[]).map((t) => (
                 <button
                   key={t}
-                  onClick={() => { setGrnType(t); setSelectedPO(null); setSelectedDC(null); setLineItems([]); setFullyReceived(false); }}
+                  onClick={() => { setGrnType(t); setSelectedPO(null); setSelectedDC(null); setLineItems([]); setFullyReceived(false); setJigsByDrawing({}); }}
                   className={cn(
                     "px-4 py-2 rounded-lg text-sm font-medium border transition-colors",
                     grnType === t
@@ -816,6 +893,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
                     index={index}
                     isAdmin={isAdmin}
                     onChange={updateLineItem}
+                    jigs={grnType === 'dc_grn' ? (jigsByDrawing[item.drawing_number ?? ''] ?? []) : undefined}
                   />
                 ))}
               </tbody>
