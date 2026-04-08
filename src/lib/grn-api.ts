@@ -376,6 +376,66 @@ async function recalculatePOStatus(poId: string) {
   await supabase.from("purchase_orders").update({ status: newStatus } as any).eq("id", poId);
 }
 
+// Mirrors recalculatePOStatus but operates on a GRN's own status field.
+// Uses received_qty (set at Stage 1) vs ordered_qty from grn_line_items.
+async function recalculateGRNStatusFromLines(grnId: string): Promise<void> {
+  const { data: lines } = await (supabase as any)
+    .from('grn_line_items')
+    .select('ordered_qty, received_qty, received_now')
+    .eq('grn_id', grnId);
+  if (!lines?.length) return;
+  let allReceived = true, anyReceived = false;
+  for (const line of (lines as any[])) {
+    const ordered = (line.ordered_qty ?? 0) as number;
+    const received = (line.received_qty ?? line.received_now ?? 0) as number;
+    if (received < ordered) allReceived = false;
+    if (received > 0) anyReceived = true;
+  }
+  const newStatus = allReceived ? 'fully_received' : anyReceived ? 'partially_received' : 'open';
+  await (supabase as any).from('grns').update({ status: newStatus }).eq('id', grnId);
+}
+
+// Updates the parent DC status based on GRN receipts — mirrors recalculateDCStatus in
+// delivery-challans-api but uses grn_line_items.received_qty (the GRN-based return flow)
+// rather than dc_line_items.returned_qty_nos (the legacy direct-return flow).
+async function recalculateDCStatusFromGRNReceipts(dcId: string): Promise<void> {
+  // Gather all non-deleted GRNs linked to this DC
+  const { data: grns } = await (supabase as any)
+    .from('grns').select('id').eq('linked_dc_id', dcId).neq('status', 'deleted');
+  if (!grns?.length) return;
+
+  const grnIds = (grns as any[]).map((g: any) => g.id as string);
+
+  // Sum received_qty per dc_line_item_id across all linked GRNs
+  const { data: grnLines } = await (supabase as any)
+    .from('grn_line_items')
+    .select('dc_line_item_id, received_qty, received_now')
+    .in('grn_id', grnIds);
+
+  const receivedByDCLine: Record<string, number> = {};
+  for (const item of (grnLines ?? []) as any[]) {
+    const key = item.dc_line_item_id as string | null;
+    if (!key) continue;
+    receivedByDCLine[key] = (receivedByDCLine[key] ?? 0) + ((item.received_qty ?? item.received_now ?? 0) as number);
+  }
+
+  // Compare against original DC line quantities
+  const { data: dcLines } = await (supabase as any)
+    .from('dc_line_items').select('id, quantity').eq('dc_id', dcId);
+  if (!dcLines?.length) return;
+
+  let allReturned = true, anyReturned = false;
+  for (const dcLine of (dcLines as any[])) {
+    const received = receivedByDCLine[dcLine.id as string] ?? 0;
+    const qty = (dcLine.quantity ?? 0) as number;
+    if (received < qty) allReturned = false;
+    if (received > 0) anyReturned = true;
+  }
+
+  const newStatus = allReturned ? 'fully_returned' : anyReturned ? 'partially_returned' : 'issued';
+  await (supabase as any).from('delivery_challans').update({ status: newStatus }).eq('id', dcId);
+}
+
 export async function fetchGRNsForPO(poId: string): Promise<GRN[]> {
   const { data, error } = await supabase.from("grns").select("*").eq("po_id", poId).order("grn_date", { ascending: false });
   if (error) throw error;
@@ -836,6 +896,20 @@ export async function saveQuantitativeStage(
     .update(updateData)
     .eq('id', grnId);
   if (grnErr) throw grnErr;
+
+  // CHANGE 1+2: For DC return GRNs — update GRN status and parent DC status
+  try {
+    const { data: grnMeta } = await (supabase as any)
+      .from('grns').select('grn_type, linked_dc_id').eq('id', grnId).single();
+    if (grnMeta?.grn_type === 'dc_grn') {
+      await recalculateGRNStatusFromLines(grnId);
+      if (grnMeta.linked_dc_id) {
+        await recalculateDCStatusFromGRNReceipts(grnMeta.linked_dc_id);
+      }
+    }
+  } catch (dcStatusErr) {
+    console.error('[GRN] DC/GRN status update failed (stage 1 save succeeded):', dcStatusErr);
+  }
 }
 
 export interface QualitativeLineData {
@@ -919,6 +993,17 @@ export async function saveQualityStage(
       .update({ grn_stage: 'quality_done' })
       .eq('id', grnId);
     if (qualDoneErr) throw qualDoneErr;
+  }
+
+  // CHANGE 2: For DC return GRNs — update parent DC status after QC stage
+  try {
+    const { data: grnMeta } = await (supabase as any)
+      .from('grns').select('grn_type, linked_dc_id').eq('id', grnId).single();
+    if (grnMeta?.grn_type === 'dc_grn' && grnMeta.linked_dc_id) {
+      await recalculateDCStatusFromGRNReceipts(grnMeta.linked_dc_id);
+    }
+  } catch (dcStatusErr) {
+    console.error('[GRN] DC status update failed (quality stage save succeeded):', dcStatusErr);
   }
 
   // Update linked Job Card step if this GRN is linked to a DC
@@ -1194,6 +1279,14 @@ export async function storeConfirmGRN(
     })
     .eq('id', grnId);
   if (error) throw error;
+
+  // CHANGE 1+2: For DC return GRNs — set GRN status fully_received and update DC status
+  if (grnHeader?.grn_type === 'dc_grn') {
+    await recalculateGRNStatusFromLines(grnId).catch(console.error);
+    if (grnHeader.linked_dc_id) {
+      await recalculateDCStatusFromGRNReceipts(grnHeader.linked_dc_id).catch(console.error);
+    }
+  }
 }
 
 export async function fetchAwaitingStoreCount(): Promise<number> {
