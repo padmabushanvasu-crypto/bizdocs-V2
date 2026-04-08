@@ -911,6 +911,14 @@ export async function saveQualityStage(
       .update({ grn_stage: 'awaiting_store' })
       .eq('id', grnId);
     if (stageErr) throw stageErr;
+  } else {
+    // No final GRN lines — goods are going back out for more processing.
+    // Transition to quality_done so the GRN is not left stuck at quality_pending.
+    const { error: qualDoneErr } = await (supabase as any)
+      .from('grns')
+      .update({ grn_stage: 'quality_done' })
+      .eq('id', grnId);
+    if (qualDoneErr) throw qualDoneErr;
   }
 
   // Update linked Job Card step if this GRN is linked to a DC
@@ -1132,6 +1140,48 @@ export async function storeConfirmGRN(
   grnId: string,
   data: { confirmedBy: string; confirmedAt: string; location?: string | null; notes?: string | null }
 ): Promise<void> {
+  // For DC return GRNs: move accepted stock from in_process → free on storekeeper confirmation
+  const { data: grnHeader } = await (supabase as any)
+    .from('grns')
+    .select('grn_type, linked_dc_id, company_id')
+    .eq('id', grnId)
+    .single();
+
+  if (grnHeader?.grn_type === 'dc_grn') {
+    const today = new Date().toISOString().split('T')[0];
+    const { data: lines } = await (supabase as any)
+      .from('grn_line_items')
+      .select('item_id, conforming_qty, is_final_grn')
+      .eq('grn_id', grnId)
+      .eq('is_final_grn', true);
+
+    for (const line of (lines ?? []) as any[]) {
+      const qty: number = line.conforming_qty ?? 0;
+      if (!line.item_id || qty <= 0) continue;
+      await updateStockBucket(line.item_id, 'in_process', -qty).catch(console.error);
+      await updateStockBucket(line.item_id, 'free', +qty).catch(console.error);
+      await addStockLedgerEntry({
+        item_id: line.item_id,
+        item_code: null,
+        item_description: null,
+        transaction_date: today,
+        transaction_type: 'dc_return',
+        qty_in: qty,
+        qty_out: 0,
+        balance_qty: 0,
+        unit_cost: 0,
+        total_value: 0,
+        reference_type: 'grn',
+        reference_id: grnId,
+        reference_number: null,
+        notes: 'DC return — storekeeper confirmed',
+        created_by: null,
+        from_state: 'in_process',
+        to_state: 'free',
+      });
+    }
+  }
+
   const { error } = await (supabase as any)
     .from('grns')
     .update({
