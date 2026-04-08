@@ -46,17 +46,23 @@ async function fetchProcurementItems(): Promise<ProcurementItem[]> {
   const { data: alertData, error } = await (supabase as any)
     .from("stock_alerts")
     .select("*")
-    .eq("company_id", companyId)
-    .order("shortage", { ascending: false });
+    .eq("company_id", companyId);
 
   if (error) {
     console.error("PI fetch error:", error);
-    return [];
+    throw error;
   }
 
   if (!alertData?.length) return [];
 
-  const itemIds = alertData.map((i: any) => i.id);
+  // Sort by shortage descending client-side (avoids dependency on view column name)
+  const sorted = (alertData as any[]).slice().sort((a, b) => {
+    const aShortage = (a.shortage ?? a.min_stock ?? 0) - (a.effective_stock ?? a.stock_free ?? 0);
+    const bShortage = (b.shortage ?? b.min_stock ?? 0) - (b.effective_stock ?? b.stock_free ?? 0);
+    return bShortage - aShortage;
+  });
+
+  const itemIds = sorted.map((i: any) => i.id);
 
   // Fetch open POs (two-step)
   const { data: openPOs } = await (supabase as any)
@@ -114,7 +120,7 @@ async function fetchProcurementItems(): Promise<ProcurementItem[]> {
     if (!aoMap.has(ao.item_id)) aoMap.set(ao.item_id, ao.ao_number);
   });
 
-  return alertData.map((item: any): ProcurementItem => ({
+  return sorted.map((item: any): ProcurementItem => ({
     id: item.id,
     item_code: item.item_code ?? "",
     description: item.description ?? "",

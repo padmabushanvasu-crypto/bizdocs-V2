@@ -142,10 +142,10 @@ export default function DeliveryChallanDetail() {
       const companyId = await getCompanyId();
       if (!companyId) return 0;
       const { count } = await (supabase as any)
-        .from('job_cards')
+        .from('job_card_steps')
         .select('id', { count: 'exact', head: true })
         .eq('company_id', companyId)
-        .eq('dc_id', id);
+        .eq('outward_dc_id', id);
       return count ?? 0;
     },
     enabled: !!id,
