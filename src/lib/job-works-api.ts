@@ -69,7 +69,7 @@ export interface JobWorkStep {
   step_type: "internal" | "external";
   name: string;
   stage_template_id: string | null;
-  status: "pending" | "in_progress" | "done";
+  status: "pending" | "in_progress" | "done" | "pre_bizdocs" | "material_returned";
   // Internal
   labour_cost: number;
   material_cost: number;

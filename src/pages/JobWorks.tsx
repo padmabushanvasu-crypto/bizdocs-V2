@@ -156,7 +156,11 @@ export default function JobWorks() {
                       </td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${statusCls[row.status] ?? "bg-slate-50 text-slate-600 border-slate-200"}`}>
-                          {row.status.replace(/_/g, " ")}
+                          {row.status === "completed"
+                            ? "Completed"
+                            : row.status === "in_progress" && (row.step_count ?? 0) > 0
+                            ? `Stage ${(row.completed_steps ?? 0) + 1} of ${row.step_count}`
+                            : row.status.replace(/_/g, " ")}
                         </span>
                       </td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">

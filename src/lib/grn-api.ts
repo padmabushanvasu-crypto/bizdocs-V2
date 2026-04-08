@@ -908,6 +908,13 @@ export async function saveQuantitativeStage(
       await recalculateGRNStatusFromLines(grnId);
       if (grnMeta.linked_dc_id) {
         await recalculateDCStatusFromGRNReceipts(grnMeta.linked_dc_id);
+        // CHANGE 4: material received back from vendor — advance linked job card step
+        // to material_returned so the timeline shows an intermediate "returned" state
+        await (supabase as any)
+          .from('job_card_steps')
+          .update({ status: 'material_returned' })
+          .eq('outward_dc_id', grnMeta.linked_dc_id)
+          .eq('status', 'in_progress');
       }
     }
   } catch (dcStatusErr) {
@@ -1018,32 +1025,33 @@ export async function saveQualityStage(
       .single();
 
     if (grnHeader?.linked_dc_id) {
+      // Match step that was sent on this DC — could be in_progress or material_returned
       const { data: linkedStep } = await (supabase as any)
         .from("job_card_steps")
         .select("id, job_card_id, step_number")
         .eq("outward_dc_id", grnHeader.linked_dc_id)
-        .eq("status", "in_progress")
-        .single();
+        .in("status", ["in_progress", "material_returned"])
+        .maybeSingle();
 
       if (linkedStep) {
+        // Mark this step as done (QC cleared)
         await (supabase as any)
           .from("job_card_steps")
           .update({
-            status: "completed",
+            status: "done",
             completed_at: new Date().toISOString(),
-            qty_received: totalConforming,
           })
           .eq("id", linkedStep.id);
 
+        // Find the next pending step (skip pre_bizdocs placeholders)
         const { data: nextStep } = await (supabase as any)
           .from("job_card_steps")
           .select("id, step_number, name")
           .eq("job_card_id", linkedStep.job_card_id)
           .eq("status", "pending")
-          .neq("status", "pre_bizdocs")
           .order("step_number", { ascending: true })
           .limit(1)
-          .single();
+          .maybeSingle();
 
         if (nextStep) {
           await (supabase as any)
@@ -1055,6 +1063,7 @@ export async function saveQualityStage(
             })
             .eq("id", linkedStep.job_card_id);
         } else {
+          // No more pending steps — close the job card
           await (supabase as any)
             .from("job_cards")
             .update({

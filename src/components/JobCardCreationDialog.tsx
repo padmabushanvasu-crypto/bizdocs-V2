@@ -112,16 +112,60 @@ export function JobCardCreationDialog({
 
   const handleCreateJC = async () => {
     setJcCreating(true);
-    const results: { itemCode: string; jcNumber: string }[] = [];
+    const results: { itemCode: string; jcNumber: string; linked?: boolean }[] = [];
     try {
       for (const item of jcItems) {
         if (item.skip || item.selectedStageNumber === null) continue;
 
-        // Link to existing JC — no new JC created
+        // Link to existing JC — add new step to it instead of creating a new card
         if (item.existingMode && item.useExisting && item.existingJCNumber.trim()) {
+          const jcNumTrimmed = item.existingJCNumber.trim();
+          // Prefer id from the pre-fetched list; fall back to DB lookup for manual entry
+          let existingJCId: string | null =
+            item.existingJCs.find(jc => jc.jc_number === jcNumTrimmed)?.id ?? null;
+          if (!existingJCId) {
+            const { data: found } = await (supabase as any)
+              .from("job_cards")
+              .select("id")
+              .eq("jc_number", jcNumTrimmed)
+              .maybeSingle();
+            existingJCId = (found as any)?.id ?? null;
+          }
+
+          if (existingJCId) {
+            const selectedRoute = item.routes.find(r => r.stage_number === item.selectedStageNumber);
+            if (selectedRoute) {
+              await createJobWorkStep({
+                job_card_id: existingJCId,
+                step_number: item.selectedStageNumber ?? 1,
+                step_type: selectedRoute.stage_type,
+                name: selectedRoute.process_name,
+                status: "in_progress",
+                vendor_id: partyId ?? null,
+                vendor_name: partyName ?? null,
+                qty_sent: Number(item.lineItem.quantity) || 1,
+                unit: item.lineItem.unit || "NOS",
+                outward_dc_id: dcId || null,
+              } as any);
+            }
+            // Ensure JC is in_progress and track current stage
+            await (supabase as any)
+              .from("job_cards")
+              .update({
+                status: "in_progress",
+                current_stage: item.selectedStageNumber,
+                current_stage_name: selectedRoute?.process_name ?? null,
+                current_location: "at_vendor",
+                current_vendor_name: partyName ?? null,
+                current_vendor_since: new Date().toISOString(),
+              })
+              .eq("id", existingJCId);
+          }
+
           results.push({
             itemCode: item.lineItem.item_code || item.lineItem.description || "?",
-            jcNumber: item.existingJCNumber.trim(),
+            jcNumber: jcNumTrimmed,
+            linked: true,
           });
           continue;
         }
@@ -200,14 +244,25 @@ export function JobCardCreationDialog({
             <div className="flex items-center gap-2 text-emerald-700">
               <CheckCircle2 className="h-5 w-5" />
               <span className="font-medium">
-                {jcResults.length} job card{jcResults.length !== 1 ? "s" : ""} created
+                {jcResults.filter(r => !r.linked).length > 0 && (
+                  <>{jcResults.filter(r => !r.linked).length} job card{jcResults.filter(r => !r.linked).length !== 1 ? "s" : ""} created</>
+                )}
+                {jcResults.filter(r => !r.linked).length > 0 && jcResults.filter(r => r.linked).length > 0 && ", "}
+                {jcResults.filter(r => r.linked).length > 0 && (
+                  <>{jcResults.filter(r => r.linked).length} existing card{jcResults.filter(r => r.linked).length !== 1 ? "s" : ""} updated</>
+                )}
               </span>
             </div>
             <div className="space-y-1">
               {jcResults.map((r, i) => (
                 <div key={i} className="flex items-center justify-between text-sm border rounded px-3 py-1.5">
                   <span className="font-mono text-xs text-muted-foreground">{r.jcNumber}</span>
-                  <span className="font-medium">{r.itemCode}</span>
+                  <div className="flex items-center gap-2">
+                    {r.linked && (
+                      <span className="text-xs text-amber-600 font-medium bg-amber-50 px-1.5 py-0.5 rounded">Stage Added</span>
+                    )}
+                    <span className="font-medium">{r.itemCode}</span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -391,7 +446,7 @@ export function JobCardCreationDialog({
                 onClick={handleCreateJC}
                 disabled={jcCreating || jcItems.every(i => i.skip || i.selectedStageNumber === null)}
               >
-                {jcCreating ? "Creating…" : "Create Job Cards"}
+                {jcCreating ? "Saving…" : jcItems.some(i => !i.skip && i.selectedStageNumber !== null && i.existingMode && i.useExisting) ? "Save Job Cards" : "Create Job Cards"}
               </Button>
             </DialogFooter>
           </div>

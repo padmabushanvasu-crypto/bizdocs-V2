@@ -6,6 +6,16 @@ import { format } from "date-fns";
 
 // ── Stage Progress Bar with rich tooltips ─────────────────────────────────────
 
+function stepStatusLabel(step: JobWorkStep): string {
+  switch (step.status) {
+    case "done":             return "Received & QC Cleared";
+    case "material_returned": return "Material Returned — Awaiting QC";
+    case "in_progress":      return step.step_type === "external" ? "At Vendor" : "In Progress";
+    case "pre_bizdocs":      return "Pre-system (completed)";
+    default:                 return "Pending";
+  }
+}
+
 function StageProgressBar({ steps }: { steps: JobWorkStep[] }) {
   if (steps.length === 0) {
     return (
@@ -18,8 +28,10 @@ function StageProgressBar({ steps }: { steps: JobWorkStep[] }) {
   return (
     <div className="flex items-end gap-0 flex-wrap">
       {steps.map((step, i) => {
-        const done   = step.status === "done";
-        const active = step.status === "in_progress";
+        const done             = step.status === "done";
+        const matReturned      = step.status === "material_returned";
+        const active           = step.status === "in_progress";
+        const preBizdocs       = step.status === "pre_bizdocs";
 
         return (
           <div key={step.id} className="flex items-end">
@@ -27,9 +39,11 @@ function StageProgressBar({ steps }: { steps: JobWorkStep[] }) {
             <div className="relative group flex flex-col items-center">
               <div
                 className={`rounded-full shrink-0 cursor-default transition-transform group-hover:scale-110 ${
-                  done   ? "bg-blue-600 w-3 h-3" :
-                  active ? "bg-amber-500 w-4 h-4 animate-pulse" :
-                           "bg-white border-2 border-slate-300 w-3 h-3"
+                  done        ? "bg-emerald-600 w-3 h-3" :
+                  matReturned ? "bg-blue-500 w-4 h-4" :
+                  active      ? "bg-amber-500 w-4 h-4 animate-pulse" :
+                  preBizdocs  ? "bg-slate-300 w-3 h-3" :
+                                "bg-white border-2 border-slate-300 w-3 h-3"
                 }`}
               />
               <span className="text-[10px] text-slate-400 mt-1 leading-none">
@@ -40,17 +54,18 @@ function StageProgressBar({ steps }: { steps: JobWorkStep[] }) {
               <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-50 pointer-events-none
                               opacity-0 group-hover:opacity-100 transition-opacity
                               bg-slate-800 text-white rounded-lg shadow-xl px-3 py-2
-                              text-xs whitespace-nowrap min-w-[160px]">
+                              text-xs whitespace-nowrap min-w-[180px]">
                 <p className="font-semibold text-white">{step.name}</p>
                 <p className="text-slate-300 mt-0.5">
                   {step.step_type === "external" ? "External" : "Internal"}
                 </p>
                 <p className={`mt-0.5 font-medium ${
-                  done   ? "text-blue-300" :
-                  active ? "text-amber-300" :
-                           "text-slate-400"
+                  done        ? "text-emerald-300" :
+                  matReturned ? "text-blue-300" :
+                  active      ? "text-amber-300" :
+                                "text-slate-400"
                 }`}>
-                  {done ? "Done" : active ? "In Progress" : "Pending"}
+                  {stepStatusLabel(step)}
                 </p>
                 {step.vendor_name && (
                   <p className="text-slate-300 mt-0.5">Vendor: {step.vendor_name}</p>
@@ -67,7 +82,11 @@ function StageProgressBar({ steps }: { steps: JobWorkStep[] }) {
 
             {/* Connector line */}
             {i < steps.length - 1 && (
-              <div className={`h-px flex-1 w-4 mx-0.5 mb-3.5 ${done ? "bg-blue-300" : "bg-slate-200"}`} />
+              <div className={`h-px flex-1 w-4 mx-0.5 mb-3.5 ${
+                done        ? "bg-emerald-300" :
+                matReturned ? "bg-blue-200" :
+                              "bg-slate-200"
+              }`} />
             )}
           </div>
         );
@@ -300,16 +319,22 @@ export default function JobCardDetail() {
                 key={step.id}
                 className={`rounded-lg border p-3 flex items-start gap-3 transition-colors ${
                   step.status === "done"
+                    ? "bg-emerald-50/40 border-emerald-100"
+                    : step.status === "material_returned"
                     ? "bg-blue-50/40 border-blue-100"
                     : step.status === "in_progress"
                     ? "bg-amber-50/40 border-amber-200"
+                    : step.status === "pre_bizdocs"
+                    ? "bg-slate-50/20 border-slate-100 opacity-60"
                     : "bg-slate-50/30 border-slate-200"
                 }`}
               >
                 <div
                   className={`mt-0.5 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold shrink-0 ${
                     step.status === "done"
-                      ? "bg-blue-600 text-white"
+                      ? "bg-emerald-600 text-white"
+                      : step.status === "material_returned"
+                      ? "bg-blue-500 text-white"
                       : step.status === "in_progress"
                       ? "bg-amber-500 text-white"
                       : "bg-slate-200 text-slate-600"
@@ -332,7 +357,7 @@ export default function JobCardDetail() {
                   )}
                   {step.completed_at && (
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Completed: {format(new Date(step.completed_at), "dd MMM yyyy")}
+                      QC cleared: {format(new Date(step.completed_at), "dd MMM yyyy")}
                     </p>
                   )}
                 </div>
@@ -340,17 +365,17 @@ export default function JobCardDetail() {
                 <span
                   className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${
                     step.status === "done"
+                      ? "bg-emerald-100 text-emerald-700"
+                      : step.status === "material_returned"
                       ? "bg-blue-100 text-blue-700"
                       : step.status === "in_progress"
                       ? "bg-amber-100 text-amber-700"
+                      : step.status === "pre_bizdocs"
+                      ? "bg-slate-100 text-slate-400"
                       : "bg-slate-100 text-slate-600"
                   }`}
                 >
-                  {step.status === "in_progress"
-                    ? "In Progress"
-                    : step.status === "done"
-                    ? "Done"
-                    : "Pending"}
+                  {stepStatusLabel(step)}
                 </span>
               </div>
             ))}
