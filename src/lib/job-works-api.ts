@@ -98,12 +98,16 @@ export interface JobWorkStep {
   // Rework
   is_rework: boolean;
   rework_reason: string | null;
+  // QC outcome
+  actual_qty: number | null;
   // General
   notes: string | null;
   started_at: string | null;
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+  // Derived (not in DB — populated by fetchJobWork join)
+  dc_number?: string | null;
 }
 
 export interface JobWorkFilters {
@@ -230,13 +234,17 @@ export async function fetchJobWork(id: string): Promise<JobWork & { steps: JobWo
     (supabase as any).from("job_cards").select("*").eq("id", id).single(),
     (supabase as any)
       .from("job_card_steps")
-      .select("*")
+      .select("*, outward_dc:delivery_challans!outward_dc_id(dc_number)")
       .eq("job_card_id", id)
       .order("step_number", { ascending: true }),
   ]);
   if (jcRes.error) throw jcRes.error;
   if (stepsRes.error) throw stepsRes.error;
-  return { ...(jcRes.data as JobWork), steps: (stepsRes.data ?? []) as JobWorkStep[] };
+  const steps: JobWorkStep[] = (stepsRes.data ?? []).map((s: any) => ({
+    ...s,
+    dc_number: (s.outward_dc as any)?.dc_number ?? null,
+  }));
+  return { ...(jcRes.data as JobWork), steps };
 }
 
 export async function fetchJobWorkSummary(id: string): Promise<JobWorkSummary> {

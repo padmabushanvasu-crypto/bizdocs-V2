@@ -1,96 +1,130 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, AlertTriangle, TrendingUp } from "lucide-react";
+import { ChevronLeft, AlertTriangle, TrendingUp, CheckCircle2, Clock, Circle } from "lucide-react";
 import { fetchJobWork, type JobWork, type JobWorkStep } from "@/lib/job-works-api";
 import { format } from "date-fns";
 
-// ── Stage Progress Bar with rich tooltips ─────────────────────────────────────
+// ── Vertical timeline step ────────────────────────────────────────────────────
 
-function stepStatusLabel(step: JobWorkStep): string {
-  switch (step.status) {
-    case "done":             return "Received & QC Cleared";
-    case "material_returned": return "Material Returned — Awaiting QC";
-    case "in_progress":      return step.step_type === "external" ? "At Vendor" : "In Progress";
-    case "pre_bizdocs":      return "Pre-system (completed)";
-    default:                 return "Pending";
+function TimelineStep({
+  step,
+  isLast,
+}: {
+  step: JobWorkStep;
+  isLast: boolean;
+}) {
+  const done = step.status === "done";
+  const matReturned = step.status === "material_returned";
+  const active = step.status === "in_progress";
+  const preBizdocs = step.status === "pre_bizdocs";
+
+  let icon: React.ReactNode;
+  let iconBg: string;
+  let lineColor: string;
+  let lineDash: boolean;
+
+  if (done) {
+    icon = <CheckCircle2 className="h-5 w-5 text-white" />;
+    iconBg = "bg-emerald-600";
+    lineColor = "bg-emerald-300";
+    lineDash = false;
+  } else if (matReturned) {
+    icon = <Clock className="h-4 w-4 text-white" />;
+    iconBg = "bg-blue-500";
+    lineColor = "bg-blue-200";
+    lineDash = true;
+  } else if (active) {
+    icon = <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse block" />;
+    iconBg = "bg-amber-500";
+    lineColor = "bg-amber-200";
+    lineDash = true;
+  } else if (preBizdocs) {
+    icon = <CheckCircle2 className="h-5 w-5 text-slate-400" />;
+    iconBg = "bg-slate-200";
+    lineColor = "bg-slate-200";
+    lineDash = false;
+  } else {
+    icon = <Circle className="h-4 w-4 text-slate-400" />;
+    iconBg = "bg-white border-2 border-slate-300";
+    lineColor = "bg-slate-200";
+    lineDash = true;
   }
-}
 
-function StageProgressBar({ steps }: { steps: JobWorkStep[] }) {
-  if (steps.length === 0) {
-    return (
-      <p className="text-sm text-slate-500 italic">
-        No stages added yet — add steps below to begin tracking progress.
-      </p>
-    );
+  let statusLabel: string;
+  let statusColor: string;
+  let sublabel: string | null = null;
+
+  if (done) {
+    statusLabel = "Completed";
+    statusColor = "text-emerald-700";
+    sublabel = step.completed_at
+      ? format(new Date(step.completed_at), "dd MMM yyyy")
+      : null;
+  } else if (matReturned) {
+    statusLabel = "Material Returned — Awaiting QC";
+    statusColor = "text-blue-700";
+  } else if (active) {
+    if (step.step_type === "external") {
+      statusLabel = step.vendor_name ? `At Vendor — ${step.vendor_name}` : "At Vendor";
+      statusColor = "text-amber-700";
+      sublabel = step.dc_number ? `DC: ${step.dc_number}` : null;
+    } else {
+      statusLabel = "In Progress";
+      statusColor = "text-amber-700";
+    }
+  } else if (preBizdocs) {
+    statusLabel = "Pre-system (completed)";
+    statusColor = "text-slate-400";
+  } else {
+    statusLabel = "Pending";
+    statusColor = "text-slate-400";
   }
 
   return (
-    <div className="flex items-end gap-0 flex-wrap">
-      {steps.map((step, i) => {
-        const done             = step.status === "done";
-        const matReturned      = step.status === "material_returned";
-        const active           = step.status === "in_progress";
-        const preBizdocs       = step.status === "pre_bizdocs";
+    <div className="flex gap-3">
+      {/* Icon + connector */}
+      <div className="flex flex-col items-center">
+        <div
+          className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${iconBg}`}
+        >
+          {icon}
+        </div>
+        {!isLast && (
+          <div
+            className={`flex-1 w-0.5 my-1 min-h-[28px] ${lineColor} ${
+              lineDash ? "opacity-60" : ""
+            }`}
+            style={lineDash ? { backgroundImage: "repeating-linear-gradient(to bottom, currentColor 0, currentColor 4px, transparent 4px, transparent 8px)" } : {}}
+          />
+        )}
+      </div>
 
-        return (
-          <div key={step.id} className="flex items-end">
-            {/* Dot + number + tooltip */}
-            <div className="relative group flex flex-col items-center">
-              <div
-                className={`rounded-full shrink-0 cursor-default transition-transform group-hover:scale-110 ${
-                  done        ? "bg-emerald-600 w-3 h-3" :
-                  matReturned ? "bg-blue-500 w-4 h-4" :
-                  active      ? "bg-amber-500 w-4 h-4 animate-pulse" :
-                  preBizdocs  ? "bg-slate-300 w-3 h-3" :
-                                "bg-white border-2 border-slate-300 w-3 h-3"
-                }`}
-              />
-              <span className="text-[10px] text-slate-400 mt-1 leading-none">
-                {step.step_number}
+      {/* Content */}
+      <div className="pb-5 flex-1 min-w-0">
+        <div className="flex items-start justify-between gap-2 flex-wrap">
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-semibold text-slate-900">
+                {step.step_number}. {step.name}
               </span>
-
-              {/* Tooltip */}
-              <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-50 pointer-events-none
-                              opacity-0 group-hover:opacity-100 transition-opacity
-                              bg-slate-800 text-white rounded-lg shadow-xl px-3 py-2
-                              text-xs whitespace-nowrap min-w-[180px]">
-                <p className="font-semibold text-white">{step.name}</p>
-                <p className="text-slate-300 mt-0.5">
-                  {step.step_type === "external" ? "External" : "Internal"}
-                </p>
-                <p className={`mt-0.5 font-medium ${
-                  done        ? "text-emerald-300" :
-                  matReturned ? "text-blue-300" :
-                  active      ? "text-amber-300" :
-                                "text-slate-400"
-                }`}>
-                  {stepStatusLabel(step)}
-                </p>
-                {step.vendor_name && (
-                  <p className="text-slate-300 mt-0.5">Vendor: {step.vendor_name}</p>
-                )}
-                {step.completed_at && (
-                  <p className="text-slate-300 mt-0.5">
-                    Completed: {format(new Date(step.completed_at), "dd MMM yyyy")}
-                  </p>
-                )}
-                {/* Tooltip arrow */}
-                <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-800" />
-              </div>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium uppercase tracking-wide">
+                {step.step_type === "external" ? "External" : "Internal"}
+              </span>
             </div>
-
-            {/* Connector line */}
-            {i < steps.length - 1 && (
-              <div className={`h-px flex-1 w-4 mx-0.5 mb-3.5 ${
-                done        ? "bg-emerald-300" :
-                matReturned ? "bg-blue-200" :
-                              "bg-slate-200"
-              }`} />
+            <p className={`text-xs mt-0.5 font-medium ${statusColor}`}>
+              {statusLabel}
+              {sublabel && (
+                <span className="text-slate-400 font-normal ml-1.5">· {sublabel}</span>
+              )}
+            </p>
+            {done && step.actual_qty != null && (
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Confirmed qty: {step.actual_qty} {step.unit ?? ""}
+              </p>
             )}
           </div>
-        );
-      })}
+        </div>
+      </div>
     </div>
   );
 }
@@ -125,7 +159,6 @@ function CostSummaryPanel({ jc, steps }: { jc: JobWork; steps: JobWorkStep[] }) 
   const variance = costPerUnit - standardCost;
   const variancePct = standardCost > 0 ? (variance / standardCost) * 100 : null;
 
-  // Cost absorbed by rejections — proportional estimate
   const rejectionCost = originalQty > 0 && rejectedQty > 0
     ? (totalCost / originalQty) * rejectedQty
     : 0;
@@ -141,7 +174,6 @@ function CostSummaryPanel({ jc, steps }: { jc: JobWork; steps: JobWorkStep[] }) 
       </div>
 
       <div className="font-mono text-xs space-y-1 text-slate-700">
-        {/* Raw material */}
         <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mt-2">Raw Material Cost</div>
         {rawMaterialCost > 0 ? (
           <div className="flex justify-between">
@@ -152,7 +184,6 @@ function CostSummaryPanel({ jc, steps }: { jc: JobWork; steps: JobWorkStep[] }) 
           <div className="text-slate-400 italic">No raw material cost recorded</div>
         )}
 
-        {/* Processing steps */}
         {processingRows.length > 0 && (
           <>
             <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mt-3">Processing Costs</div>
@@ -169,7 +200,6 @@ function CostSummaryPanel({ jc, steps }: { jc: JobWork; steps: JobWorkStep[] }) 
           </>
         )}
 
-        {/* Non-conformance deductions */}
         {rejectedQty > 0 && (
           <>
             <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mt-3">Non-Conformance Deductions</div>
@@ -180,7 +210,6 @@ function CostSummaryPanel({ jc, steps }: { jc: JobWork; steps: JobWorkStep[] }) 
           </>
         )}
 
-        {/* Divider + totals */}
         <div className="border-t border-slate-200 mt-3 pt-3 space-y-1">
           <div className="flex justify-between font-semibold">
             <span>Total Cost (all stages)</span>
@@ -250,7 +279,10 @@ export default function JobCardDetail() {
   }
 
   const steps = data.steps ?? [];
-  const doneCount = steps.filter((s) => s.status === "done").length;
+  const doneCount = steps.filter((s) => s.status === "done" || s.status === "pre_bizdocs").length;
+  const activeStep = steps.find((s) => s.status === "in_progress" || s.status === "material_returned");
+  const totalSteps = steps.filter((s) => s.status !== "pre_bizdocs").length;
+  const completedSteps = steps.filter((s) => s.status === "done").length;
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-4xl mx-auto">
@@ -289,95 +321,45 @@ export default function JobCardDetail() {
           </span>
         </div>
 
-        {/* ── Stage progress bar ── */}
-        <div className="border-t border-slate-100 pt-4">
-          <p className="text-xs font-medium text-slate-500 mb-3">
-            Stage Progress
-            {steps.length > 0 && (
-              <span className="ml-2 text-slate-400">
-                ({doneCount} of {steps.length} done)
+        {/* ── Stage progress summary ── */}
+        {steps.length > 0 && (
+          <div className="border-t border-slate-100 pt-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-slate-600">
+                {data.status === "completed"
+                  ? `All ${totalSteps} stages complete`
+                  : activeStep
+                  ? `Stage ${activeStep.step_number} of ${totalSteps} — ${activeStep.name}`
+                  : `${completedSteps} of ${totalSteps} stages complete`}
+              </p>
+              <span className="text-xs text-slate-400 tabular-nums">
+                {completedSteps}/{totalSteps}
               </span>
-            )}
-          </p>
-          <StageProgressBar steps={steps} />
-        </div>
+            </div>
+            {/* Mini progress bar */}
+            <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-emerald-500 transition-all"
+                style={{ width: totalSteps > 0 ? `${Math.round((completedSteps / totalSteps) * 100)}%` : "0%" }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Cost Summary ── */}
       <CostSummaryPanel jc={data} steps={steps} />
 
-      {/* ── Steps list ── */}
-      <div className="paper-card space-y-3">
-        <h2 className="text-sm font-semibold text-slate-700">Processing Steps</h2>
+      {/* ── Vertical timeline ── */}
+      <div className="paper-card space-y-0">
+        <h2 className="text-sm font-semibold text-slate-700 mb-4">Processing Stages</h2>
 
         {steps.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No steps added yet.</p>
+          <p className="text-sm text-muted-foreground">No stages added yet.</p>
         ) : (
-          <div className="space-y-2">
-            {steps.map((step) => (
-              <div
-                key={step.id}
-                className={`rounded-lg border p-3 flex items-start gap-3 transition-colors ${
-                  step.status === "done"
-                    ? "bg-emerald-50/40 border-emerald-100"
-                    : step.status === "material_returned"
-                    ? "bg-blue-50/40 border-blue-100"
-                    : step.status === "in_progress"
-                    ? "bg-amber-50/40 border-amber-200"
-                    : step.status === "pre_bizdocs"
-                    ? "bg-slate-50/20 border-slate-100 opacity-60"
-                    : "bg-slate-50/30 border-slate-200"
-                }`}
-              >
-                <div
-                  className={`mt-0.5 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold shrink-0 ${
-                    step.status === "done"
-                      ? "bg-emerald-600 text-white"
-                      : step.status === "material_returned"
-                      ? "bg-blue-500 text-white"
-                      : step.status === "in_progress"
-                      ? "bg-amber-500 text-white"
-                      : "bg-slate-200 text-slate-600"
-                  }`}
-                >
-                  {step.step_number}
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-sm font-medium text-slate-900">{step.name}</p>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium">
-                      {step.step_type === "external" ? "External" : "Internal"}
-                    </span>
-                  </div>
-                  {step.vendor_name && (
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Vendor: {step.vendor_name}
-                    </p>
-                  )}
-                  {step.completed_at && (
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      QC cleared: {format(new Date(step.completed_at), "dd MMM yyyy")}
-                    </p>
-                  )}
-                </div>
-
-                <span
-                  className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${
-                    step.status === "done"
-                      ? "bg-emerald-100 text-emerald-700"
-                      : step.status === "material_returned"
-                      ? "bg-blue-100 text-blue-700"
-                      : step.status === "in_progress"
-                      ? "bg-amber-100 text-amber-700"
-                      : step.status === "pre_bizdocs"
-                      ? "bg-slate-100 text-slate-400"
-                      : "bg-slate-100 text-slate-600"
-                  }`}
-                >
-                  {stepStatusLabel(step)}
-                </span>
-              </div>
+          <div>
+            {steps.map((step, i) => (
+              <TimelineStep key={step.id} step={step} isLast={i === steps.length - 1} />
             ))}
           </div>
         )}

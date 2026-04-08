@@ -1034,12 +1034,13 @@ export async function saveQualityStage(
         .maybeSingle();
 
       if (linkedStep) {
-        // Mark this step as done (QC cleared)
+        // Mark this step as done (QC cleared) and record final confirmed qty
         await (supabase as any)
           .from("job_card_steps")
           .update({
             status: "done",
             completed_at: new Date().toISOString(),
+            actual_qty: totalConforming,
           })
           .eq("id", linkedStep.id);
 
