@@ -86,6 +86,7 @@ interface S1Line {
   mismatch_disposition: string;
   // Jig / mould return confirmation
   jig_confirmed?: boolean;
+  unit: string;
 }
 
 // ── QC Measurement row state ───────────────────────────────────────────────────
@@ -204,28 +205,32 @@ function Stage1Table({
             <th className="text-left px-3 py-2.5 font-semibold">Item Code</th>
             <th className="text-left px-3 py-2.5 font-semibold">Description</th>
             <th className="text-right px-3 py-2.5 font-semibold w-24">Ordered</th>
-            <th className="text-right px-3 py-2.5 font-semibold w-28">Received Now *</th>
+            <th className="text-right px-3 py-2.5 font-semibold w-32">Received Now *</th>
             <th className="text-right px-3 py-2.5 font-semibold w-24">Pending</th>
-            <th className="text-right px-3 py-2.5 font-semibold w-28">Qty Matched</th>
-            <th className="text-right px-3 py-2.5 font-semibold w-24">Not Matched</th>
+            <th className="text-right px-3 py-2.5 font-semibold w-32">Matching Units</th>
+            <th className="text-right px-3 py-2.5 font-semibold w-28">Not Matched</th>
             <th className="text-center px-3 py-2.5 font-semibold w-36">Condition</th>
             <th className="text-center px-3 py-2.5 font-semibold w-24">Packing OK</th>
             <th className="text-left px-3 py-2.5 font-semibold">Notes</th>
-            <th className="text-center px-3 py-2.5 font-semibold w-36">Product Identity</th>
+            <th className="text-center px-3 py-2.5 font-semibold w-32">Product Identity</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-blue-50">
           {lines.map((line, idx) => {
             const isOverQty = overQtyIds.includes(line.id);
+            const unit = line.unit || "NOS";
             const pending = Math.max(0, line.pending_quantity - line.received_qty);
-            const pm = line.product_match ?? 'yes';
-            const rowBg = pm === 'no'
+            const nonMatching = Math.max(0, line.received_qty - line.matching_units);
+            const showSubRow = line.received_qty > 0 && nonMatching > 0;
+
+            const rowBg = line.received_qty > 0 && line.matching_units === 0
               ? "bg-red-50"
-              : pm === 'partial'
+              : nonMatching > 0
               ? "bg-amber-50"
               : isOverQty
               ? "bg-yellow-50/70"
               : "bg-white hover:bg-blue-50/20";
+
             return (
               <>
                 <tr key={line.id} className={`transition-colors ${rowBg}`}>
@@ -234,9 +239,16 @@ function Stage1Table({
                   <td className="px-3 py-2 font-medium text-slate-800 max-w-[200px]">
                     <span className="block truncate" title={line.description}>{line.description}</span>
                   </td>
-                  <td className="px-3 py-2 text-right font-mono tabular-nums text-slate-500">{line.po_quantity}</td>
+
+                  {/* Ordered — with muted unit suffix */}
+                  <td className="px-3 py-2 text-right tabular-nums text-slate-500">
+                    <span className="font-mono">{line.po_quantity}</span>
+                    <span className="text-xs text-muted-foreground ml-1">{unit}</span>
+                  </td>
+
+                  {/* Received Now — input + muted unit suffix */}
                   <td className="px-3 py-2">
-                    <div className="flex items-center justify-end gap-1">
+                    <div className="flex items-center justify-end gap-1.5">
                       <input
                         type="number"
                         className="w-20 text-right border border-slate-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
@@ -245,46 +257,72 @@ function Stage1Table({
                         disabled={disabled}
                         onChange={(e) => {
                           const v = Number(e.target.value);
+                          // Default to full match; user can adjust Matching Units column
                           onChange(idx, "received_qty", v);
-                          onChange(idx, "qty_matched", v);
                           onChange(idx, "matching_units", v);
+                          onChange(idx, "qty_matched", v);
                           onChange(idx, "non_matching_units", 0);
+                          onChange(idx, "product_match", "yes");
+                          onChange(idx, "mismatch_reason", "");
+                          onChange(idx, "mismatch_disposition", "");
                         }}
                       />
-                      {isOverQty && <span className="text-amber-500 text-xs">⚠</span>}
+                      <span className="text-xs text-muted-foreground ml-1 shrink-0">{unit}</span>
+                      {isOverQty && <span className="text-amber-500 text-xs shrink-0">⚠</span>}
                     </div>
                     {isOverQty && (
-                      <p className="text-xs text-amber-700 mt-0.5">Max: {line.pending_quantity} {(line as any).unit}</p>
+                      <p className="text-xs text-amber-700 mt-0.5 text-right">Max: {line.pending_quantity} {unit}</p>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-right font-mono tabular-nums text-slate-600">{pending}</td>
+
+                  {/* Pending — auto, read-only, muted */}
+                  <td className="px-3 py-2 text-right tabular-nums text-slate-400">
+                    <span className="font-mono">{pending}</span>
+                    <span className="text-xs text-muted-foreground ml-1">{unit}</span>
+                  </td>
+
+                  {/* Matching Units — user input, default = received_qty */}
                   <td className="px-3 py-2">
-                    <div className="flex flex-col items-end gap-0.5">
+                    <div className="flex items-center justify-end gap-1.5">
                       <input
                         type="number"
                         className="w-20 text-right border border-slate-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
-                        value={line.qty_matched || ""}
+                        value={line.received_qty === 0 ? "" : line.matching_units}
                         min={0}
                         max={line.received_qty}
                         disabled={disabled}
                         onChange={(e) => {
                           const v = Math.max(0, Math.min(line.received_qty, Number(e.target.value)));
+                          const nm = Math.max(0, line.received_qty - v);
+                          const pm: "yes" | "partial" | "no" =
+                            v >= line.received_qty ? "yes" : v > 0 ? "partial" : "no";
+                          onChange(idx, "matching_units", v);
                           onChange(idx, "qty_matched", v);
+                          onChange(idx, "non_matching_units", nm);
+                          onChange(idx, "product_match", pm);
+                          if (pm === "yes") {
+                            onChange(idx, "mismatch_reason", "");
+                            onChange(idx, "mismatch_disposition", "");
+                          }
                         }}
                       />
-                      {line.qty_matched < line.received_qty && line.received_qty > 0 && (
-                        <span className="text-[10px] text-amber-600">
-                          Not matched: {line.received_qty - line.qty_matched}
-                        </span>
-                      )}
+                      <span className="text-xs text-muted-foreground ml-1 shrink-0">{unit}</span>
                     </div>
                   </td>
-                  <td className="px-3 py-2 text-right font-mono tabular-nums text-sm">
-                    {line.received_qty > 0 && line.qty_matched < line.received_qty
-                      ? <span className="text-amber-600 font-semibold">{line.received_qty - line.qty_matched}</span>
-                      : <span className="text-slate-300">—</span>
-                    }
+
+                  {/* Non-Matching Units — auto, read-only */}
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {nonMatching > 0 ? (
+                      <>
+                        <span className="font-mono text-red-500 font-semibold">{nonMatching}</span>
+                        <span className="text-xs text-muted-foreground ml-1">{unit}</span>
+                      </>
+                    ) : (
+                      <span className="text-slate-300">—</span>
+                    )}
                   </td>
+
+                  {/* Condition */}
                   <td className="px-3 py-2">
                     <select
                       className="w-full border border-slate-200 rounded px-1.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
@@ -297,6 +335,8 @@ function Stage1Table({
                       <option value="short_delivery">Short Delivery</option>
                     </select>
                   </td>
+
+                  {/* Packing OK */}
                   <td className="px-3 py-2 text-center">
                     <button
                       type="button"
@@ -309,6 +349,8 @@ function Stage1Table({
                       {line.packing_intact ? "Yes" : "No"}
                     </button>
                   </td>
+
+                  {/* Notes */}
                   <td className="px-3 py-2">
                     <input
                       type="text"
@@ -319,74 +361,41 @@ function Stage1Table({
                       placeholder="Optional…"
                     />
                   </td>
-                  <td className="px-3 py-2">
-                    <select
-                      className={`w-full border rounded px-1.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-400 ${
-                        pm === 'no' ? 'border-red-300 bg-red-50' : pm === 'partial' ? 'border-amber-300 bg-amber-50' : 'border-slate-200'
-                      }`}
-                      value={pm}
-                      disabled={disabled}
-                      onChange={(e) => {
-                        const val = e.target.value as 'yes' | 'partial' | 'no';
-                        onChange(idx, "product_match", val);
-                        if (val === 'yes') {
-                          onChange(idx, "matching_units", line.received_qty);
-                          onChange(idx, "non_matching_units", 0);
-                          onChange(idx, "mismatch_reason", "");
-                          onChange(idx, "mismatch_disposition", "");
-                        } else if (val === 'no') {
-                          onChange(idx, "matching_units", 0);
-                          onChange(idx, "non_matching_units", line.received_qty);
-                        }
-                      }}
-                    >
-                      <option value="yes">✓ Yes — All match</option>
-                      <option value="partial">⚠ Partial — Some match</option>
-                      <option value="no">✗ No — None match</option>
-                    </select>
+
+                  {/* Product Identity — auto badge derived from matching_units */}
+                  <td className="px-3 py-2 text-center">
+                    {line.received_qty === 0 ? (
+                      <span className="text-[10px] text-slate-400">—</span>
+                    ) : line.matching_units >= line.received_qty ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md border text-[11px] font-semibold bg-green-50 text-green-700 border-green-200">
+                        Full Match
+                      </span>
+                    ) : line.matching_units > 0 ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md border text-[11px] font-semibold bg-amber-50 text-amber-700 border-amber-200">
+                        Partial
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md border text-[11px] font-semibold bg-red-50 text-red-700 border-red-200">
+                        Full Reject
+                      </span>
+                    )}
                   </td>
                 </tr>
-                {pm !== 'yes' && (
-                  <tr key={`${line.id}-identity`} className={pm === 'no' ? 'bg-red-50/80' : 'bg-amber-50/80'}>
+
+                {/* Sub-row — appears only when non-matching units > 0 */}
+                {showSubRow && (
+                  <tr key={`${line.id}-mismatch`} className={line.matching_units === 0 ? "bg-red-50/80" : "bg-amber-50/80"}>
                     <td colSpan={12} className="px-4 py-3">
                       <div className="flex flex-wrap gap-4 items-start">
-                        {pm === 'partial' && (
-                          <>
-                            <div className="flex flex-col gap-1 min-w-[120px]">
-                              <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Matching Units</label>
-                              <input
-                                type="number"
-                                min={0}
-                                max={line.received_qty}
-                                className="w-24 text-right border border-amber-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400"
-                                value={line.matching_units || ""}
-                                disabled={disabled}
-                                onChange={(e) => {
-                                  const v = Math.max(0, Math.min(line.received_qty, Number(e.target.value)));
-                                  onChange(idx, "matching_units", v);
-                                  onChange(idx, "non_matching_units", Math.max(0, line.received_qty - v));
-                                }}
-                              />
-                            </div>
-                            <div className="flex flex-col gap-1 min-w-[120px]">
-                              <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Non-Matching Units</label>
-                              <input
-                                type="number"
-                                className="w-24 text-right border border-slate-200 rounded px-2 py-1 text-sm font-mono bg-slate-50 text-slate-500"
-                                value={line.non_matching_units}
-                                readOnly
-                                disabled
-                              />
-                            </div>
-                          </>
-                        )}
-                        {pm === 'no' && (
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold text-red-700">No units will proceed to QC. GRN will close at Stage 1.</span>
-                          </div>
+                        {line.matching_units === 0 && (
+                          <p className="w-full text-xs font-semibold text-red-700">
+                            No units will proceed to QC. GRN will close at Stage 1.
+                          </p>
                         )}
                         <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
-                          <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Mismatch Reason</label>
+                          <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
+                            Mismatch Reason
+                          </label>
                           <input
                             type="text"
                             className="w-full border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
@@ -396,9 +405,9 @@ function Stage1Table({
                             onChange={(e) => onChange(idx, "mismatch_reason", e.target.value)}
                           />
                         </div>
-                        <div className="flex flex-col gap-1 min-w-[180px]">
+                        <div className="flex flex-col gap-1 min-w-[220px]">
                           <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
-                            Disposition {pm === 'partial' ? '(Non-Matching Units)' : '(All Units)'}
+                            Disposition for Non-Matching Units
                           </label>
                           <select
                             className="w-full border border-slate-200 rounded px-1.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
@@ -1199,6 +1208,7 @@ export default function GRNDetail() {
           mismatch_reason:      a.mismatch_reason ?? "",
           mismatch_disposition: a.mismatch_disposition ?? "",
           jig_confirmed:        a.jig_confirmed ?? false,
+          unit:                 a.unit ?? "NOS",
         };
       })
     );
