@@ -22,14 +22,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { fetchItems } from "@/lib/items-api";
 import { fetchBomVariants } from "@/lib/bom-api";
@@ -354,44 +346,44 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
             <p className="text-xs text-slate-400 mt-1">No items are below their minimum stock threshold</p>
           </div>
         ) : (
-          <div className={`overflow-y-auto overflow-x-auto ${fullHeight ? "flex-1 min-h-0" : "max-h-80"}`}>
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-slate-50 hover:bg-slate-50 sticky top-0 z-10">
-                  <TableHead className="text-xs font-semibold text-slate-500 uppercase tracking-wide w-32 bg-slate-50">Item Code</TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50">Item Name</TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-500 uppercase tracking-wide w-32 bg-slate-50">Type</TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-500 uppercase tracking-wide text-right w-28 bg-slate-50">Current Stock</TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-500 uppercase tracking-wide text-right w-24 bg-slate-50">Min Stock</TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-500 uppercase tracking-wide text-right w-24 bg-slate-50">Shortage</TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-500 uppercase tracking-wide text-center w-36 bg-slate-50">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+          <div className={`relative overflow-x-auto ${fullHeight ? "flex-1 min-h-0 overflow-y-auto" : "max-h-80 overflow-y-auto"}`}>
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr>
+                  <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide w-32 border-b border-slate-200">Item Code</th>
+                  <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide border-b border-slate-200">Item Name</th>
+                  <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide w-32 border-b border-slate-200">Type</th>
+                  <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide w-28 border-b border-slate-200">Current Stock</th>
+                  <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide w-24 border-b border-slate-200">Min Stock</th>
+                  <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide w-24 border-b border-slate-200">Shortage</th>
+                  <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide w-36 border-b border-slate-200">Action</th>
+                </tr>
+              </thead>
+              <tbody>
                 {rows.map((row, idx) => {
                   const { label: typeLabel, className: typeCls } = itemTypeBadge(row.item_type);
                   const raisePO   = needsPO(row.item_type);
                   const startProd = needsProduction(row.item_type);
 
                   return (
-                    <TableRow key={row.id} className={idx % 2 === 1 ? "bg-muted/50" : ""}>
-                      <TableCell className="py-2 font-mono text-xs text-slate-700">{row.item_code}</TableCell>
-                      <TableCell className="py-2 text-sm text-slate-800">{row.item_name}</TableCell>
-                      <TableCell className="py-2">
+                    <tr key={row.id} className={`border-b border-slate-100 ${idx % 2 === 1 ? "bg-slate-50/50" : "bg-white"}`}>
+                      <td className="px-4 py-2 font-mono text-xs text-slate-700">{row.item_code}</td>
+                      <td className="px-4 py-2 text-sm text-slate-800">{row.item_name}</td>
+                      <td className="px-4 py-2">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-md border text-[11px] font-medium ${typeCls}`}>
                           {typeLabel}
                         </span>
-                      </TableCell>
-                      <TableCell className="py-2 text-right font-mono text-sm tabular-nums text-slate-700">
+                      </td>
+                      <td className="px-4 py-2 text-right font-mono text-sm tabular-nums text-slate-700">
                         {row.current_stock.toFixed(2)}
-                      </TableCell>
-                      <TableCell className="py-2 text-right font-mono text-sm tabular-nums text-slate-500">
+                      </td>
+                      <td className="px-4 py-2 text-right font-mono text-sm tabular-nums text-slate-500">
                         {row.min_stock.toFixed(2)}
-                      </TableCell>
-                      <TableCell className="py-2 text-right font-mono text-sm tabular-nums font-semibold text-red-600">
+                      </td>
+                      <td className="px-4 py-2 text-right font-mono text-sm tabular-nums font-semibold text-red-600">
                         {row.shortage.toFixed(2)}
-                      </TableCell>
-                      <TableCell className="py-2 text-center">
+                      </td>
+                      <td className="px-4 py-2 text-center">
                         {row.actionedWith === "PO" ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-green-200 bg-green-50 text-green-700 text-xs font-semibold">
                             <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
@@ -434,12 +426,12 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
                         ) : (
                           <span className="text-xs text-slate-400">—</span>
                         )}
-                      </TableCell>
-                    </TableRow>
+                      </td>
+                    </tr>
                   );
                 })}
-              </TableBody>
-            </Table>
+              </tbody>
+            </table>
           </div>
         )}
       </div>
