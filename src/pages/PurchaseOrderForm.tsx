@@ -29,6 +29,7 @@ import {
 import { formatCurrency, formatNumber, amountInWords } from "@/lib/gst-utils";
 import { getGSTType, calculateLineTax, round2, resolveStateCode, getStateName, type GSTType } from "@/lib/tax-utils";
 import { UNITS } from "@/lib/constants";
+import { supabase } from "@/integrations/supabase/client";
 
 const PAYMENT_TERMS = ["Immediate", "7 Days", "15 Days", "30 Days", "45 Days", "60 Days", "Custom"];
 const GST_RATES = [0, 5, 12, 18, 28];
@@ -206,6 +207,48 @@ export default function PurchaseOrderForm() {
       setDeliveryAddressAutoFilled(true);
     }
   }, [isEdit, deliveryAddressAutoFilled, companyDeliveryAddress]);
+
+  // Vendor auto-fill from item_id in prefill state (Stock Alerts Board flow).
+  // Looks up the most recent PO vendor for this item via po_line_items.
+  // Silently skips if no match — vendor remains blank for manual selection.
+  useEffect(() => {
+    if (isEdit || !prefillApplied || vendorId || vendors.length === 0) return;
+    const firstItem = prefillState?.prefill_items?.[0];
+    if (!firstItem?.item_id) return;
+
+    const itemId = firstItem.item_id;
+    (async () => {
+      try {
+        const { data: lineData } = await (supabase as any)
+          .from("po_line_items")
+          .select("po_id")
+          .eq("item_id", itemId)
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        const poId = lineData?.[0]?.po_id;
+        if (!poId) return;
+
+        const { data: poData } = await (supabase as any)
+          .from("purchase_orders")
+          .select("vendor_id")
+          .eq("id", poId)
+          .single();
+
+        const foundVendorId = poData?.vendor_id;
+        if (!foundVendorId) return;
+
+        const v = vendors.find((vv) => vv.id === foundVendorId);
+        if (v && !vendorId) {
+          setVendorId(v.id);
+          setSelectedVendor(v);
+          if (v.payment_terms && !paymentTerms) setPaymentTerms(v.payment_terms);
+        }
+      } catch {
+        // Silently ignore — vendor stays blank for manual selection
+      }
+    })();
+  }, [isEdit, prefillApplied, vendors]);
 
   const handleVendorSelect = (vendor: Party) => {
     setVendorId(vendor.id);
