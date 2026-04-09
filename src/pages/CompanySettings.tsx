@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
-import { ArrowLeft, Save, Building2, Upload, X } from "lucide-react";
+import { ArrowLeft, Save, Building2, Upload, X, Lock } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,7 +22,7 @@ export default function CompanySettings() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { profile, refreshProfile } = useAuth();
+  const { profile, refreshProfile, role } = useAuth();
 
   const [form, setForm] = useState({
     company_name: "",
@@ -48,6 +48,7 @@ export default function CompanySettings() {
     website: "",
     authorized_signatory: "",
     logo_url: "",
+    over_receipt_tolerance_percent: 0,
   });
   const [sameAsPhysical, setSameAsPhysical] = useState(false);
 
@@ -103,6 +104,7 @@ export default function CompanySettings() {
         website: existing.website ?? "",
         authorized_signatory: e.authorized_signatory ?? "",
         logo_url: existing.logo_url ?? "",
+        over_receipt_tolerance_percent: Number(e.over_receipt_tolerance_percent ?? 0),
       });
       if (existing.logo_url) setLogoPreview(existing.logo_url);
     }
@@ -220,6 +222,7 @@ export default function CompanySettings() {
           ...(form.cin ? { cin: form.cin } : {}),
           ...(form.authorized_signatory ? { authorized_signatory: form.authorized_signatory } : {}),
           ...regAddr,
+          over_receipt_tolerance_percent: form.over_receipt_tolerance_percent,
         } as any),
         isFirstSetup,
       };
@@ -492,6 +495,47 @@ export default function CompanySettings() {
           <Input value={form.authorized_signatory} onChange={set("authorized_signatory")} placeholder="Name of authorized person" />
           <p className="text-xs text-slate-400">Printed below the signature on documents</p>
         </div>
+      </div>
+
+      {/* Receiving & GRN Settings */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-bold uppercase text-slate-500 tracking-wider">Receiving &amp; GRN Settings</h2>
+          {role !== "admin" && (
+            <span className="flex items-center gap-1 text-xs text-slate-400">
+              <Lock className="h-3.5 w-3.5" /> Admin only
+            </span>
+          )}
+        </div>
+
+        {role === "admin" ? (
+          <div className="space-y-1.5">
+            <Label>Over-Receipt Tolerance (%)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={20}
+              step={0.5}
+              value={form.over_receipt_tolerance_percent}
+              onChange={(e) => setForm((f) => ({ ...f, over_receipt_tolerance_percent: Number(e.target.value) }))}
+              placeholder="0 (strict — no over-receipt allowed)"
+              className="w-48 font-mono"
+            />
+            <p className="text-xs text-slate-400">
+              Allow GRN to proceed if received quantity exceeds PO by up to this percentage.
+              Set to 0 to block all over-receipts. Over-receipts within tolerance require finance team approval.
+            </p>
+          </div>
+        ) : (
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-slate-50 border border-slate-200">
+            <Lock className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
+            <div className="space-y-0.5">
+              <p className="text-xs font-medium text-slate-600">Over-Receipt Tolerance</p>
+              <p className="text-sm font-mono text-slate-800">{form.over_receipt_tolerance_percent}%</p>
+              <p className="text-xs text-slate-400">Only admins can change this setting.</p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Save */}

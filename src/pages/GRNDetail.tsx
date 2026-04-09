@@ -34,6 +34,9 @@ import { AuditTimeline } from "@/components/AuditTimeline";
 import { logAudit } from "@/lib/audit-api";
 import { UNITS } from "@/lib/constants";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { fetchCompanySettings } from "@/lib/settings-api";
+import { GRNFinanceApproval } from "@/components/GRNFinanceApproval";
 
 // ── Lookup tables ──────────────────────────────────────────────────────────────
 
@@ -190,11 +193,15 @@ function Stage1Table({
   onChange,
   disabled = false,
   overQtyIds = [],
+  withinToleranceIds = [],
+  tolerancePct = 0,
 }: {
   lines: S1Line[];
   onChange: (idx: number, field: keyof S1Line, value: unknown) => void;
   disabled?: boolean;
   overQtyIds?: string[];
+  withinToleranceIds?: string[];
+  tolerancePct?: number;
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-blue-100">
@@ -218,6 +225,7 @@ function Stage1Table({
         <tbody className="divide-y divide-blue-50">
           {lines.map((line, idx) => {
             const isOverQty = overQtyIds.includes(line.id);
+            const isWithinTolerance = withinToleranceIds.includes(line.id);
             const unit = line.unit || "NOS";
             const pending = Math.max(0, line.pending_quantity - line.received_qty);
             const nonMatching = Math.max(0, line.received_qty - line.matching_units);
@@ -228,7 +236,9 @@ function Stage1Table({
               : nonMatching > 0
               ? "bg-amber-50"
               : isOverQty
-              ? "bg-yellow-50/70"
+              ? "bg-red-50/60"
+              : isWithinTolerance
+              ? "bg-amber-50/50"
               : "bg-white hover:bg-blue-50/20";
 
             return (
@@ -268,10 +278,17 @@ function Stage1Table({
                         }}
                       />
                       <span className="text-xs text-muted-foreground ml-1 shrink-0">{unit}</span>
-                      {isOverQty && <span className="text-amber-500 text-xs shrink-0">⚠</span>}
+                      {(isOverQty || isWithinTolerance) && <span className={`text-xs shrink-0 ${isOverQty ? "text-red-500" : "text-amber-500"}`}>⚠</span>}
                     </div>
                     {isOverQty && (
-                      <p className="text-xs text-amber-700 mt-0.5 text-right">Max: {line.pending_quantity} {unit}</p>
+                      <p className="text-xs text-red-600 mt-0.5 text-right font-medium">
+                        Exceeds max {tolerancePct > 0 ? `(${line.pending_quantity + Math.floor(line.pending_quantity * tolerancePct / 100)} ${unit})` : `(${line.pending_quantity} ${unit})`}
+                      </p>
+                    )}
+                    {isWithinTolerance && !isOverQty && (
+                      <p className="text-xs text-amber-700 mt-0.5 text-right">
+                        +{line.received_qty - line.pending_quantity} over PO · within {tolerancePct}% tolerance
+                      </p>
                     )}
                   </td>
 
@@ -1116,6 +1133,7 @@ export default function GRNDetail() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { role } = useAuth();
 
   // ── Data fetch ────────────────────────────────────────────────────────────
 
@@ -1124,6 +1142,14 @@ export default function GRNDetail() {
     queryFn: () => fetchGRNWithStages(id!),
     enabled: !!id,
   });
+
+  const { data: companySettings } = useQuery({
+    queryKey: ["company-settings"],
+    queryFn: fetchCompanySettings,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const tolerancePct = Number((companySettings as any)?.over_receipt_tolerance_percent ?? 0);
 
   // ── Item type lookup for per-line Final GRN auto-detection ────────────────
   const { data: lineItemTypes } = useQuery({
@@ -1313,22 +1339,31 @@ export default function GRNDetail() {
 
   // ── Mutations ─────────────────────────────────────────────────────────────
 
+  const needsFinanceApproval = withinToleranceItems.length > 0 && beyondToleranceItems.length === 0;
+
   const s1Mutation = useMutation({
     mutationFn: async () => {
-      const lines: QuantitativeLineData[] = s1Lines.map((l) => ({
-        id:                   l.id,
-        received_qty:         l.received_qty,
-        qty_matched:          l.qty_matched,
-        condition_on_arrival: l.condition_on_arrival,
-        packing_intact:       l.packing_intact,
-        quantitative_notes:   l.notes || null,
-        product_match:        l.product_match,
-        matching_units:       l.matching_units,
-        non_matching_units:   l.non_matching_units,
-        mismatch_reason:      l.mismatch_reason || null,
-        mismatch_disposition: l.mismatch_disposition || null,
-      }));
-      await saveQuantitativeStage(id!, lines, s1VerifiedBy, s1InvoiceNumber || null, s1InvoiceDate || null);
+      const lines: QuantitativeLineData[] = s1Lines.map((l) => {
+        const tier = overReceiptTiers.find((t) => t.line.id === l.id);
+        return {
+          id:                   l.id,
+          received_qty:         l.received_qty,
+          qty_matched:          l.qty_matched,
+          condition_on_arrival: l.condition_on_arrival,
+          packing_intact:       l.packing_intact,
+          quantitative_notes:   l.notes || null,
+          product_match:        l.product_match,
+          matching_units:       l.matching_units,
+          non_matching_units:   l.non_matching_units,
+          mismatch_reason:      l.mismatch_reason || null,
+          mismatch_disposition: l.mismatch_disposition || null,
+          over_receipt_qty:     tier?.tier === "within_tolerance" ? (tier as any).excess : null,
+        };
+      });
+
+      const overrideStage = needsFinanceApproval ? "pending_finance_approval" : null;
+      await saveQuantitativeStage(id!, lines, s1VerifiedBy, s1InvoiceNumber || null, s1InvoiceDate || null, overrideStage);
+
       // Save scrap data for DC-GRNs
       await saveGRNScrapItems(id!, scrapReturned, scrapNotes || null,
         scrapItems.filter((r) => r.material_type.trim()).map((r) => ({
@@ -1338,14 +1373,38 @@ export default function GRNDetail() {
           notes: r.notes || undefined,
         }))
       );
-      await logAudit("grn", id!, "GRN Stage 1 Complete");
+
+      // Insert finance approval notification if needed
+      if (needsFinanceApproval) {
+        try {
+          const totalExcess = withinToleranceItems.reduce((sum, t) => sum + ((t as any).excess ?? 0), 0);
+          await (supabase as any).from("notifications").insert({
+            company_id: g.company_id,
+            type: "over_receipt_approval",
+            title: "Over-Receipt GRN Requires Approval",
+            message: `GRN ${g.grn_number} has ${totalExcess} over-received unit(s). Finance approval needed before QC can proceed.`,
+            is_read: false,
+            link: `/grns/${id}`,
+            target_role: "finance",
+          });
+        } catch {
+          // Notifications table may not exist yet — non-fatal
+        }
+      }
+
+      await logAudit("grn", id!, needsFinanceApproval ? "GRN Stage 1 — Pending Finance Approval" : "GRN Stage 1 Complete");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["grn-stages", id] });
       queryClient.invalidateQueries({ queryKey: ["grns"] });
       queryClient.invalidateQueries({ queryKey: ["pending-qc-grns"] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
       setS1Editing(false);
-      toast({ title: "Goods receipt recorded", description: "Ready for QC inspection." });
+      if (needsFinanceApproval) {
+        toast({ title: "Submitted for finance approval", description: "Finance team has been notified. QC will begin after approval." });
+      } else {
+        toast({ title: "Goods receipt recorded", description: "Ready for QC inspection." });
+      }
     },
     onError: (err: any) =>
       toast({ title: "Error saving Stage 1", description: err.message, variant: "destructive" }),
@@ -1533,9 +1592,10 @@ export default function GRNDetail() {
   const g         = grn as any;
   const stage     = g.grn_stage ?? "draft";
   const verdict   = g.overall_quality_verdict as string | undefined;
-  const s1Done    = ["quality_pending", "quality_done", "closed", "awaiting_store"].includes(stage);
+  const s1Done    = ["quality_pending", "quality_done", "closed", "awaiting_store", "pending_finance_approval"].includes(stage);
   const s2Visible = ["quality_pending", "quality_done", "closed", "awaiting_store"].includes(stage);
   const s2Done    = ["quality_done", "closed", "awaiting_store"].includes(stage);
+  const pendingFinanceApproval = stage === "pending_finance_approval";
 
   // ── Per-line Final GRN derived values ─────────────────────────────────────
   const autoFinalLines = new Set<string>(
@@ -1550,7 +1610,20 @@ export default function GRNDetail() {
   const showStorePanel = stage === "awaiting_store" && !g.store_confirmed;
   const s1Editable = (!s1Done || s1Editing) && !isDeletedOrCancelled;
 
-  const overQtyLines  = s1Lines.filter((l) => l.received_qty > 0 && l.pending_quantity > 0 && l.received_qty > l.pending_quantity);
+  // ── Over-receipt tolerance tiers ─────────────────────────────────────────
+  // For each line that is over the PO quantity, determine if it falls within
+  // the configured tolerance (requires finance approval) or beyond it (hard block).
+  const overReceiptTiers = s1Lines.map((l) => {
+    if (l.received_qty <= l.pending_quantity || l.pending_quantity <= 0) return { line: l, tier: "ok" as const };
+    const tolerance_qty = Math.floor(l.pending_quantity * (tolerancePct / 100));
+    const max_allowed   = l.pending_quantity + tolerance_qty;
+    if (l.received_qty <= max_allowed) return { line: l, tier: "within_tolerance" as const, excess: l.received_qty - l.pending_quantity, max_allowed };
+    return { line: l, tier: "beyond_tolerance" as const, max_allowed };
+  });
+  const withinToleranceItems = overReceiptTiers.filter((t) => t.tier === "within_tolerance");
+  const beyondToleranceItems = overReceiptTiers.filter((t) => t.tier === "beyond_tolerance");
+  // Legacy alias — any line that blocks the save button at all
+  const overQtyLines = beyondToleranceItems.map((t) => t.line);
   const ncItemsWithData = ncSummaries.filter((s) => s.non_conforming_qty > 0);
 
   // For QCMeasurementEditor lineItems
@@ -1694,7 +1767,14 @@ export default function GRNDetail() {
 
         <div className="px-5 py-4 space-y-4">
           {s1Editable ? (
-            <Stage1Table lines={s1Lines} onChange={updateS1Line} disabled={isDeletedOrCancelled} overQtyIds={overQtyLines.map(l => l.id)} />
+            <Stage1Table
+              lines={s1Lines}
+              onChange={updateS1Line}
+              disabled={isDeletedOrCancelled}
+              overQtyIds={overQtyLines.map(l => l.id)}
+              withinToleranceIds={withinToleranceItems.map(t => t.line.id)}
+              tolerancePct={tolerancePct}
+            />
           ) : (
             <Stage1ReadOnly lines={s1Lines} isDcGrn={!!g.linked_dc_id} />
           )}
@@ -1814,8 +1894,40 @@ export default function GRNDetail() {
                 <Label className="text-xs font-medium text-slate-600">Receipt Notes</Label>
                 <Textarea value={s1Notes} onChange={(e) => setS1Notes(e.target.value)} className="mt-1 text-sm" rows={2} placeholder="Overall notes for this delivery (optional)…" />
               </div>
-              <Button onClick={handleS1Save} disabled={s1Mutation.isPending || isDeletedOrCancelled || overQtyLines.length > 0} className="w-full bg-blue-600 hover:bg-blue-700 text-white">
-                {s1Mutation.isPending ? "Saving…" : "Save — Stage 1 Complete"}
+              {/* Within-tolerance warning banner */}
+              {withinToleranceItems.length > 0 && beyondToleranceItems.length === 0 && (
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
+                  <span>
+                    <strong>Over-receipt within {tolerancePct}% tolerance.</strong>{" "}
+                    {withinToleranceItems.length} line{withinToleranceItems.length > 1 ? "s" : ""} received above PO quantity.
+                    Submitting will send this GRN to finance for approval before QC proceeds.
+                  </span>
+                </div>
+              )}
+
+              {/* Beyond-tolerance error banner */}
+              {beyondToleranceItems.length > 0 && (
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-800 text-xs">
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-red-600" />
+                  <span>
+                    <strong>Quantity exceeds maximum allowed.</strong>{" "}
+                    {beyondToleranceItems.length} line{beyondToleranceItems.length > 1 ? "s exceed" : " exceeds"} the{" "}
+                    {tolerancePct > 0 ? `${tolerancePct}% tolerance limit` : "PO quantity"}. Edit the received quantity or amend the PO to proceed.
+                  </span>
+                </div>
+              )}
+
+              <Button
+                onClick={handleS1Save}
+                disabled={s1Mutation.isPending || isDeletedOrCancelled || overQtyLines.length > 0}
+                className={`w-full text-white ${needsFinanceApproval ? "bg-amber-600 hover:bg-amber-700" : "bg-blue-600 hover:bg-blue-700"}`}
+              >
+                {s1Mutation.isPending
+                  ? "Saving…"
+                  : needsFinanceApproval
+                  ? "Submit for Finance Approval"
+                  : "Save — Stage 1 Complete"}
               </Button>
             </>
           )}
@@ -1835,6 +1947,25 @@ export default function GRNDetail() {
           )}
         </div>
       </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          FINANCE APPROVAL (when pending_finance_approval)
+      ═══════════════════════════════════════════════════════════════════ */}
+      {pendingFinanceApproval && (
+        <GRNFinanceApproval
+          grnId={id!}
+          grnNumber={g.grn_number ?? ""}
+          role={role}
+          overReceiptLines={withinToleranceItems.map((t) => ({
+            id: t.line.id,
+            item_code: t.line.item_code,
+            description: t.line.description,
+            pending_quantity: t.line.pending_quantity,
+            received_qty: t.line.received_qty,
+            unit: t.line.unit,
+          }))}
+        />
+      )}
 
       {/* ═══════════════════════════════════════════════════════════════════
           STAGE 2 — QUALITY INSPECTION

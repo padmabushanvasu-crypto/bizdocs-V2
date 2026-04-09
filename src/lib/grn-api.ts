@@ -839,6 +839,7 @@ export interface QuantitativeLineData {
   non_matching_units?: number | null;
   mismatch_reason?: string | null;
   mismatch_disposition?: string | null;
+  over_receipt_qty?: number | null;
 }
 
 export async function saveQuantitativeStage(
@@ -847,6 +848,7 @@ export async function saveQuantitativeStage(
   verifiedBy: string,
   vendorInvoiceNumber?: string | null,
   vendorInvoiceDate?: string | null,
+  overrideStage?: string | null,
 ): Promise<void> {
   const now = new Date().toISOString();
   // Update each line
@@ -869,6 +871,7 @@ export async function saveQuantitativeStage(
         non_matching_units: line.non_matching_units ?? null,
         mismatch_reason: line.mismatch_reason ?? null,
         mismatch_disposition: line.mismatch_disposition ?? null,
+        over_receipt_qty: line.over_receipt_qty ?? null,
       })
       .eq('id', line.id);
     if (error) throw error;
@@ -885,7 +888,10 @@ export async function saveQuantitativeStage(
   if (vendorInvoiceNumber !== undefined) updateData.vendor_invoice_number = vendorInvoiceNumber;
   if (vendorInvoiceDate !== undefined) updateData.vendor_invoice_date = vendorInvoiceDate || null;
 
-  if (allRejected) {
+  if (overrideStage) {
+    // Caller explicitly controls next stage (e.g. pending_finance_approval)
+    updateData.grn_stage = overrideStage;
+  } else if (allRejected) {
     // All items rejected at Stage 1 — close GRN without QC
     updateData.grn_stage = 'closed';
     updateData.overall_quality_verdict = 'returned';
