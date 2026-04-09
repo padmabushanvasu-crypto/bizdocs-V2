@@ -280,26 +280,35 @@ export default function Dashboard() {
     refetchInterval: STALE,
   });
 
+  // Resolve companyId once so it can gate and key the stock alerts query
+  const { data: companyId } = useQuery({
+    queryKey: ['company-id'],
+    queryFn: () => getCompanyId(),
+    staleTime: Infinity,
+  });
+
   // Live stock alerts from view
   const { data: stockAlertData = { unactioned: [] as StockAlertItem[], actioned: [] as StockAlertItem[] } } = useQuery({
-    queryKey: ['stock-alerts-dashboard'],
+    queryKey: ['stock-alerts-dashboard', companyId],
+    enabled: !!companyId,
+    staleTime: 0,
     queryFn: async () => {
-      const companyId = await getCompanyId();
-      if (!companyId) return { unactioned: [] as StockAlertItem[], actioned: [] as StockAlertItem[] };
-
       const { data, error } = await (supabase as any)
         .from('stock_alerts')
         .select('*')
         .eq('company_id', companyId)
-        .neq('item_type', 'service')
-        .order('shortage', { ascending: false });
+        .neq('item_type', 'service');
 
       if (error) {
         console.error('Stock alerts error:', error);
-        return { unactioned: [] as StockAlertItem[], actioned: [] as StockAlertItem[] };
+        throw error;
       }
 
-      const alertItems = (data ?? []) as any[];
+      const alertItems = ((data ?? []) as any[]).sort((a: any, b: any) => {
+        const aS = a.shortage ?? ((a.min_stock ?? 0) - (a.effective_stock ?? a.stock_free ?? 0));
+        const bS = b.shortage ?? ((b.min_stock ?? 0) - (b.effective_stock ?? b.stock_free ?? 0));
+        return bS - aS;
+      });
       if (alertItems.length === 0) return { unactioned: [] as StockAlertItem[], actioned: [] as StockAlertItem[] };
 
       const itemIds = alertItems.map((i: any) => i.id);
@@ -353,8 +362,6 @@ export default function Dashboard() {
         actioned: enriched.filter((i) => !!i.actionedWith),
       };
     },
-    staleTime: 30_000,
-    refetchOnMount: true,
   });
 
   // Derived alert counts
@@ -666,7 +673,7 @@ export default function Dashboard() {
                 className="text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors"
                 onClick={() => navigate("/reorder-alerts")}
               >
-                View full procurement intelligence →
+                View all reorder alerts →
               </button>
             </div>
           </div>
