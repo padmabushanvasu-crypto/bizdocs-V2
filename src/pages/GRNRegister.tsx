@@ -315,11 +315,6 @@ function GRNRegisterInner() {
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                         <div className="flex gap-1 justify-center" onClick={(e) => e.stopPropagation()}>
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate(`/grn/${grn.id}`)}><Eye className="h-3.5 w-3.5" /></Button>
-                          {!isDeleted && (
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openDeleteDialog(grn)}>
-                              <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                            </Button>
-                          )}
                         </div>
                       </td>
                     </tr>

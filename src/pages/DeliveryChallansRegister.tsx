@@ -314,11 +314,6 @@ function DeliveryChallansRegisterInner() {
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate(`/delivery-challans/${dc.id}`)}>
                             <Eye className="h-3.5 w-3.5" />
                           </Button>
-                          {!["cancelled", "deleted"].includes(dc.status) && (
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => openDeleteDialog(dc)}>
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
                         </div>
                       </td>
                     </tr>
