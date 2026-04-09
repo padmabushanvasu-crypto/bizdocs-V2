@@ -4,7 +4,8 @@ import { Activity, CheckCircle2 } from "lucide-react";
 import { fetchPendingQCGRNs, fetchAwaitingStoreCount } from "@/lib/grn-api";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { StockAlertsBoard } from "@/components/StockAlertsBoard";
-import { OperationalSummaryStrip } from "@/components/OperationalSummaryStrip";
+import { OutstandingPOsWidget } from "@/components/OutstandingPOsWidget";
+import { OutstandingDCsWidget } from "@/components/OutstandingDCsWidget";
 import { formatCurrency } from "@/lib/gst-utils";
 import { fetchAssemblyOrderStats } from "@/lib/assembly-orders-api";
 import { fetchFatStats } from "@/lib/fat-api";
@@ -514,59 +515,16 @@ export default function Dashboard() {
           </span>
         </button>
 
-        {/* ── Section 1: Critical Alerts ───────────────────────────── */}
-        {allClear ? (
-          <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-green-50 border border-green-200">
-            <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
-            <p className="text-sm font-medium text-green-800">All systems go — no alerts requiring attention.</p>
-          </div>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {overdueDCReturns > 0 && (
-              <AlertPill label="Overdue DC Returns" count={overdueDCReturns} colour="red"   onClick={() => navigate("/delivery-challans")} />
-            )}
-            {(dashData?.overduePOCount ?? 0) > 0 && (
-              <AlertPill label="Overdue POs" count={dashData!.overduePOCount} colour="red" onClick={() => navigate("/purchase-orders")} />
-            )}
-            {criticalCount > 0 && (
-              <AlertPill label="Needs Action"       count={criticalCount}   colour="red"   onClick={() => navigate("/reorder-intelligence?filter=needs_action")} />
-            )}
-            {actionedCount > 0 && (
-              <AlertPill label="Being Actioned"     count={actionedCount}   colour="amber" onClick={() => navigate("/reorder-intelligence")} />
-            )}
-            {pendingQCCount > 0 && (
-              <AlertPill
-                label="Awaiting QC"
-                count={pendingQCCount}
-                colour="amber"
-                onClick={() => navigate('/grn?stage=quality_pending')}
-              />
-            )}
-            {awaitingStoreCount > 0 && (
-              <AlertPill
-                label="Awaiting Store"
-                count={awaitingStoreCount}
-                colour="amber"
-                onClick={() => navigate('/storekeeper-queue')}
-              />
-            )}
-            {fatPending > 0 && (
-              <AlertPill label="FAT Pending"        count={fatPending}       colour="amber" onClick={() => navigate("/fat-certificates")} />
-            )}
-            {uninvoicedUnits > 0 && (
-              <AlertPill label="Ready to Invoice"   count={uninvoicedUnits}  colour="amber" onClick={() => navigate("/fat-certificates")} />
-            )}
-            {(dashData?.needsBuildingCount ?? 0) > 0 && (
-              <AlertPill label="Items Need Building" count={dashData!.needsBuildingCount} colour="amber" onClick={() => navigate("/stock-register")} />
-            )}
-          </div>
-        )}
-
         {/* ── Section 2: Stock Alerts Board ────────────────────────── */}
         {companyId && <StockAlertsBoard companyId={companyId} />}
 
-        {/* ── Section 3: Operational Summary Strip ─────────────────── */}
-        {companyId && <OperationalSummaryStrip companyId={companyId} />}
+        {/* ── Section 3: Outstanding POs and DCs ───────────────────── */}
+        {companyId && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <OutstandingPOsWidget companyId={companyId} />
+            <OutstandingDCsWidget companyId={companyId} />
+          </div>
+        )}
 
         {/* ── Section 4: Two-column stats grid ─────────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
