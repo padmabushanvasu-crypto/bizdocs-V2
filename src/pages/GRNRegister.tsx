@@ -1,15 +1,27 @@
 import { useState, useMemo, Component, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { PackageCheck, Plus, Search, Eye, ClipboardCheck, AlertTriangle, Package, Download, Trash2 } from "lucide-react";
+import { PackageCheck, Plus, Search, Eye, ClipboardCheck, AlertTriangle, Package, Download, Trash2, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { MetricCard } from "@/components/MetricCard";
-import { fetchGRNs, fetchGRNStats, softDeleteGRN, fetchPendingQCGRNs, type GRNFilters } from "@/lib/grn-api";
+import { fetchGRNs, fetchGRNStats, softDeleteGRN, fetchPendingQCGRNs, type GRNFilters, type GrnDeleteStockAction } from "@/lib/grn-api";
 import { logAudit } from "@/lib/audit-api";
 import { exportToExcel, GRN_EXPORT_COLS } from "@/lib/export-utils";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+
+const DELETION_REASONS = [
+  { value: 'data_entry_error',        label: 'Data entry error' },
+  { value: 'duplicate_entry',         label: 'Duplicate entry' },
+  { value: 'wrong_vendor',            label: 'Wrong vendor / supplier selected' },
+  { value: 'cancelled_by_management', label: 'Cancelled by management' },
+  { value: 'other',                   label: 'Other (please specify)' },
+];
+
+const COMPLETED_GRN_STAGES = new Set(['quality_done', 'awaiting_store', 'closed']);
 
 const stageConfig: Record<string, { label: string; cls: string; pulse?: boolean }> = {
   draft:                          { label: 'Draft',             cls: 'bg-slate-100 text-slate-600 border border-slate-200' },
@@ -40,6 +52,7 @@ function StageBadge({ grn }: { grn: any }) {
 class GrnRegisterErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   constructor(props: { children: ReactNode }) { super(props); this.state = { error: null }; }
   static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error, info: any) { console.error('[GRNRegister crash]', error, info?.componentStack); }
   render() {
     if (this.state.error) {
       return (
@@ -71,6 +84,14 @@ function GRNRegisterInner() {
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { role } = useAuth();
+
+  // ── Deletion dialog state ─────────────────────────────────────────────────
+  const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [deleteCustomReason, setDeleteCustomReason] = useState('');
+  const [deleteStockAction, setDeleteStockAction] = useState<GrnDeleteStockAction | ''>('');
 
   const monthOptions = useMemo(() => {
     const opts: { value: string; label: string }[] = [];
@@ -95,16 +116,49 @@ function GRNRegisterInner() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (grn: any) => {
-      await softDeleteGRN(grn.id);
-      await logAudit("grn", grn.id, "deleted");
+    mutationFn: async ({ grn, reason, stockAction }: { grn: any; reason: string; stockAction?: GrnDeleteStockAction }) => {
+      await softDeleteGRN(grn.id, { deletion_reason: reason, stockAction });
+      await logAudit("grn", grn.id, "deleted", { reason, stockAction });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["grns"] });
       queryClient.invalidateQueries({ queryKey: ["grn-stats"] });
+      setDeleteDialogOpen(false);
+      setDeleteTarget(null);
+      setDeleteReason('');
+      setDeleteCustomReason('');
+      setDeleteStockAction('');
       toast({ title: "GRN deleted" });
     },
+    onError: (err: any) => toast({ title: "Delete failed", description: err.message, variant: "destructive" }),
   });
+
+  const openDeleteDialog = (grn: any) => {
+    setDeleteTarget(grn);
+    setDeleteReason('');
+    setDeleteCustomReason('');
+    setDeleteStockAction('');
+    setDeleteDialogOpen(true);
+  };
+
+  const getFinalReason = () =>
+    deleteReason === 'other'
+      ? deleteCustomReason.trim()
+      : DELETION_REASONS.find(r => r.value === deleteReason)?.label ?? deleteReason;
+
+  const handleConfirmDelete = () => {
+    if (!deleteTarget || !deleteReason) return;
+    if (deleteReason === 'other' && !deleteCustomReason.trim()) return;
+    const isCompleted = COMPLETED_GRN_STAGES.has(deleteTarget.grn_stage);
+    const canDeleteCompleted = role === 'admin' || role === 'storekeeper';
+    if (isCompleted && canDeleteCompleted && !deleteStockAction) return;
+    const finalReason = getFinalReason();
+    deleteMutation.mutate({
+      grn: deleteTarget,
+      reason: finalReason,
+      stockAction: (isCompleted && canDeleteCompleted && deleteStockAction) ? deleteStockAction : undefined,
+    });
+  };
 
   const { data: stats } = useQuery({ queryKey: ["grn-stats"], queryFn: fetchGRNStats });
   const { data: pendingQC = [] } = useQuery({ queryKey: ["pending-qc-grns"], queryFn: fetchPendingQCGRNs });
@@ -262,7 +316,7 @@ function GRNRegisterInner() {
                         <div className="flex gap-1 justify-center" onClick={(e) => e.stopPropagation()}>
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate(`/grn/${grn.id}`)}><Eye className="h-3.5 w-3.5" /></Button>
                           {!isDeleted && (
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => deleteMutation.mutate(grn)}>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openDeleteDialog(grn)}>
                               <Trash2 className="h-3.5 w-3.5 text-destructive" />
                             </Button>
                           )}
@@ -284,6 +338,107 @@ function GRNRegisterInner() {
           <Button variant="outline" size="sm" disabled={(filters.page ?? 1) * (filters.pageSize ?? 20) >= (data?.count ?? 0)} onClick={() => setFilters((f) => ({ ...f, page: (f.page ?? 1) + 1 }))}>Next</Button>
         </div>
       )}
+
+      {/* ── GRN Deletion Dialog ── */}
+      <Dialog open={deleteDialogOpen} onOpenChange={(open) => { if (!open) { setDeleteDialogOpen(false); setDeleteTarget(null); } }}>
+        <DialogContent className="max-w-md">
+          {(() => {
+            if (!deleteTarget) return null;
+            const isCompleted = COMPLETED_GRN_STAGES.has(deleteTarget.grn_stage);
+            const canDelete = !isCompleted || role === 'admin' || role === 'storekeeper';
+
+            if (isCompleted && !canDelete) {
+              return (
+                <>
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2 text-destructive">
+                      <Lock className="h-4 w-4" /> Delete GRN — Restricted
+                    </DialogTitle>
+                  </DialogHeader>
+                  <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                    <p className="text-sm text-amber-800">
+                      This GRN has completed QC and stock has been credited. Only administrators or storekeepers can delete it. Please contact your supervisor.
+                    </p>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Close</Button>
+                  </DialogFooter>
+                </>
+              );
+            }
+
+            const needsStockAction = isCompleted && canDelete;
+            const reasonLabel = DELETION_REASONS.find(r => r.value === deleteReason)?.label ?? '';
+            const isOther = deleteReason === 'other';
+            const isConfirmEnabled =
+              !!deleteReason &&
+              (!isOther || !!deleteCustomReason.trim()) &&
+              (!needsStockAction || !!deleteStockAction);
+
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="text-destructive">
+                    {needsStockAction ? 'Delete GRN — Stock Action Required' : 'Delete GRN'}
+                  </DialogTitle>
+                  {needsStockAction && (
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Stock has already been credited for this GRN. How should we handle it?
+                    </p>
+                  )}
+                </DialogHeader>
+
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Reason for deletion <span className="text-destructive">*</span></label>
+                    <Select value={deleteReason} onValueChange={setDeleteReason}>
+                      <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select a reason…" /></SelectTrigger>
+                      <SelectContent>
+                        {DELETION_REASONS.map(r => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    {isOther && (
+                      <Input
+                        placeholder="Please specify…"
+                        value={deleteCustomReason}
+                        onChange={e => setDeleteCustomReason(e.target.value)}
+                        className="h-9 text-sm mt-1.5"
+                      />
+                    )}
+                  </div>
+
+                  {needsStockAction && (
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Stock action <span className="text-destructive">*</span></label>
+                      {([
+                        { value: 'return_to_vendor', label: 'Goods returned to vendor', desc: 'Reverses stock that was credited to store' },
+                        { value: 'duplicate_reverse', label: 'Duplicate GRN entry — reverse stock', desc: 'Reverses duplicate stock credit' },
+                        { value: 'keep_stock',        label: 'Keep stock — GRN entry was incorrect', desc: 'Stock stays in store; only the GRN record is removed' },
+                      ] as { value: GrnDeleteStockAction; label: string; desc: string }[]).map(opt => (
+                        <label key={opt.value} className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${deleteStockAction === opt.value ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}>
+                          <input type="radio" name="grnStockAction" value={opt.value} checked={deleteStockAction === opt.value} onChange={() => setDeleteStockAction(opt.value)} className="mt-0.5" />
+                          <div>
+                            <p className="text-sm font-medium">{opt.label}</p>
+                            <p className="text-xs text-muted-foreground">{opt.desc}</p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setDeleteDialogOpen(false)} disabled={deleteMutation.isPending}>Go Back</Button>
+                  <Button variant="destructive" onClick={handleConfirmDelete} disabled={!isConfirmEnabled || deleteMutation.isPending}>
+                    {deleteMutation.isPending ? 'Deleting…' : 'Confirm Deletion'}
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

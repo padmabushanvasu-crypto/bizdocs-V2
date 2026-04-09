@@ -1,9 +1,10 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Edit, X, Truck, CheckCircle2, RotateCcw, AlertTriangle, Printer, ChevronLeft, Trash2, Plus } from "lucide-react";
+import { Edit, X, Truck, CheckCircle2, RotateCcw, AlertTriangle, Printer, ChevronLeft, Trash2, Plus, Lock } from "lucide-react";
 import { EditableSection } from "@/components/EditableSection";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
@@ -12,12 +13,24 @@ import { Label } from "@/components/ui/label";
 import {
   fetchDeliveryChallan,
   cancelDeliveryChallan,
+  softDeleteDeliveryChallan,
   fetchDCReturns,
   recordEnhancedReturn,
   fetchBomStagesForItemDC,
   fetchComponentProcessingLog,
   type EnhancedReturnData,
+  type DcDeleteStockAction,
 } from "@/lib/delivery-challans-api";
+import { logAudit } from "@/lib/audit-api";
+import { useAuth } from "@/hooks/useAuth";
+
+const DELETION_REASONS_DC_DETAIL = [
+  { value: 'data_entry_error',        label: 'Data entry error' },
+  { value: 'duplicate_entry',         label: 'Duplicate entry' },
+  { value: 'wrong_vendor',            label: 'Wrong vendor / supplier selected' },
+  { value: 'cancelled_by_management', label: 'Cancelled by management' },
+  { value: 'other',                   label: 'Other (please specify)' },
+];
 import { createGrnFromDC } from "@/lib/grn-api";
 import { JobCardCreationDialog } from "@/components/JobCardCreationDialog";
 import { supabase } from "@/integrations/supabase/client";
@@ -58,6 +71,14 @@ export default function DeliveryChallanDetail() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { role } = useAuth();
+
+  // ── Delete dialog state ───────────────────────────────────────────────────
+  const [deleteDialogOpen,   setDeleteDialogOpen]   = useState(false);
+  const [deleteReason,       setDeleteReason]       = useState('');
+  const [deleteCustomReason, setDeleteCustomReason] = useState('');
+  const [deleteStockAction,  setDeleteStockAction]  = useState<DcDeleteStockAction | ''>('');
+
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [copyLabel, setCopyLabel] = useState("ORIGINAL");
@@ -184,6 +205,35 @@ export default function DeliveryChallanDetail() {
       setReturnProcessingLog(log);
     }
     setReturnDialogOpen(true);
+  };
+
+  const deleteDCMutation = useMutation({
+    mutationFn: async ({ reason, stockAction }: { reason: string; stockAction?: DcDeleteStockAction }) => {
+      await softDeleteDeliveryChallan(id!, { deletion_reason: reason, stockAction });
+      await logAudit("delivery_challan", id!, "deleted", { reason, stockAction });
+    },
+    onSuccess: () => {
+      toast({ title: "DC deleted" });
+      navigate("/delivery-challans");
+    },
+    onError: (err: any) => toast({ title: "Delete failed", description: err.message, variant: "destructive" }),
+  });
+
+  const getDCDetailFinalReason = () =>
+    deleteReason === 'other'
+      ? deleteCustomReason.trim()
+      : DELETION_REASONS_DC_DETAIL.find(r => r.value === deleteReason)?.label ?? deleteReason;
+
+  const handleConfirmDeleteDCDetail = () => {
+    if (!deleteReason) return;
+    if (deleteReason === 'other' && !deleteCustomReason.trim()) return;
+    const isIssued = dc?.status === 'issued';
+    const canDeleteIssued = role === 'admin' || role === 'purchase_team';
+    if (isIssued && canDeleteIssued && !deleteStockAction) return;
+    deleteDCMutation.mutate({
+      reason: getDCDetailFinalReason(),
+      stockAction: (isIssued && canDeleteIssued && deleteStockAction) ? deleteStockAction : undefined,
+    });
   };
 
   const cancelMutation = useMutation({
@@ -457,6 +507,16 @@ export default function DeliveryChallanDetail() {
           {!["cancelled", "fully_returned", "deleted"].includes(dc.status) && (
             <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => setCancelOpen(true)}>
               <X className="h-3.5 w-3.5 mr-1" /> Cancel
+            </Button>
+          )}
+          {!isDeleted && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:text-destructive"
+              onClick={() => { setDeleteReason(''); setDeleteCustomReason(''); setDeleteStockAction(''); setDeleteDialogOpen(true); }}
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
             </Button>
           )}
         </div>
@@ -1153,6 +1213,100 @@ export default function DeliveryChallanDetail() {
         partyName={dc.party_name}
         existingJobCards={existingJobCards}
       />
+
+      {/* ── DC Deletion Dialog ── */}
+      <Dialog open={deleteDialogOpen} onOpenChange={(open) => { if (!open) setDeleteDialogOpen(false); }}>
+        <DialogContent className="max-w-md">
+          {(() => {
+            const isIssued = dc?.status === 'issued';
+            const canDelete = !isIssued || role === 'admin' || role === 'purchase_team';
+
+            if (isIssued && !canDelete) {
+              return (
+                <>
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2 text-destructive">
+                      <Lock className="h-4 w-4" /> Delete DC — Restricted
+                    </DialogTitle>
+                  </DialogHeader>
+                  <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                    <p className="text-sm text-amber-800">
+                      This DC has been issued and stock has been moved to the vendor. Only administrators or purchase team can delete it.
+                    </p>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Close</Button>
+                  </DialogFooter>
+                </>
+              );
+            }
+
+            const needsStockAction = isIssued && canDelete;
+            const isOther = deleteReason === 'other';
+            const isConfirmEnabled =
+              !!deleteReason &&
+              (!isOther || !!deleteCustomReason.trim()) &&
+              (!needsStockAction || !!deleteStockAction);
+
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="text-destructive">
+                    {needsStockAction ? 'Delete DC — Stock Action Required' : 'Delete DC'}
+                  </DialogTitle>
+                  {needsStockAction && (
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Stock was moved when this DC was issued. How should we handle it?
+                    </p>
+                  )}
+                </DialogHeader>
+
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Reason for deletion <span className="text-destructive">*</span></label>
+                    <Select value={deleteReason} onValueChange={setDeleteReason}>
+                      <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select a reason…" /></SelectTrigger>
+                      <SelectContent>
+                        {DELETION_REASONS_DC_DETAIL.map(r => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    {isOther && (
+                      <Input placeholder="Please specify…" value={deleteCustomReason} onChange={e => setDeleteCustomReason(e.target.value)} className="h-9 text-sm mt-1.5" />
+                    )}
+                  </div>
+
+                  {needsStockAction && (
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Stock action <span className="text-destructive">*</span></label>
+                      {([
+                        { value: 'recalled',         label: 'DC recalled — goods never left the store', desc: 'Returns stock from vendor bucket back to store' },
+                        { value: 'immediate_return', label: 'Vendor returned goods immediately',         desc: 'Returns stock from vendor bucket back to store' },
+                        { value: 'write_off',        label: 'Stock written off — goods lost/damaged',    desc: 'Removes from vendor bucket, not returned to store' },
+                      ] as { value: DcDeleteStockAction; label: string; desc: string }[]).map(opt => (
+                        <label key={opt.value} className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${deleteStockAction === opt.value ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}>
+                          <input type="radio" name="dcDetailStockAction" value={opt.value} checked={deleteStockAction === opt.value} onChange={() => setDeleteStockAction(opt.value)} className="mt-0.5" />
+                          <div>
+                            <p className="text-sm font-medium">{opt.label}</p>
+                            <p className="text-xs text-muted-foreground">{opt.desc}</p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setDeleteDialogOpen(false)} disabled={deleteDCMutation.isPending}>Go Back</Button>
+                  <Button variant="destructive" onClick={handleConfirmDeleteDCDetail} disabled={!isConfirmEnabled || deleteDCMutation.isPending}>
+                    {deleteDCMutation.isPending ? 'Deleting…' : 'Confirm Deletion'}
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  ChevronLeft, Printer, CheckCircle2, Clock, AlertTriangle, Trash2, Plus, PackageCheck,
+  ChevronLeft, Printer, CheckCircle2, Clock, AlertTriangle, Trash2, Plus, PackageCheck, Lock,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import {
   fetchGRNWithStages,
   saveQuantitativeStage,
   saveQualityStage,
+  softDeleteGRN,
   fetchGRNQCMeasurements,
   saveGRNQCMeasurements,
   saveGRNScrapItems,
@@ -25,7 +26,17 @@ import {
   type GRNQCMeasurement,
   type GRNLineItem,
   type GRNScrapItem,
+  type GrnDeleteStockAction,
 } from "@/lib/grn-api";
+
+const DELETION_REASONS_GRN = [
+  { value: 'data_entry_error',        label: 'Data entry error' },
+  { value: 'duplicate_entry',         label: 'Duplicate entry' },
+  { value: 'wrong_vendor',            label: 'Wrong vendor / supplier selected' },
+  { value: 'cancelled_by_management', label: 'Cancelled by management' },
+  { value: 'other',                   label: 'Other (please specify)' },
+];
+const COMPLETED_GRN_STAGES_SET = new Set(['quality_done', 'awaiting_store', 'closed']);
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -1168,6 +1179,12 @@ export default function GRNDetail() {
     enabled: !!grn?.line_items?.length,
   });
 
+  // ── Delete dialog state ───────────────────────────────────────────────────
+  const [deleteDialogOpen,    setDeleteDialogOpen]    = useState(false);
+  const [deleteReason,        setDeleteReason]        = useState('');
+  const [deleteCustomReason,  setDeleteCustomReason]  = useState('');
+  const [deleteStockAction,   setDeleteStockAction]   = useState<GrnDeleteStockAction | ''>('');
+
   // ── Stage 1 state ─────────────────────────────────────────────────────────
 
   const [s1Lines,         setS1Lines]         = useState<S1Line[]>([]);
@@ -1337,6 +1354,19 @@ export default function GRNDetail() {
     );
   }, [qcRows, grn?.line_items]);
 
+  // ── Over-receipt tolerance tiers ─────────────────────────────────────────
+  // For each line that is over the PO quantity, determine if it falls within
+  // the configured tolerance (requires finance approval) or beyond it (hard block).
+  const overReceiptTiers = s1Lines.map((l) => {
+    if (l.received_qty <= l.pending_quantity || l.pending_quantity <= 0) return { line: l, tier: "ok" as const };
+    const tolerance_qty = Math.floor(l.pending_quantity * (tolerancePct / 100));
+    const max_allowed   = l.pending_quantity + tolerance_qty;
+    if (l.received_qty <= max_allowed) return { line: l, tier: "within_tolerance" as const, excess: l.received_qty - l.pending_quantity, max_allowed };
+    return { line: l, tier: "beyond_tolerance" as const, max_allowed };
+  });
+  const withinToleranceItems = overReceiptTiers.filter((t) => t.tier === "within_tolerance");
+  const beyondToleranceItems = overReceiptTiers.filter((t) => t.tier === "beyond_tolerance");
+
   // ── Mutations ─────────────────────────────────────────────────────────────
 
   const needsFinanceApproval = withinToleranceItems.length > 0 && beyondToleranceItems.length === 0;
@@ -1471,6 +1501,40 @@ export default function GRNDetail() {
     onError: (err: any) =>
       toast({ title: "Error saving Stage 2", description: err.message, variant: "destructive" }),
   });
+
+  // ── Delete mutation ────────────────────────────────────────────────────────
+
+  const deleteMutation = useMutation({
+    mutationFn: async ({ reason, stockAction }: { reason: string; stockAction?: GrnDeleteStockAction }) => {
+      await softDeleteGRN(id!, { deletion_reason: reason, stockAction });
+      await logAudit("grn", id!, "deleted", { reason, stockAction });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["grns"] });
+      queryClient.invalidateQueries({ queryKey: ["grn-stats"] });
+      toast({ title: "GRN deleted" });
+      navigate("/grn");
+    },
+    onError: (err: any) => toast({ title: "Delete failed", description: err.message, variant: "destructive" }),
+  });
+
+  const getFinalReasonGRN = () =>
+    deleteReason === 'other'
+      ? deleteCustomReason.trim()
+      : DELETION_REASONS_GRN.find(r => r.value === deleteReason)?.label ?? deleteReason;
+
+  const handleConfirmDeleteGRN = () => {
+    if (!deleteReason) return;
+    if (deleteReason === 'other' && !deleteCustomReason.trim()) return;
+    const isCompleted = COMPLETED_GRN_STAGES_SET.has(stage);
+    const canDeleteCompleted = role === 'admin' || role === 'storekeeper';
+    if (isCompleted && canDeleteCompleted && !deleteStockAction) return;
+    const finalReason = getFinalReasonGRN();
+    deleteMutation.mutate({
+      reason: finalReason,
+      stockAction: (isCompleted && canDeleteCompleted && deleteStockAction) ? deleteStockAction : undefined,
+    });
+  };
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -1610,18 +1674,6 @@ export default function GRNDetail() {
   const showStorePanel = stage === "awaiting_store" && !g.store_confirmed;
   const s1Editable = (!s1Done || s1Editing) && !isDeletedOrCancelled;
 
-  // ── Over-receipt tolerance tiers ─────────────────────────────────────────
-  // For each line that is over the PO quantity, determine if it falls within
-  // the configured tolerance (requires finance approval) or beyond it (hard block).
-  const overReceiptTiers = s1Lines.map((l) => {
-    if (l.received_qty <= l.pending_quantity || l.pending_quantity <= 0) return { line: l, tier: "ok" as const };
-    const tolerance_qty = Math.floor(l.pending_quantity * (tolerancePct / 100));
-    const max_allowed   = l.pending_quantity + tolerance_qty;
-    if (l.received_qty <= max_allowed) return { line: l, tier: "within_tolerance" as const, excess: l.received_qty - l.pending_quantity, max_allowed };
-    return { line: l, tier: "beyond_tolerance" as const, max_allowed };
-  });
-  const withinToleranceItems = overReceiptTiers.filter((t) => t.tier === "within_tolerance");
-  const beyondToleranceItems = overReceiptTiers.filter((t) => t.tier === "beyond_tolerance");
   // Legacy alias — any line that blocks the save button at all
   const overQtyLines = beyondToleranceItems.map((t) => t.line);
   const ncItemsWithData = ncSummaries.filter((s) => s.non_conforming_qty > 0);
@@ -1726,6 +1778,16 @@ export default function GRNDetail() {
             <Button variant="outline" size="sm" onClick={() => window.print()}>
               <Printer className="h-3.5 w-3.5 mr-1" /> Print GRN
             </Button>
+            {!isDeletedOrCancelled && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                onClick={() => { setDeleteReason(''); setDeleteCustomReason(''); setDeleteStockAction(''); setDeleteDialogOpen(true); }}
+              >
+                <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
+              </Button>
+            )}
           </div>
         </div>
 
@@ -2283,6 +2345,107 @@ export default function GRNDetail() {
         s2Remarks={s2Remarks}
         verdict={verdict}
       />
+
+      {/* ── GRN Deletion Dialog ── */}
+      <Dialog open={deleteDialogOpen} onOpenChange={(open) => { if (!open) setDeleteDialogOpen(false); }}>
+        <DialogContent className="max-w-md">
+          {(() => {
+            const isCompleted = COMPLETED_GRN_STAGES_SET.has(stage);
+            const canDelete = !isCompleted || role === 'admin' || role === 'storekeeper';
+
+            if (isCompleted && !canDelete) {
+              return (
+                <>
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2 text-destructive">
+                      <Lock className="h-4 w-4" /> Delete GRN — Restricted
+                    </DialogTitle>
+                  </DialogHeader>
+                  <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                    <p className="text-sm text-amber-800">
+                      This GRN has completed QC and stock has been credited. Only administrators or storekeepers can delete it. Please contact your supervisor.
+                    </p>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Close</Button>
+                  </DialogFooter>
+                </>
+              );
+            }
+
+            const needsStockAction = isCompleted && canDelete;
+            const isOther = deleteReason === 'other';
+            const isConfirmEnabled =
+              !!deleteReason &&
+              (!isOther || !!deleteCustomReason.trim()) &&
+              (!needsStockAction || !!deleteStockAction);
+
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="text-destructive">
+                    {needsStockAction ? 'Delete GRN — Stock Action Required' : 'Delete GRN'}
+                  </DialogTitle>
+                  {needsStockAction && (
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Stock has already been credited for this GRN. How should we handle it?
+                    </p>
+                  )}
+                </DialogHeader>
+
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Reason for deletion <span className="text-destructive">*</span></label>
+                    <select
+                      value={deleteReason}
+                      onChange={e => setDeleteReason(e.target.value)}
+                      className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="">Select a reason…</option>
+                      {DELETION_REASONS_GRN.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                    </select>
+                    {isOther && (
+                      <Input
+                        placeholder="Please specify…"
+                        value={deleteCustomReason}
+                        onChange={e => setDeleteCustomReason(e.target.value)}
+                        className="h-9 text-sm mt-1.5"
+                      />
+                    )}
+                  </div>
+
+                  {needsStockAction && (
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Stock action <span className="text-destructive">*</span></label>
+                      {([
+                        { value: 'return_to_vendor',  label: 'Goods returned to vendor',           desc: 'Reverses stock that was credited to store' },
+                        { value: 'duplicate_reverse', label: 'Duplicate GRN entry — reverse stock', desc: 'Reverses duplicate stock credit' },
+                        { value: 'keep_stock',        label: 'Keep stock — GRN entry was incorrect', desc: 'Stock stays in store; only the GRN record is removed' },
+                      ] as { value: GrnDeleteStockAction; label: string; desc: string }[]).map(opt => (
+                        <label key={opt.value} className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${deleteStockAction === opt.value ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}>
+                          <input type="radio" name="grnDetailStockAction" value={opt.value} checked={deleteStockAction === opt.value} onChange={() => setDeleteStockAction(opt.value)} className="mt-0.5" />
+                          <div>
+                            <p className="text-sm font-medium">{opt.label}</p>
+                            <p className="text-xs text-muted-foreground">{opt.desc}</p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setDeleteDialogOpen(false)} disabled={deleteMutation.isPending}>Go Back</Button>
+                  <Button variant="destructive" onClick={handleConfirmDeleteGRN} disabled={!isConfirmEnabled || deleteMutation.isPending}>
+                    {deleteMutation.isPending ? 'Deleting…' : 'Confirm Deletion'}
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -323,6 +323,25 @@ export async function createDeliveryChallan({ dc, lineItems }: CreateDCData) {
 
 export async function updateDeliveryChallan(id: string, { dc, lineItems }: CreateDCData) {
   const companyId = await getCompanyId();
+
+  // Fetch current status and capture original lines BEFORE modification (for issued DC stock delta)
+  const { data: currentDC } = await supabase
+    .from('delivery_challans')
+    .select('status')
+    .eq('id', id)
+    .single();
+  const isIssued = (currentDC as any)?.status === 'issued';
+
+  type OrigLine = { item_id: string | null; qty_nos: number | null; quantity: number | null };
+  let originalLines: OrigLine[] = [];
+  if (isIssued && RETURNABLE_DC_TYPES.has(dc.dc_type)) {
+    const { data: origLines } = await supabase
+      .from('dc_line_items')
+      .select('item_id, qty_nos, quantity')
+      .eq('dc_id', id);
+    originalLines = (origLines ?? []) as OrigLine[];
+  }
+
   const { error } = await supabase.from("delivery_challans").update({
     dc_number: dc.dc_number, dc_date: dc.dc_date, dc_type: dc.dc_type,
     party_id: dc.party_id, party_name: dc.party_name, party_address: dc.party_address,
@@ -367,6 +386,66 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
     }));
     const { error: itemsError } = await supabase.from("dc_line_items").insert(itemsToInsert as any);
     if (itemsError) throw itemsError;
+  }
+
+  // Part 7: apply stock bucket deltas when editing an issued returnable DC
+  if (isIssued && RETURNABLE_DC_TYPES.has(dc.dc_type) && originalLines.length > 0) {
+    const today = new Date().toISOString().split('T')[0];
+
+    // Build item_id → original qty map
+    const origMap = new Map<string, number>();
+    for (const ol of originalLines) {
+      if (ol.item_id) {
+        origMap.set(ol.item_id, (ol.qty_nos ?? ol.quantity ?? 0));
+      }
+    }
+
+    // Build item_id → new qty map
+    const newMap = new Map<string, number>();
+    for (const nl of lineItems) {
+      if (nl.item_id) {
+        const qty = (nl.qty_nos ?? nl.quantity ?? 0);
+        newMap.set(nl.item_id, (newMap.get(nl.item_id) ?? 0) + qty);
+      }
+    }
+
+    const allItemIds = new Set([...origMap.keys(), ...newMap.keys()]);
+    for (const itemId of allItemIds) {
+      const origQty = origMap.get(itemId) ?? 0;
+      const newQty = newMap.get(itemId) ?? 0;
+      const delta = newQty - origQty;
+      if (delta === 0) continue;
+
+      if (delta > 0) {
+        // Quantity increased — deduct more from free, add to in_process
+        await updateStockBucket(itemId, 'free', -delta).catch(console.error);
+        await updateStockBucket(itemId, 'in_process', +delta).catch(console.error);
+      } else {
+        // Quantity decreased or item removed — return from in_process to free
+        await updateStockBucket(itemId, 'in_process', delta).catch(console.error);
+        await updateStockBucket(itemId, 'free', Math.abs(delta)).catch(console.error);
+      }
+
+      try {
+        await addStockLedgerEntry({
+          item_id: itemId,
+          item_code: null,
+          item_description: null,
+          transaction_date: today,
+          transaction_type: 'manual_adjustment',
+          qty_in: delta < 0 ? Math.abs(delta) : 0,
+          qty_out: delta > 0 ? delta : 0,
+          balance_qty: 0,
+          unit_cost: 0,
+          total_value: 0,
+          reference_type: 'delivery_challan',
+          reference_id: id,
+          reference_number: dc.dc_number,
+          notes: 'DC quantity edited after issuance — net delta applied',
+          created_by: null,
+        });
+      } catch { /* ignore */ }
+    }
   }
 }
 
@@ -549,8 +628,92 @@ export async function fetchDCStats() {
   return { totalThisMonth: thisMonth.length, openDCs: open.length, overdueDCs: overdue.length, pendingReturns: pendingReturns.length };
 }
 
-export async function softDeleteDeliveryChallan(id: string) {
-  const { error } = await supabase.from("delivery_challans").update({ status: "deleted" } as any).eq("id", id);
+export type DcDeleteStockAction = 'recalled' | 'immediate_return' | 'write_off';
+
+export async function softDeleteDeliveryChallan(
+  id: string,
+  options: { deletion_reason?: string; stockAction?: DcDeleteStockAction } = {}
+): Promise<void> {
+  const { deletion_reason, stockAction } = options;
+  const companyId = await getCompanyId();
+  const today = new Date().toISOString().split('T')[0];
+
+  if (stockAction) {
+    const { data: dcHeader } = await supabase
+      .from('delivery_challans')
+      .select('dc_number')
+      .eq('id', id)
+      .single();
+    const dcNumber = (dcHeader as any)?.dc_number ?? '';
+
+    const { data: lines } = await supabase
+      .from('dc_line_items')
+      .select('item_id, item_code, description, qty_nos, quantity')
+      .eq('dc_id', id);
+
+    for (const line of (lines ?? []) as any[]) {
+      if (!line.item_id) continue;
+      const qty: number = line.qty_nos ?? line.quantity ?? 0;
+      if (qty <= 0) continue;
+
+      if (stockAction === 'recalled' || stockAction === 'immediate_return') {
+        await updateStockBucket(line.item_id, 'in_process', -qty).catch(console.error);
+        await updateStockBucket(line.item_id, 'free', +qty).catch(console.error);
+        const notesLabel = stockAction === 'recalled'
+          ? 'DC deleted — recalled before dispatch'
+          : 'DC deleted — immediate vendor return';
+        const notes = deletion_reason ? `${notesLabel}: ${deletion_reason}` : notesLabel;
+        try {
+          await addStockLedgerEntry({
+            item_id: line.item_id,
+            item_code: line.item_code ?? null,
+            item_description: line.description ?? null,
+            transaction_date: today,
+            transaction_type: 'dc_return',
+            qty_in: qty,
+            qty_out: 0,
+            balance_qty: 0,
+            unit_cost: 0,
+            total_value: 0,
+            reference_type: 'delivery_challan',
+            reference_id: id,
+            reference_number: dcNumber,
+            notes,
+            created_by: null,
+          });
+        } catch { /* ignore */ }
+      } else if (stockAction === 'write_off') {
+        await updateStockBucket(line.item_id, 'in_process', -qty).catch(console.error);
+        const notes = deletion_reason
+          ? `DC deleted — stock written off: ${deletion_reason}`
+          : 'DC deleted — stock written off';
+        try {
+          await addStockLedgerEntry({
+            item_id: line.item_id,
+            item_code: line.item_code ?? null,
+            item_description: line.description ?? null,
+            transaction_date: today,
+            transaction_type: 'rejection_writeoff',
+            qty_in: 0,
+            qty_out: qty,
+            balance_qty: 0,
+            unit_cost: 0,
+            total_value: 0,
+            reference_type: 'delivery_challan',
+            reference_id: id,
+            reference_number: dcNumber,
+            notes,
+            created_by: null,
+          });
+        } catch { /* ignore */ }
+      }
+    }
+  }
+
+  const { error } = await (supabase as any)
+    .from('delivery_challans')
+    .update({ status: 'deleted', deletion_reason: deletion_reason ?? null })
+    .eq('id', id);
   if (error) throw error;
 }
 

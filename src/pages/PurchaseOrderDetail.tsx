@@ -47,6 +47,17 @@ export default function PurchaseOrderDetail() {
   const queryClient = useQueryClient();
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [deleteCustomReason, setDeleteCustomReason] = useState('');
+
+  const DELETION_REASONS_PO = [
+    { value: 'data_entry_error',        label: 'Data entry error' },
+    { value: 'duplicate_entry',         label: 'Duplicate entry' },
+    { value: 'wrong_vendor',            label: 'Wrong vendor / supplier selected' },
+    { value: 'cancelled_by_management', label: 'Cancelled by management' },
+    { value: 'other',                   label: 'Other (please specify)' },
+  ];
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split("T")[0]);
@@ -110,15 +121,27 @@ export default function PurchaseOrderDetail() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async () => {
-      await softDeletePurchaseOrder(id!);
-      await logAudit("purchase_order", id!, "deleted");
+    mutationFn: async (reason: string) => {
+      await softDeletePurchaseOrder(id!, reason);
+      await logAudit("purchase_order", id!, "deleted", { reason });
     },
     onSuccess: () => {
-      toast({ title: "PO Deleted" });
+      toast({ title: "Purchase order deleted" });
       navigate("/purchase-orders");
     },
+    onError: (err: any) => toast({ title: "Delete failed", description: err.message, variant: "destructive" }),
   });
+
+  const getPOFinalReason = () =>
+    deleteReason === 'other'
+      ? deleteCustomReason.trim()
+      : DELETION_REASONS_PO.find(r => r.value === deleteReason)?.label ?? deleteReason;
+
+  const handleConfirmDeletePO = () => {
+    if (!deleteReason) return;
+    if (deleteReason === 'other' && !deleteCustomReason.trim()) return;
+    deleteMutation.mutate(getPOFinalReason());
+  };
 
   const createGrnMutation = useMutation({
     mutationFn: () => createGrnFromPO({ po_id: id!, date: new Date().toISOString().split("T")[0] }),
@@ -275,9 +298,12 @@ export default function PurchaseOrderDetail() {
             </Button>
           )}
           {!["deleted"].includes(po.status) && (
-            <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => {
-              if (confirm("Delete this PO?")) deleteMutation.mutate();
-            }}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:text-destructive"
+              onClick={() => { setDeleteReason(''); setDeleteCustomReason(''); setDeleteOpen(true); }}
+            >
               <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
             </Button>
           )}
@@ -779,6 +805,49 @@ export default function PurchaseOrderDetail() {
             <Button variant="outline" onClick={() => setCancelOpen(false)}>Go Back</Button>
             <Button variant="destructive" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
               Cancel PO
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── PO Deletion Dialog ── */}
+      <Dialog open={deleteOpen} onOpenChange={(open) => { if (!open) setDeleteOpen(false); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-destructive">Delete Purchase Order</DialogTitle>
+            <p className="text-sm text-muted-foreground mt-1">Please provide a reason for deletion.</p>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Reason for deletion <span className="text-destructive">*</span></label>
+              <select
+                value={deleteReason}
+                onChange={e => setDeleteReason(e.target.value)}
+                className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">Select a reason…</option>
+                {DELETION_REASONS_PO.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </select>
+            </div>
+            {deleteReason === 'other' && (
+              <Input
+                placeholder="Please specify…"
+                value={deleteCustomReason}
+                onChange={e => setDeleteCustomReason(e.target.value)}
+                className="h-9 text-sm"
+              />
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={deleteMutation.isPending}>Go Back</Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmDeletePO}
+              disabled={!deleteReason || (deleteReason === 'other' && !deleteCustomReason.trim()) || deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? 'Deleting…' : 'Confirm Deletion'}
             </Button>
           </DialogFooter>
         </DialogContent>

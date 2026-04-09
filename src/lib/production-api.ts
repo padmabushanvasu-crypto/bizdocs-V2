@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { updateStockBucket } from "@/lib/items-api";
+import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
 
 async function getCompanyId(): Promise<string | null> {
   const { data: { user } } = await supabase.auth.getUser();
@@ -329,41 +330,101 @@ export async function cancelAssemblyWorkOrder(
       (li) => li.item_id && li.issued_qty > 0
     );
 
+    const cancelDate = new Date().toISOString().split('T')[0];
+
     if (stockAction === 'return_all') {
       for (const li of issuedLines) {
         await updateStockBucket(li.item_id!, 'in_subassembly_wip', -li.issued_qty);
         await updateStockBucket(li.item_id!, 'free', +li.issued_qty);
+        try {
+          await addStockLedgerEntry({
+            item_id: li.item_id!,
+            item_code: li.item_code ?? null,
+            item_description: li.item_description ?? null,
+            transaction_date: cancelDate,
+            transaction_type: 'assembly_return',
+            qty_in: li.issued_qty,
+            qty_out: 0,
+            balance_qty: 0,
+            unit_cost: 0,
+            total_value: 0,
+            reference_type: 'assembly_work_order',
+            reference_id: id,
+            reference_number: awoNumber,
+            notes: 'Materials returned — AWO cancelled',
+            created_by: null,
+          });
+        } catch (e) { console.error('[production] return ledger failed:', e); }
       }
     } else if (stockAction === 'scrap_all') {
       for (const li of issuedLines) {
         await updateStockBucket(li.item_id!, 'in_subassembly_wip', -li.issued_qty);
         try {
-          await (supabase as any).from("stock_ledger").insert({
-            company_id: companyId,
-            item_id: li.item_id,
+          await addStockLedgerEntry({
+            item_id: li.item_id!,
+            item_code: li.item_code ?? null,
+            item_description: li.item_description ?? null,
+            transaction_date: cancelDate,
             transaction_type: 'scrap_write_off',
-            quantity: -li.issued_qty,
-            notes: `AWO cancellation scrap write-off — ${awoNumber}`,
+            qty_in: 0,
+            qty_out: li.issued_qty,
+            balance_qty: 0,
+            unit_cost: 0,
+            total_value: 0,
+            reference_type: 'assembly_work_order',
+            reference_id: id,
+            reference_number: awoNumber,
+            notes: 'Materials scrapped — AWO cancelled',
+            created_by: null,
           });
-        } catch { /* ignore */ }
+        } catch (e) { console.error('[production] scrap ledger failed:', e); }
       }
     } else if (stockAction === 'partial' && partialLines) {
       for (const pl of partialLines) {
         if (pl.return_qty > 0) {
           await updateStockBucket(pl.item_id, 'in_subassembly_wip', -pl.return_qty);
           await updateStockBucket(pl.item_id, 'free', +pl.return_qty);
+          try {
+            await addStockLedgerEntry({
+              item_id: pl.item_id,
+              item_code: null,
+              item_description: null,
+              transaction_date: cancelDate,
+              transaction_type: 'assembly_return',
+              qty_in: pl.return_qty,
+              qty_out: 0,
+              balance_qty: 0,
+              unit_cost: 0,
+              total_value: 0,
+              reference_type: 'assembly_work_order',
+              reference_id: id,
+              reference_number: awoNumber,
+              notes: 'Materials returned — AWO cancelled',
+              created_by: null,
+            });
+          } catch (e) { console.error('[production] return ledger failed:', e); }
         }
         if (pl.scrap_qty > 0) {
           await updateStockBucket(pl.item_id, 'in_subassembly_wip', -pl.scrap_qty);
           try {
-            await (supabase as any).from("stock_ledger").insert({
-              company_id: companyId,
+            await addStockLedgerEntry({
               item_id: pl.item_id,
+              item_code: null,
+              item_description: null,
+              transaction_date: cancelDate,
               transaction_type: 'scrap_write_off',
-              quantity: -pl.scrap_qty,
-              notes: `AWO cancellation scrap write-off (partial) — ${awoNumber}`,
+              qty_in: 0,
+              qty_out: pl.scrap_qty,
+              balance_qty: 0,
+              unit_cost: 0,
+              total_value: 0,
+              reference_type: 'assembly_work_order',
+              reference_id: id,
+              reference_number: awoNumber,
+              notes: 'Materials scrapped — AWO cancelled',
+              created_by: null,
             });
-          } catch { /* ignore */ }
+          } catch (e) { console.error('[production] scrap ledger failed:', e); }
         }
       }
     }
@@ -634,15 +695,26 @@ export async function confirmMaterialIssue(
       await updateStockBucket(mirLine.item_id, 'in_subassembly_wip', +issue.issued_qty);
 
       try {
-        await (supabase as any).from("stock_ledger").insert({
-          company_id: companyId,
-          item_id: mirLine.item_id,
+        const awoNumber = mir.awo?.awo_number ?? '';
+        await addStockLedgerEntry({
+          item_id: mirLine.item_id!,
+          item_code: mirLine.item_code ?? null,
+          item_description: mirLine.item_description ?? null,
+          transaction_date: new Date().toISOString().split('T')[0],
           transaction_type: 'assembly_issue',
-          quantity: -issue.issued_qty,
-          notes: `MIR ${mir.mir_number} — Raised by ${mir.requested_by}, Issued by ${issued_by}`,
+          qty_in: 0,
+          qty_out: issue.issued_qty,
+          balance_qty: 0,
+          unit_cost: 0,
+          total_value: 0,
+          reference_type: 'assembly_work_order',
+          reference_id: mir.awo_id,
+          reference_number: awoNumber,
+          notes: `Material issued for AWO #${awoNumber}`,
+          created_by: null,
         });
-      } catch {
-        // stock_ledger may not exist yet — ignore
+      } catch (e) {
+        console.error('[production] ledger write failed for MIR issue:', e);
       }
     }
   }));
@@ -688,56 +760,109 @@ export async function completeAssemblyWorkOrder(id: string): Promise<void> {
   const awo = await fetchAssemblyWorkOrder(id);
   if (!awo) throw new Error("Work order not found");
 
+  const today = new Date().toISOString().split('T')[0];
+
   if (awo.awo_type === 'sub_assembly') {
-    // Consume components from in_subassembly_wip
+    // Consume components from in_subassembly_wip + write consumption ledger entries
     for (const li of awo.line_items ?? []) {
       if (li.item_id && li.issued_qty > 0) {
         const err = await updateStockBucket(li.item_id, 'in_subassembly_wip', -li.issued_qty).catch((e: Error) => e);
         if (err instanceof Error) throw new Error(`Stock update failed for ${li.item_code ?? li.item_id}: ${err.message}`);
+        try {
+          await addStockLedgerEntry({
+            item_id: li.item_id,
+            item_code: li.item_code ?? null,
+            item_description: li.item_description ?? null,
+            transaction_date: today,
+            transaction_type: 'assembly_consumption',
+            qty_in: 0,
+            qty_out: li.issued_qty,
+            balance_qty: 0,
+            unit_cost: 0,
+            total_value: 0,
+            reference_type: 'assembly_work_order',
+            reference_id: id,
+            reference_number: awo.awo_number,
+            notes: `Component consumed — AWO #${awo.awo_number} complete`,
+            created_by: null,
+          });
+        } catch (e) { console.error('[production] consumption ledger failed:', e); }
       }
     }
 
-    // Add finished item to free stock
+    // Add finished item to free stock + write output ledger entry
     if (awo.item_id) {
       await updateStockBucket(awo.item_id, 'free', +awo.quantity_to_build);
-
-      // Stock ledger
       try {
-        await (supabase as any).from("stock_ledger").insert({
-          company_id: companyId,
+        await addStockLedgerEntry({
           item_id: awo.item_id,
+          item_code: awo.item_code ?? null,
+          item_description: awo.item_description ?? null,
+          transaction_date: today,
           transaction_type: 'assembly_output',
-          quantity: +awo.quantity_to_build,
-          notes: `AWO ${awo.awo_number} complete`,
+          qty_in: awo.quantity_to_build,
+          qty_out: 0,
+          balance_qty: 0,
+          unit_cost: 0,
+          total_value: 0,
+          reference_type: 'assembly_work_order',
+          reference_id: id,
+          reference_number: awo.awo_number,
+          notes: `Assembly complete — AWO #${awo.awo_number}`,
+          created_by: null,
         });
-      } catch {
-        // ignore
-      }
+      } catch (e) { console.error('[production] output ledger failed:', e); }
     }
   } else if (awo.awo_type === 'finished_good') {
-    // Consume components from in_fg_wip
+    // Consume components from in_fg_wip + write consumption ledger entries
     for (const li of awo.line_items ?? []) {
       if (li.item_id && li.issued_qty > 0) {
         const err = await updateStockBucket(li.item_id, 'in_fg_wip', -li.issued_qty).catch((e: Error) => e);
         if (err instanceof Error) throw new Error(`Stock update failed for ${li.item_code ?? li.item_id}: ${err.message}`);
+        try {
+          await addStockLedgerEntry({
+            item_id: li.item_id,
+            item_code: li.item_code ?? null,
+            item_description: li.item_description ?? null,
+            transaction_date: today,
+            transaction_type: 'assembly_consumption',
+            qty_in: 0,
+            qty_out: li.issued_qty,
+            balance_qty: 0,
+            unit_cost: 0,
+            total_value: 0,
+            reference_type: 'assembly_work_order',
+            reference_id: id,
+            reference_number: awo.awo_number,
+            notes: `Component consumed — AWO #${awo.awo_number} complete`,
+            created_by: null,
+          });
+        } catch (e) { console.error('[production] consumption ledger failed:', e); }
       }
     }
 
-    // Add to in_fg_ready
+    // Add to in_fg_ready + write output ledger entry
     if (awo.item_id) {
       await updateStockBucket(awo.item_id, 'in_fg_ready', +awo.quantity_to_build);
-
       try {
-        await (supabase as any).from("stock_ledger").insert({
-          company_id: companyId,
+        await addStockLedgerEntry({
           item_id: awo.item_id,
+          item_code: awo.item_code ?? null,
+          item_description: awo.item_description ?? null,
+          transaction_date: today,
           transaction_type: 'assembly_output',
-          quantity: +awo.quantity_to_build,
-          notes: `AWO ${awo.awo_number} complete`,
+          qty_in: awo.quantity_to_build,
+          qty_out: 0,
+          balance_qty: 0,
+          unit_cost: 0,
+          total_value: 0,
+          reference_type: 'assembly_work_order',
+          reference_id: id,
+          reference_number: awo.awo_number,
+          notes: `Assembly complete — AWO #${awo.awo_number}`,
+          created_by: null,
         });
-      } catch {
-        // ignore
-      }
+      } catch (e) { console.error('[production] output ledger failed:', e); }
     }
 
     // Update serial number status if present

@@ -463,8 +463,70 @@ export async function fetchGRNStats() {
   };
 }
 
-export async function softDeleteGRN(id: string) {
-  const { error } = await supabase.from("grns").update({ status: "deleted" } as any).eq("id", id);
+export type GrnDeleteStockAction = 'return_to_vendor' | 'duplicate_reverse' | 'keep_stock';
+
+export async function softDeleteGRN(
+  id: string,
+  options: { deletion_reason?: string; stockAction?: GrnDeleteStockAction } = {}
+): Promise<void> {
+  const { deletion_reason, stockAction } = options;
+  const companyId = await getCompanyId();
+  const today = new Date().toISOString().split('T')[0];
+
+  if (stockAction === 'return_to_vendor' || stockAction === 'duplicate_reverse') {
+    const notesLabel = stockAction === 'return_to_vendor'
+      ? 'GRN deleted — goods returned to vendor'
+      : 'GRN deleted — duplicate entry';
+    const notes = deletion_reason ? `${notesLabel}: ${deletion_reason}` : notesLabel;
+
+    const { data: lines } = await (supabase as any)
+      .from('grn_line_items')
+      .select('item_id, accepted_qty, accepted_quantity, drawing_number, description')
+      .eq('grn_id', id);
+
+    for (const line of (lines ?? []) as any[]) {
+      const qty: number = (line.accepted_qty ?? line.accepted_quantity ?? 0);
+      if (qty <= 0) continue;
+
+      let itemId: string | null = line.item_id ?? null;
+      if (!itemId && line.drawing_number && companyId) {
+        const { data: rec } = await supabase
+          .from('items')
+          .select('id')
+          .eq('drawing_revision', line.drawing_number)
+          .eq('company_id', companyId as any)
+          .maybeSingle();
+        itemId = (rec as any)?.id ?? null;
+      }
+      if (!itemId) continue;
+
+      await updateStockBucket(itemId, 'free', -qty).catch(console.error);
+      try {
+        await addStockLedgerEntry({
+          item_id: itemId,
+          item_code: null,
+          item_description: line.description ?? null,
+          transaction_date: today,
+          transaction_type: 'manual_adjustment',
+          qty_in: 0,
+          qty_out: qty,
+          balance_qty: 0,
+          unit_cost: 0,
+          total_value: 0,
+          reference_type: 'grn',
+          reference_id: id,
+          reference_number: null,
+          notes,
+          created_by: null,
+        });
+      } catch { /* ignore ledger failures */ }
+    }
+  }
+
+  const { error } = await (supabase as any)
+    .from('grns')
+    .update({ status: 'deleted', deletion_reason: deletion_reason ?? null })
+    .eq('id', id);
   if (error) throw error;
 }
 
@@ -1244,6 +1306,17 @@ export async function storeConfirmGRN(
   grnId: string,
   data: { confirmedBy: string; confirmedAt: string; location?: string | null; notes?: string | null }
 ): Promise<void> {
+  // Idempotency guard — prevent double stock movement if called twice
+  const { data: grnCheck, error: checkErr } = await (supabase as any)
+    .from('grns')
+    .select('store_confirmed')
+    .eq('id', grnId)
+    .single();
+  if (checkErr) throw checkErr;
+  if ((grnCheck as any)?.store_confirmed === true) {
+    throw new Error('This GRN has already been store-confirmed. Please refresh the page.');
+  }
+
   // For DC return GRNs: move accepted stock from in_process → free on storekeeper confirmation
   const { data: grnHeader } = await (supabase as any)
     .from('grns')

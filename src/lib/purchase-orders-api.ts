@@ -232,8 +232,11 @@ export async function fetchPOStats() {
   return { totalThisMonth: thisMonth.length, openPOs: open.length, totalValueThisMonth, overduePOs: overdue.length };
 }
 
-export async function softDeletePurchaseOrder(id: string) {
-  const { error } = await supabase.from("purchase_orders").update({ status: "deleted" } as any).eq("id", id);
+export async function softDeletePurchaseOrder(id: string, deletion_reason?: string): Promise<void> {
+  const { error } = await supabase
+    .from("purchase_orders")
+    .update({ status: "deleted", deletion_reason: deletion_reason ?? null } as any)
+    .eq("id", id);
   if (error) throw error;
 }
 
