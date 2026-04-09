@@ -565,7 +565,7 @@ export default function Dashboard() {
         {companyId && <StockAlertsBoard companyId={companyId} />}
 
         {/* ── Section 3: Three-column stats grid ───────────────────── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
           {/* Production card */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 lg:p-5">
@@ -580,105 +580,6 @@ export default function Dashboard() {
               <LightStatRow label="FAT Pending"  value={fatStats?.pending ?? "—"} highlight={(fatStats?.pending ?? 0) > 0} onClick={() => navigate("/fat-certificates")} />
               <LightStatRow label="Pending Assembly" value={dashData?.pendingAssemblyOrderCount ?? "—"} highlight={(dashData?.pendingAssemblyOrderCount ?? 0) > 0} onClick={() => navigate("/assembly-orders")} />
               <LightStatRow label="WIP Components" value={dashData?.wipCount ?? "—"} onClick={() => navigate("/wip-register")} />
-            </div>
-          </div>
-
-          {/* Stock Alerts card */}
-          <div className={`bg-white rounded-xl border shadow-sm p-4 lg:p-5 ${criticalCount > 0 ? 'border-red-300' : actionedCount > 0 ? 'border-blue-300' : 'border-slate-200'}`}>
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Stock Alerts</p>
-              <button className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors" onClick={() => navigate("/reorder-intelligence")}>
-                View All →
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              {/* Group 1 — Needs Action (unactioned items) */}
-              {criticalCount > 0 && (
-                <div
-                  className="rounded-lg border-l-[3px] border-red-500 bg-red-50 px-3 py-2 cursor-pointer hover:bg-red-100 transition-colors"
-                  onClick={() => navigate("/reorder-intelligence?filter=needs_action")}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-red-700 uppercase tracking-wider">Needs Action</span>
-                    <span className="text-base font-extrabold font-mono tabular-nums text-red-600">{criticalCount}</span>
-                  </div>
-                  <p className="text-[10px] text-red-500 mt-0.5">Below min stock — no open PO / DC / AO</p>
-                  {stockAlertData.unactioned.slice(0, 3).map((item, i) => (
-                    <div key={i} className="mt-1.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] text-red-800 truncate max-w-[100px] font-mono">{item.item_code || item.description}</span>
-                        <div className="flex items-center gap-1 shrink-0">
-                          {item.item_type === 'raw_material' || item.item_type === 'bought_out' || item.item_type === 'consumable' ? (
-                            <button
-                              className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-blue-200 text-blue-700 hover:bg-blue-50 transition-colors"
-                              onClick={(e) => { e.stopPropagation(); navigate("/purchase-orders/new", { state: { prefillItem: { item_id: item.id, item_code: item.item_code, description: item.description } } }); }}
-                            >Raise PO</button>
-                          ) : item.item_type === 'component' ? (
-                            <button
-                              className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
-                              onClick={(e) => { e.stopPropagation(); navigate("/delivery-challans/new", { state: { prefillItem: { item_id: item.id, item_code: item.item_code, description: item.description } } }); }}
-                            >Raise DC</button>
-                          ) : item.item_type === 'sub_assembly' || item.item_type === 'finished_good' ? (
-                            <button
-                              className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-emerald-200 text-emerald-700 hover:bg-emerald-50 transition-colors"
-                              onClick={(e) => { e.stopPropagation(); navigate(item.item_type === 'sub_assembly' ? '/sub-assembly-work-orders' : '/finished-good-work-orders', { state: { prefillItem: { item_id: item.id, item_code: item.item_code, description: item.description } } }); }}
-                            >Raise AO</button>
-                          ) : null}
-                        </div>
-                      </div>
-                      {item.aimed_stock > 0 && (item.aimed_stock - item.effective_stock) > 0 && (
-                        <p className="text-[9px] text-red-500 mt-0.5">
-                          Order {Math.ceil(item.aimed_stock - item.effective_stock)} to reach aimed qty of {item.aimed_stock}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Group 2 — Being Actioned (items with open PO/DC/AO) */}
-              {actionedCount > 0 && (
-                <div className="rounded-lg border-l-[3px] border-amber-400 bg-amber-50 px-3 py-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-amber-700 uppercase tracking-wider">Being Actioned</span>
-                    <span className="text-base font-extrabold font-mono tabular-nums text-amber-600">{actionedCount}</span>
-                  </div>
-                  <p className="text-[10px] text-amber-500 mt-0.5">Open PO / DC / AO already raised</p>
-                  {stockAlertData.actioned.slice(0, 3).map((item, i) => (
-                    <div key={i} className="mt-1.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] text-amber-800 truncate max-w-[110px] font-mono opacity-70">{item.item_code || item.description}</span>
-                        {item.actionedWith === 'PO' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">PO Raised</span>}
-                        {item.actionedWith === 'DC' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-teal-100 text-teal-700">DC Out</span>}
-                        {item.actionedWith === 'AO' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">AO Raised</span>}
-                      </div>
-                      {item.aimed_stock > 0 && (item.aimed_stock - item.effective_stock) > 0 && (
-                        <p className="text-[9px] text-amber-500 mt-0.5">
-                          Order {Math.ceil(item.aimed_stock - item.effective_stock)} to reach aimed qty of {item.aimed_stock}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* All healthy */}
-              {criticalCount === 0 && actionedCount === 0 && (
-                <div className="py-2">
-                  <p className="text-2xl font-extrabold tracking-tight font-mono tabular-nums text-green-600">0</p>
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wider">All healthy</p>
-                </div>
-              )}
-            </div>
-
-            <div className="mt-3 pt-2 border-t border-slate-100">
-              <button
-                className="text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors"
-                onClick={() => navigate("/reorder-intelligence")}
-              >
-                View all reorder alerts →
-              </button>
             </div>
           </div>
 
