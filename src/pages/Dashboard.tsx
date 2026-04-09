@@ -4,6 +4,7 @@ import { Activity, CheckCircle2 } from "lucide-react";
 import { fetchPendingQCGRNs, fetchAwaitingStoreCount } from "@/lib/grn-api";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { StockAlertsBoard } from "@/components/StockAlertsBoard";
+import { OperationalSummaryStrip } from "@/components/OperationalSummaryStrip";
 import { formatCurrency } from "@/lib/gst-utils";
 import { fetchAssemblyOrderStats } from "@/lib/assembly-orders-api";
 import { fetchFatStats } from "@/lib/fat-api";
@@ -564,7 +565,10 @@ export default function Dashboard() {
         {/* ── Section 2: Stock Alerts Board ────────────────────────── */}
         {companyId && <StockAlertsBoard companyId={companyId} />}
 
-        {/* ── Section 3: Three-column stats grid ───────────────────── */}
+        {/* ── Section 3: Operational Summary Strip ─────────────────── */}
+        {companyId && <OperationalSummaryStrip companyId={companyId} />}
+
+        {/* ── Section 4: Two-column stats grid ─────────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
           {/* Production card */}
