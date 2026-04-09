@@ -66,6 +66,7 @@ export default function PurchaseOrderForm() {
   const [vendorId, setVendorId] = useState<string | null>(null);
   const [selectedVendor, setSelectedVendor] = useState<Party | null>(null);
   const [vendorOpen, setVendorOpen] = useState(false);
+  const [poDateOpen, setPoDateOpen] = useState(false);
   const [vendorReference, setVendorReference] = useState("");
   const [vendorEmail, setVendorEmail] = useState("");
   const [referenceNumber, setReferenceNumber] = useState("");
@@ -530,14 +531,14 @@ export default function PurchaseOrderForm() {
 
             <div>
               <Label className="text-sm font-medium text-slate-700">PO Date *</Label>
-              <Popover>
+              <Popover open={poDateOpen} onOpenChange={setPoDateOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className={cn("w-full mt-1 justify-start font-normal", !poDate && "text-muted-foreground")}>
                     {poDate ? format(poDate, "dd MMM yyyy") : "Select date"}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar mode="single" selected={poDate} onSelect={(d) => d && setPODate(d)} className="p-3 pointer-events-auto" />
+                  <Calendar mode="single" selected={poDate} onSelect={(d) => { if (d) { setPODate(d); setPoDateOpen(false); } }} className="p-3 pointer-events-auto" />
                 </PopoverContent>
               </Popover>
             </div>

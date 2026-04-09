@@ -127,6 +127,8 @@ export default function DeliveryChallanForm() {
   const [partyId, setPartyId] = useState<string | null>(null);
   const [selectedParty, setSelectedParty] = useState<Party | null>(null);
   const [partyOpen, setPartyOpen] = useState(false);
+  const [dcDateOpen, setDcDateOpen] = useState(false);
+  const [returnDateOpen, setReturnDateOpen] = useState(false);
   const [referenceNumber, setReferenceNumber] = useState("");
   const [specialInstructions, setSpecialInstructions] = useState("");
   const [internalRemarks, setInternalRemarks] = useState("");
@@ -589,7 +591,7 @@ export default function DeliveryChallanForm() {
         {isReturnable && (
           <div className="space-y-1.5">
             <Label className="text-sm">Return Due Date</Label>
-            <Popover>
+            <Popover open={returnDateOpen} onOpenChange={setReturnDateOpen}>
               <PopoverTrigger asChild>
                 <Button variant="outline" className={cn("w-full justify-start font-normal", !returnDueDate && "text-muted-foreground")}>
                   {returnDueDate ? format(returnDueDate, "dd MMM yyyy") : "Select date..."}
@@ -597,7 +599,7 @@ export default function DeliveryChallanForm() {
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0" align="start">
-                <Calendar mode="single" selected={returnDueDate} onSelect={setReturnDueDate} initialFocus />
+                <Calendar mode="single" selected={returnDueDate} onSelect={(d) => { setReturnDueDate(d); setReturnDateOpen(false); }} initialFocus />
               </PopoverContent>
             </Popover>
           </div>
@@ -695,14 +697,14 @@ export default function DeliveryChallanForm() {
               </div>
               <div>
                 <Label className="text-sm font-medium text-slate-700">DC Date *</Label>
-                <Popover>
+                <Popover open={dcDateOpen} onOpenChange={setDcDateOpen}>
                   <PopoverTrigger asChild>
                     <Button variant="outline" className={cn("w-full mt-1 justify-start font-normal", !dcDate && "text-muted-foreground")}>
                       {dcDate ? format(dcDate, "dd MMM yyyy") : "Select date"}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar mode="single" selected={dcDate} onSelect={(d) => d && setDcDate(d)} className="p-3 pointer-events-auto" />
+                    <Calendar mode="single" selected={dcDate} onSelect={(d) => { if (d) { setDcDate(d); setDcDateOpen(false); } }} className="p-3 pointer-events-auto" />
                   </PopoverContent>
                 </Popover>
               </div>

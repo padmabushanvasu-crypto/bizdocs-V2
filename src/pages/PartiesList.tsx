@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { fetchParties, deactivateParty, deleteParty, bulkDeleteParties, safeDeleteAllParties, importPartiesBatch, type PartiesFilters, type VendorType } from "@/lib/parties-api";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -65,6 +66,7 @@ export default function PartiesList() {
   const [clearAllOpen, setClearAllOpen] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [partyToDelete, setPartyToDelete] = useState<{ id: string; name: string } | null>(null);
   const [filters, setFilters] = useState<PartiesFilters>({
     search: "",
     type: "all",
@@ -451,7 +453,7 @@ export default function PartiesList() {
                           size="icon"
                           className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50"
                           disabled={deletePartyMutation.isPending}
-                          onClick={() => deletePartyMutation.mutate(party.id)}
+                          onClick={() => setPartyToDelete({ id: party.id, name: party.name })}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -548,6 +550,26 @@ export default function PartiesList() {
         batchFn={importPartiesBatch}
         invalidateKeys={[["parties"]]}
       />
+
+      <AlertDialog open={!!partyToDelete} onOpenChange={(open) => { if (!open) setPartyToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete <strong>{partyToDelete?.name}</strong>. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { if (partyToDelete) { deletePartyMutation.mutate(partyToDelete.id); setPartyToDelete(null); } }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -22,6 +22,7 @@ import { SegmentedControl } from "@/components/SegmentedControl";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -831,6 +832,7 @@ function BillOfMaterialsInner() {
   // ── BOM line bulk select state ───────────────────────────────────────────────
   const [selectedBomLines, setSelectedBomLines] = useState<Set<string>>(new Set());
   const [deleteLinesConfirmOpen, setDeleteLinesConfirmOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<{ label: string; onConfirm: () => void } | null>(null);
 
   // ── Processing stages state ──────────────────────────────────────────────────
   const [processingStagesByLine, setProcessingStagesByLine] = useState<Map<string, BomProcessingStage[]>>(new Map());
@@ -2127,13 +2129,10 @@ function BillOfMaterialsInner() {
                                           size="icon"
                                           className="h-7 w-7"
                                           onClick={() => {
-                                            if (
-                                              confirm(
-                                                `Remove ${line.child_item_code ?? "this component"} from BOM?`
-                                              )
-                                            ) {
-                                              deleteLineMutation.mutate(line.id);
-                                            }
+                                            setPendingDelete({
+                                              label: `Remove ${line.child_item_code ?? "this component"} from BOM?`,
+                                              onConfirm: () => deleteLineMutation.mutate(line.id),
+                                            });
                                           }}
                                         >
                                           <Trash2 className="h-3 w-3 text-destructive" />
@@ -2254,9 +2253,10 @@ function BillOfMaterialsInner() {
                                                           </button>
                                                           <button
                                                             onClick={() => {
-                                                              if (confirm(`Remove ${v.vendor_name}?`)) {
-                                                                removeVendorMutation.mutate(v.id);
-                                                              }
+                                                              setPendingDelete({
+                                                                label: `Remove ${v.vendor_name}?`,
+                                                                onConfirm: () => removeVendorMutation.mutate(v.id),
+                                                              });
                                                             }}
                                                             className="h-6 w-6 flex items-center justify-center rounded hover:bg-red-100 text-slate-400 hover:text-red-600 transition-colors"
                                                           >
@@ -2359,9 +2359,10 @@ function BillOfMaterialsInner() {
                                                             </button>
                                                             <button
                                                               onClick={() => {
-                                                                if (confirm(`Remove step "${step.process_name}"?`)) {
-                                                                  deleteStepMutation.mutate(step.id);
-                                                                }
+                                                                setPendingDelete({
+                                                                  label: `Remove step "${step.process_name}"?`,
+                                                                  onConfirm: () => deleteStepMutation.mutate(step.id),
+                                                                });
                                                               }}
                                                               className="h-5 w-5 flex items-center justify-center rounded hover:bg-red-100 text-slate-400 hover:text-red-600 transition-colors"
                                                             >
@@ -2946,13 +2947,10 @@ function BillOfMaterialsInner() {
                                       size="icon"
                                       className="h-7 w-7"
                                       onClick={() => {
-                                        if (
-                                          confirm(
-                                            `Delete variant "${v.variant_name}"? All BOM lines for this variant will also be deleted.`
-                                          )
-                                        ) {
-                                          deleteVariantMutation.mutate(v.id);
-                                        }
+                                        setPendingDelete({
+                                          label: `Delete variant "${v.variant_name}"? All BOM lines for this variant will also be deleted.`,
+                                          onConfirm: () => deleteVariantMutation.mutate(v.id),
+                                        });
                                       }}
                                     >
                                       <Trash2 className="h-3 w-3 text-destructive" />
@@ -3972,6 +3970,26 @@ function BillOfMaterialsInner() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => { if (!open) setPendingDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDelete?.label} This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { pendingDelete?.onConfirm(); setPendingDelete(null); }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
