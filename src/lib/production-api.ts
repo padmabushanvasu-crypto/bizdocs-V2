@@ -314,9 +314,60 @@ export async function updateAssemblyWorkOrder(
 
 // ── cancelAssemblyWorkOrder ───────────────────────────────────────────────────
 
-export async function cancelAssemblyWorkOrder(id: string): Promise<void> {
+export async function cancelAssemblyWorkOrder(
+  id: string,
+  stockAction: 'none' | 'return_all' | 'partial' | 'scrap_all' = 'none',
+  partialLines?: Array<{ item_id: string; return_qty: number; scrap_qty: number }>
+): Promise<void> {
   const companyId = await getCompanyId();
   if (!companyId) throw new Error("Not authenticated");
+
+  if (stockAction !== 'none') {
+    const awo = await fetchAssemblyWorkOrder(id);
+    const awoNumber = awo?.awo_number ?? '';
+    const issuedLines = (awo?.line_items ?? []).filter(
+      (li) => li.item_id && li.issued_qty > 0
+    );
+
+    if (stockAction === 'return_all') {
+      for (const li of issuedLines) {
+        await updateStockBucket(li.item_id!, 'in_subassembly_wip', -li.issued_qty);
+        await updateStockBucket(li.item_id!, 'free', +li.issued_qty);
+      }
+    } else if (stockAction === 'scrap_all') {
+      for (const li of issuedLines) {
+        await updateStockBucket(li.item_id!, 'in_subassembly_wip', -li.issued_qty);
+        try {
+          await (supabase as any).from("stock_ledger").insert({
+            company_id: companyId,
+            item_id: li.item_id,
+            transaction_type: 'scrap_write_off',
+            quantity: -li.issued_qty,
+            notes: `AWO cancellation scrap write-off — ${awoNumber}`,
+          });
+        } catch { /* ignore */ }
+      }
+    } else if (stockAction === 'partial' && partialLines) {
+      for (const pl of partialLines) {
+        if (pl.return_qty > 0) {
+          await updateStockBucket(pl.item_id, 'in_subassembly_wip', -pl.return_qty);
+          await updateStockBucket(pl.item_id, 'free', +pl.return_qty);
+        }
+        if (pl.scrap_qty > 0) {
+          await updateStockBucket(pl.item_id, 'in_subassembly_wip', -pl.scrap_qty);
+          try {
+            await (supabase as any).from("stock_ledger").insert({
+              company_id: companyId,
+              item_id: pl.item_id,
+              transaction_type: 'scrap_write_off',
+              quantity: -pl.scrap_qty,
+              notes: `AWO cancellation scrap write-off (partial) — ${awoNumber}`,
+            });
+          } catch { /* ignore */ }
+        }
+      }
+    }
+  }
 
   const { error } = await (supabase as any)
     .from("assembly_work_orders")

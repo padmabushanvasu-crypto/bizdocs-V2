@@ -7,7 +7,6 @@ import { StockAlertsBoard } from "@/components/StockAlertsBoard";
 import { OutstandingPOsWidget } from "@/components/OutstandingPOsWidget";
 import { OutstandingDCsWidget } from "@/components/OutstandingDCsWidget";
 import { formatCurrency } from "@/lib/gst-utils";
-import { fetchAssemblyOrderStats } from "@/lib/assembly-orders-api";
 import { fetchFatStats } from "@/lib/fat-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { fetchAllAuditLog, type AuditEntry } from "@/lib/audit-api";
@@ -28,8 +27,6 @@ interface DashboardData {
   finishedGoodCount: number;
   needsBuildingCount: number;
   overduePOCount: number;
-  pendingAssemblyOrderCount: number;
-  wipCount: number;
 }
 
 interface StockAlertItem {
@@ -61,7 +58,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
   const fyYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
   const fyStart = format(new Date(fyYear, 3, 1), "yyyy-MM-dd");
 
-  const [invsRes, openPOsRes, openDCsRes, itemsRes, overduePOsRes, pendingAORes] = await Promise.all([
+  const [invsRes, openPOsRes, openDCsRes, itemsRes, overduePOsRes] = await Promise.all([
     supabase
       .from("invoices")
       .select("grand_total, invoice_date, due_date, status")
@@ -77,17 +74,12 @@ async function fetchDashboardData(): Promise<DashboardData> {
       .eq("status", "issued"),
     (supabase as any)
       .from("items")
-      .select("id, item_type, current_stock, stock_finished_goods, min_finished_stock, stock_wip")
+      .select("id, item_type, current_stock, stock_finished_goods, min_finished_stock")
       .eq("status", "active"),
     (supabase as any)
       .from("purchase_orders")
       .select("*", { count: "exact", head: true })
       .in("status", ["draft", "issued", "partially_received"]),
-    // Pending assembly order count
-    (supabase as any)
-      .from("assembly_orders")
-      .select("id", { count: "exact", head: true })
-      .in("status", ["draft", "in_progress"]),
   ]);
 
   const invoices = (invsRes.data ?? []) as any[];
@@ -119,9 +111,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
   const needsBuildingCount = items.filter(
     (i) => i.item_type === "finished_good" && (i.stock_finished_goods ?? 0) < (i.min_finished_stock ?? 0) && (i.min_finished_stock ?? 0) > 0
   ).length;
-  const wipCount = items.filter((i) => (i.stock_wip ?? 0) > 0).length;
 
-  const pendingAssemblyOrderCount = (pendingAORes as any).count ?? 0;
   const overduePOCount = overduePOsRes.count ?? 0;
 
   return {
@@ -129,8 +119,37 @@ async function fetchDashboardData(): Promise<DashboardData> {
     openPOValue, overdueDCCount,
     rawMaterialCount, componentCount, finishedGoodCount,
     needsBuildingCount, overduePOCount,
-    pendingAssemblyOrderCount, wipCount,
   };
+}
+
+async function fetchAwoStats(): Promise<{ buildsInProgress: number; pendingCount: number; wipComponentsCount: number }> {
+  const companyId = await getCompanyId();
+  if (!companyId) return { buildsInProgress: 0, pendingCount: 0, wipComponentsCount: 0 };
+
+  const { data: awos } = await (supabase as any)
+    .from("assembly_work_orders")
+    .select("id, status")
+    .eq("company_id", companyId)
+    .in("status", ["draft", "pending_materials", "in_progress"]);
+
+  const awoList = (awos ?? []) as Array<{ id: string; status: string }>;
+  const buildsInProgress = awoList.filter((a) => a.status === "in_progress").length;
+  const pendingCount = awoList.filter(
+    (a) => a.status === "draft" || a.status === "pending_materials"
+  ).length;
+
+  const inProgressIds = awoList.filter((a) => a.status === "in_progress").map((a) => a.id);
+  let wipComponentsCount = 0;
+  if (inProgressIds.length > 0) {
+    const { count } = await (supabase as any)
+      .from("awo_line_items")
+      .select("id", { count: "exact", head: true })
+      .in("awo_id", inProgressIds)
+      .gt("issued_qty", 0);
+    wipComponentsCount = count ?? 0;
+  }
+
+  return { buildsInProgress, pendingCount, wipComponentsCount };
 }
 
 async function fetchReadyToShip(): Promise<ReadyToShipRow[]> {
@@ -237,9 +256,9 @@ export default function Dashboard() {
     queryFn: fetchCompanySettings,
     staleTime: Infinity,
   });
-  const { data: aoStats } = useQuery({
-    queryKey: ["ao-stats-db"],
-    queryFn: fetchAssemblyOrderStats,
+  const { data: awoStats } = useQuery({
+    queryKey: ["awo-stats-dashboard"],
+    queryFn: fetchAwoStats,
     staleTime: STALE,
     refetchInterval: STALE,
   });
@@ -538,10 +557,10 @@ export default function Dashboard() {
               </button>
             </div>
             <div className="divide-y divide-slate-100 mt-2">
-              <LightStatRow label="Builds"   value={aoStats?.completedThisMonth ?? "—"}   onClick={() => navigate("/stock-register")} />
+              <LightStatRow label="Builds" value={awoStats?.buildsInProgress ?? "—"} onClick={() => navigate("/sub-assembly-work-orders")} />
               <LightStatRow label="FAT Pending"  value={fatStats?.pending ?? "—"} highlight={(fatStats?.pending ?? 0) > 0} onClick={() => navigate("/fat-certificates")} />
-              <LightStatRow label="Pending Assembly" value={dashData?.pendingAssemblyOrderCount ?? "—"} highlight={(dashData?.pendingAssemblyOrderCount ?? 0) > 0} onClick={() => navigate("/assembly-orders")} />
-              <LightStatRow label="WIP Components" value={dashData?.wipCount ?? "—"} onClick={() => navigate("/wip-register")} />
+              <LightStatRow label="Pending Assembly" value={awoStats?.pendingCount ?? "—"} highlight={(awoStats?.pendingCount ?? 0) > 0} onClick={() => navigate("/sub-assembly-work-orders")} />
+              <LightStatRow label="WIP Components" value={awoStats?.wipComponentsCount ?? "—"} onClick={() => navigate("/wip-register")} />
             </div>
           </div>
 

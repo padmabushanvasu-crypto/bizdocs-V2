@@ -16,10 +16,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { supabase } from "@/integrations/supabase/client";
-import {
-  fetchInProgressAOsWithLines,
-  type AssemblyOrderWithLines,
-} from "@/lib/assembly-orders-api";
 import { exportMultiSheet } from "@/lib/export-utils";
 import { format, differenceInDays, parseISO } from "date-fns";
 
@@ -37,25 +33,6 @@ function DaysInProgress({ createdAt }: { createdAt: string }) {
     <span className={`flex items-center justify-end gap-1 text-sm ${colour}`}>
       <Clock className="h-3.5 w-3.5 shrink-0" />
       {days}d
-    </span>
-  );
-}
-
-// ── Components-ready cell for AOs ────────────────────────────────────────────
-
-function ComponentsReady({ lines }: { lines: AssemblyOrderWithLines["lines"] }) {
-  if (lines.length === 0) {
-    return <span className="text-muted-foreground text-sm">No BOM</span>;
-  }
-  const ready = lines.filter((l) => l.available_qty >= l.required_qty).length;
-  const total = lines.length;
-  const colour =
-    ready === total ? "text-emerald-600 font-medium" :
-    ready === 0     ? "text-destructive font-medium" :
-                      "text-amber-600 font-medium";
-  return (
-    <span className={`text-sm ${colour}`}>
-      {ready} of {total} ready
     </span>
   );
 }
@@ -160,15 +137,8 @@ export default function WipRegister() {
     },
   });
 
-  // Sub-assembly WIP (legacy assembly orders in progress)
-  const { data: aoRows = [], isLoading: aoLoading } = useQuery({
-    queryKey: ["wip-assembly-orders"],
-    queryFn: fetchInProgressAOsWithLines,
-    refetchInterval: 30000,
-  });
-
-  // Sub-assembly WIP (new AWO system — pending_materials + in_progress)
-  const { data: saWorkOrders = [] } = useQuery({
+  // Sub-assembly WIP (new AWO system — draft + pending_materials + in_progress)
+  const { data: saWorkOrders = [], isLoading: saLoading } = useQuery({
     queryKey: ["sa-work-orders-wip"],
     queryFn: async () => {
       const { supabase: sb } = await import("@/integrations/supabase/client");
@@ -181,7 +151,7 @@ export default function WipRegister() {
         .select("*")
         .eq("company_id", profile.company_id)
         .eq("awo_type", "sub_assembly")
-        .in("status", ["pending_materials", "in_progress"])
+        .in("status", ["draft", "pending_materials", "in_progress"])
         .order("created_at", { ascending: false });
       return data ?? [];
     },
@@ -224,23 +194,23 @@ export default function WipRegister() {
     );
   }, [wipData, search]);
 
-  // Filtered assembly WIP
-  const filteredAo = useMemo(() => {
-    if (!search.trim()) return aoRows;
+  // Filtered sub-assembly WIP
+  const filteredSaWorkOrders = useMemo(() => {
+    if (!search.trim()) return saWorkOrders as any[];
     const q = search.toLowerCase();
-    return aoRows.filter(
-      (ao) =>
-        ao.ao_number?.toLowerCase().includes(q) ||
-        ao.item_code?.toLowerCase().includes(q) ||
-        ao.item_description?.toLowerCase().includes(q) ||
-        ao.work_order_ref?.toLowerCase().includes(q)
+    return (saWorkOrders as any[]).filter(
+      (awo: any) =>
+        awo.awo_number?.toLowerCase().includes(q) ||
+        awo.item_code?.toLowerCase().includes(q) ||
+        awo.item_description?.toLowerCase().includes(q) ||
+        awo.work_order_ref?.toLowerCase().includes(q)
     );
-  }, [aoRows, search]);
+  }, [saWorkOrders, search]);
 
   // Summary stats
   const today = new Date().toISOString().split("T")[0];
   const overdueCount = (wipData as any[]).filter((r: any) => r.return_before_date && r.return_before_date < today).length;
-  const aoOverdue = aoRows.filter((ao) => ao.planned_date && ao.planned_date < today).length;
+  const saOverdue = (saWorkOrders as any[]).filter((awo: any) => awo.planned_date && awo.planned_date < today).length;
 
   const lastRefreshed = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleTimeString("en-IN", { timeStyle: "short" })
@@ -264,14 +234,15 @@ export default function WipRegister() {
         {
           sheetName: "Production WIP",
           columns: [
-            { key: "ao_number",          label: "Run Number",       type: "text",   width: 14 },
+            { key: "awo_number",         label: "WO Number",         type: "text",   width: 14 },
             { key: "item_code",          label: "Item Code",         type: "text",   width: 12 },
             { key: "item_description",   label: "Item Being Built",  type: "text",   width: 28 },
             { key: "quantity_to_build",  label: "Qty to Build",      type: "number", width: 12 },
+            { key: "status",             label: "Status",            type: "text",   width: 18 },
             { key: "work_order_ref",     label: "Work Order Ref",    type: "text",   width: 16 },
             { key: "planned_date",       label: "Planned Date",      type: "date",   width: 14 },
           ],
-          data: filteredAo,
+          data: filteredSaWorkOrders,
         },
       ],
       "WIP_Register.xlsx"
@@ -309,9 +280,9 @@ export default function WipRegister() {
       <div className="flex items-center gap-4 flex-wrap">
         <SegmentedControl
           options={[
-            { value: "all",          label: "All WIP",           color: "#0F172A", count: (wipData as any[]).length + aoRows.length + saWorkOrders.length },
+            { value: "all",          label: "All WIP",           color: "#0F172A", count: (wipData as any[]).length + (saWorkOrders as any[]).length },
             { value: "component",    label: "Component WIP",     color: "#2563EB", count: (wipData as any[]).length },
-            { value: "subassembly",  label: "Sub-Assembly WIP",  color: "#0F766E", count: aoRows.length + saWorkOrders.length },
+            { value: "subassembly",  label: "Sub-Assembly WIP",  color: "#0F766E", count: (saWorkOrders as any[]).length },
             { value: "finished_good", label: "Finished Good WIP", color: "#6366F1", count: fgWorkOrders.length },
           ]}
           value={tab}
@@ -485,21 +456,21 @@ export default function WipRegister() {
             <Layers className="h-4 w-4 text-muted-foreground" />
             <h2 className="text-sm font-semibold text-foreground">Production Runs</h2>
             <span className="bg-slate-100 text-slate-700 text-[11px] font-bold px-2 py-0.5 rounded-full border border-slate-200">
-              {aoRows.length + saWorkOrders.length}
+              {(saWorkOrders as any[]).length}
             </span>
           </div>
 
           {/* Sub-Assembly stat chips */}
           <div className="flex items-center gap-2 flex-wrap text-sm">
             <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-medium text-xs ${
-              aoRows.length > 0 ? "bg-blue-50 border border-blue-200 text-blue-800 shadow-sm" : "bg-slate-50 border border-slate-200 text-slate-600"
+              (saWorkOrders as any[]).filter((a: any) => a.status === 'in_progress').length > 0 ? "bg-blue-50 border border-blue-200 text-blue-800 shadow-sm" : "bg-slate-50 border border-slate-200 text-slate-600"
             }`}>
-              <Layers className="h-3 w-3" /> {aoRows.length} in progress
+              <Layers className="h-3 w-3" /> {(saWorkOrders as any[]).filter((a: any) => a.status === 'in_progress').length} in progress
             </span>
             <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs ${
-              aoOverdue > 0 ? "bg-red-50 border border-red-200 text-red-800 font-bold shadow-sm" : "bg-slate-50 border border-slate-200 text-slate-600 font-medium"
+              saOverdue > 0 ? "bg-red-50 border border-red-200 text-red-800 font-bold shadow-sm" : "bg-slate-50 border border-slate-200 text-slate-600 font-medium"
             }`}>
-              <AlertTriangle className="h-3 w-3" /> {aoOverdue} overdue
+              <AlertTriangle className="h-3 w-3" /> {saOverdue} overdue
             </span>
           </div>
 
@@ -521,25 +492,21 @@ export default function WipRegister() {
                   </tr>
                 </thead>
                 <tbody>
-                  {aoLoading ? (
+                  {saLoading ? (
                     <tr>
                       <td colSpan={9} className="px-3 py-8 text-center text-sm text-slate-400">
                         Loading production runs…
                       </td>
                     </tr>
-                  ) : filteredAo.length === 0 && saWorkOrders.filter((awo: any) => {
-                      if (!search.trim()) return true;
-                      const q = search.toLowerCase();
-                      return awo.awo_number?.toLowerCase().includes(q) || awo.item_code?.toLowerCase().includes(q) || awo.item_description?.toLowerCase().includes(q);
-                    }).length === 0 ? (
+                  ) : filteredSaWorkOrders.length === 0 ? (
                     <tr>
                       <td colSpan={9} className="text-center py-10">
-                        {aoRows.length === 0 && saWorkOrders.length === 0 ? (
+                        {(saWorkOrders as any[]).length === 0 ? (
                           <div className="flex flex-col items-center gap-2 text-muted-foreground">
                             <Layers className="h-8 w-8 opacity-30" />
                             <p>No production runs in progress.</p>
                             <Link
-                              to="/assembly-orders"
+                              to="/sub-assembly-work-orders"
                               className="text-primary text-sm flex items-center gap-1 hover:underline"
                             >
                               Go to Production <ArrowRight className="h-3.5 w-3.5" />
@@ -551,94 +518,57 @@ export default function WipRegister() {
                       </td>
                     </tr>
                   ) : (
-                    <>
-                    {filteredAo.map((ao) => (
-                      <tr
-                        key={ao.id}
-                        className="cursor-pointer hover:bg-muted/30 transition-colors"
-                        onClick={() => navigate(`/assembly-orders/${ao.id}`)}
-                      >
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium">
-                          {ao.ao_number}
-                        </td>
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
-                          <p className="font-medium leading-tight">{ao.item_code ?? "—"}</p>
-                          {ao.item_description && (
-                            <p className="text-xs text-muted-foreground truncate max-w-[180px]">
-                              {ao.item_description}
-                            </p>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
-                          {ao.quantity_to_build}
-                        </td>
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right">
-                          {(ao as any).serial_numbers_generated ? (
-                            <span className="text-xs font-mono text-amber-700 font-medium">
-                              {ao.quantity_to_build}
+                    filteredSaWorkOrders.map((awo: any) => {
+                      const statusCls =
+                        awo.status === 'draft'
+                          ? 'bg-slate-100 text-slate-700 border-slate-200'
+                          : awo.status === 'pending_materials'
+                          ? 'bg-amber-50 text-amber-800 border-amber-200'
+                          : 'bg-blue-50 text-blue-800 border-blue-200';
+                      const dotCls =
+                        awo.status === 'draft'
+                          ? 'bg-slate-400'
+                          : awo.status === 'pending_materials'
+                          ? 'bg-amber-500'
+                          : 'bg-blue-500 animate-pulse';
+                      const statusLabel =
+                        awo.status === 'draft'
+                          ? 'Draft'
+                          : awo.status === 'pending_materials'
+                          ? 'Pending Materials'
+                          : 'In Progress';
+                      return (
+                        <tr
+                          key={awo.id}
+                          className="cursor-pointer hover:bg-muted/30 transition-colors"
+                          onClick={() => navigate(`/assembly-work-orders/${awo.id}`)}
+                        >
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium">{awo.awo_number}</td>
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
+                            <p className="font-medium leading-tight">{awo.item_code ?? "—"}</p>
+                            {awo.item_description && (
+                              <p className="text-xs text-muted-foreground truncate max-w-[180px]">{awo.item_description}</p>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{awo.quantity_to_build}</td>
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right"><span className="text-muted-foreground text-sm">—</span></td>
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-muted-foreground">{awo.work_order_ref ?? "—"}</td>
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
+                            {awo.planned_date ? format(parseISO(awo.planned_date), "dd MMM yyyy") : <span className="text-muted-foreground">—</span>}
+                          </td>
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right">
+                            <DaysInProgress createdAt={awo.created_at} />
+                          </td>
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left"><span className="text-muted-foreground text-sm">—</span></td>
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${statusCls}`}>
+                              <span className={`h-1.5 w-1.5 rounded-full ${dotCls}`} />
+                              {statusLabel}
                             </span>
-                          ) : (
-                            <span className="text-muted-foreground text-sm">—</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-muted-foreground">
-                          {ao.work_order_ref ?? "—"}
-                        </td>
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
-                          {ao.planned_date
-                            ? format(new Date(ao.planned_date), "dd MMM yyyy")
-                            : <span className="text-muted-foreground">—</span>}
-                        </td>
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right">
-                          <DaysInProgress createdAt={ao.created_at} />
-                        </td>
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
-                          <ComponentsReady lines={ao.lines} />
-                        </td>
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border bg-blue-50 text-blue-800 border-blue-200">
-                            <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
-                            In Progress
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                    {saWorkOrders.filter((awo: any) => {
-                      if (!search.trim()) return true;
-                      const q = search.toLowerCase();
-                      return awo.awo_number?.toLowerCase().includes(q) || awo.item_code?.toLowerCase().includes(q) || awo.item_description?.toLowerCase().includes(q);
-                    }).map((awo: any) => (
-                      <tr
-                        key={awo.id}
-                        className="cursor-pointer hover:bg-muted/30 transition-colors"
-                        onClick={() => navigate(`/assembly-work-orders/${awo.id}`)}
-                      >
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium">{awo.awo_number}</td>
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
-                          <p className="font-medium leading-tight">{awo.item_code ?? "—"}</p>
-                          {awo.item_description && (
-                            <p className="text-xs text-muted-foreground truncate max-w-[180px]">{awo.item_description}</p>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{awo.quantity_to_build}</td>
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right"><span className="text-muted-foreground text-sm">—</span></td>
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-muted-foreground">{awo.work_order_ref ?? "—"}</td>
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
-                          {awo.planned_date ? format(parseISO(awo.planned_date), "dd MMM yyyy") : <span className="text-muted-foreground">—</span>}
-                        </td>
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right">
-                          <DaysInProgress createdAt={awo.created_at} />
-                        </td>
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left"><span className="text-muted-foreground text-sm">—</span></td>
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${awo.status === 'pending_materials' ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-blue-50 text-blue-800 border-blue-200'}`}>
-                            <span className={`h-1.5 w-1.5 rounded-full ${awo.status === 'pending_materials' ? 'bg-amber-500' : 'bg-blue-500 animate-pulse'}`} />
-                            {awo.status === 'pending_materials' ? 'Pending Materials' : 'In Progress'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                    </>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>

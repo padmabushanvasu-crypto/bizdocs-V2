@@ -24,6 +24,8 @@ import {
 } from "@/lib/production-api";
 import { format, differenceInDays, parseISO } from "date-fns";
 
+type StockAction = 'none' | 'return_all' | 'partial' | 'scrap_all';
+
 function statusBadge(status: string) {
   const map: Record<string, { label: string; className: string }> = {
     draft: { label: "Draft", className: "bg-slate-100 text-slate-700" },
@@ -66,6 +68,9 @@ export default function AssemblyWorkOrderDetail() {
   const queryClient = useQueryClient();
 
   const [confirmCompleteOpen, setConfirmCompleteOpen] = useState(false);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [cancelOption, setCancelOption] = useState<StockAction>('none');
+  const [partialLines, setPartialLines] = useState<Record<string, { return_qty: number; scrap_qty: number }>>({});
 
   const { data: awo, isLoading } = useQuery({
     queryKey: ["awo-detail", id],
@@ -108,10 +113,29 @@ export default function AssemblyWorkOrderDetail() {
   });
 
   const cancelMutation = useMutation({
-    mutationFn: () => cancelAssemblyWorkOrder(id!),
+    mutationFn: async () => {
+      const pLines =
+        cancelOption === 'partial'
+          ? Object.entries(partialLines).map(([item_id, vals]) => ({
+              item_id,
+              return_qty: vals.return_qty,
+              scrap_qty: vals.scrap_qty,
+            }))
+          : undefined;
+      return cancelAssemblyWorkOrder(id!, cancelOption, pLines);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["awo-detail", id] });
+      queryClient.invalidateQueries({ queryKey: ["sa-work-orders-wip"] });
+      queryClient.invalidateQueries({ queryKey: ["fg-work-orders-wip"] });
+      queryClient.invalidateQueries({ queryKey: ["awo-stats-dashboard"] });
+      setCancelDialogOpen(false);
       toast({ title: "Work order cancelled" });
+      if (awo?.awo_type === 'sub_assembly') {
+        navigate('/sub-assembly-work-orders');
+      } else {
+        navigate('/finished-good-work-orders');
+      }
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -133,6 +157,31 @@ export default function AssemblyWorkOrderDetail() {
   }
 
   const handlePrint = () => window.print();
+
+  const issuedLines = (awo.line_items ?? []).filter(
+    (li) => li.item_id && li.issued_qty > 0
+  );
+
+  // Validation for partial option
+  const hasValidationErrors =
+    cancelOption === 'partial' &&
+    Object.entries(partialLines).some(([item_id, vals]) => {
+      const issued = issuedLines.find((li) => li.item_id === item_id)?.issued_qty ?? 0;
+      return vals.return_qty + vals.scrap_qty > issued;
+    });
+
+  const openCancelDialog = () => {
+    const defaultOption: StockAction =
+      awo.status === 'in_progress' ? 'return_all' : 'none';
+    setCancelOption(defaultOption);
+    // Initialize partial lines from issued items
+    const lines: Record<string, { return_qty: number; scrap_qty: number }> = {};
+    issuedLines.forEach((li) => {
+      lines[li.item_id!] = { return_qty: li.issued_qty, scrap_qty: 0 };
+    });
+    setPartialLines(lines);
+    setCancelDialogOpen(true);
+  };
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -234,13 +283,12 @@ export default function AssemblyWorkOrderDetail() {
                 Complete Work Order
               </Button>
             )}
-            {(awo.status === 'draft' || awo.status === 'pending_materials') && (
+            {(awo.status === 'draft' || awo.status === 'pending_materials' || awo.status === 'in_progress') && (
               <Button
                 variant="outline"
                 size="sm"
                 className="text-destructive border-destructive hover:bg-destructive/10"
-                onClick={() => cancelMutation.mutate()}
-                disabled={cancelMutation.isPending}
+                onClick={openCancelDialog}
               >
                 Cancel
               </Button>
@@ -368,6 +416,172 @@ export default function AssemblyWorkOrderDetail() {
               disabled={completeMutation.isPending}
             >
               {completeMutation.isPending ? "Completing…" : "Confirm Complete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancel work order dialog */}
+      <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Cancel Work Order</DialogTitle>
+            <DialogDescription>
+              How should we handle the materials for this order?
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            {/* draft / pending_materials: only Option A */}
+            {(awo.status === 'draft' || awo.status === 'pending_materials') && (
+              <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50">
+                <input
+                  type="radio"
+                  name="cancelOption"
+                  value="none"
+                  checked={cancelOption === 'none'}
+                  onChange={() => setCancelOption('none')}
+                  className="mt-0.5 accent-slate-700"
+                />
+                <div>
+                  <p className="text-sm font-medium text-slate-900">No materials issued yet — cancel only</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">No stock changes will be made.</p>
+                </div>
+              </label>
+            )}
+
+            {/* in_progress: three options */}
+            {awo.status === 'in_progress' && (
+              <>
+                <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50">
+                  <input
+                    type="radio"
+                    name="cancelOption"
+                    value="return_all"
+                    checked={cancelOption === 'return_all'}
+                    onChange={() => setCancelOption('return_all')}
+                    className="mt-0.5 accent-slate-700"
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">Materials issued but work not started</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">All issued materials will be returned to store.</p>
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50">
+                  <input
+                    type="radio"
+                    name="cancelOption"
+                    value="partial"
+                    checked={cancelOption === 'partial'}
+                    onChange={() => setCancelOption('partial')}
+                    className="mt-0.5 accent-slate-700"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-900">Work partially done — some materials scrapped</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Specify how much to return to store and how much to write off.</p>
+                  </div>
+                </label>
+
+                {/* Partial lines table */}
+                {cancelOption === 'partial' && issuedLines.length > 0 && (
+                  <div className="ml-6 overflow-x-auto rounded-lg border border-slate-200">
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                      <thead>
+                        <tr style={{ backgroundColor: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+                          <th style={{ textAlign: "left", padding: "8px 10px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", fontSize: "11px", letterSpacing: "0.05em" }}>Item Code</th>
+                          <th style={{ textAlign: "left", padding: "8px 10px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", fontSize: "11px", letterSpacing: "0.05em" }}>Description</th>
+                          <th style={{ textAlign: "right", padding: "8px 10px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", fontSize: "11px", letterSpacing: "0.05em" }}>Issued</th>
+                          <th style={{ textAlign: "right", padding: "8px 10px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", fontSize: "11px", letterSpacing: "0.05em" }}>Return to Store</th>
+                          <th style={{ textAlign: "right", padding: "8px 10px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", fontSize: "11px", letterSpacing: "0.05em" }}>Scrap</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {issuedLines.map((li) => {
+                          const pl = partialLines[li.item_id!] ?? { return_qty: li.issued_qty, scrap_qty: 0 };
+                          const exceeded = pl.return_qty + pl.scrap_qty > li.issued_qty;
+                          return (
+                            <tr key={li.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                              <td style={{ padding: "6px 10px", fontFamily: "monospace", color: "#3b82f6" }}>{li.drawing_number ?? li.item_code ?? "—"}</td>
+                              <td style={{ padding: "6px 10px", color: "#334155", maxWidth: "160px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{li.item_description ?? "—"}</td>
+                              <td style={{ padding: "6px 10px", textAlign: "right", fontFamily: "monospace", color: "#475569" }}>{li.issued_qty}</td>
+                              <td style={{ padding: "6px 10px", textAlign: "right" }}>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={li.issued_qty}
+                                  step={1}
+                                  value={pl.return_qty}
+                                  onChange={(e) => {
+                                    const v = Math.max(0, Number(e.target.value));
+                                    setPartialLines((prev) => ({
+                                      ...prev,
+                                      [li.item_id!]: { ...pl, return_qty: v },
+                                    }));
+                                  }}
+                                  style={{ width: "64px", textAlign: "right", border: exceeded ? "1px solid #ef4444" : "1px solid #cbd5e1", borderRadius: "4px", padding: "2px 6px", fontSize: "13px" }}
+                                />
+                              </td>
+                              <td style={{ padding: "6px 10px", textAlign: "right" }}>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={li.issued_qty}
+                                  step={1}
+                                  value={pl.scrap_qty}
+                                  onChange={(e) => {
+                                    const v = Math.max(0, Number(e.target.value));
+                                    setPartialLines((prev) => ({
+                                      ...prev,
+                                      [li.item_id!]: { ...pl, scrap_qty: v },
+                                    }));
+                                  }}
+                                  style={{ width: "64px", textAlign: "right", border: exceeded ? "1px solid #ef4444" : "1px solid #cbd5e1", borderRadius: "4px", padding: "2px 6px", fontSize: "13px" }}
+                                />
+                                {exceeded && (
+                                  <p style={{ color: "#ef4444", fontSize: "11px", marginTop: "2px" }}>Exceeds issued</p>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50">
+                  <input
+                    type="radio"
+                    name="cancelOption"
+                    value="scrap_all"
+                    checked={cancelOption === 'scrap_all'}
+                    onChange={() => setCancelOption('scrap_all')}
+                    className="mt-0.5 accent-slate-700"
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">Entire batch scrapped</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">All issued materials will be written off as scrap.</p>
+                  </div>
+                </label>
+              </>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCancelDialogOpen(false)}
+              disabled={cancelMutation.isPending}
+            >
+              Go Back
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => cancelMutation.mutate()}
+              disabled={cancelMutation.isPending || hasValidationErrors}
+            >
+              {cancelMutation.isPending ? "Cancelling…" : "Confirm Cancellation"}
             </Button>
           </DialogFooter>
         </DialogContent>
