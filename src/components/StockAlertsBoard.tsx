@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { RefreshCw } from "lucide-react";
@@ -37,7 +37,7 @@ interface StockAlertBoardRow {
   current_stock: number;
   min_stock: number;
   shortage: number;
-  actionedWith: "PO" | "DC" | null;
+  actionedWith: "PO" | "WO" | null;
 }
 
 interface WoFormState {
@@ -106,8 +106,10 @@ async function fetchStockAlertBoard(companyId: string): Promise<StockAlertBoardR
   if (rawRows.length === 0) return [];
 
   const itemIds = rawRows.map((r: any) => r.id);
+  const itemCodeMap: Record<string, string> = {};
+  rawRows.forEach((r: any) => { itemCodeMap[r.id] = r.item_code ?? ""; });
 
-  // Open POs — two-step, filtered by companyId prop
+  // ── PO detection (two-pass) ───────────────────────────────────────────────
   const { data: openPOs } = await (supabase as any)
     .from("purchase_orders")
     .select("id")
@@ -118,31 +120,71 @@ async function fetchStockAlertBoard(companyId: string): Promise<StockAlertBoardR
   let itemsWithPO = new Set<string>();
 
   if (openPOIds.length > 0) {
-    const { data: poLines } = await (supabase as any)
+    // Pass 1: match by item_id FK (populated for newer POs)
+    const { data: poLinesById } = await (supabase as any)
       .from("po_line_items")
-      .select("item_id")
-      .in("po_id", openPOIds)
-      .in("item_id", itemIds);
-    itemsWithPO = new Set((poLines ?? []).filter((l: any) => l.item_id).map((l: any) => l.item_id));
+      .select("item_id, description, po_id")
+      .in("po_id", openPOIds);
+
+    const validLines = (poLinesById ?? []).filter((l: any) => l.po_id && openPOIds.includes(l.po_id));
+
+    // Items matched by item_id
+    validLines
+      .filter((l: any) => l.item_id && itemIds.includes(l.item_id))
+      .forEach((l: any) => itemsWithPO.add(l.item_id));
+
+    // Pass 2: description ILIKE fallback for items not yet matched
+    const unmatchedIds = itemIds.filter((id) => !itemsWithPO.has(id));
+    const descriptionMatches: string[] = [];
+    if (unmatchedIds.length > 0) {
+      validLines
+        .filter((l: any) => l.description)
+        .forEach((l: any) => {
+          const desc = (l.description as string).toLowerCase();
+          unmatchedIds.forEach((id) => {
+            const code = (itemCodeMap[id] ?? "").toLowerCase();
+            if (code && desc.includes(code)) {
+              itemsWithPO.add(id);
+              descriptionMatches.push(`${itemCodeMap[id]} matched via "${l.description}"`);
+            }
+          });
+        });
+    }
+
+    // Debug diagnostics
+    console.debug("[StockAlertsBoard] PO detection — alert item IDs:", itemIds);
+    console.debug(
+      "[StockAlertsBoard] PO detection — matched item IDs from po_line_items (pass 1, item_id FK):",
+      validLines.filter((l: any) => l.item_id && itemIds.includes(l.item_id)).map((l: any) => l.item_id)
+    );
+    console.debug("[StockAlertsBoard] PO detection — pass 2 description matches:", descriptionMatches);
+    console.debug(
+      "[StockAlertsBoard] PO detection — final sample (first 3):",
+      itemIds.slice(0, 3).map((id) => ({
+        item_id: id,
+        item_code: itemCodeMap[id],
+        hasPO: itemsWithPO.has(id),
+      }))
+    );
   }
 
-  // Open DCs — two-step, dc_line_items FK is dc_id (not delivery_challan_id)
-  const { data: openDCs } = await (supabase as any)
-    .from("delivery_challans")
-    .select("id")
-    .eq("company_id", companyId)
-    .in("status", ["draft", "issued"]);
+  // ── Work-order detection for sub-assemblies ───────────────────────────────
+  const subAssemblyIds = itemIds.filter(
+    (id) => rawRows.find((r: any) => r.id === id)?.item_type === "sub_assembly"
+  );
+  let itemsWithWO = new Set<string>();
 
-  const openDCIds = (openDCs ?? []).map((d: any) => d.id);
-  let itemsWithDC = new Set<string>();
-
-  if (openDCIds.length > 0) {
-    const { data: dcLines } = await (supabase as any)
-      .from("dc_line_items")
+  if (subAssemblyIds.length > 0) {
+    const { data: openWOs } = await (supabase as any)
+      .from("assembly_work_orders")
       .select("item_id")
-      .in("dc_id", openDCIds)
-      .in("item_id", itemIds);
-    itemsWithDC = new Set((dcLines ?? []).filter((l: any) => l.item_id).map((l: any) => l.item_id));
+      .eq("company_id", companyId)
+      .in("item_id", subAssemblyIds)
+      .not("status", "in", '("complete","cancelled")');
+
+    (openWOs ?? [])
+      .filter((w: any) => w.item_id)
+      .forEach((w: any) => itemsWithWO.add(w.item_id));
   }
 
   // Normalise columns (view: description/effective_stock; items: description/stock_free)
@@ -158,7 +200,7 @@ async function fetchStockAlertBoard(companyId: string): Promise<StockAlertBoardR
       current_stock: stock,
       min_stock: minStock,
       shortage,
-      actionedWith: itemsWithPO.has(r.id) ? "PO" : itemsWithDC.has(r.id) ? "DC" : null,
+      actionedWith: itemsWithPO.has(r.id) ? "PO" : itemsWithWO.has(r.id) ? "WO" : null,
     };
   });
 
@@ -210,12 +252,26 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
   const [woDialogOpen, setWoDialogOpen] = useState(false);
   const [woForm, setWoForm] = useState<WoFormState>(defaultWoForm);
 
+  // Filter state — dashboard defaults to "needs_action", full-height page defaults to "all"
+  type FilterKey = "all" | "needs_action" | "po_raised" | "production_started";
+  const [activeFilter, setActiveFilter] = useState<FilterKey>(fullHeight ? "all" : "needs_action");
+
   const { data: rows = [], isLoading, refetch, isFetching } = useQuery({
     queryKey: ["stock-alerts-board", companyId],
     queryFn: () => fetchStockAlertBoard(companyId),
-    staleTime: 0,
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
     enabled: !!companyId,
   });
+
+  // Refetch when the user navigates back to this tab/page
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refetch();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [refetch]);
 
   // Items for WO dialog dropdown (only fetched when dialog is open)
   const { data: itemsData } = useQuery({
@@ -276,9 +332,19 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
     setWoForm(defaultWoForm);
   };
 
-  const totalBelow       = rows.length;
-  const needsPOCount     = rows.filter((r) => needsPO(r.item_type) && !r.actionedWith).length;
-  const needsProdCount   = rows.filter((r) => needsProduction(r.item_type) && !r.actionedWith).length;
+  const totalBelow         = rows.length;
+  const needsPOCount       = rows.filter((r) => needsPO(r.item_type) && !r.actionedWith).length;
+  const needsProdCount     = rows.filter((r) => needsProduction(r.item_type) && !r.actionedWith).length;
+  const needsActionCount   = rows.filter((r) => !r.actionedWith).length;
+  const poRaisedCount      = rows.filter((r) => r.actionedWith === "PO").length;
+  const prodStartedCount   = rows.filter((r) => r.actionedWith === "WO").length;
+
+  const filteredRows = rows.filter((r) => {
+    if (activeFilter === "needs_action")       return !r.actionedWith;
+    if (activeFilter === "po_raised")          return r.actionedWith === "PO";
+    if (activeFilter === "production_started") return r.actionedWith === "WO";
+    return true; // "all"
+  });
 
   return (
     <>
@@ -330,6 +396,33 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
           </div>
         </div>
 
+        {/* ── Filter pills — always visible when data is loaded ───────────── */}
+        {!isLoading && rows.length > 0 && (
+          <div className="flex items-center gap-2 px-4 lg:px-5 py-2.5 border-b border-slate-100 shrink-0 flex-wrap">
+            {(
+              [
+                { key: "all",                label: "All",                count: totalBelow,       dot: null },
+                { key: "needs_action",       label: "Needs Action",       count: needsActionCount,  dot: "bg-red-500" },
+                { key: "po_raised",          label: "PO Raised",          count: poRaisedCount,     dot: "bg-green-500" },
+                { key: "production_started", label: "Production Started", count: prodStartedCount,  dot: "bg-blue-500" },
+              ] as { key: FilterKey; label: string; count: number; dot: string | null }[]
+            ).map(({ key, label, count, dot }) => (
+              <button
+                key={key}
+                onClick={() => setActiveFilter(key)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                  activeFilter === key
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                }`}
+              >
+                {dot && <span className={`h-1.5 w-1.5 rounded-full ${dot} ${activeFilter === key ? "opacity-80" : ""}`} />}
+                {label} ({count})
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* ── Table ───────────────────────────────────────────────────────── */}
         {isLoading ? (
           <div className="p-4 space-y-2 shrink-0">
@@ -360,7 +453,13 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, idx) => {
+                {filteredRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-400">
+                      No items match this filter.
+                    </td>
+                  </tr>
+                ) : filteredRows.map((row, idx) => {
                   const { label: typeLabel, className: typeCls } = itemTypeBadge(row.item_type);
                   const raisePO   = needsPO(row.item_type);
                   const startProd = needsProduction(row.item_type);
@@ -389,9 +488,9 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
                             <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
                             PO Raised
                           </span>
-                        ) : row.actionedWith === "DC" ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-green-200 bg-green-50 text-green-700 text-xs font-semibold">
-                            <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                        ) : row.actionedWith === "WO" ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-blue-200 bg-blue-50 text-blue-700 text-xs font-semibold">
+                            <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
                             In Production
                           </span>
                         ) : raisePO ? (

@@ -168,6 +168,7 @@ export default function PurchaseOrderForm() {
     if (prefillState.prefill_items?.length) {
       const items: POLineItem[] = prefillState.prefill_items.map((pi, idx) => ({
         serial_number: idx + 1,
+        item_id: pi.item_id || null,
         description: pi.description,
         drawing_number: "",
         quantity: pi.qty,

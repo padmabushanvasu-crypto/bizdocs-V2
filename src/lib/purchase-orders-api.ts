@@ -4,6 +4,7 @@ import { getNextDocNumber } from "@/lib/doc-number-utils";
 
 export interface POLineItem {
   id?: string;
+  item_id?: string | null;
   serial_number: number;
   description: string;
   drawing_number?: string;
@@ -149,6 +150,7 @@ export async function createPurchaseOrder({ po, lineItems }: CreatePOData) {
     const itemsToInsert = lineItems.map((item) => ({
       company_id: companyId,
       po_id: (newPO as any).id, serial_number: item.serial_number, description: item.description,
+      item_id: item.item_id || null,
       drawing_number: item.drawing_number || null, quantity: item.quantity, unit: item.unit,
       unit_price: item.unit_price, delivery_date: item.delivery_date || null,
       line_total: item.line_total, gst_rate: item.gst_rate, hsn_sac_code: item.hsn_sac_code || null,
@@ -186,6 +188,7 @@ export async function updatePurchaseOrder(id: string, { po, lineItems }: CreateP
     const itemsToInsert = lineItems.map((item) => ({
       company_id: companyId,
       po_id: id, serial_number: item.serial_number, description: item.description,
+      item_id: item.item_id || null,
       drawing_number: item.drawing_number || null, quantity: item.quantity, unit: item.unit,
       unit_price: item.unit_price, delivery_date: item.delivery_date || null,
       line_total: item.line_total, gst_rate: item.gst_rate, hsn_sac_code: item.hsn_sac_code || null,
