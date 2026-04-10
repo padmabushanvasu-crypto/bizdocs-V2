@@ -13,13 +13,16 @@ import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId } from "@/lib/auth-helpers";
 import type { AppRole } from "@/lib/role-access";
 
+// last_sign_in_at lives on auth.users, not on the profiles table.
+// Profiles columns: id, full_name, display_name, email, role, company_id,
+//                   is_active, tour_completed, created_at, updated_at
 interface ProfileRow {
   id: string;
   full_name: string | null;
+  display_name: string | null;
   email: string | null;
   role: string | null;
   created_at: string;
-  last_sign_in_at: string | null;
 }
 
 const ROLE_OPTIONS: { value: AppRole; label: string }[] = [
@@ -32,32 +35,20 @@ const ROLE_OPTIONS: { value: AppRole; label: string }[] = [
   { value: "finance",       label: "Finance" },
 ];
 
-function formatRelativeTime(dateStr: string | null): string {
-  if (!dateStr) return "Never";
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins} min ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days === 1) return "Yesterday";
-  if (days < 30) return `${days} days ago`;
-  const months = Math.floor(days / 30);
-  if (months < 12) return `${months} months ago`;
-  return `${Math.floor(months / 12)} years ago`;
-}
-
 async function fetchProfiles(): Promise<ProfileRow[]> {
   const companyId = await getCompanyId();
   if (!companyId) return [];
   const { data, error } = await (supabase as any)
     .from("profiles")
-    .select("id, full_name, email, role, created_at, last_sign_in_at")
+    .select("id, full_name, display_name, email, role, created_at")
     .eq("company_id", companyId)
     .order("created_at", { ascending: true });
   if (error) throw error;
   return data ?? [];
+}
+
+function displayName(profile: ProfileRow): string {
+  return profile.display_name || profile.full_name || profile.email || "—";
 }
 
 export default function UserManagement() {
@@ -152,9 +143,6 @@ export default function UserManagement() {
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">
                   Role
                 </th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">
-                  Last Active
-                </th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">
                   Actions
                 </th>
@@ -175,9 +163,6 @@ export default function UserManagement() {
                         <Skeleton className="h-8 w-36" />
                       </td>
                       <td className="px-3 py-3 border-b border-slate-100">
-                        <Skeleton className="h-4 w-20" />
-                      </td>
-                      <td className="px-3 py-3 border-b border-slate-100">
                         <Skeleton className="h-8 w-14 mx-auto" />
                       </td>
                     </tr>
@@ -185,7 +170,7 @@ export default function UserManagement() {
                 </>
               ) : error ? (
                 <tr>
-                  <td colSpan={5} className="px-3 py-12 text-center">
+                  <td colSpan={4} className="px-3 py-12 text-center">
                     <div className="flex flex-col items-center gap-3">
                       <AlertCircle className="h-8 w-8 text-red-400" />
                       <p className="text-sm text-slate-600 font-medium">
@@ -204,7 +189,7 @@ export default function UserManagement() {
                 </tr>
               ) : profiles.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-3 py-12 text-center">
+                  <td colSpan={4} className="px-3 py-12 text-center">
                     <Users className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
                     <p className="text-muted-foreground font-medium text-sm">
                       No team members found
@@ -219,7 +204,7 @@ export default function UserManagement() {
                   const isCurrentUser = profile.id === user?.id;
                   const pendingRole = pendingRoles[profile.id];
                   const hasChanged = !!pendingRole;
-                  const displayRole = pendingRole ?? profile.role ?? "admin";
+                  const roleValue = pendingRole ?? profile.role ?? "admin";
 
                   return (
                     <tr
@@ -232,7 +217,7 @@ export default function UserManagement() {
                           : "hover:bg-muted/30"
                       }`}
                     >
-                      {/* Name cell — carries left accent border */}
+                      {/* Name — left accent border indicates pending change */}
                       <td
                         className={`px-3 py-2.5 border-b border-slate-100 border-l-2 ${
                           hasChanged ? "border-l-amber-400" : "border-l-transparent"
@@ -240,7 +225,7 @@ export default function UserManagement() {
                       >
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium text-slate-800">
-                            {profile.full_name || "—"}
+                            {displayName(profile)}
                           </span>
                           {isCurrentUser && (
                             <Badge
@@ -262,7 +247,7 @@ export default function UserManagement() {
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <div className="w-36">
-                                <Select disabled value={displayRole}>
+                                <Select disabled value={roleValue}>
                                   <SelectTrigger className="h-8 text-xs opacity-60 cursor-not-allowed">
                                     <SelectValue />
                                   </SelectTrigger>
@@ -283,13 +268,9 @@ export default function UserManagement() {
                         ) : (
                           <div className="w-36">
                             <Select
-                              value={displayRole}
+                              value={roleValue}
                               onValueChange={(val) =>
-                                handleRoleChange(
-                                  profile.id,
-                                  profile.role,
-                                  val as AppRole,
-                                )
+                                handleRoleChange(profile.id, profile.role, val as AppRole)
                               }
                             >
                               <SelectTrigger className="h-8 text-xs">
@@ -305,10 +286,6 @@ export default function UserManagement() {
                             </Select>
                           </div>
                         )}
-                      </td>
-
-                      <td className="px-3 py-2.5 border-b border-slate-100 text-sm text-slate-500">
-                        {formatRelativeTime(profile.last_sign_in_at)}
                       </td>
 
                       <td className="px-3 py-2.5 border-b border-slate-100 text-center">
