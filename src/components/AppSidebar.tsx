@@ -511,7 +511,7 @@ export function AppSidebar() {
 
   const { data: awaitingStoreCount = 0 } = useQuery({
     queryKey: ["awaiting-store-count"],
-    queryFn: fetchAwaitingStoreCount,
+    queryFn: async () => { try { return await fetchAwaitingStoreCount(); } catch { return 0; } },
     staleTime: 60_000,
     refetchInterval: 60_000,
   });

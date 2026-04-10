@@ -1215,7 +1215,7 @@ export default function DeliveryChallanDetail() {
       />
 
       {/* ── DC Deletion Dialog ── */}
-      <Dialog open={deleteDialogOpen} onOpenChange={(open) => { if (!open) setDeleteDialogOpen(false); }}>
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent className="max-w-md">
           {(() => {
             const isIssued = dc?.status === 'issued';

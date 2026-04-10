@@ -1382,15 +1382,20 @@ export async function storeConfirmGRN(
 }
 
 export async function fetchAwaitingStoreCount(): Promise<number> {
-  const companyId = await getCompanyId();
-  if (!companyId) return 0;
-  const { count } = await (supabase as any)
-    .from('grn_line_items')
-    .select('id', { count: 'exact', head: true })
-    .eq('company_id', companyId)
-    .eq('is_final_grn', true)
-    .neq('store_confirmed', true);
-  return count ?? 0;
+  try {
+    const companyId = await getCompanyId();
+    if (!companyId) return 0;
+    const { count, error } = await (supabase as any)
+      .from('grn_line_items')
+      .select('id', { count: 'exact', head: true })
+      .eq('company_id', companyId)
+      .eq('is_final_grn', true)
+      .neq('store_confirmed', true);
+    if (error) return 0;
+    return count ?? 0;
+  } catch {
+    return 0;
+  }
 }
 
 export interface AwaitingStoreLineItem {

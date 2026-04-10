@@ -253,8 +253,8 @@ function Stage1Table({
               : "bg-white hover:bg-blue-50/20";
 
             return (
-              <>
-                <tr key={line.id} className={`transition-colors ${rowBg}`}>
+              <React.Fragment key={line.id}>
+                <tr className={`transition-colors ${rowBg}`}>
                   <td className="px-3 py-2 text-slate-400 text-xs">{idx + 1}</td>
                   <td className="px-3 py-2 font-mono text-xs text-slate-500">{line.item_code || "—"}</td>
                   <td className="px-3 py-2 font-medium text-slate-800 max-w-[200px]">
@@ -412,7 +412,7 @@ function Stage1Table({
 
                 {/* Sub-row — appears only when non-matching units > 0 */}
                 {showSubRow && (
-                  <tr key={`${line.id}-mismatch`} className={line.matching_units === 0 ? "bg-red-50/80" : "bg-amber-50/80"}>
+                  <tr className={line.matching_units === 0 ? "bg-red-50/80" : "bg-amber-50/80"}>
                     <td colSpan={12} className="px-4 py-3">
                       <div className="flex flex-wrap gap-4 items-start">
                         {line.matching_units === 0 && (
@@ -455,7 +455,7 @@ function Stage1Table({
                     </td>
                   </tr>
                 )}
-              </>
+              </React.Fragment>
             );
           })}
         </tbody>
