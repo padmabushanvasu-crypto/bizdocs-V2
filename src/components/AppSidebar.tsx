@@ -128,6 +128,8 @@ const TOOLTIP_TEXT: Record<string, string> = {
     "The recipe for every product — what components go in, how many, and which vendors make them.",
   "Settings":
     "Company profile, document settings, data import, notifications and more.",
+  "User Management":
+    "Assign roles to team members. Admin and Finance only.",
   "Sub-Assembly": "Manage sub-assembly work orders",
   "Finished Goods": "Manage finished good work orders",
   "Storekeeper Queue": "Issue materials from store to production",
@@ -834,6 +836,12 @@ export function AppSidebar() {
       icon: Settings,
       badge: companyNeedsSetup ? 1 : undefined,
       badgeColor: "amber" as const,
+      allowedRoles: ['admin', 'finance'],
+    },
+    {
+      title: "User Management",
+      url: "/settings/users",
+      icon: Users,
       allowedRoles: ['admin', 'finance'],
     },
   ];

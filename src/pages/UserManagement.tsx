@@ -1,248 +1,341 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Users, UserPlus } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Users, ChevronLeft, AlertCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog";
-import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { ROLE_LABELS } from "@/lib/roles";
-import type { AppRole } from "@/lib/roles";
+import { getCompanyId } from "@/lib/auth-helpers";
+import type { AppRole } from "@/lib/role-access";
 
-async function fetchCompanyUsers(companyId: string) {
-  const { data } = await (supabase as any)
+interface ProfileRow {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  role: string | null;
+  created_at: string;
+  last_sign_in_at: string | null;
+}
+
+const ROLE_OPTIONS: { value: AppRole; label: string }[] = [
+  { value: "admin",         label: "Admin" },
+  { value: "purchase_team", label: "Purchase Team" },
+  { value: "inward_team",   label: "Inward Team" },
+  { value: "qc_team",       label: "QC Team" },
+  { value: "storekeeper",   label: "Storekeeper" },
+  { value: "assembly_team", label: "Assembly Team" },
+  { value: "finance",       label: "Finance" },
+];
+
+function formatRelativeTime(dateStr: string | null): string {
+  if (!dateStr) return "Never";
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "Yesterday";
+  if (days < 30) return `${days} days ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months} months ago`;
+  return `${Math.floor(months / 12)} years ago`;
+}
+
+async function fetchProfiles(): Promise<ProfileRow[]> {
+  const companyId = await getCompanyId();
+  if (!companyId) return [];
+  const { data, error } = await (supabase as any)
     .from("profiles")
-    .select("id, full_name, display_name, email, role, is_active, created_at")
+    .select("id, full_name, email, role, created_at, last_sign_in_at")
     .eq("company_id", companyId)
     .order("created_at", { ascending: true });
+  if (error) throw error;
   return data ?? [];
 }
 
-async function updateUserRole(userId: string, role: string) {
-  const { error } = await (supabase as any)
-    .from("profiles")
-    .update({ role })
-    .eq("id", userId);
-  if (error) throw error;
-}
-
-async function toggleUserActive(userId: string, is_active: boolean) {
-  const { error } = await (supabase as any)
-    .from("profiles")
-    .update({ is_active })
-    .eq("id", userId);
-  if (error) throw error;
-}
-
-async function inviteUser(email: string, _displayName: string, _role: string, _companyId: string) {
-  const { data, error } = await supabase.auth.signInWithOtp({ email });
-  if (error) throw error;
-  return data;
-}
-
 export default function UserManagement() {
-  const { companyId, user } = useAuth();
+  const navigate = useNavigate();
   const { toast } = useToast();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  const [inviteOpen, setInviteOpen] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteName, setInviteName] = useState("");
-  const [inviteRole, setInviteRole] = useState<AppRole>('admin');
+  const [pendingRoles, setPendingRoles] = useState<Record<string, AppRole>>({});
 
-  const { data: users = [], isLoading } = useQuery({
-    queryKey: ["company-users", companyId],
-    queryFn: () => fetchCompanyUsers(companyId!),
-    enabled: !!companyId,
+  const {
+    data: profiles = [],
+    isLoading,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: ["user-management-profiles"],
+    queryFn: fetchProfiles,
   });
 
-  const roleMutation = useMutation({
-    mutationFn: ({ userId, role }: { userId: string; role: string }) =>
-      updateUserRole(userId, role),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["company-users", companyId] });
+  const updateRoleMutation = useMutation({
+    mutationFn: async ({ userId, role }: { userId: string; role: AppRole }) => {
+      const { error } = await (supabase as any)
+        .from("profiles")
+        .update({ role })
+        .eq("id", userId);
+      if (error) throw error;
     },
-    onError: (err: any) => {
-      toast({ title: "Failed to update role", description: err.message, variant: "destructive" });
+    onSuccess: (_, { userId }) => {
+      toast({ title: "Role updated successfully" });
+      setPendingRoles((prev) => {
+        const next = { ...prev };
+        delete next[userId];
+        return next;
+      });
+      queryClient.invalidateQueries({ queryKey: ["user-management-profiles"] });
     },
-  });
-
-  const activeMutation = useMutation({
-    mutationFn: ({ userId, is_active }: { userId: string; is_active: boolean }) =>
-      toggleUserActive(userId, is_active),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["company-users", companyId] });
-    },
-    onError: (err: any) => {
-      toast({ title: "Failed to update status", description: err.message, variant: "destructive" });
-    },
-  });
-
-  const inviteMutation = useMutation({
-    mutationFn: () => inviteUser(inviteEmail, inviteName, inviteRole, companyId!),
-    onSuccess: () => {
-      toast({ title: `Invitation sent to ${inviteEmail}` });
-      setInviteOpen(false);
-      setInviteEmail("");
-      setInviteName("");
-      setInviteRole('admin');
-    },
-    onError: (err: any) => {
-      toast({ title: "Failed to send invitation", description: err.message, variant: "destructive" });
+    onError: () => {
+      toast({ title: "Failed to update role", variant: "destructive" });
     },
   });
 
-  const roleKeys = Object.keys(ROLE_LABELS) as AppRole[];
+  const handleRoleChange = (
+    userId: string,
+    originalRole: string | null,
+    newRole: AppRole,
+  ) => {
+    if (newRole === originalRole) {
+      setPendingRoles((prev) => {
+        const next = { ...prev };
+        delete next[userId];
+        return next;
+      });
+    } else {
+      setPendingRoles((prev) => ({ ...prev, [userId]: newRole }));
+    }
+  };
 
   return (
-    <div className="p-4 md:p-6 max-w-4xl">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <Users className="h-6 w-6 text-primary" />
-          <h1 className="text-2xl font-bold">Users and Roles</h1>
+    <div className="p-4 md:p-6 space-y-4 max-w-5xl">
+      <button
+        onClick={() => navigate("/settings")}
+        className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 transition-colors mb-3"
+      >
+        <ChevronLeft className="h-4 w-4" /> Back to Settings
+      </button>
+
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+            <Users className="h-6 w-6" /> User Management
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">Manage team members and their roles</p>
         </div>
-        <Button onClick={() => setInviteOpen(true)}>
-          <UserPlus className="h-4 w-4 mr-2" />
-          Invite User
-        </Button>
       </div>
 
-      {isLoading && <p className="text-sm text-muted-foreground">Loading users...</p>}
+      <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 w-fit">
+        To invite new users, use the Supabase dashboard.
+      </p>
 
-      {!isLoading && (
-        <div className="overflow-x-auto rounded-lg border border-slate-200">
+      <div className="paper-card !p-0">
+        <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
-            <thead>
+            <thead className="sticky top-0 z-10 bg-slate-50">
               <tr>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Name</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Email</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Role</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Active</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">
+                  Name
+                </th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">
+                  Email
+                </th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">
+                  Role
+                </th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">
+                  Last Active
+                </th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">
+                  Actions
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border">
-              {users.map((u: any) => {
-                const isSelf = u.id === user?.id;
-                const name = u.display_name || u.full_name || "—";
-                return (
-                  <tr key={u.id} className="bg-white hover:bg-muted/20 transition-colors">
-                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{name}</span>
-                        {isSelf && (
-                          <Badge className="text-[10px] bg-blue-100 text-blue-800">You</Badge>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">{u.email}</td>
-                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
-                      <Select
-                        value={u.role ?? 'admin'}
-                        onValueChange={(val) =>
-                          roleMutation.mutate({ userId: u.id, role: val })
-                        }
-                        disabled={isSelf}
-                      >
-                        <SelectTrigger className="h-8 w-40">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {roleKeys.map((r) => (
-                            <SelectItem key={r} value={r}>
-                              {ROLE_LABELS[r]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </td>
-                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
-                      <Switch
-                        checked={u.is_active !== false}
-                        onCheckedChange={(checked) =>
-                          activeMutation.mutate({ userId: u.id, is_active: checked })
-                        }
-                        disabled={isSelf}
-                      />
-                    </td>
-                  </tr>
-                );
-              })}
-              {users.length === 0 && (
+            <tbody>
+              {isLoading ? (
+                <>
+                  {[1, 2, 3].map((i) => (
+                    <tr key={i}>
+                      <td className="px-3 py-3 border-b border-slate-100">
+                        <Skeleton className="h-4 w-32" />
+                      </td>
+                      <td className="px-3 py-3 border-b border-slate-100">
+                        <Skeleton className="h-4 w-48" />
+                      </td>
+                      <td className="px-3 py-3 border-b border-slate-100">
+                        <Skeleton className="h-8 w-36" />
+                      </td>
+                      <td className="px-3 py-3 border-b border-slate-100">
+                        <Skeleton className="h-4 w-20" />
+                      </td>
+                      <td className="px-3 py-3 border-b border-slate-100">
+                        <Skeleton className="h-8 w-14 mx-auto" />
+                      </td>
+                    </tr>
+                  ))}
+                </>
+              ) : error ? (
                 <tr>
-                  <td colSpan={4} className="px-3 py-8 text-center text-sm text-slate-400">
-                    No data found
+                  <td colSpan={5} className="px-3 py-12 text-center">
+                    <div className="flex flex-col items-center gap-3">
+                      <AlertCircle className="h-8 w-8 text-red-400" />
+                      <p className="text-sm text-slate-600 font-medium">
+                        Failed to load team members
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => refetch()}
+                        className="gap-1.5"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" /> Retry
+                      </Button>
+                    </div>
                   </td>
                 </tr>
+              ) : profiles.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-3 py-12 text-center">
+                    <Users className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+                    <p className="text-muted-foreground font-medium text-sm">
+                      No team members found
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      To invite new users, use the Supabase dashboard.
+                    </p>
+                  </td>
+                </tr>
+              ) : (
+                profiles.map((profile) => {
+                  const isCurrentUser = profile.id === user?.id;
+                  const pendingRole = pendingRoles[profile.id];
+                  const hasChanged = !!pendingRole;
+                  const displayRole = pendingRole ?? profile.role ?? "admin";
+
+                  return (
+                    <tr
+                      key={profile.id}
+                      className={`transition-colors ${
+                        hasChanged
+                          ? "bg-amber-50"
+                          : isCurrentUser
+                          ? "bg-blue-50/40"
+                          : "hover:bg-muted/30"
+                      }`}
+                    >
+                      {/* Name cell — carries left accent border */}
+                      <td
+                        className={`px-3 py-2.5 border-b border-slate-100 border-l-2 ${
+                          hasChanged ? "border-l-amber-400" : "border-l-transparent"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-slate-800">
+                            {profile.full_name || "—"}
+                          </span>
+                          {isCurrentUser && (
+                            <Badge
+                              variant="secondary"
+                              className="text-[10px] px-1.5 py-0 h-4 leading-none"
+                            >
+                              You
+                            </Badge>
+                          )}
+                        </div>
+                      </td>
+
+                      <td className="px-3 py-2.5 border-b border-slate-100 text-sm text-slate-600">
+                        {profile.email || "—"}
+                      </td>
+
+                      <td className="px-3 py-2.5 border-b border-slate-100">
+                        {isCurrentUser ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="w-36">
+                                <Select disabled value={displayRole}>
+                                  <SelectTrigger className="h-8 text-xs opacity-60 cursor-not-allowed">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {ROLE_OPTIONS.map((opt) => (
+                                      <SelectItem key={opt.value} value={opt.value}>
+                                        {opt.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                              <p className="text-xs">Cannot change your own role</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <div className="w-36">
+                            <Select
+                              value={displayRole}
+                              onValueChange={(val) =>
+                                handleRoleChange(
+                                  profile.id,
+                                  profile.role,
+                                  val as AppRole,
+                                )
+                              }
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {ROLE_OPTIONS.map((opt) => (
+                                  <SelectItem key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                      </td>
+
+                      <td className="px-3 py-2.5 border-b border-slate-100 text-sm text-slate-500">
+                        {formatRelativeTime(profile.last_sign_in_at)}
+                      </td>
+
+                      <td className="px-3 py-2.5 border-b border-slate-100 text-center">
+                        {hasChanged && (
+                          <Button
+                            size="sm"
+                            className="h-7 text-xs px-3"
+                            disabled={updateRoleMutation.isPending}
+                            onClick={() =>
+                              updateRoleMutation.mutate({
+                                userId: profile.id,
+                                role: pendingRole,
+                              })
+                            }
+                          >
+                            Save
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
-      )}
-
-      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Invite Team Member</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="invite-email">Email *</Label>
-              <Input
-                id="invite-email"
-                type="email"
-                placeholder="colleague@company.com"
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="invite-name">Display Name</Label>
-              <Input
-                id="invite-name"
-                placeholder="e.g. Ravi Kumar"
-                value={inviteName}
-                onChange={(e) => setInviteName(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="invite-role">Role</Label>
-              <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as AppRole)}>
-                <SelectTrigger id="invite-role">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {roleKeys.map((r) => (
-                    <SelectItem key={r} value={r}>
-                      {ROLE_LABELS[r]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <p className="text-xs text-muted-foreground bg-muted rounded-lg p-3">
-              An email invitation will be sent. The user will set their own password. Role can be updated after they first log in.
-            </p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setInviteOpen(false)}>Cancel</Button>
-            <Button
-              onClick={() => inviteMutation.mutate()}
-              disabled={!inviteEmail.trim() || inviteMutation.isPending}
-            >
-              {inviteMutation.isPending ? "Sending..." : "Send Invitation"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </div>
     </div>
   );
 }
