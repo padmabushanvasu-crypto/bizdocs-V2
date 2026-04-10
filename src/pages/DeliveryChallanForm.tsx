@@ -692,20 +692,6 @@ export default function DeliveryChallanForm() {
                 <Label className="text-sm font-medium text-slate-700">Vehicle Number</Label>
                 <Input value={vehicleNumber} onChange={(e) => setVehicleNumber(e.target.value)} className="mt-1" placeholder="e.g., MH-01-AB-1234" />
               </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <Label className="text-sm font-medium text-slate-700">Driver Name</Label>
-                <Input value={driverName} onChange={(e) => setDriverName(e.target.value)} className="mt-1" placeholder="Driver's name" />
-              </div>
-              <div>
-                <Label className="text-sm font-medium text-slate-700">Driver Contact</Label>
-                <Input value={driverContact} onChange={(e) => setDriverContact(e.target.value)} className="mt-1" placeholder="Mobile number" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label className="text-sm font-medium text-slate-700">Approx. Value ₹</Label>
                 <Input
@@ -716,6 +702,17 @@ export default function DeliveryChallanForm() {
                   placeholder="Declared value"
                 />
                 <p className="text-[10px] text-muted-foreground mt-0.5">Required for e-way bill if goods &gt; ₹50,000</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label className="text-sm font-medium text-slate-700">Driver Name</Label>
+                <Input value={driverName} onChange={(e) => setDriverName(e.target.value)} className="mt-1" placeholder="Driver's name" />
+              </div>
+              <div>
+                <Label className="text-sm font-medium text-slate-700">Driver Contact</Label>
+                <Input value={driverContact} onChange={(e) => setDriverContact(e.target.value)} className="mt-1" placeholder="Mobile number" />
               </div>
             </div>
 
