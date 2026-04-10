@@ -41,6 +41,7 @@ import { DocumentActions } from "@/components/DocumentActions";
 import { AuditTimeline } from "@/components/AuditTimeline";
 import { DocumentSignature } from "@/components/DocumentSignature";
 import { fetchCompanySettings } from "@/lib/settings-api";
+import { useRoleAccess } from "@/hooks/useRoleAccess";
 
 const statusClass: Record<string, string> = {
   draft: "status-draft",
@@ -72,6 +73,7 @@ export default function DeliveryChallanDetail() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { role } = useAuth();
+  const { hideCosts } = useRoleAccess();
 
   // ── Delete dialog state ───────────────────────────────────────────────────
   const [deleteDialogOpen,   setDeleteDialogOpen]   = useState(false);
@@ -704,8 +706,8 @@ export default function DeliveryChallanDetail() {
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty (NOS)</th>
                 {hasQtyKgs && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty (KGS)</th>}
                 {hasQtySft && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty (SFT)</th>}
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Rate (₹)</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Amount (₹)</th>
+                {!hideCosts && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Rate (₹)</th>}
+                {!hideCosts && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Amount (₹)</th>}
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Remarks</th>
                 {isReturnable && ["issued", "partially_returned"].includes(dc.status) && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center print:hidden">Actions</th>}
               </tr>
@@ -723,8 +725,8 @@ export default function DeliveryChallanDetail() {
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(item.quantity || item.qty_nos || 0)}</td>
                   {hasQtyKgs && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{(item as any).qty_kgs != null ? formatNumber((item as any).qty_kgs) : "—"}</td>}
                   {hasQtySft && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{(item as any).qty_sft != null ? formatNumber((item as any).qty_sft) : "—"}</td>}
-                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(item.rate || 0)}</td>
-                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-medium">{formatCurrency(item.amount || 0)}</td>
+                  {!hideCosts && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(item.rate || 0)}</td>}
+                  {!hideCosts && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-medium">{formatCurrency(item.amount || 0)}</td>}
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">{item.remarks || "—"}</td>
                   {isReturnable && ["issued", "partially_returned"].includes(dc.status) && (
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center print:hidden">
@@ -741,7 +743,7 @@ export default function DeliveryChallanDetail() {
         </div>
 
         {/* Totals Block */}
-        <div className="flex justify-end">
+        {!hideCosts && <div className="flex justify-end">
           <div className="w-full max-w-xs space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Sub Total</span>
@@ -774,7 +776,7 @@ export default function DeliveryChallanDetail() {
               {amountInWords(grandTotal)}
             </div>
           </div>
-        </div>
+        </div>}
 
         {/* Special Instructions */}
         {dc.special_instructions && (

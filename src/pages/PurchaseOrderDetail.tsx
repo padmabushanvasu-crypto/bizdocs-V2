@@ -26,6 +26,7 @@ import { logAudit } from "@/lib/audit-api";
 import { DocumentHeader } from "@/components/DocumentHeader";
 import { DocumentActions } from "@/components/DocumentActions";
 import { DocumentSignature } from "@/components/DocumentSignature";
+import { useRoleAccess } from "@/hooks/useRoleAccess";
 
 const statusClass: Record<string, string> = {
   draft: "status-draft",
@@ -44,6 +45,7 @@ export default function PurchaseOrderDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { hideCosts } = useRoleAccess();
   const queryClient = useQueryClient();
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
@@ -471,8 +473,8 @@ export default function PurchaseOrderDetail() {
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right print:hidden" style={{ width: '7%' }}>Pending</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right" style={{ width: '8%' }}>Qty</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left" style={{ width: '7%' }}>Unit</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right" style={{ width: '17%' }}>Unit Price</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right" style={{ width: '20%' }}>Amount</th>
+                {!hideCosts && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right" style={{ width: '17%' }}>Unit Price</th>}
+                {!hideCosts && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right" style={{ width: '20%' }}>Amount</th>}
               </tr>
             </thead>
             <tbody>
@@ -508,8 +510,8 @@ export default function PurchaseOrderDetail() {
                     </td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.quantity}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.unit}</td>
-                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(item.unit_price)}</td>
-                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(item.line_total)}</td>
+                    {!hideCosts && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(item.unit_price)}</td>}
+                    {!hideCosts && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(item.line_total)}</td>}
                   </tr>
                 );
               })}
@@ -518,7 +520,7 @@ export default function PurchaseOrderDetail() {
         </div>
 
         {/* ── Totals (shared screen + print) ── */}
-        <div className="flex justify-end po-section">
+        {!hideCosts && <div className="flex justify-end po-section">
           <div className="w-full max-w-xs space-y-1.5 text-sm po-totals-block">
             <div className="flex justify-between po-totals-row">
               <span className="text-muted-foreground">Sub Total</span>
@@ -561,7 +563,7 @@ export default function PurchaseOrderDetail() {
             </div>
             <p className="text-[10px] text-muted-foreground italic pt-1 po-amount-words">{amountInWords(po.grand_total)}</p>
           </div>
-        </div>
+        </div>}
 
         {po.special_instructions && (
           <div className="po-section">
@@ -686,7 +688,7 @@ export default function PurchaseOrderDetail() {
       </div>
 
       {/* Payment Section */}
-      <div className="paper-card print:hidden">
+      {!hideCosts && <div className="paper-card print:hidden">
         <div className="flex items-center justify-between border-b border-border pb-2 mb-4">
           <h3 className="text-xs font-semibold text-slate-500">Payment</h3>
           {(() => {
@@ -724,7 +726,7 @@ export default function PurchaseOrderDetail() {
         {po.payment_notes && (
           <p className="text-xs text-muted-foreground mt-1 italic">{po.payment_notes}</p>
         )}
-      </div>
+      </div>}
 
       {/* Record Payment Dialog */}
       <Dialog open={paymentOpen} onOpenChange={setPaymentOpen}>

@@ -54,6 +54,7 @@ import { exportToExcel } from "@/lib/export-utils";
 import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId } from "@/lib/auth-helpers";
+import { useRoleAccess } from "@/hooks/useRoleAccess";
 
 function ordinal(n: number): string {
   if (n === 1) return "1st";
@@ -772,6 +773,7 @@ function ProcessingStagesEditor({
 function BillOfMaterialsInner() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { hideCosts, canExport } = useRoleAccess();
 
   // ── Refs ─────────────────────────────────────────────────────────────────────
   const rightPanelRef = useRef<HTMLDivElement>(null);
@@ -794,6 +796,13 @@ function BillOfMaterialsInner() {
 
   // ── Tab / variant state ─────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState("structure");
+
+  // Redirect off the cost tab if the current role cannot see costs
+  useEffect(() => {
+    if (hideCosts && activeTab === "cost") {
+      setActiveTab("structure");
+    }
+  }, [hideCosts, activeTab]);
   // "__default_bom__" = default BOM (variant_id IS NULL), "uuid" = specific variant
   const [selectedVariantId, setSelectedVariantId] = useState("__default_bom__");
 
@@ -1806,7 +1815,7 @@ function BillOfMaterialsInner() {
                       options={[
                         { value: "structure", label: "Structure" },
                         { value: "explosion", label: "BOM Explosion" },
-                        { value: "cost", label: "Cost Rollup" },
+                        ...(!hideCosts ? [{ value: "cost", label: "Cost Rollup" }] : []),
                         { value: "where-used", label: "Where Used" },
                         { value: "variants", label: bomVariants.length > 0 ? `Variants (${bomVariants.length})` : "Variants" },
                         { value: "visual-tree", label: "Visual Tree" },
@@ -2419,7 +2428,7 @@ function BillOfMaterialsInner() {
                         <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={collapseAll}>
                           Collapse
                         </Button>
-                        <Button
+                        {canExport && <Button
                           variant="outline"
                           size="sm"
                           className="h-8 text-xs gap-1"
@@ -2427,7 +2436,7 @@ function BillOfMaterialsInner() {
                           disabled={!explosionData}
                         >
                           <Download className="h-3 w-3" /> Export
-                        </Button>
+                        </Button>}
                         <Button
                           variant="outline"
                           size="sm"

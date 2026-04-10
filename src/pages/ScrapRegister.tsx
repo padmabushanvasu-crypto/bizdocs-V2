@@ -48,6 +48,7 @@ import { formatCurrency } from "@/lib/gst-utils";
 import { exportMultiSheet } from "@/lib/export-utils";
 import { UNITS } from "@/lib/constants";
 import { format } from "date-fns";
+import { useRoleAccess } from "@/hooks/useRoleAccess";
 
 const SCRAP_CATEGORIES = [
   { value: "process_rejection",  label: "Process Rejection" },
@@ -132,6 +133,7 @@ export default function ScrapRegister() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { hideCosts, canExport } = useRoleAccess();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<ScrapForm>(emptyForm());
@@ -286,9 +288,9 @@ export default function ScrapRegister() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2 flex-shrink-0">
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={handleExport}>
+          {canExport && <Button variant="outline" size="sm" className="gap-1.5" onClick={handleExport}>
             <Download className="h-3.5 w-3.5" /> Export
-          </Button>
+          </Button>}
           <Button size="sm" className="gap-1.5" onClick={() => { setForm(emptyForm()); setDialogOpen(true); }}>
             <Plus className="h-3.5 w-3.5" /> Record Scrap
           </Button>
@@ -304,36 +306,42 @@ export default function ScrapRegister() {
           <p className="text-2xl font-bold font-mono">{stats?.total_entries ?? 0}</p>
           <p className="text-[11px] text-muted-foreground">Entries</p>
         </div>
-        <div className="paper-card py-3 border-l-4 border-l-destructive">
-          <div className="flex items-center gap-1.5 mb-1">
-            <IndianRupee className="h-3.5 w-3.5 text-destructive" />
-            <p className="text-[11px] uppercase text-muted-foreground font-bold tracking-wider">Scrap Value</p>
+        {!hideCosts && (
+          <div className="paper-card py-3 border-l-4 border-l-destructive">
+            <div className="flex items-center gap-1.5 mb-1">
+              <IndianRupee className="h-3.5 w-3.5 text-destructive" />
+              <p className="text-[11px] uppercase text-muted-foreground font-bold tracking-wider">Scrap Value</p>
+            </div>
+            <p className="text-xl font-bold font-mono text-destructive">
+              {formatCurrency(stats?.total_value ?? 0)}
+            </p>
+            <p className="text-[11px] text-muted-foreground">This month</p>
           </div>
-          <p className="text-xl font-bold font-mono text-destructive">
-            {formatCurrency(stats?.total_value ?? 0)}
-          </p>
-          <p className="text-[11px] text-muted-foreground">This month</p>
-        </div>
-        <div className="paper-card py-3 border-l-4 border-l-emerald-500">
-          <div className="flex items-center gap-1.5 mb-1">
-            <IndianRupee className="h-3.5 w-3.5 text-emerald-600" />
-            <p className="text-[11px] uppercase text-muted-foreground font-bold tracking-wider">Recovered</p>
+        )}
+        {!hideCosts && (
+          <div className="paper-card py-3 border-l-4 border-l-emerald-500">
+            <div className="flex items-center gap-1.5 mb-1">
+              <IndianRupee className="h-3.5 w-3.5 text-emerald-600" />
+              <p className="text-[11px] uppercase text-muted-foreground font-bold tracking-wider">Recovered</p>
+            </div>
+            <p className="text-xl font-bold font-mono text-emerald-700">
+              {formatCurrency(stats?.recovered ?? 0)}
+            </p>
+            <p className="text-[11px] text-muted-foreground">Scrap sales</p>
           </div>
-          <p className="text-xl font-bold font-mono text-emerald-700">
-            {formatCurrency(stats?.recovered ?? 0)}
-          </p>
-          <p className="text-[11px] text-muted-foreground">Scrap sales</p>
-        </div>
-        <div className="paper-card py-3">
-          <div className="flex items-center gap-1.5 mb-1">
-            <IndianRupee className="h-3.5 w-3.5 text-amber-600" />
-            <p className="text-[11px] uppercase text-muted-foreground font-bold tracking-wider">Net Loss</p>
+        )}
+        {!hideCosts && (
+          <div className="paper-card py-3">
+            <div className="flex items-center gap-1.5 mb-1">
+              <IndianRupee className="h-3.5 w-3.5 text-amber-600" />
+              <p className="text-[11px] uppercase text-muted-foreground font-bold tracking-wider">Net Loss</p>
+            </div>
+            <p className="text-xl font-bold font-mono text-amber-700">
+              {formatCurrency(stats?.net_loss ?? 0)}
+            </p>
+            <p className="text-[11px] text-muted-foreground">This month</p>
           </div>
-          <p className="text-xl font-bold font-mono text-amber-700">
-            {formatCurrency(stats?.net_loss ?? 0)}
-          </p>
-          <p className="text-[11px] text-muted-foreground">This month</p>
-        </div>
+        )}
       </div>
 
       {/* Filters */}
@@ -384,8 +392,8 @@ export default function ScrapRegister() {
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Reason</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Category</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Cost/Unit</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Scrap Value</th>
+                {!hideCosts && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Cost/Unit</th>}
+                {!hideCosts && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Scrap Value</th>}
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Disposal</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Vendor/Buyer</th>
               </tr>
@@ -393,13 +401,13 @@ export default function ScrapRegister() {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={11} className="px-3 py-8 text-center text-sm text-slate-400">
+                  <td colSpan={hideCosts ? 9 : 11} className="px-3 py-8 text-center text-sm text-slate-400">
                     Loading…
                   </td>
                 </tr>
               ) : entries.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-3 py-8 text-center text-sm text-slate-400">
+                  <td colSpan={hideCosts ? 9 : 11} className="px-3 py-8 text-center text-sm text-slate-400">
                     No scrap entries found. Click "Record Scrap" to add the first entry.
                   </td>
                 </tr>
@@ -430,12 +438,16 @@ export default function ScrapRegister() {
                         {categoryLabels[entry.scrap_category] ?? entry.scrap_category}
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-muted-foreground">
-                      {formatCurrency(entry.cost_per_unit)}
-                    </td>
-                    <td className="px-3 py-2 text-sm border-b border-slate-100 text-right tabular-nums font-mono font-medium text-destructive">
-                      {formatCurrency(entry.total_scrap_value)}
-                    </td>
+                    {!hideCosts && (
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-muted-foreground">
+                        {formatCurrency(entry.cost_per_unit)}
+                      </td>
+                    )}
+                    {!hideCosts && (
+                      <td className="px-3 py-2 text-sm border-b border-slate-100 text-right tabular-nums font-mono font-medium text-destructive">
+                        {formatCurrency(entry.total_scrap_value)}
+                      </td>
+                    )}
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                       <span className="text-xs text-muted-foreground">
                         {disposalLabels[entry.disposal_method] ?? entry.disposal_method}

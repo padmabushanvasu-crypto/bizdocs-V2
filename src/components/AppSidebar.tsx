@@ -41,6 +41,8 @@ import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
+import { useCurrentRole } from "@/hooks/useRoleAccess";
+import type { AppRole } from "@/lib/role-access";
 import { fetchFatStats } from "@/lib/fat-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { fetchAwoStats } from "@/lib/production-api";
@@ -70,6 +72,7 @@ type NavItem = {
   icon: React.ComponentType<any>;
   badge?: number;
   badgeColor?: "red" | "amber";
+  allowedRoles?: AppRole[];   // undefined = all roles can see this item
 };
 
 // ── Tooltip content ───────────────────────────────────────────────────────────
@@ -332,21 +335,30 @@ function NavGroup({
 export function AppSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { role } = useAuth();
+  const { role } = useAuth(); // kept for any existing references
+  const currentRole = useCurrentRole();
+
+  // A group is visible when the current role can see at least one item in it.
+  // Derived from the per-item allowedRoles arrays defined on each nav item below.
+  // admin and finance see everything; other roles are checked explicitly.
+  const GROUP_ROLE_MAP: Record<string, AppRole[]> = {
+    'START HERE':             ['purchase_team', 'inward_team', 'qc_team', 'storekeeper', 'assembly_team'],
+    'DAILY WORK':             ['purchase_team', 'inward_team', 'qc_team', 'storekeeper', 'assembly_team'],
+    'PURCHASING & RECEIVING': ['purchase_team', 'inward_team', 'qc_team', 'storekeeper'],
+    'PRODUCTION':             ['qc_team', 'storekeeper', 'assembly_team'],
+    'STORE':                  ['purchase_team', 'inward_team', 'qc_team', 'storekeeper', 'assembly_team'],
+    'REPORTS':                ['purchase_team', 'qc_team', 'storekeeper', 'assembly_team'],
+    'MASTER DATA':            ['purchase_team', 'inward_team', 'qc_team', 'storekeeper', 'assembly_team'],
+  };
 
   const canSeeGroup = (groupName: string): boolean => {
-    if (role === 'admin') return true;
-    const groupVisibility: Record<string, string[]> = {
-      'START HERE':             ['admin', 'assembly_team', 'purchase_team'],
-      'DAILY WORK':             ['admin', 'assembly_team'],
-      'PURCHASING & RECEIVING': ['admin', 'purchase_team'],
-      'PRODUCTION':             ['admin', 'assembly_team'],
-      'STORE':                  ['admin', 'assembly_team'],
-      'REPORTS':                ['admin', 'purchase_team'],
-      'MASTER DATA':            ['admin', 'purchase_team'],
-    };
-    return (groupVisibility[groupName] ?? ['admin']).includes(role);
+    if (currentRole === 'admin' || currentRole === 'finance') return true;
+    return (GROUP_ROLE_MAP[groupName] ?? []).includes(currentRole);
   };
+
+  // Filter a nav array to only items the current role can see.
+  const filterByRole = (items: NavItem[]): NavItem[] =>
+    items.filter(item => !item.allowedRoles || item.allowedRoles.includes(currentRole));
 
   const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>(loadGroupState);
   const [railMode, setRailMode] = useState<boolean>(() => {
@@ -628,6 +640,7 @@ export function AppSidebar() {
   // Nav arrays
   const startHereNav: NavItem[] = [
     { title: "Dashboard", url: "/", icon: LayoutDashboard },
+    // Dashboard is visible to all roles — no allowedRoles restriction
   ];
 
   const dailyWorkNav: NavItem[] = [
@@ -637,6 +650,7 @@ export function AppSidebar() {
       icon: Activity,
       badge: jobCardCount > 0 ? jobCardCount : undefined,
       badgeColor: "amber" as const,
+      allowedRoles: ['admin', 'finance', 'qc_team', 'storekeeper', 'assembly_team'],
     },
     {
       title: "DC / Job Work Order",
@@ -644,6 +658,7 @@ export function AppSidebar() {
       icon: Truck,
       badge: openDCCount > 0 ? openDCCount : undefined,
       badgeColor: "amber" as const,
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'storekeeper', 'assembly_team'],
     },
     {
       title: "DC Returns",
@@ -651,6 +666,7 @@ export function AppSidebar() {
       icon: RotateCcw,
       badge: dcReturnQCCount > 0 ? dcReturnQCCount : undefined,
       badgeColor: "amber" as const,
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'qc_team', 'storekeeper'],
     },
   ];
 
@@ -661,6 +677,7 @@ export function AppSidebar() {
       icon: ShoppingCart,
       badge: overduePOCount && overduePOCount > 0 ? overduePOCount : undefined,
       badgeColor: "red" as const,
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'storekeeper'],
     },
     {
       title: "GRN",
@@ -668,17 +685,24 @@ export function AppSidebar() {
       icon: PackageCheck,
       badge: grnQCCount > 0 ? grnQCCount : undefined,
       badgeColor: "red" as const,
+      allowedRoles: ['admin', 'finance', 'inward_team', 'qc_team'],
     },
   ];
 
   const productionNav: NavItem[] = [
-    { title: "WIP Register", url: "/wip-register", icon: AlertTriangle },
+    {
+      title: "WIP Register",
+      url: "/wip-register",
+      icon: AlertTriangle,
+      allowedRoles: ['admin', 'finance', 'qc_team', 'storekeeper', 'assembly_team'],
+    },
     {
       title: "Sub-Assembly",
       url: "/sub-assembly-work-orders",
       icon: Layers,
       badge: awoStats?.sa_active && awoStats.sa_active > 0 ? awoStats.sa_active : undefined,
       badgeColor: "amber" as const,
+      allowedRoles: ['admin', 'finance', 'storekeeper', 'assembly_team'],
     },
     {
       title: "Finished Goods",
@@ -686,6 +710,7 @@ export function AppSidebar() {
       icon: Package,
       badge: awoStats?.fg_active && awoStats.fg_active > 0 ? awoStats.fg_active : undefined,
       badgeColor: "amber" as const,
+      allowedRoles: ['admin', 'finance', 'qc_team', 'storekeeper', 'assembly_team'],
     },
   ];
 
@@ -696,6 +721,7 @@ export function AppSidebar() {
       icon: PackageCheck,
       badge: pendingMIRCount > 0 ? pendingMIRCount : undefined,
       badgeColor: "amber" as const,
+      allowedRoles: ['admin', 'finance', 'storekeeper'],
     },
     {
       title: "Store Receipt Queue",
@@ -703,19 +729,41 @@ export function AppSidebar() {
       icon: PackageCheck,
       badge: awaitingStoreCount > 0 ? awaitingStoreCount : undefined,
       badgeColor: "amber" as const,
+      allowedRoles: ['admin', 'finance', 'storekeeper'],
     },
     { title: "Stock Register", url: "/stock-register", icon: BarChart3 },
-    { title: "Stock Ledger", url: "/stock-ledger", icon: BookOpen },
-    { title: "Opening Stock", url: "/opening-stock", icon: Archive },
-    { title: "Scrap Register", url: "/scrap-register", icon: Trash2 },
+    {
+      title: "Stock Ledger",
+      url: "/stock-ledger",
+      icon: BookOpen,
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'storekeeper'],
+    },
+    {
+      title: "Opening Stock",
+      url: "/opening-stock",
+      icon: Archive,
+      allowedRoles: ['admin', 'finance', 'storekeeper'],
+    },
+    {
+      title: "Scrap Register",
+      url: "/scrap-register",
+      icon: Trash2,
+      allowedRoles: ['admin', 'finance', 'qc_team', 'storekeeper'],
+    },
     {
       title: "Ready to Dispatch",
       url: "/ready-to-dispatch",
       icon: CheckCircle,
       badge: dispatchStats?.ready_to_dispatch && dispatchStats.ready_to_dispatch > 0 ? dispatchStats.ready_to_dispatch : undefined,
       badgeColor: "amber" as const,
+      allowedRoles: ['admin', 'finance', 'qc_team', 'storekeeper', 'assembly_team'],
     },
-    { title: "Dispatch Records", url: "/dispatch-records", icon: Truck },
+    {
+      title: "Dispatch Records",
+      url: "/dispatch-records",
+      icon: Truck,
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'storekeeper'],
+    },
   ];
 
   const reportsNav: NavItem[] = [
@@ -724,26 +772,70 @@ export function AppSidebar() {
       url: "/reorder-intelligence",
       icon: TrendingDown,
       badge: reorderCritical > 0 ? reorderCritical : undefined,
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'storekeeper', 'assembly_team'],
     },
-    { title: "Serial Numbers", url: "/serial-numbers", icon: Hash },
+    {
+      title: "Serial Numbers",
+      url: "/serial-numbers",
+      icon: Hash,
+      allowedRoles: ['admin', 'finance', 'qc_team', 'storekeeper', 'assembly_team'],
+    },
     {
       title: "FAT Certificates",
       url: "/fat-certificates",
       icon: ClipboardCheck,
       badge: fatStats?.pending && fatStats.pending > 0 ? fatStats.pending : undefined,
       badgeColor: "amber" as const,
+      allowedRoles: ['admin', 'finance', 'qc_team', 'storekeeper', 'assembly_team'],
     },
-    { title: "Vendor Scorecards", url: "/vendor-scorecards", icon: Star },
-    { title: "GST Reports", url: "/gst-reports", icon: FileSpreadsheet },
+    {
+      title: "Vendor Scorecards",
+      url: "/vendor-scorecards",
+      icon: Star,
+      allowedRoles: ['admin', 'finance', 'purchase_team'],
+    },
+    {
+      title: "GST Reports",
+      url: "/gst-reports",
+      icon: FileSpreadsheet,
+      allowedRoles: ['admin', 'finance'],
+    },
   ];
 
   const masterDataNav: NavItem[] = [
     { title: "Items", url: "/items", icon: Package },
-    { title: "Parties", url: "/parties", icon: Users },
-    { title: "Bill of Materials", url: "/bill-of-materials", icon: GitFork },
-    { title: "Jig Master", url: "/jig-master", icon: Wrench },
-    { title: "Assets Register", url: "/assets-register", icon: Package2 },
-    { title: "Settings", url: "/settings", icon: Settings, badge: companyNeedsSetup ? 1 : undefined, badgeColor: "amber" as const },
+    {
+      title: "Parties",
+      url: "/parties",
+      icon: Users,
+      allowedRoles: ['admin', 'finance', 'purchase_team'],
+    },
+    {
+      title: "Bill of Materials",
+      url: "/bill-of-materials",
+      icon: GitFork,
+      allowedRoles: ['admin', 'finance', 'storekeeper', 'assembly_team'],
+    },
+    {
+      title: "Jig Master",
+      url: "/jig-master",
+      icon: Wrench,
+      allowedRoles: ['admin', 'finance', 'storekeeper', 'assembly_team'],
+    },
+    {
+      title: "Assets Register",
+      url: "/assets-register",
+      icon: Package2,
+      allowedRoles: ['admin', 'finance', 'storekeeper'],
+    },
+    {
+      title: "Settings",
+      url: "/settings",
+      icon: Settings,
+      badge: companyNeedsSetup ? 1 : undefined,
+      badgeColor: "amber" as const,
+      allowedRoles: ['admin', 'finance'],
+    },
   ];
 
   // Group items map for rail flyout
@@ -757,11 +849,26 @@ export function AppSidebar() {
     "MASTER DATA":            masterDataNav,
   };
 
+  // URLs the current role is allowed to navigate to (derived from filtered nav arrays)
+  const allowedUrls = new Set<string>(
+    [
+      ...filterByRole(startHereNav),
+      ...filterByRole(dailyWorkNav),
+      ...filterByRole(purchasingReceivingNav),
+      ...filterByRole(productionNav),
+      ...filterByRole(storeNav),
+      ...filterByRole(reportsNav),
+      ...filterByRole(masterDataNav),
+    ].map((item) => item.url)
+  );
+
   // Search filtering
   const searchResults =
     searchQuery.trim().length > 0
-      ? ALL_SEARCH_ITEMS.filter((item) =>
-          item.title.toLowerCase().includes(searchQuery.toLowerCase())
+      ? ALL_SEARCH_ITEMS.filter(
+          (item) =>
+            allowedUrls.has(item.url) &&
+            item.title.toLowerCase().includes(searchQuery.toLowerCase())
         )
       : [];
 
@@ -937,7 +1044,7 @@ export function AppSidebar() {
               {canSeeGroup("START HERE") && (
                 <NavGroup
                   label="START HERE"
-                  items={startHereNav}
+                  items={filterByRole(startHereNav)}
                   isActiveFn={isActive}
                   open={groupOpen["START HERE"]}
                   onToggle={() => toggleGroup("START HERE")}
@@ -946,7 +1053,7 @@ export function AppSidebar() {
               {canSeeGroup("DAILY WORK") && (
                 <NavGroup
                   label="DAILY WORK"
-                  items={dailyWorkNav}
+                  items={filterByRole(dailyWorkNav)}
                   isActiveFn={isActive}
                   open={groupOpen["DAILY WORK"]}
                   onToggle={() => toggleGroup("DAILY WORK")}
@@ -955,7 +1062,7 @@ export function AppSidebar() {
               {canSeeGroup("PURCHASING & RECEIVING") && (
                 <NavGroup
                   label="PURCHASING & RECEIVING"
-                  items={purchasingReceivingNav}
+                  items={filterByRole(purchasingReceivingNav)}
                   isActiveFn={isActive}
                   open={groupOpen["PURCHASING & RECEIVING"]}
                   onToggle={() => toggleGroup("PURCHASING & RECEIVING")}
@@ -964,7 +1071,7 @@ export function AppSidebar() {
               {canSeeGroup("PRODUCTION") && (
                 <NavGroup
                   label="PRODUCTION"
-                  items={productionNav}
+                  items={filterByRole(productionNav)}
                   isActiveFn={isActive}
                   open={groupOpen["PRODUCTION"]}
                   onToggle={() => toggleGroup("PRODUCTION")}
@@ -973,7 +1080,7 @@ export function AppSidebar() {
               {canSeeGroup("STORE") && (
                 <NavGroup
                   label="STORE"
-                  items={storeNav}
+                  items={filterByRole(storeNav)}
                   isActiveFn={isActive}
                   open={groupOpen["STORE"]}
                   onToggle={() => toggleGroup("STORE")}
@@ -982,7 +1089,7 @@ export function AppSidebar() {
               {canSeeGroup("REPORTS") && (
                 <NavGroup
                   label="REPORTS"
-                  items={reportsNav}
+                  items={filterByRole(reportsNav)}
                   isActiveFn={isActive}
                   open={groupOpen["REPORTS"]}
                   onToggle={() => toggleGroup("REPORTS")}
@@ -991,7 +1098,7 @@ export function AppSidebar() {
               {canSeeGroup("MASTER DATA") && (
                 <NavGroup
                   label="MASTER DATA"
-                  items={masterDataNav}
+                  items={filterByRole(masterDataNav)}
                   isActiveFn={isActive}
                   open={groupOpen["MASTER DATA"]}
                   onToggle={() => toggleGroup("MASTER DATA")}
@@ -1064,7 +1171,7 @@ export function AppSidebar() {
               {hoveredGroup}
             </p>
             <div style={{ padding: "4px 0" }}>
-              {(GROUP_ITEMS_MAP[hoveredGroup] ?? []).map((item) => (
+              {filterByRole(GROUP_ITEMS_MAP[hoveredGroup] ?? []).map((item) => (
                 <NavLink
                   key={item.url}
                   to={item.url}

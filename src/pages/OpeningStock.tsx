@@ -16,6 +16,7 @@ import {
   type NotificationSettings,
 } from "@/lib/settings-api";
 import { format } from "date-fns";
+import { useRoleAccess } from "@/hooks/useRoleAccess";
 
 const ITEM_TYPE_LABELS: Record<string, { label: string; cls: string }> = {
   raw_material:   { label: "Raw Material",  cls: "bg-slate-100 text-slate-700" },
@@ -79,6 +80,7 @@ interface EditState {
 export default function OpeningStock() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { hideCosts } = useRoleAccess();
 
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -284,18 +286,18 @@ export default function OpeningStock() {
               <th className="text-right px-4 py-3 font-medium text-slate-600">Free Stock</th>
               <th className="text-right px-4 py-3 font-medium text-slate-600">Aimed Qty</th>
               <th className="text-right px-4 py-3 font-medium text-slate-600">Last Opening Entry</th>
-              <th className="text-right px-4 py-3 font-medium text-slate-600">Cost/Unit</th>
+              {!hideCosts && <th className="text-right px-4 py-3 font-medium text-slate-600">Cost/Unit</th>}
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody className="divide-y">
             {isLoading ? (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-slate-400">Loading…</td>
+                <td colSpan={hideCosts ? 8 : 9} className="px-4 py-8 text-center text-slate-400">Loading…</td>
               </tr>
             ) : filteredItems.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-slate-400">No items found</td>
+                <td colSpan={hideCosts ? 8 : 9} className="px-4 py-8 text-center text-slate-400">No items found</td>
               </tr>
             ) : (
               filteredItems.map(item => {
@@ -331,9 +333,11 @@ export default function OpeningStock() {
                         <span className="text-slate-300">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right text-slate-500">
-                      {entry ? `₹${entry.unit_cost.toLocaleString("en-IN", { maximumFractionDigits: 2 })}` : "—"}
-                    </td>
+                    {!hideCosts && (
+                      <td className="px-4 py-3 text-right text-slate-500">
+                        {entry ? `₹${entry.unit_cost.toLocaleString("en-IN", { maximumFractionDigits: 2 })}` : "—"}
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-right">
                       <Button
                         variant="ghost"

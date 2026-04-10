@@ -12,6 +12,7 @@ import { exportToExcel, PO_EXPORT_COLS } from "@/lib/export-utils";
 import { getDaysOpen, getDaysOpenClass } from "@/lib/days-open";
 import { logAudit } from "@/lib/audit-api";
 import { useToast } from "@/hooks/use-toast";
+import { useRoleAccess } from "@/hooks/useRoleAccess";
 
 const statusLabels: Record<string, string> = {
   draft: "Draft",
@@ -36,6 +37,7 @@ const statusClass: Record<string, string> = {
 export default function PurchaseOrdersList() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { hideCosts, canExport } = useRoleAccess();
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<POFilters>({
     search: "",
@@ -78,9 +80,9 @@ export default function PurchaseOrdersList() {
           <p className="text-sm text-slate-500 mt-1">Track vendor orders and receipts</p>
         </div>
         <div className="flex flex-wrap gap-2 flex-shrink-0">
-          <Button variant="outline" onClick={() => exportToExcel(pos, PO_EXPORT_COLS, `Purchase_Orders_${new Date().toISOString().split("T")[0]}.xlsx`, "Purchase Orders")} disabled={pos.length === 0}>
+          {canExport && <Button variant="outline" onClick={() => exportToExcel(pos, PO_EXPORT_COLS, `Purchase_Orders_${new Date().toISOString().split("T")[0]}.xlsx`, "Purchase Orders")} disabled={pos.length === 0}>
             <Download className="h-4 w-4 mr-1" /> Export
-          </Button>
+          </Button>}
           <Button onClick={() => navigate("/purchase-orders/new")} className="active:scale-[0.98] transition-transform">
             <Plus className="h-4 w-4 mr-1" /> New PO
           </Button>
@@ -146,7 +148,7 @@ export default function PurchaseOrdersList() {
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">PO #</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Date</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Vendor</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Total Value</th>
+                {!hideCosts && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Total Value</th>}
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Payment</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Days Open</th>
@@ -156,11 +158,11 @@ export default function PurchaseOrdersList() {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-400">Loading...</td>
+                  <td colSpan={hideCosts ? 7 : 8} className="px-3 py-8 text-center text-sm text-slate-400">Loading...</td>
                 </tr>
               ) : pos.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-400">
+                  <td colSpan={hideCosts ? 7 : 8} className="px-3 py-8 text-center text-sm text-slate-400">
                     <div className="flex flex-col items-center justify-center py-8 text-center">
                       <div className="h-16 w-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
                         <ShoppingCart className="h-8 w-8 text-slate-400" />
@@ -184,7 +186,7 @@ export default function PurchaseOrdersList() {
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium">{po.po_number}</td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{new Date(po.po_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">{po.vendor_name || "—"}</td>
-                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(po.grand_total)}</td>
+                      {!hideCosts && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(po.grand_total)}</td>}
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                         <span className={statusClass[po.status] || "status-draft"}>
                           {statusLabels[po.status] || po.status}

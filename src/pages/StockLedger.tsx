@@ -13,6 +13,7 @@ import { fetchItems, type Item } from "@/lib/items-api";
 import { exportToExcel } from "@/lib/export-utils";
 import { formatCurrency } from "@/lib/gst-utils";
 import { format } from "date-fns";
+import { useRoleAccess } from "@/hooks/useRoleAccess";
 
 const TXN_LABELS: Record<string, { label: string; cls: string }> = {
   grn_receipt:           { label: "GRN Receipt",       cls: "bg-green-100 text-green-800" },
@@ -40,6 +41,7 @@ const ROUTE_MAP: Record<string, string> = {
 export default function StockLedger() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { hideCosts, canExport } = useRoleAccess();
 
   const [filters, setFilters] = useState<StockLedgerFilters>({
     page: 1,
@@ -131,9 +133,9 @@ export default function StockLedger() {
           </h1>
           <p className="text-sm text-slate-500 mt-1">Complete history of every stock movement</p>
         </div>
-        <Button variant="outline" onClick={handleExport} className="gap-1.5 flex-shrink-0">
+        {canExport && <Button variant="outline" onClick={handleExport} className="gap-1.5 flex-shrink-0">
           <Download className="h-4 w-4" /> Export
-        </Button>
+        </Button>}
       </div>
 
       {/* Filters */}
@@ -256,18 +258,18 @@ export default function StockLedger() {
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty In</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty Out</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Balance</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Unit Cost</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Total Value</th>
+                {!hideCosts && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Unit Cost</th>}
+                {!hideCosts && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Total Value</th>}
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={12} className="px-3 py-8 text-center text-sm text-slate-400">Loading...</td>
+                  <td colSpan={hideCosts ? 10 : 12} className="px-3 py-8 text-center text-sm text-slate-400">Loading...</td>
                 </tr>
               ) : entries.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="text-center py-12">
+                  <td colSpan={hideCosts ? 10 : 12} className="text-center py-12">
                     <BookOpen className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
                     <p className="text-muted-foreground font-medium">No stock movements recorded yet</p>
                     <p className="text-sm text-muted-foreground">
@@ -342,12 +344,16 @@ export default function StockLedger() {
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right font-mono tabular-nums font-semibold text-slate-900">
                         {entry.balance_qty}
                       </td>
-                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right font-mono tabular-nums text-muted-foreground">
-                        {entry.unit_cost > 0 ? formatCurrency(entry.unit_cost) : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right font-mono tabular-nums font-medium">
-                        {entry.total_value > 0 ? formatCurrency(entry.total_value) : "—"}
-                      </td>
+                      {!hideCosts && (
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right font-mono tabular-nums text-muted-foreground">
+                          {entry.unit_cost > 0 ? formatCurrency(entry.unit_cost) : "—"}
+                        </td>
+                      )}
+                      {!hideCosts && (
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right font-mono tabular-nums font-medium">
+                          {entry.total_value > 0 ? formatCurrency(entry.total_value) : "—"}
+                        </td>
+                      )}
                     </tr>
                   );
                 })

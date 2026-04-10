@@ -15,6 +15,7 @@ import { fetchItems, createItem, updateItem, deleteItem, bulkDeleteItems, fetchI
 import ItemsImportDialog from "@/components/ItemsImportDialog";
 import { exportToExcel, ITEMS_EXPORT_COLS } from "@/lib/export-utils";
 import { UNITS } from "@/lib/constants";
+import { useRoleAccess } from "@/hooks/useRoleAccess";
 
 const ITEM_TYPES = [
   { value: "raw_material", label: "Raw Material" },
@@ -50,6 +51,7 @@ const emptyItem = {
 export default function Items() {
   const { toast } = useToast();
   const { companyId } = useAuth();
+  const { canExport } = useRoleAccess();
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<ItemFilters>({ search: "", type: "all", status: "active" });
   const [formOpen, setFormOpen] = useState(false);
@@ -267,9 +269,9 @@ export default function Items() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2 flex-shrink-0">
-          <Button variant="outline" onClick={() => exportToExcel(items, ITEMS_EXPORT_COLS, `Items_${new Date().toISOString().split("T")[0]}.xlsx`, "Items")} disabled={items.length === 0}>
+          {canExport && <Button variant="outline" onClick={() => exportToExcel(items, ITEMS_EXPORT_COLS, `Items_${new Date().toISOString().split("T")[0]}.xlsx`, "Items")} disabled={items.length === 0}>
             <Download className="h-4 w-4 mr-1" /> Export
-          </Button>
+          </Button>}
           <Button variant="outline" onClick={() => setImportOpen(true)}>
             <Upload className="h-4 w-4 mr-1" /> Import
           </Button>

@@ -1,9 +1,11 @@
+import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/hooks/useAuth";
+import { useRoleAccess } from "@/hooks/useRoleAccess";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AppLayout } from "@/components/AppLayout";
 import Login from "@/pages/Login";
@@ -86,6 +88,12 @@ import OpeningStock from "@/pages/OpeningStock";
 import DangerZone from "@/pages/DangerZone";
 import { ImportQueueProvider } from "@/lib/import-queue";
 
+function PageGuard({ page, children }: { page: string; children: React.ReactNode; }) {
+  const { canView } = useRoleAccess(page);
+  if (!canView) return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
 function DcGrnRedirect() {
   const { id } = useParams<{ id: string }>();
   return <Navigate to={`/grn/${id}`} replace />;
@@ -106,50 +114,14 @@ const App = () => (
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/setup" element={<ProtectedRoute requireCompany={false}><CompanySetup /></ProtectedRoute>} />
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
+              {/* ── Unguarded: accessible to all authenticated roles ── */}
               <Route path="/" element={<Dashboard />} />
               <Route path="/open-items" element={<OpenItems />} />
-              <Route path="/parties" element={<PartiesList />} />
-              <Route path="/parties/new" element={<PartyForm />} />
-              <Route path="/parties/:id" element={<PartyDetail />} />
-              <Route path="/parties/:id/edit" element={<PartyForm />} />
               <Route path="/items" element={<Items />} />
               <Route path="/stock-register" element={<StockRegister />} />
-              <Route path="/invoices" element={<InvoiceRegister />} />
-              <Route path="/invoices/new" element={<InvoiceForm />} />
-              <Route path="/invoices/:id" element={<InvoiceDetail />} />
-              <Route path="/invoices/:id/edit" element={<InvoiceForm />} />
-              <Route path="/purchase-orders" element={<PurchaseOrdersList />} />
-              <Route path="/purchase-orders/new" element={<PurchaseOrderForm />} />
-              <Route path="/purchase-orders/:id" element={<PurchaseOrderDetail />} />
-              <Route path="/purchase-orders/:id/edit" element={<PurchaseOrderForm />} />
-              <Route path="/delivery-challans" element={<DeliveryChallansRegister />} />
-              <Route path="/delivery-challans/new" element={<DeliveryChallanForm />} />
-              <Route path="/delivery-challans/:id" element={<DeliveryChallanDetail />} />
-              <Route path="/delivery-challans/:id/edit" element={<DeliveryChallanForm />} />
-              <Route path="/delivery-challans/:id/record-return" element={<DCRecordReturn />} />
-              <Route path="/grn" element={<GRNRegister />} />
-              <Route path="/grn/new" element={<Navigate to="/grn" replace />} />
-              <Route path="/grn/:id" element={<GRNDetail />} />
-              <Route path="/dc-grn" element={<DcGrn />} />
-              <Route path="/dc-grn/new" element={<Navigate to="/grn" replace />} />
-              <Route path="/dc-grn/:id" element={<DcGrnRedirect />} />
               <Route path="/receipts" element={<PaymentReceipts />} />
-              <Route path="/job-works" element={<JobWorks />} />
-              <Route path="/job-works/:id" element={<JobWorkDetail />} />
-              <Route path="/wip-register" element={<WipRegister />} />
-              <Route path="/vendor-scorecards" element={<VendorScorecards />} />
-              <Route path="/vendor-scorecards/:vendorId" element={<VendorScorecardDetail />} />
-              <Route path="/gst-reports" element={<GstReports />} />
-              <Route path="/settings/notifications" element={<NotificationsSettings />} />
-              <Route path="/settings/documents" element={<DocumentSettings />} />
-              <Route path="/settings/import" element={<DataImport />} />
-              <Route path="/bill-of-materials" element={<BillOfMaterials />} />
               <Route path="/assembly-orders" element={<AssemblyOrders />} />
               <Route path="/assembly-orders/:id" element={<AssemblyOrderDetail />} />
-              <Route path="/stock-ledger" element={<StockLedger />} />
-              <Route path="/serial-numbers" element={<SerialNumbers />} />
-              <Route path="/fat-certificates" element={<FatCertificates />} />
-              <Route path="/fat-certificates/:id" element={<FatCertificateDetail />} />
               <Route path="/warranty-tracker" element={<WarrantyTracker />} />
               <Route path="/sales-orders" element={<SalesOrders />} />
               <Route path="/sales-orders/new" element={<SalesOrderForm />} />
@@ -159,36 +131,98 @@ const App = () => (
               <Route path="/dispatch-notes/new" element={<DispatchNoteForm />} />
               <Route path="/dispatch-notes/:id" element={<DispatchNoteDetail />} />
               <Route path="/dispatch-notes/:id/edit" element={<DispatchNoteForm />} />
-              <Route path="/reorder-intelligence" element={<ReorderIntelligence />} />
               <Route path="/reorder-rules" element={<ReorderRules />} />
-              <Route path="/scrap-register" element={<ScrapRegister />} />
               <Route path="/audit-log" element={<AuditLog />} />
               <Route path="/how-to-use" element={<HowToUse />} />
               <Route path="/settings/how-to-use" element={<HowToUse />} />
               <Route path="/stage-templates" element={<StageTemplates />} />
               <Route path="/component-journey" element={<ComponentJourney />} />
-              <Route path="/jig-master" element={<JigMaster />} />
-              <Route path="/sub-assembly-work-orders" element={<SubAssemblyWorkOrders />} />
-              <Route path="/finished-good-work-orders" element={<FinishedGoodWorkOrders />} />
               <Route path="/assembly-work-orders/:id" element={<AssemblyWorkOrderDetail />} />
-              <Route path="/storekeeper" element={<StorekeeperQueue />} />
-              <Route path="/storekeeper-queue" element={<GrnStoreQueue />} />
               <Route path="/grn-queue" element={<GrnQueue />} />
               <Route path="/qc-queue" element={<QcQueue />} />
-              <Route path="/settings/users" element={<UserManagement />} />
-              <Route path="/dispatch-records" element={<DispatchRecords />} />
-              <Route path="/dispatch-records/new" element={<DispatchRecordForm />} />
-              <Route path="/dispatch-records/:id" element={<DispatchRecordDetail />} />
-              <Route path="/dispatch-records/:id/edit" element={<DispatchRecordForm />} />
-              <Route path="/ready-to-dispatch" element={<ReadyToDispatch />} />
               <Route path="/more" element={<MoreMenu />} />
-              <Route path="/settings/company" element={<CompanySettings />} />
-              <Route path="/settings/process-library" element={<ProcessLibrary />} />
-              <Route path="/settings/jig-mould" element={<JigMouldSettings />} />
-              <Route path="/settings/danger-zone" element={<DangerZone />} />
-              <Route path="/settings" element={<SettingsPage />} />
-              <Route path="/assets-register" element={<AssetsRegister />} />
-              <Route path="/opening-stock" element={<OpeningStock />} />
+
+              {/* ── Role-guarded routes ── */}
+              <Route path="/parties" element={<PageGuard page="parties"><PartiesList /></PageGuard>} />
+              <Route path="/parties/new" element={<PageGuard page="parties"><PartyForm /></PageGuard>} />
+              <Route path="/parties/:id" element={<PageGuard page="parties"><PartyDetail /></PageGuard>} />
+              <Route path="/parties/:id/edit" element={<PageGuard page="parties"><PartyForm /></PageGuard>} />
+
+              <Route path="/invoices" element={<PageGuard page="invoices"><InvoiceRegister /></PageGuard>} />
+              <Route path="/invoices/new" element={<PageGuard page="invoices"><InvoiceForm /></PageGuard>} />
+              <Route path="/invoices/:id" element={<PageGuard page="invoices"><InvoiceDetail /></PageGuard>} />
+              <Route path="/invoices/:id/edit" element={<PageGuard page="invoices"><InvoiceForm /></PageGuard>} />
+
+              <Route path="/purchase-orders" element={<PageGuard page="purchase-orders"><PurchaseOrdersList /></PageGuard>} />
+              <Route path="/purchase-orders/new" element={<PageGuard page="purchase-orders"><PurchaseOrderForm /></PageGuard>} />
+              <Route path="/purchase-orders/:id" element={<PageGuard page="purchase-orders"><PurchaseOrderDetail /></PageGuard>} />
+              <Route path="/purchase-orders/:id/edit" element={<PageGuard page="purchase-orders"><PurchaseOrderForm /></PageGuard>} />
+
+              <Route path="/delivery-challans" element={<PageGuard page="delivery-challans"><DeliveryChallansRegister /></PageGuard>} />
+              <Route path="/delivery-challans/new" element={<PageGuard page="delivery-challans"><DeliveryChallanForm /></PageGuard>} />
+              <Route path="/delivery-challans/:id" element={<PageGuard page="delivery-challans"><DeliveryChallanDetail /></PageGuard>} />
+              <Route path="/delivery-challans/:id/edit" element={<PageGuard page="delivery-challans"><DeliveryChallanForm /></PageGuard>} />
+              <Route path="/delivery-challans/:id/record-return" element={<PageGuard page="delivery-challans"><DCRecordReturn /></PageGuard>} />
+
+              <Route path="/grn" element={<PageGuard page="grn"><GRNRegister /></PageGuard>} />
+              <Route path="/grn/new" element={<Navigate to="/grn" replace />} />
+              <Route path="/grn/:id" element={<PageGuard page="grn"><GRNDetail /></PageGuard>} />
+
+              <Route path="/dc-grn" element={<PageGuard page="dc-grn"><DcGrn /></PageGuard>} />
+              <Route path="/dc-grn/new" element={<Navigate to="/grn" replace />} />
+              <Route path="/dc-grn/:id" element={<PageGuard page="dc-grn"><DcGrnRedirect /></PageGuard>} />
+
+              <Route path="/job-works" element={<PageGuard page="job-works"><JobWorks /></PageGuard>} />
+              <Route path="/job-works/:id" element={<PageGuard page="job-works"><JobWorkDetail /></PageGuard>} />
+
+              <Route path="/wip-register" element={<PageGuard page="wip-register"><WipRegister /></PageGuard>} />
+
+              <Route path="/vendor-scorecards" element={<PageGuard page="vendor-scorecards"><VendorScorecards /></PageGuard>} />
+              <Route path="/vendor-scorecards/:vendorId" element={<PageGuard page="vendor-scorecards"><VendorScorecardDetail /></PageGuard>} />
+
+              <Route path="/gst-reports" element={<PageGuard page="gst-reports"><GstReports /></PageGuard>} />
+
+              <Route path="/bill-of-materials" element={<PageGuard page="bill-of-materials"><BillOfMaterials /></PageGuard>} />
+
+              <Route path="/stock-ledger" element={<PageGuard page="stock-ledger"><StockLedger /></PageGuard>} />
+
+              <Route path="/serial-numbers" element={<PageGuard page="serial-numbers"><SerialNumbers /></PageGuard>} />
+
+              <Route path="/fat-certificates" element={<PageGuard page="fat-certificates"><FatCertificates /></PageGuard>} />
+              <Route path="/fat-certificates/:id" element={<PageGuard page="fat-certificates"><FatCertificateDetail /></PageGuard>} />
+
+              <Route path="/reorder-intelligence" element={<PageGuard page="reorder-intelligence"><ReorderIntelligence /></PageGuard>} />
+
+              <Route path="/scrap-register" element={<PageGuard page="scrap-register"><ScrapRegister /></PageGuard>} />
+
+              <Route path="/jig-master" element={<PageGuard page="jig-master"><JigMaster /></PageGuard>} />
+
+              <Route path="/sub-assembly-work-orders" element={<PageGuard page="sub-assembly-work-orders"><SubAssemblyWorkOrders /></PageGuard>} />
+              <Route path="/finished-good-work-orders" element={<PageGuard page="finished-good-work-orders"><FinishedGoodWorkOrders /></PageGuard>} />
+
+              <Route path="/storekeeper" element={<PageGuard page="storekeeper"><StorekeeperQueue /></PageGuard>} />
+              <Route path="/storekeeper-queue" element={<PageGuard page="storekeeper-queue"><GrnStoreQueue /></PageGuard>} />
+
+              <Route path="/dispatch-records" element={<PageGuard page="dispatch-records"><DispatchRecords /></PageGuard>} />
+              <Route path="/dispatch-records/new" element={<PageGuard page="dispatch-records"><DispatchRecordForm /></PageGuard>} />
+              <Route path="/dispatch-records/:id" element={<PageGuard page="dispatch-records"><DispatchRecordDetail /></PageGuard>} />
+              <Route path="/dispatch-records/:id/edit" element={<PageGuard page="dispatch-records"><DispatchRecordForm /></PageGuard>} />
+
+              <Route path="/ready-to-dispatch" element={<PageGuard page="ready-to-dispatch"><ReadyToDispatch /></PageGuard>} />
+
+              <Route path="/assets-register" element={<PageGuard page="assets-register"><AssetsRegister /></PageGuard>} />
+
+              <Route path="/opening-stock" element={<PageGuard page="opening-stock"><OpeningStock /></PageGuard>} />
+
+              <Route path="/settings" element={<PageGuard page="settings"><SettingsPage /></PageGuard>} />
+              <Route path="/settings/notifications" element={<PageGuard page="settings"><NotificationsSettings /></PageGuard>} />
+              <Route path="/settings/documents" element={<PageGuard page="settings"><DocumentSettings /></PageGuard>} />
+              <Route path="/settings/import" element={<PageGuard page="settings"><DataImport /></PageGuard>} />
+              <Route path="/settings/users" element={<PageGuard page="settings"><UserManagement /></PageGuard>} />
+              <Route path="/settings/company" element={<PageGuard page="settings"><CompanySettings /></PageGuard>} />
+              <Route path="/settings/process-library" element={<PageGuard page="settings"><ProcessLibrary /></PageGuard>} />
+              <Route path="/settings/jig-mould" element={<PageGuard page="settings"><JigMouldSettings /></PageGuard>} />
+              <Route path="/settings/danger-zone" element={<PageGuard page="settings"><DangerZone /></PageGuard>} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>

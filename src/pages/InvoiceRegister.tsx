@@ -12,6 +12,7 @@ import { exportToExcel, INVOICE_EXPORT_COLS } from "@/lib/export-utils";
 import { getDaysOpen, getDaysOpenClass } from "@/lib/days-open";
 import { logAudit } from "@/lib/audit-api";
 import { useToast } from "@/hooks/use-toast";
+import { useRoleAccess } from "@/hooks/useRoleAccess";
 
 const statusLabels: Record<string, string> = {
   draft: "Draft",
@@ -36,6 +37,7 @@ const statusClass: Record<string, string> = {
 export default function InvoiceRegister() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { canExport } = useRoleAccess();
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<InvoiceFilters>({ search: "", status: "all", page: 1, pageSize: 20 });
   const [showDeleted, setShowDeleted] = useState(false);
@@ -76,9 +78,9 @@ export default function InvoiceRegister() {
           <p className="text-sm text-slate-500 mt-1">GST-compliant tax invoices</p>
         </div>
         <div className="flex flex-wrap gap-2 flex-shrink-0">
-          <Button variant="outline" onClick={() => exportToExcel(invoices, INVOICE_EXPORT_COLS, `Invoices_${new Date().toISOString().split("T")[0]}.xlsx`, "Invoices")} disabled={invoices.length === 0}>
+          {canExport && <Button variant="outline" onClick={() => exportToExcel(invoices, INVOICE_EXPORT_COLS, `Invoices_${new Date().toISOString().split("T")[0]}.xlsx`, "Invoices")} disabled={invoices.length === 0}>
             <Download className="h-4 w-4 mr-1" /> Export
-          </Button>
+          </Button>}
           <Button onClick={() => navigate("/invoices/new")} className="active:scale-[0.98] transition-transform">
             <Plus className="h-4 w-4 mr-1" /> New Invoice
           </Button>

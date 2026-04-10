@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Package2, ChevronLeft } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId } from "@/lib/auth-helpers";
+import { useRoleAccess } from "@/hooks/useRoleAccess";
 
 interface AssetRow {
   id: string;
@@ -60,6 +61,7 @@ const statusClass: Record<string, string> = {
 export default function AssetsRegister() {
   const navigate = useNavigate();
   const [assetStatus, setAssetStatus] = useState<Record<string, string>>({});
+  const { hideCosts } = useRoleAccess();
 
   const { data: assets = [], isLoading } = useQuery({
     queryKey: ["assets-register"],
@@ -95,17 +97,17 @@ export default function AssetsRegister() {
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item Code</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Classification</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Cost ₹</th>
+                {!hideCosts && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Cost ₹</th>}
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Added</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={6} className="px-3 py-8 text-center text-sm text-slate-400">Loading...</td></tr>
+                <tr><td colSpan={hideCosts ? 5 : 6} className="px-3 py-8 text-center text-sm text-slate-400">Loading...</td></tr>
               ) : assets.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-12 text-center text-sm text-slate-400">
+                  <td colSpan={hideCosts ? 5 : 6} className="px-3 py-12 text-center text-sm text-slate-400">
                     <Package2 className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
                     <p className="text-muted-foreground font-medium">No assets found</p>
                     <p className="text-xs text-muted-foreground mt-1">Items with a classification where Affects Stock = No will appear here.</p>
@@ -122,9 +124,11 @@ export default function AssetsRegister() {
                         {asset.classification_name}
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
-                      {asset.standard_cost != null ? `₹${Number(asset.standard_cost).toLocaleString("en-IN")}` : "—"}
-                    </td>
+                    {!hideCosts && (
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
+                        {asset.standard_cost != null ? `₹${Number(asset.standard_cost).toLocaleString("en-IN")}` : "—"}
+                      </td>
+                    )}
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">
                       {new Date(asset.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
                     </td>
