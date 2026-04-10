@@ -871,7 +871,6 @@ function BillOfMaterialsInner() {
 
   // ── Reset state when item changes ────────────────────────────────────────────
   const handleSelectItem = (item: Item) => {
-    console.log("[BOM] Item selected:", item.id, item.description, "type:", item.item_type);
     setSelectedItem(item);
     setSelectedVariantId("__default_bom__");
     setActiveTab("structure");
@@ -931,9 +930,7 @@ function BillOfMaterialsInner() {
   const { data: bomLines = [], isLoading: bomLoading, isError: bomError, error: bomQueryError, refetch: refetchLines } = useQuery({
     queryKey: ["bom-lines-v2", selectedItem?.id, selectedVariantId],
     queryFn: async () => {
-      console.log("[BOM] Fetching lines, itemId:", selectedItem?.id, "variant:", variantFilter);
       const result = await fetchBomLines(selectedItem!.id, variantFilter);
-      console.log("[BOM] Lines fetched:", result.length, "lines", result);
       return result;
     },
     enabled: !!selectedItem,
@@ -1789,11 +1786,6 @@ function BillOfMaterialsInner() {
             ) : (
               <BomErrorBoundary>
               <>
-                {/* Debug — remove after root cause confirmed */}
-                {(() => {
-                  console.log("[BOM] Rendering right panel. selectedItem:", selectedItem?.id, selectedItem?.description, "bomLoading:", bomLoading, "bomError:", bomError, "lines:", bomLines.length);
-                  return null;
-                })()}
                 {/* Item header */}
                 <div className="px-5 py-4 border-b border-slate-100">
                   <div className="flex items-center gap-2 flex-wrap">

@@ -151,21 +151,6 @@ async function fetchStockAlertBoard(companyId: string): Promise<StockAlertBoardR
         });
     }
 
-    // Debug diagnostics
-    console.debug("[StockAlertsBoard] PO detection — alert item IDs:", itemIds);
-    console.debug(
-      "[StockAlertsBoard] PO detection — matched item IDs from po_line_items (pass 1, item_id FK):",
-      validLines.filter((l: any) => l.item_id && itemIds.includes(l.item_id)).map((l: any) => l.item_id)
-    );
-    console.debug("[StockAlertsBoard] PO detection — pass 2 description matches:", descriptionMatches);
-    console.debug(
-      "[StockAlertsBoard] PO detection — final sample (first 3):",
-      itemIds.slice(0, 3).map((id) => ({
-        item_id: id,
-        item_code: itemCodeMap[id],
-        hasPO: itemsWithPO.has(id),
-      }))
-    );
   }
 
   // ── Work-order detection for sub-assemblies ───────────────────────────────
