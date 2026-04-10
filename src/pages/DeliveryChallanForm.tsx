@@ -549,29 +549,6 @@ export default function DeliveryChallanForm() {
 
       {/* DC Type Selector */}
       <div className="space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <button
-            onClick={() => { setPrimaryChoice("returnable"); setDcSubType(""); }}
-            className={cn(
-              "p-4 rounded-lg border-2 text-center transition-all",
-              isReturnable ? "border-primary bg-primary/5 text-primary" : "border-border hover:border-muted-foreground/40"
-            )}
-          >
-            <p className="font-bold text-sm">RETURNABLE</p>
-            <p className="text-xs text-muted-foreground mt-1">Goods to be returned after processing</p>
-          </button>
-          <button
-            onClick={() => { setPrimaryChoice("non_returnable"); setDcSubType(""); }}
-            className={cn(
-              "p-4 rounded-lg border-2 text-center transition-all",
-              !isReturnable ? "border-primary bg-primary/5 text-primary" : "border-border hover:border-muted-foreground/40"
-            )}
-          >
-            <p className="font-bold text-sm">NON-RETURNABLE</p>
-            <p className="text-xs text-muted-foreground mt-1">Goods sent permanently to party</p>
-          </button>
-        </div>
-
         {/* Sub-type dropdown */}
         <div className="space-y-1.5">
           <Label className="text-sm text-muted-foreground">Sub-type (optional)</Label>
@@ -580,7 +557,7 @@ export default function DeliveryChallanForm() {
               <SelectValue placeholder="Select sub-type..." />
             </SelectTrigger>
             <SelectContent>
-              {(isReturnable ? RETURNABLE_SUBTYPES : NON_RETURNABLE_SUBTYPES).map((t) => (
+              {RETURNABLE_SUBTYPES.map((t) => (
                 <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
               ))}
             </SelectContent>

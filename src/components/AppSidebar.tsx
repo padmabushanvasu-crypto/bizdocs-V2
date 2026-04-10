@@ -474,14 +474,18 @@ export function AppSidebar() {
   const { data: awoStats } = useQuery({
     queryKey: ["awo-stats-sidebar"],
     queryFn: async () => {
-      const [sa, fg] = await Promise.all([
-        fetchAwoStats("sub_assembly"),
-        fetchAwoStats("finished_good"),
-      ]);
-      return {
-        sa_active: (sa.pending_materials ?? 0) + (sa.in_progress ?? 0),
-        fg_active: (fg.pending_materials ?? 0) + (fg.in_progress ?? 0),
-      };
+      try {
+        const [sa, fg] = await Promise.all([
+          fetchAwoStats("sub_assembly"),
+          fetchAwoStats("finished_good"),
+        ]);
+        return {
+          sa_active: (sa.pending_materials ?? 0) + (sa.in_progress ?? 0),
+          fg_active: (fg.pending_materials ?? 0) + (fg.in_progress ?? 0),
+        };
+      } catch {
+        return { sa_active: 0, fg_active: 0 };
+      }
     },
     staleTime: 60_000,
   });
@@ -498,10 +502,11 @@ export function AppSidebar() {
     queryKey: ["overdue-po-count-sidebar"],
     queryFn: async () => {
       try {
-        const { count } = await (supabase as any)
+        const { count, error } = await (supabase as any)
           .from("purchase_orders")
           .select("*", { count: "exact", head: true })
           .in("status", ["draft", "issued", "partially_received"]);
+        if (error) return 0;
         return count ?? 0;
       } catch { return 0; }
     },
@@ -522,13 +527,14 @@ export function AppSidebar() {
       try {
         const companyId = await getCompanyId();
         if (!companyId) return 0;
-        const { count } = await (supabase as any)
+        const { count, error } = await (supabase as any)
           .from("grns")
           .select("id", { count: "exact", head: true })
           .eq("company_id", companyId)
           .eq("grn_stage", "quality_pending")
           .neq("status", "deleted")
           .neq("status", "cancelled");
+        if (error) return 0;
         return count ?? 0;
       } catch { return 0; }
     },
@@ -542,11 +548,12 @@ export function AppSidebar() {
       try {
         const companyId = await getCompanyId();
         if (!companyId) return 0;
-        const { count } = await (supabase as any)
+        const { count, error } = await (supabase as any)
           .from("delivery_challans")
           .select("id", { count: "exact", head: true })
           .eq("company_id", companyId)
           .in("status", ["issued", "partially_returned"]);
+        if (error) return 0;
         return count ?? 0;
       } catch { return 0; }
     },
@@ -560,7 +567,7 @@ export function AppSidebar() {
       try {
         const companyId = await getCompanyId();
         if (!companyId) return 0;
-        const { count } = await (supabase as any)
+        const { count, error } = await (supabase as any)
           .from("grns")
           .select("id", { count: "exact", head: true })
           .eq("company_id", companyId)
@@ -568,6 +575,7 @@ export function AppSidebar() {
           .eq("grn_stage", "quality_pending")
           .neq("status", "deleted")
           .neq("status", "cancelled");
+        if (error) return 0;
         return count ?? 0;
       } catch { return 0; }
     },
@@ -581,11 +589,12 @@ export function AppSidebar() {
       try {
         const companyId = await getCompanyId();
         if (!companyId) return 0;
-        const { count } = await (supabase as any)
+        const { count, error } = await (supabase as any)
           .from("job_cards")
           .select("id", { count: "exact", head: true })
           .eq("company_id", companyId)
           .eq("status", "in_progress");
+        if (error) return 0;
         return count ?? 0;
       } catch { return 0; }
     },
@@ -599,11 +608,12 @@ export function AppSidebar() {
       try {
         const companyId = await getCompanyId();
         if (!companyId) return 0;
-        const { count } = await (supabase as any)
+        const { count, error } = await (supabase as any)
           .from("material_issue_requests")
           .select("id", { count: "exact", head: true })
           .eq("company_id", companyId)
           .eq("status", "pending");
+        if (error) return 0;
         return count ?? 0;
       } catch { return 0; }
     },
