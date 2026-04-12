@@ -132,9 +132,19 @@ serve(async (req) => {
   }
 
   // ── 6. Update the target user's profile ───────────────────────────────────
+  const fullName =
+    (targetAuthUser.user_metadata?.full_name as string | undefined) ||
+    targetAuthUser.email ||
+    null;
+
   const { error: updateError } = await serviceClient
     .from("profiles")
-    .update({ company_id: companyId, role: targetRole })
+    .update({
+      company_id: companyId,
+      role: targetRole,
+      full_name: fullName,
+      email: targetAuthUser.email ?? null,
+    })
     .eq("id", targetAuthUser.id);
 
   if (updateError) {
