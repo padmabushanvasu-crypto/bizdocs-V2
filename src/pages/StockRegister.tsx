@@ -497,7 +497,7 @@ function StockRegisterInner() {
                     row.stock_in_process +
                     inProd +
                     row.stock_in_fg_ready;
-                  const minReq = row.min_stock_override ?? row.min_stock ?? 0;
+                  const minReq = row.min_stock_override || row.min_stock || 0;
 
                   return (
                     <tr

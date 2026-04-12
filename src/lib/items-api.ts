@@ -244,7 +244,7 @@ export async function fetchStockStatus() {
   if (!companyId) return [] as StockStatusRow[];
   const { data, error } = await (supabase as any)
     .from("items")
-    .select("id, item_code, description, unit, item_type, hsn_sac_code, current_stock, stock_raw_material, stock_wip, stock_finished_goods, min_stock, min_stock_override, standard_cost, parent_item_id, company_id, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, stock_alert_level, min_finished_stock, stock_finished_goods")
+    .select("id, item_code, description, unit, item_type, hsn_sac_code, current_stock, stock_raw_material, stock_wip, stock_finished_goods, min_stock, min_stock_override, standard_cost, parent_item_id, company_id, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, stock_alert_level, min_finished_stock")
     .eq("company_id", companyId)
     .eq("status", "active")
     .order("item_code", { ascending: true });
@@ -299,7 +299,9 @@ export async function fetchStockStatus() {
 
   // Compute stock_status and effective_min_stock client-side (same logic as the view)
   const rows = (data ?? []).map((item: any) => {
-    const effectiveMin = item.min_stock_override ?? item.min_stock ?? 0;
+    // Use || not ?? so that a stored value of 0 is treated as "not set"
+    // and falls through to min_stock (??  would short-circuit on 0)
+    const effectiveMin = item.min_stock_override || item.min_stock || 0;
     let stock_status: "green" | "amber" | "red" = "green";
     if (item.current_stock <= 0) stock_status = "red";
     else if (effectiveMin > 0 && item.current_stock <= effectiveMin) stock_status = "amber";
