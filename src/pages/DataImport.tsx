@@ -17,7 +17,7 @@ import {
   JIG_FIELD_MAP, MOULD_FIELD_MAP, PROCESSING_ROUTES_FIELD_MAP,
   type ColumnMappingSummary, type SkipReason,
 } from "@/lib/import-utils";
-import { importItemsBatch } from "@/lib/items-api";
+import { importItemsBatch, importItemsPatchBatch } from "@/lib/items-api";
 import { importPartiesBatch } from "@/lib/parties-api";
 import { importProcessCodes } from "@/lib/process-library-api";
 import { useImportQueue, type BatchImportFn } from "@/lib/import-queue";
@@ -2488,6 +2488,8 @@ export default function DataImport() {
     },
   });
 
+  const [itemsPatchMode, setItemsPatchMode] = useState(false);
+
   const { data: itemsCount = 0, refetch: refetchItemsCount } = useQuery({
     queryKey: ["count", "items"],
     queryFn: async () => {
@@ -2790,20 +2792,36 @@ export default function DataImport() {
               </Button>
             )}
           </div>
-          <p className="text-sm text-muted-foreground mb-4">
+          <p className="text-sm text-muted-foreground mb-3">
             Import your product, component, and material master list.
           </p>
+          <label className="inline-flex items-center gap-2.5 mb-4 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-slate-300 accent-primary cursor-pointer"
+              checked={itemsPatchMode}
+              onChange={(e) => setItemsPatchMode(e.target.checked)}
+            />
+            <span className="text-sm font-medium text-slate-700">
+              Patch mode — only fill missing fields, never overwrite
+            </span>
+            {itemsPatchMode && (
+              <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-0.5">
+                Fills: description, drawing number, unit, item type, min stock, standard cost
+              </span>
+            )}
+          </label>
           <ImportTab
             title="Items"
             icon={Package}
             templateHeaders={ITEM_HEADERS}
             templateSheetName="Items Import"
             fieldMap={ITEM_FIELD_MAP}
-            requiredFields={["description", "item_type", "unit"]}
+            requiredFields={itemsPatchMode ? [] : ["description", "item_type", "unit"]}
             primaryKeyField="drawing_number"
-            onImport={importItemsBatch}
+            onImport={itemsPatchMode ? importItemsPatchBatch : importItemsBatch}
             invalidateOnComplete={[["items"]]}
-            validate={(row) => {
+            validate={itemsPatchMode ? undefined : (row) => {
               if (!row["description"]?.trim()) return "Description is required";
               return null;
             }}

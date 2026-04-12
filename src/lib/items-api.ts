@@ -646,6 +646,192 @@ export async function importItemsBatch(
   return { imported, skipped, errors, skipReasons, updated: updatedCount };
 }
 
+// ── importItemsPatchBatch ──────────────────────────────────────────────────────
+// Patch mode: match rows by item_code, only fill fields that are NULL/empty/0
+// in the database. Never overwrites existing data. New item_codes are inserted.
+export async function importItemsPatchBatch(
+  rows: Record<string, string>[],
+  rowNums: number[],
+  onProgress?: (pct: number) => void
+): Promise<{ imported: number; skipped: number; errors: string[]; skipReasons: SkipReason[]; updated?: number }> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error("Import failed: session expired. Please sign out and sign in again.");
+  const companyId = await getCompanyId();
+  if (!companyId) throw new Error("Import failed: company ID is missing. Please complete company setup.");
+
+  // Fetch existing items with all patchable fields
+  const { data: existingItems } = await supabase
+    .from("items")
+    .select("id, item_code, drawing_revision, description, drawing_number, unit, item_type, min_stock, standard_cost")
+    .eq("company_id", companyId) as { data: Array<{
+      id: string;
+      item_code: string | null;
+      drawing_revision: string | null;
+      description: string | null;
+      drawing_number: string | null;
+      unit: string | null;
+      item_type: string | null;
+      min_stock: number | null;
+      standard_cost: number | null;
+    }> | null };
+
+  const normalizeItemCode = (s: string) => s.toUpperCase().replace(/[\s.]/g, "");
+
+  // Maps for lookup
+  const byCode = new Map<string, typeof existingItems extends null ? never : NonNullable<typeof existingItems>[number]>();
+  for (const item of existingItems ?? []) {
+    if (item.item_code) {
+      byCode.set(item.item_code.toLowerCase(), item);
+      byCode.set(normalizeItemCode(item.item_code), item);
+    }
+  }
+  const byDrawing = new Map<string, NonNullable<typeof existingItems>[number]>();
+  for (const item of existingItems ?? []) {
+    if (item.drawing_revision) byDrawing.set(item.drawing_revision.toLowerCase(), item);
+  }
+
+  let imported = 0;
+  let updatedCount = 0;
+  let skipped = 0;
+  let autoCodeIndex = 1;
+  const errors: string[] = [];
+  const skipReasons: SkipReason[] = [];
+  const toInsert: any[] = [];
+  const patchOps: Array<{ id: string; patch: Record<string, unknown> }> = [];
+  const codeToRow = new Map<string, number>();
+  const VALID_TYPES = ["raw_material", "component", "sub_assembly", "bought_out", "finished_good", "product", "consumable", "service"];
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const excelRow = rowNums[i] ?? (i + 2);
+    const code = row["item_code"]?.trim() || "";
+    const drawingNum = row["drawing_revision"]?.trim() || "";
+    const desc = row["description"]?.trim() || "";
+    const displayKey = code || drawingNum || desc.slice(0, 30);
+
+    if (!code && !drawingNum && !desc) {
+      skipped++;
+      skipReasons.push({ row: excelRow, value: "", reason: "Row entirely blank — skipped" });
+      continue;
+    }
+
+    // Resolve existing item
+    let existing: NonNullable<typeof existingItems>[number] | undefined;
+    let resolvedCode = code;
+
+    if (code) {
+      existing = byCode.get(code.toLowerCase()) ?? byCode.get(normalizeItemCode(code));
+    } else if (drawingNum) {
+      existing = byDrawing.get(drawingNum.toLowerCase());
+      if (existing) resolvedCode = existing.item_code ?? drawingNum;
+      else resolvedCode = drawingNum;
+    } else {
+      const words = desc.trim().split(/\s+/).slice(0, 3)
+        .map((w) => w.toUpperCase().replace(/[^A-Z0-9]/g, "")).filter(Boolean);
+      resolvedCode = `${words.join("-")}-${String(autoCodeIndex).padStart(4, "0")}`;
+      autoCodeIndex++;
+    }
+
+    if (resolvedCode) codeToRow.set(resolvedCode.toLowerCase(), excelRow);
+
+    if (!existing) {
+      // New item — insert normally (description required for new items)
+      if (!desc) {
+        skipped++;
+        errors.push(`Row ${excelRow} (${displayKey}): Description is required for new items`);
+        skipReasons.push({ row: excelRow, value: displayKey, reason: "Description required for new items" });
+        continue;
+      }
+      toInsert.push({
+        company_id: companyId,
+        item_code: resolvedCode || null,
+        description: desc,
+        item_type: normalizeItemType(row["item_type"] || ""),
+        unit: normalizeUnit(row["unit"] || "NOS"),
+        drawing_number: drawingNum || null,
+        drawing_revision: drawingNum || null,
+        min_stock: parseFloat(row["min_stock"] || "0") || 0,
+        standard_cost: parseFloat(row["standard_cost"] || "0") || 0,
+        hsn_sac_code: row["hsn_sac_code"] || null,
+        notes: row["notes"] || null,
+      });
+    } else {
+      // Existing item — only patch NULL/empty/zero fields
+      const patch: Record<string, unknown> = {};
+
+      if (desc && (!existing.description || existing.description.trim() === "")) {
+        patch.description = desc;
+      }
+      if (drawingNum && (!existing.drawing_number || existing.drawing_number.trim() === "")) {
+        patch.drawing_number = drawingNum;
+        patch.drawing_revision = drawingNum;
+      }
+      const newUnit = normalizeUnit(row["unit"] || "");
+      if (newUnit && newUnit !== "NOS" && (!existing.unit || existing.unit.trim() === "")) {
+        patch.unit = newUnit;
+      } else if (newUnit && !existing.unit) {
+        patch.unit = newUnit;
+      }
+      const newType = normalizeItemType(row["item_type"] || "");
+      if (newType && (!existing.item_type || existing.item_type.trim() === "")) {
+        patch.item_type = newType;
+      }
+      const newMinStock = parseFloat(row["min_stock"] || "0") || 0;
+      if (newMinStock > 0 && (!existing.min_stock || existing.min_stock === 0)) {
+        patch.min_stock = newMinStock;
+      }
+      const newCost = parseFloat(row["standard_cost"] || "0") || 0;
+      if (newCost > 0 && (!existing.standard_cost || existing.standard_cost === 0)) {
+        patch.standard_cost = newCost;
+      }
+
+      if (Object.keys(patch).length > 0) {
+        patchOps.push({ id: existing.id, patch });
+      } else {
+        skipped++;
+        skipReasons.push({ row: excelRow, value: displayKey, reason: "All fields already populated — nothing to patch" });
+      }
+    }
+  }
+
+  const totalOps = toInsert.length + patchOps.length;
+
+  // Insert new items
+  for (const itemData of toInsert) {
+    try {
+      const { error } = await supabase.from("items").insert(itemData);
+      if (error) throw error;
+      imported++;
+    } catch (err: any) {
+      skipped++;
+      const isDup = err?.code === "23505" || String(err?.message ?? "").toLowerCase().includes("duplicate");
+      const reason = isDup ? "Duplicate already exists" : `DB error: ${err?.message ?? "unknown"}`;
+      const rowNum = codeToRow.get((itemData.item_code || "").toLowerCase()) ?? 0;
+      errors.push(`Row ${rowNum} (${itemData.item_code || itemData.description}): ${reason}`);
+      skipReasons.push({ row: rowNum, value: itemData.item_code || "", reason });
+    }
+    if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
+  }
+
+  // Patch existing items (one by one — each patch set is different)
+  for (const { id, patch } of patchOps) {
+    try {
+      const { error } = await supabase.from("items").update(patch).eq("id", id);
+      if (error) throw error;
+      imported++;
+      updatedCount++;
+    } catch (err: any) {
+      skipped++;
+      const reason = `DB error: ${err?.message ?? "unknown"}`;
+      errors.push(`Patch failed for item id ${id}: ${reason}`);
+      skipReasons.push({ row: 0, value: id, reason });
+    }
+    if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
+  }
+
+  return { imported, skipped, errors, skipReasons, updated: updatedCount };
+}
+
 export async function updateMinStockOverride(id: string, value: number | null) {
   const { data, error } = await supabase
     .from("items")
