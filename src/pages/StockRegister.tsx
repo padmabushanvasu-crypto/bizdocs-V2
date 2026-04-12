@@ -268,7 +268,7 @@ function StockRegisterInner() {
       result = result.filter((r) => {
         if (availability === "in_store")          return r.stock_free > 0;
         if (availability === "at_vendor")         return r.stock_in_process > 0;
-        if (availability === "in_production")     return (r.stock_in_subassembly_wip + r.stock_in_fg_wip) > 0;
+        if (availability === "in_production")     return (r.stock_in_subassembly_wip + r.stock_in_fg_wip + r.awo_qty) > 0;
         if (availability === "ready_to_dispatch") return r.stock_in_fg_ready > 0;
         return true;
       });
@@ -491,7 +491,7 @@ function StockRegisterInner() {
                 </tr>
               ) : (
                 filtered.map((row) => {
-                  const inProd = row.stock_in_subassembly_wip + row.stock_in_fg_wip;
+                  const inProd = row.stock_in_subassembly_wip + row.stock_in_fg_wip + row.awo_qty;
                   const total =
                     row.stock_free +
                     row.stock_in_process +

@@ -103,6 +103,8 @@ export interface StockStatusRow {
   stock_in_subassembly_wip: number;
   stock_in_fg_wip: number;
   stock_in_fg_ready: number;
+  // Calculated from active AWOs — not stored in DB, computed in fetchStockStatus
+  awo_qty: number;
 }
 
 export interface ItemFilters {
@@ -247,6 +249,54 @@ export async function fetchStockStatus() {
     .eq("status", "active")
     .order("item_code", { ascending: true });
   if (error) throw error;
+
+  // ── Active AWO overlay ────────────────────────────────────────────────────
+  // Two separate queries because assembly_work_orders → bom_lines have no
+  // direct FK (both reference items.id independently), so nested select fails.
+  // Column is quantity_to_build (not qty_to_build).
+  // Valid statuses: draft | pending_materials | in_progress | complete | cancelled
+  console.log("[fetchStockStatus] querying AWOs for company_id:", companyId);
+  const { data: awoData, error: awoError } = await (supabase as any)
+    .from("assembly_work_orders")
+    .select("id, item_id, quantity_to_build")
+    .eq("company_id", companyId)
+    .in("status", ["pending_materials", "in_progress"]);
+
+  if (awoError) console.error("[fetchStockStatus] AWO query error:", awoError);
+
+  const activeAwos = (awoData ?? []) as Array<{ id: string; item_id: string; quantity_to_build: number }>;
+  console.log("[fetchStockStatus] activeAwos:", activeAwos);
+
+  // For each active AWO, fetch its BOM lines (parent_item_id = item being built, child_item_id = component)
+  let bomLines: Array<{ parent_item_id: string; child_item_id: string; quantity: number }> = [];
+  if (activeAwos.length > 0) {
+    const awoItemIds = [...new Set(activeAwos.map((a) => a.item_id))];
+    const { data: bomData, error: bomError } = await (supabase as any)
+      .from("bom_lines")
+      .select("parent_item_id, child_item_id, quantity")
+      .eq("company_id", companyId)
+      .in("parent_item_id", awoItemIds);
+    if (bomError) console.error("[fetchStockStatus] bom_lines query error:", bomError);
+    bomLines = (bomData ?? []) as typeof bomLines;
+    console.log("[fetchStockStatus] bomLines for active AWOs:", bomLines);
+  }
+
+  // Build a per-item awo_qty map:
+  //   - For the sub-assembly itself: add quantity_to_build
+  //   - For each BOM component: add (bom_qty × quantity_to_build)
+  const awoQtyMap = new Map<string, number>();
+  for (const awo of activeAwos) {
+    const qtyToBuild = awo.quantity_to_build ?? 0;
+    // Sub-assembly being built
+    awoQtyMap.set(awo.item_id, (awoQtyMap.get(awo.item_id) ?? 0) + qtyToBuild);
+    // Components consumed by the AWO
+    for (const line of bomLines.filter((l) => l.parent_item_id === awo.item_id)) {
+      const componentQty = (line.quantity ?? 0) * qtyToBuild;
+      awoQtyMap.set(line.child_item_id, (awoQtyMap.get(line.child_item_id) ?? 0) + componentQty);
+    }
+  }
+  console.log("[fetchStockStatus] awoQtyMap:", Object.fromEntries(awoQtyMap));
+
   // Compute stock_status and effective_min_stock client-side (same logic as the view)
   const rows = (data ?? []).map((item: any) => {
     const effectiveMin = item.min_stock_override ?? item.min_stock ?? 0;
@@ -258,6 +308,7 @@ export async function fetchStockStatus() {
       effective_min_stock: effectiveMin,
       stock_status,
       stock_alert_level: item.stock_alert_level ?? 'healthy',
+      awo_qty: awoQtyMap.get(item.id) ?? 0,
     } as StockStatusRow;
   });
   return rows;
