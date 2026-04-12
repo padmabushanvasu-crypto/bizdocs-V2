@@ -124,8 +124,8 @@ export default function FinishedGoodWorkOrders() {
   });
 
   const { data: itemsData } = useQuery({
-    queryKey: ["items", "finished_good_or_sub"],
-    queryFn: () => fetchItems({ types: ["finished_good", "sub_assembly"], pageSize: 200 }),
+    queryKey: ["items", "finished_good"],
+    queryFn: () => fetchItems({ types: ["finished_good"], pageSize: 200 }),
     enabled: dialogOpen,
   });
 
