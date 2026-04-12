@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect, useCallback } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { Users, ChevronLeft, AlertCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,16 +10,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { getCompanyId } from "@/lib/auth-helpers";
 import type { AppRole } from "@/lib/role-access";
 
-// last_sign_in_at lives on auth.users, not on the profiles table.
-// Profiles columns: id, full_name, display_name, email, role, company_id,
-//                   is_active, tour_completed, created_at, updated_at
 interface ProfileRow {
   id: string;
   full_name: string | null;
-  display_name: string | null;
   email: string | null;
   role: string | null;
   created_at: string;
@@ -35,39 +30,65 @@ const ROLE_OPTIONS: { value: AppRole; label: string }[] = [
   { value: "finance",       label: "Finance" },
 ];
 
-async function fetchProfiles(): Promise<ProfileRow[]> {
-  const companyId = await getCompanyId();
-  if (!companyId) return [];
-  const { data, error } = await (supabase as any)
-    .from("profiles")
-    .select("id, full_name, display_name, email, role, created_at")
-    .eq("company_id", companyId)
-    .order("created_at", { ascending: true });
-  if (error) throw error;
-  return data ?? [];
-}
-
 function displayName(profile: ProfileRow): string {
-  return profile.display_name || profile.full_name || profile.email || "—";
+  return profile.full_name || profile.email || "—";
 }
 
 export default function UserManagement() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuth();
-  const queryClient = useQueryClient();
 
+  const [profiles, setProfiles] = useState<ProfileRow[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | false>(false);
   const [pendingRoles, setPendingRoles] = useState<Record<string, AppRole>>({});
 
-  const {
-    data: profiles = [],
-    isLoading,
-    error,
-    refetch,
-  } = useQuery({
-    queryKey: ["user-management-profiles"],
-    queryFn: fetchProfiles,
-  });
+  const loadUsers = useCallback(async () => {
+    console.log("fetching users...");
+    setIsLoading(true);
+    setFetchError(false);
+
+    await supabase.auth.getUser(); // refreshes the session if token is expiring
+    const { data: { session } } = await supabase.auth.getSession();
+    const accessToken = session?.access_token;
+
+    console.log("session:", session ? "found" : "null");
+    console.log("accessToken:", accessToken ? accessToken.substring(0, 20) : "null");
+
+    if (!accessToken) {
+      console.warn("No access token — cannot fetch users");
+      setFetchError("Failed to load team members");
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-company-users`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+      console.log("response status:", response.status);
+      const text = await response.text();
+      console.log("response body:", text);
+      const { users } = JSON.parse(text);
+      setProfiles(users ?? []);
+    } catch (err) {
+      console.error("fetch error:", err);
+      setFetchError("Failed to load team members");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
 
   const updateRoleMutation = useMutation({
     mutationFn: async ({ userId, role }: { userId: string; role: AppRole }) => {
@@ -84,7 +105,8 @@ export default function UserManagement() {
         delete next[userId];
         return next;
       });
-      queryClient.invalidateQueries({ queryKey: ["user-management-profiles"] });
+      // Refresh the list so the saved role reflects in the table
+      loadUsers();
     },
     onError: () => {
       toast({ title: "Failed to update role", variant: "destructive" });
@@ -168,7 +190,7 @@ export default function UserManagement() {
                     </tr>
                   ))}
                 </>
-              ) : error ? (
+              ) : fetchError ? (
                 <tr>
                   <td colSpan={4} className="px-3 py-12 text-center">
                     <div className="flex flex-col items-center gap-3">
@@ -179,7 +201,7 @@ export default function UserManagement() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => refetch()}
+                        onClick={loadUsers}
                         className="gap-1.5"
                       >
                         <RefreshCw className="h-3.5 w-3.5" /> Retry

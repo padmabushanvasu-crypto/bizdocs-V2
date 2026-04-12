@@ -453,7 +453,7 @@ export function AppSidebar() {
   // Queries
   const { data: fatStats } = useQuery({
     queryKey: ["fat-stats-sidebar"],
-    queryFn: fetchFatStats,
+    queryFn: async () => { try { return await fetchFatStats(); } catch { return null; } },
     refetchInterval: 60000,
   });
 
