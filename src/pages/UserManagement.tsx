@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { Users, ChevronLeft, AlertCircle, RefreshCw } from "lucide-react";
+import { Users, ChevronLeft, AlertCircle, RefreshCw, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -34,15 +35,34 @@ function displayName(profile: ProfileRow): string {
   return profile.full_name || profile.email || "—";
 }
 
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
 export default function UserManagement() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuth();
 
+  // ── Table state ────────────────────────────────────────────────────────────
   const [profiles, setProfiles] = useState<ProfileRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | false>(false);
   const [pendingRoles, setPendingRoles] = useState<Record<string, AppRole>>({});
+
+  // ── Add member form state ──────────────────────────────────────────────────
+  const [addEmail, setAddEmail] = useState("");
+  const [addRole, setAddRole] = useState<AppRole | "">("");
+  const [addValidationError, setAddValidationError] = useState("");
+  const [isAssigning, setIsAssigning] = useState(false);
+  const [isInviting, setIsInviting] = useState(false);
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  const getAccessToken = useCallback(async (): Promise<string | null> => {
+    await supabase.auth.getUser();
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token ?? null;
+  }, []);
 
   const loadUsers = useCallback(async () => {
     console.log("fetching users...");
@@ -90,6 +110,112 @@ export default function UserManagement() {
     loadUsers();
   }, [loadUsers]);
 
+  // ── Validate add-member form ───────────────────────────────────────────────
+  const validateAddForm = (): boolean => {
+    if (!addEmail.trim() || !isValidEmail(addEmail)) {
+      setAddValidationError("Enter a valid email address.");
+      return false;
+    }
+    if (!addRole) {
+      setAddValidationError("Select a role.");
+      return false;
+    }
+    setAddValidationError("");
+    return true;
+  };
+
+  // ── Assign Role (existing user) ────────────────────────────────────────────
+  const handleAssignRole = async () => {
+    if (!validateAddForm()) return;
+    setIsAssigning(true);
+    try {
+      const accessToken = await getAccessToken();
+      if (!accessToken) throw new Error("Not authenticated");
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/assign-member`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ email: addEmail.trim(), role: addRole }),
+        },
+      );
+
+      const body = await response.json().catch(() => ({})) as { error?: string };
+
+      if (!response.ok) {
+        const msg = body.error ?? "Failed to assign role";
+        if (msg.toLowerCase().includes("not found")) {
+          toast({
+            title: "No account found for this email. Use Send Invite instead.",
+            variant: "destructive",
+          });
+        } else {
+          toast({ title: msg, variant: "destructive" });
+        }
+        return;
+      }
+
+      toast({ title: "Role assigned successfully" });
+      setAddEmail("");
+      setAddRole("");
+      loadUsers();
+    } catch (err: any) {
+      toast({ title: err?.message ?? "Failed to assign role", variant: "destructive" });
+    } finally {
+      setIsAssigning(false);
+    }
+  };
+
+  // ── Send Invite (new user) ─────────────────────────────────────────────────
+  const handleSendInvite = async () => {
+    if (!validateAddForm()) return;
+    setIsInviting(true);
+    try {
+      const accessToken = await getAccessToken();
+      if (!accessToken) throw new Error("Not authenticated");
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/invite-member`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ email: addEmail.trim(), role: addRole }),
+        },
+      );
+
+      const body = await response.json().catch(() => ({})) as { error?: string };
+
+      if (!response.ok) {
+        const msg = body.error ?? "Failed to send invite";
+        if (msg.toLowerCase().includes("already registered")) {
+          toast({
+            title: "This email already has an account. Use Assign Role instead.",
+            variant: "destructive",
+          });
+        } else {
+          toast({ title: msg, variant: "destructive" });
+        }
+        return;
+      }
+
+      toast({ title: `Invite sent to ${addEmail.trim()}` });
+      setAddEmail("");
+      setAddRole("");
+    } catch (err: any) {
+      toast({ title: err?.message ?? "Failed to send invite", variant: "destructive" });
+    } finally {
+      setIsInviting(false);
+    }
+  };
+
+  // ── Existing-user role update (table) ─────────────────────────────────────
   const updateRoleMutation = useMutation({
     mutationFn: async ({ userId, role }: { userId: string; role: AppRole }) => {
       const { error } = await (supabase as any)
@@ -105,7 +231,6 @@ export default function UserManagement() {
         delete next[userId];
         return next;
       });
-      // Refresh the list so the saved role reflects in the table
       loadUsers();
     },
     onError: () => {
@@ -129,6 +254,8 @@ export default function UserManagement() {
     }
   };
 
+  const anyActionLoading = isAssigning || isInviting;
+
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-5xl">
       <button
@@ -147,10 +274,78 @@ export default function UserManagement() {
         </div>
       </div>
 
-      <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 w-fit">
-        To invite new users, use the Supabase dashboard.
-      </p>
+      {/* ── Add Team Member card ── */}
+      <div className="paper-card space-y-3">
+        <p className="text-sm font-semibold text-slate-800">Add Team Member</p>
 
+        <div className="flex flex-col sm:flex-row gap-2">
+          <div className="flex-1 min-w-0">
+            <Input
+              type="email"
+              placeholder="Enter email address"
+              value={addEmail}
+              onChange={(e) => {
+                setAddEmail(e.target.value);
+                if (addValidationError) setAddValidationError("");
+              }}
+              className="h-9 text-sm"
+            />
+          </div>
+
+          <div className="w-full sm:w-44">
+            <Select
+              value={addRole}
+              onValueChange={(val) => {
+                setAddRole(val as AppRole);
+                if (addValidationError) setAddValidationError("");
+              }}
+            >
+              <SelectTrigger className="h-9 text-sm">
+                <SelectValue placeholder="Select role" />
+              </SelectTrigger>
+              <SelectContent>
+                {ROLE_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex gap-2 flex-shrink-0">
+            <Button
+              size="sm"
+              className="h-9 px-4 text-sm"
+              disabled={anyActionLoading}
+              onClick={handleAssignRole}
+            >
+              {isAssigning && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
+              Assign Role
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 px-4 text-sm"
+              disabled={anyActionLoading}
+              onClick={handleSendInvite}
+            >
+              {isInviting && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
+              Send Invite
+            </Button>
+          </div>
+        </div>
+
+        {addValidationError && (
+          <p className="text-xs text-red-500">{addValidationError}</p>
+        )}
+
+        <p className="text-xs text-slate-400">
+          Use Send Invite for new users or Assign Role for existing BizDocs users.
+        </p>
+      </div>
+
+      {/* ── Team members table ── */}
       <div className="paper-card !p-0">
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
@@ -217,7 +412,7 @@ export default function UserManagement() {
                       No team members found
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      To invite new users, use the Supabase dashboard.
+                      Use Send Invite for new users or Assign Role for existing BizDocs users.
                     </p>
                   </td>
                 </tr>
