@@ -60,7 +60,7 @@ serve(async (_req) => {
 
       const { data: openPOs } = await supabase
         .from("purchase_orders")
-        .select("po_number, vendor_name, grand_total, delivery_date, po_date, status")
+        .select("po_number, vendor_name, grand_total, delivery_date, po_date, status, parties(email, phone)")
         .eq("company_id", companyId)
         .not("status", "in", '("cancelled","closed","received")')
         .order("delivery_date", { ascending: true, nullsLast: true });
@@ -96,11 +96,13 @@ serve(async (_req) => {
         const flag = typeof daysRemaining === "number"
           ? (daysRemaining < 0 ? "⚠ OVERDUE" : daysRemaining <= 7 ? "⚑ Due Soon" : "")
           : "";
-        return `${po.po_number}\t${po.vendor_name ?? ""}\t${po.delivery_date ?? "—"}\t${daysRemaining}\t${po.grand_total ?? 0}\t${po.status}\t${flag}`;
+        const vendorEmail = po.parties?.email ?? "";
+        const vendorPhone = po.parties?.phone ?? "";
+        return `${po.po_number}\t${po.vendor_name ?? ""}\t${vendorEmail}\t${vendorPhone}\t${po.delivery_date ?? "—"}\t${daysRemaining}\t${po.grand_total ?? 0}\t${po.status}\t${flag}`;
       });
       csvSheets.push(
         `=== SHEET 2: Open POs ===\n` +
-        `PO Number\tVendor\tDue Date\tDays Remaining\tValue (INR)\tStatus\tAlert\n` +
+        `PO Number\tVendor\tVendor Email\tVendor Phone\tDue Date\tDays Remaining\tValue (INR)\tStatus\tAlert\n` +
         s2rows.join("\n")
       );
 
@@ -109,11 +111,13 @@ serve(async (_req) => {
         const daysOverdue = Math.abs(
           Math.ceil((new Date(po.delivery_date).getTime() - now.getTime()) / 86400000)
         );
-        return `${po.po_number}\t${po.vendor_name ?? ""}\t${po.delivery_date}\t${daysOverdue}\t${po.grand_total ?? 0}`;
+        const vendorEmail = po.parties?.email ?? "";
+        const vendorPhone = po.parties?.phone ?? "";
+        return `${po.po_number}\t${po.vendor_name ?? ""}\t${vendorEmail}\t${vendorPhone}\t${po.delivery_date}\t${daysOverdue}\t${po.grand_total ?? 0}`;
       });
       csvSheets.push(
         `=== SHEET 3: Overdue POs ===\n` +
-        `PO Number\tVendor\tDue Date\tDays Overdue\tValue (INR)\n` +
+        `PO Number\tVendor\tVendor Email\tVendor Phone\tDue Date\tDays Overdue\tValue (INR)\n` +
         s3rows.join("\n")
       );
 
