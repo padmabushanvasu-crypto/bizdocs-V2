@@ -865,16 +865,39 @@ export async function completeAssemblyWorkOrder(id: string): Promise<void> {
       } catch (e) { console.error('[production] output ledger failed:', e); }
     }
 
-    // Update serial number status if present
+    // Create or update serial_numbers row
+    // awo.item_code and awo.item_description come from the SELECT * on assembly_work_orders
     if (awo.serial_number) {
       try {
-        await (supabase as any)
+        const { data: existingSn } = await (supabase as any)
           .from("serial_numbers")
-          .update({ status: 'in_stock' })
+          .select("id")
           .eq("serial_number", awo.serial_number)
-          .eq("company_id", companyId);
-      } catch {
-        // ignore
+          .eq("company_id", companyId)
+          .maybeSingle();
+
+        if (existingSn?.id) {
+          // Row exists — update its status
+          await (supabase as any)
+            .from("serial_numbers")
+            .update({ status: 'in_stock' })
+            .eq("id", existingSn.id);
+        } else {
+          // Row missing — insert it now
+          const { error: snErr } = await (supabase as any)
+            .from("serial_numbers")
+            .insert({
+              serial_number: awo.serial_number,
+              company_id: companyId,
+              item_id: awo.item_id ?? null,
+              item_code: awo.item_code ?? null,
+              item_description: awo.item_description ?? null,
+              status: 'in_stock',
+            });
+          if (snErr) console.error('[production] serial_numbers insert failed:', snErr);
+        }
+      } catch (e) {
+        console.error('[production] serial_numbers upsert failed:', e);
       }
     }
   }
