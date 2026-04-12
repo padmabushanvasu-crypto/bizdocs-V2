@@ -1,13 +1,23 @@
 import { useState, useEffect, useCallback } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { Users, ChevronLeft, AlertCircle, RefreshCw, Loader2 } from "lucide-react";
+import { Users, ChevronLeft, AlertCircle, RefreshCw, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -251,6 +261,46 @@ export default function UserManagement() {
       });
     } else {
       setPendingRoles((prev) => ({ ...prev, [userId]: newRole }));
+    }
+  };
+
+  // ── Remove member state ────────────────────────────────────────────────────
+  const [removeTarget, setRemoveTarget] = useState<{ id: string; name: string } | null>(null);
+  const [isRemoving, setIsRemoving] = useState(false);
+
+  const handleConfirmRemove = async () => {
+    if (!removeTarget) return;
+    setIsRemoving(true);
+    try {
+      const accessToken = await getAccessToken();
+      if (!accessToken) throw new Error("Not authenticated");
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/remove-member`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ userId: removeTarget.id }),
+        },
+      );
+
+      const body = await response.json().catch(() => ({})) as { error?: string };
+
+      if (!response.ok) {
+        toast({ title: body.error ?? "Failed to remove member", variant: "destructive" });
+        return;
+      }
+
+      toast({ title: `${removeTarget.name} has been removed` });
+      setRemoveTarget(null);
+      loadUsers();
+    } catch (err: any) {
+      toast({ title: err?.message ?? "Failed to remove member", variant: "destructive" });
+    } finally {
+      setIsRemoving(false);
     }
   };
 
@@ -506,21 +556,48 @@ export default function UserManagement() {
                       </td>
 
                       <td className="px-3 py-2.5 border-b border-slate-100 text-center">
-                        {hasChanged && (
-                          <Button
-                            size="sm"
-                            className="h-7 text-xs px-3"
-                            disabled={updateRoleMutation.isPending}
-                            onClick={() =>
-                              updateRoleMutation.mutate({
-                                userId: profile.id,
-                                role: pendingRole,
-                              })
-                            }
-                          >
-                            Save
-                          </Button>
-                        )}
+                        <div className="flex items-center justify-center gap-1.5">
+                          {hasChanged && (
+                            <Button
+                              size="sm"
+                              className="h-7 text-xs px-3"
+                              disabled={updateRoleMutation.isPending}
+                              onClick={() =>
+                                updateRoleMutation.mutate({
+                                  userId: profile.id,
+                                  role: pendingRole,
+                                })
+                              }
+                            >
+                              {updateRoleMutation.isPending ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                "Save"
+                              )}
+                            </Button>
+                          )}
+                          {!isCurrentUser && !hasChanged && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                  disabled={updateRoleMutation.isPending}
+                                  onClick={() =>
+                                    setRemoveTarget({
+                                      id: profile.id,
+                                      name: displayName(profile),
+                                    })
+                                  }
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent side="top">
+                                <p className="text-xs">Remove from company</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -530,6 +607,36 @@ export default function UserManagement() {
           </table>
         </div>
       </div>
+
+      {/* ── Remove member confirmation dialog ── */}
+      <AlertDialog
+        open={!!removeTarget}
+        onOpenChange={(open) => { if (!open) setRemoveTarget(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove team member?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove <strong>{removeTarget?.name}</strong> from your company. They will
+              lose access immediately. Their BizDocs account is not deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isRemoving}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+              disabled={isRemoving}
+              onClick={handleConfirmRemove}
+            >
+              {isRemoving ? (
+                <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Removing…</>
+              ) : (
+                "Remove"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
