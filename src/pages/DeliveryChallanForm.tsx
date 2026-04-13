@@ -445,9 +445,11 @@ export default function DeliveryChallanForm() {
             parent_dc_line_id: (i as any).parent_dc_line_id ?? null,
             total_stages: selectedStage ? routeForLine.length : null,
             route_id: selectedStageId ?? null,
-            jigs_sent: jigsForLine.length > 0
-              ? jigsForLine.filter(j => jigsChecked.includes(j.id)).map(j => ({ id: j.id, jig_number: j.jig_number }))
-              : null,
+            jigs_sent: (() => {
+              const selected = jigsForLine.filter(j => jigsChecked.includes(j.id));
+              if (selected.length === 0) return null;
+              return selected.map(j => j.jig_number || j.id).join(', ');
+            })(),
           };
         });
 

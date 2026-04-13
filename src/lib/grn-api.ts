@@ -48,8 +48,8 @@ export interface GRNLineItem {
   stage2_approved_by?: string | null;
   stage2_date?: string | null;
   stage2_complete?: boolean;
-  jigs_sent?: any[] | null;
-  jigs_returned?: any[] | null;
+  jigs_sent?: string | null;
+  jigs_returned?: string | null;
   identity_matched_qty?: number;
   identity_not_matched_qty?: number;
   // Stage 1 — Quantitative
@@ -770,6 +770,8 @@ export async function createGrnFromDC(data: CreateGrnFromDCData): Promise<GRN> {
     stage1_complete: false,
     stage2_complete: false,
     jigs_sent: item.jigs_sent ?? null,
+    jigs_returned: null,
+    jig_confirmed: false,
     nature_of_process: item.nature_of_process ?? null,
     unit_rate: item.rate ?? null,
   }));
@@ -979,10 +981,18 @@ export async function saveQuantitativeStage(
       if (grnMeta.linked_dc_id) {
         await recalculateDCStatusFromGRNReceipts(grnMeta.linked_dc_id);
         // CHANGE 4: material received back from vendor — advance linked job card step
-        // to material_returned so the timeline shows an intermediate "returned" state
+        // to material_returned so the timeline shows an intermediate "returned" state.
+        // Also record job_work_charges from the DC line item total (provisional — refined at Stage 2).
+        const { data: dcLines1 } = await (supabase as any)
+          .from('dc_line_items')
+          .select('amount')
+          .eq('dc_id', grnMeta.linked_dc_id);
+        const provisionalCharge = ((dcLines1 ?? []) as any[]).reduce((s: number, l: any) => s + (Number(l.amount) || 0), 0);
+        const stepUpdate: Record<string, unknown> = { status: 'material_returned' };
+        if (provisionalCharge > 0) stepUpdate.job_work_charges = provisionalCharge;
         await (supabase as any)
           .from('job_card_steps')
-          .update({ status: 'material_returned' })
+          .update(stepUpdate)
           .eq('outward_dc_id', grnMeta.linked_dc_id)
           .eq('status', 'in_progress');
       }
@@ -1104,14 +1114,24 @@ export async function saveQualityStage(
         .maybeSingle();
 
       if (linkedStep) {
-        // Mark this step as done (QC cleared) and record final confirmed qty
+        // Fetch DC line items to compute job_work_charges = rate × qty_accepted
+        const { data: dcLines2 } = await (supabase as any)
+          .from("dc_line_items")
+          .select("rate")
+          .eq("dc_id", grnHeader.linked_dc_id);
+        const dcRate = Number((dcLines2 as any[])?.[0]?.rate ?? 0);
+        const refinedCharge = dcRate > 0 ? dcRate * totalConforming : 0;
+
+        // Mark this step as done (QC cleared) and record final confirmed qty + job work charge
+        const doneUpdate: Record<string, unknown> = {
+          status: "done",
+          completed_at: new Date().toISOString(),
+          actual_qty: totalConforming,
+        };
+        if (refinedCharge > 0) doneUpdate.job_work_charges = refinedCharge;
         await (supabase as any)
           .from("job_card_steps")
-          .update({
-            status: "done",
-            completed_at: new Date().toISOString(),
-            actual_qty: totalConforming,
-          })
+          .update(doneUpdate)
           .eq("id", linkedStep.id);
 
         // Find all steps that are not yet finished (pending or in_progress, excluding pre_bizdocs)
