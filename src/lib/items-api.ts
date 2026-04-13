@@ -684,12 +684,24 @@ export async function importItemsPatchBatch(
 
   type ExistingItem = NonNullable<typeof existingItems>[number];
 
-  // Two separate maps to keep size = actual item count (not doubled by dual keys)
+  // Deduplicate by item_code — DB may contain duplicate rows if items is a view or re-imports occurred
+  const seen = new Set<string>();
+  const uniqueItems = (existingItems ?? []).filter(item => {
+    if (!item.item_code) return true; // keep items without item_code (matched by drawing)
+    const key = item.item_code.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  console.log('[patch] DB rows fetched:', existingItems?.length ?? 0, '| unique by item_code:', uniqueItems.length);
+
+  // Two separate maps so size = actual unique item count
   const byCode = new Map<string, ExistingItem>();       // key: item_code.toLowerCase()
   const byCodeNorm = new Map<string, ExistingItem>();   // key: normalizeItemCode(item_code)
   const byDrawing = new Map<string, ExistingItem>();    // key: drawing_revision.toLowerCase()
 
-  for (const item of existingItems ?? []) {
+  for (const item of uniqueItems) {
     if (item.item_code) {
       byCode.set(item.item_code.toLowerCase(), item);
       byCodeNorm.set(normalizeItemCode(item.item_code), item);
@@ -697,7 +709,7 @@ export async function importItemsPatchBatch(
     if (item.drawing_revision) byDrawing.set(item.drawing_revision.toLowerCase(), item);
   }
 
-  console.log('[patch] DB items loaded:', existingItems?.length ?? 0, '| byCode size:', byCode.size);
+  console.log('[patch] byCode size:', byCode.size);
 
   let imported = 0;
   let updatedCount = 0;
@@ -750,6 +762,7 @@ export async function importItemsPatchBatch(
 
     if (i < 3) {
       console.log(`[patch] row ${i}: existing=${existing ? existing.item_code : 'NOT FOUND'} | byCode size=${byCode.size}`);
+      console.log(`[patch] row ${i}: existing min_stock=${existing?.min_stock} (${typeof existing?.min_stock}) | will patch: ${!existing?.min_stock}`);
     }
 
     if (!existing) {
@@ -804,6 +817,10 @@ export async function importItemsPatchBatch(
       const newCost = parseFloat(row["standard_cost"] as string) || 0;
       if (newCost > 0 && (!existing.standard_cost && existing.standard_cost !== undefined)) {
         patch.standard_cost = newCost;
+      }
+
+      if (i < 3) {
+        console.log(`[patch] row ${i}: patch object for ${existing.item_code}:`, JSON.stringify(patch));
       }
 
       if (Object.keys(patch).length > 0) {
