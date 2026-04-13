@@ -1046,6 +1046,35 @@ export async function fetchWipSummary(): Promise<WipSummary> {
   };
 }
 
+// ── Completed steps for item (used by DC form + JC creation dialog) ──────────
+
+/**
+ * Returns the set of step_numbers that are 'done' or 'material_returned'
+ * on the most recent open job card for the given item.
+ * Returns an empty Set if no open job card exists.
+ */
+export async function fetchCompletedStepsForItem(itemId: string): Promise<Set<number>> {
+  const { data: jc } = await (supabase as any)
+    .from("job_cards")
+    .select("id")
+    .eq("item_id", itemId)
+    .not("status", "in", "(completed,cancelled)")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!jc?.id) return new Set();
+  const { data: steps } = await (supabase as any)
+    .from("job_card_steps")
+    .select("step_number")
+    .eq("job_card_id", jc.id)
+    .in("status", ["done", "material_returned"]);
+  const result = new Set<number>();
+  for (const s of steps ?? []) {
+    if (s.step_number != null) result.add(s.step_number);
+  }
+  return result;
+}
+
 // ── Aliases for renamed exports ──────────────────────────────────────────────
 export const updateJobWorkStatus = updateJobCardStatus;
 export const issueJobWorkMaterial = issueJobCardMaterial;

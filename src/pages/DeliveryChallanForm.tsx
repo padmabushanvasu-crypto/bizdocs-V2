@@ -24,9 +24,9 @@ import {
   updateDeliveryChallan,
   issueDeliveryChallan,
   fetchBomStagesForItemDC,
-  fetchComponentProcessingLog,
   type DCLineItem,
 } from "@/lib/delivery-challans-api";
+import { fetchCompletedStepsForItem } from "@/lib/job-works-api";
 import { getCompanyId } from "@/lib/auth-helpers";
 import { JobCardCreationDialog } from "@/components/JobCardCreationDialog";
 import { fetchProcessingRoute, fetchProcessingRouteAll, fetchJigsForDrawing, fetchStageVendors, fetchMouldItemsForDrawing, type ProcessingRoute, type JigMasterRecord, type MouldItem } from "@/lib/dc-intelligence-api";
@@ -150,7 +150,7 @@ export default function DeliveryChallanForm() {
   const [checkedBy, setCheckedBy] = useState("");
   // BOM stages state
   const [lineBomStages, setLineBomStages] = useState<Map<number, any[]>>(new Map());
-  const [lineProcessingLog, setLineProcessingLog] = useState<Map<number, any>>(new Map());
+  const [lineCompletedStages, setLineCompletedStages] = useState<Map<number, Set<number>>>(new Map());
   const [lineStageSelection, setLineStageSelection] = useState<Map<number, number | 'manual'>>(new Map());
   const [itemIdByIndex, setItemIdByIndex] = useState<Map<number, string>>(new Map());
   // Phase 15: processing routes and jigs per line
@@ -773,15 +773,9 @@ export default function DeliveryChallanForm() {
                           setLineBomStages(prev => { const m = new Map(prev); m.set(index, stages); return m; });
                           setLineStageSelection(prev => { const m = new Map(prev); m.delete(index); return m; });
                         });
-                        // Load processing log and auto-select next pending stage
-                        getCompanyId().then(cid => {
-                          fetchComponentProcessingLog(cid, selectedItem.id).then(log => {
-                            setLineProcessingLog(prev => { const m = new Map(prev); if (log) m.set(index, log); else m.delete(index); return m; });
-                            if (log) {
-                              const nextStage = ((log as any).current_stage ?? 0) + 1;
-                              setLineStageSelection(prev => { const m = new Map(prev); m.set(index, nextStage); return m; });
-                            }
-                          });
+                        // Load completed stages from open job card's steps
+                        fetchCompletedStepsForItem(selectedItem.id).then(completed => {
+                          setLineCompletedStages(prev => { const m = new Map(prev); m.set(index, completed); return m; });
                         });
                         // Phase 15: Load processing routes for this item
                         fetchProcessingRoute(selectedItem.id).then(routes => {
@@ -935,24 +929,19 @@ export default function DeliveryChallanForm() {
                           >
                             <option value="">Select processing stage…</option>
                             {(lineBomStages.get(index) ?? []).map((stage: any) => {
-                              const log = lineProcessingLog.get(index) as any;
-                              const currentStage = log?.current_stage ?? 0;
-                              const isCompleted = stage.stage_number <= currentStage;
+                              const isCompleted = lineCompletedStages.get(index)?.has(stage.stage_number) ?? false;
                               return (
                                 <option key={stage.stage_number} value={stage.stage_number} disabled={isCompleted}>
-                                  Stage {stage.stage_number} — {stage.process_name}{stage.vendor_name ? ` (${stage.vendor_name})` : ''}{isCompleted ? ' ✓ (completed)' : ''}
+                                  {isCompleted ? '✓ ' : ''}Stage {stage.stage_number} — {stage.process_name}{stage.vendor_name ? ` (${stage.vendor_name})` : ''}{isCompleted ? ' (completed)' : ''}
                                 </option>
                               );
                             })}
                             <option value="manual">Manual entry (no BOM stage)</option>
                           </select>
                         </div>
-                        {lineProcessingLog.get(index) && (
+                        {(lineCompletedStages.get(index)?.size ?? 0) > 0 && (
                           <div className="text-xs text-slate-500 self-end pb-1">
-                            Last status: <span className="font-medium">{(lineProcessingLog.get(index) as any)?.current_status?.replace(/_/g, ' ')}</span>
-                            {' — '}
-                            {(lineProcessingLog.get(index) as any)?.accepted_qty ?? 0} accepted,
-                            Stage {(lineProcessingLog.get(index) as any)?.current_stage ?? 0} of {(lineProcessingLog.get(index) as any)?.total_stages ?? 0} complete
+                            {lineCompletedStages.get(index)!.size} stage{lineCompletedStages.get(index)!.size !== 1 ? 's' : ''} already completed on open job card
                           </div>
                         )}
                         {(location.state as any)?.prefill?.line_items?.[index]?.is_rework && (

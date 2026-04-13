@@ -1,7 +1,8 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, AlertTriangle, TrendingUp, CheckCircle2, Clock, Circle } from "lucide-react";
+import { ChevronLeft, AlertTriangle, TrendingUp, CheckCircle2, Clock, Circle, Wrench, ExternalLink } from "lucide-react";
 import { fetchJobWork, type JobWork, type JobWorkStep } from "@/lib/job-works-api";
+import { fetchProcessingRouteAll, type ProcessingRoute } from "@/lib/dc-intelligence-api";
 import { format } from "date-fns";
 
 // ── Vertical timeline step ────────────────────────────────────────────────────
@@ -124,6 +125,134 @@ function TimelineStep({
             )}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Production Route row ──────────────────────────────────────────────────────
+
+function RouteRow({
+  route,
+  step,
+  isLast,
+}: {
+  route: ProcessingRoute;
+  step: JobWorkStep | undefined;
+  isLast: boolean;
+}) {
+  const isExternal = route.stage_type === "external";
+
+  // Determine visual state from the linked job_card_step (external only)
+  const done      = step?.status === "done";
+  const matRet    = step?.status === "material_returned";
+  const active    = step?.status === "in_progress";
+  const preBiz    = step?.status === "pre_bizdocs";
+  const pending   = step?.status === "pending";
+  const tracked   = !!step;
+
+  let iconBg: string;
+  let icon: React.ReactNode;
+  let lineColor: string;
+
+  if (!isExternal) {
+    // Internal — always grey
+    iconBg = "bg-slate-100 border border-slate-200";
+    icon = <Wrench className="h-3.5 w-3.5 text-slate-400" />;
+    lineColor = "bg-slate-100";
+  } else if (done) {
+    iconBg = "bg-emerald-600";
+    icon = <CheckCircle2 className="h-4 w-4 text-white" />;
+    lineColor = "bg-emerald-300";
+  } else if (matRet) {
+    iconBg = "bg-blue-500";
+    icon = <Clock className="h-3.5 w-3.5 text-white" />;
+    lineColor = "bg-blue-200";
+  } else if (active) {
+    iconBg = "bg-amber-500";
+    icon = <span className="w-2 h-2 rounded-full bg-white animate-pulse block" />;
+    lineColor = "bg-amber-200";
+  } else if (preBiz) {
+    iconBg = "bg-slate-200";
+    icon = <CheckCircle2 className="h-4 w-4 text-slate-400" />;
+    lineColor = "bg-slate-200";
+  } else {
+    // pending or untracked external
+    iconBg = "bg-white border-2 border-slate-300";
+    icon = <ExternalLink className="h-3 w-3 text-slate-400" />;
+    lineColor = "bg-slate-100";
+  }
+
+  let statusText: string | null = null;
+  let statusColor = "text-slate-400";
+
+  if (!isExternal) {
+    statusText = "Internal — in-house";
+    statusColor = "text-slate-400";
+  } else if (!tracked) {
+    statusText = "Not yet started";
+    statusColor = "text-slate-400";
+  } else if (done) {
+    statusText = step?.completed_at
+      ? `Completed · ${format(new Date(step.completed_at), "dd MMM yyyy")}`
+      : "Completed";
+    statusColor = "text-emerald-700";
+  } else if (matRet) {
+    statusText = "Material returned — awaiting QC";
+    statusColor = "text-blue-700";
+  } else if (active) {
+    statusText = step?.vendor_name ? `At Vendor — ${step.vendor_name}` : "At Vendor";
+    statusColor = "text-amber-700";
+  } else if (preBiz) {
+    statusText = "Pre-system (completed)";
+    statusColor = "text-slate-400";
+  } else if (pending) {
+    statusText = "Pending";
+    statusColor = "text-slate-400";
+  }
+
+  return (
+    <div className="flex gap-3">
+      {/* Icon + connector line */}
+      <div className="flex flex-col items-center">
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${iconBg}`}>
+          {icon}
+        </div>
+        {!isLast && (
+          <div className={`flex-1 w-0.5 my-1 min-h-[24px] ${lineColor}`} />
+        )}
+      </div>
+
+      {/* Row content */}
+      <div className="pb-4 flex-1 min-w-0">
+        <div className="flex items-start gap-2 flex-wrap">
+          <span className="text-sm font-medium text-slate-800">
+            {route.stage_number}. {route.process_name}
+          </span>
+          <span
+            className={`text-[10px] px-1.5 py-0.5 rounded font-medium uppercase tracking-wide shrink-0 ${
+              isExternal
+                ? "bg-blue-50 text-blue-600 border border-blue-100"
+                : "bg-slate-100 text-slate-500"
+            }`}
+          >
+            {isExternal ? "External" : "Internal"}
+          </span>
+          {active && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-amber-100 text-amber-700 border border-amber-200 shrink-0">
+              Active
+            </span>
+          )}
+        </div>
+        {statusText && (
+          <p className={`text-xs mt-0.5 ${statusColor}`}>{statusText}</p>
+        )}
+        {active && step?.dc_number && (
+          <p className="text-[11px] text-slate-400 mt-0.5">DC: {step.dc_number}</p>
+        )}
+        {route.notes && (
+          <p className="text-[11px] text-slate-400 mt-0.5 italic">{route.notes}</p>
+        )}
       </div>
     </div>
   );
@@ -259,6 +388,12 @@ export default function JobCardDetail() {
     enabled: !!id,
   });
 
+  const { data: routes } = useQuery({
+    queryKey: ["processing-routes", data?.item_id],
+    queryFn: () => fetchProcessingRouteAll(data!.item_id!),
+    enabled: !!data?.item_id,
+  });
+
   if (isLoading) {
     return (
       <div className="p-6 text-muted-foreground text-sm animate-pulse">
@@ -279,6 +414,10 @@ export default function JobCardDetail() {
   }
 
   const steps = data.steps ?? [];
+  const stepByStage = new Map<number, JobWorkStep>();
+  for (const s of steps) {
+    if (s.step_number != null) stepByStage.set(s.step_number, s);
+  }
   const doneCount = steps.filter((s) => s.status === "done" || s.status === "pre_bizdocs").length;
   const activeStep = steps.find((s) => s.status === "in_progress" || s.status === "material_returned");
   const totalSteps = steps.filter((s) => s.status !== "pre_bizdocs").length;
@@ -387,6 +526,27 @@ export default function JobCardDetail() {
           </div>
         )}
       </div>
+
+      {/* ── Production Route ── */}
+      {routes && routes.length > 0 && (
+        <div className="paper-card space-y-0">
+          <div className="flex items-center gap-2 mb-4">
+            <Wrench className="h-4 w-4 text-slate-400" />
+            <h2 className="text-sm font-semibold text-slate-700">Production Route</h2>
+            <span className="text-xs text-slate-400">({routes.length} stages from BOM)</span>
+          </div>
+          <div>
+            {routes.map((route, i) => (
+              <RouteRow
+                key={route.id}
+                route={route}
+                step={stepByStage.get(route.stage_number)}
+                isLast={i === routes.length - 1}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

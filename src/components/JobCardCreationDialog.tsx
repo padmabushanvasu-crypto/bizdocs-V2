@@ -7,7 +7,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { fetchProcessingRouteAll, type ProcessingRoute } from "@/lib/dc-intelligence-api";
-import { createJobWork, createJobWorkStep, getNextJCNumber } from "@/lib/job-works-api";
+import { createJobWork, createJobWorkStep, getNextJCNumber, fetchCompletedStepsForItem } from "@/lib/job-works-api";
 import { type DCLineItem } from "@/lib/delivery-challans-api";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -16,6 +16,7 @@ type JCItemState = {
   itemId: string | null;
   routes: ProcessingRoute[];
   selectedStageNumber: number | null;
+  completedStageNumbers: Set<number>;
   skip: boolean;
   existingMode: boolean;
   existingJCNumber: string;
@@ -67,6 +68,7 @@ export function JobCardCreationDialog({
           itemId,
           routes: [],
           selectedStageNumber: suggestedStage,
+          completedStageNumbers: new Set<number>(),
           skip: false,
           existingMode: suggestedStage !== null && suggestedStage > 1,
           existingJCNumber: existingMatch?.jc_number ?? "",
@@ -89,6 +91,13 @@ export function JobCardCreationDialog({
       }).catch(err => {
         toast({ title: "Failed to load processing routes", description: err.message, variant: "destructive" });
       });
+      fetchCompletedStepsForItem(item.itemId).then(completedStageNumbers => {
+        setJcItems(prev => {
+          const updated = [...prev];
+          if (updated[idx]) updated[idx] = { ...updated[idx], completedStageNumbers };
+          return updated;
+        });
+      }).catch(() => {/* ignore — completed stages are a display enhancement */});
     });
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -339,34 +348,42 @@ export function JobCardCreationDialog({
                       </p>
                     ) : (
                       <div className="flex flex-wrap gap-1.5">
-                        {item.routes.map(route => (
-                          <button
-                            key={route.id}
-                            onClick={() => {
-                              const isStage2Plus = route.stage_number > 1;
-                              setJcItems(prev => {
-                                const u = [...prev];
-                                u[idx] = {
-                                  ...u[idx],
-                                  selectedStageNumber: route.stage_number,
-                                  existingMode: isStage2Plus,
-                                };
-                                return u;
-                              });
-                              if (isStage2Plus) fetchExistingJCs(idx, item.itemId);
-                            }}
-                            className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
-                              item.selectedStageNumber === route.stage_number
-                                ? "bg-slate-900 text-white border-slate-900"
-                                : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
-                            }`}
-                          >
-                            {route.stage_number}. {route.process_name}
-                            <span className="ml-1 opacity-60">
-                              {route.stage_type === "internal" ? "(internal)" : "(vendor)"}
-                            </span>
-                          </button>
-                        ))}
+                        {item.routes.map(route => {
+                          const isDone = item.completedStageNumbers.has(route.stage_number);
+                          const isSelected = item.selectedStageNumber === route.stage_number;
+                          return (
+                            <button
+                              key={route.id}
+                              disabled={isDone}
+                              onClick={() => {
+                                if (isDone) return;
+                                const isStage2Plus = route.stage_number > 1;
+                                setJcItems(prev => {
+                                  const u = [...prev];
+                                  u[idx] = {
+                                    ...u[idx],
+                                    selectedStageNumber: route.stage_number,
+                                    existingMode: isStage2Plus,
+                                  };
+                                  return u;
+                                });
+                                if (isStage2Plus) fetchExistingJCs(idx, item.itemId);
+                              }}
+                              className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                                isDone
+                                  ? "bg-slate-50 text-slate-400 border-slate-200 line-through cursor-not-allowed"
+                                  : isSelected
+                                  ? "bg-slate-900 text-white border-slate-900"
+                                  : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
+                              }`}
+                            >
+                              {isDone ? "✓ " : ""}{route.stage_number}. {route.process_name}
+                              <span className="ml-1 opacity-60">
+                                {route.stage_type === "internal" ? "(internal)" : "(vendor)"}
+                              </span>
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
 
