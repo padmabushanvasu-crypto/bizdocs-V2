@@ -656,6 +656,9 @@ export async function importItemsPatchBatch(
   rowNums: number[],
   onProgress?: (pct: number) => void
 ): Promise<{ imported: number; skipped: number; errors: string[]; skipReasons: SkipReason[]; updated?: number }> {
+  console.log('[patch] rows received:', rows.length, '| first row keys:', Object.keys(rows[0] || {}));
+  console.log('[patch] first row:', JSON.stringify(rows[0]));
+
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error("Import failed: session expired. Please sign out and sign in again.");
   const companyId = await getCompanyId();
@@ -711,6 +714,11 @@ export async function importItemsPatchBatch(
     const desc = row["description"]?.trim() || "";
     const displayKey = code || drawingNum || desc.slice(0, 30);
 
+    // Log first 3 rows so we can see exactly what keys and values arrived
+    if (i < 3) {
+      console.log(`[patch] row ${i}: item_code=${JSON.stringify(code)} drawing_revision=${JSON.stringify(drawingNum)} description=${JSON.stringify(desc.slice(0, 40))} min_stock=${JSON.stringify(row["min_stock"])}`);
+    }
+
     if (!code && !drawingNum && !desc) {
       skipped++;
       skipReasons.push({ row: excelRow, value: "", reason: "Row entirely blank — skipped" });
@@ -735,6 +743,10 @@ export async function importItemsPatchBatch(
     }
 
     if (resolvedCode) codeToRow.set(resolvedCode.toLowerCase(), excelRow);
+
+    if (i < 3) {
+      console.log(`[patch] row ${i}: existing=${existing ? existing.item_code : 'NOT FOUND'} | byCode size=${byCode.size}`);
+    }
 
     if (!existing) {
       // New item — insert normally (description required for new items)
@@ -779,7 +791,6 @@ export async function importItemsPatchBatch(
         patch.item_type = newType;
       }
       // min_stock: parse as float — parseFloat(undefined) = NaN → || 0 = 0; parseFloat("50") = 50
-      console.log('[patch] min_stock raw:', JSON.stringify(row["min_stock"]), '| existing:', existing.min_stock, '| item_code:', existing.item_code);
       const newMinStock = parseFloat(row["min_stock"] as string) || 0;
       if (newMinStock > 0 && (existing.min_stock === null || existing.min_stock === 0)) {
         patch.min_stock = newMinStock;
