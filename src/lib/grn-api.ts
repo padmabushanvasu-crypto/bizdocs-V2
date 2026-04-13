@@ -54,7 +54,7 @@ export interface GRNLineItem {
   identity_not_matched_qty?: number;
   // Stage 1 — Quantitative
   received_qty?: number;
-  qty_matched?: number;
+  qty_matched?: boolean;
   condition_on_arrival?: string | null;
   packing_intact?: boolean;
   vendor_invoice_ref?: string | null;
@@ -915,26 +915,28 @@ export async function saveQuantitativeStage(
   const now = new Date().toISOString();
   // Update each line
   for (const line of lines) {
+    const linePayload = {
+      received_qty: line.received_qty,
+      receiving_now: line.received_qty, // keep legacy field in sync
+      qty_matched: line.qty_matched >= line.received_qty, // boolean: did all received units match?
+      qty_matched_qty: line.qty_matched, // numeric: exact count of matched units
+      condition_on_arrival: line.condition_on_arrival,
+      packing_intact: line.packing_intact,
+      quantitative_notes: line.quantitative_notes ?? null,
+      vendor_invoice_ref: line.vendor_invoice_ref ?? null,
+      quantitative_verified_by: verifiedBy,
+      quantitative_verified_at: now,
+      product_match: line.product_match ?? 'yes',
+      matching_units: line.matching_units ?? null,
+      non_matching_units: line.non_matching_units ?? null,
+      mismatch_reason: line.mismatch_reason ?? null,
+      mismatch_disposition: line.mismatch_disposition ?? null,
+      over_receipt_qty: line.over_receipt_qty ?? null,
+    };
+    console.log('[GRN Stage 1] payload:', JSON.stringify(linePayload));
     const { error } = await (supabase as any)
       .from('grn_line_items')
-      .update({
-        received_qty: line.received_qty,
-        receiving_now: line.received_qty, // keep legacy field in sync
-        qty_matched: line.qty_matched, // numeric count of matched units
-        qty_matched_qty: line.qty_matched, // keep in sync
-        condition_on_arrival: line.condition_on_arrival,
-        packing_intact: line.packing_intact,
-        quantitative_notes: line.quantitative_notes ?? null,
-        vendor_invoice_ref: line.vendor_invoice_ref ?? null,
-        quantitative_verified_by: verifiedBy,
-        quantitative_verified_at: now,
-        product_match: line.product_match ?? 'yes',
-        matching_units: line.matching_units ?? null,
-        non_matching_units: line.non_matching_units ?? null,
-        mismatch_reason: line.mismatch_reason ?? null,
-        mismatch_disposition: line.mismatch_disposition ?? null,
-        over_receipt_qty: line.over_receipt_qty ?? null,
-      })
+      .update(linePayload)
       .eq('id', line.id);
     if (error) throw error;
   }
