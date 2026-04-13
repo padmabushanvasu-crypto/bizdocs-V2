@@ -518,20 +518,35 @@ export default function DeliveryChallanForm() {
         return;
       }
     }
-    // Change 3: require acknowledgement for 'ok' jigs (all must be ticked)
-    for (let idx = 0; idx < lineItems.length; idx++) {
-      if (!lineItems[idx].description.trim()) continue;
-      const jigs = lineJigs.get(idx) ?? [];
-      const okJigs = jigs.filter(j => j.status === "ok" || j.status === "in_progress");
-      const checked = lineJigsChecked.get(idx) ?? [];
-      const firstUnchecked = okJigs.find(j => !checked.includes(j.id));
-      if (firstUnchecked) {
-        toast({
-          title: "Jig acknowledgement required",
-          description: `Confirm jig "${firstUnchecked.jig_number}" is included with line item ${idx + 1} before saving.`,
-          variant: "destructive",
-        });
-        return;
+    if (status === "issued") {
+      // Require acknowledgement for 'ok' jigs (all must be ticked before issuing)
+      for (let idx = 0; idx < lineItems.length; idx++) {
+        if (!lineItems[idx].description.trim()) continue;
+        const jigs = lineJigs.get(idx) ?? [];
+        const okJigs = jigs.filter(j => j.status === "ok" || j.status === "in_progress");
+        const checked = lineJigsChecked.get(idx) ?? [];
+        const firstUnchecked = okJigs.find(j => !checked.includes(j.id));
+        if (firstUnchecked) {
+          toast({
+            title: "Jig acknowledgement required",
+            description: `Confirm jig "${firstUnchecked.jig_number}" is included with line item ${idx + 1} before issuing.`,
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+      // Require processing stage selection for any line with BOM routes
+      for (let idx = 0; idx < lineItems.length; idx++) {
+        if (!lineItems[idx].description.trim()) continue;
+        const routes = lineRoutes.get(idx) ?? [];
+        if (routes.length > 0 && !lineStageSelection.get(idx)) {
+          toast({
+            title: "Processing stage required",
+            description: `Please select a processing stage for line item ${idx + 1} before issuing.`,
+            variant: "destructive",
+          });
+          return;
+        }
       }
     }
     saveMutation.mutate(status);

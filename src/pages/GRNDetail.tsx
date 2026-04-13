@@ -1208,6 +1208,7 @@ export default function GRNDetail() {
   // ── Scrap return state (Stage 1 — DC-GRN only) ────────────────────────────
   const [scrapReturned, setScrapReturned] = useState(false);
   const [scrapNotes,    setScrapNotes]    = useState("");
+  const [jigReturnConfirmed, setJigReturnConfirmed] = useState<Set<string>>(new Set());
   const [scrapItems,    setScrapItems]    = useState<{material_type:string; quantity:string; unit:string; notes:string}[]>([]);
 
   // ── Final GRN / store confirmation state ──────────────────────────────────
@@ -1556,6 +1557,15 @@ export default function GRNDetail() {
       toast({ title: "Verification Date is required", variant: "destructive" });
       return;
     }
+    const unconfirmedJigLines = s1Lines.filter(l => l.jigs_sent && !jigReturnConfirmed.has(l.id));
+    if (unconfirmedJigLines.length > 0) {
+      toast({
+        title: "Jig return confirmation required",
+        description: "Please confirm return of all jigs before completing Stage 1.",
+        variant: "destructive",
+      });
+      return;
+    }
     s1Mutation.mutate();
   };
 
@@ -1832,16 +1842,46 @@ export default function GRNDetail() {
         <div className="px-5 py-4 space-y-4">
           {/* Jig/Mould return alert — shown when DC included tooling */}
           {(() => {
-            const jigAlerts = s1Lines.filter(l => l.jigs_sent).map(l => l.jigs_sent as string);
-            if (jigAlerts.length === 0) return null;
+            const jigLines = s1Lines.filter(l => l.jigs_sent);
+            if (jigLines.length === 0) return null;
+            const allConfirmed = jigLines.every(l => jigReturnConfirmed.has(l.id));
             return (
-              <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 flex items-start gap-2">
-                <span className="text-amber-600 text-base">⚠️</span>
-                <div>
-                  <p className="font-medium text-amber-800 text-sm">Jig/Mould sent with this DC — verify return</p>
-                  <ul className="text-amber-700 text-sm mt-1 list-disc list-inside">
-                    {jigAlerts.map((j, i) => <li key={i}>{j}</li>)}
-                  </ul>
+              <div className={`border rounded-lg p-3 ${allConfirmed ? "bg-emerald-50 border-emerald-300" : "bg-amber-50 border-amber-300"}`}>
+                <div className="flex items-start gap-2">
+                  <span className="text-base">{allConfirmed ? "✅" : "⚠️"}</span>
+                  <div className="flex-1 space-y-2">
+                    <p className={`font-medium text-sm ${allConfirmed ? "text-emerald-800" : "text-amber-800"}`}>
+                      Jig/Mould sent with this DC — confirm return before saving
+                    </p>
+                    {jigLines.map((line) => {
+                      const confirmed = jigReturnConfirmed.has(line.id);
+                      return (
+                        <label key={line.id} className="flex items-start gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={confirmed}
+                            onChange={(e) => {
+                              setJigReturnConfirmed(prev => {
+                                const next = new Set(prev);
+                                if (e.target.checked) next.add(line.id);
+                                else next.delete(line.id);
+                                return next;
+                              });
+                            }}
+                            className="h-4 w-4 mt-0.5 accent-amber-600 cursor-pointer shrink-0"
+                          />
+                          <span className={`text-sm ${confirmed ? "line-through text-slate-400" : "text-amber-700"}`}>
+                            Confirmed — {line.jigs_sent} has been returned by vendor
+                          </span>
+                        </label>
+                      );
+                    })}
+                    {!allConfirmed && (
+                      <p className="text-xs text-amber-600 font-medium">
+                        All jig/mould returns must be confirmed before Stage 1 can be saved.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -2000,7 +2040,12 @@ export default function GRNDetail() {
 
               <Button
                 onClick={handleS1Save}
-                disabled={s1Mutation.isPending || isDeletedOrCancelled || overQtyLines.length > 0}
+                disabled={
+                  s1Mutation.isPending ||
+                  isDeletedOrCancelled ||
+                  overQtyLines.length > 0 ||
+                  s1Lines.filter(l => l.jigs_sent).some(l => !jigReturnConfirmed.has(l.id))
+                }
                 className={`w-full text-white ${needsFinanceApproval ? "bg-amber-600 hover:bg-amber-700" : "bg-blue-600 hover:bg-blue-700"}`}
               >
                 {s1Mutation.isPending
