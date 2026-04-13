@@ -778,6 +778,7 @@ export async function importItemsPatchBatch(
       if (newType && (!existing.item_type || existing.item_type.trim() === "")) {
         patch.item_type = newType;
       }
+      console.log('[patch] min_stock raw from row:', row["min_stock"], '| existing:', existing.min_stock);
       const newMinStock = parseFloat(row["min_stock"] || "0") || 0;
       if (newMinStock > 0 && (!existing.min_stock || existing.min_stock === 0)) {
         patch.min_stock = newMinStock;

@@ -654,7 +654,7 @@ export const ITEM_FIELD_MAP: Record<string, string[]> = {
   unit: ["unit", "uom", "unit of measure", "default unit"],
   hsn_sac_code: ["hsn sac code", "hsnsac", "hsn", "sac", "hsn code", "sac code"],
   gst_rate: ["gst rate %", "gst rate", "tax rate"],
-  min_stock: ["min stock", "minimum stock", "min stock level", "reorder level", "minimum qty"],
+  min_stock: ["min stock", "minimum stock", "min stock level", "reorder level", "minimum qty", "minimum quantity"],
   is_critical: ["is critical", "critical", "critical item", "critical component"],
   notes: ["notes", "remarks", "comments"],
   drawing_number: ["drawing number (alt)", "alt drawing", "drawing ref"],
