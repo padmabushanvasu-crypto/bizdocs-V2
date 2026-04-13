@@ -682,18 +682,22 @@ export async function importItemsPatchBatch(
 
   const normalizeItemCode = (s: string) => s.toUpperCase().replace(/[\s.]/g, "");
 
-  // Maps for lookup
-  const byCode = new Map<string, typeof existingItems extends null ? never : NonNullable<typeof existingItems>[number]>();
+  type ExistingItem = NonNullable<typeof existingItems>[number];
+
+  // Two separate maps to keep size = actual item count (not doubled by dual keys)
+  const byCode = new Map<string, ExistingItem>();       // key: item_code.toLowerCase()
+  const byCodeNorm = new Map<string, ExistingItem>();   // key: normalizeItemCode(item_code)
+  const byDrawing = new Map<string, ExistingItem>();    // key: drawing_revision.toLowerCase()
+
   for (const item of existingItems ?? []) {
     if (item.item_code) {
       byCode.set(item.item_code.toLowerCase(), item);
-      byCode.set(normalizeItemCode(item.item_code), item);
+      byCodeNorm.set(normalizeItemCode(item.item_code), item);
     }
-  }
-  const byDrawing = new Map<string, NonNullable<typeof existingItems>[number]>();
-  for (const item of existingItems ?? []) {
     if (item.drawing_revision) byDrawing.set(item.drawing_revision.toLowerCase(), item);
   }
+
+  console.log('[patch] DB items loaded:', existingItems?.length ?? 0, '| byCode size:', byCode.size);
 
   let imported = 0;
   let updatedCount = 0;
@@ -730,7 +734,7 @@ export async function importItemsPatchBatch(
     let resolvedCode = code;
 
     if (code) {
-      existing = byCode.get(code.toLowerCase()) ?? byCode.get(normalizeItemCode(code));
+      existing = byCode.get(code.toLowerCase()) ?? byCodeNorm.get(normalizeItemCode(code));
     } else if (drawingNum) {
       existing = byDrawing.get(drawingNum.toLowerCase());
       if (existing) resolvedCode = existing.item_code ?? drawingNum;
@@ -790,13 +794,15 @@ export async function importItemsPatchBatch(
       if (newType && (!existing.item_type || existing.item_type.trim() === "")) {
         patch.item_type = newType;
       }
-      // min_stock: parse as float — parseFloat(undefined) = NaN → || 0 = 0; parseFloat("50") = 50
+      // min_stock: defensive check — catches null, 0 (numeric), and 0.0
+      // (!x && x !== undefined) is true for null, 0, 0.0, false — but never for actual values
+      console.log('[patch] existing min_stock:', existing.min_stock, typeof existing.min_stock, '| row min_stock:', JSON.stringify(row["min_stock"]));
       const newMinStock = parseFloat(row["min_stock"] as string) || 0;
-      if (newMinStock > 0 && (existing.min_stock === null || existing.min_stock === 0)) {
+      if (newMinStock > 0 && (!existing.min_stock && existing.min_stock !== undefined)) {
         patch.min_stock = newMinStock;
       }
       const newCost = parseFloat(row["standard_cost"] as string) || 0;
-      if (newCost > 0 && (existing.standard_cost === null || existing.standard_cost === 0)) {
+      if (newCost > 0 && (!existing.standard_cost && existing.standard_cost !== undefined)) {
         patch.standard_cost = newCost;
       }
 
