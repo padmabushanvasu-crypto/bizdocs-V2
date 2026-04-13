@@ -29,7 +29,7 @@ import {
 import { fetchCompletedStepsForItem } from "@/lib/job-works-api";
 import { getCompanyId } from "@/lib/auth-helpers";
 import { JobCardCreationDialog } from "@/components/JobCardCreationDialog";
-import { fetchProcessingRoute, fetchProcessingRouteAll, fetchJigsForDrawing, fetchStageVendors, fetchMouldItemsForDrawing, type ProcessingRoute, type JigMasterRecord, type MouldItem } from "@/lib/dc-intelligence-api";
+import { fetchProcessingRoute, fetchProcessingRouteAll, fetchJigsForDrawing, fetchStageVendors, fetchMouldItemsForDrawing, fetchItemIdByDrawingNumber, type ProcessingRoute, type JigMasterRecord, type MouldItem } from "@/lib/dc-intelligence-api";
 import { formatCurrency, amountInWords } from "@/lib/gst-utils";
 import { getGSTType, calculateLineTax, round2, resolveStateCode, type GSTType } from "@/lib/tax-utils";
 
@@ -257,7 +257,17 @@ export default function DeliveryChallanForm() {
       setPreparedBy(existingDC.prepared_by || "");
       setCheckedBy(existingDC.checked_by || "");
       if (existingDC.return_due_date) setReturnDueDate(new Date(existingDC.return_due_date));
-      if (existingDC.line_items?.length) setLineItems(existingDC.line_items);
+      if (existingDC.line_items?.length) {
+        setLineItems(existingDC.line_items);
+        existingDC.line_items.forEach((li: any, idx: number) => {
+          const itemId = li.item_id;
+          if (itemId) {
+            fetchCompletedStepsForItem(itemId).then(completed => {
+              setLineCompletedStages(prev => { const m = new Map(prev); m.set(idx, completed); return m; });
+            }).catch(() => {/* non-fatal */});
+          }
+        });
+      }
       if (existingDC.party_id) {
         const p = parties.find((p) => p.id === existingDC.party_id);
         if (p) setSelectedParty(p);
@@ -820,6 +830,39 @@ export default function DeliveryChallanForm() {
                           });
                         }
                       }}
+                      onBlur={(e) => {
+                        const drawing = e.target.value.trim();
+                        if (!drawing) return;
+                        // Resolve item_id — use already-stored value if ItemSuggest fired, else look up by drawing number
+                        const knownItemId = itemIdByIndex.get(index);
+                        const resolveItemId: Promise<string | null> = knownItemId
+                          ? Promise.resolve(knownItemId)
+                          : fetchItemIdByDrawingNumber(drawing);
+                        resolveItemId.then(itemId => {
+                          if (!itemId) return;
+                          // Store item_id so downstream code has it
+                          setItemIdByIndex(prev => { const m = new Map(prev); m.set(index, itemId); return m; });
+                          // Fetch BOM stages if not already loaded
+                          if (!lineBomStages.get(index)?.length) {
+                            fetchBomStagesForItemDC(itemId).then(stages => {
+                              setLineBomStages(prev => { const m = new Map(prev); m.set(index, stages); return m; });
+                            });
+                          }
+                          // Fetch processing route if not already loaded
+                          if (!lineRoutes.get(index)?.length) {
+                            fetchProcessingRoute(itemId).then(routes => {
+                              setLineRoutes(prev => { const m = new Map(prev); m.set(index, routes); return m; });
+                            });
+                            fetchProcessingRouteAll(itemId).then(allRoutes => {
+                              setLineAllRoutes(prev => { const m = new Map(prev); m.set(index, allRoutes); return m; });
+                            });
+                          }
+                          // Always refresh completed stages
+                          fetchCompletedStepsForItem(itemId).then(completed => {
+                            setLineCompletedStages(prev => { const m = new Map(prev); m.set(index, completed); return m; });
+                          });
+                        }).catch(() => {/* non-fatal */});
+                      }}
                       placeholder="e.g. 230086"
                       className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm font-mono"
                     />
@@ -961,20 +1004,27 @@ export default function DeliveryChallanForm() {
                       <div className="mt-1 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                         <p className="text-xs font-semibold text-blue-700 mb-2">Processing Route</p>
                         <div className="flex flex-wrap gap-1 mb-2">
-                          {(lineRoutes.get(index) ?? []).map((stage) => (
-                            <button
-                              key={stage.id}
-                              type="button"
-                              onClick={() => selectStage(index, stage)}
-                              className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
-                                lineSelectedStageId.get(index) === stage.id
-                                  ? 'bg-blue-600 text-white border-blue-600'
-                                  : 'bg-white text-blue-700 border-blue-300 hover:bg-blue-100'
-                              }`}
-                            >
-                              {stage.stage_number}. {stage.process_name}
-                            </button>
-                          ))}
+                          {(lineRoutes.get(index) ?? []).map((stage) => {
+                            const isDone = lineCompletedStages.get(index)?.has(stage.stage_number) ?? false;
+                            const isSelected = lineSelectedStageId.get(index) === stage.id;
+                            return (
+                              <button
+                                key={stage.id}
+                                type="button"
+                                disabled={isDone}
+                                onClick={() => { if (!isDone) selectStage(index, stage); }}
+                                className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
+                                  isDone
+                                    ? 'bg-slate-50 text-slate-400 border-slate-200 line-through opacity-50 cursor-not-allowed'
+                                    : isSelected
+                                    ? 'bg-blue-600 text-white border-blue-600'
+                                    : 'bg-white text-blue-700 border-blue-300 hover:bg-blue-100'
+                                }`}
+                              >
+                                {isDone ? '✓ ' : ''}{stage.stage_number}. {stage.process_name}
+                              </button>
+                            );
+                          })}
                         </div>
                         {lineSelectedStageId.get(index) && (
                           <p className="text-xs text-blue-600">

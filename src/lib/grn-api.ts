@@ -1114,27 +1114,27 @@ export async function saveQualityStage(
           })
           .eq("id", linkedStep.id);
 
-        // Find the next pending step (skip pre_bizdocs placeholders)
-        const { data: nextStep } = await (supabase as any)
+        // Find all steps that are not yet finished (pending or in_progress, excluding pre_bizdocs)
+        const { data: remainingSteps } = await (supabase as any)
           .from("job_card_steps")
-          .select("id, step_number, name")
+          .select("id, step_number, name, status")
           .eq("job_card_id", linkedStep.job_card_id)
-          .eq("status", "pending")
-          .order("step_number", { ascending: true })
-          .limit(1)
-          .maybeSingle();
+          .not("status", "in", "(done,material_returned,pre_bizdocs)")
+          .order("step_number", { ascending: true });
 
-        if (nextStep) {
+        if (remainingSteps && remainingSteps.length > 0) {
+          // Unfinished steps remain — advance current_stage pointer, stay in_progress
+          const next = remainingSteps[0];
           await (supabase as any)
             .from("job_cards")
             .update({
-              current_stage: nextStep.step_number,
-              current_stage_name: nextStep.name,
+              current_stage: next.step_number,
+              current_stage_name: next.name,
               updated_at: new Date().toISOString(),
             })
             .eq("id", linkedStep.job_card_id);
         } else {
-          // No more pending steps — close the job card
+          // Every meaningful step is done or material_returned — close the job card
           await (supabase as any)
             .from("job_cards")
             .update({

@@ -1050,15 +1050,17 @@ export async function fetchWipSummary(): Promise<WipSummary> {
 
 /**
  * Returns the set of step_numbers that are 'done' or 'material_returned'
- * on the most recent open job card for the given item.
- * Returns an empty Set if no open job card exists.
+ * on the most recent job card for the given item (any status).
+ * Using the most recent card regardless of status ensures that a card
+ * incorrectly marked 'completed' still has its steps visible in the UI.
+ * Returns an empty Set if no job card exists for this item.
  */
 export async function fetchCompletedStepsForItem(itemId: string): Promise<Set<number>> {
   const { data: jc } = await (supabase as any)
     .from("job_cards")
     .select("id")
     .eq("item_id", itemId)
-    .not("status", "in", "(completed,cancelled)")
+    .not("status", "eq", "cancelled")
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();

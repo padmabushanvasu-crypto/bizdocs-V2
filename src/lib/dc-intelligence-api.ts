@@ -311,3 +311,19 @@ export async function deleteMouldItem(id: string): Promise<void> {
     .eq("id", id);
   if (error) throw error;
 }
+
+/**
+ * Look up the item_id for a given drawing number (matches drawing_number or
+ * drawing_revision column). Returns null if no item found.
+ */
+export async function fetchItemIdByDrawingNumber(drawingNumber: string): Promise<string | null> {
+  const companyId = await getCompanyId();
+  const { data } = await (supabase as any)
+    .from("items")
+    .select("id")
+    .eq("company_id", companyId)
+    .or(`drawing_number.eq.${drawingNumber},drawing_revision.eq.${drawingNumber}`)
+    .limit(1)
+    .maybeSingle();
+  return (data as any)?.id ?? null;
+}
