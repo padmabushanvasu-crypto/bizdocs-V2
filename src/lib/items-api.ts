@@ -807,10 +807,22 @@ export async function importItemsPatchBatch(
       if (newType && (!existing.item_type || existing.item_type.trim() === "")) {
         patch.item_type = newType;
       }
-      // min_stock: defensive check — catches null, 0 (numeric), and 0.0
-      // (!x && x !== undefined) is true for null, 0, 0.0, false — but never for actual values
-      console.log('[patch] existing min_stock:', existing.min_stock, typeof existing.min_stock, '| row min_stock:', JSON.stringify(row["min_stock"]));
-      const newMinStock = parseFloat(row["min_stock"] as string) || 0;
+      // min_stock: try all possible keys — ITEM_FIELD_MAP may not have mapped the column
+      const rawMinStock =
+        row["min_stock"] ??
+        row["Minimum Quantity"] ??
+        row["minimum quantity"] ??
+        row["Min Stock"] ??
+        row["min stock"] ??
+        row["MinStock"] ??
+        row["minimum_quantity"] ??
+        undefined;
+      console.log('[patch] min_stock raw keys tried:',
+        'min_stock=', row["min_stock"],
+        'Minimum Quantity=', row["Minimum Quantity"],
+        'Min Stock=', row["Min Stock"],
+        '→ resolved:', rawMinStock, '→ parsed:', parseFloat(String(rawMinStock ?? "")) || 0);
+      const newMinStock = parseFloat(String(rawMinStock ?? "")) || 0;
       if (newMinStock > 0 && (!existing.min_stock && existing.min_stock !== undefined)) {
         patch.min_stock = newMinStock;
       }
