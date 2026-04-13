@@ -282,7 +282,7 @@ export default function JobCardDetail() {
   const doneCount = steps.filter((s) => s.status === "done" || s.status === "pre_bizdocs").length;
   const activeStep = steps.find((s) => s.status === "in_progress" || s.status === "material_returned");
   const totalSteps = steps.filter((s) => s.status !== "pre_bizdocs").length;
-  const completedSteps = steps.filter((s) => s.status === "done").length;
+  const completedSteps = steps.filter((s) => s.status === "done" || s.status === "material_returned").length;
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-4xl mx-auto">

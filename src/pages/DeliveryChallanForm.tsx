@@ -773,10 +773,14 @@ export default function DeliveryChallanForm() {
                           setLineBomStages(prev => { const m = new Map(prev); m.set(index, stages); return m; });
                           setLineStageSelection(prev => { const m = new Map(prev); m.delete(index); return m; });
                         });
-                        // Load processing log
+                        // Load processing log and auto-select next pending stage
                         getCompanyId().then(cid => {
                           fetchComponentProcessingLog(cid, selectedItem.id).then(log => {
                             setLineProcessingLog(prev => { const m = new Map(prev); if (log) m.set(index, log); else m.delete(index); return m; });
+                            if (log) {
+                              const nextStage = ((log as any).current_stage ?? 0) + 1;
+                              setLineStageSelection(prev => { const m = new Map(prev); m.set(index, nextStage); return m; });
+                            }
                           });
                         });
                         // Phase 15: Load processing routes for this item
@@ -930,11 +934,16 @@ export default function DeliveryChallanForm() {
                             }}
                           >
                             <option value="">Select processing stage…</option>
-                            {(lineBomStages.get(index) ?? []).map((stage: any) => (
-                              <option key={stage.stage_number} value={stage.stage_number}>
-                                Stage {stage.stage_number} — {stage.process_name}{stage.vendor_name ? ` (${stage.vendor_name})` : ''}
-                              </option>
-                            ))}
+                            {(lineBomStages.get(index) ?? []).map((stage: any) => {
+                              const log = lineProcessingLog.get(index) as any;
+                              const currentStage = log?.current_stage ?? 0;
+                              const isCompleted = stage.stage_number <= currentStage;
+                              return (
+                                <option key={stage.stage_number} value={stage.stage_number} disabled={isCompleted}>
+                                  Stage {stage.stage_number} — {stage.process_name}{stage.vendor_name ? ` (${stage.vendor_name})` : ''}{isCompleted ? ' ✓ (completed)' : ''}
+                                </option>
+                              );
+                            })}
                             <option value="manual">Manual entry (no BOM stage)</option>
                           </select>
                         </div>

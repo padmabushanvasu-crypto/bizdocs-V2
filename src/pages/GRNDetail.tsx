@@ -100,6 +100,7 @@ interface S1Line {
   mismatch_disposition: string;
   // Jig / mould return confirmation
   jig_confirmed?: boolean;
+  jigs_sent?: string | null;
   unit: string;
 }
 
@@ -1251,6 +1252,7 @@ export default function GRNDetail() {
           mismatch_reason:      a.mismatch_reason ?? "",
           mismatch_disposition: a.mismatch_disposition ?? "",
           jig_confirmed:        a.jig_confirmed ?? false,
+          jigs_sent:            (a as any).jigs_sent ?? null,
           unit:                 a.unit ?? "NOS",
         };
       })
@@ -1828,6 +1830,22 @@ export default function GRNDetail() {
         </div>
 
         <div className="px-5 py-4 space-y-4">
+          {/* Jig/Mould return alert — shown when DC included tooling */}
+          {(() => {
+            const jigAlerts = s1Lines.filter(l => l.jigs_sent).map(l => l.jigs_sent as string);
+            if (jigAlerts.length === 0) return null;
+            return (
+              <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 flex items-start gap-2">
+                <span className="text-amber-600 text-base">⚠️</span>
+                <div>
+                  <p className="font-medium text-amber-800 text-sm">Jig/Mould sent with this DC — verify return</p>
+                  <ul className="text-amber-700 text-sm mt-1 list-disc list-inside">
+                    {jigAlerts.map((j, i) => <li key={i}>{j}</li>)}
+                  </ul>
+                </div>
+              </div>
+            );
+          })()}
           {s1Editable ? (
             <Stage1Table
               lines={s1Lines}
