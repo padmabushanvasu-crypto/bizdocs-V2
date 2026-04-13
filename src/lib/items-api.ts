@@ -778,13 +778,14 @@ export async function importItemsPatchBatch(
       if (newType && (!existing.item_type || existing.item_type.trim() === "")) {
         patch.item_type = newType;
       }
-      console.log('[patch] min_stock raw from row:', row["min_stock"], '| existing:', existing.min_stock);
-      const newMinStock = parseFloat(row["min_stock"] || "0") || 0;
-      if (newMinStock > 0 && (!existing.min_stock || existing.min_stock === 0)) {
+      // min_stock: parse as float — parseFloat(undefined) = NaN → || 0 = 0; parseFloat("50") = 50
+      console.log('[patch] min_stock raw:', JSON.stringify(row["min_stock"]), '| existing:', existing.min_stock, '| item_code:', existing.item_code);
+      const newMinStock = parseFloat(row["min_stock"] as string) || 0;
+      if (newMinStock > 0 && (existing.min_stock === null || existing.min_stock === 0)) {
         patch.min_stock = newMinStock;
       }
-      const newCost = parseFloat(row["standard_cost"] || "0") || 0;
-      if (newCost > 0 && (!existing.standard_cost || existing.standard_cost === 0)) {
+      const newCost = parseFloat(row["standard_cost"] as string) || 0;
+      if (newCost > 0 && (existing.standard_cost === null || existing.standard_cost === 0)) {
         patch.standard_cost = newCost;
       }
 
@@ -792,7 +793,10 @@ export async function importItemsPatchBatch(
         patchOps.push({ id: existing.id, patch });
       } else {
         skipped++;
-        skipReasons.push({ row: excelRow, value: displayKey, reason: "All fields already populated — nothing to patch" });
+        const missingFields = [];
+        if (!row["min_stock"]) missingFields.push("min_stock not in file");
+        if (existing.min_stock && existing.min_stock > 0) missingFields.push(`min_stock already ${existing.min_stock}`);
+        skipReasons.push({ row: excelRow, value: displayKey, reason: `All fields already populated — nothing to patch${missingFields.length ? ` (${missingFields.join(", ")})` : ""}` });
       }
     }
   }
