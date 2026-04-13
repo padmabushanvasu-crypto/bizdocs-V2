@@ -169,6 +169,7 @@ export default function DeliveryChallanForm() {
 
   const selectStage = (lineIndex: number, stage: ProcessingRoute) => {
     setLineSelectedStageId(prev => { const m = new Map(prev); m.set(lineIndex, stage.id); return m; });
+    setLineStageSelection(prev => { const m = new Map(prev); m.set(lineIndex, stage.stage_number); return m; });
     setLineItems(items => {
       const updated = [...items];
       (updated[lineIndex] as any).selectedStageId = stage.id;
@@ -539,10 +540,15 @@ export default function DeliveryChallanForm() {
       for (let idx = 0; idx < lineItems.length; idx++) {
         if (!lineItems[idx].description.trim()) continue;
         const routes = lineRoutes.get(idx) ?? [];
-        if (routes.length > 0 && !lineStageSelection.get(idx)) {
+        const stageSelected = !!lineStageSelection.get(idx) || !!lineSelectedStageId.get(idx);
+        if (routes.length > 0 && !stageSelected) {
+          // Scroll the line row into view
+          const row = document.querySelector(`tr[data-line-index="${idx}"]`);
+          if (row) row.scrollIntoView({ behavior: "smooth", block: "center" });
+          const exampleStage = routes[0]?.process_name ?? "e.g. ECU COPPER";
           toast({
             title: "Processing stage required",
-            description: `Please select a processing stage for line item ${idx + 1} before issuing.`,
+            description: `Please select a processing route stage (e.g. ${exampleStage}) for line item ${idx + 1} — click one of the stage pills in the Processing Route section.`,
             variant: "destructive",
           });
           return;
@@ -773,7 +779,7 @@ export default function DeliveryChallanForm() {
             <tbody>
               {lineItems.map((item, index) => (
                 <React.Fragment key={index}>
-                <tr className="group border-b border-slate-100 hover:bg-slate-50/50">
+                <tr data-line-index={index} className="group border-b border-slate-100 hover:bg-slate-50/50">
                   <td className="px-3 py-2 text-muted-foreground font-mono text-sm w-8">{item.serial_number}</td>
                   <td className="px-1 py-1">
                     <ItemSuggest
@@ -1029,11 +1035,17 @@ export default function DeliveryChallanForm() {
                                 disabled={isDone}
                                 onClick={() => { if (!isDone) selectStage(index, stage); }}
                                 className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
-                                  isDone
-                                    ? 'bg-slate-50 text-slate-400 border-slate-200 line-through opacity-50 cursor-not-allowed'
+                                  stage.stage_type === "external"
+                                    ? isDone
+                                      ? 'bg-blue-50 text-blue-400 border-blue-200 line-through opacity-60 cursor-not-allowed'
+                                      : isSelected
+                                      ? 'bg-blue-600 text-white border-blue-600'
+                                      : 'bg-blue-50 text-blue-700 border-blue-400 hover:bg-blue-100'
+                                    : isDone
+                                    ? 'bg-slate-50 text-slate-400 border-slate-200 line-through opacity-60 cursor-not-allowed'
                                     : isSelected
-                                    ? 'bg-blue-600 text-white border-blue-600'
-                                    : 'bg-white text-blue-700 border-blue-300 hover:bg-blue-100'
+                                    ? 'bg-slate-600 text-white border-slate-600'
+                                    : 'bg-slate-50 text-slate-600 border-slate-300 hover:bg-slate-100'
                                 }`}
                               >
                                 {isDone ? '✓ ' : ''}{stage.stage_number}. {stage.process_name}

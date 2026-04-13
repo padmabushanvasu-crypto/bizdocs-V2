@@ -370,11 +370,17 @@ export function JobCardCreationDialog({
                                 if (isStage2Plus) fetchExistingJCs(idx, item.itemId);
                               }}
                               className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
-                                isDone
-                                  ? "bg-slate-50 text-slate-400 border-slate-200 line-through cursor-not-allowed"
+                                route.stage_type === "external"
+                                  ? isDone
+                                    ? "bg-blue-50 text-blue-400 border-blue-200 line-through opacity-60 cursor-not-allowed"
+                                    : isSelected
+                                    ? "bg-blue-600 text-white border-blue-600"
+                                    : "bg-blue-50 text-blue-700 border-blue-400 hover:bg-blue-100"
+                                  : isDone
+                                  ? "bg-slate-50 text-slate-400 border-slate-200 line-through opacity-60 cursor-not-allowed"
                                   : isSelected
-                                  ? "bg-slate-900 text-white border-slate-900"
-                                  : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
+                                  ? "bg-slate-600 text-white border-slate-600"
+                                  : "bg-slate-50 text-slate-600 border-slate-300 hover:bg-slate-100"
                               }`}
                             >
                               {isDone ? "✓ " : ""}{route.stage_number}. {route.process_name}
