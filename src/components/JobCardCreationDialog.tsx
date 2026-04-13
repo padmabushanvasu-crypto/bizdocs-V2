@@ -213,6 +213,20 @@ export function JobCardCreationDialog({
               outward_dc_id: dcId || null,
             } as any);
           }
+
+          // Create pending placeholder steps for all stages after the selected one
+          const subsequentRoutes = item.routes.filter(r => r.stage_number > (item.selectedStageNumber ?? 0));
+          for (const next of subsequentRoutes) {
+            await createJobWorkStep({
+              job_card_id: (newJC as any).id,
+              step_number: next.stage_number,
+              step_type: next.stage_type,
+              name: next.process_name,
+              status: "pending",
+              qty_sent: null,
+              unit: item.lineItem.unit || "NOS",
+            } as any);
+          }
         }
 
         results.push({
