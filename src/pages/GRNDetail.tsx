@@ -1238,7 +1238,7 @@ export default function GRNDetail() {
           po_quantity:          item.po_quantity ?? 0,
           pending_quantity:     a.pending_quantity ?? item.po_quantity ?? 0,
           received_qty:         recv,
-          qty_matched:          a.qty_matched !== false && recv === (a.pending_quantity ?? item.po_quantity ?? 0),
+          qty_matched:          a.qty_matched_qty ?? (typeof a.qty_matched === 'number' ? a.qty_matched : recv),
           condition_on_arrival: a.condition_on_arrival ?? "good",
           packing_intact:       a.packing_intact !== false,
           notes:                a.quantitative_notes ?? "",

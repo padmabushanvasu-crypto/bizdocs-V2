@@ -54,7 +54,7 @@ export interface GRNLineItem {
   identity_not_matched_qty?: number;
   // Stage 1 — Quantitative
   received_qty?: number;
-  qty_matched?: boolean;
+  qty_matched?: number;
   condition_on_arrival?: string | null;
   packing_intact?: boolean;
   vendor_invoice_ref?: string | null;
@@ -920,8 +920,8 @@ export async function saveQuantitativeStage(
       .update({
         received_qty: line.received_qty,
         receiving_now: line.received_qty, // keep legacy field in sync
-        qty_matched: line.qty_matched >= line.received_qty, // legacy boolean: true if all received units matched
-        qty_matched_qty: line.qty_matched, // new numeric: exact count of matched units
+        qty_matched: line.qty_matched, // numeric count of matched units
+        qty_matched_qty: line.qty_matched, // keep in sync
         condition_on_arrival: line.condition_on_arrival,
         packing_intact: line.packing_intact,
         quantitative_notes: line.quantitative_notes ?? null,
