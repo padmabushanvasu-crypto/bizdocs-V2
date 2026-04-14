@@ -528,6 +528,47 @@ export function AppSidebar() {
     refetchInterval: 120_000,
   });
 
+  const { data: pendingApprovalCount = 0 } = useQuery({
+    queryKey: ["po-pending-approval-count"],
+    queryFn: async () => {
+      try {
+        const companyId = await getCompanyId();
+        if (!companyId) return 0;
+        const { count, error } = await (supabase as any)
+          .from("purchase_orders")
+          .select("*", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .eq("status", "pending_approval");
+        if (error) return 0;
+        return count ?? 0;
+      } catch { return 0; }
+    },
+    enabled: currentRole === 'admin' || currentRole === 'finance',
+    staleTime: 120_000,
+    refetchInterval: 120_000,
+  });
+
+  const { data: unreadRejectionCount = 0 } = useQuery({
+    queryKey: ["po-unread-rejection-count"],
+    queryFn: async () => {
+      try {
+        const companyId = await getCompanyId();
+        if (!companyId) return 0;
+        const { count, error } = await (supabase as any)
+          .from("purchase_orders")
+          .select("*", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .eq("status", "rejected")
+          .eq("rejection_noted", false);
+        if (error) return 0;
+        return count ?? 0;
+      } catch { return 0; }
+    },
+    enabled: currentRole === 'purchase_team',
+    staleTime: 120_000,
+    refetchInterval: 120_000,
+  });
+
   const { data: awaitingStoreCount = 0 } = useQuery({
     queryKey: ["awaiting-store-count"],
     queryFn: async () => { try { return await fetchAwaitingStoreCount(); } catch { return 0; } },
@@ -677,8 +718,12 @@ export function AppSidebar() {
       title: "Purchase Orders",
       url: "/purchase-orders",
       icon: ShoppingCart,
-      badge: overduePOCount && overduePOCount > 0 ? overduePOCount : undefined,
-      badgeColor: "red" as const,
+      badge: (currentRole === 'admin' || currentRole === 'finance')
+        ? (pendingApprovalCount > 0 ? pendingApprovalCount : undefined)
+        : currentRole === 'purchase_team'
+        ? (unreadRejectionCount > 0 ? unreadRejectionCount : undefined)
+        : (overduePOCount && overduePOCount > 0 ? overduePOCount : undefined),
+      badgeColor: (currentRole === 'admin' || currentRole === 'finance') ? "amber" as const : "red" as const,
       allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'storekeeper'],
     },
     {

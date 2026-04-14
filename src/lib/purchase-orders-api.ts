@@ -54,6 +54,12 @@ export interface PurchaseOrder {
   payment_date: string | null;
   payment_reference: string | null;
   payment_notes: string | null;
+  approval_requested_at: string | null;
+  approval_requested_by: string | null;
+  approved_at: string | null;
+  approved_by: string | null;
+  rejection_reason: string | null;
+  rejection_noted: boolean;
   created_at: string;
   updated_at: string;
   line_items?: POLineItem[];
@@ -212,9 +218,121 @@ export async function duplicatePurchaseOrder(id: string) {
   const original = await fetchPurchaseOrder(id);
   const nextNumber = await getNextPONumber();
   return createPurchaseOrder({
-    po: { ...original, po_number: nextNumber, po_date: new Date().toISOString().split("T")[0], status: "draft", issued_at: null, cancelled_at: null, cancellation_reason: null },
+    po: {
+      ...original,
+      po_number: nextNumber,
+      po_date: new Date().toISOString().split("T")[0],
+      status: "draft",
+      issued_at: null,
+      cancelled_at: null,
+      cancellation_reason: null,
+      approval_requested_at: null,
+      approval_requested_by: null,
+      approved_at: null,
+      approved_by: null,
+      rejection_reason: null,
+      rejection_noted: false,
+    },
     lineItems: (original.line_items || []).map((item) => ({ ...item, id: undefined, received_quantity: undefined as any, pending_quantity: undefined as any })),
   });
+}
+
+export async function approvePurchaseOrder(id: string, approvedBy: string) {
+  const { error } = await supabase
+    .from("purchase_orders")
+    .update({ status: "draft", approved_at: new Date().toISOString(), approved_by: approvedBy } as any)
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function rejectPurchaseOrder(id: string, reason: string) {
+  const { error } = await supabase
+    .from("purchase_orders")
+    .update({ status: "rejected", rejection_reason: reason, rejection_noted: false } as any)
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function markRejectionNoted(id: string) {
+  const { error } = await supabase
+    .from("purchase_orders")
+    .update({ rejection_noted: true } as any)
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function fetchPendingApprovalCount(): Promise<number> {
+  const companyId = await getCompanyId();
+  if (!companyId) return 0;
+  const { count, error } = await supabase
+    .from("purchase_orders")
+    .select("*", { count: "exact", head: true })
+    .eq("company_id", companyId)
+    .eq("status", "pending_approval");
+  if (error) return 0;
+  return count ?? 0;
+}
+
+export async function fetchUnreadRejectionCount(): Promise<number> {
+  const companyId = await getCompanyId();
+  if (!companyId) return 0;
+  const { count, error } = await supabase
+    .from("purchase_orders")
+    .select("*", { count: "exact", head: true })
+    .eq("company_id", companyId)
+    .eq("status", "rejected")
+    .eq("rejection_noted", false);
+  if (error) return 0;
+  return count ?? 0;
+}
+
+export interface PendingApprovalPO extends PurchaseOrder {
+  line_item_count: number;
+}
+
+export async function fetchPendingApprovals(): Promise<PendingApprovalPO[]> {
+  const companyId = await getCompanyId();
+  if (!companyId) return [];
+  const { data, error } = await supabase
+    .from("purchase_orders")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("status", "pending_approval")
+    .order("approval_requested_at", { ascending: true });
+  if (error) throw error;
+  const pos = (data ?? []) as unknown as PurchaseOrder[];
+  if (pos.length === 0) return [];
+  const poIds = pos.map((p) => p.id);
+  const { data: lineItems } = await supabase
+    .from("po_line_items")
+    .select("po_id")
+    .in("po_id", poIds);
+  const countMap: Record<string, number> = {};
+  (lineItems ?? []).forEach((li: any) => {
+    countMap[li.po_id] = (countMap[li.po_id] ?? 0) + 1;
+  });
+  return pos.map((p) => ({ ...p, line_item_count: countMap[p.id] ?? 0 }));
+}
+
+export async function fetchApprovalHistory(search?: string): Promise<PurchaseOrder[]> {
+  const companyId = await getCompanyId();
+  if (!companyId) return [];
+  let query = supabase
+    .from("purchase_orders")
+    .select("*")
+    .eq("company_id", companyId)
+    .not("approval_requested_at", "is", null)
+    .neq("status", "pending_approval")
+    .order("approval_requested_at", { ascending: false });
+  if (search?.trim()) {
+    const sanitized = sanitizeSearchTerm(search);
+    if (sanitized) {
+      query = query.or(`po_number.ilike.%${sanitized}%,vendor_name.ilike.%${sanitized}%`);
+    }
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as unknown as PurchaseOrder[];
 }
 
 export async function fetchPOStats() {

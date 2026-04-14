@@ -30,6 +30,7 @@ import { formatCurrency, formatNumber, amountInWords } from "@/lib/gst-utils";
 import { getGSTType, calculateLineTax, round2, resolveStateCode, getStateName, type GSTType } from "@/lib/tax-utils";
 import { UNITS } from "@/lib/constants";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 const PAYMENT_TERMS = ["Immediate", "7 Days", "15 Days", "30 Days", "45 Days", "60 Days", "Custom"];
 const GST_RATES = [0, 5, 12, 18, 28];
@@ -55,6 +56,9 @@ export default function PurchaseOrderForm() {
   const location = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  const { role, profile } = useAuth();
+  const isPurchaseTeam = role === 'purchase_team';
 
   const prefillState = location.state as { vendor_id?: string; prefill_items?: { item_id: string; description: string; qty: number; unit: string }[] } | null;
   const [prefillApplied, setPrefillApplied] = useState(false);
@@ -352,6 +356,12 @@ export default function PurchaseOrderForm() {
         issued_at: status === "issued" ? new Date().toISOString() : null,
         cancelled_at: null,
         cancellation_reason: null,
+        approval_requested_at: status === "pending_approval" ? new Date().toISOString() : null,
+        approval_requested_by: status === "pending_approval" ? (profile?.display_name || profile?.full_name || profile?.email || null) : null,
+        approved_at: null,
+        approved_by: null,
+        rejection_reason: null,
+        rejection_noted: false,
       };
 
       const items = lineItems
@@ -371,9 +381,13 @@ export default function PurchaseOrderForm() {
     onSuccess: (poId, status) => {
       queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
       queryClient.invalidateQueries({ queryKey: ["po-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["po-pending-approval-count"] });
       if (status === "issued") {
         setSavedPOId(poId as string);
         setSuccessDialogOpen(true);
+      } else if (status === "pending_approval") {
+        toast({ title: "PO submitted for approval", description: `PO ${poNumber} sent to Finance for approval.` });
+        navigate("/purchase-orders");
       } else {
         toast({ title: "Purchase order saved", description: `PO ${poNumber} saved as draft.` });
         navigate("/purchase-orders");
@@ -853,12 +867,27 @@ export default function PurchaseOrderForm() {
       {/* Sticky Action Bar */}
       <div className="fixed bottom-0 left-0 right-0 md:left-[var(--sidebar-width)] bg-card border-t border-border p-3 flex justify-end gap-2 z-40">
         <Button variant="outline" onClick={() => navigate("/purchase-orders")}>Cancel</Button>
-        <Button variant="secondary" onClick={() => handleSave("draft")} disabled={saveMutation.isPending}>
-          Save as Draft
-        </Button>
-        <Button onClick={() => handleSave("issued")} disabled={saveMutation.isPending} className="active:scale-[0.98] transition-transform">
-          Issue PO →
-        </Button>
+        {isPurchaseTeam ? (
+          isEdit && existingPO?.approved_at ? (
+            // Editing an approved draft — purchase_team can now issue it
+            <Button onClick={() => handleSave("issued")} disabled={saveMutation.isPending} className="active:scale-[0.98] transition-transform">
+              Issue PO →
+            </Button>
+          ) : (
+            <Button onClick={() => handleSave("pending_approval")} disabled={saveMutation.isPending} className="active:scale-[0.98] transition-transform">
+              Submit for Approval →
+            </Button>
+          )
+        ) : (
+          <>
+            <Button variant="secondary" onClick={() => handleSave("draft")} disabled={saveMutation.isPending}>
+              Save as Draft
+            </Button>
+            <Button onClick={() => handleSave("issued")} disabled={saveMutation.isPending} className="active:scale-[0.98] transition-transform">
+              Issue PO →
+            </Button>
+          </>
+        )}
       </div>
 
       {/* Success Dialog */}

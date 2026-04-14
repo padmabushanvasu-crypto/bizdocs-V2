@@ -1425,6 +1425,10 @@ export type Database = {
       purchase_orders: {
         Row: {
           additional_charges: Json | null
+          approval_requested_at: string | null
+          approval_requested_by: string | null
+          approved_at: string | null
+          approved_by: string | null
           cancellation_reason: string | null
           cancelled_at: string | null
           cgst_amount: number | null
@@ -1441,6 +1445,8 @@ export type Database = {
           po_date: string
           po_number: string
           reference_number: string | null
+          rejection_noted: boolean
+          rejection_reason: string | null
           sgst_amount: number | null
           special_instructions: string | null
           status: string | null
@@ -1457,6 +1463,10 @@ export type Database = {
         }
         Insert: {
           additional_charges?: Json | null
+          approval_requested_at?: string | null
+          approval_requested_by?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
           cancellation_reason?: string | null
           cancelled_at?: string | null
           cgst_amount?: number | null
@@ -1473,6 +1483,8 @@ export type Database = {
           po_date?: string
           po_number: string
           reference_number?: string | null
+          rejection_noted?: boolean
+          rejection_reason?: string | null
           sgst_amount?: number | null
           special_instructions?: string | null
           status?: string | null
@@ -1489,6 +1501,10 @@ export type Database = {
         }
         Update: {
           additional_charges?: Json | null
+          approval_requested_at?: string | null
+          approval_requested_by?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
           cancellation_reason?: string | null
           cancelled_at?: string | null
           cgst_amount?: number | null
@@ -1505,6 +1521,8 @@ export type Database = {
           po_date?: string
           po_number?: string
           reference_number?: string | null
+          rejection_noted?: boolean
+          rejection_reason?: string | null
           sgst_amount?: number | null
           special_instructions?: string | null
           status?: string | null

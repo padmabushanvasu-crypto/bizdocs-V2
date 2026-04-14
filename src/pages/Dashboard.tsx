@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { fetchPendingApprovalCount, fetchUnreadRejectionCount } from "@/lib/purchase-orders-api";
 import { Activity, CheckCircle2 } from "lucide-react";
 import { fetchPendingQCGRNs, fetchAwaitingStoreCount } from "@/lib/grn-api";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -249,6 +251,9 @@ function LightStatRow({
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { role } = useAuth();
+  const isFinanceOrAdmin = role === 'admin' || role === 'finance';
+  const isPurchaseTeam = role === 'purchase_team';
   const STALE = 5 * 60 * 1000;
 
   const { data: companySettings } = useQuery({
@@ -298,6 +303,22 @@ export default function Dashboard() {
   const { data: awaitingStoreCount = 0 } = useQuery({
     queryKey: ['awaiting-store-count'],
     queryFn: fetchAwaitingStoreCount,
+    staleTime: STALE,
+    refetchInterval: STALE,
+  });
+
+  const { data: pendingApprovalCount = 0 } = useQuery({
+    queryKey: ['po-pending-approval-count'],
+    queryFn: fetchPendingApprovalCount,
+    enabled: isFinanceOrAdmin,
+    staleTime: STALE,
+    refetchInterval: STALE,
+  });
+
+  const { data: unreadRejectionCount = 0 } = useQuery({
+    queryKey: ['po-unread-rejection-count'],
+    queryFn: fetchUnreadRejectionCount,
+    enabled: isPurchaseTeam,
     staleTime: STALE,
     refetchInterval: STALE,
   });
@@ -393,7 +414,7 @@ export default function Dashboard() {
   const fatPending        = fatStats?.pending ?? 0;
   const uninvoicedUnits   = readyToShip.length;
 
-  const totalAlerts = overdueDCReturns + criticalCount + actionedCount + fatPending + uninvoicedUnits + (dashData?.needsBuildingCount ?? 0) + (dashData?.overduePOCount ?? 0);
+  const totalAlerts = overdueDCReturns + criticalCount + actionedCount + fatPending + uninvoicedUnits + (dashData?.needsBuildingCount ?? 0) + (dashData?.overduePOCount ?? 0) + pendingApprovalCount + unreadRejectionCount;
   const allClear = totalAlerts === 0;
 
   // Company info
@@ -533,6 +554,24 @@ export default function Dashboard() {
             {gstr3bDaysLeft} day{gstr3bDaysLeft !== 1 ? "s" : ""} left
           </span>
         </button>
+
+        {/* ── PO Approval pills ────────────────────────────────────── */}
+        {isFinanceOrAdmin && pendingApprovalCount > 0 && (
+          <AlertPill
+            label="POs awaiting approval"
+            count={pendingApprovalCount}
+            colour="amber"
+            onClick={() => navigate("/purchase-orders?status=pending_approval")}
+          />
+        )}
+        {isPurchaseTeam && unreadRejectionCount > 0 && (
+          <AlertPill
+            label="PO requests rejected"
+            count={unreadRejectionCount}
+            colour="red"
+            onClick={() => navigate("/purchase-orders?status=rejected")}
+          />
+        )}
 
         {/* ── Section 2: Stock Alerts Board ────────────────────────── */}
         {companyId && <StockAlertsBoard companyId={companyId} />}

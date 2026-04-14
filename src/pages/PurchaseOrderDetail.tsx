@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { FileText, Edit, Copy, X, ShoppingCart, Clock, CheckCircle2, AlertCircle, Package, Trash2, ChevronLeft, IndianRupee, Eye, EyeOff } from "lucide-react";
+import { FileText, Edit, Copy, X, ShoppingCart, Clock, CheckCircle2, AlertCircle, Package, Trash2, ChevronLeft, IndianRupee, Eye, EyeOff, CheckCircle, XCircle, AlertTriangle } from "lucide-react";
 import { EditableSection } from "@/components/EditableSection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,9 @@ import {
   issuePurchaseOrder,
   softDeletePurchaseOrder,
   updatePOPayment,
+  approvePurchaseOrder,
+  rejectPurchaseOrder,
+  markRejectionNoted,
   type PurchaseOrder,
 } from "@/lib/purchase-orders-api";
 import { fetchGRNsForPO, createGrnFromPO } from "@/lib/grn-api";
@@ -27,6 +30,7 @@ import { DocumentHeader } from "@/components/DocumentHeader";
 import { DocumentActions } from "@/components/DocumentActions";
 import { DocumentSignature } from "@/components/DocumentSignature";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
+import { useAuth } from "@/hooks/useAuth";
 
 const statusClass: Record<string, string> = {
   draft: "status-draft",
@@ -35,10 +39,13 @@ const statusClass: Record<string, string> = {
   fully_received: "status-paid",
   cancelled: "status-cancelled",
   closed: "status-draft",
+  pending_approval: "bg-amber-50 text-amber-700 border border-amber-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
+  rejected: "bg-red-50 text-red-700 border border-red-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
 };
 const statusLabels: Record<string, string> = {
   draft: "Draft", issued: "Issued", partially_received: "Partially Received",
   fully_received: "Fully Received", cancelled: "Cancelled", closed: "Closed",
+  pending_approval: "Pending Approval", rejected: "Rejected",
 };
 
 export default function PurchaseOrderDetail() {
@@ -46,6 +53,9 @@ export default function PurchaseOrderDetail() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { hideCosts } = useRoleAccess();
+  const { role, profile } = useAuth();
+  const isFinanceOrAdmin = role === 'admin' || role === 'finance';
+  const isPurchaseTeam = role === 'purchase_team';
   const queryClient = useQueryClient();
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
@@ -60,6 +70,8 @@ export default function PurchaseOrderDetail() {
     { value: 'cancelled_by_management', label: 'Cancelled by management' },
     { value: 'other',                   label: 'Other (please specify)' },
   ];
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split("T")[0]);
@@ -176,6 +188,43 @@ export default function PurchaseOrderDetail() {
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
+  const approveMutation = useMutation({
+    mutationFn: () => {
+      const approvedBy = profile?.display_name || profile?.full_name || profile?.email || "Finance";
+      return approvePurchaseOrder(id!, approvedBy);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["purchase-order", id] });
+      queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["po-pending-approval-count"] });
+      toast({ title: "PO Approved", description: "PO moved to Draft — it can now be issued." });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: () => rejectPurchaseOrder(id!, rejectReason.trim()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["purchase-order", id] });
+      queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["po-pending-approval-count"] });
+      queryClient.invalidateQueries({ queryKey: ["po-unread-rejection-count"] });
+      setRejectOpen(false);
+      setRejectReason("");
+      toast({ title: "PO Rejected", description: "The purchase team will be notified." });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const markNotedMutation = useMutation({
+    mutationFn: () => markRejectionNoted(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["purchase-order", id] });
+      queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["po-unread-rejection-count"] });
+    },
+  });
+
   if (isLoading) return <div className="p-6 text-muted-foreground">Loading...</div>;
   if (!po) return <div className="p-6 text-muted-foreground">Purchase order not found.</div>;
 
@@ -246,11 +295,93 @@ export default function PurchaseOrderDetail() {
         <ChevronLeft className="h-4 w-4" />
         Back to Purchase Orders
       </button>
+      {/* Approval banner — finance/admin sees this when PO is pending_approval */}
+      {isFinanceOrAdmin && po.status === "pending_approval" && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 print:hidden">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-amber-900">Awaiting your approval</p>
+              <p className="text-sm text-amber-700 mt-0.5">
+                Requested by <strong>{po.approval_requested_by || "purchase team"}</strong>
+                {po.approval_requested_at && (
+                  <> on {new Date(po.approval_requested_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</>
+                )}
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <Button variant="outline" size="sm" onClick={() => navigate(`/purchase-orders/${id}/edit`)}>
+              <Edit className="h-3.5 w-3.5 mr-1" /> Edit
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:text-destructive border-red-200 hover:border-red-300"
+              onClick={() => { setRejectReason(""); setRejectOpen(true); }}
+            >
+              <XCircle className="h-3.5 w-3.5 mr-1" /> Reject
+            </Button>
+            <Button size="sm" onClick={() => approveMutation.mutate()} disabled={approveMutation.isPending}>
+              <CheckCircle className="h-3.5 w-3.5 mr-1" /> Approve
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Approved banner — purchase_team sees this when their PO has been approved and is ready to issue */}
+      {isPurchaseTeam && po.status === "draft" && po.approved_at && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-xl border border-green-200 bg-green-50 p-4 print:hidden">
+          <div className="flex items-start gap-3">
+            <CheckCircle className="h-5 w-5 text-green-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-green-900">Approved — ready to issue</p>
+              <p className="text-sm text-green-700 mt-0.5">
+                Approved by <strong>{po.approved_by || "Finance"}</strong>
+                {po.approved_at && (
+                  <> on {new Date(po.approved_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</>
+                )}. Issue this PO to the vendor when ready.
+              </p>
+            </div>
+          </div>
+          <Button size="sm" onClick={() => issueMutation.mutate()} disabled={issueMutation.isPending} className="shrink-0 bg-green-700 hover:bg-green-800 text-white border-0">
+            Issue PO →
+          </Button>
+        </div>
+      )}
+
+      {/* Rejection banner — purchase_team sees this when their PO was rejected */}
+      {isPurchaseTeam && po.status === "rejected" && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 print:hidden">
+          <div className="flex items-start gap-3">
+            <XCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-semibold text-red-900">This PO was rejected</p>
+              {po.rejection_reason && (
+                <p className="text-sm text-red-700 mt-0.5">Reason: <strong>{po.rejection_reason}</strong></p>
+              )}
+              <p className="text-sm text-red-600 mt-1">Edit the PO and resubmit, or delete it if no longer needed.</p>
+            </div>
+            {!po.rejection_noted && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0 text-red-700 border-red-200"
+                onClick={() => markNotedMutation.mutate()}
+                disabled={markNotedMutation.isPending}
+              >
+                Mark as Noted
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Top Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-display font-bold font-mono text-foreground">{po.po_number}</h1>
-          <span className={statusClass[po.status] || "status-draft"}>{statusLabels[po.status]}</span>
+          <span className={statusClass[po.status] || "status-draft"}>{statusLabels[po.status] || po.status}</span>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={() => setPrintPreview((p) => !p)}>
@@ -262,8 +393,16 @@ export default function PurchaseOrderDetail() {
               <Button variant="outline" size="sm" onClick={() => navigate(`/purchase-orders/${id}/edit`)}>
                 <Edit className="h-3.5 w-3.5 mr-1" /> Edit
               </Button>
-              <Button size="sm" onClick={() => issueMutation.mutate()}>Issue PO →</Button>
+              {/* Hide top-bar Issue button for purchase_team when the approved banner (with its own Issue button) is visible */}
+              {!(isPurchaseTeam && po.approved_at) && (
+                <Button size="sm" onClick={() => issueMutation.mutate()}>Issue PO →</Button>
+              )}
             </>
+          )}
+          {po.status === "rejected" && isPurchaseTeam && (
+            <Button variant="outline" size="sm" onClick={() => navigate(`/purchase-orders/${id}/edit`)}>
+              <Edit className="h-3.5 w-3.5 mr-1" /> Edit & Resubmit
+            </Button>
           )}
           {po.status === "issued" && (
             <Button variant="outline" size="sm" onClick={() => navigate(`/purchase-orders/${id}/edit`)}>
@@ -819,6 +958,32 @@ export default function PurchaseOrderDetail() {
               disabled={paymentMutation.isPending || !paymentAmount || Number(paymentAmount) <= 0}
             >
               Save Payment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reject Dialog */}
+      <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-destructive">Reject Purchase Order</DialogTitle>
+            <DialogDescription>Provide a reason so the purchase team can correct and resubmit.</DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            placeholder="Reason for rejection..."
+            rows={3}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectOpen(false)}>Go Back</Button>
+            <Button
+              variant="destructive"
+              onClick={() => rejectMutation.mutate()}
+              disabled={rejectMutation.isPending || !rejectReason.trim()}
+            >
+              {rejectMutation.isPending ? "Rejecting…" : "Reject PO"}
             </Button>
           </DialogFooter>
         </DialogContent>
