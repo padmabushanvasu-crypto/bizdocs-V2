@@ -294,15 +294,6 @@ export default function DeliveryChallanDetail() {
         <div style={{ textAlign: 'center', marginBottom: '2pt' }}>
           <div style={{ fontWeight: 700, fontSize: '13pt', color: '#1E3A5F', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Delivery Challan cum Job Work Order</div>
         </div>
-        {/* Return Date — prominent, right below title */}
-        {dc.return_due_date && (
-          <div style={{ textAlign: 'center', marginBottom: '4pt' }}>
-            <span style={{ fontSize: '9pt', fontWeight: 700, color: '#1E3A5F' }}>Return Date: </span>
-            <span style={{ fontSize: '9pt', fontWeight: 600, color: '#334155' }}>
-              {new Date(dc.return_due_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
-            </span>
-          </div>
-        )}
         {/* Header — company name + registered address */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1.5pt solid #1E3A5F', paddingBottom: '3pt', marginBottom: '3pt' }}>
           <div>
@@ -316,6 +307,14 @@ export default function DeliveryChallanDetail() {
             <div style={{ fontWeight: 700, fontSize: '6pt', color: '#1E3A5F', marginBottom: '1pt', letterSpacing: '0.03em' }}>[{typeLabels[dc.dc_type] || dc.dc_type}]</div>
             <div style={{ fontWeight: 700, fontSize: '7pt' }}>DC No: {dc.dc_number}</div>
             <div style={{ fontSize: '7pt' }}>Date: {new Date(dc.dc_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+            <div style={{ marginTop: '3pt', marginBottom: '2pt', padding: '2pt 5pt', background: dc.return_due_date ? '#FFF7ED' : '#F8FAFC', border: `0.75pt solid ${dc.return_due_date ? '#F97316' : '#CBD5E1'}`, borderRadius: '2pt', textAlign: 'right' }}>
+              <span style={{ fontWeight: 700, fontSize: '7pt', color: '#1E3A5F' }}>Expected Return Date: </span>
+              <span style={{ fontWeight: 700, fontSize: '7.5pt', color: dc.return_due_date ? '#C2410C' : '#94A3B8' }}>
+                {dc.return_due_date
+                  ? new Date(dc.return_due_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                  : 'Not specified'}
+              </span>
+            </div>
             {dc.vehicle_number && <div style={{ fontSize: '6.5pt' }}>Vehicle: {dc.vehicle_number}</div>}
             {(dc as any).driver_name && <div style={{ fontSize: '6.5pt' }}>Driver: {(dc as any).driver_name}{(dc as any).driver_contact ? ` — ${(dc as any).driver_contact}` : ''}</div>}
             <div style={{ fontWeight: 700, border: '0.75pt solid #1E3A5F', display: 'inline-block', padding: '1pt 4pt', marginTop: '1pt', fontSize: '7pt', letterSpacing: '0.05em' }}>{label}</div>
@@ -340,11 +339,10 @@ export default function DeliveryChallanDetail() {
         </div>
 
         {/* Reference row */}
-        {(dc.po_reference || dc.return_due_date || (dc as any).lo_number) && (
+        {(dc.po_reference || (dc as any).lo_number || (dc as any).approx_value > 0) && (
           <div style={{ display: 'flex', gap: '10pt', fontSize: '7pt', marginBottom: '3pt', color: '#475569' }}>
             {(dc as any).lo_number && <span>L.O. No: <strong style={{ color: '#000' }}>{(dc as any).lo_number}</strong></span>}
             {dc.po_reference && <span>PO Ref: <strong style={{ color: '#000' }}>{dc.po_reference}</strong></span>}
-            {dc.return_due_date && <span>Return Due: <strong style={{ color: '#000' }}>{new Date(dc.return_due_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</strong></span>}
             {(dc as any).approx_value > 0 && <span>Approx. Value: <strong style={{ color: '#000' }}>₹{formatCurrency((dc as any).approx_value)}</strong></span>}
           </div>
         )}
