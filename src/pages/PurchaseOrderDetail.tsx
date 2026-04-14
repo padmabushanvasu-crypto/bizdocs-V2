@@ -325,6 +325,10 @@ export default function PurchaseOrderDetail() {
 
         {/* ── PRINT: compact 2-col header ── */}
         <div className="hidden print:block po-section" style={{ borderBottom: '0.5pt solid #CBD5E1', paddingBottom: '3px' }}>
+          {/* Centered PO title above the 2-col grid */}
+          <div style={{ textAlign: 'center', marginBottom: '4px' }}>
+            <div style={{ fontWeight: '700', fontSize: '13pt', color: '#1E3A5F', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Purchase Order</div>
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: '56fr 44fr', gap: '8px', alignItems: 'flex-start' }}>
             {/* Left: Company info */}
             <div>
@@ -347,12 +351,10 @@ export default function PurchaseOrderDetail() {
               {company?.phone && <div style={{ fontSize: '7.5pt', color: '#475569' }}>Ph: {company.phone}</div>}
               {company?.email && <div style={{ fontSize: '7.5pt', color: '#475569' }}>{company.email}</div>}
             </div>
-            {/* Right: PO title + details */}
+            {/* Right: PO details */}
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontWeight: '700', fontSize: '13pt', color: '#1E3A5F', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Purchase Order</div>
               <div style={{ fontWeight: '700', fontSize: '7.5pt' }}>PO No: {po.po_number}</div>
               <div style={{ fontSize: '7.5pt' }}>Date: {new Date(po.po_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
-              {po.payment_terms && <div style={{ fontSize: '7.5pt' }}>Terms: {po.payment_terms}</div>}
               {(po as any).vendor_reference && <div style={{ fontSize: '7.5pt' }}>Vendor Ref: {(po as any).vendor_reference}</div>}
               {po.reference_number && <div style={{ fontSize: '7.5pt' }}>Ref: {po.reference_number}</div>}
             </div>
@@ -466,13 +468,14 @@ export default function PurchaseOrderDetail() {
             <thead>
               <tr>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left" style={{ width: '5%' }}>#</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left" style={{ width: '36%' }}>Description</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left" style={{ width: '28%' }}>Description</th>
                 {/* Drawing No: visible on screen, hidden in print (shown inline in description) */}
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left print:hidden" style={{ width: '12%' }}>Drawing No.</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right print:hidden" style={{ width: '7%' }}>Rcvd</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right print:hidden" style={{ width: '7%' }}>Pending</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right" style={{ width: '8%' }}>Qty</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left" style={{ width: '7%' }}>Unit</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center" style={{ width: '10%' }}>Delivery Date</th>
                 {!hideCosts && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right" style={{ width: '17%' }}>Unit Price</th>}
                 {!hideCosts && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right" style={{ width: '20%' }}>Amount</th>}
               </tr>
@@ -510,6 +513,7 @@ export default function PurchaseOrderDetail() {
                     </td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.quantity}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.unit}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center tabular-nums font-mono">{item.delivery_date ? new Date(item.delivery_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</td>
                     {!hideCosts && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(item.unit_price)}</td>}
                     {!hideCosts && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(item.line_total)}</td>}
                   </tr>
@@ -519,6 +523,10 @@ export default function PurchaseOrderDetail() {
           </table>
         </div>
 
+        {/* Flex spacer — print only — pushes totals+footer to page bottom */}
+        <div className="hidden print:block" style={{ flexGrow: 1 }} />
+
+        <div style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}>
         {/* ── Totals (shared screen + print) ── */}
         {!hideCosts && <div className="flex justify-end po-section">
           <div className="w-full max-w-xs space-y-1.5 text-sm po-totals-block">
@@ -581,6 +589,31 @@ export default function PurchaseOrderDetail() {
 
         {/* ── PRINT: footer — [T&C | Bank Details] + Signatory ── */}
         <div className="hidden print:block po-footer" style={{ borderTop: '0.75pt solid #CBD5E1', paddingTop: '4px' }}>
+          {/* Delivery Date + Payment Terms — above T&C, slightly bolder */}
+          {(po.payment_terms || items.some((item: any) => item.delivery_date)) && (
+            <div style={{ display: 'flex', gap: '16px', marginBottom: '5px', paddingBottom: '4px', borderBottom: '0.5pt solid #E2E8F0' }}>
+              {po.payment_terms && (
+                <div>
+                  <span style={{ fontSize: '8pt', fontWeight: '700', color: '#1E3A5F' }}>Payment Terms: </span>
+                  <span style={{ fontSize: '8pt', fontWeight: '600', color: '#334155' }}>{po.payment_terms}</span>
+                </div>
+              )}
+              {items.some((item: any) => item.delivery_date) && (
+                <div>
+                  <span style={{ fontSize: '8pt', fontWeight: '700', color: '#1E3A5F' }}>Delivery Date: </span>
+                  <span style={{ fontSize: '8pt', fontWeight: '600', color: '#334155' }}>
+                    {(() => {
+                      const dates = items.filter((item: any) => item.delivery_date).map((item: any) => new Date(item.delivery_date));
+                      const earliest = new Date(Math.min(...dates.map((d: Date) => d.getTime())));
+                      const latest = new Date(Math.max(...dates.map((d: Date) => d.getTime())));
+                      const fmt = (d: Date) => d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+                      return earliest.getTime() === latest.getTime() ? fmt(earliest) : `${fmt(earliest)} – ${fmt(latest)}`;
+                    })()}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
           <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
             {/* Left 50%: T&C */}
             <div style={{ flex: '1 1 50%' }}>
@@ -625,6 +658,7 @@ export default function PurchaseOrderDetail() {
             </div>
           </div>
         </div>
+        </div>{/* end breakInside wrapper */}
       </div>
 
       {/* Audit Trail */}
