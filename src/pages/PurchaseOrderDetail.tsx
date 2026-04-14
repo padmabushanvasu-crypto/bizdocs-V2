@@ -360,7 +360,7 @@ export default function PurchaseOrderDetail() {
               {po.rejection_reason && (
                 <p className="text-sm text-red-700 mt-0.5">Reason: <strong>{po.rejection_reason}</strong></p>
               )}
-              <p className="text-sm text-red-600 mt-1">Edit the PO and resubmit, or delete it if no longer needed.</p>
+              <p className="text-sm text-red-600 mt-1">This request has been rejected. Please raise a new PO request if still required.</p>
             </div>
             {!po.rejection_noted && (
               <Button
@@ -399,11 +399,7 @@ export default function PurchaseOrderDetail() {
               )}
             </>
           )}
-          {po.status === "rejected" && isPurchaseTeam && (
-            <Button variant="outline" size="sm" onClick={() => navigate(`/purchase-orders/${id}/edit`)}>
-              <Edit className="h-3.5 w-3.5 mr-1" /> Edit & Resubmit
-            </Button>
-          )}
+
           {po.status === "issued" && (
             <Button variant="outline" size="sm" onClick={() => navigate(`/purchase-orders/${id}/edit`)}>
               <Edit className="h-3.5 w-3.5 mr-1" /> Edit
@@ -433,8 +429,7 @@ export default function PurchaseOrderDetail() {
           <Button variant="outline" size="sm" onClick={() => duplicateMutation.mutate()}>
             <Copy className="h-3.5 w-3.5 mr-1" /> Duplicate
           </Button>
-          {!["cancelled", "closed", "fully_received", "deleted"].includes(po.status) &&
-            !(isPurchaseTeam && po.status === "pending_approval") && (
+          {isFinanceOrAdmin && !["cancelled", "closed", "fully_received", "deleted"].includes(po.status) && (
             <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => setCancelOpen(true)}>
               <X className="h-3.5 w-3.5 mr-1" /> Cancel
             </Button>
