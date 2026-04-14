@@ -290,6 +290,19 @@ export default function DeliveryChallanDetail() {
     const regAddr  = [regLine1, regLine2, [regCity, regState].filter(Boolean).join(', '), regPin ? `PIN ${regPin}` : ''].filter(Boolean).join(', ');
     return (
       <div className="dc-print-copy" style={{ fontFamily: 'Arial, sans-serif', fontSize: '7.5pt', color: '#000', lineHeight: 1.2, display: 'flex', flexDirection: 'column', minHeight: '270mm' }}>
+        {/* Centered title */}
+        <div style={{ textAlign: 'center', marginBottom: '2pt' }}>
+          <div style={{ fontWeight: 700, fontSize: '13pt', color: '#1E3A5F', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Delivery Challan cum Job Work Order</div>
+        </div>
+        {/* Return Date — prominent, right below title */}
+        {dc.return_due_date && (
+          <div style={{ textAlign: 'center', marginBottom: '4pt' }}>
+            <span style={{ fontSize: '9pt', fontWeight: 700, color: '#1E3A5F' }}>Return Date: </span>
+            <span style={{ fontSize: '9pt', fontWeight: 600, color: '#334155' }}>
+              {new Date(dc.return_due_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+            </span>
+          </div>
+        )}
         {/* Header — company name + registered address */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1.5pt solid #1E3A5F', paddingBottom: '3pt', marginBottom: '3pt' }}>
           <div>
@@ -300,7 +313,6 @@ export default function DeliveryChallanDetail() {
             {co?.phone && <div style={{ fontSize: '6.5pt', color: '#475569' }}>Ph: {co.phone}</div>}
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontWeight: 700, fontSize: '10pt', color: '#1E3A5F', letterSpacing: '0.03em' }}>DELIVERY CHALLAN cum Job Work Order</div>
             <div style={{ fontWeight: 700, fontSize: '6pt', color: '#1E3A5F', marginBottom: '1pt', letterSpacing: '0.03em' }}>[{typeLabels[dc.dc_type] || dc.dc_type}]</div>
             <div style={{ fontWeight: 700, fontSize: '7pt' }}>DC No: {dc.dc_number}</div>
             <div style={{ fontSize: '7pt' }}>Date: {new Date(dc.dc_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
@@ -346,6 +358,7 @@ export default function DeliveryChallanDetail() {
               <th style={{ padding: '2pt 3pt', textAlign: 'left' }}>Description</th>
               {hasNatureOfProcess && <th style={{ padding: '2pt 3pt', textAlign: 'left', minWidth: '55pt' }}>Process</th>}
               <th style={{ padding: '2pt 3pt', textAlign: 'center', width: '20pt' }}>Unit</th>
+              <th style={{ padding: '2pt 3pt', textAlign: 'center', width: '42pt' }}>Delivery Date</th>
               <th style={{ padding: '2pt 3pt', textAlign: 'right', width: '28pt' }}>Qty</th>
               {hasQtyKgs && <th style={{ padding: '2pt 3pt', textAlign: 'right', width: '32pt' }}>KGS</th>}
               {hasQtySft && <th style={{ padding: '2pt 3pt', textAlign: 'right', width: '32pt' }}>SFT</th>}
@@ -361,6 +374,7 @@ export default function DeliveryChallanDetail() {
                 <td style={{ padding: '1.5pt 3pt' }}>{item.description}</td>
                 {hasNatureOfProcess && <td style={{ padding: '1.5pt 3pt', color: '#475569' }}>{(item as any).nature_of_process || '—'}</td>}
                 <td style={{ padding: '1.5pt 3pt', textAlign: 'center', color: '#475569' }}>{item.unit || 'NOS'}</td>
+                <td style={{ padding: '1.5pt 3pt', textAlign: 'center', color: '#475569' }}>{(item as any).delivery_date ? new Date((item as any).delivery_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
                 <td style={{ padding: '1.5pt 3pt', textAlign: 'right', fontFamily: 'monospace' }}>{formatNumber(item.quantity || item.qty_nos || 0)}</td>
                 {hasQtyKgs && <td style={{ padding: '1.5pt 3pt', textAlign: 'right', fontFamily: 'monospace' }}>{(item as any).qty_kgs != null ? formatNumber((item as any).qty_kgs) : '—'}</td>}
                 {hasQtySft && <td style={{ padding: '1.5pt 3pt', textAlign: 'right', fontFamily: 'monospace' }}>{(item as any).qty_sft != null ? formatNumber((item as any).qty_sft) : '—'}</td>}
@@ -371,9 +385,19 @@ export default function DeliveryChallanDetail() {
           </tbody>
         </table>
 
+        {/* Flex spacer — pushes totals+footer to page bottom */}
+        <div style={{ flexGrow: 1 }} />
+
+        <div style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}>
         {/* Totals + Instructions */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4pt' }}>
           <div style={{ maxWidth: '55%', fontSize: '7pt' }}>
+            {(dc as any).payment_terms && (
+              <div style={{ marginBottom: '3pt' }}>
+                <span style={{ fontWeight: 700 }}>Payment Terms: </span>
+                <span style={{ color: '#334155' }}>{(dc as any).payment_terms}</span>
+              </div>
+            )}
             {dc.special_instructions && (
               <div><span style={{ fontWeight: 700 }}>Special Instructions: </span>{dc.special_instructions}</div>
             )}
@@ -413,8 +437,8 @@ export default function DeliveryChallanDetail() {
           </div>
         </div>
 
-        {/* Signature + Receiver — pinned to bottom */}
-        <div style={{ borderTop: '0.75pt solid #CBD5E1', paddingTop: '3pt', marginTop: 'auto' }}>
+        {/* Signature + Receiver */}
+        <div style={{ borderTop: '0.75pt solid #CBD5E1', paddingTop: '3pt' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6pt', fontSize: '7pt', textAlign: 'center' }}>
             {[
               { label: 'Prepared By', name: dc.prepared_by },
@@ -432,6 +456,7 @@ export default function DeliveryChallanDetail() {
             Received the above goods in good condition · Date: ___________
           </div>
         </div>
+        </div>{/* end breakInside wrapper */}
       </div>
     );
   };
