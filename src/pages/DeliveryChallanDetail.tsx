@@ -289,58 +289,58 @@ export default function DeliveryChallanDetail() {
     const regPin   = co?.registered_pin_code || co?.pin_code;
     const regAddr  = [regLine1, regLine2, [regCity, regState].filter(Boolean).join(', '), regPin ? `PIN ${regPin}` : ''].filter(Boolean).join(', ');
     return (
-      <div className="dc-print-copy" style={{ fontFamily: 'Arial, sans-serif', fontSize: '7.5pt', color: '#000', lineHeight: 1.2, display: 'flex', flexDirection: 'column', minHeight: '270mm' }}>
+      <div className="dc-print-copy" style={{ fontFamily: 'Arial, sans-serif', fontSize: '9.5pt', color: '#000', lineHeight: 1.35, display: 'flex', flexDirection: 'column', minHeight: '270mm' }}>
         {/* Centered title */}
-        <div style={{ textAlign: 'center', marginBottom: '2pt' }}>
-          <div style={{ fontWeight: 700, fontSize: '13pt', color: '#1E3A5F', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Delivery Challan cum Job Work Order</div>
+        <div style={{ textAlign: 'center', marginBottom: '3pt' }}>
+          <div style={{ fontWeight: 700, fontSize: '14pt', color: '#1E3A5F', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Delivery Challan cum Job Work Order</div>
         </div>
         {/* Header — company name + registered address */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1.5pt solid #1E3A5F', paddingBottom: '3pt', marginBottom: '3pt' }}>
           <div>
-            {co?.logo_url && <img src={co.logo_url} alt="" style={{ height: '22pt', marginBottom: '1pt', objectFit: 'contain' }} />}
-            <div style={{ fontWeight: 700, fontSize: '9.5pt', lineHeight: 1.15 }}>{co?.company_name}</div>
-            <div style={{ fontSize: '6.5pt', color: '#475569' }}>{regAddr}</div>
-            {co?.gstin && <div style={{ fontSize: '6.5pt', fontFamily: 'monospace' }}>GSTIN: {co.gstin}</div>}
-            {co?.phone && <div style={{ fontSize: '6.5pt', color: '#475569' }}>Ph: {co.phone}</div>}
+            {co?.logo_url && <img src={co.logo_url} alt="" style={{ height: '26pt', marginBottom: '2pt', objectFit: 'contain' }} />}
+            <div style={{ fontWeight: 700, fontSize: '12pt', lineHeight: 1.2 }}>{co?.company_name}</div>
+            <div style={{ fontSize: '8.5pt', color: '#475569' }}>{regAddr}</div>
+            {co?.gstin && <div style={{ fontSize: '8.5pt', fontFamily: 'monospace' }}>GSTIN: {co.gstin}</div>}
+            {co?.phone && <div style={{ fontSize: '8.5pt', color: '#475569' }}>Ph: {co.phone}</div>}
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontWeight: 700, fontSize: '6pt', color: '#1E3A5F', marginBottom: '1pt', letterSpacing: '0.03em' }}>[{typeLabels[dc.dc_type] || dc.dc_type}]</div>
-            <div style={{ fontWeight: 700, fontSize: '7pt' }}>DC No: {dc.dc_number}</div>
-            <div style={{ fontSize: '7pt' }}>Date: {new Date(dc.dc_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
-            <div style={{ marginTop: '3pt', marginBottom: '2pt', padding: '2pt 5pt', background: dc.return_due_date ? '#FFF7ED' : '#F8FAFC', border: `0.75pt solid ${dc.return_due_date ? '#F97316' : '#CBD5E1'}`, borderRadius: '2pt', textAlign: 'right' }}>
-              <span style={{ fontWeight: 700, fontSize: '7pt', color: '#1E3A5F' }}>Expected Return Date: </span>
-              <span style={{ fontWeight: 700, fontSize: '7.5pt', color: dc.return_due_date ? '#C2410C' : '#94A3B8' }}>
+            <div style={{ fontWeight: 700, fontSize: '8pt', color: '#1E3A5F', marginBottom: '2pt', letterSpacing: '0.03em' }}>[{typeLabels[dc.dc_type] || dc.dc_type}]</div>
+            <div style={{ fontWeight: 700, fontSize: '11pt' }}>DC No: {dc.dc_number}</div>
+            <div style={{ fontSize: '9.5pt' }}>Date: {new Date(dc.dc_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+            <div style={{ marginTop: '4pt', marginBottom: '3pt', padding: '3pt 6pt', background: dc.return_due_date ? '#FFF7ED' : '#F8FAFC', border: `0.75pt solid ${dc.return_due_date ? '#F97316' : '#CBD5E1'}`, borderRadius: '2pt', textAlign: 'right' }}>
+              <span style={{ fontWeight: 700, fontSize: '9pt', color: '#1E3A5F' }}>Expected Return Date: </span>
+              <span style={{ fontWeight: 700, fontSize: '10pt', color: dc.return_due_date ? '#C2410C' : '#94A3B8' }}>
                 {dc.return_due_date
                   ? new Date(dc.return_due_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
                   : 'Not specified'}
               </span>
             </div>
-            {dc.vehicle_number && <div style={{ fontSize: '6.5pt' }}>Vehicle: {dc.vehicle_number}</div>}
-            {(dc as any).driver_name && <div style={{ fontSize: '6.5pt' }}>Driver: {(dc as any).driver_name}{(dc as any).driver_contact ? ` — ${(dc as any).driver_contact}` : ''}</div>}
-            <div style={{ fontWeight: 700, border: '0.75pt solid #1E3A5F', display: 'inline-block', padding: '1pt 4pt', marginTop: '1pt', fontSize: '7pt', letterSpacing: '0.05em' }}>{label}</div>
+            {dc.vehicle_number && <div style={{ fontSize: '8.5pt' }}>Vehicle: {dc.vehicle_number}</div>}
+            {(dc as any).driver_name && <div style={{ fontSize: '8.5pt' }}>Driver: {(dc as any).driver_name}{(dc as any).driver_contact ? ` — ${(dc as any).driver_contact}` : ''}</div>}
+            <div style={{ fontWeight: 700, border: '0.75pt solid #1E3A5F', display: 'inline-block', padding: '2pt 6pt', marginTop: '2pt', fontSize: '8.5pt', letterSpacing: '0.05em' }}>{label}</div>
           </div>
         </div>
 
         {/* From / To */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4pt', marginBottom: '3pt', fontSize: '7pt' }}>
-          <div style={{ border: '0.5pt solid #CBD5E1', padding: '3pt', borderRadius: '2pt' }}>
-            <div style={{ fontWeight: 700, fontSize: '6pt', color: '#64748b', textTransform: 'uppercase', marginBottom: '1pt' }}>From (Dispatch)</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5pt', marginBottom: '4pt', fontSize: '9pt', lineHeight: 1.5 }}>
+          <div style={{ border: '0.5pt solid #CBD5E1', padding: '4pt 5pt', borderRadius: '2pt' }}>
+            <div style={{ fontWeight: 700, fontSize: '8.5pt', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2pt' }}>From (Dispatch)</div>
             <div style={{ fontWeight: 700 }}>{co?.company_name}</div>
             <div style={{ color: '#475569' }}>{physAddr}</div>
-            {co?.gstin && <div style={{ fontFamily: 'monospace', fontSize: '6pt' }}>GSTIN: {co.gstin}</div>}
+            {co?.gstin && <div style={{ fontFamily: 'monospace', fontSize: '8pt' }}>GSTIN: {co.gstin}</div>}
           </div>
-          <div style={{ border: '0.5pt solid #CBD5E1', padding: '3pt', borderRadius: '2pt' }}>
-            <div style={{ fontWeight: 700, fontSize: '6pt', color: '#64748b', textTransform: 'uppercase', marginBottom: '1pt' }}>To</div>
+          <div style={{ border: '0.5pt solid #CBD5E1', padding: '4pt 5pt', borderRadius: '2pt' }}>
+            <div style={{ fontWeight: 700, fontSize: '8.5pt', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2pt' }}>To</div>
             <div style={{ fontWeight: 700 }}>{dc.party_name}</div>
             {dc.party_address && <div style={{ color: '#475569' }}>{dc.party_address}</div>}
-            {dc.party_gstin && <div style={{ fontFamily: 'monospace', fontSize: '6pt' }}>GSTIN: {dc.party_gstin}</div>}
+            {dc.party_gstin && <div style={{ fontFamily: 'monospace', fontSize: '8pt' }}>GSTIN: {dc.party_gstin}</div>}
             {dc.party_phone && <div style={{ color: '#475569' }}>Ph: {dc.party_phone}</div>}
           </div>
         </div>
 
         {/* Reference row */}
         {(dc.po_reference || (dc as any).lo_number || (dc as any).approx_value > 0) && (
-          <div style={{ display: 'flex', gap: '10pt', fontSize: '7pt', marginBottom: '3pt', color: '#475569' }}>
+          <div style={{ display: 'flex', gap: '12pt', fontSize: '8.5pt', marginBottom: '4pt', color: '#475569' }}>
             {(dc as any).lo_number && <span>L.O. No: <strong style={{ color: '#000' }}>{(dc as any).lo_number}</strong></span>}
             {dc.po_reference && <span>PO Ref: <strong style={{ color: '#000' }}>{dc.po_reference}</strong></span>}
             {(dc as any).approx_value > 0 && <span>Approx. Value: <strong style={{ color: '#000' }}>₹{formatCurrency((dc as any).approx_value)}</strong></span>}
@@ -348,36 +348,36 @@ export default function DeliveryChallanDetail() {
         )}
 
         {/* Line Items */}
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '7pt', marginBottom: '3pt' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9.5pt', marginBottom: '4pt' }}>
           <thead>
             <tr style={{ background: '#1E3A5F', color: '#fff' }}>
-              <th style={{ padding: '2pt 3pt', textAlign: 'left', width: '16pt' }}>#</th>
-              {hasDrawingNumber && <th style={{ padding: '2pt 3pt', textAlign: 'left', minWidth: '55pt' }}>Drawing No.</th>}
-              <th style={{ padding: '2pt 3pt', textAlign: 'left' }}>Description</th>
-              {hasNatureOfProcess && <th style={{ padding: '2pt 3pt', textAlign: 'left', minWidth: '55pt' }}>Process</th>}
-              <th style={{ padding: '2pt 3pt', textAlign: 'center', width: '20pt' }}>Unit</th>
-              <th style={{ padding: '2pt 3pt', textAlign: 'center', width: '42pt' }}>Delivery Date</th>
-              <th style={{ padding: '2pt 3pt', textAlign: 'right', width: '28pt' }}>Qty</th>
-              {hasQtyKgs && <th style={{ padding: '2pt 3pt', textAlign: 'right', width: '32pt' }}>KGS</th>}
-              {hasQtySft && <th style={{ padding: '2pt 3pt', textAlign: 'right', width: '32pt' }}>SFT</th>}
-              <th style={{ padding: '2pt 3pt', textAlign: 'right', width: '40pt' }}>Rate (₹)</th>
-              <th style={{ padding: '2pt 3pt', textAlign: 'right', width: '46pt' }}>Amount (₹)</th>
+              <th style={{ padding: '4pt 5pt', textAlign: 'left', width: '16pt', fontWeight: 700 }}>#</th>
+              {hasDrawingNumber && <th style={{ padding: '4pt 5pt', textAlign: 'left', minWidth: '55pt', fontWeight: 700 }}>Drawing No.</th>}
+              <th style={{ padding: '4pt 5pt', textAlign: 'left', fontWeight: 700 }}>Description</th>
+              {hasNatureOfProcess && <th style={{ padding: '4pt 5pt', textAlign: 'left', minWidth: '55pt', fontWeight: 700 }}>Process</th>}
+              <th style={{ padding: '4pt 5pt', textAlign: 'center', width: '22pt', fontWeight: 700 }}>Unit</th>
+              <th style={{ padding: '4pt 5pt', textAlign: 'center', width: '46pt', fontWeight: 700 }}>Delivery Date</th>
+              <th style={{ padding: '4pt 5pt', textAlign: 'right', width: '30pt', fontWeight: 700 }}>Qty</th>
+              {hasQtyKgs && <th style={{ padding: '4pt 5pt', textAlign: 'right', width: '34pt', fontWeight: 700 }}>KGS</th>}
+              {hasQtySft && <th style={{ padding: '4pt 5pt', textAlign: 'right', width: '34pt', fontWeight: 700 }}>SFT</th>}
+              <th style={{ padding: '4pt 5pt', textAlign: 'right', width: '44pt', fontWeight: 700 }}>Rate (₹)</th>
+              <th style={{ padding: '4pt 5pt', textAlign: 'right', width: '50pt', fontWeight: 700 }}>Amount (₹)</th>
             </tr>
           </thead>
           <tbody>
             {items.map((item, idx) => (
-              <tr key={item.serial_number} style={{ background: idx % 2 === 0 ? '#F8FAFC' : '#fff', borderBottom: '0.5pt solid #E2E8F0' }}>
-                <td style={{ padding: '1.5pt 3pt', color: '#64748b' }}>{item.serial_number}</td>
-                {hasDrawingNumber && <td style={{ padding: '1.5pt 3pt', fontFamily: 'monospace', fontWeight: 700, color: '#1E3A5F' }}>{item.drawing_number || item.item_code || '—'}</td>}
-                <td style={{ padding: '1.5pt 3pt' }}>{item.description}</td>
-                {hasNatureOfProcess && <td style={{ padding: '1.5pt 3pt', color: '#475569' }}>{(item as any).nature_of_process || '—'}</td>}
-                <td style={{ padding: '1.5pt 3pt', textAlign: 'center', color: '#475569' }}>{item.unit || 'NOS'}</td>
-                <td style={{ padding: '1.5pt 3pt', textAlign: 'center', color: '#475569' }}>{(item as any).delivery_date ? new Date((item as any).delivery_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
-                <td style={{ padding: '1.5pt 3pt', textAlign: 'right', fontFamily: 'monospace' }}>{formatNumber(item.quantity || item.qty_nos || 0)}</td>
-                {hasQtyKgs && <td style={{ padding: '1.5pt 3pt', textAlign: 'right', fontFamily: 'monospace' }}>{(item as any).qty_kgs != null ? formatNumber((item as any).qty_kgs) : '—'}</td>}
-                {hasQtySft && <td style={{ padding: '1.5pt 3pt', textAlign: 'right', fontFamily: 'monospace' }}>{(item as any).qty_sft != null ? formatNumber((item as any).qty_sft) : '—'}</td>}
-                <td style={{ padding: '1.5pt 3pt', textAlign: 'right', fontFamily: 'monospace' }}>{formatCurrency(item.rate || 0)}</td>
-                <td style={{ padding: '1.5pt 3pt', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}>{formatCurrency(item.amount || 0)}</td>
+              <tr key={item.serial_number} style={{ background: idx % 2 === 0 ? '#F8FAFC' : '#fff', borderBottom: '1pt solid #E2E8F0' }}>
+                <td style={{ padding: '4pt 5pt', color: '#64748b' }}>{item.serial_number}</td>
+                {hasDrawingNumber && <td style={{ padding: '4pt 5pt', fontFamily: 'monospace', fontWeight: 700, color: '#1E3A5F' }}>{item.drawing_number || item.item_code || '—'}</td>}
+                <td style={{ padding: '4pt 5pt' }}>{item.description}</td>
+                {hasNatureOfProcess && <td style={{ padding: '4pt 5pt', color: '#475569' }}>{(item as any).nature_of_process || '—'}</td>}
+                <td style={{ padding: '4pt 5pt', textAlign: 'center', color: '#475569' }}>{item.unit || 'NOS'}</td>
+                <td style={{ padding: '4pt 5pt', textAlign: 'center', color: '#475569' }}>{(item as any).delivery_date ? new Date((item as any).delivery_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
+                <td style={{ padding: '4pt 5pt', textAlign: 'right', fontFamily: 'monospace' }}>{formatNumber(item.quantity || item.qty_nos || 0)}</td>
+                {hasQtyKgs && <td style={{ padding: '4pt 5pt', textAlign: 'right', fontFamily: 'monospace' }}>{(item as any).qty_kgs != null ? formatNumber((item as any).qty_kgs) : '—'}</td>}
+                {hasQtySft && <td style={{ padding: '4pt 5pt', textAlign: 'right', fontFamily: 'monospace' }}>{(item as any).qty_sft != null ? formatNumber((item as any).qty_sft) : '—'}</td>}
+                <td style={{ padding: '4pt 5pt', textAlign: 'right', fontFamily: 'monospace' }}>{formatCurrency(item.rate || 0)}</td>
+                <td style={{ padding: '4pt 5pt', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}>{formatCurrency(item.amount || 0)}</td>
               </tr>
             ))}
           </tbody>
@@ -388,8 +388,8 @@ export default function DeliveryChallanDetail() {
 
         <div style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}>
         {/* Totals + Instructions */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4pt' }}>
-          <div style={{ maxWidth: '55%', fontSize: '7pt' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '5pt' }}>
+          <div style={{ maxWidth: '55%', fontSize: '8.5pt' }}>
             {(dc as any).payment_terms && (
               <div style={{ marginBottom: '3pt' }}>
                 <span style={{ fontWeight: 700 }}>Payment Terms: </span>
@@ -400,58 +400,58 @@ export default function DeliveryChallanDetail() {
               <div><span style={{ fontWeight: 700 }}>Special Instructions: </span>{dc.special_instructions}</div>
             )}
             {isReturnable && (
-              <div style={{ fontWeight: 700, fontSize: '6.5pt', borderTop: '0.75pt solid #1E3A5F', borderBottom: '0.75pt solid #1E3A5F', padding: '1.5pt 0', marginTop: '3pt', letterSpacing: '0.05em' }}>
+              <div style={{ fontWeight: 700, fontSize: '8pt', borderTop: '0.75pt solid #1E3A5F', borderBottom: '0.75pt solid #1E3A5F', padding: '2pt 0', marginTop: '4pt', letterSpacing: '0.05em' }}>
                 NOT FOR SALE — GOODS FOR JOB WORK / RETURNABLE
               </div>
             )}
           </div>
-          <div style={{ minWidth: '120pt', fontSize: '7pt' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5pt 0' }}>
+          <div style={{ minWidth: '140pt', fontSize: '9pt' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1pt 0' }}>
               <span style={{ color: '#475569' }}>Sub Total</span>
               <span style={{ fontFamily: 'monospace' }}>{formatCurrency(subTotal)}</span>
             </div>
             {isCgstSgst ? (
               <>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5pt 0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1pt 0' }}>
                   <span style={{ color: '#475569' }}>CGST @ {(dc.gst_rate || 18) / 2}%</span>
                   <span style={{ fontFamily: 'monospace' }}>{formatCurrency(dc.cgst_amount || 0)}</span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5pt 0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1pt 0' }}>
                   <span style={{ color: '#475569' }}>SGST @ {(dc.gst_rate || 18) / 2}%</span>
                   <span style={{ fontFamily: 'monospace' }}>{formatCurrency(dc.sgst_amount || 0)}</span>
                 </div>
               </>
             ) : (dc.igst_amount || 0) > 0 ? (
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5pt 0' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1pt 0' }}>
                 <span style={{ color: '#475569' }}>IGST @ {dc.gst_rate || 18}%</span>
                 <span style={{ fontFamily: 'monospace' }}>{formatCurrency(dc.igst_amount || 0)}</span>
               </div>
             ) : null}
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '0.75pt solid #000', paddingTop: '1.5pt', fontWeight: 700, fontSize: '8pt', marginTop: '1pt' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '0.75pt solid #000', paddingTop: '2pt', fontWeight: 700, fontSize: '10pt', marginTop: '2pt' }}>
               <span>Total</span>
               <span style={{ fontFamily: 'monospace' }}>{formatCurrency(grandTotal)}</span>
             </div>
-            <div style={{ fontSize: '6pt', color: '#475569', fontStyle: 'italic', marginTop: '1pt' }}>{amountInWords(grandTotal)}</div>
+            <div style={{ fontSize: '8pt', color: '#475569', fontStyle: 'italic', marginTop: '2pt' }}>{amountInWords(grandTotal)}</div>
           </div>
         </div>
 
         {/* Signature + Receiver */}
-        <div style={{ borderTop: '0.75pt solid #CBD5E1', paddingTop: '3pt' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6pt', fontSize: '7pt', textAlign: 'center' }}>
+        <div style={{ borderTop: '0.75pt solid #CBD5E1', paddingTop: '4pt' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '8pt', fontSize: '8.5pt', textAlign: 'center' }}>
             {[
               { label: 'Prepared By', name: dc.prepared_by },
               { label: 'Checked By', name: dc.checked_by },
               { label: 'Authorised Signatory', name: '' },
               { label: `Receiver (${dc.party_name})`, name: '' },
             ].map(({ label, name }) => (
-              <div key={label} style={{ borderTop: '0.5pt solid #000', paddingTop: '2pt', marginTop: '10pt' }}>
-                {name && <div style={{ fontSize: '6pt', color: '#64748b', marginBottom: '1pt' }}>{name}</div>}
-                <div style={{ fontWeight: 700, fontSize: '6.5pt' }}>{label}</div>
+              <div key={label} style={{ borderTop: '0.5pt solid #000', paddingTop: '3pt', marginTop: '18pt' }}>
+                {name && <div style={{ fontSize: '8pt', color: '#64748b', marginBottom: '1pt' }}>{name}</div>}
+                <div style={{ fontWeight: 700, fontSize: '8.5pt' }}>{label}</div>
               </div>
             ))}
           </div>
-          <div style={{ fontSize: '6.5pt', color: '#475569', textAlign: 'center', marginTop: '2pt' }}>
-            Received the above goods in good condition · Date: ___________
+          <div style={{ fontSize: '8.5pt', color: '#475569', textAlign: 'center', marginTop: '4pt', padding: '3pt', border: '0.5pt solid #CBD5E1', borderRadius: '2pt' }}>
+            Received the above goods in good condition &nbsp;·&nbsp; Date: ___________
           </div>
         </div>
         </div>{/* end breakInside wrapper */}
@@ -470,7 +470,7 @@ export default function DeliveryChallanDetail() {
           .dc-page-break { page-break-before: always; break-before: always; }
           .dc-print-copy { page-break-inside: avoid; }
           @page { size: A4 portrait; margin: 10mm 12mm 8mm 12mm; }
-          body { font-size: 7.5pt !important; line-height: 1.2 !important; }
+          body { font-size: 9.5pt !important; line-height: 1.35 !important; }
         }
       `}</style>
 
