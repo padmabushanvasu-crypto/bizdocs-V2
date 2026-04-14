@@ -36,6 +36,7 @@ import {
   CheckCircle,
   Activity,
   Archive,
+  Phone,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -179,7 +180,7 @@ const RAIL_MODE_KEY = "bizdocs_sidebar_mode";
 const GROUP_PATHS: Record<string, string[]> = {
   "START HERE":             ["/"],
   "DAILY WORK":             ["/job-works", "/delivery-challans", "/dc-grn"],
-  "PURCHASING & RECEIVING": ["/purchase-orders", "/grn"],
+  "PURCHASING & RECEIVING": ["/purchase-orders", "/grn", "/follow-up-tracker"],
   "PRODUCTION":             ["/wip-register", "/sub-assembly-work-orders", "/finished-good-work-orders"],
   "STORE":                  ["/storekeeper", "/storekeeper-queue", "/stock-register", "/stock-ledger", "/opening-stock", "/scrap-register", "/ready-to-dispatch", "/dispatch-records"],
   "REPORTS":                ["/reorder-intelligence", "/serial-numbers", "/fat-certificates", "/gst-reports", "/vendor-scorecards"],
@@ -687,6 +688,12 @@ export function AppSidebar() {
       badge: grnQCCount > 0 ? grnQCCount : undefined,
       badgeColor: "red" as const,
       allowedRoles: ['admin', 'finance', 'inward_team', 'qc_team'],
+    },
+    {
+      title: "Follow-Up Tracker",
+      url: "/follow-up-tracker",
+      icon: Phone,
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team'],
     },
   ];
 

@@ -86,6 +86,7 @@ import JigMouldSettings from "@/pages/JigMouldSettings";
 import AssetsRegister from "@/pages/AssetsRegister";
 import OpeningStock from "@/pages/OpeningStock";
 import DangerZone from "@/pages/DangerZone";
+import FollowUpTracker from "@/pages/FollowUpTracker";
 import { ImportQueueProvider } from "@/lib/import-queue";
 
 function PageGuard({ page, children }: { page: string; children: React.ReactNode; }) {
@@ -167,6 +168,8 @@ const App = () => (
               <Route path="/grn" element={<PageGuard page="grn"><GRNRegister /></PageGuard>} />
               <Route path="/grn/new" element={<Navigate to="/grn" replace />} />
               <Route path="/grn/:id" element={<PageGuard page="grn"><GRNDetail /></PageGuard>} />
+
+              <Route path="/follow-up-tracker" element={<PageGuard page="follow-up-tracker"><FollowUpTracker /></PageGuard>} />
 
               <Route path="/dc-grn" element={<PageGuard page="dc-grn"><DcGrn /></PageGuard>} />
               <Route path="/dc-grn/new" element={<Navigate to="/grn" replace />} />
