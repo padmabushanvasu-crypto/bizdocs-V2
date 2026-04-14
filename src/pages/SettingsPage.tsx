@@ -1,4 +1,5 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Navigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 import { Building2, FileText, Bell, Upload, FileSpreadsheet, Users, History, BookOpen, ChevronRight, AlertTriangle, Receipt, Cog, Wrench, UserCheck, ShieldAlert } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchCompanySettings } from "@/lib/settings-api";
@@ -16,6 +17,7 @@ interface SettingsCard {
 
 export default function SettingsPage() {
   const navigate = useNavigate();
+  const { role } = useAuth();
 
   const { data: companySettings } = useQuery({
     queryKey: ["company-settings"],
@@ -131,6 +133,10 @@ export default function SettingsPage() {
       action: () => navigate("/settings/notifications"),
     },
   ];
+
+  if (role !== 'admin' && role !== 'finance') {
+    return <Navigate to="/" replace />;
+  }
 
   return (
     <div className="p-4 md:p-6 space-y-6">

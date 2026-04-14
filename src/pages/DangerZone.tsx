@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Navigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 import { ShieldAlert, Trash2, AlertTriangle } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -22,6 +23,7 @@ import {
 export default function DangerZone() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { role } = useAuth();
 
   const { data: companySettings } = useQuery({
     queryKey: ["company-settings"],
@@ -74,6 +76,10 @@ export default function DangerZone() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (role !== 'admin' && role !== 'finance') {
+    return <Navigate to="/" replace />;
   }
 
   return (

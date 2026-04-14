@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { useRoleAccess } from "@/hooks/useRoleAccess";
 import {
   fetchSerialNumbers,
   fetchSerialStats,
@@ -80,6 +81,7 @@ function WarrantyDate({ expiry }: { expiry: string | null }) {
 export default function SerialNumbers() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { canEdit } = useRoleAccess();
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState("");
@@ -286,7 +288,7 @@ export default function SerialNumbers() {
                         >
                           <ClipboardCheck className="h-3 w-3 mr-1" /> View FAT
                         </Button>
-                      ) : (
+                      ) : canEdit ? (
                         <Button
                           variant="outline"
                           size="sm"
@@ -295,7 +297,7 @@ export default function SerialNumbers() {
                         >
                           <Plus className="h-3 w-3 mr-1" /> Create FAT
                         </Button>
-                      )}
+                      ) : null}
                     </div>
                   </td>
                 </tr>

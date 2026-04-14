@@ -37,7 +37,7 @@ const statusClass: Record<string, string> = {
 export default function InvoiceRegister() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { canExport } = useRoleAccess();
+  const { canExport, canEdit } = useRoleAccess();
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<InvoiceFilters>({ search: "", status: "all", page: 1, pageSize: 20 });
   const [showDeleted, setShowDeleted] = useState(false);
@@ -81,9 +81,11 @@ export default function InvoiceRegister() {
           {canExport && <Button variant="outline" onClick={() => exportToExcel(invoices, INVOICE_EXPORT_COLS, `Invoices_${new Date().toISOString().split("T")[0]}.xlsx`, "Invoices")} disabled={invoices.length === 0}>
             <Download className="h-4 w-4 mr-1" /> Export
           </Button>}
-          <Button onClick={() => navigate("/invoices/new")} className="active:scale-[0.98] transition-transform">
-            <Plus className="h-4 w-4 mr-1" /> New Invoice
-          </Button>
+          {canEdit && (
+            <Button onClick={() => navigate("/invoices/new")} className="active:scale-[0.98] transition-transform">
+              <Plus className="h-4 w-4 mr-1" /> New Invoice
+            </Button>
+          )}
         </div>
       </div>
 

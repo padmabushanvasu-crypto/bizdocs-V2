@@ -13,6 +13,7 @@ import { getDaysOpen, getDaysOpenClass } from "@/lib/days-open";
 import { logAudit } from "@/lib/audit-api";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { useRoleAccess } from "@/hooks/useRoleAccess";
 
 const DELETION_REASONS_DC = [
   { value: 'data_entry_error',        label: 'Data entry error' },
@@ -74,6 +75,7 @@ function DeliveryChallansRegisterInner() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { role } = useAuth();
+  const access = useRoleAccess();
   const [filters, setFilters] = useState<DCFilters>({
     search: "",
     status: "all",
@@ -134,7 +136,7 @@ function DeliveryChallansRegisterInner() {
     if (!deleteTarget || !deleteReason) return;
     if (deleteReason === 'other' && !deleteCustomReason.trim()) return;
     const isIssued = deleteTarget.status === 'issued';
-    const canDeleteIssued = role === 'admin' || role === 'purchase_team';
+    const canDeleteIssued = access.canEdit;
     if (isIssued && canDeleteIssued && !deleteStockAction) return;
     deleteMutation.mutate({
       dc: deleteTarget,
@@ -177,9 +179,11 @@ function DeliveryChallansRegisterInner() {
           <Button variant="outline" onClick={() => exportToExcel(dcs, DC_EXPORT_COLS, `Delivery_Challans_${new Date().toISOString().split("T")[0]}.xlsx`, "Delivery Challans")} disabled={dcs.length === 0}>
             <Download className="h-4 w-4 mr-1" /> Export
           </Button>
-          <Button onClick={() => navigate("/delivery-challans/new")} className="active:scale-[0.98] transition-transform">
-            <Plus className="h-4 w-4 mr-1" /> New DC
-          </Button>
+          {access.canEdit && (
+            <Button onClick={() => navigate("/delivery-challans/new")} className="active:scale-[0.98] transition-transform">
+              <Plus className="h-4 w-4 mr-1" /> New DC
+            </Button>
+          )}
         </div>
       </div>
 
@@ -356,7 +360,7 @@ function DeliveryChallansRegisterInner() {
           {(() => {
             if (!deleteTarget) return null;
             const isIssued = deleteTarget.status === 'issued';
-            const canDelete = !isIssued || role === 'admin' || role === 'purchase_team';
+            const canDelete = !isIssued || access.canEdit;
 
             if (isIssued && !canDelete) {
               return (

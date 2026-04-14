@@ -687,7 +687,7 @@ export function AppSidebar() {
       icon: PackageCheck,
       badge: grnQCCount > 0 ? grnQCCount : undefined,
       badgeColor: "red" as const,
-      allowedRoles: ['admin', 'finance', 'inward_team', 'qc_team'],
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'qc_team'],
     },
     {
       title: "Follow-Up Tracker",
@@ -744,7 +744,7 @@ export function AppSidebar() {
       title: "Stock Ledger",
       url: "/stock-ledger",
       icon: BookOpen,
-      allowedRoles: ['admin', 'finance', 'purchase_team', 'storekeeper'],
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'storekeeper'],
     },
     {
       title: "Opening Stock",
@@ -816,7 +816,7 @@ export function AppSidebar() {
       title: "Parties",
       url: "/parties",
       icon: Users,
-      allowedRoles: ['admin', 'finance', 'purchase_team'],
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'storekeeper'],
     },
     {
       title: "Bill of Materials",

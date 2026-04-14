@@ -7,14 +7,25 @@ const VALID_ROLES: AppRole[] = [
   'qc_team', 'storekeeper', 'assembly_team', 'finance',
 ];
 
+// Sentinel for unknown roles — not a real AppRole entry.
+// getRoleAccess handles it the same as any unrecognised role: returns NO_ACCESS.
+// AppSidebar also correctly hides everything for this value.
+const UNKNOWN_ROLE = '__unknown__' as AppRole;
+
 /**
  * Returns the current user's typed AppRole.
- * Falls back to 'admin' if the profile role is missing or unrecognised —
- * this keeps the app fully usable for the primary admin account.
+ * Returns UNKNOWN_ROLE (→ NO_ACCESS) if the profile role is missing or
+ * unrecognised, and warns in development. Never falls back to admin.
  */
 export function useCurrentRole(): AppRole {
   const { role } = useAuth();
-  return VALID_ROLES.includes(role as AppRole) ? (role as AppRole) : 'admin';
+  if (!VALID_ROLES.includes(role as AppRole)) {
+    if (import.meta.env.DEV) {
+      console.warn(`Unknown role: "${role}", defaulting to no access`);
+    }
+    return UNKNOWN_ROLE;
+  }
+  return role as AppRole;
 }
 
 /**

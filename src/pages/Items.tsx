@@ -51,7 +51,7 @@ const emptyItem = {
 export default function Items() {
   const { toast } = useToast();
   const { companyId } = useAuth();
-  const { canExport } = useRoleAccess();
+  const { canExport, canEdit } = useRoleAccess();
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<ItemFilters>({ search: "", type: "all", status: "active" });
   const [formOpen, setFormOpen] = useState(false);
@@ -272,12 +272,16 @@ export default function Items() {
           {canExport && <Button variant="outline" onClick={() => exportToExcel(items, ITEMS_EXPORT_COLS, `Items_${new Date().toISOString().split("T")[0]}.xlsx`, "Items")} disabled={items.length === 0}>
             <Download className="h-4 w-4 mr-1" /> Export
           </Button>}
-          <Button variant="outline" onClick={() => setImportOpen(true)}>
-            <Upload className="h-4 w-4 mr-1" /> Import
-          </Button>
-          <Button onClick={openNew} className="active:scale-[0.98] transition-transform">
-            <Plus className="h-4 w-4 mr-1" /> Add Item
-          </Button>
+          {canEdit && (
+            <Button variant="outline" onClick={() => setImportOpen(true)}>
+              <Upload className="h-4 w-4 mr-1" /> Import
+            </Button>
+          )}
+          {canEdit && (
+            <Button onClick={openNew} className="active:scale-[0.98] transition-transform">
+              <Plus className="h-4 w-4 mr-1" /> Add Item
+            </Button>
+          )}
         </div>
       </div>
 
@@ -306,15 +310,17 @@ export default function Items() {
       {selected.size > 0 && (
         <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
           <span className="text-sm font-medium text-blue-800">{selected.size} selected</span>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 text-xs border-blue-300 text-blue-700 hover:bg-blue-100"
-            onClick={() => setBulkDeleteOpen(true)}
-            disabled={bulkDeleteMutation.isPending}
-          >
-            <Trash2 className="h-3 w-3 mr-1" /> Delete Selected
-          </Button>
+          {canEdit && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs border-blue-300 text-blue-700 hover:bg-blue-100"
+              onClick={() => setBulkDeleteOpen(true)}
+              disabled={bulkDeleteMutation.isPending}
+            >
+              <Trash2 className="h-3 w-3 mr-1" /> Delete Selected
+            </Button>
+          )}
           <Button
             size="sm"
             variant="ghost"
@@ -393,12 +399,16 @@ export default function Items() {
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.gst_rate}%</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                       <div className="flex gap-1 justify-center" onClick={(e) => e.stopPropagation()}>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(item)}>
-                          <Edit className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setItemToDelete(item)}>
-                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                        </Button>
+                        {canEdit && (
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(item)}>
+                            <Edit className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {canEdit && (
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setItemToDelete(item)}>
+                            <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>

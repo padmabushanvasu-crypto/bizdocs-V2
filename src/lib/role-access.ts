@@ -34,6 +34,7 @@ const PURCHASE_TEAM_MAP: Record<string, PageAccess> = {
   'vendor-scorecards':    { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
   'dc-grn':               { canView: true,  canEdit: true,  canExport: false, hideCosts: true  },
   'delivery-challans':    { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
+  'grn':                  { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
   'stock-register':       { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
   'stock-ledger':         { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
   'dispatch-records':     { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
@@ -50,6 +51,7 @@ const INWARD_TEAM_MAP: Record<string, PageAccess> = {
   'grn':                { canView: true,  canEdit: true,  canExport: false, hideCosts: true },
   'dc-grn':             { canView: true,  canEdit: true,  canExport: false, hideCosts: true },
   'stock-register':     { canView: true,  canEdit: false, canExport: false, hideCosts: true },
+  'stock-ledger':       { canView: true,  canEdit: false, canExport: false, hideCosts: true },
   'items':              { canView: true,  canEdit: false, canExport: false, hideCosts: true },
 };
 
@@ -91,6 +93,7 @@ const STOREKEEPER_MAP: Record<string, PageAccess> = {
   'bill-of-materials':          { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
   'jig-master':                 { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
   'assets-register':            { canView: true,  canEdit: true,  canExport: false, hideCosts: true  },
+  'parties':                    { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
 };
 
 const ASSEMBLY_TEAM_MAP: Record<string, PageAccess> = {

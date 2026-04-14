@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Navigate } from "react-router-dom";
 import { Users, ChevronLeft, AlertCircle, RefreshCw, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -52,7 +52,7 @@ function isValidEmail(email: string): boolean {
 export default function UserManagement() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, role } = useAuth();
 
   // ── Table state ────────────────────────────────────────────────────────────
   const [profiles, setProfiles] = useState<ProfileRow[]>([]);
@@ -305,6 +305,10 @@ export default function UserManagement() {
   };
 
   const anyActionLoading = isAssigning || isInviting;
+
+  if (role !== 'admin' && role !== 'finance') {
+    return <Navigate to="/" replace />;
+  }
 
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-5xl">

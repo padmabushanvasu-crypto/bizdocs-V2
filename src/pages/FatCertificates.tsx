@@ -9,6 +9,7 @@ import { fetchFatCertificates, fetchFatStats } from "@/lib/fat-api";
 import { fetchItems } from "@/lib/items-api";
 import { MetricCard } from "@/components/MetricCard";
 import { useToast } from "@/hooks/use-toast";
+import { useRoleAccess } from "@/hooks/useRoleAccess";
 import { format } from "date-fns";
 
 const statusClass: Record<string, string> = {
@@ -29,6 +30,7 @@ const statusLabels: Record<string, string> = {
 export default function FatCertificates() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { canEdit } = useRoleAccess();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [itemFilter, setItemFilter] = useState("all");
@@ -72,15 +74,17 @@ export default function FatCertificates() {
           <h1 className="text-2xl font-bold text-slate-900">FAT Certificates</h1>
           <p className="text-sm text-slate-500 mt-1">Factory Acceptance Test records</p>
         </div>
-        <Button
-          size="sm"
-          onClick={() => {
-            toast({ title: "Select a serial number to create a FAT certificate" });
-            navigate("/serial-numbers");
-          }}
-        >
-          <Plus className="h-4 w-4 mr-1" /> New FAT Certificate
-        </Button>
+        {canEdit && (
+          <Button
+            size="sm"
+            onClick={() => {
+              toast({ title: "Select a serial number to create a FAT certificate" });
+              navigate("/serial-numbers");
+            }}
+          >
+            <Plus className="h-4 w-4 mr-1" /> New FAT Certificate
+          </Button>
+        )}
       </div>
 
       {/* Summary Cards */}

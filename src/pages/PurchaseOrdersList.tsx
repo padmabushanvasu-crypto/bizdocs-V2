@@ -37,7 +37,7 @@ const statusClass: Record<string, string> = {
 export default function PurchaseOrdersList() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { hideCosts, canExport } = useRoleAccess();
+  const { hideCosts, canExport, canEdit } = useRoleAccess();
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<POFilters>({
     search: "",
@@ -83,9 +83,11 @@ export default function PurchaseOrdersList() {
           {canExport && <Button variant="outline" onClick={() => exportToExcel(pos, PO_EXPORT_COLS, `Purchase_Orders_${new Date().toISOString().split("T")[0]}.xlsx`, "Purchase Orders")} disabled={pos.length === 0}>
             <Download className="h-4 w-4 mr-1" /> Export
           </Button>}
-          <Button onClick={() => navigate("/purchase-orders/new")} className="active:scale-[0.98] transition-transform">
-            <Plus className="h-4 w-4 mr-1" /> New PO
-          </Button>
+          {canEdit && (
+            <Button onClick={() => navigate("/purchase-orders/new")} className="active:scale-[0.98] transition-transform">
+              <Plus className="h-4 w-4 mr-1" /> New PO
+            </Button>
+          )}
         </div>
       </div>
 

@@ -1530,7 +1530,7 @@ export default function GRNDetail() {
     if (!deleteReason) return;
     if (deleteReason === 'other' && !deleteCustomReason.trim()) return;
     const isCompleted = COMPLETED_GRN_STAGES_SET.has(stage);
-    const canDeleteCompleted = role === 'admin' || role === 'storekeeper';
+    const canDeleteCompleted = role === 'admin' || role === 'finance' || role === 'storekeeper';
     if (isCompleted && canDeleteCompleted && !deleteStockAction) return;
     const finalReason = getFinalReasonGRN();
     deleteMutation.mutate({
@@ -1684,7 +1684,9 @@ export default function GRNDetail() {
     return autoFinalLines.has(lineId) || (finalGrnPerLine[lineId] ?? false);
   });
   const showStorePanel = stage === "awaiting_store" && !g.store_confirmed;
-  const s1Editable = (!s1Done || s1Editing) && !isDeletedOrCancelled;
+  const s1RoleAllowed = role === 'admin' || role === 'finance' || role === 'inward_team';
+  const s2RoleAllowed = role === 'admin' || role === 'finance' || role === 'qc_team';
+  const s1Editable = s1RoleAllowed && (!s1Done || s1Editing) && !isDeletedOrCancelled;
 
   // Legacy alias — any line that blocks the save button at all
   const overQtyLines = beyondToleranceItems.map((t) => t.line);
@@ -1826,7 +1828,7 @@ export default function GRNDetail() {
             <p className="text-xs text-blue-600 mt-0.5">Inward Team</p>
           </div>
           <div className="flex items-center gap-3">
-            {s1Done && !s1Editing && !isDeletedOrCancelled && (
+            {s1RoleAllowed && s1Done && !s1Editing && !isDeletedOrCancelled && (
               <Button variant="outline" size="sm" className="text-blue-700 border-blue-300 bg-white" onClick={() => setS1Editing(true)}>
                 Edit Receipt
               </Button>
@@ -2110,7 +2112,7 @@ export default function GRNDetail() {
           </div>
 
           <div className="px-5 py-4 space-y-5">
-            {(!s2Done && !isDeletedOrCancelled) ? (
+            {(s2RoleAllowed && !s2Done && !isDeletedOrCancelled) ? (
               <>
                 {/* QC measurement tables per item */}
                 <QCMeasurementEditor
@@ -2414,7 +2416,7 @@ export default function GRNDetail() {
         <DialogContent className="max-w-md">
           {(() => {
             const isCompleted = COMPLETED_GRN_STAGES_SET.has(stage);
-            const canDelete = !isCompleted || role === 'admin' || role === 'storekeeper';
+            const canDelete = !isCompleted || role === 'admin' || role === 'finance' || role === 'storekeeper';
 
             if (isCompleted && !canDelete) {
               return (

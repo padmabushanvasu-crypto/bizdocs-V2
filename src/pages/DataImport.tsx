@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, Navigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Upload, Download, CheckCircle, XCircle, AlertTriangle, Table, Users, Package, GitFork, ChevronLeft, Trash2, Wrench, Cog } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -2467,7 +2467,7 @@ export default function DataImport() {
   const [activeTab, setActiveTab] = useState((location.state as any)?.tab ?? "parties");
   // companyId is guaranteed non-null here by ProtectedRoute (redirects to /setup if null).
   // Reading from auth context avoids a redundant network call and race conditions.
-  const { companyId: pageCompanyId, signOut } = useAuth();
+  const { companyId: pageCompanyId, signOut, role } = useAuth();
 
   useEffect(() => {
     if ((location.state as any)?.tab) {
@@ -2702,6 +2702,10 @@ export default function DataImport() {
 
     return { imported, skipped, errors, skipReasons };
   };
+
+  if (role !== 'admin' && role !== 'finance') {
+    return <Navigate to="/" replace />;
+  }
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-4xl mx-auto">
