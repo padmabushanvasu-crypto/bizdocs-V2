@@ -48,7 +48,7 @@ export interface GRNLineItem {
   stage2_approved_by?: string | null;
   stage2_date?: string | null;
   stage2_complete?: boolean;
-  jigs_sent?: string | null;
+  jigs_sent?: string | string[] | null;
   jigs_returned?: string | null;
   identity_matched_qty?: number;
   identity_not_matched_qty?: number;
@@ -913,6 +913,7 @@ export async function saveQuantitativeStage(
   vendorInvoiceNumber?: string | null,
   vendorInvoiceDate?: string | null,
   overrideStage?: string | null,
+  jigReturnConfirmed?: Set<string>,
 ): Promise<void> {
   const now = new Date().toISOString();
   // Update each line
@@ -934,6 +935,7 @@ export async function saveQuantitativeStage(
       mismatch_reason: line.mismatch_reason ?? null,
       mismatch_disposition: line.mismatch_disposition ?? null,
       over_receipt_qty: line.over_receipt_qty ?? null,
+      jig_confirmed: jigReturnConfirmed ? jigReturnConfirmed.has(line.id) : false,
     };
     console.log('[GRN Stage 1] payload:', JSON.stringify(linePayload));
     const { error } = await (supabase as any)

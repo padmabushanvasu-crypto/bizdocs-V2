@@ -237,7 +237,14 @@ export async function duplicatePurchaseOrder(id: string) {
   });
 }
 
+// TODO: Add RLS policy to restrict UPDATE of approved_at/approved_by columns to
+// finance and admin roles so this guard is enforced server-side as well.
 export async function approvePurchaseOrder(id: string, approvedBy: string) {
+  const { data: { user } } = await supabase.auth.getUser();
+  const role = (user?.user_metadata?.role ?? user?.app_metadata?.role) as string | undefined;
+  if (role !== 'admin' && role !== 'finance') {
+    throw new Error('Unauthorised: only finance or admin can approve purchase orders');
+  }
   const { error } = await supabase
     .from("purchase_orders")
     .update({ status: "draft", approved_at: new Date().toISOString(), approved_by: approvedBy } as any)
@@ -246,6 +253,11 @@ export async function approvePurchaseOrder(id: string, approvedBy: string) {
 }
 
 export async function rejectPurchaseOrder(id: string, reason: string) {
+  const { data: { user } } = await supabase.auth.getUser();
+  const role = (user?.user_metadata?.role ?? user?.app_metadata?.role) as string | undefined;
+  if (role !== 'admin' && role !== 'finance') {
+    throw new Error('Unauthorised: only finance or admin can reject purchase orders');
+  }
   const { error } = await supabase
     .from("purchase_orders")
     .update({ status: "rejected", rejection_reason: reason, rejection_noted: false } as any)

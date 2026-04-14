@@ -100,8 +100,15 @@ interface S1Line {
   mismatch_disposition: string;
   // Jig / mould return confirmation
   jig_confirmed?: boolean;
-  jigs_sent?: string | null;
+  jigs_sent?: string | string[] | null;
   unit: string;
+}
+
+// Normalise jigs_sent which may be a string or a JSON array (JSONB column)
+function parseJigsSent(val: string | string[] | null | undefined): string | null {
+  if (!val) return null;
+  if (Array.isArray(val)) return val.join(', ');
+  return val;
 }
 
 // ── QC Measurement row state ───────────────────────────────────────────────────
@@ -1259,6 +1266,15 @@ export default function GRNDetail() {
       })
     );
 
+    // Initialise jigReturnConfirmed from persisted jig_confirmed values
+    setJigReturnConfirmed(
+      new Set<string>(
+        items
+          .filter((item) => (item as any).jig_confirmed === true && item.id)
+          .map((item) => item.id as string)
+      )
+    );
+
     // Stage 2 — QC rows from loaded measurements
     const existingMeasurements = grn.qc_measurements ?? [];
     if (existingMeasurements.length > 0) {
@@ -1395,7 +1411,7 @@ export default function GRNDetail() {
       });
 
       const overrideStage = needsFinanceApproval ? "pending_finance_approval" : null;
-      await saveQuantitativeStage(id!, lines, s1VerifiedBy, s1InvoiceNumber || null, s1InvoiceDate || null, overrideStage);
+      await saveQuantitativeStage(id!, lines, s1VerifiedBy, s1InvoiceNumber || null, s1InvoiceDate || null, overrideStage, jigReturnConfirmed);
 
       // Save scrap data for DC-GRNs
       await saveGRNScrapItems(id!, scrapReturned, scrapNotes || null,
@@ -1557,7 +1573,7 @@ export default function GRNDetail() {
       toast({ title: "Verification Date is required", variant: "destructive" });
       return;
     }
-    const unconfirmedJigLines = s1Lines.filter(l => l.jigs_sent && !jigReturnConfirmed.has(l.id));
+    const unconfirmedJigLines = s1Lines.filter(l => !!parseJigsSent(l.jigs_sent) && !jigReturnConfirmed.has(l.id));
     if (unconfirmedJigLines.length > 0) {
       toast({
         title: "Jig return confirmation required",
@@ -1844,7 +1860,7 @@ export default function GRNDetail() {
         <div className="px-5 py-4 space-y-4">
           {/* Jig/Mould return alert — shown when DC included tooling */}
           {(() => {
-            const jigLines = s1Lines.filter(l => l.jigs_sent);
+            const jigLines = s1Lines.filter(l => !!parseJigsSent(l.jigs_sent));
             if (jigLines.length === 0) return null;
             const allConfirmed = jigLines.every(l => jigReturnConfirmed.has(l.id));
             return (
@@ -1873,7 +1889,7 @@ export default function GRNDetail() {
                             className="h-4 w-4 mt-0.5 accent-amber-600 cursor-pointer shrink-0"
                           />
                           <span className={`text-sm ${confirmed ? "line-through text-slate-400" : "text-amber-700"}`}>
-                            Confirmed — {line.jigs_sent} has been returned by vendor
+                            Confirmed — {parseJigsSent(line.jigs_sent)} has been returned by vendor
                           </span>
                         </label>
                       );
@@ -2046,7 +2062,7 @@ export default function GRNDetail() {
                   s1Mutation.isPending ||
                   isDeletedOrCancelled ||
                   overQtyLines.length > 0 ||
-                  s1Lines.filter(l => l.jigs_sent).some(l => !jigReturnConfirmed.has(l.id))
+                  s1Lines.filter(l => !!parseJigsSent(l.jigs_sent)).some(l => !jigReturnConfirmed.has(l.id))
                 }
                 className={`w-full text-white ${needsFinanceApproval ? "bg-amber-600 hover:bg-amber-700" : "bg-blue-600 hover:bg-blue-700"}`}
               >

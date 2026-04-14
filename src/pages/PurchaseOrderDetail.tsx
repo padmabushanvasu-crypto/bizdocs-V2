@@ -433,7 +433,8 @@ export default function PurchaseOrderDetail() {
           <Button variant="outline" size="sm" onClick={() => duplicateMutation.mutate()}>
             <Copy className="h-3.5 w-3.5 mr-1" /> Duplicate
           </Button>
-          {!["cancelled", "closed", "fully_received", "deleted"].includes(po.status) && (
+          {!["cancelled", "closed", "fully_received", "deleted"].includes(po.status) &&
+            !(isPurchaseTeam && po.status === "pending_approval") && (
             <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => setCancelOpen(true)}>
               <X className="h-3.5 w-3.5 mr-1" /> Cancel
             </Button>
@@ -1015,8 +1016,14 @@ export default function PurchaseOrderDetail() {
       <Dialog open={deleteOpen} onOpenChange={(open) => { if (!open) setDeleteOpen(false); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-destructive">Delete Purchase Order</DialogTitle>
-            <p className="text-sm text-muted-foreground mt-1">Please provide a reason for deletion.</p>
+            <DialogTitle className="text-destructive">
+              {isPurchaseTeam && po.status === "pending_approval" ? "Retract Approval Request" : "Delete Purchase Order"}
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              {isPurchaseTeam && po.status === "pending_approval"
+                ? "This will retract your approval request and delete the PO. Are you sure?"
+                : "Please provide a reason for deletion."}
+            </p>
           </DialogHeader>
 
           <div className="space-y-3">
