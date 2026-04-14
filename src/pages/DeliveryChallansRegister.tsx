@@ -1,13 +1,25 @@
 import { useState, Component, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { Truck, Plus, Search, Eye, Edit, Package, Clock, AlertTriangle, Download, Trash2, Lock } from "lucide-react";
+import { Truck, Plus, Search, Eye, Package, Clock, AlertTriangle, Download, Trash2, Lock, CheckCircle, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { MetricCard } from "@/components/MetricCard";
-import { fetchDeliveryChallans, fetchDCStats, softDeleteDeliveryChallan, type DCFilters, type DcDeleteStockAction } from "@/lib/delivery-challans-api";
+import {
+  fetchDeliveryChallans,
+  fetchDCStats,
+  softDeleteDeliveryChallan,
+  fetchPendingDCApprovals,
+  fetchDCApprovalHistory,
+  approveDC,
+  rejectDC,
+  type DCFilters,
+  type DcDeleteStockAction,
+} from "@/lib/delivery-challans-api";
 import { exportToExcel, DC_EXPORT_COLS } from "@/lib/export-utils";
 import { getDaysOpen, getDaysOpenClass } from "@/lib/days-open";
 import { logAudit } from "@/lib/audit-api";
@@ -30,6 +42,8 @@ const statusLabels: Record<string, string> = {
   fully_returned: "Returned",
   cancelled: "Cancelled",
   deleted: "Deleted",
+  pending_approval: "Awaiting Approval",
+  rejected: "Rejected",
 };
 
 const statusClass: Record<string, string> = {
@@ -39,6 +53,8 @@ const statusClass: Record<string, string> = {
   fully_returned: "status-paid",
   cancelled: "status-cancelled line-through",
   deleted: "bg-gray-100 text-gray-500 border border-gray-200 text-xs font-medium px-2.5 py-0.5 rounded-full line-through",
+  pending_approval: "bg-amber-50 text-amber-700 border border-amber-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
+  rejected: "bg-red-50 text-red-700 border border-red-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
 };
 
 const typeLabels: Record<string, string> = {
@@ -51,6 +67,296 @@ const typeLabels: Record<string, string> = {
   sample: "Sample",
   loan_borrow: "Loan/Borrow",
 };
+
+function daysSince(dateStr: string | null): number {
+  if (!dateStr) return 0;
+  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+}
+
+// ─── Pending Approvals Tab ────────────────────────────────────────────────────
+
+function PendingApprovalsTab({ profile }: { profile: any }) {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [rejectDcId, setRejectDcId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+
+  const { data: pendingDcs = [], isLoading } = useQuery({
+    queryKey: ["dc-pending-approvals"],
+    queryFn: fetchPendingDCApprovals,
+    staleTime: 0,
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: (dcId: string) => {
+      const approvedBy = profile?.display_name || profile?.full_name || profile?.email || "Approver";
+      return approveDC(dcId, approvedBy);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dc-pending-approvals"] });
+      queryClient.invalidateQueries({ queryKey: ["dc-approval-history"] });
+      queryClient.invalidateQueries({ queryKey: ["delivery-challans"] });
+      queryClient.invalidateQueries({ queryKey: ["dc-pending-approval-count"] });
+      toast({ title: "DC approved", description: "Inward team can now issue it." });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: (dcId: string) => rejectDC(dcId, rejectReason.trim()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dc-pending-approvals"] });
+      queryClient.invalidateQueries({ queryKey: ["dc-approval-history"] });
+      queryClient.invalidateQueries({ queryKey: ["delivery-challans"] });
+      queryClient.invalidateQueries({ queryKey: ["dc-pending-approval-count"] });
+      queryClient.invalidateQueries({ queryKey: ["dc-unread-rejection-count"] });
+      setRejectDcId(null);
+      setRejectReason("");
+      toast({ title: "DC request rejected", description: "The inward team will be notified." });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const thCls = "px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200";
+
+  if (isLoading) return <div className="py-12 text-center text-sm text-slate-400">Loading…</div>;
+
+  if (pendingDcs.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <div className="h-14 w-14 rounded-2xl bg-green-50 flex items-center justify-center mb-4">
+          <CheckCircle className="h-7 w-7 text-green-500" />
+        </div>
+        <h3 className="text-base font-semibold text-slate-900 mb-1">All clear</h3>
+        <p className="text-sm text-slate-500">No DC requests awaiting approval.</p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="paper-card !p-0">
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr>
+                <th className={`${thCls} text-left`}>DC #</th>
+                <th className={`${thCls} text-left`}>Party</th>
+                <th className={`${thCls} text-left`}>Type</th>
+                <th className={`${thCls} text-left`}>Requested By</th>
+                <th className={`${thCls} text-left`}>Requested On</th>
+                <th className={`${thCls} text-right`}>Waiting</th>
+                <th className={`${thCls} text-center`}>Items</th>
+                <th className={`${thCls} text-center`}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pendingDcs.map((dc) => {
+                const waitDays = daysSince((dc as any).approval_requested_at);
+                const isApprovingThis = approveMutation.isPending && approveMutation.variables === dc.id;
+                return (
+                  <tr key={dc.id} className="hover:bg-muted/40 transition-colors">
+                    <td className="px-3 py-2.5 border-b border-slate-100 text-left">
+                      <button
+                        className="font-mono font-semibold text-blue-700 hover:underline text-sm"
+                        onClick={() => navigate(`/delivery-challans/${dc.id}`)}
+                      >
+                        {dc.dc_number}
+                      </button>
+                    </td>
+                    <td className="px-3 py-2.5 border-b border-slate-100 text-left font-medium text-sm text-slate-800">
+                      {dc.party_name || "—"}
+                    </td>
+                    <td className="px-3 py-2.5 border-b border-slate-100 text-left text-sm text-slate-500">
+                      {typeLabels[dc.dc_type] || dc.dc_type}
+                    </td>
+                    <td className="px-3 py-2.5 border-b border-slate-100 text-left text-sm text-slate-600">
+                      {(dc as any).approval_requested_by || "—"}
+                    </td>
+                    <td className="px-3 py-2.5 border-b border-slate-100 text-left text-sm text-slate-600">
+                      {(dc as any).approval_requested_at
+                        ? new Date((dc as any).approval_requested_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+                        : "—"}
+                    </td>
+                    <td className="px-3 py-2.5 border-b border-slate-100 text-right font-mono tabular-nums text-sm">
+                      <span className={waitDays > 3 ? "text-amber-600 font-semibold" : "text-slate-600"}>
+                        {waitDays}d
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 border-b border-slate-100 text-center text-sm text-slate-500">
+                      {(dc as any).line_item_count} item{(dc as any).line_item_count !== 1 ? "s" : ""}
+                    </td>
+                    <td className="px-3 py-2.5 border-b border-slate-100 text-center">
+                      <div className="flex gap-1.5 justify-center" onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
+                          onClick={() => { setRejectDcId(dc.id); setRejectReason(""); }}
+                        >
+                          <XCircle className="h-3 w-3 mr-1" /> Reject
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs bg-green-700 hover:bg-green-800 text-white"
+                          disabled={isApprovingThis}
+                          onClick={() => approveMutation.mutate(dc.id)}
+                        >
+                          <CheckCircle className="h-3 w-3 mr-1" /> {isApprovingThis ? "Approving…" : "Approve"}
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <Dialog open={!!rejectDcId} onOpenChange={(open) => { if (!open) setRejectDcId(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-destructive">Reject DC Request</DialogTitle>
+            <DialogDescription>Provide a reason so the inward team can correct and resubmit.</DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            placeholder="Reason for rejection…"
+            rows={3}
+            autoFocus
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectDcId(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={!rejectReason.trim() || rejectMutation.isPending}
+              onClick={() => rejectDcId && rejectMutation.mutate(rejectDcId)}
+            >
+              {rejectMutation.isPending ? "Rejecting…" : "Reject DC"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+// ─── Approval History Tab ─────────────────────────────────────────────────────
+
+function ApprovalHistoryTab() {
+  const navigate = useNavigate();
+  const [search, setSearch] = useState("");
+
+  const { data: historyDcs = [], isLoading } = useQuery({
+    queryKey: ["dc-approval-history", search],
+    queryFn: () => fetchDCApprovalHistory(search),
+    staleTime: 30_000,
+  });
+
+  const thCls = "px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200";
+
+  return (
+    <div className="space-y-3">
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search DC#, party…"
+          className="pl-9"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
+      <div className="paper-card !p-0">
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr>
+                <th className={`${thCls} text-left`}>DC #</th>
+                <th className={`${thCls} text-left`}>Party</th>
+                <th className={`${thCls} text-left`}>Type</th>
+                <th className={`${thCls} text-center`}>Outcome</th>
+                <th className={`${thCls} text-left`}>Requested By</th>
+                <th className={`${thCls} text-left`}>Actioned By</th>
+                <th className={`${thCls} text-left`}>Actioned On</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={7} className="px-3 py-8 text-center text-sm text-slate-400">Loading…</td>
+                </tr>
+              ) : historyDcs.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-3 py-10 text-center text-sm text-slate-400">
+                    No approval history yet.
+                  </td>
+                </tr>
+              ) : (
+                historyDcs.map((dc) => {
+                  const wasApproved = !!(dc as any).approved_at;
+                  const actionedOn = (dc as any).approved_at || null;
+                  const actionedBy = (dc as any).approved_by || "—";
+                  return (
+                    <tr
+                      key={dc.id}
+                      className="hover:bg-muted/40 cursor-pointer transition-colors"
+                      onClick={() => navigate(`/delivery-challans/${dc.id}`)}
+                    >
+                      <td className="px-3 py-2.5 border-b border-slate-100 text-left font-mono font-semibold text-slate-800">
+                        {dc.dc_number}
+                      </td>
+                      <td className="px-3 py-2.5 border-b border-slate-100 text-left text-slate-700">
+                        {dc.party_name || "—"}
+                      </td>
+                      <td className="px-3 py-2.5 border-b border-slate-100 text-left text-slate-500 text-sm">
+                        {typeLabels[dc.dc_type] || dc.dc_type}
+                      </td>
+                      <td className="px-3 py-2.5 border-b border-slate-100 text-center">
+                        {wasApproved ? (
+                          <span className="bg-green-50 text-green-700 border border-green-200 text-xs font-medium px-2.5 py-0.5 rounded-full">
+                            Approved
+                          </span>
+                        ) : (
+                          <div>
+                            <span className="bg-red-50 text-red-700 border border-red-200 text-xs font-medium px-2.5 py-0.5 rounded-full">
+                              Rejected
+                            </span>
+                            {(dc as any).rejection_reason && (
+                              <p className="text-[10px] text-red-500 mt-0.5 max-w-[160px] truncate" title={(dc as any).rejection_reason}>
+                                {(dc as any).rejection_reason}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 border-b border-slate-100 text-slate-600 text-sm">
+                        {(dc as any).approval_requested_by || "—"}
+                      </td>
+                      <td className="px-3 py-2.5 border-b border-slate-100 text-slate-600 text-sm">
+                        {actionedBy}
+                      </td>
+                      <td className="px-3 py-2.5 border-b border-slate-100 text-slate-600 text-sm">
+                        {actionedOn
+                          ? new Date(actionedOn).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+                          : "—"}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Error Boundary ───────────────────────────────────────────────────────────
 
 class DCRegisterErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   constructor(props: { children: ReactNode }) { super(props); this.state = { error: null }; }
@@ -70,12 +376,17 @@ class DCRegisterErrorBoundary extends Component<{ children: ReactNode }, { error
   }
 }
 
+// ─── Main Component ───────────────────────────────────────────────────────────
+
 function DeliveryChallansRegisterInner() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { role } = useAuth();
+  const { role, profile } = useAuth();
   const access = useRoleAccess();
+  const isInwardTeam = role === 'inward_team';
+  const isApprover = role === 'admin' || role === 'finance' || role === 'purchase_team';
+
   const [filters, setFilters] = useState<DCFilters>({
     search: "",
     status: "all",
@@ -101,6 +412,17 @@ function DeliveryChallansRegisterInner() {
     queryFn: () => fetchDeliveryChallans(filters),
   });
 
+  // Pending count for the tab badge (approvers only)
+  const { data: pendingApprovalCount = 0 } = useQuery({
+    queryKey: ["dc-pending-approval-count"],
+    queryFn: async () => {
+      const res = await fetchPendingDCApprovals();
+      return res.length;
+    },
+    enabled: isApprover,
+    staleTime: 30_000,
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async ({ dc, reason, stockAction }: { dc: any; reason: string; stockAction?: DcDeleteStockAction }) => {
       await softDeleteDeliveryChallan(dc.id, { deletion_reason: reason, stockAction });
@@ -109,6 +431,7 @@ function DeliveryChallansRegisterInner() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["delivery-challans"] });
       queryClient.invalidateQueries({ queryKey: ["dc-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["dc-pending-approval-count"] });
       setDeleteDialogOpen(false);
       setDeleteTarget(null);
       setDeleteReason('');
@@ -168,38 +491,44 @@ function DeliveryChallansRegisterInner() {
     return null;
   };
 
-  return (
-    <div className="p-4 md:p-6 space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">DC / Job Work Orders</h1>
-          <p className="text-sm text-slate-500 mt-1">Track outgoing material and returns</p>
-        </div>
-        <div className="flex flex-wrap gap-2 flex-shrink-0">
-          <Button variant="outline" onClick={() => exportToExcel(dcs, DC_EXPORT_COLS, `Delivery_Challans_${new Date().toISOString().split("T")[0]}.xlsx`, "Delivery Challans")} disabled={dcs.length === 0}>
-            <Download className="h-4 w-4 mr-1" /> Export
+  // ── Shared header ─────────────────────────────────────────────────────────
+  const pageHeader = (
+    <div className="flex items-start justify-between gap-3">
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900">DC / Job Work Orders</h1>
+        <p className="text-sm text-slate-500 mt-1">Track outgoing material and returns</p>
+      </div>
+      <div className="flex flex-wrap gap-2 flex-shrink-0">
+        <Button variant="outline" onClick={() => exportToExcel(dcs, DC_EXPORT_COLS, `Delivery_Challans_${new Date().toISOString().split("T")[0]}.xlsx`, "Delivery Challans")} disabled={dcs.length === 0}>
+          <Download className="h-4 w-4 mr-1" /> Export
+        </Button>
+        {access.canEdit && (
+          <Button onClick={() => navigate("/delivery-challans/new")} className="active:scale-[0.98] transition-transform">
+            <Plus className="h-4 w-4 mr-1" /> New DC
           </Button>
-          {access.canEdit && (
-            <Button onClick={() => navigate("/delivery-challans/new")} className="active:scale-[0.98] transition-transform">
-              <Plus className="h-4 w-4 mr-1" /> New DC
-            </Button>
-          )}
-        </div>
+        )}
       </div>
+    </div>
+  );
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <MetricCard title="DCs This Month" value={String(stats?.totalThisMonth ?? 0)} icon={Truck} />
-        <MetricCard title="Open DCs" value={String(stats?.openDCs ?? 0)} icon={Package} />
-        <MetricCard
-          title="Overdue"
-          value={String(stats?.overdueDCs ?? 0)}
-          icon={AlertTriangle}
-          className={stats?.overdueDCs ? "border-destructive/30" : ""}
-        />
-        <MetricCard title="Pending Returns" value={String(stats?.pendingReturns ?? 0)} icon={Clock} />
-      </div>
+  // ── Summary cards ─────────────────────────────────────────────────────────
+  const summaryCards = (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <MetricCard title="DCs This Month" value={String(stats?.totalThisMonth ?? 0)} icon={Truck} />
+      <MetricCard title="Open DCs" value={String(stats?.openDCs ?? 0)} icon={Package} />
+      <MetricCard
+        title="Overdue"
+        value={String(stats?.overdueDCs ?? 0)}
+        icon={AlertTriangle}
+        className={stats?.overdueDCs ? "border-destructive/30" : ""}
+      />
+      <MetricCard title="Pending Returns" value={String(stats?.pendingReturns ?? 0)} icon={Clock} />
+    </div>
+  );
 
+  // ── All DCs table ─────────────────────────────────────────────────────────
+  const allDCsContent = (
+    <div className="space-y-3">
       {/* Filters */}
       <div className="flex flex-wrap gap-2">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
@@ -220,6 +549,8 @@ function DeliveryChallansRegisterInner() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="pending_approval">Awaiting Approval</SelectItem>
+            <SelectItem value="rejected">Rejected</SelectItem>
             <SelectItem value="draft">Draft</SelectItem>
             <SelectItem value="issued">Issued</SelectItem>
             <SelectItem value="partially_returned">Partially Returned</SelectItem>
@@ -274,6 +605,8 @@ function DeliveryChallansRegisterInner() {
                   const days = getDaysOpen(dc.issued_at, dc.status, ["fully_returned", "cancelled", "deleted"]);
                   const daysClass = getDaysOpenClass(days);
                   const isDeleted = dc.status === "deleted";
+                  // Inward team: show "Approved — Ready to Issue" for approved drafts
+                  const isApprovedDraft = isInwardTeam && dc.status === "draft" && !!(dc as any).approved_at;
                   return (
                     <tr
                       key={dc.id}
@@ -301,14 +634,21 @@ function DeliveryChallansRegisterInner() {
                             {new Date(dc.return_due_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
                             {overdue && " ⚠"}
                           </span>
-                        ) : (
-                          "—"
-                        )}
+                        ) : "—"}
                       </td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
-                        <span className={statusClass[dc.status] || "status-draft"}>
-                          {overdue && dc.status !== "cancelled" ? "Overdue" : statusLabels[dc.status] || dc.status}
-                        </span>
+                        {isApprovedDraft ? (
+                          <span className="bg-green-50 text-green-700 border border-green-200 text-xs font-medium px-2.5 py-0.5 rounded-full">
+                            Approved — Ready to Issue
+                          </span>
+                        ) : (
+                          <span className={statusClass[dc.status] || "status-draft"}>
+                            {overdue && dc.status !== "cancelled" ? "Overdue" : statusLabels[dc.status] || dc.status}
+                          </span>
+                        )}
+                        {isInwardTeam && dc.status === "rejected" && (dc as any).rejection_reason && !(dc as any).rejection_noted && (
+                          <span className="block text-[10px] text-red-600 font-medium mt-0.5">New rejection</span>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                         {days !== null ? <span className={daysClass}>{days}d</span> : "—"}
@@ -352,6 +692,47 @@ function DeliveryChallansRegisterInner() {
             Next
           </Button>
         </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="p-4 md:p-6 space-y-4">
+      {pageHeader}
+      {summaryCards}
+
+      {isApprover ? (
+        <Tabs defaultValue="all">
+          <TabsList className="mb-1">
+            <TabsTrigger value="all">All DCs</TabsTrigger>
+            <TabsTrigger value="pending" className="flex items-center gap-1.5">
+              Pending Approvals
+              {pendingApprovalCount > 0 && (
+                <span className="inline-flex items-center justify-center h-4.5 min-w-[1.25rem] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold leading-none">
+                  {pendingApprovalCount}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="history">
+              <Clock className="h-3.5 w-3.5 mr-1" />
+              Approval History
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="all" className="mt-3">
+            {allDCsContent}
+          </TabsContent>
+
+          <TabsContent value="pending" className="mt-3">
+            <PendingApprovalsTab profile={profile} />
+          </TabsContent>
+
+          <TabsContent value="history" className="mt-3">
+            <ApprovalHistoryTab />
+          </TabsContent>
+        </Tabs>
+      ) : (
+        allDCsContent
       )}
 
       {/* ── DC Deletion Dialog ── */}

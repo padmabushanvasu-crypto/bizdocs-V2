@@ -435,6 +435,10 @@ export type Database = {
       delivery_challans: {
         Row: {
           approximate_value: number | null
+          approval_requested_at: string | null
+          approval_requested_by: string | null
+          approved_at: string | null
+          approved_by: string | null
           cancellation_reason: string | null
           cancelled_at: string | null
           cgst_amount: number | null
@@ -463,6 +467,8 @@ export type Database = {
           po_reference: string | null
           prepared_by: string | null
           reference_number: string | null
+          rejection_noted: boolean
+          rejection_reason: string | null
           return_due_date: string | null
           sgst_amount: number | null
           special_instructions: string | null
@@ -476,6 +482,10 @@ export type Database = {
         }
         Insert: {
           approximate_value?: number | null
+          approval_requested_at?: string | null
+          approval_requested_by?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
           cancellation_reason?: string | null
           cancelled_at?: string | null
           cgst_amount?: number | null
@@ -504,6 +514,8 @@ export type Database = {
           po_reference?: string | null
           prepared_by?: string | null
           reference_number?: string | null
+          rejection_noted?: boolean
+          rejection_reason?: string | null
           return_due_date?: string | null
           sgst_amount?: number | null
           special_instructions?: string | null
@@ -517,6 +529,10 @@ export type Database = {
         }
         Update: {
           approximate_value?: number | null
+          approval_requested_at?: string | null
+          approval_requested_by?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
           cancellation_reason?: string | null
           cancelled_at?: string | null
           cgst_amount?: number | null
@@ -545,6 +561,8 @@ export type Database = {
           po_reference?: string | null
           prepared_by?: string | null
           reference_number?: string | null
+          rejection_noted?: boolean
+          rejection_reason?: string | null
           return_due_date?: string | null
           sgst_amount?: number | null
           special_instructions?: string | null

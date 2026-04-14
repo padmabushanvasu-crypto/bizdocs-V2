@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Edit, X, Truck, CheckCircle2, RotateCcw, AlertTriangle, Printer, ChevronLeft, Trash2, Plus, Lock } from "lucide-react";
+import { Edit, X, Truck, CheckCircle2, RotateCcw, AlertTriangle, Printer, ChevronLeft, Trash2, Plus, Lock, CheckCircle, XCircle } from "lucide-react";
 import { EditableSection } from "@/components/EditableSection";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -18,6 +18,10 @@ import {
   recordEnhancedReturn,
   fetchBomStagesForItemDC,
   fetchComponentProcessingLog,
+  approveDC,
+  rejectDC,
+  markDCRejectionNoted,
+  issueDeliveryChallan,
   type EnhancedReturnData,
   type DcDeleteStockAction,
 } from "@/lib/delivery-challans-api";
@@ -49,10 +53,13 @@ const statusClass: Record<string, string> = {
   partially_returned: "status-overdue",
   fully_returned: "status-paid",
   cancelled: "status-cancelled",
+  pending_approval: "bg-amber-50 text-amber-700 border border-amber-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
+  rejected: "bg-red-50 text-red-700 border border-red-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
 };
 const statusLabels: Record<string, string> = {
   draft: "Draft", issued: "Issued", partially_returned: "Partially Returned",
   fully_returned: "Fully Returned", cancelled: "Cancelled",
+  pending_approval: "Pending Approval", rejected: "Rejected",
 };
 const typeLabels: Record<string, string> = {
   returnable: "RETURNABLE", non_returnable: "NON-RETURNABLE",
@@ -72,8 +79,10 @@ export default function DeliveryChallanDetail() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { role } = useAuth();
+  const { role, profile } = useAuth();
   const { hideCosts } = useRoleAccess();
+  const isInwardTeam = role === 'inward_team';
+  const isApprover = role === 'admin' || role === 'finance' || role === 'purchase_team';
 
   // ── Delete dialog state ───────────────────────────────────────────────────
   const [deleteDialogOpen,   setDeleteDialogOpen]   = useState(false);
@@ -83,6 +92,8 @@ export default function DeliveryChallanDetail() {
 
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
   const [copyLabel, setCopyLabel] = useState("ORIGINAL");
   const [printDialogOpen, setPrintDialogOpen] = useState(false);
   const [printCopiesSelected, setPrintCopiesSelected] = useState(2);
@@ -245,6 +256,55 @@ export default function DeliveryChallanDetail() {
       setCancelOpen(false);
       toast({ title: "DC Cancelled" });
     },
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: () => {
+      const approvedBy = (profile as any)?.display_name || (profile as any)?.full_name || (profile as any)?.email || "Approver";
+      return approveDC(id!, approvedBy);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["delivery-challan", id] });
+      queryClient.invalidateQueries({ queryKey: ["delivery-challans"] });
+      queryClient.invalidateQueries({ queryKey: ["dc-pending-approval-count"] });
+      queryClient.invalidateQueries({ queryKey: ["dc-pending-approvals"] });
+      toast({ title: "DC approved", description: "Inward team can now issue it." });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: () => rejectDC(id!, rejectReason.trim()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["delivery-challan", id] });
+      queryClient.invalidateQueries({ queryKey: ["delivery-challans"] });
+      queryClient.invalidateQueries({ queryKey: ["dc-pending-approval-count"] });
+      queryClient.invalidateQueries({ queryKey: ["dc-pending-approvals"] });
+      queryClient.invalidateQueries({ queryKey: ["dc-unread-rejection-count"] });
+      setRejectOpen(false);
+      setRejectReason("");
+      toast({ title: "DC request rejected" });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const markNotedMutation = useMutation({
+    mutationFn: () => markDCRejectionNoted(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["delivery-challan", id] });
+      queryClient.invalidateQueries({ queryKey: ["dc-unread-rejection-count"] });
+      toast({ title: "Rejection noted" });
+    },
+  });
+
+  const issueMutation = useMutation({
+    mutationFn: () => issueDeliveryChallan(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["delivery-challan", id] });
+      queryClient.invalidateQueries({ queryKey: ["delivery-challans"] });
+      toast({ title: "DC Issued", description: "The DC has been issued." });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const createGrnMutation = useMutation({
@@ -499,25 +559,137 @@ export default function DeliveryChallanDetail() {
         </div>
       )}
 
+      {/* Approver banner — shown when DC is pending approval */}
+      {isApprover && dc.status === "pending_approval" && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 print:hidden">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-semibold text-amber-900">Approval Required</p>
+              <p className="text-sm text-amber-700 mt-0.5">
+                Requested by <strong>{(dc as any).approval_requested_by || "Inward team"}</strong>
+                {(dc as any).approval_requested_at && (
+                  <> on {new Date((dc as any).approval_requested_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</>
+                )}
+              </p>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-red-600 border-red-200 hover:bg-red-50"
+                onClick={() => { setRejectOpen(true); setRejectReason(""); }}
+              >
+                <XCircle className="h-3.5 w-3.5 mr-1" /> Reject
+              </Button>
+              <Button
+                size="sm"
+                className="bg-green-700 hover:bg-green-800 text-white"
+                disabled={approveMutation.isPending}
+                onClick={() => approveMutation.mutate()}
+              >
+                <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                {approveMutation.isPending ? "Approving…" : "Approve DC"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Inward team — pending_approval banner */}
+      {isInwardTeam && dc.status === "pending_approval" && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 print:hidden">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
+            <p className="text-sm font-medium text-amber-800">
+              Awaiting approval — submitted
+              {(dc as any).approval_requested_at && (
+                <> on {new Date((dc as any).approval_requested_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</>
+              )}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Inward team — approved draft banner */}
+      {isInwardTeam && dc.status === "draft" && (dc as any).approved_at && (
+        <div className="rounded-xl border border-green-200 bg-green-50 p-4 print:hidden">
+          <div className="flex items-start gap-3">
+            <CheckCircle className="h-5 w-5 text-green-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-semibold text-green-900">
+                Approved by {(dc as any).approved_by || "Approver"} on{" "}
+                {new Date((dc as any).approved_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })} — ready to issue
+              </p>
+            </div>
+            <Button
+              size="sm"
+              className="shrink-0 bg-green-700 hover:bg-green-800 text-white"
+              disabled={issueMutation.isPending}
+              onClick={() => issueMutation.mutate()}
+            >
+              {issueMutation.isPending ? "Issuing…" : "Issue DC →"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Inward team — rejection banner */}
+      {isInwardTeam && dc.status === "rejected" && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 print:hidden">
+          <div className="flex items-start gap-3">
+            <XCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-semibold text-red-900">This request has been rejected</p>
+              {(dc as any).rejection_reason && (
+                <p className="text-sm text-red-700 mt-0.5">Reason: <strong>{(dc as any).rejection_reason}</strong></p>
+              )}
+              <p className="text-sm text-red-600 mt-1">Please raise a new DC if still required.</p>
+            </div>
+            {!(dc as any).rejection_noted && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0 text-red-700 border-red-200"
+                onClick={() => markNotedMutation.mutate()}
+                disabled={markNotedMutation.isPending}
+              >
+                Mark as Noted
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Top Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-display font-bold font-mono text-foreground">{dc.dc_number}</h1>
-          <span className={statusClass[dc.status] || "status-draft"}>{statusLabels[dc.status]}</span>
+          <span className={statusClass[dc.status] || "status-draft"}>{statusLabels[dc.status] || dc.status}</span>
           {isOverdue && (
             <span className="bg-destructive/10 text-destructive border border-destructive/20 text-xs font-medium px-2.5 py-0.5 rounded-full">Overdue</span>
           )}
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={() => setPrintDialogOpen(true)}>
-            <Printer className="h-3.5 w-3.5 mr-1" /> Print Options
-          </Button>
-          <DocumentActions documentNumber={dc.dc_number} documentType="Delivery Challan" documentData={dc as Record<string, unknown>} />
-          {dc.status === "draft" && (
+          {/* Print locked until issued */}
+          {["issued", "fully_returned", "partially_returned"].includes(dc.status) ? (
+            <>
+              <Button variant="outline" size="sm" onClick={() => setPrintDialogOpen(true)}>
+                <Printer className="h-3.5 w-3.5 mr-1" /> Print Options
+              </Button>
+              <DocumentActions documentNumber={dc.dc_number} documentType="Delivery Challan" documentData={dc as Record<string, unknown>} />
+            </>
+          ) : (
+            <span className="flex items-center gap-1.5 text-xs text-slate-400 px-2 py-1 rounded border border-slate-200 bg-slate-50">
+              <Lock className="h-3 w-3" /> Print available after DC is issued
+            </span>
+          )}
+          {dc.status === "draft" && !isInwardTeam && (
             <Button variant="outline" size="sm" onClick={() => navigate(`/delivery-challans/${id}/edit`)}>
               <Edit className="h-3.5 w-3.5 mr-1" /> Edit
             </Button>
           )}
+          {dc.status === "draft" && isInwardTeam && (dc as any).approved_at && null /* Issue button in banner above */}
           {isJobWorkDC && ["issued", "partially_returned"].includes(dc.status) && !isDeleted && (
             <Button variant="outline" size="sm" onClick={handleOpenJCDialog}>
               <Plus className="h-3.5 w-3.5 mr-1" /> Create Job Cards
@@ -529,7 +701,7 @@ export default function DeliveryChallanDetail() {
               {createGrnMutation.isPending ? "Creating GRN…" : "Record Return"}
             </Button>
           )}
-          {!["cancelled", "fully_returned", "deleted"].includes(dc.status) && (
+          {!["cancelled", "fully_returned", "deleted", "pending_approval", "rejected"].includes(dc.status) && isApprover && (
             <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => setCancelOpen(true)}>
               <X className="h-3.5 w-3.5 mr-1" /> Cancel
             </Button>
@@ -1220,6 +1392,33 @@ export default function DeliveryChallanDetail() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setCancelOpen(false)}>Go Back</Button>
             <Button variant="destructive" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>Cancel DC</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reject DC Request Dialog */}
+      <Dialog open={rejectOpen} onOpenChange={(open) => { if (!open) setRejectOpen(false); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-destructive">Reject DC Request</DialogTitle>
+            <DialogDescription>Provide a reason so the inward team can correct and resubmit.</DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            placeholder="Reason for rejection…"
+            rows={3}
+            autoFocus
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectOpen(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={!rejectReason.trim() || rejectMutation.isPending}
+              onClick={() => rejectMutation.mutate()}
+            >
+              {rejectMutation.isPending ? "Rejecting…" : "Reject DC"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

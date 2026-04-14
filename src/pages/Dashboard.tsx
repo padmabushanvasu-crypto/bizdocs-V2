@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchPendingApprovalCount, fetchUnreadRejectionCount } from "@/lib/purchase-orders-api";
+import { fetchPendingDCApprovalCount, fetchUnreadDCRejectionCount } from "@/lib/delivery-challans-api";
 import { Activity, CheckCircle2 } from "lucide-react";
 import { fetchPendingQCGRNs, fetchAwaitingStoreCount } from "@/lib/grn-api";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -254,6 +255,8 @@ export default function Dashboard() {
   const { role } = useAuth();
   const isFinanceOrAdmin = role === 'admin' || role === 'finance';
   const isPurchaseTeam = role === 'purchase_team';
+  const isInwardTeam = role === 'inward_team';
+  const isDCApprover = role === 'admin' || role === 'finance' || role === 'purchase_team';
   const STALE = 5 * 60 * 1000;
 
   const { data: companySettings } = useQuery({
@@ -319,6 +322,22 @@ export default function Dashboard() {
     queryKey: ['po-unread-rejection-count'],
     queryFn: fetchUnreadRejectionCount,
     enabled: isPurchaseTeam,
+    staleTime: STALE,
+    refetchInterval: STALE,
+  });
+
+  const { data: pendingDCApprovalCount = 0 } = useQuery({
+    queryKey: ['dc-pending-approval-count'],
+    queryFn: fetchPendingDCApprovalCount,
+    enabled: isDCApprover,
+    staleTime: STALE,
+    refetchInterval: STALE,
+  });
+
+  const { data: unreadDCRejectionCount = 0 } = useQuery({
+    queryKey: ['dc-unread-rejection-count'],
+    queryFn: fetchUnreadDCRejectionCount,
+    enabled: isInwardTeam,
     staleTime: STALE,
     refetchInterval: STALE,
   });
@@ -414,7 +433,7 @@ export default function Dashboard() {
   const fatPending        = fatStats?.pending ?? 0;
   const uninvoicedUnits   = readyToShip.length;
 
-  const totalAlerts = overdueDCReturns + criticalCount + actionedCount + fatPending + uninvoicedUnits + (dashData?.needsBuildingCount ?? 0) + (dashData?.overduePOCount ?? 0) + pendingApprovalCount + unreadRejectionCount;
+  const totalAlerts = overdueDCReturns + criticalCount + actionedCount + fatPending + uninvoicedUnits + (dashData?.needsBuildingCount ?? 0) + (dashData?.overduePOCount ?? 0) + pendingApprovalCount + unreadRejectionCount + pendingDCApprovalCount + unreadDCRejectionCount;
   const allClear = totalAlerts === 0;
 
   // Company info
@@ -570,6 +589,24 @@ export default function Dashboard() {
             count={unreadRejectionCount}
             colour="red"
             onClick={() => navigate("/purchase-orders?status=rejected")}
+          />
+        )}
+
+        {/* ── DC Approval pills ────────────────────────────────────── */}
+        {isDCApprover && pendingDCApprovalCount > 0 && (
+          <AlertPill
+            label="DCs awaiting approval"
+            count={pendingDCApprovalCount}
+            colour="amber"
+            onClick={() => navigate("/delivery-challans")}
+          />
+        )}
+        {isInwardTeam && unreadDCRejectionCount > 0 && (
+          <AlertPill
+            label="DC requests rejected"
+            count={unreadDCRejectionCount}
+            colour="red"
+            onClick={() => navigate("/delivery-challans?status=rejected")}
           />
         )}
 

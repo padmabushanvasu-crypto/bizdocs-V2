@@ -89,6 +89,13 @@ export interface DeliveryChallan {
   challan_category?: string;
   prepared_by?: string | null;
   checked_by?: string | null;
+  // Approval workflow
+  approval_requested_at?: string | null;
+  approval_requested_by?: string | null;
+  approved_at?: string | null;
+  approved_by?: string | null;
+  rejection_reason?: string | null;
+  rejection_noted?: boolean;
   line_items?: DCLineItem[];
 }
 
@@ -1131,4 +1138,116 @@ export async function recordEnhancedReturn(
   }
 
   return result;
+}
+
+// ─── DC Approval Workflow ─────────────────────────────────────────────────────
+
+// TODO: Add RLS policy to restrict UPDATE of approved_at/approved_by columns to
+// admin, finance, and purchase_team roles so this guard is enforced server-side.
+export async function approveDC(id: string, approvedBy: string): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  const role = (user?.user_metadata?.role ?? user?.app_metadata?.role) as string | undefined;
+  if (role !== 'admin' && role !== 'finance' && role !== 'purchase_team') {
+    throw new Error('Unauthorised: only admin, finance, or purchase team can approve DCs');
+  }
+  const { error } = await supabase
+    .from('delivery_challans')
+    .update({ status: 'draft', approved_at: new Date().toISOString(), approved_by: approvedBy } as any)
+    .eq('id', id);
+  if (error) throw error;
+}
+
+export async function rejectDC(id: string, reason: string): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  const role = (user?.user_metadata?.role ?? user?.app_metadata?.role) as string | undefined;
+  if (role !== 'admin' && role !== 'finance' && role !== 'purchase_team') {
+    throw new Error('Unauthorised: only admin, finance, or purchase team can reject DCs');
+  }
+  const { error } = await supabase
+    .from('delivery_challans')
+    .update({ status: 'rejected', rejection_reason: reason, rejection_noted: false } as any)
+    .eq('id', id);
+  if (error) throw error;
+}
+
+export async function markDCRejectionNoted(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('delivery_challans')
+    .update({ rejection_noted: true } as any)
+    .eq('id', id);
+  if (error) throw error;
+}
+
+export async function fetchPendingDCApprovalCount(): Promise<number> {
+  const companyId = await getCompanyId();
+  if (!companyId) return 0;
+  const { count, error } = await supabase
+    .from('delivery_challans')
+    .select('*', { count: 'exact', head: true })
+    .eq('company_id', companyId)
+    .eq('status', 'pending_approval');
+  if (error) return 0;
+  return count ?? 0;
+}
+
+export async function fetchUnreadDCRejectionCount(): Promise<number> {
+  const companyId = await getCompanyId();
+  if (!companyId) return 0;
+  const { count, error } = await supabase
+    .from('delivery_challans')
+    .select('*', { count: 'exact', head: true })
+    .eq('company_id', companyId)
+    .eq('status', 'rejected')
+    .eq('rejection_noted', false);
+  if (error) return 0;
+  return count ?? 0;
+}
+
+export interface PendingApprovalDC extends DeliveryChallan {
+  line_item_count: number;
+}
+
+export async function fetchPendingDCApprovals(): Promise<PendingApprovalDC[]> {
+  const companyId = await getCompanyId();
+  if (!companyId) return [];
+  const { data, error } = await supabase
+    .from('delivery_challans')
+    .select('*')
+    .eq('company_id', companyId)
+    .eq('status', 'pending_approval')
+    .order('approval_requested_at', { ascending: true });
+  if (error) throw error;
+  const dcs = (data ?? []) as unknown as DeliveryChallan[];
+  if (dcs.length === 0) return [];
+  const dcIds = dcs.map((d) => d.id);
+  const { data: lineItems } = await supabase
+    .from('dc_line_items')
+    .select('delivery_challan_id')
+    .in('delivery_challan_id', dcIds);
+  const countMap: Record<string, number> = {};
+  (lineItems ?? []).forEach((li: any) => {
+    countMap[li.delivery_challan_id] = (countMap[li.delivery_challan_id] ?? 0) + 1;
+  });
+  return dcs.map((d) => ({ ...d, line_item_count: countMap[d.id] ?? 0 }));
+}
+
+export async function fetchDCApprovalHistory(search?: string): Promise<DeliveryChallan[]> {
+  const companyId = await getCompanyId();
+  if (!companyId) return [];
+  let query = supabase
+    .from('delivery_challans')
+    .select('*')
+    .eq('company_id', companyId)
+    .not('approval_requested_at', 'is', null)
+    .neq('status', 'pending_approval')
+    .order('approval_requested_at', { ascending: false });
+  if (search?.trim()) {
+    const sanitized = sanitizeSearchTerm(search);
+    if (sanitized) {
+      query = query.or(`dc_number.ilike.%${sanitized}%,party_name.ilike.%${sanitized}%`);
+    }
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as unknown as DeliveryChallan[];
 }

@@ -13,6 +13,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { fetchParties, type Party } from "@/lib/parties-api";
@@ -117,6 +118,8 @@ export default function DeliveryChallanForm() {
   const location = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { role, profile } = useAuth();
+  const isInwardTeam = role === 'inward_team';
 
   // Form state
   const [primaryChoice, setPrimaryChoice] = useState<"returnable" | "non_returnable">("returnable");
@@ -408,6 +411,14 @@ export default function DeliveryChallanForm() {
         issued_at: status === "issued" ? new Date().toISOString() : null,
         cancelled_at: null,
         cancellation_reason: null,
+        approval_requested_at: status === "pending_approval" ? new Date().toISOString() : null,
+        approval_requested_by: status === "pending_approval"
+          ? ((profile as any)?.display_name || (profile as any)?.full_name || (profile as any)?.email || null)
+          : null,
+        approved_at: null,
+        approved_by: null,
+        rejection_reason: null,
+        rejection_noted: false,
         vehicle_number: vehicleNumber || null,
         driver_name: driverName || null,
         driver_contact: driverContact || null,
@@ -466,7 +477,11 @@ export default function DeliveryChallanForm() {
     onSuccess: (dcId, status) => {
       queryClient.invalidateQueries({ queryKey: ["delivery-challans"] });
       queryClient.invalidateQueries({ queryKey: ["dc-stats"] });
-      if (status === "issued") {
+      queryClient.invalidateQueries({ queryKey: ["dc-pending-approval-count"] });
+      if (status === "pending_approval") {
+        toast({ title: "DC request submitted", description: "Awaiting approval from purchase team." });
+        navigate("/delivery-challans");
+      } else if (status === "issued") {
         setSavedDCId(dcId as string);
         const isJW = dcType === "job_work_out" || dcType === "job_work_143";
         if (isJW) {
@@ -1363,12 +1378,20 @@ export default function DeliveryChallanForm() {
       {/* Sticky Action Bar */}
       <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-border p-3 flex justify-end gap-2 z-40">
         <Button variant="outline" onClick={() => navigate("/delivery-challans")}>Cancel</Button>
-        <Button variant="outline" onClick={() => handleSave("draft")} disabled={saveMutation.isPending}>
-          Save as Draft
-        </Button>
-        <Button onClick={() => handleSave("issued")} disabled={saveMutation.isPending}>
-          Issue DC →
-        </Button>
+        {isInwardTeam ? (
+          <Button onClick={() => handleSave("pending_approval")} disabled={saveMutation.isPending}>
+            Submit for Approval →
+          </Button>
+        ) : (
+          <>
+            <Button variant="outline" onClick={() => handleSave("draft")} disabled={saveMutation.isPending}>
+              Save as Draft
+            </Button>
+            <Button onClick={() => handleSave("issued")} disabled={saveMutation.isPending}>
+              Issue DC →
+            </Button>
+          </>
+        )}
       </div>
 
       {/* Success Dialog */}

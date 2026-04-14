@@ -676,6 +676,47 @@ export function AppSidebar() {
     refetchInterval: 60_000,
   });
 
+  const { data: pendingDCApprovalCount = 0 } = useQuery({
+    queryKey: ["dc-pending-approval-count"],
+    queryFn: async () => {
+      try {
+        const companyId = await getCompanyId();
+        if (!companyId) return 0;
+        const { count, error } = await (supabase as any)
+          .from("delivery_challans")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .eq("status", "pending_approval");
+        if (error) return 0;
+        return count ?? 0;
+      } catch { return 0; }
+    },
+    enabled: currentRole === 'admin' || currentRole === 'finance' || currentRole === 'purchase_team',
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  });
+
+  const { data: unreadDCRejectionCount = 0 } = useQuery({
+    queryKey: ["dc-unread-rejection-count"],
+    queryFn: async () => {
+      try {
+        const companyId = await getCompanyId();
+        if (!companyId) return 0;
+        const { count, error } = await (supabase as any)
+          .from("delivery_challans")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .eq("status", "rejected")
+          .eq("rejection_noted", false);
+        if (error) return 0;
+        return count ?? 0;
+      } catch { return 0; }
+    },
+    enabled: currentRole === 'inward_team',
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  });
+
   const companyNeedsSetup = !companySettingsData?.gstin ||
     !companySettingsData?.company_name ||
     companySettingsData.company_name === "My Company";
@@ -699,8 +740,16 @@ export function AppSidebar() {
       title: "DC / Job Work Order",
       url: "/delivery-challans",
       icon: Truck,
-      badge: openDCCount > 0 ? openDCCount : undefined,
-      badgeColor: "amber" as const,
+      badge: (currentRole === 'admin' || currentRole === 'finance' || currentRole === 'purchase_team')
+        ? (pendingDCApprovalCount > 0 ? pendingDCApprovalCount : undefined)
+        : currentRole === 'inward_team'
+        ? (unreadDCRejectionCount > 0 ? unreadDCRejectionCount : openDCCount > 0 ? openDCCount : undefined)
+        : (openDCCount > 0 ? openDCCount : undefined),
+      badgeColor: (currentRole === 'admin' || currentRole === 'finance' || currentRole === 'purchase_team')
+        ? ("amber" as const)
+        : currentRole === 'inward_team' && unreadDCRejectionCount > 0
+        ? ("red" as const)
+        : ("amber" as const),
       allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'storekeeper', 'assembly_team'],
     },
     {
