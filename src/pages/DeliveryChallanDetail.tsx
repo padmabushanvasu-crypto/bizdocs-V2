@@ -1477,11 +1477,20 @@ export default function DeliveryChallanDetail() {
               <>
                 <DialogHeader>
                   <DialogTitle className="text-destructive">
-                    {needsStockAction ? 'Delete DC — Stock Action Required' : 'Delete DC'}
+                    {needsStockAction
+                      ? 'Delete DC — Stock Action Required'
+                      : (isInwardTeam && dc?.status === 'rejected')
+                      ? 'Remove Rejected Request'
+                      : 'Delete DC'}
                   </DialogTitle>
                   {needsStockAction && (
                     <p className="text-sm text-muted-foreground mt-1">
                       Stock was moved when this DC was issued. How should we handle it?
+                    </p>
+                  )}
+                  {!needsStockAction && isInwardTeam && dc?.status === 'rejected' && (
+                    <p className="text-sm text-muted-foreground mt-1">
+                      This will remove the rejected DC request. You can create a fresh DC request if still required.
                     </p>
                   )}
                 </DialogHeader>

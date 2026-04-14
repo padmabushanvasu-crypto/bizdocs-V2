@@ -1378,7 +1378,11 @@ export default function DeliveryChallanForm() {
       {/* Sticky Action Bar */}
       <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-border p-3 flex justify-end gap-2 z-40">
         <Button variant="outline" onClick={() => navigate("/delivery-challans")}>Cancel</Button>
-        {isInwardTeam ? (
+        {isInwardTeam && isEdit && (existingDC as any)?.approved_at ? (
+          <Button onClick={() => handleSave("issued")} disabled={saveMutation.isPending}>
+            Issue DC →
+          </Button>
+        ) : isInwardTeam ? (
           <Button onClick={() => handleSave("pending_approval")} disabled={saveMutation.isPending}>
             Submit for Approval →
           </Button>
