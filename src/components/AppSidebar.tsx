@@ -660,7 +660,7 @@ export function AppSidebar() {
       icon: Truck,
       badge: openDCCount > 0 ? openDCCount : undefined,
       badgeColor: "amber" as const,
-      allowedRoles: ['admin', 'finance', 'purchase_team', 'storekeeper', 'assembly_team'],
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'storekeeper', 'assembly_team'],
     },
     {
       title: "DC Returns",
