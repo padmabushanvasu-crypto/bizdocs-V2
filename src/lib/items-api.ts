@@ -63,6 +63,7 @@ export interface Item {
   updated_at: string;
   standard_cost: number;
   min_stock_override: number | null;
+  aimed_stock: number;
   parent_item_id: string | null;
   min_finished_stock: number;
   production_batch_size: number;
@@ -91,6 +92,7 @@ export interface StockStatusRow {
   stock_finished_goods: number;
   min_stock: number;
   min_stock_override: number | null;
+  aimed_stock: number;
   standard_cost: number;
   parent_item_id: string | null;
   effective_min_stock: number;
@@ -244,7 +246,7 @@ export async function fetchStockStatus() {
   if (!companyId) return [] as StockStatusRow[];
   const { data, error } = await (supabase as any)
     .from("items")
-    .select("id, item_code, description, unit, item_type, hsn_sac_code, current_stock, stock_raw_material, stock_wip, stock_finished_goods, min_stock, min_stock_override, standard_cost, parent_item_id, company_id, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, stock_alert_level, min_finished_stock")
+    .select("id, item_code, description, unit, item_type, hsn_sac_code, current_stock, stock_raw_material, stock_wip, stock_finished_goods, min_stock, min_stock_override, aimed_stock, standard_cost, parent_item_id, company_id, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, stock_alert_level, min_finished_stock")
     .eq("company_id", companyId)
     .eq("status", "active")
     .order("item_code", { ascending: true });
@@ -667,7 +669,7 @@ export async function importItemsPatchBatch(
   // Fetch existing items with all patchable fields
   const { data: existingItems } = await supabase
     .from("items")
-    .select("id, item_code, drawing_revision, description, drawing_number, unit, item_type, min_stock, standard_cost")
+    .select("id, item_code, drawing_revision, description, drawing_number, unit, item_type, min_stock, aimed_stock, standard_cost")
     .eq("company_id", companyId) as { data: Array<{
       id: string;
       item_code: string | null;
@@ -677,6 +679,7 @@ export async function importItemsPatchBatch(
       unit: string | null;
       item_type: string | null;
       min_stock: number | null;
+      aimed_stock: number | null;
       standard_cost: number | null;
     }> | null };
 
@@ -782,6 +785,7 @@ export async function importItemsPatchBatch(
         drawing_number: drawingNum || null,
         drawing_revision: drawingNum || null,
         min_stock: parseFloat(row["min_stock"] || "0") || 0,
+        aimed_stock: parseFloat(row["aimed_stock"] || "0") || 0,
         standard_cost: parseFloat(row["standard_cost"] || "0") || 0,
         hsn_sac_code: row["hsn_sac_code"] || null,
         notes: row["notes"] || null,
@@ -825,6 +829,18 @@ export async function importItemsPatchBatch(
       const newMinStock = parseFloat(String(rawMinStock ?? "")) || 0;
       if (newMinStock > 0 && (!existing.min_stock && existing.min_stock !== undefined)) {
         patch.min_stock = newMinStock;
+      }
+      const rawAimed =
+        row["aimed_stock"] ??
+        row["Aimed Stock"] ??
+        row["aimed_qty"] ??
+        row["Aimed Qty"] ??
+        row["max_stock"] ??
+        row["Max Stock"] ??
+        undefined;
+      const newAimed = parseFloat(String(rawAimed ?? "")) || 0;
+      if (newAimed > 0 && (!existing.aimed_stock || existing.aimed_stock === 0)) {
+        patch.aimed_stock = newAimed;
       }
       const newCost = parseFloat(row["standard_cost"] as string) || 0;
       if (newCost > 0 && (!existing.standard_cost && existing.standard_cost !== undefined)) {

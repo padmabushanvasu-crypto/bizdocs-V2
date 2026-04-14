@@ -404,7 +404,7 @@ async function downloadReorderRulesTemplate() {
 }
 
 const PARTY_HEADERS = ["Party Name *", "Party Type (vendor/customer/both) *", "Contact Person", "Address Line 1", "Address Line 2", "City", "State", "PIN Code", "Phone 1", "Email", "GSTIN", "PAN", "Payment Terms", "Notes"];
-const ITEM_HEADERS = ["Item Code *", "Description *", "Item Type *", "Unit", "Drawing Revision", "HSN/SAC Code", "Sale Price", "Purchase Price", "GST Rate %", "Min Stock", "Is Critical", "Standard Cost", "Notes"];
+const ITEM_HEADERS = ["Item Code *", "Description *", "Item Type *", "Unit", "Drawing Revision", "HSN/SAC Code", "Sale Price", "Purchase Price", "GST Rate %", "Min Stock", "Aimed Stock", "Is Critical", "Standard Cost", "Notes"];
 const BOM_HEADERS = ["Finished Item Code *", "Component Code *", "Quantity *", "Unit", "Scrap Factor %", "Is Critical", "Variant Name", "Notes"];
 // BOM template is handled by downloadBOMTemplate() with example rows
 const STOCK_HEADERS = ["Item Code *", "Description", "Drawing Number", "Item Type", "Unit", "Opening Stock Qty *", "Stock Bucket", "Cost Per Unit ₹", "Notes"];
@@ -2807,7 +2807,7 @@ export default function DataImport() {
             </span>
             {itemsPatchMode && (
               <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-0.5">
-                Fills: description, drawing number, unit, item type, min stock, standard cost
+                Fills: description, drawing number, unit, item type, min stock, aimed stock, standard cost
               </span>
             )}
           </label>

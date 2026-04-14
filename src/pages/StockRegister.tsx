@@ -454,6 +454,9 @@ function StockRegisterInner() {
                 <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
                   Min Required
                 </th>
+                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                  Aimed
+                </th>
                 <ColHeader
                   label="Pending QC"
                   tip="Qty received but awaiting quality clearance. Will enter confirmed stock after QC approval."
@@ -469,13 +472,13 @@ function StockRegisterInner() {
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={11} className="text-center py-12 text-slate-400 text-sm">
+                  <td colSpan={12} className="text-center py-12 text-slate-400 text-sm">
                     Loading…
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="py-16">
+                  <td colSpan={12} className="py-16">
                     <div className="flex flex-col items-center gap-3">
                       <Package className="h-10 w-10 text-slate-300" />
                       <div className="text-center">
@@ -556,6 +559,17 @@ function StockRegisterInner() {
                         {minReq > 0 ? (
                           <span className="text-sm font-mono tabular-nums text-slate-500">
                             {minReq}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300 text-sm select-none">—</span>
+                        )}
+                      </td>
+
+                      {/* Aimed */}
+                      <td className="px-3 py-3 text-right">
+                        {(row as any).aimed_stock > 0 ? (
+                          <span className="text-sm font-mono tabular-nums text-slate-500">
+                            {(row as any).aimed_stock}
                           </span>
                         ) : (
                           <span className="text-slate-300 text-sm select-none">—</span>

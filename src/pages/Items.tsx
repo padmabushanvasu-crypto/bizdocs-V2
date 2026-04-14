@@ -44,7 +44,7 @@ const GST_RATES = [0, 5, 12, 18, 28];
 const emptyItem = {
   item_code: "", description: "", drawing_number: "", drawing_revision: "", item_type: "raw_material",
   unit: "NOS", hsn_sac_code: "", gst_rate: 18,
-  min_stock: 0, notes: "", standard_cost: 0,
+  min_stock: 0, aimed_stock: 0, notes: "", standard_cost: 0,
   min_finished_stock: 0, production_batch_size: 1,
 };
 
@@ -238,7 +238,7 @@ export default function Items() {
       item_code: item.item_code, description: item.description,
       drawing_number: item.drawing_number || "", drawing_revision: item.drawing_revision || "", item_type: item.item_type,
       unit: item.unit, hsn_sac_code: item.hsn_sac_code || "",
-      gst_rate: item.gst_rate, min_stock: item.min_stock, notes: item.notes || "",
+      gst_rate: item.gst_rate, min_stock: item.min_stock, aimed_stock: (item as any).aimed_stock ?? 0, notes: item.notes || "",
       standard_cost: item.standard_cost ?? 0,
       min_finished_stock: (item as any).min_finished_stock ?? 0,
       production_batch_size: (item as any).production_batch_size ?? 1,
@@ -346,15 +346,17 @@ export default function Items() {
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Unit</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">HSN</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Min Stock</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Aimed Qty</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">GST%</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center w-20">Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={10} className="px-3 py-8 text-center text-sm text-slate-400">Loading...</td></tr>
+                <tr><td colSpan={11} className="px-3 py-8 text-center text-sm text-slate-400">Loading...</td></tr>
+
               ) : items.length === 0 ? (
-                <tr><td colSpan={10} className="px-3 py-8 text-center text-sm text-slate-400">No items found. Add your first item.</td></tr>
+                <tr><td colSpan={11} className="px-3 py-8 text-center text-sm text-slate-400">No items found. Add your first item.</td></tr>
               ) : (
                 items.map((item) => (
                   <tr key={item.id} className={`hover:bg-muted/50 cursor-pointer transition-colors ${selected.has(item.id) ? "bg-blue-50/60" : ""}`} onClick={() => openEdit(item)}>
@@ -387,6 +389,7 @@ export default function Items() {
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.unit}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{item.hsn_sac_code || "—"}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.min_stock || "—"}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{(item as any).aimed_stock || "—"}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.gst_rate}%</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                       <div className="flex gap-1 justify-center" onClick={(e) => e.stopPropagation()}>
@@ -521,6 +524,10 @@ export default function Items() {
                 <div className="space-y-1.5">
                   <Label>Minimum Stock Level</Label>
                   <Input type="number" min={0} value={form.min_stock || ""} onChange={(e) => setForm((f) => ({ ...f, min_stock: parseFloat(e.target.value) || 0 }))} placeholder="0" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Aimed Qty (Max)</Label>
+                  <Input type="number" min={0} value={(form as any).aimed_stock || ""} onChange={(e) => setForm((f) => ({ ...f, aimed_stock: parseFloat(e.target.value) || 0 }))} placeholder="0" />
                 </div>
               </div>
               <div className="space-y-1.5">

@@ -36,6 +36,7 @@ interface StockAlertBoardRow {
   item_type: string;
   current_stock: number;
   min_stock: number;
+  aimed_stock: number;
   shortage: number;
   actionedWith: "PO" | "WO" | null;
 }
@@ -64,7 +65,7 @@ const defaultWoForm: WoFormState = {
 
 // ─── Data fetching ────────────────────────────────────────────────────────────
 
-async function fetchStockAlertBoard(companyId: string): Promise<StockAlertBoardRow[]> {
+async function fetchStockAlertBoard(companyId: string): Promise<{ rows: StockAlertBoardRow[]; atMaxStockCount: number }> {
   // Try stock_alerts view first (columns: id, item_code, description,
   // item_type, effective_stock, min_stock, shortage, company_id).
   // View exposes company_id but does NOT self-isolate — filter required.
@@ -76,9 +77,19 @@ async function fetchStockAlertBoard(companyId: string): Promise<StockAlertBoardR
     .neq("item_type", "finished_good");
 
   let rawRows: any[] = [];
+  let aimMap = new Map<string, number>();
 
   if (!viewError && viewData && viewData.length > 0) {
     rawRows = viewData;
+    // Supplemental fetch for aimed_stock (not in view)
+    if (rawRows.length > 0) {
+      const { data: aimData } = await (supabase as any)
+        .from("items")
+        .select("id, aimed_stock")
+        .eq("company_id", companyId)
+        .in("id", rawRows.map((r: any) => r.id));
+      (aimData ?? []).forEach((r: any) => aimMap.set(r.id, r.aimed_stock ?? 0));
+    }
   } else {
     // Fallback: items table direct query filtered by companyId prop (no hardcoded ID)
     const { data: itemsData, error: itemsError } = await (supabase as any)
@@ -101,9 +112,19 @@ async function fetchStockAlertBoard(companyId: string): Promise<StockAlertBoardR
         effective_stock: i.stock_free ?? i.current_stock ?? 0,
         shortage: Math.max(0, (i.min_stock ?? 0) - (i.stock_free ?? i.current_stock ?? 0)),
       }));
+    (itemsData ?? []).forEach((i: any) => aimMap.set(i.id, i.aimed_stock ?? 0));
   }
 
-  if (rawRows.length === 0) return [];
+  // At-max-stock count: items where aimed_stock > 0 and current_stock >= aimed_stock
+  const { count: atMaxStockCount } = await (supabase as any)
+    .from("items")
+    .select("id", { count: "exact", head: true })
+    .eq("company_id", companyId)
+    .eq("status", "active")
+    .gt("aimed_stock", 0)
+    .filter("current_stock", "gte", "aimed_stock");
+
+  if (rawRows.length === 0) return { rows: [], atMaxStockCount: atMaxStockCount ?? 0 };
 
   const itemIds = rawRows.map((r: any) => r.id);
   const itemCodeMap: Record<string, string> = {};
@@ -173,23 +194,29 @@ async function fetchStockAlertBoard(companyId: string): Promise<StockAlertBoardR
   }
 
   // Normalise columns (view: description/effective_stock; items: description/stock_free)
-  const enriched: StockAlertBoardRow[] = rawRows.map((r: any) => {
-    const stock = r.effective_stock ?? r.stock_free ?? r.current_stock ?? 0;
-    const minStock = r.min_stock ?? 0;
-    const shortage = r.shortage ?? Math.max(0, minStock - stock);
-    return {
-      id: r.id,
-      item_code: r.item_code ?? "",
-      item_name: r.item_name ?? r.description ?? r.item_code ?? "—",
-      item_type: r.item_type ?? "",
-      current_stock: stock,
-      min_stock: minStock,
-      shortage,
-      actionedWith: itemsWithPO.has(r.id) ? "PO" : itemsWithWO.has(r.id) ? "WO" : null,
-    };
-  });
+  const enriched: StockAlertBoardRow[] = rawRows
+    .map((r: any) => {
+      const stock = r.effective_stock ?? r.stock_free ?? r.current_stock ?? 0;
+      const minStock = r.min_stock ?? 0;
+      const shortage = r.shortage ?? Math.max(0, minStock - stock);
+      const aimed = aimMap.get(r.id) ?? r.aimed_stock ?? 0;
+      return {
+        id: r.id,
+        item_code: r.item_code ?? "",
+        item_name: r.item_name ?? r.description ?? r.item_code ?? "—",
+        item_type: r.item_type ?? "",
+        current_stock: stock,
+        min_stock: minStock,
+        aimed_stock: aimed,
+        shortage,
+        actionedWith: itemsWithPO.has(r.id) ? "PO" : itemsWithWO.has(r.id) ? "WO" : null,
+      };
+    })
+    // Suppress items already at or above aimed stock
+    .filter((r) => !(r.aimed_stock > 0 && r.current_stock >= r.aimed_stock));
 
-  return enriched.sort((a, b) => b.shortage - a.shortage);
+  const sorted = enriched.sort((a, b) => b.shortage - a.shortage);
+  return { rows: sorted, atMaxStockCount: atMaxStockCount ?? 0 };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -241,13 +268,15 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
   type FilterKey = "all" | "needs_action" | "po_raised" | "production_started";
   const [activeFilter, setActiveFilter] = useState<FilterKey>(fullHeight ? "all" : "needs_action");
 
-  const { data: rows = [], isLoading, refetch, isFetching } = useQuery({
+  const { data: alertData, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["stock-alerts-board", companyId],
     queryFn: () => fetchStockAlertBoard(companyId),
     staleTime: 30_000,
     refetchOnWindowFocus: true,
     enabled: !!companyId,
   });
+  const rows = alertData?.rows ?? [];
+  const atMaxStockCount = alertData?.atMaxStockCount ?? 0;
 
   // Refetch when the user navigates back to this tab/page
   useEffect(() => {
@@ -357,7 +386,7 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
         </div>
 
         {/* ── Summary stat cards — always visible ─────────────────────────── */}
-        <div className="grid grid-cols-3 divide-x divide-slate-100 border-b border-slate-100 shrink-0">
+        <div className="grid grid-cols-4 divide-x divide-slate-100 border-b border-slate-100 shrink-0">
           <div className="px-4 lg:px-5 py-3">
             <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-0.5">Below Min Stock</p>
             <p className={`text-2xl font-extrabold font-mono tabular-nums ${totalBelow > 0 ? "text-red-600" : "text-green-600"}`}>
@@ -378,6 +407,13 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
               {isLoading ? "—" : needsProdCount}
             </p>
             <p className="text-[10px] text-slate-400 mt-0.5">sub-assembly work orders</p>
+          </div>
+          <div className="px-4 lg:px-5 py-3">
+            <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-0.5">At Max Stock</p>
+            <p className="text-2xl font-extrabold font-mono tabular-nums text-green-600">
+              {isLoading ? "—" : atMaxStockCount}
+            </p>
+            <p className="text-[10px] text-slate-400 mt-0.5">at or above aimed qty</p>
           </div>
         </div>
 
@@ -433,14 +469,16 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
                   <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide w-32 border-b border-slate-200">Type</th>
                   <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide w-28 border-b border-slate-200">Current Stock</th>
                   <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide w-24 border-b border-slate-200">Min Stock</th>
+                  <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide w-24 border-b border-slate-200">Aimed Qty</th>
                   <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide w-24 border-b border-slate-200">Shortage</th>
+                  <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide w-28 border-b border-slate-200">Suggested Order</th>
                   <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide w-36 border-b border-slate-200">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredRows.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-400">
+                    <td colSpan={9} className="px-4 py-8 text-center text-sm text-slate-400">
                       No items match this filter.
                     </td>
                   </tr>
@@ -464,8 +502,16 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
                       <td className="px-4 py-2 text-right font-mono text-sm tabular-nums text-slate-500">
                         {row.min_stock.toFixed(2)}
                       </td>
+                      <td className="px-4 py-2 text-right font-mono text-sm tabular-nums text-slate-400">
+                        {row.aimed_stock > 0 ? row.aimed_stock.toFixed(2) : "—"}
+                      </td>
                       <td className="px-4 py-2 text-right font-mono text-sm tabular-nums font-semibold text-red-600">
                         {row.shortage.toFixed(2)}
+                      </td>
+                      <td className="px-4 py-2 text-right font-mono text-sm tabular-nums font-semibold text-blue-700">
+                        {row.aimed_stock > 0
+                          ? Math.max(0, row.aimed_stock - row.current_stock).toFixed(2)
+                          : row.shortage.toFixed(2)}
                       </td>
                       <td className="px-4 py-2 text-center">
                         {row.actionedWith === "PO" ? (
