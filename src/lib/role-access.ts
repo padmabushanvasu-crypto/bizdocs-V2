@@ -41,6 +41,10 @@ const PURCHASE_TEAM_MAP: Record<string, PageAccess> = {
   'invoices':             { canView: true,  canEdit: false, canExport: false, hideCosts: false },
   'items':                { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
   'parties':              { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
+  'sales-orders':         { canView: true,  canEdit: false, canExport: false, hideCosts: false },
+  'receipts':             { canView: true,  canEdit: false, canExport: false, hideCosts: false },
+  'open-items':           { canView: true,  canEdit: false, canExport: false, hideCosts: false },
+  'reorder-rules':        { canView: true,  canEdit: false, canExport: false, hideCosts: false },
 };
 
 const INWARD_TEAM_MAP: Record<string, PageAccess> = {
@@ -94,6 +98,8 @@ const STOREKEEPER_MAP: Record<string, PageAccess> = {
   'jig-master':                 { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
   'assets-register':            { canView: true,  canEdit: true,  canExport: false, hideCosts: true  },
   'parties':                    { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
+  'dispatch-notes':             { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
+  'reorder-rules':              { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
 };
 
 const ASSEMBLY_TEAM_MAP: Record<string, PageAccess> = {

@@ -1,5 +1,6 @@
 export type AppRole =
   | 'admin'
+  | 'finance'
   | 'purchase_team'
   | 'inward_team'
   | 'qc_team'
@@ -8,6 +9,7 @@ export type AppRole =
 
 export const ROLE_LABELS: Record<AppRole, string> = {
   admin: 'Admin',
+  finance: 'Finance',
   purchase_team: 'Purchase Team',
   inward_team: 'Inward Team',
   qc_team: 'QC Team',
@@ -16,12 +18,13 @@ export const ROLE_LABELS: Record<AppRole, string> = {
 };
 
 // Roles that bypass the normal sidebar/dashboard and get a focused view
-export const FOCUSED_ROLES: AppRole[] = ['inward_team', 'qc_team', 'storekeeper'];
+export const FOCUSED_ROLES: AppRole[] = ['inward_team', 'qc_team', 'storekeeper', 'assembly_team'];
 
 export const FOCUSED_ROLE_REDIRECT: Record<string, string> = {
   inward_team: '/grn-queue',
   qc_team: '/qc-queue',
   storekeeper: '/storekeeper',
+  assembly_team: '/sub-assembly-work-orders',
 };
 
 export const ROLE_PERMISSIONS = {

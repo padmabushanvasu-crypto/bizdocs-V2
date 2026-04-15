@@ -117,23 +117,23 @@ const App = () => (
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
               {/* ── Unguarded: accessible to all authenticated roles ── */}
               <Route path="/" element={<Dashboard />} />
-              <Route path="/open-items" element={<OpenItems />} />
+              <Route path="/open-items" element={<PageGuard page="open-items"><OpenItems /></PageGuard>} />
               <Route path="/items" element={<Items />} />
               <Route path="/stock-register" element={<StockRegister />} />
-              <Route path="/receipts" element={<PaymentReceipts />} />
+              <Route path="/receipts" element={<PageGuard page="receipts"><PaymentReceipts /></PageGuard>} />
               <Route path="/assembly-orders" element={<AssemblyOrders />} />
               <Route path="/assembly-orders/:id" element={<AssemblyOrderDetail />} />
               <Route path="/warranty-tracker" element={<WarrantyTracker />} />
-              <Route path="/sales-orders" element={<SalesOrders />} />
-              <Route path="/sales-orders/new" element={<SalesOrderForm />} />
-              <Route path="/sales-orders/:id" element={<SalesOrderDetail />} />
-              <Route path="/sales-orders/:id/edit" element={<SalesOrderForm />} />
-              <Route path="/dispatch-notes" element={<DispatchNotes />} />
-              <Route path="/dispatch-notes/new" element={<DispatchNoteForm />} />
-              <Route path="/dispatch-notes/:id" element={<DispatchNoteDetail />} />
-              <Route path="/dispatch-notes/:id/edit" element={<DispatchNoteForm />} />
-              <Route path="/reorder-rules" element={<ReorderRules />} />
-              <Route path="/audit-log" element={<AuditLog />} />
+              <Route path="/sales-orders" element={<PageGuard page="sales-orders"><SalesOrders /></PageGuard>} />
+              <Route path="/sales-orders/new" element={<PageGuard page="sales-orders"><SalesOrderForm /></PageGuard>} />
+              <Route path="/sales-orders/:id" element={<PageGuard page="sales-orders"><SalesOrderDetail /></PageGuard>} />
+              <Route path="/sales-orders/:id/edit" element={<PageGuard page="sales-orders"><SalesOrderForm /></PageGuard>} />
+              <Route path="/dispatch-notes" element={<PageGuard page="dispatch-notes"><DispatchNotes /></PageGuard>} />
+              <Route path="/dispatch-notes/new" element={<PageGuard page="dispatch-notes"><DispatchNoteForm /></PageGuard>} />
+              <Route path="/dispatch-notes/:id" element={<PageGuard page="dispatch-notes"><DispatchNoteDetail /></PageGuard>} />
+              <Route path="/dispatch-notes/:id/edit" element={<PageGuard page="dispatch-notes"><DispatchNoteForm /></PageGuard>} />
+              <Route path="/reorder-rules" element={<PageGuard page="reorder-rules"><ReorderRules /></PageGuard>} />
+              <Route path="/audit-log" element={<PageGuard page="audit-log"><AuditLog /></PageGuard>} />
               <Route path="/how-to-use" element={<HowToUse />} />
               <Route path="/settings/how-to-use" element={<HowToUse />} />
               <Route path="/stage-templates" element={<StageTemplates />} />
