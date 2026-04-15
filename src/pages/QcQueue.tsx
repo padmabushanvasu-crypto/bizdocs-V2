@@ -9,32 +9,29 @@ async function fetchQcPendingGrns() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
   const { data: profile } = await supabase.from("profiles").select("company_id").eq("id", user.id).single();
-  if (!profile?.company_id) return [];
+  if (!profile?.company_id) {
+    console.log('[QcQueue] no company_id on profile — returning empty');
+    return [];
+  }
 
-  const { data: grns } = await (supabase as any)
+  console.log('[QcQueue] company_id resolved:', profile.company_id);
+
+  const { data: grns, error } = await (supabase as any)
     .from("grns")
     .select("id, grn_number, grn_date, vendor_name, vehicle_number, grn_type, created_at")
     .eq("company_id", profile.company_id)
-    .order("created_at", { ascending: false })
-    .limit(100);
+    .eq("grn_stage", "quality_pending")
+    .neq("status", "deleted")
+    .neq("status", "cancelled")
+    .order("created_at", { ascending: false });
 
-  if (!grns) return [];
-
-  const result = [];
-  for (const grn of grns) {
-    const { data: lines } = await (supabase as any)
-      .from("grn_line_items")
-      .select("id, stage1_complete, stage2_complete")
-      .eq("grn_id", grn.id);
-
-    const allStage1Done = (lines ?? []).length > 0 && (lines ?? []).every((l: any) => l.stage1_complete);
-    const someStage2Pending = (lines ?? []).some((l: any) => !l.stage2_complete);
-
-    if (allStage1Done && someStage2Pending) {
-      result.push({ ...grn, line_count: lines?.length ?? 0 });
-    }
+  if (error) {
+    console.error('[QcQueue] query error:', error);
+    return [];
   }
-  return result;
+
+  console.log('[QcQueue] grns found:', grns?.length ?? 0);
+  return grns ?? [];
 }
 
 export default function QcQueue() {
@@ -82,7 +79,6 @@ export default function QcQueue() {
                 <p className="text-sm text-foreground truncate">{grn.vendor_name}</p>
                 <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{format(parseISO(grn.grn_date), 'dd MMM yyyy')}</span>
-                  <span>{grn.line_count} item{grn.line_count !== 1 ? 's' : ''}</span>
                 </div>
               </div>
             </div>

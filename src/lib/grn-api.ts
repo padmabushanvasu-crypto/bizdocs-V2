@@ -187,7 +187,11 @@ export interface GrnReceiptEvent {
 
 export async function fetchGRNs(filters: GRNFilters = {}) {
   const companyId = await getCompanyId();
-  if (!companyId) return { data: [], count: 0 };
+  if (!companyId) {
+    console.warn('[fetchGRNs] getCompanyId() returned null — returning empty');
+    return { data: [], count: 0 };
+  }
+  console.log('[fetchGRNs] company_id:', companyId, '| month:', filters.month, '| grn_stage:', filters.grn_stage);
   const { search, status = "all", grn_type, month, page = 1, pageSize = 20 } = filters;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
