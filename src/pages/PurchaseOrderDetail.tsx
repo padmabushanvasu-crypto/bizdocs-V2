@@ -229,6 +229,8 @@ export default function PurchaseOrderDetail() {
   if (!po) return <div className="p-6 text-muted-foreground">Purchase order not found.</div>;
 
   const items = po.line_items || [];
+  const itemCount = items.length;
+  const compactClass = itemCount > 12 ? ' ultra-compact' : itemCount > 8 ? ' compact' : '';
   const isSameState = po.vendor_state_code === "33";
   const charges = po.additional_charges || [];
   const canRecordReceipt = ["issued", "partially_received"].includes(po.status) && po.status !== "deleted";
@@ -271,11 +273,19 @@ export default function PurchaseOrderDetail() {
           /* Body base */
           body { font-size: 9.5pt !important; line-height: 1.35 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
-          /* Line items table */
+          /* Line items table — default */
           .po-line-items-table th { font-size: 9.5pt !important; padding: 4px 5px !important; }
           .po-line-items-table td { font-size: 9.5pt !important; padding: 4px 5px !important; line-height: 1.35 !important; white-space: nowrap !important; }
           .po-line-items-table td:nth-child(2) { white-space: normal !important; }
           .po-line-items-table tr { page-break-inside: avoid; }
+
+          /* Compact — items > 8 */
+          .po-print-wrapper.compact .po-line-items-table th { font-size: 7pt !important; padding: 1px 3px !important; }
+          .po-print-wrapper.compact .po-line-items-table td { font-size: 7pt !important; padding: 1px 3px !important; line-height: 1.2 !important; }
+
+          /* Ultra-compact — items > 12 */
+          .po-print-wrapper.ultra-compact .po-line-items-table th { font-size: 6.5pt !important; padding: 1px 2px !important; }
+          .po-print-wrapper.ultra-compact .po-line-items-table td { font-size: 6.5pt !important; padding: 1px 2px !important; line-height: 1.15 !important; }
 
           /* Navy/white alternating rows for print */
           .po-line-items-table thead tr th { background: #1E3A5F !important; color: #fff !important; border-color: #1E3A5F !important; }
@@ -448,7 +458,7 @@ export default function PurchaseOrderDetail() {
       </div>
 
       {/* Document Preview */}
-      <div className={`paper-card space-y-4 po-print-wrapper${printPreview ? " print-preview-active" : ""}`}>
+      <div className={`paper-card space-y-4 po-print-wrapper${printPreview ? " print-preview-active" : ""}${compactClass}`}>
 
         {/* ── SCREEN: standard header ── */}
         <div className="print:hidden">
@@ -784,11 +794,11 @@ export default function PurchaseOrderDetail() {
                 )}
               </div>
               {/* Authorised Signatory */}
-              <div style={{ flex: '0 0 100pt', textAlign: 'center' }}>
-                <div style={{ fontSize: '8.5pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '3px', letterSpacing: '0.04em' }}>Authorised Signatory</div>
-                <div style={{ fontSize: '8.5pt', color: '#475569' }}>for {company?.company_name}</div>
+              <div style={{ flex: '0 0 auto', textAlign: 'center' }}>
+                <div style={{ fontSize: '7pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>Authorised Signatory</div>
+                <div style={{ fontSize: '6.5pt', color: '#475569', whiteSpace: 'nowrap' }}>for {company?.company_name}</div>
                 <div style={{ borderBottom: '0.5pt solid #94a3b8', marginTop: '16mm', marginBottom: '2mm', marginLeft: '4mm', marginRight: '4mm' }} />
-                <div style={{ fontSize: '8.5pt', color: '#64748b' }}>Signature</div>
+                <div style={{ fontSize: '7pt', color: '#64748b' }}>Signature</div>
               </div>
             </div>
           </div>

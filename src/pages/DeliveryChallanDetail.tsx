@@ -338,6 +338,9 @@ export default function DeliveryChallanDetail() {
   // ── Compact A4 print copy renderer ────────────────────────────────────────
   const renderDCPrintCopy = (label: string) => {
     const co = companySettings as any;
+    const dcItemCount = items.length;
+    const rowFontSize = dcItemCount > 12 ? '6.5pt' : dcItemCount > 8 ? '7pt' : '9.5pt';
+    const rowPadding = dcItemCount > 12 ? '1pt 2pt' : dcItemCount > 8 ? '1pt 3pt' : '4pt 5pt';
     // Physical/factory address — used in "From" dispatch block
     const physAddrParts = [co?.address_line1, co?.address_line2, [co?.city, co?.state].filter(Boolean).join(', '), co?.pin_code ? `PIN ${co.pin_code}` : ''].filter(Boolean);
     const physAddr = physAddrParts.join(', ');
@@ -408,36 +411,36 @@ export default function DeliveryChallanDetail() {
         )}
 
         {/* Line Items */}
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9.5pt', marginBottom: '4pt' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: rowFontSize, marginBottom: '4pt' }}>
           <thead>
             <tr style={{ background: '#1E3A5F', color: '#fff' }}>
-              <th style={{ padding: '4pt 5pt', textAlign: 'left', width: '16pt', fontWeight: 700 }}>#</th>
-              {hasDrawingNumber && <th style={{ padding: '4pt 5pt', textAlign: 'left', minWidth: '55pt', fontWeight: 700 }}>Drawing No.</th>}
-              <th style={{ padding: '4pt 5pt', textAlign: 'left', fontWeight: 700 }}>Description</th>
-              {hasNatureOfProcess && <th style={{ padding: '4pt 5pt', textAlign: 'left', minWidth: '55pt', fontWeight: 700 }}>Process</th>}
-              <th style={{ padding: '4pt 5pt', textAlign: 'center', width: '22pt', fontWeight: 700 }}>Unit</th>
-              <th style={{ padding: '4pt 5pt', textAlign: 'center', width: '46pt', fontWeight: 700 }}>Delivery Date</th>
-              <th style={{ padding: '4pt 5pt', textAlign: 'right', width: '30pt', fontWeight: 700 }}>Qty</th>
-              {hasQtyKgs && <th style={{ padding: '4pt 5pt', textAlign: 'right', width: '34pt', fontWeight: 700 }}>KGS</th>}
-              {hasQtySft && <th style={{ padding: '4pt 5pt', textAlign: 'right', width: '34pt', fontWeight: 700 }}>SFT</th>}
-              <th style={{ padding: '4pt 5pt', textAlign: 'right', width: '44pt', fontWeight: 700 }}>Rate (₹)</th>
-              <th style={{ padding: '4pt 5pt', textAlign: 'right', width: '50pt', fontWeight: 700 }}>Amount (₹)</th>
+              <th style={{ padding: rowPadding, textAlign: 'left', width: '16pt', fontWeight: 700 }}>#</th>
+              {hasDrawingNumber && <th style={{ padding: rowPadding, textAlign: 'left', minWidth: '55pt', fontWeight: 700 }}>Drawing No.</th>}
+              <th style={{ padding: rowPadding, textAlign: 'left', fontWeight: 700 }}>Description</th>
+              {hasNatureOfProcess && <th style={{ padding: rowPadding, textAlign: 'left', minWidth: '55pt', fontWeight: 700 }}>Process</th>}
+              <th style={{ padding: rowPadding, textAlign: 'center', width: '22pt', fontWeight: 700 }}>Unit</th>
+              <th style={{ padding: rowPadding, textAlign: 'center', width: '46pt', fontWeight: 700 }}>Delivery Date</th>
+              <th style={{ padding: rowPadding, textAlign: 'right', width: '30pt', fontWeight: 700 }}>Qty</th>
+              {hasQtyKgs && <th style={{ padding: rowPadding, textAlign: 'right', width: '34pt', fontWeight: 700 }}>KGS</th>}
+              {hasQtySft && <th style={{ padding: rowPadding, textAlign: 'right', width: '34pt', fontWeight: 700 }}>SFT</th>}
+              <th style={{ padding: rowPadding, textAlign: 'right', width: '44pt', fontWeight: 700 }}>Rate (₹)</th>
+              <th style={{ padding: rowPadding, textAlign: 'right', width: '50pt', fontWeight: 700 }}>Amount (₹)</th>
             </tr>
           </thead>
           <tbody>
             {items.map((item, idx) => (
               <tr key={item.serial_number} style={{ background: idx % 2 === 0 ? '#F8FAFC' : '#fff', borderBottom: '1pt solid #E2E8F0' }}>
-                <td style={{ padding: '4pt 5pt', color: '#64748b' }}>{item.serial_number}</td>
-                {hasDrawingNumber && <td style={{ padding: '4pt 5pt', fontFamily: 'monospace', fontWeight: 700, color: '#1E3A5F' }}>{item.drawing_number || item.item_code || '—'}</td>}
-                <td style={{ padding: '4pt 5pt' }}>{item.description}</td>
-                {hasNatureOfProcess && <td style={{ padding: '4pt 5pt', color: '#475569' }}>{(item as any).nature_of_process || '—'}</td>}
-                <td style={{ padding: '4pt 5pt', textAlign: 'center', color: '#475569' }}>{item.unit || 'NOS'}</td>
-                <td style={{ padding: '4pt 5pt', textAlign: 'center', color: '#475569' }}>{(item as any).delivery_date ? new Date((item as any).delivery_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
-                <td style={{ padding: '4pt 5pt', textAlign: 'right', fontFamily: 'monospace' }}>{formatNumber(item.quantity || item.qty_nos || 0)}</td>
-                {hasQtyKgs && <td style={{ padding: '4pt 5pt', textAlign: 'right', fontFamily: 'monospace' }}>{(item as any).qty_kgs != null ? formatNumber((item as any).qty_kgs) : '—'}</td>}
-                {hasQtySft && <td style={{ padding: '4pt 5pt', textAlign: 'right', fontFamily: 'monospace' }}>{(item as any).qty_sft != null ? formatNumber((item as any).qty_sft) : '—'}</td>}
-                <td style={{ padding: '4pt 5pt', textAlign: 'right', fontFamily: 'monospace' }}>{formatCurrency(item.rate || 0)}</td>
-                <td style={{ padding: '4pt 5pt', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}>{formatCurrency(item.amount || 0)}</td>
+                <td style={{ padding: rowPadding, color: '#64748b' }}>{item.serial_number}</td>
+                {hasDrawingNumber && <td style={{ padding: rowPadding, fontFamily: 'monospace', fontWeight: 700, color: '#1E3A5F' }}>{item.drawing_number || item.item_code || '—'}</td>}
+                <td style={{ padding: rowPadding }}>{item.description}</td>
+                {hasNatureOfProcess && <td style={{ padding: rowPadding, color: '#475569' }}>{(item as any).nature_of_process || '—'}</td>}
+                <td style={{ padding: rowPadding, textAlign: 'center', color: '#475569' }}>{item.unit || 'NOS'}</td>
+                <td style={{ padding: rowPadding, textAlign: 'center', color: '#475569' }}>{(item as any).delivery_date ? new Date((item as any).delivery_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
+                <td style={{ padding: rowPadding, textAlign: 'right', fontFamily: 'monospace' }}>{formatNumber(item.quantity || item.qty_nos || 0)}</td>
+                {hasQtyKgs && <td style={{ padding: rowPadding, textAlign: 'right', fontFamily: 'monospace' }}>{(item as any).qty_kgs != null ? formatNumber((item as any).qty_kgs) : '—'}</td>}
+                {hasQtySft && <td style={{ padding: rowPadding, textAlign: 'right', fontFamily: 'monospace' }}>{(item as any).qty_sft != null ? formatNumber((item as any).qty_sft) : '—'}</td>}
+                <td style={{ padding: rowPadding, textAlign: 'right', fontFamily: 'monospace' }}>{formatCurrency(item.rate || 0)}</td>
+                <td style={{ padding: rowPadding, textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}>{formatCurrency(item.amount || 0)}</td>
               </tr>
             ))}
           </tbody>
@@ -497,7 +500,7 @@ export default function DeliveryChallanDetail() {
 
         {/* Signature + Receiver */}
         <div style={{ borderTop: '0.75pt solid #CBD5E1', paddingTop: '4pt' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '8pt', fontSize: '8.5pt', textAlign: 'center' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '8pt', fontSize: '7pt', textAlign: 'center' }}>
             {[
               { label: 'Prepared By', name: dc.prepared_by },
               { label: 'Checked By', name: dc.checked_by },
@@ -505,8 +508,8 @@ export default function DeliveryChallanDetail() {
               { label: `Receiver (${dc.party_name})`, name: '' },
             ].map(({ label, name }) => (
               <div key={label} style={{ borderTop: '0.5pt solid #000', paddingTop: '3pt', marginTop: '18pt' }}>
-                {name && <div style={{ fontSize: '8pt', color: '#64748b', marginBottom: '1pt' }}>{name}</div>}
-                <div style={{ fontWeight: 700, fontSize: '8.5pt' }}>{label}</div>
+                {name && <div style={{ fontSize: '7pt', color: '#64748b', marginBottom: '1pt', whiteSpace: 'nowrap' }}>{name}</div>}
+                <div style={{ fontWeight: 700, fontSize: '7pt', whiteSpace: 'nowrap' }}>{label}</div>
               </div>
             ))}
           </div>
