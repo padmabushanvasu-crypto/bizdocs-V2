@@ -31,6 +31,7 @@ import { getGSTType, calculateLineTax, round2, resolveStateCode, getStateName, t
 import { UNITS } from "@/lib/constants";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useCanEdit } from "@/hooks/useCanEdit";
 
 const PAYMENT_TERMS = ["Immediate", "7 Days", "15 Days", "30 Days", "45 Days", "60 Days", "Custom"];
 const GST_RATES = [0, 5, 12, 18, 28];
@@ -59,6 +60,8 @@ export default function PurchaseOrderForm() {
 
   const { role, profile } = useAuth();
   const isPurchaseTeam = role === 'purchase_team';
+  const canEditPO = useCanEdit('purchase-orders');
+  const [accessBlocked, setAccessBlocked] = useState(false);
 
   const prefillState = location.state as { vendor_id?: string; prefill_items?: { item_id: string; description: string; qty: number; unit: string }[] } | null;
   const [prefillApplied, setPrefillApplied] = useState(false);
@@ -127,6 +130,17 @@ export default function PurchaseOrderForm() {
     queryFn: () => fetchPurchaseOrder(id!),
     enabled: isEdit,
   });
+
+  // Block roles where canEdit = false (e.g. inward_team, storekeeper).
+  // Wait until profile loads so we don't redirect on the 'admin' default.
+  useEffect(() => {
+    if (!profile) return;
+    if (!canEditPO) {
+      setAccessBlocked(true);
+      const timer = setTimeout(() => navigate('/purchase-orders', { replace: true }), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [profile, canEditPO]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!isEdit && nextNumber) setPONumber(nextNumber);
@@ -410,6 +424,18 @@ export default function PurchaseOrderForm() {
     }
     saveMutation.mutate(status);
   };
+
+  if (accessBlocked) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-3 text-center p-6">
+        <div className="h-10 w-10 rounded-full bg-amber-100 flex items-center justify-center">
+          <Info className="h-5 w-5 text-amber-600" />
+        </div>
+        <p className="font-semibold text-foreground">You don't have permission to edit purchase orders</p>
+        <p className="text-sm text-muted-foreground">Redirecting…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-6 pb-32 space-y-6 max-w-5xl mx-auto">

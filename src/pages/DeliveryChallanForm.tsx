@@ -14,6 +14,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { useCanEdit } from "@/hooks/useCanEdit";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { fetchParties, type Party } from "@/lib/parties-api";
@@ -120,6 +121,8 @@ export default function DeliveryChallanForm() {
   const queryClient = useQueryClient();
   const { role, profile } = useAuth();
   const isInwardTeam = role === 'inward_team';
+  const canEditDC = useCanEdit('delivery-challans');
+  const [accessBlocked, setAccessBlocked] = useState(false);
 
   // Form state
   const [primaryChoice, setPrimaryChoice] = useState<"returnable" | "non_returnable">("returnable");
@@ -235,6 +238,17 @@ export default function DeliveryChallanForm() {
     queryFn: () => fetchDeliveryChallan(id!),
     enabled: isEdit,
   });
+
+  // Block roles where canEdit = false (e.g. storekeeper).
+  // Wait until profile loads so we don't redirect on the 'admin' default.
+  useEffect(() => {
+    if (!profile) return;
+    if (!canEditDC) {
+      setAccessBlocked(true);
+      const timer = setTimeout(() => navigate('/delivery-challans', { replace: true }), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [profile, canEditDC]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!isEdit && nextNumber) setDcNumber(nextNumber);
@@ -576,6 +590,18 @@ export default function DeliveryChallanForm() {
   };
 
   const isJobWorkDC = dcType === "job_work_out" || dcType === "job_work_143";
+
+  if (accessBlocked) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-3 text-center p-6">
+        <div className="h-10 w-10 rounded-full bg-amber-100 flex items-center justify-center">
+          <Info className="h-5 w-5 text-amber-600" />
+        </div>
+        <p className="font-semibold text-foreground">You don't have permission to edit delivery challans</p>
+        <p className="text-sm text-muted-foreground">Redirecting…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-6 pb-32 space-y-6 max-w-5xl mx-auto">

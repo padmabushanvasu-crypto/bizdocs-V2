@@ -261,7 +261,14 @@ export default function Items() {
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Items</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Items</h1>
+            {!canEdit && (
+              <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200">
+                View Only
+              </span>
+            )}
+          </div>
           <p className="text-sm text-slate-500 mt-1">
             {totalCount > 0
               ? `Showing ${items.length} of ${totalCount} items`
@@ -365,7 +372,7 @@ export default function Items() {
                 <tr><td colSpan={11} className="px-3 py-8 text-center text-sm text-slate-400">No items found. Add your first item.</td></tr>
               ) : (
                 items.map((item) => (
-                  <tr key={item.id} className={`hover:bg-muted/50 cursor-pointer transition-colors ${selected.has(item.id) ? "bg-blue-50/60" : ""}`} onClick={() => openEdit(item)}>
+                  <tr key={item.id} className={`transition-colors ${canEdit ? "hover:bg-muted/50 cursor-pointer" : ""} ${selected.has(item.id) ? "bg-blue-50/60" : ""}`} onClick={canEdit ? () => openEdit(item) : undefined}>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center" onClick={(e) => { e.stopPropagation(); toggleSelect(item.id); }}>
                       {selected.has(item.id)
                         ? <CheckSquare className="h-4 w-4 text-blue-600 mx-auto" />
