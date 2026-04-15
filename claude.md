@@ -8,7 +8,7 @@
 ## 1. Project Identity
 
 - **Product Name:** BizDocs
-- **Built By:** Innventive Solutions
+- **Built By:** Innventive Solutions Creations Private Limited
 - **Developer:** Vasu (padmabushanvasu-crypto on GitHub)
 - **Repo:** bizdocs-v2
 - **Local Path:** /Users/shree/Library/Mobile Documents/com~apple~CloudDocs/Desktop/bizdocs-bharat-main
@@ -138,6 +138,9 @@ These are logged and must not be ignored:
 ## 9. Client Context
 
 Current live client: **Vasudevan** (OLTC component manufacturer)
+
+- Company: **Innventive Solutions Creations Private Limited**
+- `company_id`: `45c14753-4e54-4327-bf77-dd9fb72899dc`
 
 Imported data:
 - 883 items, 1,067 BOM lines, 2,667 processing route stages, 231 parties
