@@ -2,8 +2,9 @@
 // Assigns an existing BizDocs user (by email) to the caller's company with a given role.
 // Requires the caller to be authenticated with role admin or finance.
 // Uses service role client to:
-//   1. Look up the target user in auth.users by email
+//   1. Look up the target user in auth.users by email (getUserByEmail — O(1))
 //   2. Update their profile: set company_id and role
+//   3. Clean up the orphan "My Company" left behind by the handle_new_user trigger
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -109,29 +110,29 @@ serve(async (req) => {
     );
   }
 
-  // ── 5. Look up the target user in auth.users by email ─────────────────────
+  // ── 5. Look up the target user by email — O(1) direct lookup ──────────────
   const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  const { data: listData, error: listError } = await serviceClient.auth.admin.listUsers();
-  if (listError) {
-    return new Response(
-      JSON.stringify({ error: "Failed to list users: " + listError.message }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
-  }
+  const { data: { user: targetAuthUser }, error: lookupError } =
+    await serviceClient.auth.admin.getUserByEmail(email);
 
-  const targetAuthUser = listData.users.find(
-    (u) => u.email?.toLowerCase() === email.toLowerCase(),
-  );
-
-  if (!targetAuthUser) {
+  if (lookupError || !targetAuthUser) {
     return new Response(
       JSON.stringify({ error: "not found" }),
       { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 
-  // ── 6. Update the target user's profile ───────────────────────────────────
+  // ── 6. Read the current orphan company_id before overwriting ──────────────
+  const { data: oldProfile } = await serviceClient
+    .from("profiles")
+    .select("company_id")
+    .eq("id", targetAuthUser.id)
+    .single();
+
+  const orphanCompanyId = (oldProfile as any)?.company_id ?? null;
+
+  // ── 7. Update the target user's profile ───────────────────────────────────
   const fullName =
     (targetAuthUser.user_metadata?.full_name as string | undefined) ||
     targetAuthUser.email ||
@@ -152,6 +153,20 @@ serve(async (req) => {
       JSON.stringify({ error: "Failed to update profile: " + updateError.message }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
+  }
+
+  // ── 8. Delete the orphan "My Company" created by the trigger ──────────────
+  if (orphanCompanyId && orphanCompanyId !== companyId) {
+    const { error: deleteError } = await serviceClient
+      .from("companies")
+      .delete()
+      .eq("id", orphanCompanyId)
+      .eq("name", "My Company");
+
+    if (deleteError) {
+      // Non-fatal — profile is already updated correctly
+      console.error("Orphan company cleanup failed:", deleteError.message);
+    }
   }
 
   return new Response(

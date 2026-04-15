@@ -94,9 +94,32 @@ serve(async (req) => {
     );
   }
 
-  // ── 5. Return results ──────────────────────────────────────────────────────
+  // ── 5. Enrich with auth metadata to detect pending invites ────────────────
+  // An invited user who has not yet accepted has email_confirmed_at = null.
+  // We fetch auth users once, filter to this company's user IDs, and merge
+  // is_pending + email fallback (for invites sent before email was stored in profiles).
+  const profileIds = new Set((users ?? []).map((u: any) => u.id as string));
+
+  const { data: authList } = await serviceClient.auth.admin.listUsers({ perPage: 1000 });
+  const authMap = new Map(
+    (authList?.users ?? [])
+      .filter((u) => profileIds.has(u.id))
+      .map((u) => [u.id, u]),
+  );
+
+  const enriched = (users ?? []).map((p: any) => {
+    const authUser = authMap.get(p.id);
+    return {
+      ...p,
+      // Fallback to auth email so Resend Invite works for pre-fix invites
+      email: p.email ?? authUser?.email ?? null,
+      is_pending: !authUser?.email_confirmed_at,
+    };
+  });
+
+  // ── 6. Return results ──────────────────────────────────────────────────────
   return new Response(
-    JSON.stringify({ users: users ?? [] }),
+    JSON.stringify({ users: enriched }),
     { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
   );
 });

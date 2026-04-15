@@ -136,17 +136,45 @@ serve(async (req) => {
   }
 
   // ── 6. Pre-assign company_id and role on the new profile row ─────────────
-  // Supabase creates a profile row via trigger on auth.users insert.
-  // We update it immediately so the user is associated with the right company.
+  // Supabase creates a profile row via the handle_new_user trigger the moment
+  // auth.users is written. That trigger always creates a fresh "My Company"
+  // and links the profile to it. We immediately overwrite the profile with the
+  // correct company and role, then delete the orphan company.
   if (inviteData?.user?.id) {
+    const newUserId = inviteData.user.id;
+
+    // Read the orphan company_id BEFORE overwriting it
+    const { data: oldProfile } = await serviceClient
+      .from("profiles")
+      .select("company_id")
+      .eq("id", newUserId)
+      .single();
+
+    const orphanCompanyId = (oldProfile as any)?.company_id ?? null;
+
+    // Overwrite the profile: correct company, role, and email
     const { error: updateError } = await serviceClient
       .from("profiles")
-      .update({ company_id: companyId, role: targetRole })
-      .eq("id", inviteData.user.id);
+      .update({ company_id: companyId, role: targetRole, email: email.trim().toLowerCase() })
+      .eq("id", newUserId);
 
     if (updateError) {
       // Non-fatal: invite was sent, profile update failed. Log and continue.
       console.error("Profile update after invite failed:", updateError.message);
+    }
+
+    // Delete the orphan "My Company" created by the trigger
+    if (orphanCompanyId && orphanCompanyId !== companyId) {
+      const { error: deleteError } = await serviceClient
+        .from("companies")
+        .delete()
+        .eq("id", orphanCompanyId)
+        .eq("name", "My Company");
+
+      if (deleteError) {
+        // Non-fatal — profile is already updated correctly
+        console.error("Orphan company cleanup failed:", deleteError.message);
+      }
     }
   }
 

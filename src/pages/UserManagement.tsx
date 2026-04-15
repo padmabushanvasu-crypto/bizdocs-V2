@@ -26,9 +26,11 @@ import type { AppRole } from "@/lib/role-access";
 interface ProfileRow {
   id: string;
   full_name: string | null;
+  display_name: string | null;
   email: string | null;
   role: string | null;
   created_at: string;
+  is_pending?: boolean;
 }
 
 const ROLE_OPTIONS: { value: AppRole; label: string }[] = [
@@ -264,6 +266,42 @@ export default function UserManagement() {
     }
   };
 
+  // ── Resend invite ──────────────────────────────────────────────────────────
+  const [isResending, setIsResending] = useState<string | null>(null);
+
+  const handleResendInvite = async (profileId: string, email: string, memberRole: AppRole) => {
+    setIsResending(profileId);
+    try {
+      const accessToken = await getAccessToken();
+      if (!accessToken) throw new Error("Not authenticated");
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/invite-member`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ email, role: memberRole }),
+        },
+      );
+
+      const body = await response.json().catch(() => ({})) as { error?: string };
+
+      if (!response.ok) {
+        toast({ title: body.error ?? "Failed to resend invite", variant: "destructive" });
+        return;
+      }
+
+      toast({ title: `Invite resent to ${email}` });
+    } catch (err: any) {
+      toast({ title: err?.message ?? "Failed to resend invite", variant: "destructive" });
+    } finally {
+      setIsResending(null);
+    }
+  };
+
   // ── Remove member state ────────────────────────────────────────────────────
   const [removeTarget, setRemoveTarget] = useState<{ id: string; name: string } | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
@@ -473,6 +511,7 @@ export default function UserManagement() {
               ) : (
                 profiles.map((profile) => {
                   const isCurrentUser = profile.id === user?.id;
+                  const isPending = profile.is_pending === true && !isCurrentUser;
                   const pendingRole = pendingRoles[profile.id];
                   const hasChanged = !!pendingRole;
                   const roleValue = pendingRole ?? profile.role ?? "admin";
@@ -488,25 +527,36 @@ export default function UserManagement() {
                           : "hover:bg-muted/30"
                       }`}
                     >
-                      {/* Name — left accent border indicates pending change */}
+                      {/* Name — left accent border indicates pending role change */}
                       <td
                         className={`px-3 py-2.5 border-b border-slate-100 border-l-2 ${
                           hasChanged ? "border-l-amber-400" : "border-l-transparent"
                         }`}
                       >
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-slate-800">
-                            {displayName(profile)}
-                          </span>
-                          {isCurrentUser && (
-                            <Badge
-                              variant="secondary"
-                              className="text-[10px] px-1.5 py-0 h-4 leading-none"
-                            >
-                              You
+                        {isPending ? (
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm italic text-slate-400">
+                              {profile.email || "—"}
+                            </span>
+                            <Badge className="text-[10px] px-1.5 py-0 h-4 leading-none bg-amber-100 text-amber-700 border border-amber-200 font-medium">
+                              Pending
                             </Badge>
-                          )}
-                        </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-slate-800">
+                              {displayName(profile)}
+                            </span>
+                            {isCurrentUser && (
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px] px-1.5 py-0 h-4 leading-none"
+                              >
+                                You
+                              </Badge>
+                            )}
+                          </div>
+                        )}
                       </td>
 
                       <td className="px-3 py-2.5 border-b border-slate-100 text-sm text-slate-600">
@@ -580,6 +630,27 @@ export default function UserManagement() {
                               )}
                             </Button>
                           )}
+                          {isPending && profile.email && !hasChanged && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs px-2 text-amber-700 border-amber-200 hover:bg-amber-50"
+                              disabled={!!isResending}
+                              onClick={() =>
+                                handleResendInvite(
+                                  profile.id,
+                                  profile.email!,
+                                  (profile.role as AppRole) || "admin",
+                                )
+                              }
+                            >
+                              {isResending === profile.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                "Resend"
+                              )}
+                            </Button>
+                          )}
                           {!isCurrentUser && !hasChanged && (
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -589,7 +660,7 @@ export default function UserManagement() {
                                   onClick={() =>
                                     setRemoveTarget({
                                       id: profile.id,
-                                      name: displayName(profile),
+                                      name: isPending ? (profile.email ?? "Pending user") : displayName(profile),
                                     })
                                   }
                                 >
