@@ -1,4 +1,4 @@
-import { useState, useMemo, Component, type ReactNode } from "react";
+import { useState, useMemo, useEffect, Component, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { PackageCheck, Plus, Search, Eye, ClipboardCheck, AlertTriangle, Package, Download, Trash2, Lock } from "lucide-react";
@@ -114,6 +114,15 @@ function GRNRegisterInner() {
     page: 1,
     pageSize: 20,
   });
+
+  // qc_team default: remove month restriction so quality_pending GRNs are always visible,
+  // and pre-select the "Awaiting QC" stage pill. Runs once when role resolves from auth.
+  useEffect(() => {
+    if (role === 'qc_team') {
+      setFilters(f => ({ ...f, month: undefined }));
+      setStageFilter(prev => prev === 'all' ? 'quality_pending' : prev);
+    }
+  }, [role]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const deleteMutation = useMutation({
     mutationFn: async ({ grn, reason, stockAction }: { grn: any; reason: string; stockAction?: GrnDeleteStockAction }) => {
