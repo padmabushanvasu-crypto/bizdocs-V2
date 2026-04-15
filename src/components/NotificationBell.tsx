@@ -11,6 +11,7 @@ import {
   type Notification,
 } from "@/lib/notifications-api";
 import { useAuth } from "@/hooks/useAuth";
+import { getRoleAccess } from "@/lib/role-access";
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -76,7 +77,12 @@ export function NotificationBell() {
 
   const handleClick = (notif: Notification) => {
     if (!notif.is_read) readMutation.mutate(notif.id);
-    if (notif.link) navigate(notif.link);
+    if (notif.link) {
+      // Derive the page key from the link (e.g. "/purchase-orders/123" → "purchase-orders")
+      const pageKey = notif.link.replace(/^\//, '').split('/')[0];
+      const { canView } = getRoleAccess(role, pageKey);
+      if (canView) navigate(notif.link);
+    }
   };
 
   return (

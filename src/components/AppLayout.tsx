@@ -18,6 +18,7 @@ export function AppLayout() {
   const navigate = useNavigate();
 
   const isFocused = FOCUSED_ROLES.includes(role as AppRole);
+  const isAdminOrFinance = role === 'admin' || role === 'finance';
 
   const displayName = profile?.full_name || user?.user_metadata?.full_name || user?.user_metadata?.name || null;
   const avatarUrl = profile?.avatar_url || user?.user_metadata?.avatar_url || user?.user_metadata?.picture || null;
@@ -96,13 +97,17 @@ export function AppLayout() {
                   {displayName && <p className="text-sm font-medium text-foreground">{displayName}</p>}
                   <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
                 </div>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => navigate("/settings/company")}>
-                  <User className="mr-2 h-4 w-4" /> My Profile
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate("/settings")}>
-                  <Settings className="mr-2 h-4 w-4" /> Company Settings
-                </DropdownMenuItem>
+                {isAdminOrFinance && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => navigate("/settings/company")}>
+                      <User className="mr-2 h-4 w-4" /> My Profile
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => navigate("/settings")}>
+                      <Settings className="mr-2 h-4 w-4" /> Company Settings
+                    </DropdownMenuItem>
+                  </>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
                   <LogOut className="mr-2 h-4 w-4" /> Sign out
