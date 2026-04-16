@@ -870,6 +870,7 @@ function GRNPrintView({
   s2Remarks,
   verdict,
   companySettings,
+  linkedDC,
 }: {
   grn: any;
   s1Lines: S1Line[];
@@ -881,6 +882,7 @@ function GRNPrintView({
   s2Remarks: string;
   verdict: string | undefined;
   companySettings: any;
+  linkedDC?: { id: string; dc_number: string; dc_date: string; status: string } | null;
 }) {
   const lineItems: GRNLineItem[] = grn.line_items ?? [];
   const hasNC = qcMeasurements.some((m) => m.result === "non_conforming");
@@ -915,6 +917,14 @@ function GRNPrintView({
             <div><strong>GRN No.:</strong> {grn.grn_number}</div>
             <div><strong>GRN Date:</strong> {new Date(grn.grn_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
             <div><strong>Vendor:</strong> {grn.vendor_name || "—"}</div>
+            {grn.grn_type === "dc_grn" && (grn.linked_dc_number || linkedDC) && (
+              <div style={{ marginTop: "3pt", padding: "2pt 5pt", background: "#EFF6FF", border: "0.5pt solid #BFDBFE", borderRadius: "2pt" }}>
+                <strong>Linked DC:</strong>{" "}
+                <span style={{ fontFamily: "monospace" }}>{grn.linked_dc_number || linkedDC?.dc_number}</span>
+                {linkedDC?.dc_date && <span> · {new Date(linkedDC.dc_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>}
+                {linkedDC?.status && <span> · <span style={{ textTransform: "capitalize" }}>{linkedDC.status.replace(/_/g, " ")}</span></span>}
+              </div>
+            )}
           </div>
           <div>
             {grn.po_number && <div><strong>PO No.:</strong> {grn.po_number}</div>}
@@ -1121,8 +1131,7 @@ function GRNPrintView({
       )}
 
       {/* ── SECTION D — AUTHORISATION ── */}
-      <div style={{ flexGrow: 1 }} />
-      <div style={{ pageBreakInside: "avoid", breakInside: "avoid" }}>
+      <div className="grn-section-d">
         <div style={{ fontWeight: "bold", fontSize: "8pt", color: "#1E40AF", marginBottom: "6pt", fontFamily: "Arial" }}>
           SECTION D — AUTHORISATION
         </div>
@@ -1142,7 +1151,6 @@ function GRNPrintView({
             </div>
           ))}
         </div>
-      </div>
       </div>
 
       {/* Footer note */}
@@ -1174,6 +1182,21 @@ export default function GRNDetail() {
     queryKey: ["company-settings"],
     queryFn: fetchCompanySettings,
     staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: linkedDC } = useQuery({
+    queryKey: ["linked-dc", (grn as any)?.linked_dc_id],
+    queryFn: async () => {
+      const dcId = (grn as any)?.linked_dc_id;
+      if (!dcId) return null;
+      const { data } = await (supabase as any)
+        .from("delivery_challans")
+        .select("id, dc_number, dc_date, status")
+        .eq("id", dcId)
+        .single();
+      return data as { id: string; dc_number: string; dc_date: string; status: string } | null;
+    },
+    enabled: !!(grn as any)?.linked_dc_id,
   });
 
   const tolerancePct = Number((companySettings as any)?.over_receipt_tolerance_percent ?? 0);
@@ -1759,7 +1782,8 @@ export default function GRNDetail() {
         @media print {
           * { visibility: hidden; }
           #grn-print-view, #grn-print-view * { visibility: visible; }
-          #grn-print-view { position: absolute; left: 0; top: 0; width: 100%; display: flex !important; flex-direction: column; min-height: 100%; }
+          #grn-print-view { position: absolute; left: 0; top: 0; width: 100%; display: block !important; min-height: 273mm; padding-bottom: 90pt; box-sizing: border-box; }
+          .grn-section-d { position: absolute; bottom: 0; left: 0; right: 0; page-break-inside: avoid; break-inside: avoid; }
           @page {
             size: A4 portrait;
             margin: 12mm 14mm 12mm 14mm;
@@ -1803,6 +1827,20 @@ export default function GRNDetail() {
                   >
                     {grn.po_number}
                   </button>
+                </span>
+              )}
+              {(grn as any).linked_dc_number && (
+                <span>
+                  DC:{" "}
+                  <button
+                    className="text-primary hover:underline"
+                    onClick={() => navigate(`/delivery-challans/${(grn as any).linked_dc_id}`)}
+                  >
+                    {(grn as any).linked_dc_number}
+                  </button>
+                  {linkedDC?.status && (
+                    <span className="ml-1 text-slate-400">({linkedDC.status.replace(/_/g, " ")})</span>
+                  )}
                 </span>
               )}
               {g.vendor_invoice_number && <span>Invoice: {g.vendor_invoice_number}</span>}
@@ -2434,6 +2472,7 @@ export default function GRNDetail() {
         s2Remarks={s2Remarks}
         verdict={verdict}
         companySettings={companySettings}
+        linkedDC={linkedDC}
       />
 
       {/* ── GRN Deletion Dialog ── */}
