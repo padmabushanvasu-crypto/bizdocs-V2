@@ -782,6 +782,32 @@ function BOMImportTab() {
     }
     console.log("[BOM import / DataImport] partyCodeToVendor entries:", partyCodeToVendor.size, "— partyNameToVendor entries:", partyNameToVendor.size);
 
+    // Internal process codes that should be skipped — not external vendor parties
+    const INTERNAL_VENDOR_PATTERNS = [
+      "innv qc", "innventive qc", "innventive", "inv mac shop", "innv mac shop", "innventive mac shop",
+    ];
+    const isInternalVendor = (name: string): boolean => {
+      const lower = name.toLowerCase().trim();
+      return INTERNAL_VENDOR_PATTERNS.some((p) => lower === p || lower.startsWith(p));
+    };
+
+    // 4-level fuzzy match: exact → starts-with → contains/contained-by → not found
+    const resolveVendor = (raw: string): { id: string; name: string } | null => {
+      const lower = raw.toLowerCase().trim();
+      // 1. Exact match by party_code or party name
+      const exact = partyCodeToVendor.get(lower) ?? partyNameToVendor.get(lower);
+      if (exact) return exact;
+      // 2. Starts-with: DB party name starts with the search token
+      const sw = Array.from(partyNameToVendor.entries()).find(([k]) => k.startsWith(lower));
+      if (sw) return sw[1];
+      // 3. Contains: DB name contains the token, or token contains the DB name
+      const co = Array.from(partyNameToVendor.entries()).find(
+        ([k]) => k.includes(lower) || lower.includes(k)
+      );
+      if (co) return co[1];
+      return null;
+    };
+
     let skipped = 0;
     const errors: string[] = [];
     const skipReasons: SkipReason[] = [];
@@ -968,13 +994,18 @@ function BOMImportTab() {
       if (!lineId || vendors.length === 0) continue;
       for (let vi = 0; vi < vendors.length; vi++) {
         const ve = vendors[vi];
-        const found = partyCodeToVendor.get(ve.code.toLowerCase()) ?? partyNameToVendor.get(ve.code.toLowerCase());
+        if (isInternalVendor(ve.code)) {
+          console.log(`[BOM import / DataImport] Inline vendor skipped — internal code: "${ve.code}"`);
+          continue;
+        }
+        const found = resolveVendor(ve.code);
         if (!found) {
           inlineVendorNotFound++;
           console.warn(`[BOM import / DataImport] Inline vendor not found: "${ve.code}" (lineId=${lineId})`);
           skipReasons.push({ row: 0, value: ve.code, reason: `Vendor '${ve.code}' not found in Parties master` });
           continue;
         }
+        console.log(`[BOM import / DataImport] Inline vendor resolved: "${ve.code}" → "${found.name}"`);
         bomVendorRecords.push({
           company_id: companyId,
           bom_line_id: lineId,
@@ -1041,9 +1072,9 @@ function BOMImportTab() {
       let sheetVendorSkipped = 0;
       for (const vRow of vendorSheetRows) {
         const compCode = vRow["component_code"]?.trim() ?? "";
-        const vendCode = vRow["vendor_code"]?.trim() ?? "";
-        console.log(`[BOM import / DataImport] Vendor sheet row — component_code="${compCode}" vendor_code="${vendCode}"`);
-        if (!compCode || !vendCode) {
+        const rawVendCode = vRow["vendor_code"]?.trim() ?? "";
+        console.log(`[BOM import / DataImport] Vendor sheet row — component_code="${compCode}" vendor_code="${rawVendCode}"`);
+        if (!compCode || !rawVendCode) {
           console.warn("[BOM import / DataImport] Vendor sheet row skipped: missing component_code or vendor_code");
           sheetVendorSkipped++;
           continue;
@@ -1054,34 +1085,45 @@ function BOMImportTab() {
           sheetVendorSkipped++;
           continue;
         }
-        const found = partyCodeToVendor.get(vendCode.toLowerCase()) ?? partyNameToVendor.get(vendCode.toLowerCase());
-        if (!found) {
-          console.warn(`[BOM import / DataImport] Vendor sheet row skipped: vendor "${vendCode}" not found by code or name in Parties master`);
-          skipReasons.push({ row: 0, value: vendCode, reason: `Vendor '${vendCode}' not found in Parties master` });
-          sheetVendorSkipped++;
-          continue;
-        }
         const lineIds = childToLineIds.get(childId) ?? [];
-        console.log(`[BOM import / DataImport] Vendor sheet row — childId=${childId}, lineIds=${lineIds.length}, found vendor="${found.name}"`);
         if (lineIds.length === 0) {
           console.warn(`[BOM import / DataImport] Vendor sheet row skipped: no BOM line found for childId=${childId}`);
           sheetVendorSkipped++;
           continue;
         }
+
+        // Split comma-separated vendor names (e.g. "JAISAI SPECIAL PROCESS,Lavanya Metal process")
+        const vendorNames = rawVendCode.split(",").map((v) => v.trim()).filter(Boolean);
         const prefOrder = parseInt(vRow["preference_order"] || "1", 10) || 1;
-        for (const lineId of lineIds) {
-          sheetVendorRecords.push({
-            company_id: companyId,
-            bom_line_id: lineId,
-            vendor_id: found.id,
-            vendor_name: found.name,
-            vendor_code: vendCode,
-            notes: vRow["process_name"]?.trim() || vRow["notes"]?.trim() || null,
-            lead_time_days: parseInt(vRow["lead_time_days"] || "7", 10) || 7,
-            currency: "INR",
-            is_preferred: prefOrder === 1,
-          });
-          vendorMappingsCount++;
+
+        for (const vendName of vendorNames) {
+          if (isInternalVendor(vendName)) {
+            console.log(`[BOM import / DataImport] Vendor sheet row skipped — internal code: "${vendName}" (component="${compCode}")`);
+            sheetVendorSkipped++;
+            continue;
+          }
+          const found = resolveVendor(vendName);
+          if (!found) {
+            console.warn(`[BOM import / DataImport] Vendor sheet row skipped: vendor "${vendName}" not found by code, exact name, starts-with, or contains match`);
+            skipReasons.push({ row: 0, value: vendName, reason: `Vendor '${vendName}' not found in Parties master` });
+            sheetVendorSkipped++;
+            continue;
+          }
+          console.log(`[BOM import / DataImport] Vendor sheet resolved: "${vendName}" → "${found.name}" — ${lineIds.length} BOM line(s)`);
+          for (const lineId of lineIds) {
+            sheetVendorRecords.push({
+              company_id: companyId,
+              bom_line_id: lineId,
+              vendor_id: found.id,
+              vendor_name: found.name,
+              vendor_code: vendName,
+              notes: vRow["process_name"]?.trim() || vRow["notes"]?.trim() || null,
+              lead_time_days: parseInt(vRow["lead_time_days"] || "7", 10) || 7,
+              currency: "INR",
+              is_preferred: prefOrder === 1,
+            });
+            vendorMappingsCount++;
+          }
         }
       }
       console.log("[BOM import / DataImport] Sheet vendor records to insert:", sheetVendorRecords.length, "— skipped:", sheetVendorSkipped);
