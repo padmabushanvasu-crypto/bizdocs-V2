@@ -54,6 +54,7 @@ const INWARD_TEAM_MAP: Record<string, PageAccess> = {
   'delivery-challans':  { canView: true,  canEdit: true,  canExport: false, hideCosts: false },
   'grn':                { canView: true,  canEdit: true,  canExport: false, hideCosts: true },
   'dc-grn':             { canView: true,  canEdit: true,  canExport: false, hideCosts: true },
+  'job-works':          { canView: true,  canEdit: false, canExport: false, hideCosts: true },
   'stock-register':     { canView: true,  canEdit: false, canExport: false, hideCosts: true },
   'stock-ledger':       { canView: true,  canEdit: false, canExport: false, hideCosts: true },
   'items':              { canView: true,  canEdit: false, canExport: false, hideCosts: true },

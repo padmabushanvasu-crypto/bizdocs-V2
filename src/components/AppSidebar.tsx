@@ -734,7 +734,7 @@ export function AppSidebar() {
       icon: Activity,
       badge: jobCardCount > 0 ? jobCardCount : undefined,
       badgeColor: "amber" as const,
-      allowedRoles: ['admin', 'finance', 'qc_team', 'storekeeper', 'assembly_team'],
+      allowedRoles: ['admin', 'finance', 'inward_team', 'qc_team', 'storekeeper', 'assembly_team'],
     },
     {
       title: "DC / Job Work Order",
