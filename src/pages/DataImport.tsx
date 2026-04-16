@@ -770,17 +770,15 @@ function BOMImportTab() {
     // Pre-fetch parties (vendors) for vendor lookup
     const { data: allParties } = await (supabase as any)
       .from("parties")
-      .select("id, name, party_code")
+      .select("id, name")
       .in("party_type", ["vendor", "both"])
       .eq("company_id", companyId);
-    console.log("[BOM import / DataImport] Vendor parties fetched:", (allParties ?? []).length);
-    const partyCodeToVendor = new Map<string, { id: string; name: string }>();
+    console.log("[BOM import] Parties loaded:", (allParties ?? []).length, "— first 3:", (allParties ?? []).slice(0, 3).map((p: any) => p.name));
     const partyNameToVendor = new Map<string, { id: string; name: string }>();
     for (const p of (allParties ?? []) as any[]) {
-      if (p.party_code) partyCodeToVendor.set((p.party_code as string).toLowerCase(), { id: p.id, name: p.name });
       if (p.name) partyNameToVendor.set((p.name as string).toLowerCase(), { id: p.id, name: p.name });
     }
-    console.log("[BOM import / DataImport] partyCodeToVendor entries:", partyCodeToVendor.size, "— partyNameToVendor entries:", partyNameToVendor.size);
+    console.log("[BOM import / DataImport] partyNameToVendor entries:", partyNameToVendor.size);
 
     // Internal process codes that should be skipped — not external vendor parties
     const INTERNAL_VENDOR_PATTERNS = [
@@ -791,11 +789,11 @@ function BOMImportTab() {
       return INTERNAL_VENDOR_PATTERNS.some((p) => lower === p || lower.startsWith(p));
     };
 
-    // 4-level fuzzy match: exact → starts-with → contains/contained-by → not found
+    // 3-level fuzzy match: exact → starts-with → contains/contained-by → not found
     const resolveVendor = (raw: string): { id: string; name: string } | null => {
       const lower = raw.toLowerCase().trim();
-      // 1. Exact match by party_code or party name
-      const exact = partyCodeToVendor.get(lower) ?? partyNameToVendor.get(lower);
+      // 1. Exact match by party name
+      const exact = partyNameToVendor.get(lower);
       if (exact) return exact;
       // 2. Starts-with: DB party name starts with the search token
       const sw = Array.from(partyNameToVendor.entries()).find(([k]) => k.startsWith(lower));
