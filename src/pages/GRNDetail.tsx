@@ -40,7 +40,6 @@ const COMPLETED_GRN_STAGES_SET = new Set(['quality_done', 'awaiting_store', 'clo
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { DocumentHeader } from "@/components/DocumentHeader";
 import { AuditTimeline } from "@/components/AuditTimeline";
 import { logAudit } from "@/lib/audit-api";
 import { UNITS } from "@/lib/constants";
@@ -870,6 +869,7 @@ function GRNPrintView({
   s2Date,
   s2Remarks,
   verdict,
+  companySettings,
 }: {
   grn: any;
   s1Lines: S1Line[];
@@ -880,6 +880,7 @@ function GRNPrintView({
   s2Date: string;
   s2Remarks: string;
   verdict: string | undefined;
+  companySettings: any;
 }) {
   const lineItems: GRNLineItem[] = grn.line_items ?? [];
   const hasNC = qcMeasurements.some((m) => m.result === "non_conforming");
@@ -895,12 +896,17 @@ function GRNPrintView({
       <div style={{ borderBottom: "2pt solid #0F4C81", paddingBottom: "6pt", marginBottom: "8pt" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
-            <div style={{ fontWeight: "bold", fontSize: "11pt", color: "#0F4C81", fontFamily: "Arial" }}>
-              <DocumentHeader />
-            </div>
+            {companySettings?.logo_url && (
+              <img src={companySettings.logo_url} alt="Logo" style={{ height: '36px', marginBottom: '3px', objectFit: 'contain' }} />
+            )}
+            <div style={{ fontWeight: "700", fontSize: "13pt", lineHeight: 1.2, color: "#CC0000", fontFamily: "Arial" }}>{companySettings?.company_name}</div>
+            {companySettings?.gstin && <div style={{ fontSize: "8pt", fontFamily: "monospace" }}>GSTIN: {companySettings.gstin}</div>}
+            {companySettings?.phone && <div style={{ fontSize: "8pt", color: "#475569", fontFamily: "Arial" }}>Ph: {companySettings.phone}</div>}
           </div>
           <div style={{ textAlign: "right" }}>
-            <div style={{ fontWeight: "bold", fontSize: "11pt", fontFamily: "Arial" }}>GOODS RECEIPT NOTE</div>
+            <div style={{ fontWeight: "bold", fontSize: "11pt", fontFamily: "Arial", whiteSpace: "nowrap" }}>
+              {grn.grn_type === "dc_grn" ? "Delivery Challan cum Job Work Order Return" : "GOODS RECEIPT NOTE"}
+            </div>
             <div style={{ fontSize: "7pt", color: "#64748B", fontFamily: "Arial" }}>Doc: GRN / INS / 01</div>
           </div>
         </div>
@@ -1115,7 +1121,8 @@ function GRNPrintView({
       )}
 
       {/* ── SECTION D — AUTHORISATION ── */}
-      <div>
+      <div style={{ flexGrow: 1 }} />
+      <div style={{ pageBreakInside: "avoid", breakInside: "avoid" }}>
         <div style={{ fontWeight: "bold", fontSize: "8pt", color: "#1E40AF", marginBottom: "6pt", fontFamily: "Arial" }}>
           SECTION D — AUTHORISATION
         </div>
@@ -1135,6 +1142,7 @@ function GRNPrintView({
             </div>
           ))}
         </div>
+      </div>
       </div>
 
       {/* Footer note */}
@@ -1751,7 +1759,7 @@ export default function GRNDetail() {
         @media print {
           * { visibility: hidden; }
           #grn-print-view, #grn-print-view * { visibility: visible; }
-          #grn-print-view { position: absolute; left: 0; top: 0; width: 100%; display: block !important; }
+          #grn-print-view { position: absolute; left: 0; top: 0; width: 100%; display: flex !important; flex-direction: column; min-height: 100%; }
           @page {
             size: A4 portrait;
             margin: 12mm 14mm 12mm 14mm;
@@ -2425,6 +2433,7 @@ export default function GRNDetail() {
         s2Date={s2Date}
         s2Remarks={s2Remarks}
         verdict={verdict}
+        companySettings={companySettings}
       />
 
       {/* ── GRN Deletion Dialog ── */}

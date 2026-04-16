@@ -360,9 +360,8 @@ export default function DeliveryChallanDetail() {
         {/* Header — company name + registered address */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1.5pt solid #1E3A5F', paddingBottom: '3pt', marginBottom: '3pt' }}>
           <div>
-            {co?.logo_url && <img src={co.logo_url} alt="" style={{ height: '26pt', marginBottom: '2pt', objectFit: 'contain' }} />}
-            <div style={{ fontWeight: 700, fontSize: '12pt', lineHeight: 1.2 }}>{co?.company_name}</div>
-            <div style={{ fontSize: '8.5pt', color: '#475569' }}>{regAddr}</div>
+            {co?.logo_url && <img src={co.logo_url} alt="" style={{ height: '34pt', marginBottom: '2pt', objectFit: 'contain' }} />}
+            <div style={{ fontWeight: 700, fontSize: '13pt', lineHeight: 1.2, color: '#CC0000' }}>{co?.company_name}</div>
             {co?.gstin && <div style={{ fontSize: '8.5pt', fontFamily: 'monospace' }}>GSTIN: {co.gstin}</div>}
             {co?.phone && <div style={{ fontSize: '8.5pt', color: '#475569' }}>Ph: {co.phone}</div>}
           </div>
@@ -370,7 +369,7 @@ export default function DeliveryChallanDetail() {
             <div style={{ fontWeight: 700, fontSize: '8pt', color: '#1E3A5F', marginBottom: '2pt', letterSpacing: '0.03em' }}>[{typeLabels[dc.dc_type] || dc.dc_type}]</div>
             <div style={{ fontWeight: 700, fontSize: '11pt' }}>DC No: {dc.dc_number}</div>
             <div style={{ fontSize: '9.5pt' }}>Date: {new Date(dc.dc_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
-            <div style={{ marginTop: '4pt', marginBottom: '3pt', padding: '3pt 6pt', background: dc.return_due_date ? '#FFF7ED' : '#F8FAFC', border: `0.75pt solid ${dc.return_due_date ? '#F97316' : '#CBD5E1'}`, borderRadius: '2pt', textAlign: 'right' }}>
+            <div style={{ marginTop: '4pt', marginBottom: '3pt', padding: '3pt 6pt', background: dc.return_due_date ? '#FFF7ED' : '#F8FAFC', border: `0.75pt solid ${dc.return_due_date ? '#F97316' : '#CBD5E1'}`, borderRadius: '2pt', textAlign: 'right', whiteSpace: 'nowrap' }}>
               <span style={{ fontWeight: 700, fontSize: '9pt', color: '#1E3A5F' }}>Expected Return Date: </span>
               <span style={{ fontWeight: 700, fontSize: '10pt', color: dc.return_due_date ? '#C2410C' : '#94A3B8' }}>
                 {dc.return_due_date
@@ -760,12 +759,9 @@ export default function DeliveryChallanDetail() {
           <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
             <div style={{ flex: '0 0 58%' }}>
               {companySettings?.logo_url && (
-                <img src={companySettings.logo_url} alt="Logo" style={{ height: '32px', marginBottom: '3px', objectFit: 'contain' }} />
+                <img src={companySettings.logo_url} alt="Logo" style={{ height: '36px', marginBottom: '3px', objectFit: 'contain' }} />
               )}
-              <div style={{ fontWeight: '700', fontSize: '11pt', lineHeight: 1.2 }}>{companySettings?.company_name}</div>
-              <div style={{ fontSize: '8pt', color: '#475569', lineHeight: 1.4 }}>
-                {[companySettings?.address_line1, companySettings?.address_line2, [companySettings?.city, companySettings?.state].filter(Boolean).join(', '), companySettings?.pin_code ? `PIN ${companySettings.pin_code}` : ''].filter(Boolean).join(', ')}
-              </div>
+              <div style={{ fontWeight: '700', fontSize: '13pt', lineHeight: 1.2, color: '#CC0000' }}>{companySettings?.company_name}</div>
               {companySettings?.gstin && <div style={{ fontSize: '8pt', fontFamily: 'monospace' }}>GSTIN: {companySettings.gstin}</div>}
               {companySettings?.phone && <div style={{ fontSize: '8pt', color: '#475569' }}>Ph: {companySettings.phone}</div>}
             </div>
