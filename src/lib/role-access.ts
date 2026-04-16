@@ -49,7 +49,6 @@ const PURCHASE_TEAM_MAP: Record<string, PageAccess> = {
 
 const INWARD_TEAM_MAP: Record<string, PageAccess> = {
   'dashboard':          { canView: true,  canEdit: false, canExport: false, hideCosts: true },
-  'purchase-orders':    { canView: true,  canEdit: false, canExport: false, hideCosts: true },
   'follow-up-tracker':  { canView: true,  canEdit: true,  canExport: false, hideCosts: true },
   'delivery-challans':  { canView: true,  canEdit: true,  canExport: false, hideCosts: false },
   'grn':                { canView: true,  canEdit: true,  canExport: false, hideCosts: true },

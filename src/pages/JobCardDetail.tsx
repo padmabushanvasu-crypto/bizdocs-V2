@@ -4,6 +4,7 @@ import { ChevronLeft, AlertTriangle, TrendingUp, CheckCircle2, Clock, Circle, Wr
 import { fetchJobWork, type JobWork, type JobWorkStep } from "@/lib/job-works-api";
 import { fetchProcessingRouteAll, type ProcessingRoute } from "@/lib/dc-intelligence-api";
 import { format } from "date-fns";
+import { useAuth } from "@/hooks/useAuth";
 
 // ── Vertical timeline step ────────────────────────────────────────────────────
 
@@ -381,6 +382,8 @@ function CostSummaryPanel({ jc, steps }: { jc: JobWork; steps: JobWorkStep[] }) 
 export default function JobCardDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { role } = useAuth();
+  const hideCosts = role === 'inward_team' || role === 'qc_team' || role === 'assembly_team';
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["job-work", id],
@@ -510,7 +513,7 @@ export default function JobCardDetail() {
       </div>
 
       {/* ── Cost Summary ── */}
-      <CostSummaryPanel jc={data} steps={steps} />
+      {!hideCosts && <CostSummaryPanel jc={data} steps={steps} />}
 
       {/* ── Vertical timeline ── */}
       <div className="paper-card space-y-0">

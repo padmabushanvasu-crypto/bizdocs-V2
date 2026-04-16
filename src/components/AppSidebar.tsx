@@ -773,7 +773,7 @@ export function AppSidebar() {
         ? (unreadRejectionCount > 0 ? unreadRejectionCount : undefined)
         : (overduePOCount && overduePOCount > 0 ? overduePOCount : undefined),
       badgeColor: (currentRole === 'admin' || currentRole === 'finance') ? "amber" as const : "red" as const,
-      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'storekeeper'],
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'storekeeper'],
     },
     {
       title: "GRN",
