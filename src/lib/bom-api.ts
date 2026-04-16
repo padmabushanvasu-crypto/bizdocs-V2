@@ -1193,10 +1193,19 @@ export async function importBomBatch(
   rowNums: number[],
   onProgress?: (pct: number) => void
 ): Promise<{ imported: number; skipped: number; errors: string[]; skipReasons: SkipReason[] }> {
-  const companyId = await getCompanyId();
+  console.log("[BOM import] importBomBatch called — total rows:", rows.length);
+  if (rows.length > 0) {
+    console.log("[BOM import] Sample rows (first 3):", rows.slice(0, 3));
+    console.log("[BOM import] Keys in first row:", Object.keys(rows[0]));
+  }
 
-  const { data: allItems } = await supabase
+  const companyId = await getCompanyId();
+  console.log("[BOM import] company_id:", companyId);
+
+  const { data: allItems, error: itemsError } = await supabase
     .from("items").select("id, item_code, drawing_revision, drawing_number").eq("company_id", companyId);
+  if (itemsError) console.error("[BOM import] Failed to fetch items:", itemsError);
+  console.log("[BOM import] allItems fetched:", allItems?.length ?? 0, "items");
 
   let skipped = 0;
   const errors: string[] = [];
@@ -1221,7 +1230,9 @@ export async function importBomBatch(
     if (!parentId || !childId) {
       skipped++;
       const missingCode = !parentId ? parentCode : childCode;
-      skipReasons.push({ row: excelRow, value: parentCode, reason: `Item '${missingCode}' not found — import items first` });
+      const reason = `Item '${missingCode}' not found — import items first`;
+      console.warn(`[BOM import] Row ${excelRow} skipped: ${reason} (parent="${parentCode}", child="${childCode}")`);
+      skipReasons.push({ row: excelRow, value: parentCode, reason });
       continue;
     }
     resolvedRows.push({
@@ -1233,12 +1244,19 @@ export async function importBomBatch(
     });
   }
 
-  if (resolvedRows.length === 0) return { imported: 0, skipped, errors, skipReasons };
+  console.log("[BOM import] Resolved rows:", resolvedRows.length, "— skipped (lookup fail):", skipped);
+  if (resolvedRows.length === 0) {
+    console.warn("[BOM import] No rows resolved — returning early with 0 imported");
+    return { imported: 0, skipped, errors, skipReasons };
+  }
 
-  const [{ data: existingVariants }, { data: existingBomLines }] = await Promise.all([
+  const [{ data: existingVariants, error: varErr }, { data: existingBomLines, error: bomErr }] = await Promise.all([
     (supabase as any).from("bom_variants").select("id, parent_item_id, variant_name").eq("company_id", companyId),
     (supabase as any).from("bom_lines").select("id, parent_item_id, child_item_id").eq("company_id", companyId),
   ]);
+  if (varErr) console.error("[BOM import] Failed to fetch existing variants:", varErr);
+  if (bomErr) console.error("[BOM import] Failed to fetch existing bom_lines:", bomErr);
+  console.log("[BOM import] Existing bom_lines count:", (existingBomLines ?? []).length);
 
   const variantMap = new Map<string, string>(
     (existingVariants ?? []).map((v: any) => [`${v.parent_item_id}:${v.variant_name}`, v.id as string])
@@ -1278,6 +1296,8 @@ export async function importBomBatch(
     else toInsert.push(payload);
   }
 
+  console.log("[BOM import] toInsert:", toInsert.length, "— toUpdate:", toUpdate.length);
+
   let imported = 0;
   const totalOps = toInsert.length + toUpdate.length;
 
@@ -1286,13 +1306,16 @@ export async function importBomBatch(
       const { error } = await (supabase as any).from("bom_lines").insert(toInsert);
       if (error) throw error;
       imported += toInsert.length;
-    } catch {
+      console.log("[BOM import] Bulk insert succeeded:", toInsert.length, "rows");
+    } catch (bulkErr: any) {
+      console.error("[BOM import] Bulk insert failed, falling back to row-by-row:", bulkErr);
       for (const payload of toInsert) {
         try {
           const { error } = await (supabase as any).from("bom_lines").insert(payload);
           if (error) throw error;
           imported++;
         } catch (err: any) {
+          console.error("[BOM import] Row insert failed:", err, "payload:", payload);
           skipped++;
           skipReasons.push({ row: 0, value: "", reason: `DB error: ${err?.message ?? "unknown"}` });
         }
@@ -1308,13 +1331,16 @@ export async function importBomBatch(
       const { error } = await (supabase as any).from("bom_lines").upsert(upsertPayloads, { onConflict: "id" });
       if (error) throw error;
       imported += chunk.length;
-    } catch {
+      console.log("[BOM import] Upsert chunk succeeded:", chunk.length, "rows (offset", i, ")");
+    } catch (upsertErr: any) {
+      console.error("[BOM import] Upsert chunk failed, falling back to row-by-row updates:", upsertErr);
       for (const line of chunk) {
         try {
           const { error } = await (supabase as any).from("bom_lines").update(line.payload).eq("id", line.id);
           if (error) throw error;
           imported++;
         } catch (err: any) {
+          console.error("[BOM import] Row update failed:", err, "id:", line.id);
           skipped++;
           skipReasons.push({ row: 0, value: "", reason: `DB error: ${err?.message ?? "unknown"}` });
         }
@@ -1323,6 +1349,7 @@ export async function importBomBatch(
     if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
   }
 
+  console.log("[BOM import] Done — imported:", imported, "skipped:", skipped);
   return { imported, skipped, errors, skipReasons };
 }
 

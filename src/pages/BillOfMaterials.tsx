@@ -943,6 +943,8 @@ function BillOfMaterialsInner() {
       return result;
     },
     enabled: !!selectedItem,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
   const { data: bomVariants = [], refetch: refetchVariants } = useQuery({
@@ -1695,7 +1697,7 @@ function BillOfMaterialsInner() {
           fieldMap={BOM_FIELD_MAP}
           requiredFields={["finished_item_code", "component_code"]}
           batchFn={importBomBatch}
-          invalidateKeys={[["bom-lines"]]}
+          invalidateKeys={[["bom-lines-v2"], ["bom-lines"], ["bom-explosion"], ["bom-cost"], ["bom-variants"]]}
         />
 
         {/* Two-panel layout */}
