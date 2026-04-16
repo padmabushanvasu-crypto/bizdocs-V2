@@ -1251,34 +1251,34 @@ export async function importBomBatch(
   }
 
   const [{ data: existingVariants, error: varErr }, { data: existingBomLines, error: bomErr }] = await Promise.all([
-    (supabase as any).from("bom_variants").select("id, parent_item_id, variant_name").eq("company_id", companyId),
+    (supabase as any).from("bom_variants").select("id, item_id, variant_name").eq("company_id", companyId),
     (supabase as any).from("bom_lines").select("id, parent_item_id, child_item_id").eq("company_id", companyId),
   ]);
-  if (varErr) console.error("[BOM import] Failed to fetch existing variants:", varErr);
-  if (bomErr) console.error("[BOM import] Failed to fetch existing bom_lines:", bomErr);
+  if (varErr) console.error("[BOM import] Failed to fetch existing variants:", varErr?.message || varErr?.code || JSON.stringify(varErr));
+  if (bomErr) console.error("[BOM import] Failed to fetch existing bom_lines:", bomErr?.message || bomErr?.code || JSON.stringify(bomErr));
   console.log("[BOM import] Existing bom_lines count:", (existingBomLines ?? []).length);
 
   const variantMap = new Map<string, string>(
-    (existingVariants ?? []).map((v: any) => [`${v.parent_item_id}:${v.variant_name}`, v.id as string])
+    (existingVariants ?? []).map((v: any) => [`${v.item_id}:${v.variant_name}`, v.id as string])
   );
   const bomLineMap = new Map<string, string>(
     (existingBomLines ?? []).map((b: any) => [`${b.parent_item_id}:${b.child_item_id}`, b.id as string])
   );
 
   // Insert new variants
-  const newVariantsNeeded = new Map<string, { parent_item_id: string; variant_name: string }>();
+  const newVariantsNeeded = new Map<string, { item_id: string; variant_name: string }>();
   for (const r of resolvedRows) {
     if (r.variantName) {
       const key = `${r.parentId}:${r.variantName}`;
-      if (!variantMap.has(key)) newVariantsNeeded.set(key, { parent_item_id: r.parentId, variant_name: r.variantName });
+      if (!variantMap.has(key)) newVariantsNeeded.set(key, { item_id: r.parentId, variant_name: r.variantName });
     }
   }
   if (newVariantsNeeded.size > 0) {
     const toInsertVariants = [...newVariantsNeeded.values()].map((v) => ({ ...v, company_id: companyId }));
     const { data: insertedVariants } = await (supabase as any)
-      .from("bom_variants").insert(toInsertVariants).select("id, parent_item_id, variant_name");
+      .from("bom_variants").insert(toInsertVariants).select("id, item_id, variant_name");
     for (const v of (insertedVariants ?? []) as any[]) {
-      variantMap.set(`${v.parent_item_id}:${v.variant_name}`, v.id as string);
+      variantMap.set(`${v.item_id}:${v.variant_name}`, v.id as string);
     }
   }
 
