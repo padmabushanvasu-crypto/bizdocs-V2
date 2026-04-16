@@ -667,6 +667,7 @@ export default function PurchaseOrderForm() {
               <tr className="bg-slate-50 border-b border-slate-200">
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-8">#</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-24">HSN</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-32">Drawing No</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-20">Qty</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-24">Unit</th>
@@ -694,6 +695,15 @@ export default function PurchaseOrderForm() {
                       }}
                       placeholder="Type to search items..."
                       className="h-8 text-sm w-full"
+                    />
+                  </td>
+                  <td className="p-0 w-24">
+                    <input
+                      type="text"
+                      value={(item as any).hsn_sac_code || ""}
+                      onChange={(e) => updateLineItem(index, "hsn_sac_code", e.target.value)}
+                      className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm font-mono"
+                      placeholder="HSN"
                     />
                   </td>
                   <td className="p-0 w-32">

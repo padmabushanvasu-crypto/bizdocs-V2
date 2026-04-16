@@ -290,7 +290,7 @@ export default function PurchaseOrderDetail() {
           /* Navy/white alternating rows for print */
           .po-line-items-table thead tr th { background: #1E3A5F !important; color: #fff !important; border-color: #1E3A5F !important; }
           .po-line-items-table tbody tr:nth-child(odd) td { background: #fff !important; color: #000 !important; border-color: #e2e8f0 !important; }
-          .po-line-items-table tbody tr:nth-child(even) td { background: #1E3A5F !important; color: #fff !important; border-color: #1E3A5F !important; }
+          .po-line-items-table tbody tr:nth-child(even) td { background: #f8f8f8 !important; color: #000 !important; border-color: #e2e8f0 !important; }
 
           /* Totals block */
           .po-totals-block { font-size: 9pt !important; }
@@ -478,9 +478,9 @@ export default function PurchaseOrderDetail() {
             {/* Left: Company info */}
             <div>
               {company?.logo_url && (
-                <img src={company.logo_url} alt="Logo" style={{ height: '28px', marginBottom: '2px', objectFit: 'contain' }} />
+                <img src={company.logo_url} alt="Logo" style={{ height: '36px', marginBottom: '2px', objectFit: 'contain' }} />
               )}
-              <div style={{ fontWeight: '700', fontSize: '12pt', lineHeight: 1.2 }}>{company?.company_name}</div>
+              <div style={{ fontWeight: '700', fontSize: '13pt', lineHeight: 1.2, color: '#CC0000' }}>{company?.company_name}</div>
               <div style={{ fontSize: '8.5pt', color: '#475569', lineHeight: 1.4 }}>
                 {(() => {
                   const c = company as any;
@@ -489,7 +489,7 @@ export default function PurchaseOrderDetail() {
                   const regCity = c?.registered_city || company?.city;
                   const regState = c?.registered_state || company?.state;
                   const regPin = c?.registered_pin_code || company?.pin_code;
-                  return [reg1, reg2, [regCity, regState].filter(Boolean).join(', '), regPin ? `PIN ${regPin}` : ''].filter(Boolean).join(', ');
+                  return [reg1, reg2, [regCity, regState].filter(Boolean).join(', '), regPin ? regPin : ''].filter(Boolean).join(', ');
                 })()}
               </div>
               {company?.gstin && <div style={{ fontSize: '8.5pt', fontFamily: 'monospace' }}>GSTIN: {company.gstin}</div>}
@@ -577,7 +577,7 @@ export default function PurchaseOrderDetail() {
             company?.address_line1,
             company?.address_line2,
             [company?.city, company?.state].filter(Boolean).join(', '),
-            company?.pin_code ? `PIN ${company.pin_code}` : '',
+            company?.pin_code ? company.pin_code : '',
           ].filter(Boolean).join(', ');
           const deliverAddr = po.delivery_address || physAddr || null;
           return (
@@ -613,7 +613,8 @@ export default function PurchaseOrderDetail() {
             <thead>
               <tr>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left" style={{ width: '5%' }}>#</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left" style={{ width: '28%' }}>Description</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left" style={{ width: '24%' }}>Description</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left" style={{ width: '8%' }}>HSN</th>
                 {/* Drawing No: visible on screen, hidden in print (shown inline in description) */}
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left print:hidden" style={{ width: '12%' }}>Drawing No.</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right print:hidden" style={{ width: '7%' }}>Rcvd</th>
@@ -641,6 +642,7 @@ export default function PurchaseOrderDetail() {
                         </div>
                       )}
                     </td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{(item as any).hsn_sac_code || "—"}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono print:hidden">{item.drawing_number || "—"}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono print:hidden">
                       {received > 0 ? (
@@ -676,7 +678,7 @@ export default function PurchaseOrderDetail() {
         {!hideCosts && <div className="flex justify-end po-section">
           <div className="w-full max-w-xs space-y-1.5 text-sm po-totals-block">
             <div className="flex justify-between po-totals-row">
-              <span className="text-muted-foreground">Sub Total</span>
+              <span className="text-muted-foreground">Taxable Amount</span>
               <span className="font-mono tabular-nums">{formatCurrency(po.sub_total)}</span>
             </div>
             {charges.length > 0 && charges.map((c: any, i: number) => (
@@ -734,29 +736,13 @@ export default function PurchaseOrderDetail() {
 
         {/* ── PRINT: footer — [T&C | Bank Details] + Signatory ── */}
         <div className="hidden print:block po-footer" style={{ borderTop: '0.75pt solid #CBD5E1', paddingTop: '4px' }}>
-          {/* Delivery Date + Payment Terms — above T&C, slightly bolder */}
-          {(po.payment_terms || items.some((item: any) => item.delivery_date)) && (
+          {/* Payment Terms — above T&C */}
+          {po.payment_terms && (
             <div style={{ display: 'flex', gap: '16px', marginBottom: '6px', paddingBottom: '5px', borderBottom: '0.5pt solid #E2E8F0' }}>
-              {po.payment_terms && (
-                <div>
-                  <span style={{ fontSize: '9.5pt', fontWeight: '700', color: '#1E3A5F' }}>Payment Terms: </span>
-                  <span style={{ fontSize: '9.5pt', fontWeight: '600', color: '#334155' }}>{po.payment_terms}</span>
-                </div>
-              )}
-              {items.some((item: any) => item.delivery_date) && (
-                <div>
-                  <span style={{ fontSize: '9.5pt', fontWeight: '700', color: '#1E3A5F' }}>Delivery Date: </span>
-                  <span style={{ fontSize: '9.5pt', fontWeight: '600', color: '#334155' }}>
-                    {(() => {
-                      const dates = items.filter((item: any) => item.delivery_date).map((item: any) => new Date(item.delivery_date));
-                      const earliest = new Date(Math.min(...dates.map((d: Date) => d.getTime())));
-                      const latest = new Date(Math.max(...dates.map((d: Date) => d.getTime())));
-                      const fmt = (d: Date) => d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-                      return earliest.getTime() === latest.getTime() ? fmt(earliest) : `${fmt(earliest)} – ${fmt(latest)}`;
-                    })()}
-                  </span>
-                </div>
-              )}
+              <div>
+                <span style={{ fontSize: '9.5pt', fontWeight: '700', color: '#1E3A5F' }}>Payment Terms: </span>
+                <span style={{ fontSize: '9.5pt', fontWeight: '600', color: '#334155' }}>{po.payment_terms}</span>
+              </div>
             </div>
           )}
           <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
@@ -795,8 +781,8 @@ export default function PurchaseOrderDetail() {
               </div>
               {/* Authorised Signatory */}
               <div style={{ flex: '0 0 auto', textAlign: 'center' }}>
-                <div style={{ fontSize: '7pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>Authorised Signatory</div>
                 <div style={{ fontSize: '6.5pt', color: '#475569', whiteSpace: 'nowrap' }}>for {company?.company_name}</div>
+                <div style={{ fontSize: '6.5pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>AUTHORISED SIGNATORY</div>
                 <div style={{ borderBottom: '0.5pt solid #94a3b8', marginTop: '16mm', marginBottom: '2mm', marginLeft: '4mm', marginRight: '4mm' }} />
                 <div style={{ fontSize: '7pt', color: '#64748b' }}>Signature</div>
               </div>
