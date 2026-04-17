@@ -158,15 +158,10 @@ export default function PurchaseOrderDetail() {
     deleteMutation.mutate(getPOFinalReason());
   };
 
-  const createGrnMutation = useMutation({
-    mutationFn: () => createGrnFromPO({ po_id: id!, date: new Date().toISOString().split("T")[0] }),
-    onSuccess: (newGrn) => {
-      navigate(`/grn/${(newGrn as any).id}`);
-    },
-    onError: (err: any) => {
-      toast({ title: "Error creating GRN", description: err.message, variant: "destructive" });
-    },
-  });
+  const createGrnMutation = {
+    mutate: () => navigate(`/grn/new?po=${id}`),
+    isPending: false,
+  };
 
   const paymentMutation = useMutation({
     mutationFn: () =>

@@ -166,13 +166,13 @@ const App = () => (
               <Route path="/delivery-challans/:id/record-return" element={<PageGuard page="delivery-challans"><DCRecordReturn /></PageGuard>} />
 
               <Route path="/grn" element={<PageGuard page="grn"><GRNRegister /></PageGuard>} />
-              <Route path="/grn/new" element={<Navigate to="/grn" replace />} />
+              <Route path="/grn/new" element={<PageGuard page="grn"><GRNForm /></PageGuard>} />
               <Route path="/grn/:id" element={<PageGuard page="grn"><GRNDetail /></PageGuard>} />
 
               <Route path="/follow-up-tracker" element={<PageGuard page="follow-up-tracker"><FollowUpTracker /></PageGuard>} />
 
               <Route path="/dc-grn" element={<PageGuard page="dc-grn"><DcGrn /></PageGuard>} />
-              <Route path="/dc-grn/new" element={<Navigate to="/grn" replace />} />
+              <Route path="/dc-grn/new" element={<PageGuard page="dc-grn"><DcGrnForm /></PageGuard>} />
               <Route path="/dc-grn/:id" element={<PageGuard page="dc-grn"><DcGrnRedirect /></PageGuard>} />
 
               <Route path="/job-works" element={<PageGuard page="job-works"><JobWorks /></PageGuard>} />
