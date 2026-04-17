@@ -342,27 +342,7 @@ export async function recordGRNAndUpdatePO(grnData: CreateGRNData) {
         const newStock = (rec.current_stock ?? 0) + item.accepted_quantity;
         const newRawMat = (rec.stock_raw_material ?? 0) + item.accepted_quantity;
         await supabase.from("items").update({ current_stock: newStock, stock_raw_material: newRawMat } as any).eq("id", rec.id);
-        // Phase 13: update stock bucket
-        await updateStockBucket(rec.id, 'free', item.accepted_quantity).catch(console.error);
-        await addStockLedgerEntry({
-          item_id: rec.id,
-          item_code: rec.item_code,
-          item_description: rec.description,
-          transaction_date: today,
-          transaction_type: "grn_receipt",
-          qty_in: item.accepted_quantity,
-          qty_out: 0,
-          balance_qty: newStock,
-          unit_cost: 0,
-          total_value: 0,
-          reference_type: "grn",
-          reference_id: grn.id,
-          reference_number: grn.grn_number,
-          notes: `GRN receipt: ${grn.grn_number}`,
-          created_by: null,
-          from_state: null,
-          to_state: "raw_material",
-        });
+        // stock_free is updated at storeConfirmGRN (after QC), not at creation.
       }
     }
   }
@@ -1348,7 +1328,7 @@ export async function storeConfirmGRN(
   // For DC return GRNs: move accepted stock from in_process → free on storekeeper confirmation
   const { data: grnHeader } = await (supabase as any)
     .from('grns')
-    .select('grn_type, linked_dc_id, company_id')
+    .select('grn_type, linked_dc_id, company_id, grn_number')
     .eq('id', grnId)
     .single();
 
@@ -1382,6 +1362,67 @@ export async function storeConfirmGRN(
         notes: 'DC return — storekeeper confirmed',
         created_by: null,
         from_state: 'in_process',
+        to_state: 'free',
+      });
+    }
+  }
+
+  // For PO-GRN: move QC-accepted stock into stock_free on storekeeper confirmation.
+  // Stock intentionally NOT moved at GRN creation — only moved here after QC verdict is set.
+  if (grnHeader?.grn_type !== 'dc_grn' && !grnHeader?.linked_dc_id) {
+    const today = new Date().toISOString().split('T')[0];
+    const { data: poLines } = await (supabase as any)
+      .from('grn_line_items')
+      .select('item_id, drawing_number, accepted_qty, conforming_qty, accepted_quantity')
+      .eq('grn_id', grnId)
+      .eq('is_final_grn', true);
+
+    for (const line of (poLines ?? []) as any[]) {
+      // Use QC-verified accepted_qty (Phase 14); fall back to conforming_qty, then creation-time accepted_quantity
+      const qty: number =
+        (line.accepted_qty ?? 0) > 0 ? line.accepted_qty
+        : (line.conforming_qty ?? 0) > 0 ? line.conforming_qty
+        : (line.accepted_quantity ?? 0);
+      if (qty <= 0) continue;
+
+      // Resolve item_id — use direct FK if available, else look up by drawing_revision
+      let itemId: string | null = line.item_id ?? null;
+      let itemCode: string | null = null;
+      let itemDesc: string | null = null;
+      if (!itemId && line.drawing_number) {
+        const { data: itemRec } = await (supabase as any)
+          .from('items')
+          .select('id, item_code, description')
+          .eq('drawing_revision', line.drawing_number)
+          .eq('company_id', grnHeader.company_id)
+          .maybeSingle();
+        if (itemRec) {
+          itemId = (itemRec as any).id;
+          itemCode = (itemRec as any).item_code;
+          itemDesc = (itemRec as any).description;
+        }
+      }
+      if (!itemId) continue;
+
+      console.log('[Stock] GRN confirmed:', grnHeader.grn_number, 'item:', itemId, 'qty:', qty);
+      await updateStockBucket(itemId, 'free', +qty).catch(console.error);
+      await addStockLedgerEntry({
+        item_id: itemId,
+        item_code: itemCode,
+        item_description: itemDesc,
+        transaction_date: today,
+        transaction_type: 'grn_receipt',
+        qty_in: qty,
+        qty_out: 0,
+        balance_qty: 0,
+        unit_cost: 0,
+        total_value: 0,
+        reference_type: 'grn',
+        reference_id: grnId,
+        reference_number: grnHeader.grn_number ?? null,
+        notes: `GRN ${grnHeader.grn_number} store confirmed`,
+        created_by: null,
+        from_state: 'incoming',
         to_state: 'free',
       });
     }

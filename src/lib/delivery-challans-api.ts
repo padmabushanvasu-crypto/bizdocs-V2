@@ -482,10 +482,12 @@ export async function issueDeliveryChallan(id: string) {
     const rec = itemRecord as any;
     const newStock = Math.max(0, (rec.current_stock ?? 0) - qty);
     await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
-    // Phase 13: bucket updates for returnable DCs
-    if (RETURNABLE_DC_TYPES.has(dc.dc_type)) {
+    // Bucket updates for returnable DCs: free → in_process
+    const isReturnable = RETURNABLE_DC_TYPES.has(dc.dc_type);
+    if (isReturnable) {
       await updateStockBucket(rec.id, 'free', -qty).catch(console.error);
       await updateStockBucket(rec.id, 'in_process', +qty).catch(console.error);
+      console.log('[Stock] DC issued:', dc.dc_number, 'item:', rec.id, 'qty:', qty);
     }
     await addStockLedgerEntry({
       item_id: rec.id,
@@ -503,6 +505,8 @@ export async function issueDeliveryChallan(id: string) {
       reference_number: dc.dc_number,
       notes: `DC issued: ${dc.dc_number}`,
       created_by: null,
+      from_state: isReturnable ? 'free' : null,
+      to_state: isReturnable ? 'in_process' : null,
     });
   }
 }
