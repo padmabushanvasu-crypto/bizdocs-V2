@@ -61,7 +61,7 @@ export function NotificationBell() {
   const notifications = allNotifications.filter((n) => {
     const target = (n as any).target_role as string | null;
     if (!target) return true;
-    return role === "admin" || role === target;
+    return role === "admin" || role === "finance" || role === target;
   });
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 

@@ -305,7 +305,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
     },
     staleTime: 5 * 60 * 1000,
   });
-  const isAdmin = (userRoleData as any)?.role === 'admin';
+  const isAdmin = (userRoleData as any)?.role === 'admin' || (userRoleData as any)?.role === 'finance';
 
   const { data: openPOs } = useQuery({
     queryKey: ["open-pos-for-grn"],
