@@ -1105,7 +1105,7 @@ export default function DeliveryChallanForm() {
                     </td>
                   </tr>
                 )}
-                {/* Change 3: Stage-aware jig alerts (status-aware, no process restriction) */}
+                {/* Stage-aware jig alerts: only show for machining stages */}
                 {(() => {
                   const allJigs = lineJigs.get(index) ?? [];
                   if (allJigs.length === 0) return null;
@@ -1114,15 +1114,28 @@ export default function DeliveryChallanForm() {
                     selectedStageId && selectedStageId !== "manual"
                       ? lineRoutes.get(index)?.find(s => s.id === selectedStageId)
                       : null;
-                  // Filter: if jig has associated_process, only show when it matches selected stage
-                  const relevantJigs = allJigs.filter(jig => {
-                    if (!jig.associated_process) return false;
-                    if (!stage) return true;
-                    const ap = jig.associated_process.trim().toLowerCase();
+
+                  const MACHINING_PROCESS_CODES = [
+                    '65', '64', '33', '75', '33b', '73', '65b', '65a', '33a',
+                  ];
+                  const isMachiningStage = (s: any): boolean => {
+                    if (!s) return false;
+                    const code = (s.process_code ?? '').toLowerCase().trim();
+                    const name = (s.process_name ?? '').toLowerCase().trim();
                     return (
-                      stage.process_name.toLowerCase().includes(ap) ||
-                      Boolean(stage.process_code && stage.process_code.toLowerCase() === ap)
+                      MACHINING_PROCESS_CODES.includes(code) ||
+                      name.includes('turning') ||
+                      name.includes('milling') ||
+                      name.includes('cnc') ||
+                      name.includes('traub') ||
+                      name.includes('vmc')
                     );
+                  };
+
+                  // Show all jigs for machining stages; hide for all others
+                  const relevantJigs = allJigs.filter(() => {
+                    if (!stage) return false;
+                    return isMachiningStage(stage);
                   });
                   if (relevantJigs.length === 0) return null;
 
