@@ -364,8 +364,8 @@ export default function DeliveryChallanDetail() {
             <div style={{ fontSize: '9pt', whiteSpace: 'nowrap' }}>Date: {new Date(dc.dc_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontWeight: 700, fontSize: '14pt', color: '#1E3A5F', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '2pt' }}>Delivery Challan cum Job Work Order</div>
-            <div style={{ fontWeight: 700, fontSize: '8pt', color: '#1E3A5F', marginBottom: '2pt', letterSpacing: '0.03em' }}>[{typeLabels[dc.dc_type] || dc.dc_type}]</div>
+            <div style={{ fontWeight: 700, fontSize: '9pt', color: '#1E3A5F', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '2pt', whiteSpace: 'nowrap', textAlign: 'center' }}>Delivery Challan cum Job Work Order</div>
+            <div style={{ fontWeight: 700, fontSize: '8pt', color: '#1E3A5F', marginBottom: '2pt', letterSpacing: '0.03em', textAlign: 'center' }}>[{typeLabels[dc.dc_type] || dc.dc_type}]</div>
             <div style={{ marginTop: '4pt', marginBottom: '3pt', padding: '3pt 6pt', background: dc.return_due_date ? '#FFF7ED' : '#F8FAFC', border: `0.75pt solid ${dc.return_due_date ? '#F97316' : '#CBD5E1'}`, borderRadius: '2pt', textAlign: 'right', whiteSpace: 'nowrap' }}>
               <span style={{ fontWeight: 700, fontSize: '9pt', color: '#1E3A5F' }}>Expected Return Date: </span>
               <span style={{ fontWeight: 700, fontSize: '10pt', color: dc.return_due_date ? '#C2410C' : '#94A3B8' }}>
@@ -496,27 +496,30 @@ export default function DeliveryChallanDetail() {
 
         {/* Signature + Receiver */}
         <div style={{ borderTop: '0.75pt solid #CBD5E1', paddingTop: '4pt', marginTop: '8pt' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '8pt', fontSize: '7pt', textAlign: 'center' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '8pt', fontSize: '7pt', textAlign: 'center', alignItems: 'end' }}>
             {[
               { label: 'Prepared By', name: dc.prepared_by, isAuth: false },
               { label: 'Checked By', name: dc.checked_by, isAuth: false },
               { label: 'Authorised Signatory', name: '', isAuth: true },
               { label: `Receiver (${dc.party_name})`, name: '', isAuth: false },
             ].map(({ label, name, isAuth }) => (
-              <div key={label}>
+              <div key={label} style={{ display: 'flex', flexDirection: 'column', height: '54pt' }}>
                 {isAuth ? (
                   <>
                     <div style={{ fontSize: '7pt', color: '#64748b', whiteSpace: 'nowrap' }}>for {co?.company_name}</div>
-                    <div style={{ height: '36pt' }} />
+                    <div style={{ flex: 1 }} />
                     <div style={{ borderTop: '0.5pt solid #000', paddingTop: '3pt' }}>
                       <div style={{ fontWeight: 700, fontSize: '7pt', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>AUTHORISED SIGNATORY</div>
                     </div>
                   </>
                 ) : (
-                  <div style={{ borderTop: '0.5pt solid #000', paddingTop: '3pt', marginTop: '18pt' }}>
+                  <>
                     {name && <div style={{ fontSize: '7pt', color: '#64748b', marginBottom: '1pt', whiteSpace: 'nowrap' }}>{name}</div>}
-                    <div style={{ fontWeight: 700, fontSize: '7pt', whiteSpace: 'nowrap' }}>{label}</div>
-                  </div>
+                    <div style={{ flex: 1 }} />
+                    <div style={{ borderTop: '0.5pt solid #000', paddingTop: '3pt' }}>
+                      <div style={{ fontWeight: 700, fontSize: '7pt', whiteSpace: 'nowrap' }}>{label}</div>
+                    </div>
+                  </>
                 )}
               </div>
             ))}
