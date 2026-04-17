@@ -159,7 +159,7 @@ function GRNRegisterInner() {
     if (!deleteTarget || !deleteReason) return;
     if (deleteReason === 'other' && !deleteCustomReason.trim()) return;
     const isCompleted = COMPLETED_GRN_STAGES.has(deleteTarget.grn_stage);
-    const canDeleteCompleted = role === 'admin' || role === 'storekeeper';
+    const canDeleteCompleted = role === 'admin' || role === 'finance' || role === 'storekeeper';
     if (isCompleted && canDeleteCompleted && !deleteStockAction) return;
     const finalReason = getFinalReason();
     deleteMutation.mutate({
@@ -349,7 +349,7 @@ function GRNRegisterInner() {
           {(() => {
             if (!deleteTarget) return null;
             const isCompleted = COMPLETED_GRN_STAGES.has(deleteTarget.grn_stage);
-            const canDelete = !isCompleted || role === 'admin' || role === 'storekeeper';
+            const canDelete = !isCompleted || role === 'admin' || role === 'finance' || role === 'storekeeper';
 
             if (isCompleted && !canDelete) {
               return (

@@ -241,7 +241,7 @@ export default function DeliveryChallanDetail() {
     if (!deleteReason) return;
     if (deleteReason === 'other' && !deleteCustomReason.trim()) return;
     const isIssued = dc?.status === 'issued';
-    const canDeleteIssued = role === 'admin' || role === 'purchase_team';
+    const canDeleteIssued = role === 'admin' || role === 'finance' || role === 'purchase_team';
     if (isIssued && canDeleteIssued && !deleteStockAction) return;
     deleteDCMutation.mutate({
       reason: getDCDetailFinalReason(),
@@ -1459,7 +1459,7 @@ export default function DeliveryChallanDetail() {
         <DialogContent className="max-w-md">
           {(() => {
             const isIssued = dc?.status === 'issued';
-            const canDelete = !isIssued || role === 'admin' || role === 'purchase_team';
+            const canDelete = !isIssued || role === 'admin' || role === 'finance' || role === 'purchase_team';
 
             if (isIssued && !canDelete) {
               return (
