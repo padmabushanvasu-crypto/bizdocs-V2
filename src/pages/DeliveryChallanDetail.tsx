@@ -353,22 +353,19 @@ export default function DeliveryChallanDetail() {
     const regAddr  = [regLine1, regLine2, [regCity, regState].filter(Boolean).join(', '), regPin ? `PIN ${regPin}` : ''].filter(Boolean).join(', ');
     return (
       <div className="dc-print-copy" style={{ fontFamily: 'Arial, sans-serif', fontSize: '9.5pt', color: '#000', lineHeight: 1.35, display: 'flex', flexDirection: 'column', minHeight: '270mm' }}>
-        {/* Centered title */}
-        <div style={{ textAlign: 'center', marginBottom: '3pt' }}>
-          <div style={{ fontWeight: 700, fontSize: '14pt', color: '#1E3A5F', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Delivery Challan cum Job Work Order</div>
-        </div>
-        {/* Header — company name + registered address */}
+        {/* Header — company info (left) + document title/metadata (right) */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1.5pt solid #1E3A5F', paddingBottom: '3pt', marginBottom: '3pt' }}>
           <div>
             {co?.logo_url && <img src={co.logo_url} alt="" style={{ height: '34pt', marginBottom: '2pt', objectFit: 'contain' }} />}
             <div style={{ fontWeight: 700, fontSize: '13pt', lineHeight: 1.2, color: '#CC0000' }}>{co?.company_name}</div>
             {co?.gstin && <div style={{ fontSize: '8.5pt', fontFamily: 'monospace' }}>GSTIN: {co.gstin}</div>}
             {co?.phone && <div style={{ fontSize: '8.5pt', color: '#475569' }}>Ph: {co.phone}</div>}
+            <div style={{ fontWeight: 700, fontSize: '9pt', marginTop: '3pt', whiteSpace: 'nowrap' }}>DC No: {dc.dc_number.replace('/-', '-')}</div>
+            <div style={{ fontSize: '9pt', whiteSpace: 'nowrap' }}>Date: {new Date(dc.dc_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
           </div>
           <div style={{ textAlign: 'right' }}>
+            <div style={{ fontWeight: 700, fontSize: '14pt', color: '#1E3A5F', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '2pt' }}>Delivery Challan cum Job Work Order</div>
             <div style={{ fontWeight: 700, fontSize: '8pt', color: '#1E3A5F', marginBottom: '2pt', letterSpacing: '0.03em' }}>[{typeLabels[dc.dc_type] || dc.dc_type}]</div>
-            <div style={{ fontWeight: 700, fontSize: '11pt' }}>DC No: {dc.dc_number}</div>
-            <div style={{ fontSize: '9.5pt' }}>Date: {new Date(dc.dc_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
             <div style={{ marginTop: '4pt', marginBottom: '3pt', padding: '3pt 6pt', background: dc.return_due_date ? '#FFF7ED' : '#F8FAFC', border: `0.75pt solid ${dc.return_due_date ? '#F97316' : '#CBD5E1'}`, borderRadius: '2pt', textAlign: 'right', whiteSpace: 'nowrap' }}>
               <span style={{ fontWeight: 700, fontSize: '9pt', color: '#1E3A5F' }}>Expected Return Date: </span>
               <span style={{ fontWeight: 700, fontSize: '10pt', color: dc.return_due_date ? '#C2410C' : '#94A3B8' }}>
@@ -498,17 +495,29 @@ export default function DeliveryChallanDetail() {
         </div>
 
         {/* Signature + Receiver */}
-        <div style={{ borderTop: '0.75pt solid #CBD5E1', paddingTop: '4pt' }}>
+        <div style={{ borderTop: '0.75pt solid #CBD5E1', paddingTop: '4pt', marginTop: '8pt' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '8pt', fontSize: '7pt', textAlign: 'center' }}>
             {[
-              { label: 'Prepared By', name: dc.prepared_by },
-              { label: 'Checked By', name: dc.checked_by },
-              { label: 'Authorised Signatory', name: '' },
-              { label: `Receiver (${dc.party_name})`, name: '' },
-            ].map(({ label, name }) => (
-              <div key={label} style={{ borderTop: '0.5pt solid #000', paddingTop: '3pt', marginTop: '18pt' }}>
-                {name && <div style={{ fontSize: '7pt', color: '#64748b', marginBottom: '1pt', whiteSpace: 'nowrap' }}>{name}</div>}
-                <div style={{ fontWeight: 700, fontSize: '7pt', whiteSpace: 'nowrap' }}>{label}</div>
+              { label: 'Prepared By', name: dc.prepared_by, isAuth: false },
+              { label: 'Checked By', name: dc.checked_by, isAuth: false },
+              { label: 'Authorised Signatory', name: '', isAuth: true },
+              { label: `Receiver (${dc.party_name})`, name: '', isAuth: false },
+            ].map(({ label, name, isAuth }) => (
+              <div key={label}>
+                {isAuth ? (
+                  <>
+                    <div style={{ fontSize: '7pt', color: '#64748b', whiteSpace: 'nowrap' }}>for {co?.company_name}</div>
+                    <div style={{ height: '36pt' }} />
+                    <div style={{ borderTop: '0.5pt solid #000', paddingTop: '3pt' }}>
+                      <div style={{ fontWeight: 700, fontSize: '7pt', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>AUTHORISED SIGNATORY</div>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ borderTop: '0.5pt solid #000', paddingTop: '3pt', marginTop: '18pt' }}>
+                    {name && <div style={{ fontSize: '7pt', color: '#64748b', marginBottom: '1pt', whiteSpace: 'nowrap' }}>{name}</div>}
+                    <div style={{ fontWeight: 700, fontSize: '7pt', whiteSpace: 'nowrap' }}>{label}</div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -768,7 +777,7 @@ export default function DeliveryChallanDetail() {
             <div style={{ flex: '0 0 42%', textAlign: 'right' }}>
               <div style={{ fontWeight: '700', fontSize: '13pt', color: '#1E3A5F', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Delivery Challan cum Job Work Order</div>
               <div style={{ fontWeight: '700', fontSize: '8pt', color: '#1E3A5F' }}>[{typeLabels[dc.dc_type] || dc.dc_type}]</div>
-              <div style={{ fontWeight: '700', fontSize: '9pt' }}>DC No: {dc.dc_number}</div>
+              <div style={{ fontWeight: '700', fontSize: '9pt' }}>DC No: {dc.dc_number.replace('/-', '-')}</div>
               <div style={{ fontSize: '9pt' }}>Date: {new Date(dc.dc_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
               {dc.vehicle_number && <div style={{ fontSize: '9pt' }}>Vehicle: {dc.vehicle_number}</div>}
               {(dc as any).driver_name && (

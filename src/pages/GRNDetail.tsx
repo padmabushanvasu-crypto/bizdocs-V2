@@ -914,20 +914,20 @@ function GRNPrintView({
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4pt", marginTop: "4pt", fontSize: "8pt", fontFamily: "Arial" }}>
           <div>
-            <div><strong>GRN No.:</strong> {grn.grn_number}</div>
+            <div><strong>GRN No.:</strong> {(grn.grn_number ?? "").replace("/-", "-")}</div>
             <div><strong>GRN Date:</strong> {new Date(grn.grn_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
             <div><strong>Vendor:</strong> {grn.vendor_name || "—"}</div>
             {grn.grn_type === "dc_grn" && (grn.linked_dc_number || linkedDC) && (
               <div style={{ marginTop: "3pt", padding: "2pt 5pt", background: "#EFF6FF", border: "0.5pt solid #BFDBFE", borderRadius: "2pt" }}>
                 <strong>Linked DC:</strong>{" "}
-                <span style={{ fontFamily: "monospace" }}>{grn.linked_dc_number || linkedDC?.dc_number}</span>
+                <span style={{ fontFamily: "monospace" }}>{(grn.linked_dc_number || linkedDC?.dc_number || "").replace("/-", "-")}</span>
                 {linkedDC?.dc_date && <span> · {new Date(linkedDC.dc_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>}
                 {linkedDC?.status && <span> · <span style={{ textTransform: "capitalize" }}>{linkedDC.status.replace(/_/g, " ")}</span></span>}
               </div>
             )}
           </div>
           <div>
-            {grn.po_number && <div><strong>PO No.:</strong> {grn.po_number}</div>}
+            {grn.po_number && <div><strong>PO No.:</strong> {grn.po_number.replace("/-", "-")}</div>}
             {grn.vendor_invoice_number && <div><strong>Invoice No.:</strong> {grn.vendor_invoice_number}</div>}
             {grn.vehicle_number && <div><strong>Vehicle No.:</strong> {grn.vehicle_number}</div>}
           </div>
@@ -1783,7 +1783,7 @@ export default function GRNDetail() {
           * { visibility: hidden; }
           #grn-print-view, #grn-print-view * { visibility: visible; }
           #grn-print-view { position: absolute; left: 0; top: 0; width: 100%; display: block !important; min-height: 273mm; padding-bottom: 90pt; box-sizing: border-box; }
-          .grn-section-d { position: absolute; bottom: 0; left: 0; right: 0; page-break-inside: avoid; break-inside: avoid; }
+          .grn-section-d { position: absolute; bottom: 8pt; left: 0; right: 0; page-break-inside: avoid; break-inside: avoid; }
           @page {
             size: A4 portrait;
             margin: 12mm 14mm 12mm 14mm;

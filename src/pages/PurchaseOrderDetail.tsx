@@ -498,7 +498,7 @@ export default function PurchaseOrderDetail() {
             </div>
             {/* Right: PO details */}
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontWeight: '700', fontSize: '11pt' }}>PO No: {po.po_number}</div>
+              <div style={{ fontWeight: '700', fontSize: '11pt' }}>PO No: {po.po_number.replace("/-", "-")}</div>
               <div style={{ fontSize: '9.5pt' }}>Date: {new Date(po.po_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
               {(po as any).vendor_reference && <div style={{ fontSize: '9pt' }}>Vendor Ref: {(po as any).vendor_reference}</div>}
               {po.reference_number && <div style={{ fontSize: '9pt' }}>Ref: {po.reference_number}</div>}
@@ -782,9 +782,9 @@ export default function PurchaseOrderDetail() {
               {/* Authorised Signatory */}
               <div style={{ flex: '0 0 auto', textAlign: 'center' }}>
                 <div style={{ fontSize: '6.5pt', color: '#475569', whiteSpace: 'nowrap' }}>for {company?.company_name}</div>
+                <div style={{ height: '40pt' }} />
+                <div style={{ borderBottom: '0.5pt solid #94a3b8', marginBottom: '2mm', marginLeft: '4mm', marginRight: '4mm' }} />
                 <div style={{ fontSize: '6.5pt', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>AUTHORISED SIGNATORY</div>
-                <div style={{ borderBottom: '0.5pt solid #94a3b8', marginTop: '16mm', marginBottom: '2mm', marginLeft: '4mm', marginRight: '4mm' }} />
-                <div style={{ fontSize: '7pt', color: '#64748b' }}>Signature</div>
               </div>
             </div>
           </div>
