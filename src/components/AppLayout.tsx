@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { MobileNav } from "@/components/MobileNav";
@@ -8,7 +8,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { LogOut, Settings, User, LayoutDashboard } from "lucide-react";
+import { LogOut, Settings, User, LayoutDashboard, KeyRound } from "lucide-react";
+import { ChangePasswordDialog } from "@/components/ChangePasswordDialog";
 import { generateStockAlerts, generateOverdueDCAlerts } from "@/lib/notifications-api";
 import { FOCUSED_ROLES, FOCUSED_ROLE_REDIRECT, ROLE_LABELS } from "@/lib/roles";
 import type { AppRole } from "@/lib/roles";
@@ -16,6 +17,7 @@ import type { AppRole } from "@/lib/roles";
 export function AppLayout() {
   const { user, profile, signOut, role } = useAuth();
   const navigate = useNavigate();
+  const [showChangePassword, setShowChangePassword] = useState(false);
 
   const isFocused = FOCUSED_ROLES.includes(role as AppRole);
   const isAdminOrFinance = role === 'admin' || role === 'finance';
@@ -109,11 +111,16 @@ export function AppLayout() {
                   </>
                 )}
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setShowChangePassword(true)}>
+                  <KeyRound className="mr-2 h-4 w-4" /> Change Password
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
                   <LogOut className="mr-2 h-4 w-4" /> Sign out
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <ChangePasswordDialog open={showChangePassword} onClose={() => setShowChangePassword(false)} />
             </div>
           </header>
 
