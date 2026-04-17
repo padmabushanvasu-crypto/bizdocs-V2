@@ -501,14 +501,14 @@ export default function CompanySettings() {
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-4 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-xs font-bold uppercase text-slate-500 tracking-wider">Receiving &amp; GRN Settings</h2>
-          {role !== "admin" && (
+          {role !== "admin" && role !== "finance" && (
             <span className="flex items-center gap-1 text-xs text-slate-400">
-              <Lock className="h-3.5 w-3.5" /> Admin only
+              <Lock className="h-3.5 w-3.5" /> Admin / Finance only
             </span>
           )}
         </div>
 
-        {role === "admin" ? (
+        {role === "admin" || role === "finance" ? (
           <div className="space-y-1.5">
             <Label>Over-Receipt Tolerance (%)</Label>
             <Input
@@ -532,7 +532,7 @@ export default function CompanySettings() {
             <div className="space-y-0.5">
               <p className="text-xs font-medium text-slate-600">Over-Receipt Tolerance</p>
               <p className="text-sm font-mono text-slate-800">{form.over_receipt_tolerance_percent}%</p>
-              <p className="text-xs text-slate-400">Only admins can change this setting.</p>
+              <p className="text-xs text-slate-400">Only admins and finance can change this setting.</p>
             </div>
           </div>
         )}
