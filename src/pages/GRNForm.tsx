@@ -787,6 +787,13 @@ function GRNFormInner({ defaultGrnType }: Props) {
               </div>
             )}
 
+            {/* Approved-but-not-issued PO warning */}
+            {selectedPO && (selectedPO.status === 'approved' || (selectedPO.status === 'draft' && selectedPO.approved_at)) && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                This PO has been approved but not yet formally issued. Consider issuing it from the Purchase Orders page first.
+              </div>
+            )}
+
             {/* Vendor summary */}
             {(selectedPO || selectedDC) && (
               <div className="bg-muted/50 rounded-lg p-3 border border-border text-sm space-y-1">

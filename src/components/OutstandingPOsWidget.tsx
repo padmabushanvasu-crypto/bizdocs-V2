@@ -28,7 +28,7 @@ async function fetchOutstandingPOs(companyId: string): Promise<OutstandingPO[]> 
       parties:vendor_id ( email1, phone1 )
     `)
     .eq("company_id", companyId)
-    .in("status", ["draft", "issued", "partially_received"])
+    .in("status", ["draft", "approved", "issued", "partially_received"])
     .order("created_at", { ascending: false });
 
   if (error) throw error;

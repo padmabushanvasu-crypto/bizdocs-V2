@@ -34,6 +34,7 @@ import { useAuth } from "@/hooks/useAuth";
 
 const statusClass: Record<string, string> = {
   draft: "status-draft",
+  approved: "bg-green-50 text-green-700 border border-green-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
   issued: "bg-blue-50 text-blue-700 border border-blue-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
   partially_received: "status-overdue",
   fully_received: "status-paid",
@@ -43,7 +44,7 @@ const statusClass: Record<string, string> = {
   rejected: "bg-red-50 text-red-700 border border-red-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
 };
 const statusLabels: Record<string, string> = {
-  draft: "Draft", issued: "Issued", partially_received: "Partially Received",
+  draft: "Draft", approved: "Approved", issued: "Issued", partially_received: "Partially Received",
   fully_received: "Fully Received", cancelled: "Cancelled", closed: "Closed",
   pending_approval: "Pending Approval", rejected: "Rejected",
 };
@@ -233,7 +234,7 @@ export default function PurchaseOrderDetail() {
   const compactClass = itemCount > 12 ? ' ultra-compact' : itemCount > 8 ? ' compact' : '';
   const isSameState = po.vendor_state_code === "33";
   const charges = po.additional_charges || [];
-  const canRecordReceipt = ["issued", "partially_received"].includes(po.status) && po.status !== "deleted";
+  const canRecordReceipt = ["approved", "issued", "partially_received"].includes(po.status) && po.status !== "deleted";
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-5xl mx-auto po-page-wrapper">
@@ -340,7 +341,7 @@ export default function PurchaseOrderDetail() {
       )}
 
       {/* Approved banner — purchase_team sees this when their PO has been approved and is ready to issue */}
-      {isPurchaseTeam && po.status === "draft" && po.approved_at && (
+      {isPurchaseTeam && (po.status === "approved" || (po.status === "draft" && po.approved_at)) && (
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-xl border border-green-200 bg-green-50 p-4 print:hidden">
           <div className="flex items-start gap-3">
             <CheckCircle className="h-5 w-5 text-green-600 shrink-0 mt-0.5" />
@@ -398,13 +399,13 @@ export default function PurchaseOrderDetail() {
             {printPreview ? <><EyeOff className="h-3.5 w-3.5 mr-1" /> Exit Preview</> : <><Eye className="h-3.5 w-3.5 mr-1" /> Preview Print</>}
           </Button>
           <DocumentActions documentNumber={po.po_number} documentType="Purchase Order" documentData={po as Record<string, unknown>} />
-          {po.status === "draft" && (
+          {(po.status === "draft" || po.status === "approved") && (
             <>
               <Button variant="outline" size="sm" onClick={() => navigate(`/purchase-orders/${id}/edit`)}>
                 <Edit className="h-3.5 w-3.5 mr-1" /> Edit
               </Button>
               {/* Hide top-bar Issue button for purchase_team when the approved banner (with its own Issue button) is visible */}
-              {!(isPurchaseTeam && po.approved_at) && (
+              {!(isPurchaseTeam && (po.status === "approved" || po.approved_at)) && (
                 <Button size="sm" onClick={() => issueMutation.mutate()}>Issue PO →</Button>
               )}
             </>
@@ -420,7 +421,7 @@ export default function PurchaseOrderDetail() {
               <Package className="h-3.5 w-3.5 mr-1" /> {createGrnMutation.isPending ? "Creating GRN…" : "Record Receipt"}
             </Button>
           )}
-          {!["draft", "cancelled", "deleted"].includes(po.status) && (
+          {!["draft", "approved", "cancelled", "deleted"].includes(po.status) && (
             <Button
               variant="outline"
               size="sm"
@@ -509,7 +510,7 @@ export default function PurchaseOrderDetail() {
         {/* ── SCREEN: Vendor & PO Details ── */}
         <div className="print:hidden">
           <EditableSection
-            editable={po.status === "draft" || po.status === "issued"}
+            editable={po.status === "draft" || po.status === "approved" || po.status === "issued"}
             onEdit={() => navigate(`/purchase-orders/${id}/edit`)}
             label="Click to edit"
             className="p-4 -mx-4"

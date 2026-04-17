@@ -135,7 +135,7 @@ async function fetchStockAlertBoard(companyId: string): Promise<{ rows: StockAle
     .from("purchase_orders")
     .select("id")
     .eq("company_id", companyId)
-    .in("status", ["draft", "issued", "partially_received"]);
+    .in("status", ["draft", "approved", "issued", "partially_received"]);
 
   const openPOIds = (openPOs ?? []).map((p: any) => p.id);
   let itemsWithPO = new Set<string>();

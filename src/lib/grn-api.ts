@@ -235,7 +235,12 @@ export async function getNextGRNNumber(): Promise<string> {
 }
 
 export async function fetchOpenPOs() {
-  const { data, error } = await supabase.from("purchase_orders").select("id, po_number, po_date, vendor_id, vendor_name, vendor_gstin, status, grand_total").in("status", ["issued", "partially_received"]).order("po_date", { ascending: false });
+  // Include 'issued', 'partially_received', 'approved', and legacy approved-drafts (status=draft + approved_at set)
+  const { data, error } = await supabase
+    .from("purchase_orders")
+    .select("id, po_number, po_date, vendor_id, vendor_name, vendor_gstin, status, grand_total, approved_at")
+    .or("status.in.(issued,partially_received,approved),and(status.eq.draft,approved_at.not.is.null)")
+    .order("po_date", { ascending: false });
   if (error) throw error;
   return (data ?? []) as any[];
 }

@@ -240,7 +240,7 @@ export async function duplicatePurchaseOrder(id: string) {
 export async function approvePurchaseOrder(id: string, approvedBy: string) {
   const { error } = await supabase
     .from("purchase_orders")
-    .update({ status: "draft", approved_at: new Date().toISOString(), approved_by: approvedBy } as any)
+    .update({ status: "approved", approved_at: new Date().toISOString(), approved_by: approvedBy } as any)
     .eq("id", id);
   if (error) throw error;
 }
@@ -343,7 +343,7 @@ export async function fetchPOStats() {
   const pos = (allPOs ?? []) as any[];
   const active = pos.filter((p) => p.status !== "cancelled");
   const thisMonth = active.filter((p) => p.po_date >= monthStart);
-  const open = active.filter((p) => ["draft", "issued", "partially_received"].includes(p.status));
+  const open = active.filter((p) => ["draft", "approved", "issued", "partially_received"].includes(p.status));
   const totalValueThisMonth = thisMonth.reduce((s: number, p: any) => s + (Number(p.grand_total) || 0), 0);
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000).toISOString();
   const overdue = active.filter((p) => p.status === "issued" && p.issued_at && p.issued_at < thirtyDaysAgo);

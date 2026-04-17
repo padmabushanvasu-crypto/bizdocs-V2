@@ -29,6 +29,7 @@ import { useAuth } from "@/hooks/useAuth";
 
 const statusLabels: Record<string, string> = {
   draft: "Draft",
+  approved: "Approved",
   issued: "Issued",
   partially_received: "Partial",
   fully_received: "Received",
@@ -41,6 +42,7 @@ const statusLabels: Record<string, string> = {
 
 const statusClass: Record<string, string> = {
   draft: "status-draft",
+  approved: "bg-green-50 text-green-700 border border-green-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
   issued: "bg-blue-50 text-blue-700 border border-blue-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
   partially_received: "status-overdue",
   fully_received: "status-paid",
