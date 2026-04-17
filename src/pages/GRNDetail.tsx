@@ -1130,6 +1130,9 @@ function GRNPrintView({
         </div>
       )}
 
+      {/* Spacer pushes Section D to bottom when content is short */}
+      <div className="grn-spacer" />
+
       {/* ── SECTION D — AUTHORISATION ── */}
       <div className="grn-section-d">
         <div style={{ fontWeight: "bold", fontSize: "8pt", color: "#1E40AF", marginBottom: "6pt", fontFamily: "Arial" }}>
@@ -1782,8 +1785,9 @@ export default function GRNDetail() {
         @media print {
           * { visibility: hidden; }
           #grn-print-view, #grn-print-view * { visibility: visible; }
-          #grn-print-view { position: absolute; left: 0; top: 0; width: 100%; display: block !important; min-height: 273mm; padding-bottom: 90pt; box-sizing: border-box; }
-          .grn-section-d { position: absolute; bottom: 8pt; left: 0; right: 0; page-break-inside: avoid; break-inside: avoid; }
+          #grn-print-view { position: absolute; left: 0; top: 0; width: 100%; display: flex !important; flex-direction: column; box-sizing: border-box; }
+          .grn-spacer { flex: 1; min-height: 0; }
+          .grn-section-d { page-break-inside: avoid; break-inside: avoid; }
           @page {
             size: A4 portrait;
             margin: 12mm 14mm 12mm 14mm;
