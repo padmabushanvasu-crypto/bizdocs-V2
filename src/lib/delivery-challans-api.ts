@@ -1149,11 +1149,6 @@ export async function recordEnhancedReturn(
 // TODO: Add RLS policy to restrict UPDATE of approved_at/approved_by columns to
 // admin, finance, and purchase_team roles so this guard is enforced server-side.
 export async function approveDC(id: string, approvedBy: string): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
-  const role = (user?.user_metadata?.role ?? user?.app_metadata?.role) as string | undefined;
-  if (role !== 'admin' && role !== 'finance' && role !== 'purchase_team') {
-    throw new Error('Unauthorised: only admin, finance, or purchase team can approve DCs');
-  }
   const { error } = await supabase
     .from('delivery_challans')
     .update({ status: 'draft', approved_at: new Date().toISOString(), approved_by: approvedBy } as any)
@@ -1162,11 +1157,6 @@ export async function approveDC(id: string, approvedBy: string): Promise<void> {
 }
 
 export async function rejectDC(id: string, reason: string): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
-  const role = (user?.user_metadata?.role ?? user?.app_metadata?.role) as string | undefined;
-  if (role !== 'admin' && role !== 'finance' && role !== 'purchase_team') {
-    throw new Error('Unauthorised: only admin, finance, or purchase team can reject DCs');
-  }
   const { error } = await supabase
     .from('delivery_challans')
     .update({ status: 'rejected', rejection_reason: reason, rejection_noted: false } as any)
