@@ -361,10 +361,10 @@ export default function DeliveryChallanDetail() {
             {co?.gstin && <div style={{ fontSize: '8.5pt', fontFamily: 'monospace' }}>GSTIN: {co.gstin}</div>}
             {co?.phone && <div style={{ fontSize: '8.5pt', color: '#475569' }}>Ph: {co.phone}</div>}
             <div style={{ fontWeight: 700, fontSize: '9pt', marginTop: '3pt', whiteSpace: 'nowrap' }}>DC No: {dc.dc_number.replace('/-', '-')}</div>
-            <div style={{ fontSize: '9pt', whiteSpace: 'nowrap' }}>Date: {new Date(dc.dc_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontWeight: 700, fontSize: '9pt', color: '#1E3A5F', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '2pt', whiteSpace: 'nowrap', textAlign: 'center' }}>Delivery Challan cum Job Work Order</div>
+            <div style={{ fontSize: '9pt', whiteSpace: 'nowrap', marginBottom: '3pt' }}>Date: {new Date(dc.dc_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+            <div style={{ fontWeight: 700, fontSize: '10pt', color: '#1E3A5F', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: '2pt', whiteSpace: 'nowrap', textAlign: 'center' }}>Delivery Challan cum Job Work Order</div>
             <div style={{ fontWeight: 700, fontSize: '8pt', color: '#1E3A5F', marginBottom: '2pt', letterSpacing: '0.03em', textAlign: 'center' }}>[{typeLabels[dc.dc_type] || dc.dc_type}]</div>
             <div style={{ marginTop: '4pt', marginBottom: '3pt', padding: '3pt 6pt', background: dc.return_due_date ? '#FFF7ED' : '#F8FAFC', border: `0.75pt solid ${dc.return_due_date ? '#F97316' : '#CBD5E1'}`, borderRadius: '2pt', textAlign: 'right', whiteSpace: 'nowrap' }}>
               <span style={{ fontWeight: 700, fontSize: '9pt', color: '#1E3A5F' }}>Expected Return Date: </span>
@@ -496,20 +496,28 @@ export default function DeliveryChallanDetail() {
 
         {/* Signature + Receiver */}
         <div style={{ borderTop: '0.75pt solid #CBD5E1', paddingTop: '4pt', marginTop: '8pt' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '8pt', fontSize: '7pt', textAlign: 'center', alignItems: 'end' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '8pt', fontSize: '7pt', textAlign: 'center', alignItems: 'stretch' }}>
             {[
-              { label: 'Prepared By', name: dc.prepared_by, isAuth: false },
-              { label: 'Checked By', name: dc.checked_by, isAuth: false },
-              { label: 'Authorised Signatory', name: '', isAuth: true },
-              { label: `Receiver (${dc.party_name})`, name: '', isAuth: false },
-            ].map(({ label, name, isAuth }) => (
-              <div key={label} style={{ display: 'flex', flexDirection: 'column', height: '54pt' }}>
+              { label: 'Prepared By', name: dc.prepared_by, isAuth: false, isReceiver: false },
+              { label: 'Checked By', name: dc.checked_by, isAuth: false, isReceiver: false },
+              { label: 'Authorised Signatory', name: '', isAuth: true, isReceiver: false },
+              { label: `Receiver (${dc.party_name})`, name: '', isAuth: false, isReceiver: true },
+            ].map(({ label, name, isAuth, isReceiver }) => (
+              <div key={label} style={{ display: 'flex', flexDirection: 'column' }}>
                 {isAuth ? (
                   <>
                     <div style={{ fontSize: '7pt', color: '#64748b', whiteSpace: 'nowrap' }}>for {co?.company_name}</div>
                     <div style={{ flex: 1 }} />
                     <div style={{ borderTop: '0.5pt solid #000', paddingTop: '3pt' }}>
                       <div style={{ fontWeight: 700, fontSize: '7pt', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>AUTHORISED SIGNATORY</div>
+                    </div>
+                  </>
+                ) : isReceiver ? (
+                  <>
+                    <div style={{ fontWeight: 700, fontSize: '7pt', whiteSpace: 'nowrap', marginBottom: '2pt' }}>{label}</div>
+                    <div style={{ flex: 1 }} />
+                    <div style={{ fontSize: '6.5pt', color: '#475569', borderTop: '0.5pt solid #CBD5E1', paddingTop: '3pt' }}>
+                      Received goods in good condition<br />Date: ___________
                     </div>
                   </>
                 ) : (
@@ -523,9 +531,6 @@ export default function DeliveryChallanDetail() {
                 )}
               </div>
             ))}
-          </div>
-          <div style={{ fontSize: '8.5pt', color: '#475569', textAlign: 'center', marginTop: '4pt', padding: '3pt', border: '0.5pt solid #CBD5E1', borderRadius: '2pt' }}>
-            Received the above goods in good condition &nbsp;·&nbsp; Date: ___________
           </div>
         </div>
         </div>{/* end breakInside wrapper */}
@@ -678,7 +683,7 @@ export default function DeliveryChallanDetail() {
       {/* Top Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-display font-bold font-mono text-foreground">{dc.dc_number}</h1>
+          <h1 className="text-xl font-display font-bold font-mono text-foreground">{dc.dc_number.replace('/-', '-')}</h1>
           <span className={statusClass[dc.status] || "status-draft"}>{statusLabels[dc.status] || dc.status}</span>
           {isOverdue && (
             <span className="bg-destructive/10 text-destructive border border-destructive/20 text-xs font-medium px-2.5 py-0.5 rounded-full">Overdue</span>
