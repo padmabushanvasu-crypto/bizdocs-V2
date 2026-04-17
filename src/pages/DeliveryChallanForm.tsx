@@ -1116,7 +1116,7 @@ export default function DeliveryChallanForm() {
                       : null;
                   // Filter: if jig has associated_process, only show when it matches selected stage
                   const relevantJigs = allJigs.filter(jig => {
-                    if (!jig.associated_process) return true;
+                    if (!jig.associated_process) return false;
                     if (!stage) return true;
                     const ap = jig.associated_process.trim().toLowerCase();
                     return (
