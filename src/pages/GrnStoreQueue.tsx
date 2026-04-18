@@ -187,7 +187,7 @@ export default function GrnStoreQueue() {
       <div className="flex items-center gap-3">
         <PackageCheck className="h-6 w-6 text-amber-600" />
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Store Receipt Queue</h1>
+          <h1 className="text-xl font-bold text-slate-900">Inward Receipt Queue</h1>
           <p className="text-xs text-slate-500">
             GRNs cleared by QC and awaiting physical receipt confirmation
           </p>

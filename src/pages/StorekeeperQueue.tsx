@@ -109,7 +109,7 @@ export default function StorekeeperQueue() {
       <div className="p-4 md:p-6 space-y-4">
         <div className="flex items-center gap-3 mb-4">
           <Package className="w-6 h-6 text-primary" />
-          <h1 className="text-2xl font-bold">Material Issues</h1>
+          <h1 className="text-2xl font-bold">Assembly Issue Queue</h1>
           {profile?.full_name && (
             <span className="text-sm text-muted-foreground ml-auto">{profile.full_name}</span>
           )}

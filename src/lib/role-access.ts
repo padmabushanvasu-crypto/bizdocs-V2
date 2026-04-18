@@ -75,10 +75,6 @@ const QC_TEAM_MAP: Record<string, PageAccess> = {
 const STOREKEEPER_MAP: Record<string, PageAccess> = {
   // ── Pages storekeeper can access — all with hideCosts: true ──────────────
   'dashboard':         { canView: true, canEdit: false, canExport: false, hideCosts: true },
-  'grn':               { canView: true, canEdit: false, canExport: false, hideCosts: true },
-  'dc-grn':            { canView: true, canEdit: false, canExport: false, hideCosts: true },
-  'delivery-challans': { canView: true, canEdit: false, canExport: false, hideCosts: true },
-  'job-works':         { canView: true, canEdit: false, canExport: false, hideCosts: true },
   'storekeeper':       { canView: true, canEdit: true,  canExport: true,  hideCosts: true },
   'storekeeper-queue': { canView: true, canEdit: true,  canExport: true,  hideCosts: true },
   'stock-register':    { canView: true, canEdit: false, canExport: false, hideCosts: true },

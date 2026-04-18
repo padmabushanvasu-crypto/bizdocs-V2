@@ -132,8 +132,8 @@ const TOOLTIP_TEXT: Record<string, string> = {
 
   "Sub-Assembly": "Manage sub-assembly work orders",
   "Finished Goods": "Manage finished good work orders",
-  "Storekeeper Queue": "Issue materials from store to production",
-  "Store Receipt Queue": "Confirm received materials into store",
+  "Assembly Issue Queue": "Issue materials from store to production",
+  "Inward Receipt Queue": "Confirm received materials into store",
   "Opening Stock": "Set and edit opening stock quantities",
   "Procurement Intelligence": "Smart view of what needs to be procured",
   "Jig Master": "Manage jigs and drilling tools",
@@ -345,8 +345,8 @@ export function AppSidebar() {
   // admin and finance see everything; other roles are checked explicitly.
   const GROUP_ROLE_MAP: Record<string, AppRole[]> = {
     'START HERE':             ['purchase_team', 'inward_team', 'qc_team', 'storekeeper', 'assembly_team'],
-    'DAILY WORK':             ['purchase_team', 'inward_team', 'qc_team', 'storekeeper', 'assembly_team'],
-    'PURCHASING & RECEIVING': ['purchase_team', 'inward_team', 'qc_team', 'storekeeper'],
+    'DAILY WORK':             ['purchase_team', 'inward_team', 'qc_team', 'assembly_team'],
+    'PURCHASING & RECEIVING': ['purchase_team', 'inward_team', 'qc_team'],
     'PRODUCTION':             ['qc_team', 'assembly_team'],
     'STORE':                  ['purchase_team', 'inward_team', 'qc_team', 'storekeeper', 'assembly_team'],
     'REPORTS':                ['purchase_team', 'qc_team', 'assembly_team'],
@@ -734,7 +734,7 @@ export function AppSidebar() {
       icon: Activity,
       badge: jobCardCount > 0 ? jobCardCount : undefined,
       badgeColor: "amber" as const,
-      allowedRoles: ['admin', 'finance', 'inward_team', 'qc_team', 'storekeeper', 'assembly_team'],
+      allowedRoles: ['admin', 'finance', 'inward_team', 'qc_team', 'assembly_team'],
     },
     {
       title: "DC / Job Work Order",
@@ -750,7 +750,7 @@ export function AppSidebar() {
         : currentRole === 'inward_team' && unreadDCRejectionCount > 0
         ? ("red" as const)
         : ("amber" as const),
-      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'storekeeper', 'assembly_team'],
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'assembly_team'],
     },
     {
       title: "DC Returns",
@@ -758,7 +758,7 @@ export function AppSidebar() {
       icon: RotateCcw,
       badge: dcReturnQCCount > 0 ? dcReturnQCCount : undefined,
       badgeColor: "amber" as const,
-      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'qc_team', 'storekeeper'],
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'qc_team'],
     },
   ];
 
@@ -781,7 +781,7 @@ export function AppSidebar() {
       icon: PackageCheck,
       badge: grnQCCount > 0 ? grnQCCount : undefined,
       badgeColor: "red" as const,
-      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'qc_team', 'storekeeper'],
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'qc_team'],
     },
     {
       title: "Follow-Up Tracker",
@@ -818,7 +818,7 @@ export function AppSidebar() {
 
   const storeNav: NavItem[] = [
     {
-      title: "Storekeeper Queue",
+      title: "Assembly Issue Queue",
       url: "/storekeeper",
       icon: PackageCheck,
       badge: pendingMIRCount > 0 ? pendingMIRCount : undefined,
@@ -826,7 +826,7 @@ export function AppSidebar() {
       allowedRoles: ['admin', 'finance', 'storekeeper'],
     },
     {
-      title: "Store Receipt Queue",
+      title: "Inward Receipt Queue",
       url: "/storekeeper-queue",
       icon: PackageCheck,
       badge: awaitingStoreCount > 0 ? awaitingStoreCount : undefined,
