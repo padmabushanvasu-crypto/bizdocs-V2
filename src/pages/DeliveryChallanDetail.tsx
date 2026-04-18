@@ -364,8 +364,8 @@ export default function DeliveryChallanDetail() {
           </div>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: '9pt', whiteSpace: 'nowrap', marginBottom: '3pt' }}>Date: {new Date(dc.dc_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
-            <div style={{ fontWeight: 700, fontSize: '10pt', color: '#1E3A5F', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: '2pt', whiteSpace: 'nowrap', textAlign: 'center' }}>Delivery Challan cum Job Work Order</div>
-            <div style={{ fontWeight: 700, fontSize: '8pt', color: '#1E3A5F', marginBottom: '2pt', letterSpacing: '0.03em', textAlign: 'center' }}>[{typeLabels[dc.dc_type] || dc.dc_type}]</div>
+            <div style={{ fontWeight: 700, fontSize: '10pt', color: '#1E3A5F', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: '2pt', whiteSpace: 'nowrap', textAlign: 'center', width: '100%', display: 'block' }}>Delivery Challan cum Job Work Order</div>
+            <div style={{ fontWeight: 700, fontSize: '8pt', color: '#1E3A5F', marginBottom: '2pt', letterSpacing: '0.03em', textAlign: 'center', width: '100%', display: 'block', margin: '0 auto' }}>[{typeLabels[dc.dc_type] || dc.dc_type}]</div>
             <div style={{ marginTop: '4pt', marginBottom: '3pt', padding: '3pt 6pt', background: dc.return_due_date ? '#FFF7ED' : '#F8FAFC', border: `0.75pt solid ${dc.return_due_date ? '#F97316' : '#CBD5E1'}`, borderRadius: '2pt', textAlign: 'right', whiteSpace: 'nowrap' }}>
               <span style={{ fontWeight: 700, fontSize: '9pt', color: '#1E3A5F' }}>Expected Return Date: </span>
               <span style={{ fontWeight: 700, fontSize: '10pt', color: dc.return_due_date ? '#C2410C' : '#94A3B8' }}>
@@ -783,8 +783,8 @@ export default function DeliveryChallanDetail() {
               {companySettings?.phone && <div style={{ fontSize: '8pt', color: '#475569' }}>Ph: {companySettings.phone}</div>}
             </div>
             <div style={{ flex: '0 0 42%', textAlign: 'right' }}>
-              <div style={{ fontWeight: '700', fontSize: '13pt', color: '#1E3A5F', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Delivery Challan cum Job Work Order</div>
-              <div style={{ fontWeight: '700', fontSize: '8pt', color: '#1E3A5F' }}>[{typeLabels[dc.dc_type] || dc.dc_type}]</div>
+              <div style={{ fontWeight: '700', fontSize: '13pt', color: '#1E3A5F', letterSpacing: '0.04em', textTransform: 'uppercase', textAlign: 'center', width: '100%', display: 'block' }}>Delivery Challan cum Job Work Order</div>
+              <div style={{ fontWeight: '700', fontSize: '8pt', color: '#1E3A5F', textAlign: 'center', width: '100%', display: 'block', margin: '0 auto' }}>[{typeLabels[dc.dc_type] || dc.dc_type}]</div>
               <div style={{ fontWeight: '700', fontSize: '9pt' }}>DC No: {dc.dc_number.replace('/-', '-')}</div>
               <div style={{ fontSize: '9pt' }}>Date: {new Date(dc.dc_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
               {dc.vehicle_number && <div style={{ fontSize: '9pt' }}>Vehicle: {dc.vehicle_number}</div>}
