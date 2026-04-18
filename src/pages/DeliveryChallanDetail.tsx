@@ -342,7 +342,7 @@ export default function DeliveryChallanDetail() {
     const rowFontSize = dcItemCount > 12 ? '6.5pt' : dcItemCount > 8 ? '7pt' : '9.5pt';
     const rowPadding = dcItemCount > 12 ? '1pt 2pt' : dcItemCount > 8 ? '1pt 3pt' : '4pt 5pt';
     // Physical/factory address — used in "From" dispatch block
-    const physAddrParts = [co?.address_line1, co?.address_line2, [co?.city, co?.state].filter(Boolean).join(', '), co?.pin_code ? `PIN ${co.pin_code}` : ''].filter(Boolean);
+    const physAddrParts = [co?.address_line1, co?.address_line2, [co?.city, co?.state].filter(Boolean).join(', '), co?.pin_code ? `${co.pin_code}` : ''].filter(Boolean);
     const physAddr = physAddrParts.join(', ');
     // Registered address — used in document header (falls back to physical if not set)
     const regLine1 = co?.registered_address_line1 || co?.address_line1;
@@ -350,25 +350,25 @@ export default function DeliveryChallanDetail() {
     const regCity  = co?.registered_city  || co?.city;
     const regState = co?.registered_state || co?.state;
     const regPin   = co?.registered_pin_code || co?.pin_code;
-    const regAddr  = [regLine1, regLine2, [regCity, regState].filter(Boolean).join(', '), regPin ? `PIN ${regPin}` : ''].filter(Boolean).join(', ');
+    const regAddr  = [regLine1, regLine2, [regCity, regState].filter(Boolean).join(', '), regPin ? `${regPin}` : ''].filter(Boolean).join(', ');
     return (
       <div className="dc-print-copy" style={{ fontFamily: 'Arial, sans-serif', fontSize: '9.5pt', color: '#000', lineHeight: 1.35, display: 'flex', flexDirection: 'column', minHeight: '270mm' }}>
         {/* Header — full-width title above two-column row */}
         <div style={{ borderBottom: '1.5pt solid #1E3A5F', paddingBottom: '3pt', marginBottom: '3pt' }}>
           {/* Full-width centered title */}
           <div style={{ textAlign: 'center', marginBottom: '4pt' }}>
-            <div style={{ fontWeight: 700, fontSize: '11pt', color: '#1E3A5F', letterSpacing: '0.5px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Delivery Challan cum Job Work Order</div>
-            <div style={{ fontWeight: 700, fontSize: '8pt', color: '#1E3A5F', letterSpacing: '0.03em', marginTop: '1pt' }}>[{typeLabels[dc.dc_type] || dc.dc_type}]</div>
+            <div style={{ fontWeight: 700, fontSize: '11pt', color: '#1E3A5F', letterSpacing: '0.5px', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '0.5pt solid #000', paddingBottom: '3pt' }}>Delivery Challan cum Job Work Order</div>
+            <div style={{ fontWeight: 700, fontSize: '8pt', color: '#1E3A5F', letterSpacing: '0.03em', marginTop: '1pt', textAlign: 'center' }}>[{typeLabels[dc.dc_type] || dc.dc_type}]</div>
           </div>
           {/* Two-column row: company info left, metadata right */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
-              {co?.logo_url && <img src={co.logo_url} alt="" style={{ height: '34pt', marginBottom: '2pt', objectFit: 'contain' }} />}
-              <div style={{ fontWeight: 700, fontSize: '13pt', lineHeight: 1.2, color: '#CC0000' }}>{co?.company_name}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6pt' }}>
+                {co?.logo_url && <img src={co.logo_url} alt="" style={{ height: '28px', width: 'auto', flexShrink: 0, objectFit: 'contain' }} />}
+                <div style={{ fontWeight: 700, fontSize: '13pt', lineHeight: 1.2, color: '#CC0000' }}>{co?.company_name}</div>
+              </div>
               {co?.gstin && <div style={{ fontSize: '8.5pt', fontFamily: 'monospace' }}>GSTIN: {co.gstin}</div>}
               {co?.phone && <div style={{ fontSize: '8.5pt', color: '#475569' }}>Ph: {co.phone}</div>}
-              <div style={{ fontWeight: 700, fontSize: '9pt', marginTop: '3pt', whiteSpace: 'nowrap' }}>DC No: {dc.dc_number.replace('/-', '-')}</div>
-              <div style={{ fontSize: '9pt', whiteSpace: 'nowrap' }}>Date: {new Date(dc.dc_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
             </div>
             <div style={{ textAlign: 'right' }}>
               <div style={{ marginBottom: '3pt', padding: '3pt 6pt', background: dc.return_due_date ? '#FFF7ED' : '#F8FAFC', border: `0.75pt solid ${dc.return_due_date ? '#F97316' : '#CBD5E1'}`, borderRadius: '2pt', textAlign: 'right', whiteSpace: 'nowrap' }}>
@@ -383,6 +383,11 @@ export default function DeliveryChallanDetail() {
               {(dc as any).driver_name && <div style={{ fontSize: '8.5pt' }}>Driver: {(dc as any).driver_name}{(dc as any).driver_contact ? ` — ${(dc as any).driver_contact}` : ''}</div>}
               <div style={{ fontWeight: 700, border: '0.75pt solid #1E3A5F', display: 'inline-block', padding: '2pt 6pt', marginTop: '2pt', fontSize: '8.5pt', letterSpacing: '0.05em' }}>{label}</div>
             </div>
+          </div>
+          {/* DC No / Date — full-width flex row, truly left/right aligned */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9pt', marginTop: '3pt' }}>
+            <div style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>DC No: {dc.dc_number.replace('/-', '-')}</div>
+            <div style={{ whiteSpace: 'nowrap' }}>Date: {new Date(dc.dc_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
           </div>
         </div>
 
@@ -501,7 +506,7 @@ export default function DeliveryChallanDetail() {
         </div>
 
         {/* Signature + Receiver */}
-        <div style={{ borderTop: '0.75pt solid #CBD5E1', paddingTop: '4pt', marginTop: '8pt' }}>
+        <div style={{ borderTop: '0.75pt solid #CBD5E1', paddingTop: '4pt', marginTop: '14pt' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '8pt', fontSize: '7pt', textAlign: 'center', alignItems: 'stretch' }}>
             {[
               { label: 'Prepared By', name: dc.prepared_by, isAuth: false, isReceiver: false },
@@ -781,22 +786,22 @@ export default function DeliveryChallanDetail() {
         <div className="hidden print:block po-section" style={{ borderBottom: '0.5pt solid #CBD5E1', paddingBottom: '4mm' }}>
           {/* Full-width centered title */}
           <div style={{ textAlign: 'center', marginBottom: '4pt' }}>
-            <div style={{ fontWeight: '700', fontSize: '11pt', color: '#1E3A5F', letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Delivery Challan cum Job Work Order</div>
-            <div style={{ fontWeight: '700', fontSize: '8pt', color: '#1E3A5F', marginTop: '1pt' }}>[{typeLabels[dc.dc_type] || dc.dc_type}]</div>
+            <div style={{ fontWeight: '700', fontSize: '11pt', color: '#1E3A5F', letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '0.5pt solid #000', paddingBottom: '3pt' }}>Delivery Challan cum Job Work Order</div>
+            <div style={{ fontWeight: '700', fontSize: '8pt', color: '#1E3A5F', marginTop: '1pt', textAlign: 'center' }}>[{typeLabels[dc.dc_type] || dc.dc_type}]</div>
           </div>
           {/* Two-column row: company info left, metadata right */}
           <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
             <div style={{ flex: '0 0 58%' }}>
-              {companySettings?.logo_url && (
-                <img src={companySettings.logo_url} alt="Logo" style={{ height: '36px', marginBottom: '3px', objectFit: 'contain' }} />
-              )}
-              <div style={{ fontWeight: '700', fontSize: '13pt', lineHeight: 1.2, color: '#CC0000' }}>{companySettings?.company_name}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6pt' }}>
+                {companySettings?.logo_url && (
+                  <img src={companySettings.logo_url} alt="Logo" style={{ height: '28px', width: 'auto', flexShrink: 0, objectFit: 'contain' }} />
+                )}
+                <div style={{ fontWeight: '700', fontSize: '13pt', lineHeight: 1.2, color: '#CC0000' }}>{companySettings?.company_name}</div>
+              </div>
               {companySettings?.gstin && <div style={{ fontSize: '8pt', fontFamily: 'monospace' }}>GSTIN: {companySettings.gstin}</div>}
               {companySettings?.phone && <div style={{ fontSize: '8pt', color: '#475569' }}>Ph: {companySettings.phone}</div>}
             </div>
             <div style={{ flex: '0 0 42%', textAlign: 'right' }}>
-              <div style={{ fontWeight: '700', fontSize: '9pt' }}>DC No: {dc.dc_number.replace('/-', '-')}</div>
-              <div style={{ fontSize: '9pt' }}>Date: {new Date(dc.dc_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
               {dc.vehicle_number && <div style={{ fontSize: '9pt' }}>Vehicle: {dc.vehicle_number}</div>}
               {(dc as any).driver_name && (
                 <div style={{ fontSize: '9pt' }}>
@@ -808,6 +813,11 @@ export default function DeliveryChallanDetail() {
                 {copyLabel}
               </div>
             </div>
+          </div>
+          {/* DC No / Date — full-width flex row, truly left/right aligned */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9pt', marginTop: '3pt' }}>
+            <div style={{ fontWeight: '700', whiteSpace: 'nowrap' }}>DC No: {dc.dc_number.replace('/-', '-')}</div>
+            <div style={{ whiteSpace: 'nowrap' }}>Date: {new Date(dc.dc_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
           </div>
         </div>
 
