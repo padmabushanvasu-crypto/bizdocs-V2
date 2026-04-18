@@ -781,7 +781,7 @@ export function AppSidebar() {
       icon: PackageCheck,
       badge: grnQCCount > 0 ? grnQCCount : undefined,
       badgeColor: "red" as const,
-      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'qc_team'],
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'qc_team', 'storekeeper'],
     },
     {
       title: "Follow-Up Tracker",

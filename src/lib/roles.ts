@@ -18,7 +18,7 @@ export const ROLE_LABELS: Record<AppRole, string> = {
 };
 
 // Roles that bypass the normal sidebar/dashboard and get a focused view
-export const FOCUSED_ROLES: AppRole[] = ['qc_team', 'storekeeper', 'assembly_team'];
+export const FOCUSED_ROLES: AppRole[] = ['qc_team', 'assembly_team'];
 
 export const FOCUSED_ROLE_REDIRECT: Record<string, string> = {
   qc_team: '/qc-queue',
