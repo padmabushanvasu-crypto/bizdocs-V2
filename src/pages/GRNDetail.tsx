@@ -1527,10 +1527,14 @@ export default function GRNDetail() {
         reference_drawing:    null,
         qc_notes:             null,
       }));
+      // PO-GRNs: all lines are final (goods always go to store after QC).
+      // DC-GRNs: only bought_out/consumable/service auto-mark (others may go back to job work).
       const autoFinal = new Set<string>(
-        (grn?.line_items ?? [])
-          .filter((item) => ["bought_out", "consumable", "service"].includes(lineItemTypes?.[(item as any).drawing_number ?? ""] ?? ""))
-          .map((item) => item.id ?? "")
+        grn?.grn_type === 'po_grn'
+          ? (grn?.line_items ?? []).map((item) => item.id ?? "")
+          : (grn?.line_items ?? [])
+              .filter((item) => ["bought_out", "consumable", "service"].includes(lineItemTypes?.[(item as any).drawing_number ?? ""] ?? ""))
+              .map((item) => item.id ?? "")
       );
       const anyFinalGrn = Object.values(finalGrnPerLine).some(v => v) || autoFinal.size > 0;
       // Build the per-line map including auto-final lines
@@ -1724,10 +1728,13 @@ export default function GRNDetail() {
   const pendingFinanceApproval = stage === "pending_finance_approval";
 
   // ── Per-line Final GRN derived values ─────────────────────────────────────
+  // PO-GRNs: all lines auto-final (always go to store). DC-GRNs: only specific item types.
   const autoFinalLines = new Set<string>(
-    (grn.line_items ?? [])
-      .filter((item) => ["bought_out", "consumable", "service"].includes(lineItemTypes?.[(item as any).drawing_number ?? ""] ?? ""))
-      .map((item) => item.id ?? "")
+    grn.grn_type === 'po_grn'
+      ? (grn.line_items ?? []).map((item) => item.id ?? "")
+      : (grn.line_items ?? [])
+          .filter((item) => ["bought_out", "consumable", "service"].includes(lineItemTypes?.[(item as any).drawing_number ?? ""] ?? ""))
+          .map((item) => item.id ?? "")
   );
   const isFinalGrn = (grn.line_items ?? []).some((item) => {
     const lineId = item.id ?? "";
