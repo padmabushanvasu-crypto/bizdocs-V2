@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { PackageCheck, ArrowRight, Search, History, CheckCircle2 } from "lucide-react";
@@ -56,32 +56,38 @@ export default function GrnStoreQueue() {
   const [historySearch, setHistorySearch] = useState("");
 
   // ── data ──────────────────────────────────────────────────────────────────
-  const { data: lineItems = [], isLoading } = useQuery({
+  // Note: avoid inline `= []` default — it creates a new reference every render,
+  // causing the grouped useMemo (and therefore the useEffect) to fire every render.
+  const { data: lineItemsData, isLoading } = useQuery({
     queryKey: ["awaiting-store-line-items"],
     queryFn: fetchAwaitingStoreLineItems,
     staleTime: 30_000,
   });
+  const lineItems = useMemo(() => lineItemsData ?? [], [lineItemsData]);
 
-  const { data: history = [] } = useQuery({
+  const { data: historyData } = useQuery({
     queryKey: ["store-confirmed-history"],
     queryFn: fetchStoreConfirmedHistory,
     staleTime: 30_000,
   });
+  const history = useMemo(() => historyData ?? [], [historyData]);
 
-  // Group by GRN
-  const grouped = lineItems.reduce<Record<string, AwaitingStoreLineItem[]>>((acc, item) => {
-    if (!acc[item.grn_id]) acc[item.grn_id] = [];
-    acc[item.grn_id].push(item);
-    return acc;
-  }, {});
+  // Group by GRN — memoised so it only changes when lineItems changes
+  const grouped = useMemo(
+    () => lineItems.reduce<Record<string, AwaitingStoreLineItem[]>>((acc, item) => {
+      if (!acc[item.grn_id]) acc[item.grn_id] = [];
+      acc[item.grn_id].push(item);
+      return acc;
+    }, {}),
+    [lineItems]
+  );
 
   // ── per-GRN form state ────────────────────────────────────────────────────
   const [grnForms, setGrnForms] = useState<Record<string, GrnFormState>>({});
 
   useEffect(() => {
     setGrnForms(buildInitialGrnForms(grouped));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lineItems]);
+  }, [grouped]);
 
   // ── helpers to update state ───────────────────────────────────────────────
   function setGrnField<K extends keyof Omit<GrnFormState, "items">>(
