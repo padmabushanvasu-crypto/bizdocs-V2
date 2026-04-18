@@ -347,9 +347,9 @@ export function AppSidebar() {
     'START HERE':             ['purchase_team', 'inward_team', 'qc_team', 'storekeeper', 'assembly_team'],
     'DAILY WORK':             ['purchase_team', 'inward_team', 'qc_team', 'storekeeper', 'assembly_team'],
     'PURCHASING & RECEIVING': ['purchase_team', 'inward_team', 'qc_team', 'storekeeper'],
-    'PRODUCTION':             ['qc_team', 'storekeeper', 'assembly_team'],
+    'PRODUCTION':             ['qc_team', 'assembly_team'],
     'STORE':                  ['purchase_team', 'inward_team', 'qc_team', 'storekeeper', 'assembly_team'],
-    'REPORTS':                ['purchase_team', 'qc_team', 'storekeeper', 'assembly_team'],
+    'REPORTS':                ['purchase_team', 'qc_team', 'assembly_team'],
     'MASTER DATA':            ['purchase_team', 'inward_team', 'qc_team', 'storekeeper', 'assembly_team'],
   };
 
@@ -773,7 +773,7 @@ export function AppSidebar() {
         ? (unreadRejectionCount > 0 ? unreadRejectionCount : undefined)
         : (overduePOCount && overduePOCount > 0 ? overduePOCount : undefined),
       badgeColor: (currentRole === 'admin' || currentRole === 'finance') ? "amber" as const : "red" as const,
-      allowedRoles: ['admin', 'finance', 'purchase_team', 'storekeeper'],
+      allowedRoles: ['admin', 'finance', 'purchase_team'],
     },
     {
       title: "GRN",
@@ -796,7 +796,7 @@ export function AppSidebar() {
       title: "WIP Register",
       url: "/wip-register",
       icon: AlertTriangle,
-      allowedRoles: ['admin', 'finance', 'qc_team', 'storekeeper', 'assembly_team'],
+      allowedRoles: ['admin', 'finance', 'qc_team', 'assembly_team'],
     },
     {
       title: "Sub-Assembly",
@@ -804,7 +804,7 @@ export function AppSidebar() {
       icon: Layers,
       badge: awoStats?.sa_active && awoStats.sa_active > 0 ? awoStats.sa_active : undefined,
       badgeColor: "amber" as const,
-      allowedRoles: ['admin', 'finance', 'storekeeper', 'assembly_team'],
+      allowedRoles: ['admin', 'finance', 'assembly_team'],
     },
     {
       title: "Finished Goods",
@@ -812,7 +812,7 @@ export function AppSidebar() {
       icon: Package,
       badge: awoStats?.fg_active && awoStats.fg_active > 0 ? awoStats.fg_active : undefined,
       badgeColor: "amber" as const,
-      allowedRoles: ['admin', 'finance', 'qc_team', 'storekeeper', 'assembly_team'],
+      allowedRoles: ['admin', 'finance', 'qc_team', 'assembly_team'],
     },
   ];
 
@@ -844,13 +844,13 @@ export function AppSidebar() {
       title: "Opening Stock",
       url: "/opening-stock",
       icon: Archive,
-      allowedRoles: ['admin', 'finance', 'storekeeper'],
+      allowedRoles: ['admin', 'finance'],
     },
     {
       title: "Scrap Register",
       url: "/scrap-register",
       icon: Trash2,
-      allowedRoles: ['admin', 'finance', 'qc_team', 'storekeeper'],
+      allowedRoles: ['admin', 'finance', 'qc_team'],
     },
     {
       title: "Ready to Dispatch",
@@ -858,13 +858,13 @@ export function AppSidebar() {
       icon: CheckCircle,
       badge: dispatchStats?.ready_to_dispatch && dispatchStats.ready_to_dispatch > 0 ? dispatchStats.ready_to_dispatch : undefined,
       badgeColor: "amber" as const,
-      allowedRoles: ['admin', 'finance', 'qc_team', 'storekeeper', 'assembly_team'],
+      allowedRoles: ['admin', 'finance', 'qc_team', 'assembly_team'],
     },
     {
       title: "Dispatch Records",
       url: "/dispatch-records",
       icon: Truck,
-      allowedRoles: ['admin', 'finance', 'purchase_team', 'storekeeper'],
+      allowedRoles: ['admin', 'finance', 'purchase_team'],
     },
   ];
 
@@ -874,13 +874,13 @@ export function AppSidebar() {
       url: "/reorder-intelligence",
       icon: TrendingDown,
       badge: reorderCritical > 0 ? reorderCritical : undefined,
-      allowedRoles: ['admin', 'finance', 'purchase_team', 'storekeeper', 'assembly_team'],
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'assembly_team'],
     },
     {
       title: "Serial Numbers",
       url: "/serial-numbers",
       icon: Hash,
-      allowedRoles: ['admin', 'finance', 'qc_team', 'storekeeper', 'assembly_team'],
+      allowedRoles: ['admin', 'finance', 'qc_team', 'assembly_team'],
     },
     {
       title: "FAT Certificates",
@@ -888,7 +888,7 @@ export function AppSidebar() {
       icon: ClipboardCheck,
       badge: fatStats?.pending && fatStats.pending > 0 ? fatStats.pending : undefined,
       badgeColor: "amber" as const,
-      allowedRoles: ['admin', 'finance', 'qc_team', 'storekeeper', 'assembly_team'],
+      allowedRoles: ['admin', 'finance', 'qc_team', 'assembly_team'],
     },
     {
       title: "Vendor Scorecards",
@@ -910,25 +910,25 @@ export function AppSidebar() {
       title: "Parties",
       url: "/parties",
       icon: Users,
-      allowedRoles: ['admin', 'finance', 'purchase_team', 'storekeeper'],
+      allowedRoles: ['admin', 'finance', 'purchase_team'],
     },
     {
       title: "Bill of Materials",
       url: "/bill-of-materials",
       icon: GitFork,
-      allowedRoles: ['admin', 'finance', 'storekeeper', 'assembly_team'],
+      allowedRoles: ['admin', 'finance', 'assembly_team'],
     },
     {
       title: "Jig Master",
       url: "/jig-master",
       icon: Wrench,
-      allowedRoles: ['admin', 'finance', 'storekeeper', 'assembly_team'],
+      allowedRoles: ['admin', 'finance', 'assembly_team'],
     },
     {
       title: "Assets Register",
       url: "/assets-register",
       icon: Package2,
-      allowedRoles: ['admin', 'finance', 'storekeeper'],
+      allowedRoles: ['admin', 'finance'],
     },
     {
       title: "Settings",

@@ -256,6 +256,7 @@ export default function Dashboard() {
   const isFinanceOrAdmin = role === 'admin' || role === 'finance';
   const isPurchaseTeam = role === 'purchase_team';
   const isInwardTeam = role === 'inward_team';
+  const isStorekeeper = role === 'storekeeper';
   const isDCApprover = role === 'admin' || role === 'finance' || role === 'purchase_team';
   const STALE = 5 * 60 * 1000;
 
@@ -482,8 +483,8 @@ export default function Dashboard() {
               </span>
             )}
 
-            {/* 7 quick action buttons — production flow order */}
-            <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 lg:mx-0 lg:px-0 lg:overflow-x-visible lg:flex-wrap lg:justify-end">
+            {/* Quick action buttons — hidden for storekeeper */}
+            {!isStorekeeper && <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 lg:mx-0 lg:px-0 lg:overflow-x-visible lg:flex-wrap lg:justify-end">
 
               <Tooltip delayDuration={400}>
                 <TooltipTrigger asChild>
@@ -552,7 +553,7 @@ export default function Dashboard() {
                 </Tooltip>
               )))}
 
-            </div>
+            </div>}
           </div>
         </div>
       </div>
@@ -560,19 +561,21 @@ export default function Dashboard() {
       {/* ── ZONE 2: LIGHT CONTENT ───────────────────────────────────── */}
       <div className="flex-1 px-4 py-4 lg:px-7 lg:py-5 space-y-4" style={{ backgroundColor: "#F1F5F9" }}>
 
-        {/* GSTR-3B banner */}
-        <button
-          onClick={() => navigate("/gst-reports")}
-          className="w-full flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-left hover:bg-amber-100 transition-colors"
-        >
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" />
-            <span className="text-xs font-medium text-amber-800 truncate">GSTR-3B due on {gstr3bDueLabel}</span>
-          </div>
-          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${gstr3bDaysLeft <= 5 ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>
-            {gstr3bDaysLeft} day{gstr3bDaysLeft !== 1 ? "s" : ""} left
-          </span>
-        </button>
+        {/* GSTR-3B banner — hidden for storekeeper */}
+        {!isStorekeeper && (
+          <button
+            onClick={() => navigate("/gst-reports")}
+            className="w-full flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-left hover:bg-amber-100 transition-colors"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" />
+              <span className="text-xs font-medium text-amber-800 truncate">GSTR-3B due on {gstr3bDueLabel}</span>
+            </div>
+            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${gstr3bDaysLeft <= 5 ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>
+              {gstr3bDaysLeft} day{gstr3bDaysLeft !== 1 ? "s" : ""} left
+            </span>
+          </button>
+        )}
 
         {/* ── PO Approval pills ────────────────────────────────────── */}
         {isFinanceOrAdmin && pendingApprovalCount > 0 && (
@@ -613,15 +616,38 @@ export default function Dashboard() {
         {/* ── Section 2: Stock Alerts Board ────────────────────────── */}
         {companyId && <StockAlertsBoard companyId={companyId} />}
 
-        {/* ── Section 3: Outstanding POs and DCs ───────────────────── */}
-        {companyId && (
+        {/* ── Section 3: Outstanding POs and DCs — hidden for storekeeper ── */}
+        {!isStorekeeper && companyId && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <OutstandingPOsWidget companyId={companyId} />
             <OutstandingDCsWidget companyId={companyId} />
           </div>
         )}
 
-        {/* ── Section 4: Two-column stats grid ─────────────────────── */}
+        {/* ── Section 3b: Storekeeper focus cards ──────────────────── */}
+        {isStorekeeper && (
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 lg:p-5">
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Awaiting Store Receipt</p>
+              <p className="text-3xl font-bold text-amber-700 mt-1 tabular-nums font-mono">{awaitingStoreCount}</p>
+              <p className="text-xs text-slate-400 mt-1">GRN items cleared by QC</p>
+              <button className="mt-2 text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors" onClick={() => navigate("/storekeeper-queue")}>
+                Go to Queue →
+              </button>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 lg:p-5">
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Pending GRN QC</p>
+              <p className="text-3xl font-bold text-slate-800 mt-1 tabular-nums font-mono">{pendingQCCount}</p>
+              <p className="text-xs text-slate-400 mt-1">GRNs at quality check stage</p>
+              <button className="mt-2 text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors" onClick={() => navigate("/grn")}>
+                View GRNs →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Section 4: Two-column stats grid — hidden for storekeeper ── */}
+        {!isStorekeeper && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
           {/* Production card */}
@@ -661,9 +687,10 @@ export default function Dashboard() {
           </div>
 
         </div>
+        )}
 
-        {/* ── Section 5: Finished Goods Ready to Ship ──────────────── */}
-        {readyToShip.length > 0 && (
+        {/* ── Section 5: Finished Goods Ready to Ship — hidden for storekeeper ── */}
+        {!isStorekeeper && readyToShip.length > 0 && (
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
             <div className="flex items-center justify-between px-4 lg:px-5 py-3.5 border-b border-slate-100">
               <div className="flex items-center gap-2">

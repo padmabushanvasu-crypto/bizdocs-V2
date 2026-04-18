@@ -73,33 +73,18 @@ const QC_TEAM_MAP: Record<string, PageAccess> = {
 };
 
 const STOREKEEPER_MAP: Record<string, PageAccess> = {
-  'dashboard':                  { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
-  'purchase-orders':            { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
-  'grn':                        { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
-  'dc-grn':                     { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
-  'delivery-challans':          { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
-  'job-works':                  { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
-  'wip-register':               { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
-  'sub-assembly-work-orders':   { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
-  'finished-good-work-orders':  { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
-  'storekeeper':                { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
-  'storekeeper-queue':          { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
-  'stock-register':             { canView: true,  canEdit: true,  canExport: true,  hideCosts: true  },
-  'stock-ledger':               { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
-  'opening-stock':              { canView: true,  canEdit: true,  canExport: false, hideCosts: true  },
-  'scrap-register':             { canView: true,  canEdit: true,  canExport: false, hideCosts: true  },
-  'ready-to-dispatch':          { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
-  'dispatch-records':           { canView: true,  canEdit: true,  canExport: true,  hideCosts: true  },
-  'serial-numbers':             { canView: true,  canEdit: false, canExport: true,  hideCosts: false },
-  'fat-certificates':           { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
-  'reorder-intelligence':       { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
-  'items':                      { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
-  'bill-of-materials':          { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
-  'jig-master':                 { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
-  'assets-register':            { canView: true,  canEdit: true,  canExport: false, hideCosts: true  },
-  'parties':                    { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
-  'dispatch-notes':             { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
-  'reorder-rules':              { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
+  // ── Pages storekeeper can access — all with hideCosts: true ──────────────
+  'dashboard':         { canView: true, canEdit: false, canExport: false, hideCosts: true },
+  'grn':               { canView: true, canEdit: false, canExport: false, hideCosts: true },
+  'dc-grn':            { canView: true, canEdit: false, canExport: false, hideCosts: true },
+  'delivery-challans': { canView: true, canEdit: false, canExport: false, hideCosts: true },
+  'job-works':         { canView: true, canEdit: false, canExport: false, hideCosts: true },
+  'storekeeper':       { canView: true, canEdit: true,  canExport: true,  hideCosts: true },
+  'storekeeper-queue': { canView: true, canEdit: true,  canExport: true,  hideCosts: true },
+  'stock-register':    { canView: true, canEdit: false, canExport: false, hideCosts: true },
+  'stock-ledger':      { canView: true, canEdit: false, canExport: false, hideCosts: true },
+  'items':             { canView: true, canEdit: false, canExport: false, hideCosts: true },
+  // All other pages return NO_ACCESS via fallback
 };
 
 const ASSEMBLY_TEAM_MAP: Record<string, PageAccess> = {
