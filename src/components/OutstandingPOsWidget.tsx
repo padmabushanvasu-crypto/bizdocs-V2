@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { Download } from "lucide-react";
@@ -81,6 +82,31 @@ async function exportToExcel(rows: OutstandingPO[]) {
   (XLSX as any).writeFile(wb, `outstanding_pos_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
+// ─── Glow-box card style ──────────────────────────────────────────────────────
+
+function glowBox(r: number, g: number, b: number, dark: boolean) {
+  if (dark) {
+    return {
+      background: "#0A0F1C",
+      backgroundImage: [
+        `radial-gradient(140% 90% at 100% 100%, rgba(${r},${g},${b},0.22), transparent 55%)`,
+        "linear-gradient(180deg, rgba(255,255,255,0.025), transparent 30%)",
+      ].join(", "),
+      boxShadow: "0 1px 0 rgba(255,255,255,0.05) inset, 0 10px 30px -12px rgba(0,0,0,0.6)",
+      border: "1px solid rgba(255,255,255,0.06)",
+    };
+  }
+  return {
+    background: "white",
+    backgroundImage: [
+      `radial-gradient(140% 90% at 100% 100%, rgba(${r},${g},${b},0.10), transparent 55%)`,
+      `linear-gradient(180deg, rgba(${r},${g},${b},0.04), transparent 30%)`,
+    ].join(", "),
+    boxShadow: `0 1px 3px rgba(0,0,0,0.08), 0 4px 16px -4px rgba(${r},${g},${b},0.15)`,
+    border: "1px solid rgba(148,163,184,0.8)",
+  };
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -89,6 +115,14 @@ interface Props {
 
 export function OutstandingPOsWidget({ companyId }: Props) {
   const navigate = useNavigate();
+  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
+  useEffect(() => {
+    const obs = new MutationObserver(() =>
+      setIsDark(document.documentElement.classList.contains('dark'))
+    );
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => obs.disconnect();
+  }, []);
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ["outstanding-pos", companyId],
@@ -98,7 +132,8 @@ export function OutstandingPOsWidget({ companyId }: Props) {
   });
 
   return (
-    <div className="bg-card rounded-xl border border-border shadow-subtle flex flex-col">
+    <div className="rounded-xl flex flex-col relative overflow-hidden" style={glowBox(59, 130, 246, isDark)}>
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
         <h2 className="text-sm font-display font-semibold text-foreground">
@@ -136,12 +171,12 @@ export function OutstandingPOsWidget({ companyId }: Props) {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr>
-                <th className="sticky top-0 z-10 bg-white border-b border-border px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">PO #</th>
-                <th className="sticky top-0 z-10 bg-white border-b border-border px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vendor</th>
-                <th className="sticky top-0 z-10 bg-white border-b border-border px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">Email</th>
-                <th className="sticky top-0 z-10 bg-white border-b border-border px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">Phone</th>
-                <th className="sticky top-0 z-10 bg-white border-b border-border px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">Status</th>
-                <th className="sticky top-0 z-10 bg-white border-b border-border px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">Date</th>
+                <th className="sticky top-0 z-10 border-b border-border px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide" style={{ background: isDark ? "#0A0F1C" : "white" }}>PO #</th>
+                <th className="sticky top-0 z-10 border-b border-border px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide" style={{ background: isDark ? "#0A0F1C" : "white" }}>Vendor</th>
+                <th className="sticky top-0 z-10 border-b border-border px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide" style={{ background: isDark ? "#0A0F1C" : "white" }}>Email</th>
+                <th className="sticky top-0 z-10 border-b border-border px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide" style={{ background: isDark ? "#0A0F1C" : "white" }}>Phone</th>
+                <th className="sticky top-0 z-10 border-b border-border px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide" style={{ background: isDark ? "#0A0F1C" : "white" }}>Status</th>
+                <th className="sticky top-0 z-10 border-b border-border px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide" style={{ background: isDark ? "#0A0F1C" : "white" }}>Date</th>
               </tr>
             </thead>
             <tbody>

@@ -1,7 +1,7 @@
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
-import { useTheme } from "@/hooks/useTheme";
 import { fetchPendingApprovalCount, fetchUnreadRejectionCount } from "@/lib/purchase-orders-api";
 import { fetchPendingDCApprovalCount, fetchUnreadDCRejectionCount } from "@/lib/delivery-challans-api";
 import { Activity, CheckCircle2 } from "lucide-react";
@@ -280,8 +280,14 @@ function LightStatRow({
 export default function Dashboard() {
   const navigate = useNavigate();
   const { role } = useAuth();
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
+  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
+  useEffect(() => {
+    const obs = new MutationObserver(() =>
+      setIsDark(document.documentElement.classList.contains('dark'))
+    );
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => obs.disconnect();
+  }, []);
   const isFinanceOrAdmin = role === 'admin' || role === 'finance';
   const isPurchaseTeam = role === 'purchase_team';
   const isInwardTeam = role === 'inward_team';

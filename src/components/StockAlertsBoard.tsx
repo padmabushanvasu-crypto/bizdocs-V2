@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useTheme } from "@/hooks/useTheme";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { RefreshCw } from "lucide-react";
@@ -284,8 +283,14 @@ interface Props {
 export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
+  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
+  useEffect(() => {
+    const obs = new MutationObserver(() =>
+      setIsDark(document.documentElement.classList.contains('dark'))
+    );
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => obs.disconnect();
+  }, []);
   const queryClient = useQueryClient();
 
   // Work order dialog state
