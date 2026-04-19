@@ -1007,16 +1007,15 @@ export function AppSidebar() {
               style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
               onClick={() => navigate("/")}
             >
-              {/* Glow behind logo and text */}
+              {/* Radial glow behind logo — matches HTML design exactly */}
               <div style={{
                 position: 'absolute',
-                top: '50%',
-                left: '0px',
-                transform: 'translateY(-50%)',
-                width: '200px',
-                height: '60px',
-                background: 'radial-gradient(ellipse at 30% 50%, rgba(80, 130, 255, 0.25), transparent 65%)',
-                filter: 'blur(8px)',
+                top: '-20px',
+                left: '-20px',
+                width: '220px',
+                height: '80px',
+                background: 'radial-gradient(ellipse at 25% 50%, rgba(80, 130, 255, 0.28), transparent 65%)',
+                filter: 'blur(12px)',
                 pointerEvents: 'none',
                 zIndex: 0,
               }} />

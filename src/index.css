@@ -44,51 +44,56 @@
   }
 
   .dark {
-    --background: 225 62% 4%;
-    --foreground: 215 50% 88%;
-    --card: 224 54% 7%;
-    --card-foreground: 215 50% 88%;
-    --popover: 224 54% 7%;
-    --popover-foreground: 215 50% 88%;
-    --primary: 227 100% 65%;
+    --background: 225 70% 3%;
+    --foreground: 225 60% 95%;
+    --card: 224 54% 8%;
+    --card-foreground: 225 60% 93%;
+    --popover: 224 54% 8%;
+    --popover-foreground: 225 60% 93%;
+    --primary: 226 89% 61%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 222 45% 12%;
-    --secondary-foreground: 215 40% 80%;
-    --muted: 222 45% 10%;
-    --muted-foreground: 215 20% 55%;
-    --accent: 222 45% 12%;
-    --accent-foreground: 215 50% 88%;
-    --destructive: 0 64% 52%;
+    --secondary: 224 50% 13%;
+    --secondary-foreground: 225 40% 82%;
+    --muted: 224 50% 10%;
+    --muted-foreground: 224 15% 48%;
+    --accent: 224 50% 13%;
+    --accent-foreground: 225 60% 93%;
+    --destructive: 10 70% 52%;
     --destructive-foreground: 0 0% 100%;
     --success: 149 82% 35%;
     --success-foreground: 0 0% 100%;
-    --border: 222 45% 14%;
-    --input: 222 45% 14%;
-    --ring: 227 100% 65%;
-    --radius: 0.5rem;
-    --sidebar-background: 224 60% 5%;
-    --sidebar-foreground: 215 40% 82%;
-    --sidebar-primary: 220 100% 68%;
+    --border: 224 40% 12%;
+    --input: 224 40% 14%;
+    --ring: 226 89% 61%;
+    --radius: 0.625rem;
+    --sidebar-background: 225 68% 4%;
+    --sidebar-foreground: 225 50% 88%;
+    --sidebar-primary: 226 89% 65%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 222 50% 10%;
-    --sidebar-accent-foreground: 215 50% 88%;
-    --sidebar-border: 222 45% 11%;
+    --sidebar-accent: 224 50% 9%;
+    --sidebar-accent-foreground: 225 60% 93%;
+    --sidebar-border: 224 40% 10%;
     --sidebar-ring: 213 87% 60%;
-    --sidebar-muted: 215 20% 50%;
+    --sidebar-muted: 224 20% 48%;
   }
 }
 
-/* ── Dark mode overrides for hardcoded Tailwind utility classes ── */
+/* ── Dark mode surface overrides ── */
 .dark .bg-white,
-.dark [class*="bg-white"] {
-  background: hsl(224 54% 7%) !important;
+.dark .bg-gray-50,
+.dark .bg-gray-100,
+.dark .bg-slate-50,
+.dark .bg-slate-100,
+.dark .bg-slate-200 {
+  background-color: #0f1525 !important;
 }
 
-.dark .bg-gray-50,
-.dark .bg-slate-50,
-.dark .bg-gray-100,
-.dark .bg-slate-100 {
-  background: hsl(222 45% 10%) !important;
+.dark .border,
+.dark .border-gray-100,
+.dark .border-gray-200,
+.dark .border-slate-100,
+.dark .border-slate-200 {
+  border-color: rgba(120, 160, 255, 0.14) !important;
 }
 
 .dark .text-gray-900,
@@ -96,8 +101,9 @@
 .dark .text-gray-800,
 .dark .text-slate-800,
 .dark .text-gray-700,
-.dark .text-slate-700 {
-  color: hsl(215 50% 88%) !important;
+.dark .text-slate-700,
+.dark .text-foreground {
+  color: #e6ecff !important;
 }
 
 .dark .text-gray-500,
@@ -105,24 +111,32 @@
 .dark .text-gray-400,
 .dark .text-slate-400,
 .dark .text-gray-600,
-.dark .text-slate-600 {
-  color: hsl(215 20% 58%) !important;
+.dark .text-slate-600,
+.dark .text-muted-foreground {
+  color: #545c74 !important;
 }
 
-.dark .border-gray-200,
-.dark .border-slate-200,
-.dark .border-gray-100,
-.dark .border-slate-100,
-.dark .border-gray-300 {
-  border-color: hsl(222 45% 14%) !important;
-}
-
-/* shadcn Card component override */
-.dark [data-slot="card"],
+/* Cards in dark mode get glass effect */
 .dark .rounded-xl.border,
 .dark .rounded-lg.border {
-  background: hsl(224 54% 7%);
+  background: #0f1525;
   border-color: rgba(120, 160, 255, 0.14);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* Tables */
+.dark table,
+.dark thead,
+.dark tbody,
+.dark tr,
+.dark th,
+.dark td {
+  background-color: transparent;
+  border-color: rgba(120, 160, 255, 0.10);
+}
+
+.dark tbody tr:hover {
+  background-color: rgba(80, 130, 255, 0.06) !important;
 }
 
 @layer base {
