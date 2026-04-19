@@ -409,7 +409,7 @@ export default function NotificationsSettings() {
       {/* Save */}
       <div className="space-y-2">
         <Button
-          className="bg-blue-600 hover:bg-blue-700 text-white gap-1.5"
+          className="bg-primary hover:bg-primary/90 text-primary-foreground gap-1.5"
           onClick={handleSave}
           disabled={saving}
         >

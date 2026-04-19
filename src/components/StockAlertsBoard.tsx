@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTheme } from "@/hooks/useTheme";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { RefreshCw } from "lucide-react";
@@ -247,6 +248,31 @@ function needsProduction(type: string) {
   return type === "sub_assembly";
 }
 
+// ─── Glow-box card style ──────────────────────────────────────────────────────
+
+function glowBox(r: number, g: number, b: number, dark: boolean) {
+  if (dark) {
+    return {
+      background: "#0A0F1C",
+      backgroundImage: [
+        `radial-gradient(140% 90% at 100% 100%, rgba(${r},${g},${b},0.22), transparent 55%)`,
+        "linear-gradient(180deg, rgba(255,255,255,0.025), transparent 30%)",
+      ].join(", "),
+      boxShadow: "0 1px 0 rgba(255,255,255,0.05) inset, 0 10px 30px -12px rgba(0,0,0,0.6)",
+      border: "1px solid rgba(255,255,255,0.06)",
+    };
+  }
+  return {
+    background: "white",
+    backgroundImage: [
+      `radial-gradient(140% 90% at 100% 100%, rgba(${r},${g},${b},0.10), transparent 55%)`,
+      `linear-gradient(180deg, rgba(${r},${g},${b},0.04), transparent 30%)`,
+    ].join(", "),
+    boxShadow: `0 1px 3px rgba(0,0,0,0.08), 0 4px 16px -4px rgba(${r},${g},${b},0.15)`,
+    border: "1px solid rgba(148,163,184,0.8)",
+  };
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -258,6 +284,8 @@ interface Props {
 export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const queryClient = useQueryClient();
 
   // Work order dialog state
@@ -386,29 +414,33 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
         </div>
 
         {/* ── Summary stat cards — always visible ─────────────────────────── */}
-        <div className="grid grid-cols-4 divide-x divide-slate-100 border-b border-slate-100 shrink-0">
-          <div className="px-4 lg:px-5 py-3">
+        <div className="grid grid-cols-4 gap-2 px-3 py-3 border-b border-slate-100 dark:border-white/10 shrink-0">
+          <div className="rounded-lg px-3 py-3 relative overflow-hidden" style={glowBox(239, 68, 68, isDark)}>
+            <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
             <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-0.5">Below Min Stock</p>
             <p className={`text-2xl font-extrabold font-mono tabular-nums ${totalBelow > 0 ? "text-red-600" : "text-green-600"}`}>
               {isLoading ? "—" : totalBelow}
             </p>
             <p className="text-[10px] text-slate-400 mt-0.5">total items flagged</p>
           </div>
-          <div className="px-4 lg:px-5 py-3">
+          <div className="rounded-lg px-3 py-3 relative overflow-hidden" style={glowBox(249, 115, 22, isDark)}>
+            <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
             <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-0.5">Needs PO</p>
             <p className={`text-2xl font-extrabold font-mono tabular-nums ${needsPOCount > 0 ? "text-orange-600" : "text-slate-400"}`}>
               {isLoading ? "—" : needsPOCount}
             </p>
             <p className="text-[10px] text-slate-400 mt-0.5">raw / component / bought-out</p>
           </div>
-          <div className="px-4 lg:px-5 py-3">
+          <div className="rounded-lg px-3 py-3 relative overflow-hidden" style={glowBox(139, 92, 246, isDark)}>
+            <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
             <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-0.5">Needs Production</p>
             <p className={`text-2xl font-extrabold font-mono tabular-nums ${needsProdCount > 0 ? "text-amber-600" : "text-slate-400"}`}>
               {isLoading ? "—" : needsProdCount}
             </p>
             <p className="text-[10px] text-slate-400 mt-0.5">sub-assembly work orders</p>
           </div>
-          <div className="px-4 lg:px-5 py-3">
+          <div className="rounded-lg px-3 py-3 relative overflow-hidden" style={glowBox(34, 197, 94, isDark)}>
+            <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
             <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-0.5">At Max Stock</p>
             <p className="text-2xl font-extrabold font-mono tabular-nums text-green-600">
               {isLoading ? "—" : atMaxStockCount}

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { useTheme } from "@/hooks/useTheme";
 import { fetchPendingApprovalCount, fetchUnreadRejectionCount } from "@/lib/purchase-orders-api";
 import { fetchPendingDCApprovalCount, fetchUnreadDCRejectionCount } from "@/lib/delivery-challans-api";
 import { Activity, CheckCircle2 } from "lucide-react";
@@ -202,6 +203,31 @@ function docTag(type: string) {
   return DOC_TAGS[type] ?? { cls: "bg-slate-100 text-slate-700", label: type.slice(0, 3).toUpperCase() };
 }
 
+// ─── Glow-box card style ──────────────────────────────────────────────────────
+
+function glowBox(r: number, g: number, b: number, dark: boolean) {
+  if (dark) {
+    return {
+      background: "#0A0F1C",
+      backgroundImage: [
+        `radial-gradient(140% 90% at 100% 100%, rgba(${r},${g},${b},0.22), transparent 55%)`,
+        "linear-gradient(180deg, rgba(255,255,255,0.025), transparent 30%)",
+      ].join(", "),
+      boxShadow: "0 1px 0 rgba(255,255,255,0.05) inset, 0 10px 30px -12px rgba(0,0,0,0.6)",
+      border: "1px solid rgba(255,255,255,0.06)",
+    };
+  }
+  return {
+    background: "white",
+    backgroundImage: [
+      `radial-gradient(140% 90% at 100% 100%, rgba(${r},${g},${b},0.10), transparent 55%)`,
+      `linear-gradient(180deg, rgba(${r},${g},${b},0.04), transparent 30%)`,
+    ].join(", "),
+    boxShadow: `0 1px 3px rgba(0,0,0,0.08), 0 4px 16px -4px rgba(${r},${g},${b},0.15)`,
+    border: "1px solid rgba(148,163,184,0.8)",
+  };
+}
+
 // ─── Small components ─────────────────────────────────────────────────────────
 
 function AlertPill({
@@ -230,20 +256,21 @@ function AlertPill({
 }
 
 function LightStatRow({
-  label, value, highlight, onClick,
+  label, value, highlight, onClick, dark,
 }: {
   label: string;
   value: React.ReactNode;
   highlight?: boolean;
   onClick?: () => void;
+  dark?: boolean;
 }) {
   return (
     <div
-      className={`flex items-center justify-between py-2 border-b border-slate-100 last:border-0 ${onClick ? "cursor-pointer hover:bg-slate-50 -mx-4 px-4 transition-colors" : ""}`}
+      className={`flex items-center justify-between py-2 last:border-0 ${dark ? "border-b border-white/10" : "border-b border-slate-100"} ${onClick ? `cursor-pointer -mx-4 px-4 transition-colors ${dark ? "hover:bg-white/5" : "hover:bg-slate-50"}` : ""}`}
       onClick={onClick}
     >
-      <span className="text-sm text-slate-600">{label}</span>
-      <span className={`text-sm font-semibold tabular-nums font-mono ${highlight ? "text-red-600" : "text-slate-900"}`}>{value}</span>
+      <span className={`text-sm ${dark ? "text-slate-400" : "text-slate-600"}`}>{label}</span>
+      <span className={`text-sm font-semibold tabular-nums font-mono ${highlight ? (dark ? "text-red-400" : "text-red-600") : (dark ? "text-slate-50" : "text-slate-900")}`}>{value}</span>
     </div>
   );
 }
@@ -253,6 +280,8 @@ function LightStatRow({
 export default function Dashboard() {
   const navigate = useNavigate();
   const { role } = useAuth();
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const isFinanceOrAdmin = role === 'admin' || role === 'finance';
   const isPurchaseTeam = role === 'purchase_team';
   const isInwardTeam = role === 'inward_team';
@@ -624,19 +653,21 @@ export default function Dashboard() {
         {/* ── Section 3b: Storekeeper focus cards ──────────────────── */}
         {isStorekeeper && (
           <div className="grid grid-cols-2 gap-4">
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 lg:p-5">
-              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Awaiting Store Receipt</p>
-              <p className="text-3xl font-bold text-amber-700 mt-1 tabular-nums font-mono">{awaitingStoreCount}</p>
-              <p className="text-xs text-slate-400 mt-1">GRN items cleared by QC</p>
-              <button className="mt-2 text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors" onClick={() => navigate("/storekeeper-queue")}>
+            <div className="rounded-xl p-4 lg:p-5 relative overflow-hidden" style={glowBox(45, 212, 191, isDark)}>
+              <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-widest font-semibold">Awaiting Store Receipt</p>
+              <p className="text-3xl font-bold text-amber-600 dark:text-amber-300 mt-1 tabular-nums font-mono">{awaitingStoreCount}</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">GRN items cleared by QC</p>
+              <button className="mt-2 text-xs text-sky-500 dark:text-sky-300 font-medium hover:text-sky-600 dark:hover:text-sky-200 transition-colors" onClick={() => navigate("/storekeeper-queue")}>
                 Go to Queue →
               </button>
             </div>
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 lg:p-5">
-              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Pending GRN QC</p>
-              <p className="text-3xl font-bold text-slate-800 mt-1 tabular-nums font-mono">{pendingQCCount}</p>
-              <p className="text-xs text-slate-400 mt-1">GRNs at quality check stage</p>
-              <button className="mt-2 text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors" onClick={() => navigate("/grn")}>
+            <div className="rounded-xl p-4 lg:p-5 relative overflow-hidden" style={glowBox(99, 102, 241, isDark)}>
+              <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-widest font-semibold">Pending GRN QC</p>
+              <p className="text-3xl font-bold text-slate-800 dark:text-slate-50 mt-1 tabular-nums font-mono">{pendingQCCount}</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">GRNs at quality check stage</p>
+              <button className="mt-2 text-xs text-sky-500 dark:text-sky-300 font-medium hover:text-sky-600 dark:hover:text-sky-200 transition-colors" onClick={() => navigate("/grn")}>
                 View GRNs →
               </button>
             </div>
@@ -648,38 +679,40 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
           {/* Production card */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 lg:p-5">
+          <div className="rounded-xl p-4 lg:p-5 relative overflow-hidden" style={glowBox(139, 92, 246, isDark)}>
+            <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
             <div className="flex items-center justify-between mb-1">
-              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Production</p>
-              <button className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors" onClick={() => navigate("/stock-register")}>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-widest font-semibold">Production</p>
+              <button className="text-xs text-sky-500 dark:text-sky-300 font-medium hover:text-sky-600 dark:hover:text-sky-200 transition-colors" onClick={() => navigate("/stock-register")}>
                 View →
               </button>
             </div>
-            <div className="divide-y divide-slate-100 mt-2">
-              <LightStatRow label="Builds" value={awoStats?.buildsInProgress ?? "—"} onClick={() => navigate("/sub-assembly-work-orders")} />
-              <LightStatRow label="FAT Pending"  value={fatStats?.pending ?? "—"} highlight={(fatStats?.pending ?? 0) > 0} onClick={() => navigate("/fat-certificates")} />
-              <LightStatRow label="Pending Assembly" value={awoStats?.pendingCount ?? "—"} highlight={(awoStats?.pendingCount ?? 0) > 0} onClick={() => navigate("/sub-assembly-work-orders")} />
-              <LightStatRow label="WIP Components" value={awoStats?.wipComponentsCount ?? "—"} onClick={() => navigate("/wip-register")} />
+            <div className={`divide-y mt-2 ${isDark ? "divide-white/10" : "divide-slate-100"}`}>
+              <LightStatRow dark={isDark} label="Builds" value={awoStats?.buildsInProgress ?? "—"} onClick={() => navigate("/sub-assembly-work-orders")} />
+              <LightStatRow dark={isDark} label="FAT Pending" value={fatStats?.pending ?? "—"} highlight={(fatStats?.pending ?? 0) > 0} onClick={() => navigate("/fat-certificates")} />
+              <LightStatRow dark={isDark} label="Pending Assembly" value={awoStats?.pendingCount ?? "—"} highlight={(awoStats?.pendingCount ?? 0) > 0} onClick={() => navigate("/sub-assembly-work-orders")} />
+              <LightStatRow dark={isDark} label="WIP Components" value={awoStats?.wipComponentsCount ?? "—"} onClick={() => navigate("/wip-register")} />
             </div>
           </div>
 
           {/* Financials card */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 lg:p-5">
+          <div className="rounded-xl p-4 lg:p-5 relative overflow-hidden" style={glowBox(236, 72, 153, isDark)}>
+            <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
             <div className="flex items-center justify-between mb-1">
-              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Financials</p>
-              <button className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors" onClick={() => navigate("/invoices")}>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-widest font-semibold">Financials</p>
+              <button className="text-xs text-sky-500 dark:text-sky-300 font-medium hover:text-sky-600 dark:hover:text-sky-200 transition-colors" onClick={() => navigate("/invoices")}>
                 View →
               </button>
             </div>
-            <p className="text-2xl font-extrabold text-slate-900 tracking-tight my-2 font-mono tabular-nums">
+            <p className="text-2xl font-extrabold text-slate-900 dark:text-slate-50 tracking-tight my-2 font-mono tabular-nums">
               {formatCurrency(dashData?.thisMonthRevenue ?? 0)}
             </p>
-            <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-3">This month's revenue</p>
-            <div className="divide-y divide-slate-100">
-              <LightStatRow label="Overdue Invoices" value={dashData?.overdueInvoiceCount ?? "—"} highlight={(dashData?.overdueInvoiceCount ?? 0) > 0} onClick={() => navigate("/invoices")} />
-              <LightStatRow label="Overdue POs" value={dashData?.overduePOCount ?? "—"} highlight={(dashData?.overduePOCount ?? 0) > 0} onClick={() => navigate("/purchase-orders")} />
-              <LightStatRow label="Open PO Value"    value={formatCurrency(dashData?.openPOValue ?? 0)} onClick={() => navigate("/purchase-orders")} />
-              <LightStatRow label="FY Revenue"       value={formatCurrency(dashData?.fyRevenue ?? 0)} />
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">This month's revenue</p>
+            <div className={`divide-y ${isDark ? "divide-white/10" : "divide-slate-100"}`}>
+              <LightStatRow dark={isDark} label="Overdue Invoices" value={dashData?.overdueInvoiceCount ?? "—"} highlight={(dashData?.overdueInvoiceCount ?? 0) > 0} onClick={() => navigate("/invoices")} />
+              <LightStatRow dark={isDark} label="Overdue POs" value={dashData?.overduePOCount ?? "—"} highlight={(dashData?.overduePOCount ?? 0) > 0} onClick={() => navigate("/purchase-orders")} />
+              <LightStatRow dark={isDark} label="Open PO Value" value={formatCurrency(dashData?.openPOValue ?? 0)} onClick={() => navigate("/purchase-orders")} />
+              <LightStatRow dark={isDark} label="FY Revenue" value={formatCurrency(dashData?.fyRevenue ?? 0)} />
             </div>
           </div>
 

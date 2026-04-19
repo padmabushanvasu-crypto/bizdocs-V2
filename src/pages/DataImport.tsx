@@ -1192,7 +1192,7 @@ function BOMImportTab() {
         {validRows.length > 0 && (
           <Button
             size="sm"
-            className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"
+            className="gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground"
             onClick={handleImport}
             disabled={validating || bomJobRunning}
           >
@@ -1487,7 +1487,7 @@ function ImportTab({
         </Button>
         <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xls,.csv" className="hidden" onChange={handleFile} />
         {validRows.length > 0 && (
-          <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white" onClick={handleImport} disabled={jobRunning}>
+          <Button size="sm" className="gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleImport} disabled={jobRunning}>
             {jobRunning ? (
               <><span className="h-3 w-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> Importing…</>
             ) : (
@@ -1861,7 +1861,7 @@ function ReorderRulesTab() {
         </Button>
         <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xls,.csv" className="hidden" onChange={handleFile} />
         {validRows.length > 0 && (
-          <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white" onClick={handleImport} disabled={reorderJobRunning}>
+          <Button size="sm" className="gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleImport} disabled={reorderJobRunning}>
             {reorderJobRunning ? (
               <><span className="h-3 w-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> Importing…</>
             ) : (
@@ -2145,7 +2145,7 @@ function ProcessingRoutesImportTab({ companyId }: { companyId: string | null }) 
         </Button>
         <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xls,.csv" className="hidden" onChange={handleFile} />
         {rows.length > 0 && (
-          <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white" onClick={handleImport} disabled={importing}>
+          <Button size="sm" className="gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleImport} disabled={importing}>
             {importing ? `Importing… ${progress}%` : `Import ${rows.length} Row${rows.length !== 1 ? "s" : ""}`}
           </Button>
         )}
@@ -2317,7 +2317,7 @@ function JigMasterImportTab({ companyId }: { companyId: string | null }) {
         </Button>
         <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xls,.csv" className="hidden" onChange={handleFile} />
         {rows.length > 0 && (
-          <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white" onClick={handleImport} disabled={importing}>
+          <Button size="sm" className="gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleImport} disabled={importing}>
             {importing ? "Importing…" : `Import ${rows.length} Row${rows.length !== 1 ? "s" : ""}`}
           </Button>
         )}
@@ -2552,7 +2552,7 @@ function ProcessCodeImportTab({ companyId }: { companyId: string | null }) {
           <button
             onClick={handleImport}
             disabled={importing}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md bg-primary hover:bg-primary/90 text-primary-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {importing ? "Importing…" : `Import ${rows.length} Row${rows.length !== 1 ? "s" : ""}`}
           </button>

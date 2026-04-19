@@ -50,7 +50,7 @@
     --card-foreground: 225 60% 93%;
     --popover: 224 54% 8%;
     --popover-foreground: 225 60% 93%;
-    --primary: 226 89% 61%;
+    --primary: 222 100% 66%;
     --primary-foreground: 0 0% 100%;
     --secondary: 224 50% 13%;
     --secondary-foreground: 225 40% 82%;
@@ -96,24 +96,62 @@
   border-color: rgba(120, 160, 255, 0.14) !important;
 }
 
-.dark .text-gray-900,
-.dark .text-slate-900,
-.dark .text-gray-800,
-.dark .text-slate-800,
-.dark .text-gray-700,
-.dark .text-slate-700,
-.dark .text-foreground {
+/* Headings */
+.dark h1, .dark h2, .dark h3, .dark h4, .dark h5 {
   color: #e6ecff !important;
 }
 
-.dark .text-gray-500,
+/* Page titles and labels */
+.dark .text-slate-700,
+.dark .text-slate-800,
+.dark .text-slate-900,
+.dark .text-gray-700,
+.dark .text-gray-800,
+.dark .text-gray-900 {
+  color: #d4deff !important;
+}
+
+/* Secondary text */
 .dark .text-slate-500,
-.dark .text-gray-400,
-.dark .text-slate-400,
-.dark .text-gray-600,
 .dark .text-slate-600,
-.dark .text-muted-foreground {
-  color: #545c74 !important;
+.dark .text-gray-500,
+.dark .text-gray-600 {
+  color: #8899bb !important;
+}
+
+/* Muted / placeholder text */
+.dark .text-slate-400,
+.dark .text-gray-400 {
+  color: #6677aa !important;
+}
+
+/* Table header text */
+.dark th, .dark thead td {
+  color: #8899bb !important;
+}
+
+/* Table cell text */
+.dark td {
+  color: #d4deff !important;
+}
+
+/* Input / textarea / select */
+.dark input,
+.dark textarea,
+.dark select {
+  color: #d4deff !important;
+  background-color: #0f1525 !important;
+  border-color: rgba(120, 160, 255, 0.2) !important;
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #445577 !important;
+}
+
+/* Card headings — no !important so explicit color classes can override */
+.dark [class*="font-semibold"],
+.dark [class*="font-bold"] {
+  color: #e6ecff;
 }
 
 /* Cards in dark mode get glass effect */

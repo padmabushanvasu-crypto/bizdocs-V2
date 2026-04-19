@@ -131,7 +131,7 @@ createRoot(document.getElementById("root")!).render(
           </p>
           <button
             onClick={resetError}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm hover:bg-primary/90"
           >
             Try again
           </button>

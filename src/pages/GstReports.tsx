@@ -839,7 +839,7 @@ function ReportCard({ icon, title, description, onDownload, onPreview }: ReportC
           </Button>
           <Button
             size="sm"
-            className="h-8 gap-1.5 bg-blue-600 hover:bg-blue-700 text-white shrink-0"
+            className="h-8 gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground shrink-0"
             onClick={handleDownload}
             disabled={loading || previewing}
           >
@@ -955,7 +955,7 @@ function Gstr3bCard({ companyStateCode, companyName }: { companyStateCode: strin
             <Eye className="h-3.5 w-3.5" />
             {previewing ? "Loading…" : "Preview"}
           </Button>
-          <Button size="sm" className="h-8 gap-1.5 flex-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={handleDownload} disabled={loading || previewing}>
+          <Button size="sm" className="h-8 gap-1.5 flex-1 bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleDownload} disabled={loading || previewing}>
             <Download className="h-3.5 w-3.5" />
             {loading ? "Generating…" : "Download"}
           </Button>

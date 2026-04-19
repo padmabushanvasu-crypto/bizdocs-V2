@@ -2121,7 +2121,7 @@ export default function GRNDetail() {
                   overQtyLines.length > 0 ||
                   s1Lines.filter(l => !!parseJigsSent(l.jigs_sent)).some(l => !jigReturnConfirmed.has(l.id))
                 }
-                className={`w-full text-white ${needsFinanceApproval ? "bg-amber-600 hover:bg-amber-700" : "bg-blue-600 hover:bg-blue-700"}`}
+                className={`w-full text-white ${needsFinanceApproval ? "bg-amber-600 hover:bg-amber-700" : "bg-primary hover:bg-primary/90 text-primary-foreground"}`}
               >
                 {s1Mutation.isPending
                   ? "Saving…"
