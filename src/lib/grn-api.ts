@@ -1066,6 +1066,28 @@ export async function saveQualityStage(
       .update({ grn_stage: 'awaiting_store' })
       .eq('id', grnId);
     if (stageErr) throw stageErr;
+
+    // Notify inward_team that QC has cleared this GRN and it's ready to move to store
+    try {
+      const { data: grnHeader } = await (supabase as any)
+        .from('grns')
+        .select('grn_number, vendor_name, company_id')
+        .eq('id', grnId)
+        .single();
+      if (grnHeader) {
+        await (supabase as any).from('notifications').insert({
+          company_id: grnHeader.company_id,
+          type: 'grn_ready_to_move',
+          title: 'GRN Ready to Move to Store',
+          message: `GRN ${grnHeader.grn_number}${grnHeader.vendor_name ? ` (${grnHeader.vendor_name})` : ''} has passed QC. Items are ready to be physically moved to store.`,
+          is_read: false,
+          link: `/ready-to-move`,
+          target_role: 'inward_team',
+        });
+      }
+    } catch {
+      // Notifications table may not exist yet — non-fatal
+    }
   } else {
     // No final GRN lines — goods are going back out for more processing.
     // Transition to quality_done so the GRN is not left stuck at quality_pending.
@@ -1482,6 +1504,10 @@ export interface AwaitingStoreLineItem {
   drawing_number: string | null;
   conforming_qty: number | null;
   unit: string | null;
+  store_confirmed_qty: number | null;
+  damaged_qty: number | null;
+  damaged_reason: string | null;
+  store_confirmation_notes: string | null;
 }
 
 export async function fetchAwaitingStoreLineItems(): Promise<AwaitingStoreLineItem[]> {
@@ -1489,7 +1515,7 @@ export async function fetchAwaitingStoreLineItems(): Promise<AwaitingStoreLineIt
   if (!companyId) return [];
   const { data: lineItems, error } = await (supabase as any)
     .from('grn_line_items')
-    .select('id, grn_id, description, drawing_number, conforming_qty, unit')
+    .select('id, grn_id, description, drawing_number, conforming_qty, unit, store_confirmed_qty, damaged_qty, damaged_reason, store_confirmation_notes')
     .eq('company_id', companyId)
     .eq('is_final_grn', true)
     .neq('store_confirmed', true)
@@ -1515,12 +1541,23 @@ export async function fetchAwaitingStoreLineItems(): Promise<AwaitingStoreLineIt
     drawing_number: l.drawing_number ?? null,
     conforming_qty: l.conforming_qty ?? null,
     unit: l.unit ?? null,
+    store_confirmed_qty: l.store_confirmed_qty ?? null,
+    damaged_qty: l.damaged_qty ?? null,
+    damaged_reason: l.damaged_reason ?? null,
+    store_confirmation_notes: l.store_confirmation_notes ?? null,
   }));
 }
 
 export async function storeConfirmGRNItems(
   grnId: string,
-  items: Array<{ id: string; storeQty?: number | null; location?: string | null }>,
+  items: Array<{
+    id: string;
+    storeQty?: number | null;
+    location?: string | null;
+    damagedQty?: number | null;
+    damagedReason?: string | null;
+    notes?: string | null;
+  }>,
   data: { confirmedBy: string; confirmedAt: string }
 ): Promise<void> {
   const confirmedAt = new Date(data.confirmedAt).toISOString();
@@ -1528,15 +1565,37 @@ export async function storeConfirmGRNItems(
     const { error } = await (supabase as any)
       .from('grn_line_items')
       .update({
-        store_confirmed:    true,
-        store_confirmed_by: data.confirmedBy,
-        store_confirmed_at: confirmedAt,
-        store_location:     item.location ?? null,
+        store_confirmed:          true,
+        store_confirmed_by:       data.confirmedBy,
+        store_confirmed_at:       confirmedAt,
+        store_location:           item.location ?? null,
+        store_confirmed_qty:      item.storeQty ?? null,
+        damaged_qty:              item.damagedQty ?? null,
+        damaged_reason:           item.damagedReason ?? null,
+        store_confirmation_notes: item.notes ?? null,
       })
       .eq('id', item.id);
     if (error) throw error;
   }
-  await storeConfirmGRN(grnId, { confirmedBy: data.confirmedBy, confirmedAt: data.confirmedAt });
+
+  // Check whether all final GRN line items for this GRN are now confirmed
+  const { data: remaining } = await (supabase as any)
+    .from('grn_line_items')
+    .select('id')
+    .eq('grn_id', grnId)
+    .eq('is_final_grn', true)
+    .neq('store_confirmed', true);
+
+  if (!remaining?.length) {
+    // All items confirmed — close the GRN fully
+    await storeConfirmGRN(grnId, { confirmedBy: data.confirmedBy, confirmedAt: data.confirmedAt });
+  } else {
+    // Partial — mark the flag without closing
+    await (supabase as any)
+      .from('grns')
+      .update({ partial_store_confirmed: true })
+      .eq('id', grnId);
+  }
 }
 
 export async function storeConfirmLineItem(

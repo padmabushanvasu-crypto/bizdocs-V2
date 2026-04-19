@@ -20,6 +20,9 @@ import { logAudit } from "@/lib/audit-api";
 type ItemState = {
   storeQty: string;
   location: string;
+  damagedQty: string;
+  damagedReason: string;
+  notes: string;
   checked: boolean;
 };
 
@@ -39,8 +42,11 @@ function buildInitialGrnForms(
     const itemStates: Record<string, ItemState> = {};
     for (const item of items) {
       itemStates[item.id] = {
-        storeQty: item.conforming_qty != null ? String(item.conforming_qty) : "",
+        storeQty: item.store_confirmed_qty != null ? String(item.store_confirmed_qty) : item.conforming_qty != null ? String(item.conforming_qty) : "",
         location: "",
+        damagedQty: item.damaged_qty != null ? String(item.damaged_qty) : "",
+        damagedReason: item.damaged_reason ?? "",
+        notes: item.store_confirmation_notes ?? "",
         checked: true,
       };
     }
@@ -151,13 +157,17 @@ export default function GrnStoreQueue() {
     try {
       await storeConfirmGRNItems(
         grnId,
-        checkedItems.map((item) => ({
-          id: item.id,
-          storeQty: form.items[item.id]?.storeQty
-            ? Number(form.items[item.id].storeQty)
-            : item.conforming_qty,
-          location: form.items[item.id]?.location || null,
-        })),
+        checkedItems.map((item) => {
+          const s = form.items[item.id];
+          return {
+            id: item.id,
+            storeQty: s?.storeQty ? Number(s.storeQty) : item.conforming_qty,
+            location: s?.location || null,
+            damagedQty: s?.damagedQty ? Number(s.damagedQty) : null,
+            damagedReason: s?.damagedReason || null,
+            notes: s?.notes || null,
+          };
+        }),
         { confirmedBy: form.confirmedBy, confirmedAt: form.confirmedAt }
       );
       await logAudit("grn", grnId, "Store receipt confirmed (batch)", {
@@ -287,8 +297,17 @@ export default function GrnStoreQueue() {
                         <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">
                           Store Qty
                         </th>
+                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">
+                          Damaged Qty
+                        </th>
+                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-left">
+                          Damage Reason
+                        </th>
                         <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-left">
                           Location / Rack
+                        </th>
+                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-left">
+                          Notes
                         </th>
                       </tr>
                     </thead>
@@ -349,6 +368,32 @@ export default function GrnStoreQueue() {
                                 className="w-24 h-7 text-sm text-right tabular-nums ml-auto"
                               />
                             </td>
+                            {/* Damaged qty input */}
+                            <td className="px-3 py-2.5 text-right">
+                              <Input
+                                type="number"
+                                min={0}
+                                value={itemState?.damagedQty ?? ""}
+                                onChange={(e) =>
+                                  setItemField(grnId, item.id, { damagedQty: e.target.value })
+                                }
+                                disabled={!itemState?.checked}
+                                placeholder="0"
+                                className="w-20 h-7 text-sm text-right tabular-nums ml-auto"
+                              />
+                            </td>
+                            {/* Damage reason input */}
+                            <td className="px-3 py-2.5">
+                              <Input
+                                value={itemState?.damagedReason ?? ""}
+                                onChange={(e) =>
+                                  setItemField(grnId, item.id, { damagedReason: e.target.value })
+                                }
+                                disabled={!itemState?.checked || !itemState?.damagedQty}
+                                placeholder="Reason…"
+                                className="h-7 text-sm min-w-[140px]"
+                              />
+                            </td>
                             {/* Location input */}
                             <td className="px-3 py-2.5">
                               <Input
@@ -358,7 +403,19 @@ export default function GrnStoreQueue() {
                                 }
                                 disabled={!itemState?.checked}
                                 placeholder="e.g. Rack A3, Bin 7"
-                                className="h-7 text-sm min-w-[160px]"
+                                className="h-7 text-sm min-w-[140px]"
+                              />
+                            </td>
+                            {/* Notes input */}
+                            <td className="px-3 py-2.5">
+                              <Input
+                                value={itemState?.notes ?? ""}
+                                onChange={(e) =>
+                                  setItemField(grnId, item.id, { notes: e.target.value })
+                                }
+                                disabled={!itemState?.checked}
+                                placeholder="Optional note…"
+                                className="h-7 text-sm min-w-[140px]"
                               />
                             </td>
                           </tr>

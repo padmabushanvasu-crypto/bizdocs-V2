@@ -74,6 +74,7 @@ import FinishedGoodWorkOrders from "@/pages/FinishedGoodWorkOrders";
 import AssemblyWorkOrderDetail from "@/pages/AssemblyWorkOrderDetail";
 import StorekeeperQueue from "@/pages/StorekeeperQueue";
 import GrnStoreQueue from "@/pages/GrnStoreQueue";
+import ReadyToMoveQueue from "@/pages/ReadyToMoveQueue";
 import GrnQueue from "@/pages/GrnQueue";
 import QcQueue from "@/pages/QcQueue";
 import UserManagement from "@/pages/UserManagement";
@@ -205,6 +206,7 @@ const App = () => (
 
               <Route path="/storekeeper" element={<PageGuard page="storekeeper"><StorekeeperQueue /></PageGuard>} />
               <Route path="/storekeeper-queue" element={<PageGuard page="storekeeper-queue"><GrnStoreQueue /></PageGuard>} />
+              <Route path="/ready-to-move" element={<PageGuard page="ready-to-move"><ReadyToMoveQueue /></PageGuard>} />
 
               <Route path="/dispatch-records" element={<PageGuard page="dispatch-records"><DispatchRecords /></PageGuard>} />
               <Route path="/dispatch-records/new" element={<PageGuard page="dispatch-records"><DispatchRecordForm /></PageGuard>} />

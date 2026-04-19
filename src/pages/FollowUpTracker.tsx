@@ -11,7 +11,7 @@ import {
   Phone, Mail, CheckCircle2, AlertTriangle, Clock, BellRing, RefreshCw
 } from "lucide-react";
 import {
-  fetchFollowUpPOs, fetchFollowUpDCs,
+  fetchFollowUpPOs, fetchFollowUpDCs, fetchPartiallyReturnedDCs,
   upsertFollowUpLog, markManualReceived, fetchCompletedTodayCount,
   emptyLog,
   type FollowUpLog, type FollowUpPO, type FollowUpDC, type FollowUpType,
@@ -299,7 +299,7 @@ export default function FollowUpTracker() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const [tab, setTab] = useState<"po" | "dc">("po");
+  const [tab, setTab] = useState<"po" | "dc" | "partial_po" | "partial_dc">("po");
   const [filter, setFilter] = useState<FilterType>("all");
 
   // Local log state — optimistic updates
@@ -336,18 +336,29 @@ export default function FollowUpTracker() {
     staleTime: 60_000,
   });
 
+  const partialDcQuery = useQuery({
+    queryKey: ["follow-up-partial-dcs"],
+    queryFn: fetchPartiallyReturnedDCs,
+    staleTime: 60_000,
+  });
+
   // Seed localLogs from query data (do not overwrite rows currently being saved)
   useEffect(() => {
-    const items = tab === "po" ? (poQuery.data ?? []) : (dcQuery.data ?? []);
+    const docType: "po" | "dc" = tab === "partial_po" ? "po" : tab === "partial_dc" ? "dc" : tab;
+    const items =
+      tab === "po" ? (poQuery.data ?? []) :
+      tab === "dc" ? (dcQuery.data ?? []) :
+      tab === "partial_po" ? (poQuery.data ?? []).filter((p) => p.status === "partially_received") :
+      (partialDcQuery.data ?? []);
     setLocalLogs((prev) => {
       const m = new Map(prev);
       for (const item of items) {
         if (!m.has(item.id) && item.log) m.set(item.id, item.log);
-        else if (!m.has(item.id)) m.set(item.id, emptyLog(item.id, tab));
+        else if (!m.has(item.id)) m.set(item.id, emptyLog(item.id, docType));
       }
       return m;
     });
-  }, [poQuery.data, dcQuery.data, tab]);
+  }, [poQuery.data, dcQuery.data, partialDcQuery.data, tab]);
 
   // ── Save functions ───────────────────────────────────────────────────────────
 
@@ -364,7 +375,7 @@ export default function FollowUpTracker() {
 
   const handleLogChange = useCallback((id: string, newLog: FollowUpLog, immediate = false) => {
     // Find the source data to get docNumber
-    const allItems = [...(poQuery.data ?? []), ...(dcQuery.data ?? [])];
+    const allItems = [...(poQuery.data ?? []), ...(dcQuery.data ?? []), ...(partialDcQuery.data ?? [])];
     const item = allItems.find((i) => i.id === id);
     const docNumber = "po_number" in (item ?? {})
       ? (item as FollowUpPO).po_number
@@ -384,7 +395,7 @@ export default function FollowUpTracker() {
         persistLog(id, docType, docNumber, newLog);
       }, 800));
     }
-  }, [poQuery.data, dcQuery.data, persistLog]);
+  }, [poQuery.data, dcQuery.data, partialDcQuery.data, persistLog]);
 
   // Checkbox and type changes save immediately; notes use debounce
   const handleLogChangeImmediate = useCallback((id: string, newLog: FollowUpLog) => {
@@ -395,7 +406,7 @@ export default function FollowUpTracker() {
 
   const markMutation = useMutation({
     mutationFn: async (id: string) => {
-      const allItems = [...(poQuery.data ?? []), ...(dcQuery.data ?? [])];
+      const allItems = [...(poQuery.data ?? []), ...(dcQuery.data ?? []), ...(partialDcQuery.data ?? [])];
       const item = allItems.find((i) => i.id === id);
       const docNumber = "po_number" in (item ?? {})
         ? (item as FollowUpPO).po_number
@@ -434,10 +445,22 @@ export default function FollowUpTracker() {
     return visible.filter((i) => getDueDateInfo(i.due_date).urgency === filter);
   }
 
-  const poItems = applyFilter(poQuery.data ?? []);
+  const partialPoItems = applyFilter((poQuery.data ?? []).filter((p) => p.status === "partially_received"));
+  const poItems = applyFilter((poQuery.data ?? []).filter((p) => p.status !== "partially_received"));
   const dcItems = applyFilter(dcQuery.data ?? []);
-  const activeItems = tab === "po" ? poItems : dcItems;
-  const allSource = tab === "po" ? (poQuery.data ?? []) : (dcQuery.data ?? []);
+  const partialDcItems = applyFilter(partialDcQuery.data ?? []);
+
+  const activeItems =
+    tab === "po" ? poItems :
+    tab === "dc" ? dcItems :
+    tab === "partial_po" ? partialPoItems :
+    partialDcItems;
+
+  const allSource =
+    tab === "po" ? (poQuery.data ?? []).filter((p) => p.status !== "partially_received") :
+    tab === "dc" ? (dcQuery.data ?? []) :
+    tab === "partial_po" ? (poQuery.data ?? []).filter((p) => p.status === "partially_received") :
+    (partialDcQuery.data ?? []);
   const visibleSource = allSource.filter((i) => !hiddenIds.has(i.id));
 
   const statsOverdue = visibleSource.filter((i) => getDueDateInfo(i.due_date).urgency === "overdue").length;
@@ -447,11 +470,16 @@ export default function FollowUpTracker() {
   }).length;
   const statsCompleted = tab === "po" ? (poCompletedQuery.data ?? 0) : (dcCompletedQuery.data ?? 0);
 
-  const isLoading = tab === "po" ? poQuery.isLoading : dcQuery.isLoading;
+  const isLoading =
+    tab === "po" ? poQuery.isLoading :
+    tab === "dc" ? dcQuery.isLoading :
+    tab === "partial_po" ? poQuery.isLoading :
+    partialDcQuery.isLoading;
 
   const handleRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ["follow-up-pos"] });
     queryClient.invalidateQueries({ queryKey: ["follow-up-dcs"] });
+    queryClient.invalidateQueries({ queryKey: ["follow-up-partial-dcs"] });
   };
 
   // ── Render ────────────────────────────────────────────────────────────────────
@@ -470,13 +498,15 @@ export default function FollowUpTracker() {
         </Button>
       </div>
 
-      <Tabs value={tab} onValueChange={(v) => { setTab(v as "po" | "dc"); setFilter("all"); }}>
+      <Tabs value={tab} onValueChange={(v) => { setTab(v as "po" | "dc" | "partial_po" | "partial_dc"); setFilter("all"); }}>
         <TabsList>
           <TabsTrigger value="po">Purchase Orders</TabsTrigger>
           <TabsTrigger value="dc">Delivery Challans</TabsTrigger>
+          <TabsTrigger value="partial_po">Partial PO Receipts</TabsTrigger>
+          <TabsTrigger value="partial_dc">Partial DC Returns</TabsTrigger>
         </TabsList>
 
-        {(["po", "dc"] as const).map((t) => (
+        {(["po", "dc", "partial_po", "partial_dc"] as const).map((t) => (
           <TabsContent key={t} value={t} className="space-y-4 mt-4">
             {/* Stats */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -519,8 +549,9 @@ export default function FollowUpTracker() {
             ) : (
               <div className="space-y-3">
                 {activeItems.map((item) => {
-                  const isPO = t === "po";
-                  const log = localLogs.get(item.id) ?? item.log ?? emptyLog(item.id, t);
+                  const isPO = t === "po" || t === "partial_po";
+                  const docType: "po" | "dc" = isPO ? "po" : "dc";
+                  const log = localLogs.get(item.id) ?? item.log ?? emptyLog(item.id, docType);
                   const docNumber = isPO ? (item as FollowUpPO).po_number : (item as FollowUpDC).dc_number;
                   const docPath = isPO
                     ? `/purchase-orders/${item.id}`
@@ -534,7 +565,7 @@ export default function FollowUpTracker() {
                       key={item.id}
                       id={item.id}
                       docNumber={docNumber}
-                      docType={t}
+                      docType={docType}
                       docPath={docPath}
                       vendorName={vendorName}
                       phone={phone}

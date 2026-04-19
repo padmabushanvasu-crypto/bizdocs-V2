@@ -138,6 +138,7 @@ interface NCSummary {
   conforming_qty: number;
   non_conforming_qty: number;
   disposition: Disposition | '';
+  qc_notes?: string;
 }
 
 // ── Stage Progress Bar ─────────────────────────────────────────────────────────
@@ -496,53 +497,82 @@ function Stage1ReadOnly({ lines, isDcGrn }: { lines: S1Line[]; isDcGrn?: boolean
           </tr>
         </thead>
         <tbody className="divide-y divide-blue-50">
-          {lines.map((l, idx) => (
-            <tr key={l.id} className={l.received_qty !== l.po_quantity ? "bg-yellow-50/40" : "bg-white"}>
-              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{idx + 1}</td>
-              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-xs text-slate-500">{l.item_code || "—"}</td>
-              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium text-slate-800">{l.description}</td>
-              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-slate-500">{l.po_quantity}</td>
-              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-semibold text-slate-800">{l.received_qty}</td>
-              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
-                {l.qty_matched}
-                {l.qty_matched >= l.received_qty ? <span className="ml-1 text-green-600">✓</span> : null}
-              </td>
-              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
-                {l.received_qty - l.qty_matched > 0 ? (
-                  <span className="text-amber-600 font-semibold">{l.received_qty - l.qty_matched}</span>
-                ) : <span className="text-slate-300">—</span>}
-              </td>
-              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center text-xs capitalize">{(l.condition_on_arrival || "good").replace(/_/g, " ")}</td>
-              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center text-xs">{l.packing_intact ? "✓" : "✗"}</td>
-              <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-xs text-slate-500">{l.notes || "—"}</td>
-              {hasStoreTracking && (
-                <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center text-xs">
-                  {!l.is_final_grn ? (
-                    <span className="text-slate-300">—</span>
-                  ) : l.store_confirmed ? (
-                    <span className="inline-flex items-center gap-1 text-green-700 font-medium">
-                      ✓ {l.store_confirmed_by ? <span className="font-normal text-slate-500">{l.store_confirmed_by}</span> : null}
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 text-amber-600 font-medium">
-                      ⏳ Awaiting
-                    </span>
+          {lines.map((l, idx) => {
+            const hasMismatch = l.non_matching_units > 0;
+            return (
+              <React.Fragment key={l.id}>
+                <tr className={l.received_qty !== l.po_quantity ? "bg-yellow-50/40" : "bg-white"}>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{idx + 1}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-xs text-slate-500">{l.item_code || "—"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium text-slate-800">{l.description}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-slate-500">{l.po_quantity}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-semibold text-slate-800">{l.received_qty}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
+                    {l.qty_matched}
+                    {l.qty_matched >= l.received_qty ? <span className="ml-1 text-green-600">✓</span> : null}
+                  </td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
+                    {l.received_qty - l.qty_matched > 0 ? (
+                      <span className="text-amber-600 font-semibold">{l.received_qty - l.qty_matched}</span>
+                    ) : <span className="text-slate-300">—</span>}
+                  </td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center text-xs capitalize">{(l.condition_on_arrival || "good").replace(/_/g, " ")}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center text-xs">{l.packing_intact ? "✓" : "✗"}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-xs text-slate-500">{l.notes || "—"}</td>
+                  {hasStoreTracking && (
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center text-xs">
+                      {!l.is_final_grn ? (
+                        <span className="text-slate-300">—</span>
+                      ) : l.store_confirmed ? (
+                        <span className="inline-flex items-center gap-1 text-green-700 font-medium">
+                          ✓ {l.store_confirmed_by ? <span className="font-normal text-slate-500">{l.store_confirmed_by}</span> : null}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-amber-600 font-medium">
+                          ⏳ Awaiting
+                        </span>
+                      )}
+                    </td>
                   )}
-                </td>
-              )}
-              {hasJigData && (
-                <td className="px-3 py-2 text-sm border-b border-slate-100 text-center text-xs">
-                  {l.jig_confirmed ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-800 font-medium border border-green-200">
-                      ✓ Jig Returned
-                    </span>
-                  ) : (
-                    <span className="text-slate-300">—</span>
+                  {hasJigData && (
+                    <td className="px-3 py-2 text-sm border-b border-slate-100 text-center text-xs">
+                      {l.jig_confirmed ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-800 font-medium border border-green-200">
+                          ✓ Jig Returned
+                        </span>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
+                    </td>
                   )}
-                </td>
-              )}
-            </tr>
-          ))}
+                </tr>
+                {hasMismatch && (
+                  <tr className={l.matching_units === 0 ? "bg-red-50/70" : "bg-amber-50/70"}>
+                    <td colSpan={10 + (hasStoreTracking ? 1 : 0) + (hasJigData ? 1 : 0)} className="px-4 py-2">
+                      <div className="flex flex-wrap gap-4 items-start text-xs">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-semibold text-slate-500 uppercase tracking-wide text-[10px]">Mismatch Reason</span>
+                          <span className="text-slate-700">{l.mismatch_reason || <span className="text-slate-400 italic">Not recorded</span>}</span>
+                        </div>
+                        {l.mismatch_disposition && (
+                          <div className="flex flex-col gap-0.5">
+                            <span className="font-semibold text-slate-500 uppercase tracking-wide text-[10px]">Disposition</span>
+                            <span className="text-slate-700 capitalize">{l.mismatch_disposition.replace(/_/g, " ")}</span>
+                          </div>
+                        )}
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-semibold text-slate-500 uppercase tracking-wide text-[10px]">Non-Matching</span>
+                          <span className={l.matching_units === 0 ? "text-red-700 font-semibold" : "text-amber-700 font-semibold"}>
+                            {l.non_matching_units} {l.unit} will not proceed to QC
+                          </span>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -785,7 +815,7 @@ function QCMeasurementReadOnly({
   lineItems,
   qcRows,
 }: {
-  lineItems: Array<{ id: string; item_code: string; description: string; received_qty: number; unit: string }>;
+  lineItems: Array<{ id: string; item_code: string; description: string; received_qty: number; unit: string; matching_units?: number }>;
   qcRows: GRNQCMeasurement[];
 }) {
   return (
@@ -800,7 +830,7 @@ function QCMeasurementReadOnly({
               <span className={`text-xs font-semibold ${hasNC ? "text-amber-800" : "text-blue-800"}`}>
                 <span className="font-mono">{item.item_code || "—"}</span>
                 {" — "}{item.description}
-                <span className="font-normal ml-2">· Received: {item.received_qty} {item.unit}</span>
+                <span className="font-normal ml-2">· Inspecting: {item.matching_units ?? item.received_qty} {item.unit}</span>
               </span>
             </div>
             <div className="overflow-x-auto rounded-lg border border-slate-200">
@@ -1352,6 +1382,7 @@ export default function GRNDetail() {
           conforming_qty:     a.conforming_qty ?? recv,
           non_conforming_qty: a.non_conforming_qty ?? 0,
           disposition:        (a.disposition as Disposition) ?? "",
+          qc_notes:           a.qc_notes ?? "",
         };
       })
     );
@@ -1390,6 +1421,7 @@ export default function GRNDetail() {
             conforming_qty:     recv,
             non_conforming_qty: 0,
             disposition:        "",
+            qc_notes:           existing?.qc_notes ?? "",
           };
         }
         // Derive nc qty from the max across rows for this item
@@ -1525,7 +1557,7 @@ export default function GRNDetail() {
         deviation_description: null,
         disposition:          (nc.disposition || null) as Disposition | null,
         reference_drawing:    null,
-        qc_notes:             null,
+        qc_notes:             nc.qc_notes || null,
       }));
       // PO-GRNs: all lines are final (goods always go to store after QC).
       // DC-GRNs: only bought_out/consumable/service auto-mark (others may go back to job work).
@@ -2143,6 +2175,9 @@ export default function GRNDetail() {
               {g.vendor_invoice_number && (
                 <span>Invoice: <strong className="text-slate-700">{g.vendor_invoice_number}</strong></span>
               )}
+              {g.vendor_invoice_date && (
+                <span>Invoice Date: <strong className="text-slate-700">{new Date(g.vendor_invoice_date).toLocaleDateString("en-IN")}</strong></span>
+              )}
             </div>
           )}
         </div>
@@ -2213,45 +2248,57 @@ export default function GRNDetail() {
                       const unit = (grn.line_items ?? []).find((li) => li.id === nc.lineItemId)?.unit ?? "";
                       if (!item) return null;
                       return (
-                        <div key={nc.lineItemId} className="flex flex-wrap items-center gap-3 text-xs">
-                          <span className="font-mono text-slate-500">{item.item_code || "—"}</span>
-                          <span className="font-medium text-slate-700">{item.description}</span>
-                          <span className="text-green-700">Conforming: <strong>{nc.conforming_qty} {unit}</strong></span>
-                          <span className="text-amber-700">Non-Conforming: <strong>{nc.non_conforming_qty} {unit}</strong></span>
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-slate-500">Disposition:</span>
-                            <select
-                              className="border border-amber-300 rounded px-2 py-0.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-amber-400"
-                              value={nc.disposition}
-                              onChange={(e) => updateNCSummary(nc.lineItemId, "disposition", e.target.value as Disposition)}
-                            >
-                              <option value="">Select…</option>
-                              {DISPOSITIONS.map((d) => (
-                                <option key={d.value} value={d.value}>{d.label}</option>
-                              ))}
-                            </select>
-                            {nc.disposition === "rework_our_scope" && (
-                              <span className="text-blue-600 text-[10px] italic">Note: Raise an internal work order or job card to track this rework.</span>
-                            )}
+                        <div key={nc.lineItemId} className="flex flex-col gap-2 border-b border-amber-100 pb-3 last:border-b-0 last:pb-0">
+                          <div className="flex flex-wrap items-center gap-3 text-xs">
+                            <span className="font-mono text-slate-500">{item.item_code || "—"}</span>
+                            <span className="font-medium text-slate-700">{item.description}</span>
+                            <span className="text-green-700">Conforming: <strong>{nc.conforming_qty} {unit}</strong></span>
+                            <span className="text-amber-700">Non-Conforming: <strong>{nc.non_conforming_qty} {unit}</strong></span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-slate-500">Disposition:</span>
+                              <select
+                                className="border border-amber-300 rounded px-2 py-0.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-amber-400"
+                                value={nc.disposition}
+                                onChange={(e) => updateNCSummary(nc.lineItemId, "disposition", e.target.value as Disposition)}
+                              >
+                                <option value="">Select…</option>
+                                {DISPOSITIONS.map((d) => (
+                                  <option key={d.value} value={d.value}>{d.label}</option>
+                                ))}
+                              </select>
+                              {nc.disposition === "rework_our_scope" && (
+                                <span className="text-blue-600 text-[10px] italic">Note: Raise an internal work order or job card to track this rework.</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <Label className="text-xs text-slate-500">Conf. Qty:</Label>
+                              <input
+                                type="number"
+                                className="w-16 border border-slate-200 rounded px-2 py-0.5 text-xs text-right"
+                                value={nc.conforming_qty}
+                                min={0}
+                                onChange={(e) => updateNCSummary(nc.lineItemId, "conforming_qty", Number(e.target.value))}
+                              />
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <Label className="text-xs text-slate-500">NC Qty:</Label>
+                              <input
+                                type="number"
+                                className="w-16 border border-amber-300 bg-amber-50 rounded px-2 py-0.5 text-xs text-right"
+                                value={nc.non_conforming_qty}
+                                min={0}
+                                onChange={(e) => updateNCSummary(nc.lineItemId, "non_conforming_qty", Number(e.target.value))}
+                              />
+                            </div>
                           </div>
-                          <div className="flex items-center gap-1.5">
-                            <Label className="text-xs text-slate-500">Conf. Qty:</Label>
-                            <input
-                              type="number"
-                              className="w-16 border border-slate-200 rounded px-2 py-0.5 text-xs text-right"
-                              value={nc.conforming_qty}
-                              min={0}
-                              onChange={(e) => updateNCSummary(nc.lineItemId, "conforming_qty", Number(e.target.value))}
-                            />
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <Label className="text-xs text-slate-500">NC Qty:</Label>
-                            <input
-                              type="number"
-                              className="w-16 border border-amber-300 bg-amber-50 rounded px-2 py-0.5 text-xs text-right"
-                              value={nc.non_conforming_qty}
-                              min={0}
-                              onChange={(e) => updateNCSummary(nc.lineItemId, "non_conforming_qty", Number(e.target.value))}
+                          <div className="flex flex-col gap-0.5">
+                            <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">QC Notes</label>
+                            <textarea
+                              className="w-full border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-purple-400 resize-none"
+                              rows={2}
+                              value={nc.qc_notes ?? ""}
+                              placeholder="Record specific non-conformance details, corrective actions, or observations…"
+                              onChange={(e) => updateNCSummary(nc.lineItemId, "qc_notes", e.target.value)}
                             />
                           </div>
                         </div>
@@ -2417,18 +2464,23 @@ export default function GRNDetail() {
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Conforming</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">NC Qty</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Disposition</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">QC Notes</th>
                 </tr>
               </thead>
               <tbody>
                 {ncItemsWithData.map((nc, idx) => {
                   const item = s1Lines.find((l) => l.id === nc.lineItemId);
+                  const unit = (grn.line_items ?? []).find((li) => li.id === nc.lineItemId)?.unit ?? "";
                   return (
                     <tr key={idx} className="border-b border-amber-100">
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-slate-500">{item?.item_code || "—"}</td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium text-slate-800">{item?.description || "—"}</td>
-                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-green-700 font-semibold">{nc.conforming_qty}</td>
-                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-amber-700 font-semibold">{nc.non_conforming_qty}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-green-700 font-semibold">{nc.conforming_qty} {unit}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-amber-700 font-semibold">{nc.non_conforming_qty} {unit}</td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center capitalize">{(nc.disposition || "—").replace(/_/g, " ")}</td>
+                      <td className="px-3 py-2 text-sm border-b border-slate-100 text-left text-xs text-slate-500 max-w-[200px]">
+                        {nc.qc_notes ? nc.qc_notes : <span className="text-slate-300">—</span>}
+                      </td>
                     </tr>
                   );
                 })}

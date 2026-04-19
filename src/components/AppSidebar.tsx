@@ -833,6 +833,14 @@ export function AppSidebar() {
       badgeColor: "amber" as const,
       allowedRoles: ['admin', 'finance', 'storekeeper'],
     },
+    {
+      title: "Ready to Move to Store",
+      url: "/ready-to-move",
+      icon: PackageCheck,
+      badge: awaitingStoreCount > 0 ? awaitingStoreCount : undefined,
+      badgeColor: "amber" as const,
+      allowedRoles: ['admin', 'finance', 'inward_team'],
+    },
     { title: "Stock Register", url: "/stock-register", icon: BarChart3 },
     {
       title: "Stock Ledger",

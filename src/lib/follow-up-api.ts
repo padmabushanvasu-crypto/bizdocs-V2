@@ -199,6 +199,56 @@ export async function fetchFollowUpDCs(): Promise<FollowUpDC[]> {
   return result;
 }
 
+export async function fetchPartiallyReturnedDCs(): Promise<FollowUpDC[]> {
+  const companyId = await getCompanyId();
+  if (!companyId) return [];
+
+  const { data: dcs, error } = await (supabase as any)
+    .from("delivery_challans")
+    .select("id, dc_number, party_id, party_name, party_phone, return_due_date, status")
+    .eq("company_id", companyId)
+    .eq("status", "partially_returned")
+    .order("created_at", { ascending: false });
+
+  if (error || !dcs?.length) return [];
+
+  const dcIds: string[] = dcs.map((d: any) => d.id);
+
+  // Fetch party emails
+  const partyIds = [...new Set<string>(dcs.map((d: any) => d.party_id).filter(Boolean))];
+  const emailByPartyId = new Map<string, string>();
+  if (partyIds.length) {
+    const { data: parties } = await (supabase as any)
+      .from("parties")
+      .select("id, email1")
+      .in("id", partyIds);
+    for (const p of parties ?? []) {
+      if (p.email1) emailByPartyId.set(p.id, p.email1);
+    }
+  }
+
+  // Follow-up logs for these DCs
+  const { data: logs } = await (supabase as any)
+    .from("follow_up_logs")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("document_type", "dc")
+    .in("document_id", dcIds);
+
+  const logByDocId = new Map<string, FollowUpLog>((logs ?? []).map((l: any) => [l.document_id, l as FollowUpLog]));
+
+  return dcs.map((dc: any) => ({
+    id: dc.id,
+    dc_number: dc.dc_number,
+    party_name: dc.party_name,
+    party_phone: dc.party_phone,
+    party_email: dc.party_id ? (emailByPartyId.get(dc.party_id) ?? null) : null,
+    due_date: dc.return_due_date ?? null,
+    status: dc.status,
+    log: logByDocId.get(dc.id) ?? null,
+  }));
+}
+
 export async function upsertFollowUpLog(
   documentId: string,
   documentType: "po" | "dc",
