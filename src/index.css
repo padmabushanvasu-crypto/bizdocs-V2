@@ -177,6 +177,121 @@
   background-color: rgba(80, 130, 255, 0.06) !important;
 }
 
+/* ── Dark mode badge/pill overrides ── */
+
+/* Red */
+.dark .bg-red-50  { background-color: rgba(239,68,68,0.12) !important; }
+.dark .bg-red-100 { background-color: rgba(239,68,68,0.20) !important; }
+.dark .bg-red-200 { background-color: rgba(239,68,68,0.28) !important; }
+.dark .text-red-700 { color: #fca5a5 !important; }
+.dark .text-red-800 { color: #fca5a5 !important; }
+.dark .border-red-100 { border-color: rgba(239,68,68,0.25) !important; }
+.dark .border-red-200 { border-color: rgba(239,68,68,0.35) !important; }
+
+/* Amber */
+.dark .bg-amber-50  { background-color: rgba(245,158,11,0.12) !important; }
+.dark .bg-amber-100 { background-color: rgba(245,158,11,0.20) !important; }
+.dark .bg-amber-200 { background-color: rgba(245,158,11,0.28) !important; }
+.dark .text-amber-700 { color: #fcd34d !important; }
+.dark .text-amber-800 { color: #fde68a !important; }
+.dark .border-amber-100 { border-color: rgba(245,158,11,0.25) !important; }
+.dark .border-amber-200 { border-color: rgba(245,158,11,0.35) !important; }
+
+/* Yellow */
+.dark .bg-yellow-50  { background-color: rgba(234,179,8,0.12) !important; }
+.dark .bg-yellow-100 { background-color: rgba(234,179,8,0.20) !important; }
+.dark .text-yellow-700 { color: #fde047 !important; }
+.dark .text-yellow-800 { color: #fef08a !important; }
+.dark .border-yellow-100 { border-color: rgba(234,179,8,0.25) !important; }
+.dark .border-yellow-200 { border-color: rgba(234,179,8,0.35) !important; }
+
+/* Orange */
+.dark .bg-orange-50  { background-color: rgba(249,115,22,0.12) !important; }
+.dark .bg-orange-100 { background-color: rgba(249,115,22,0.20) !important; }
+.dark .text-orange-700 { color: #fdba74 !important; }
+.dark .text-orange-800 { color: #fed7aa !important; }
+.dark .border-orange-100 { border-color: rgba(249,115,22,0.25) !important; }
+.dark .border-orange-200 { border-color: rgba(249,115,22,0.35) !important; }
+
+/* Green */
+.dark .bg-green-50  { background-color: rgba(34,197,94,0.12) !important; }
+.dark .bg-green-100 { background-color: rgba(34,197,94,0.20) !important; }
+.dark .text-green-700 { color: #86efac !important; }
+.dark .text-green-800 { color: #bbf7d0 !important; }
+.dark .border-green-100 { border-color: rgba(34,197,94,0.25) !important; }
+.dark .border-green-200 { border-color: rgba(34,197,94,0.35) !important; }
+
+/* Emerald */
+.dark .bg-emerald-50  { background-color: rgba(16,185,129,0.12) !important; }
+.dark .bg-emerald-100 { background-color: rgba(16,185,129,0.20) !important; }
+.dark .text-emerald-700 { color: #6ee7b7 !important; }
+.dark .text-emerald-800 { color: #a7f3d0 !important; }
+.dark .border-emerald-100 { border-color: rgba(16,185,129,0.25) !important; }
+.dark .border-emerald-200 { border-color: rgba(16,185,129,0.35) !important; }
+
+/* Teal */
+.dark .bg-teal-50  { background-color: rgba(20,184,166,0.12) !important; }
+.dark .bg-teal-100 { background-color: rgba(20,184,166,0.20) !important; }
+.dark .text-teal-700 { color: #5eead4 !important; }
+.dark .text-teal-800 { color: #99f6e4 !important; }
+.dark .border-teal-100 { border-color: rgba(20,184,166,0.25) !important; }
+.dark .border-teal-200 { border-color: rgba(20,184,166,0.35) !important; }
+
+/* Blue */
+.dark .bg-blue-50  { background-color: rgba(59,130,246,0.12) !important; }
+.dark .bg-blue-100 { background-color: rgba(59,130,246,0.20) !important; }
+.dark .text-blue-700 { color: #93c5fd !important; }
+.dark .text-blue-800 { color: #bfdbfe !important; }
+.dark .border-blue-100 { border-color: rgba(59,130,246,0.25) !important; }
+.dark .border-blue-200 { border-color: rgba(59,130,246,0.35) !important; }
+
+/* Indigo */
+.dark .bg-indigo-50  { background-color: rgba(99,102,241,0.12) !important; }
+.dark .bg-indigo-100 { background-color: rgba(99,102,241,0.20) !important; }
+.dark .text-indigo-700 { color: #a5b4fc !important; }
+.dark .text-indigo-800 { color: #c7d2fe !important; }
+.dark .border-indigo-100 { border-color: rgba(99,102,241,0.25) !important; }
+.dark .border-indigo-200 { border-color: rgba(99,102,241,0.35) !important; }
+
+/* Violet */
+.dark .bg-violet-50  { background-color: rgba(139,92,246,0.12) !important; }
+.dark .bg-violet-100 { background-color: rgba(139,92,246,0.20) !important; }
+.dark .text-violet-700 { color: #c4b5fd !important; }
+.dark .text-violet-800 { color: #ddd6fe !important; }
+.dark .border-violet-100 { border-color: rgba(139,92,246,0.25) !important; }
+.dark .border-violet-200 { border-color: rgba(139,92,246,0.35) !important; }
+
+/* Purple */
+.dark .bg-purple-50  { background-color: rgba(168,85,247,0.12) !important; }
+.dark .bg-purple-100 { background-color: rgba(168,85,247,0.20) !important; }
+.dark .text-purple-700 { color: #d8b4fe !important; }
+.dark .text-purple-800 { color: #e9d5ff !important; }
+.dark .border-purple-100 { border-color: rgba(168,85,247,0.25) !important; }
+.dark .border-purple-200 { border-color: rgba(168,85,247,0.35) !important; }
+
+/* Pink */
+.dark .bg-pink-50  { background-color: rgba(236,72,153,0.12) !important; }
+.dark .bg-pink-100 { background-color: rgba(236,72,153,0.20) !important; }
+.dark .text-pink-700 { color: #f9a8d4 !important; }
+.dark .text-pink-800 { color: #fbcfe8 !important; }
+.dark .border-pink-100 { border-color: rgba(236,72,153,0.25) !important; }
+.dark .border-pink-200 { border-color: rgba(236,72,153,0.35) !important; }
+
+/* Cyan */
+.dark .bg-cyan-50  { background-color: rgba(6,182,212,0.12) !important; }
+.dark .bg-cyan-100 { background-color: rgba(6,182,212,0.20) !important; }
+.dark .text-cyan-700 { color: #67e8f9 !important; }
+.dark .text-cyan-800 { color: #a5f3fc !important; }
+
+/* Slate overrides for section headers */
+.dark .bg-slate-50   { background-color: #0f1525 !important; }
+.dark .bg-slate-100  { background-color: #141c30 !important; }
+.dark .bg-slate-200  { background-color: #1a2340 !important; }
+.dark .text-slate-700 { color: #c8d6f0 !important; }
+.dark .text-slate-600 { color: #9aaac8 !important; }
+.dark .border-slate-100 { border-color: rgba(120,160,255,0.12) !important; }
+.dark .border-slate-200 { border-color: rgba(120,160,255,0.18) !important; }
+
 @layer base {
   * {
     @apply border-border;
