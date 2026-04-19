@@ -1008,34 +1008,30 @@ export function AppSidebar() {
               onClick={() => navigate("/")}
             >
               <div
-                className="h-8 w-8 flex items-center justify-center shrink-0"
+                className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
                 style={{
-                  background: "hsl(var(--primary))",
-                  borderRadius: "8px",
+                  background: "linear-gradient(135deg, #1e40af 0%, #3b82f6 100%)",
                   boxShadow: "inset 0 1px 0 rgba(255,255,255,0.15)",
                 }}
               >
-                <LayoutDashboard className="h-[18px] w-[18px] text-white" />
+                <FileText className="h-4 w-4 text-white" />
               </div>
-              <span
-                className="font-bold text-lg text-white"
-                style={{ letterSpacing: "-0.3px" }}
-              >
-                BizDocs
+              <span className="text-lg" style={{ letterSpacing: "-0.3px" }}>
+                <span style={{ color: 'white', fontWeight: 700 }}>Biz</span>
+                <span style={{ color: '#60a5fa', fontWeight: 700 }}>Docs</span>
               </span>
             </div>
           )}
           {railMode && (
             <div
-              className="h-8 w-8 flex items-center justify-center cursor-pointer shrink-0"
+              className="w-8 h-8 rounded-xl flex items-center justify-center cursor-pointer flex-shrink-0"
               style={{
-                background: "hsl(var(--primary))",
-                borderRadius: "8px",
+                background: "linear-gradient(135deg, #1e40af 0%, #3b82f6 100%)",
                 boxShadow: "inset 0 1px 0 rgba(255,255,255,0.15)",
               }}
               onClick={() => navigate("/")}
             >
-              <LayoutDashboard className="h-[18px] w-[18px] text-white" />
+              <FileText className="h-4 w-4 text-white" />
             </div>
           )}
         </div>

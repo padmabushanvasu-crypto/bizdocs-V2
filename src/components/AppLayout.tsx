@@ -8,7 +8,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { LogOut, Settings, User, LayoutDashboard, KeyRound } from "lucide-react";
+import { LogOut, Settings, User, LayoutDashboard, KeyRound, Sun, Moon } from "lucide-react";
+import { useTheme } from "@/hooks/useTheme";
 import { ChangePasswordDialog } from "@/components/ChangePasswordDialog";
 import { generateStockAlerts, generateOverdueDCAlerts } from "@/lib/notifications-api";
 import { FOCUSED_ROLES, FOCUSED_ROLE_REDIRECT, ROLE_LABELS } from "@/lib/roles";
@@ -16,6 +17,7 @@ import type { AppRole } from "@/lib/roles";
 
 export function AppLayout() {
   const { user, profile, signOut, role } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const [showChangePassword, setShowChangePassword] = useState(false);
 
@@ -84,6 +86,15 @@ export function AppLayout() {
               )}
             </div>
             <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                onClick={toggleTheme}
+                title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              >
+                {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </Button>
               <NotificationBell />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
