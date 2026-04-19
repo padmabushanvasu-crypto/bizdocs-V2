@@ -17,7 +17,7 @@ export default {
         sans: ['Inter', 'system-ui', 'sans-serif'],
         display: ["'Plus Jakarta Sans'", "sans-serif"],
         body: ["'DM Sans'", "sans-serif"],
-        mono: ["'JetBrains Mono'", "monospace"],
+        mono: ['JetBrains Mono', 'monospace'],
       },
       colors: {
         border: "hsl(var(--border))",
