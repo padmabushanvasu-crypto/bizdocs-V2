@@ -6,9 +6,9 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
+    --background: 220 33% 98%;
     --foreground: 222 47% 11%;
-    --card: 0 0% 99%;
+    --card: 220 25% 99%;
     --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
@@ -44,37 +44,85 @@
   }
 
   .dark {
-    --background: 222 47% 8%;
-    --foreground: 213 31% 91%;
-    --card: 222 47% 10%;
-    --card-foreground: 213 31% 91%;
-    --popover: 222 47% 10%;
-    --popover-foreground: 213 31% 91%;
+    --background: 225 62% 4%;
+    --foreground: 215 50% 88%;
+    --card: 224 54% 7%;
+    --card-foreground: 215 50% 88%;
+    --popover: 224 54% 7%;
+    --popover-foreground: 215 50% 88%;
     --primary: 227 100% 65%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 222 40% 16%;
-    --secondary-foreground: 213 31% 91%;
-    --muted: 222 40% 14%;
-    --muted-foreground: 215 16% 60%;
-    --accent: 222 40% 16%;
-    --accent-foreground: 213 31% 91%;
+    --secondary: 222 45% 12%;
+    --secondary-foreground: 215 40% 80%;
+    --muted: 222 45% 10%;
+    --muted-foreground: 215 20% 55%;
+    --accent: 222 45% 12%;
+    --accent-foreground: 215 50% 88%;
     --destructive: 0 64% 52%;
     --destructive-foreground: 0 0% 100%;
     --success: 149 82% 35%;
     --success-foreground: 0 0% 100%;
-    --border: 222 40% 18%;
-    --input: 222 40% 18%;
+    --border: 222 45% 14%;
+    --input: 222 45% 14%;
     --ring: 227 100% 65%;
-    --sidebar-background: 221 44% 7%;
-    --sidebar-foreground: 215 23% 90%;
+    --radius: 0.5rem;
+    --sidebar-background: 224 60% 5%;
+    --sidebar-foreground: 215 40% 82%;
     --sidebar-primary: 220 100% 68%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 222 40% 12%;
-    --sidebar-accent-foreground: 213 31% 91%;
-    --sidebar-border: 222 40% 14%;
+    --sidebar-accent: 222 50% 10%;
+    --sidebar-accent-foreground: 215 50% 88%;
+    --sidebar-border: 222 45% 11%;
     --sidebar-ring: 213 87% 60%;
-    --sidebar-muted: 215 16% 55%;
+    --sidebar-muted: 215 20% 50%;
   }
+}
+
+/* ── Dark mode overrides for hardcoded Tailwind utility classes ── */
+.dark .bg-white,
+.dark [class*="bg-white"] {
+  background: hsl(224 54% 7%) !important;
+}
+
+.dark .bg-gray-50,
+.dark .bg-slate-50,
+.dark .bg-gray-100,
+.dark .bg-slate-100 {
+  background: hsl(222 45% 10%) !important;
+}
+
+.dark .text-gray-900,
+.dark .text-slate-900,
+.dark .text-gray-800,
+.dark .text-slate-800,
+.dark .text-gray-700,
+.dark .text-slate-700 {
+  color: hsl(215 50% 88%) !important;
+}
+
+.dark .text-gray-500,
+.dark .text-slate-500,
+.dark .text-gray-400,
+.dark .text-slate-400,
+.dark .text-gray-600,
+.dark .text-slate-600 {
+  color: hsl(215 20% 58%) !important;
+}
+
+.dark .border-gray-200,
+.dark .border-slate-200,
+.dark .border-gray-100,
+.dark .border-slate-100,
+.dark .border-gray-300 {
+  border-color: hsl(222 45% 14%) !important;
+}
+
+/* shadcn Card component override */
+.dark [data-slot="card"],
+.dark .rounded-xl.border,
+.dark .rounded-lg.border {
+  background: hsl(224 54% 7%);
+  border-color: rgba(120, 160, 255, 0.14);
 }
 
 @layer base {

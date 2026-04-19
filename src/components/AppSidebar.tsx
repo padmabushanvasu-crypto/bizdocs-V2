@@ -1004,19 +1004,34 @@ export function AppSidebar() {
         >
           {!railMode && (
             <div
-              className="flex items-center gap-2.5 cursor-pointer"
+              style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
               onClick={() => navigate("/")}
             >
+              {/* Glow behind logo and text */}
+              <div style={{
+                position: 'absolute',
+                top: '50%',
+                left: '0px',
+                transform: 'translateY(-50%)',
+                width: '200px',
+                height: '60px',
+                background: 'radial-gradient(ellipse at 30% 50%, rgba(80, 130, 255, 0.25), transparent 65%)',
+                filter: 'blur(8px)',
+                pointerEvents: 'none',
+                zIndex: 0,
+              }} />
               <div
                 className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
                 style={{
                   background: "linear-gradient(135deg, #1e40af 0%, #3b82f6 100%)",
                   boxShadow: "inset 0 1px 0 rgba(255,255,255,0.15)",
+                  position: 'relative',
+                  zIndex: 1,
                 }}
               >
                 <FileText className="h-4 w-4 text-white" />
               </div>
-              <span className="text-lg" style={{ letterSpacing: "-0.3px" }}>
+              <span className="text-lg" style={{ letterSpacing: "-0.3px", position: 'relative', zIndex: 1 }}>
                 <span style={{ color: 'white', fontWeight: 700 }}>Biz</span>
                 <span style={{ color: '#60a5fa', fontWeight: 700 }}>Docs</span>
               </span>
