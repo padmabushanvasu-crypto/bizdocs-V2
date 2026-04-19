@@ -454,7 +454,7 @@ export default function Dashboard() {
     <div className="flex flex-col min-h-screen">
 
       {/* ── ZONE 1: DARK TOP ────────────────────────────────────────── */}
-      <div className="px-4 pt-5 pb-7 lg:px-7 lg:pt-6 lg:pb-8" style={{ backgroundColor: "#0F172A" }}>
+      <div className="px-4 pt-5 pb-7 lg:px-7 lg:pt-6 lg:pb-8" style={{ backgroundColor: "hsl(var(--sidebar-background))" }}>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between lg:gap-4">
 
           {/* Company info */}
@@ -489,10 +489,7 @@ export default function Dashboard() {
               <Tooltip delayDuration={400}>
                 <TooltipTrigger asChild>
                   <button
-                    className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white transition-colors shrink-0"
-                    style={{ backgroundColor: "#2563EB" }}
-                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#1D4ED8")}
-                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#2563EB")}
+                    className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white transition-colors shrink-0 bg-primary hover:bg-primary/90"
                     onClick={() => navigate("/purchase-orders/new")}
                   >
                     Raise PO
@@ -559,7 +556,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── ZONE 2: LIGHT CONTENT ───────────────────────────────────── */}
-      <div className="flex-1 px-4 py-4 lg:px-7 lg:py-5 space-y-4" style={{ backgroundColor: "#F1F5F9" }}>
+      <div className="flex-1 px-4 py-4 lg:px-7 lg:py-5 space-y-4" style={{ backgroundColor: "hsl(var(--muted))" }}>
 
         {/* GSTR-3B banner — hidden for storekeeper */}
         {!isStorekeeper && (

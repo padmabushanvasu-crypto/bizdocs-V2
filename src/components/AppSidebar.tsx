@@ -983,7 +983,7 @@ export function AppSidebar() {
           width: railMode ? 52 : 240,
           minWidth: railMode ? 52 : 240,
           transition: "width 0.2s ease",
-          background: "#0F172A",
+          background: "hsl(var(--sidebar-background))",
           height: "100vh",
           display: "flex",
           flexDirection: "column",
@@ -1010,7 +1010,7 @@ export function AppSidebar() {
               <div
                 className="h-8 w-8 flex items-center justify-center shrink-0"
                 style={{
-                  background: "linear-gradient(135deg, #1D4ED8, #2563EB)",
+                  background: "hsl(var(--primary))",
                   borderRadius: "8px",
                   boxShadow: "inset 0 1px 0 rgba(255,255,255,0.15)",
                 }}
@@ -1029,7 +1029,7 @@ export function AppSidebar() {
             <div
               className="h-8 w-8 flex items-center justify-center cursor-pointer shrink-0"
               style={{
-                background: "linear-gradient(135deg, #1D4ED8, #2563EB)",
+                background: "hsl(var(--primary))",
                 borderRadius: "8px",
                 boxShadow: "inset 0 1px 0 rgba(255,255,255,0.15)",
               }}
@@ -1069,7 +1069,7 @@ export function AppSidebar() {
               <div
                 className="absolute left-3 right-3 top-full mt-1 z-50 rounded-lg overflow-hidden shadow-lg"
                 style={{
-                  background: "#0f1623",
+                  background: "hsl(var(--sidebar-background))",
                   border: "1px solid rgba(100,116,139,0.4)",
                 }}
               >
@@ -1128,7 +1128,7 @@ export function AppSidebar() {
                         : hovered
                         ? "rgba(255,255,255,0.1)"
                         : "transparent",
-                      color: active || hovered ? "#ffffff" : "#94a3b8",
+                      color: active || hovered ? "#ffffff" : "hsl(var(--sidebar-muted))",
                       transition: "background 0.15s, color 0.15s",
                     }}
                     onMouseEnter={(e) => handleGroupEnter(groupName, e)}
@@ -1251,7 +1251,7 @@ export function AppSidebar() {
               minWidth: 210,
               maxHeight: "70vh",
               overflowY: "auto",
-              background: "#0f1623",
+              background: "hsl(var(--sidebar-background))",
               border: "1px solid rgba(100,116,139,0.5)",
               borderRadius: "0 12px 12px 0",
               boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
@@ -1266,7 +1266,7 @@ export function AppSidebar() {
                 letterSpacing: "0.1em",
                 fontWeight: 600,
                 padding: "12px 12px 6px",
-                color: "#94a3b8",
+                color: "hsl(var(--sidebar-muted))",
                 borderBottom: "1px solid rgba(100,116,139,0.3)",
               }}
             >
