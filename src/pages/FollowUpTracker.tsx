@@ -347,7 +347,7 @@ export default function FollowUpTracker() {
     const docType: "po" | "dc" = tab === "partial_po" ? "po" : tab === "partial_dc" ? "dc" : tab;
     const items =
       tab === "po" ? (poQuery.data ?? []) :
-      tab === "dc" ? (dcQuery.data ?? []) :
+      tab === "dc" ? [...(dcQuery.data ?? []), ...(partialDcQuery.data ?? [])] :
       tab === "partial_po" ? (poQuery.data ?? []).filter((p) => p.status === "partially_received") :
       (partialDcQuery.data ?? []);
     setLocalLogs((prev) => {
@@ -442,23 +442,31 @@ export default function FollowUpTracker() {
       const log = localLogs.get(i.id) ?? i.log;
       return getFollowUpCount(log) > 0;
     });
-    return visible.filter((i) => getDueDateInfo(i.due_date).urgency === filter);
+    if (filter === "overdue") return visible.filter((i) => getDueDateInfo(i.due_date).urgency === "overdue");
+    if (filter === "due2") return visible.filter((i) => getDueDateInfo(i.due_date).urgency === "due2");
+    // due7: everything due within the next 7 days (includes due2)
+    return visible.filter((i) => {
+      const u = getDueDateInfo(i.due_date).urgency;
+      return u === "due7" || u === "due2";
+    });
   }
 
+  // All items for each tab — no status exclusions, full dataset
+  const poItems      = applyFilter(poQuery.data ?? []);
+  const dcItems      = applyFilter([...(dcQuery.data ?? []), ...(partialDcQuery.data ?? [])]);
   const partialPoItems = applyFilter((poQuery.data ?? []).filter((p) => p.status === "partially_received"));
-  const poItems = applyFilter((poQuery.data ?? []).filter((p) => p.status !== "partially_received"));
-  const dcItems = applyFilter(dcQuery.data ?? []);
   const partialDcItems = applyFilter(partialDcQuery.data ?? []);
 
   const activeItems =
-    tab === "po" ? poItems :
-    tab === "dc" ? dcItems :
+    tab === "po"         ? poItems :
+    tab === "dc"         ? dcItems :
     tab === "partial_po" ? partialPoItems :
     partialDcItems;
 
+  // allSource: full tab dataset (unfiltered, unhidden) — used for stat cards
   const allSource =
-    tab === "po" ? (poQuery.data ?? []).filter((p) => p.status !== "partially_received") :
-    tab === "dc" ? (dcQuery.data ?? []) :
+    tab === "po"         ? (poQuery.data ?? []) :
+    tab === "dc"         ? [...(dcQuery.data ?? []), ...(partialDcQuery.data ?? [])] :
     tab === "partial_po" ? (poQuery.data ?? []).filter((p) => p.status === "partially_received") :
     (partialDcQuery.data ?? []);
   const visibleSource = allSource.filter((i) => !hiddenIds.has(i.id));
@@ -468,11 +476,13 @@ export default function FollowUpTracker() {
     const u = getDueDateInfo(i.due_date).urgency;
     return u === "due2" || u === "due7";
   }).length;
-  const statsCompleted = tab === "po" ? (poCompletedQuery.data ?? 0) : (dcCompletedQuery.data ?? 0);
+  const statsCompleted = (tab === "po" || tab === "partial_po")
+    ? (poCompletedQuery.data ?? 0)
+    : (dcCompletedQuery.data ?? 0);
 
   const isLoading =
-    tab === "po" ? poQuery.isLoading :
-    tab === "dc" ? dcQuery.isLoading :
+    tab === "po"         ? poQuery.isLoading :
+    tab === "dc"         ? (dcQuery.isLoading || partialDcQuery.isLoading) :
     tab === "partial_po" ? poQuery.isLoading :
     partialDcQuery.isLoading;
 
@@ -538,7 +548,13 @@ export default function FollowUpTracker() {
               <div className="text-center py-12 border border-dashed border-slate-200 rounded-lg">
                 <CheckCircle2 className="h-10 w-10 text-green-400 mx-auto mb-3" />
                 <p className="text-sm font-semibold text-slate-600">
-                  {filter === "all" ? "All clear — nothing pending follow-up." : "No items match this filter."}
+                  {filter === "all"
+                    ? t === "po"         ? "No open Purchase Orders — all clear."
+                    : t === "dc"         ? "No open Delivery Challans — all clear."
+                    : t === "partial_po" ? "No partially received POs — all clear."
+                    :                     "No partially returned DCs — all clear."
+                    : "No items match this filter."
+                  }
                 </p>
                 {filter !== "all" && (
                   <Button variant="link" size="sm" onClick={() => setFilter("all")} className="mt-1">
