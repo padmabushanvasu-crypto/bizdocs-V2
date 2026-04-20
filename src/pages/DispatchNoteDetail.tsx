@@ -1,4 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
+import { printWithLightMode } from "@/lib/print-utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Edit, X, Truck, Printer, ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -76,7 +77,7 @@ export default function DispatchNoteDetail() {
             size="sm"
             onClick={() => {
               setIsDuplicate(true);
-              setTimeout(() => { window.print(); setIsDuplicate(false); }, 100);
+              setTimeout(() => { printWithLightMode(); setIsDuplicate(false); }, 100);
             }}
           >
             <Printer className="h-3.5 w-3.5 mr-1" /> Print Duplicate

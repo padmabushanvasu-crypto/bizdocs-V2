@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { printWithLightMode } from "@/lib/print-utils";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -1894,7 +1895,7 @@ export default function GRNDetail() {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             {verdict && <VerdictBadge verdict={verdict} />}
-            <Button variant="outline" size="sm" onClick={() => window.print()}>
+            <Button variant="outline" size="sm" onClick={() => printWithLightMode()}>
               <Printer className="h-3.5 w-3.5 mr-1" /> Print GRN
             </Button>
             {!isDeletedOrCancelled && (

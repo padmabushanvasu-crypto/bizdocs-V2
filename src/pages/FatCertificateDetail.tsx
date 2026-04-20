@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { printWithLightMode } from "@/lib/print-utils";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -202,7 +203,7 @@ export default function FatCertificateDetail() {
               {saveMutation.isPending ? "Saving..." : "Save Progress"}
             </Button>
           )}
-          <Button variant="outline" size="sm" onClick={() => window.print()}>
+          <Button variant="outline" size="sm" onClick={() => printWithLightMode()}>
             <Printer className="h-3.5 w-3.5 mr-1" /> Print
           </Button>
           <DocumentActions

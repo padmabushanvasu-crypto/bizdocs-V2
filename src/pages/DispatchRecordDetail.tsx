@@ -1,4 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
+import { printWithLightMode } from "@/lib/print-utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Printer, Truck, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -117,14 +118,14 @@ export default function DispatchRecordDetail() {
                 <CheckCircle className="h-4 w-4 mr-1" />
                 Mark Delivered
               </Button>
-              <Button variant="outline" onClick={() => window.print()}>
+              <Button variant="outline" onClick={() => printWithLightMode()}>
                 <Printer className="h-4 w-4 mr-1" />
                 Print
               </Button>
             </>
           )}
           {dr.status === "delivered" && (
-            <Button variant="outline" onClick={() => window.print()}>
+            <Button variant="outline" onClick={() => printWithLightMode()}>
               <Printer className="h-4 w-4 mr-1" />
               Print
             </Button>

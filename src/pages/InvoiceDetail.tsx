@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { printWithLightMode } from "@/lib/print-utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, Download, Edit, XCircle, IndianRupee, CheckCircle2, Truck, Printer } from "lucide-react";
 import { EditableSection } from "@/components/EditableSection";
@@ -45,11 +46,24 @@ export default function InvoiceDetail() {
   const [invPrintDialogOpen, setInvPrintDialogOpen] = useState(false);
   const [invPrintCopies, setInvPrintCopies] = useState(3);
   const INV_COPY_LABELS = ["ORIGINAL FOR RECIPIENT", "DUPLICATE FOR TRANSPORTER", "TRIPLICATE FOR SUPPLIER"];
-  const triggerInvPrint = (totalCopies: number, index = 0) => {
-    if (index >= totalCopies) { setInvCopyLabel(""); return; }
+  const triggerInvPrint = (totalCopies: number, index = 0, darkWasActive = false) => {
+    // On first call capture dark state and remove it; pass it through all recursive calls
+    const isDark = index === 0
+      ? document.documentElement.classList.contains("dark")
+      : darkWasActive;
+    if (index === 0 && isDark) document.documentElement.classList.remove("dark");
+
+    if (index >= totalCopies) {
+      setInvCopyLabel("");
+      if (isDark) document.documentElement.classList.add("dark");
+      return;
+    }
     setInvCopyLabel(INV_COPY_LABELS[index]);
     setTimeout(() => {
-      const handler = () => { window.removeEventListener("afterprint", handler); setTimeout(() => triggerInvPrint(totalCopies, index + 1), 50); };
+      const handler = () => {
+        window.removeEventListener("afterprint", handler);
+        setTimeout(() => triggerInvPrint(totalCopies, index + 1, isDark), 50);
+      };
       window.addEventListener("afterprint", handler);
       window.print();
     }, 100);

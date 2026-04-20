@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { printWithLightMode } from "@/lib/print-utils";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Printer, Package, CheckCircle, AlertTriangle } from "lucide-react";
@@ -156,7 +157,7 @@ export default function AssemblyWorkOrderDetail() {
     );
   }
 
-  const handlePrint = () => window.print();
+  const handlePrint = () => printWithLightMode();
 
   const issuedLines = (awo.line_items ?? []).filter(
     (li) => li.item_id && li.issued_qty > 0

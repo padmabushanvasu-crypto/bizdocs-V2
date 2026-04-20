@@ -117,7 +117,11 @@ export async function fetchFollowUpPOs(): Promise<FollowUpPO[]> {
   for (const po of pos) {
     const log = logByDocId.get(po.id) ?? null;
     if (log?.manual_received) continue;
-    if (closedPoIds.has(po.id)) continue;
+    // Only auto-hide an 'issued' PO when a closed GRN exists (handles the edge case
+    // where all receipts are in but PO status hasn't updated yet).
+    // 'partially_received' POs must stay visible even if some GRNs are closed —
+    // they still need follow-up for the remaining outstanding quantity.
+    if (po.status === "issued" && closedPoIds.has(po.id)) continue;
     result.push({
       id: po.id,
       po_number: po.po_number,

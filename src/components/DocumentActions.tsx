@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { fetchCompanySettings } from "@/lib/settings-api";
+import { printWithLightMode } from "@/lib/print-utils";
 import {
   formatDocumentText,
   formatWhatsAppMessage,
@@ -64,7 +65,7 @@ export function DocumentActions({
   };
 
   const handlePrint = () => {
-    window.print();
+    printWithLightMode();
   };
 
   const handleWhatsApp = () => {

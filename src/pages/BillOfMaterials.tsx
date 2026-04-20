@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback, Component, type ReactNode } from "react";
+import { printWithLightMode } from "@/lib/print-utils";
 import '@xyflow/react/dist/style.css';
 import {
   ReactFlow, Background, Controls, MiniMap, ReactFlowProvider, BackgroundVariant, useReactFlow,
@@ -1496,7 +1497,7 @@ function BillOfMaterialsInner() {
     );
   };
 
-  const handlePrint = () => window.print();
+  const handlePrint = () => printWithLightMode();
 
   const estimatedCost = bomLines.reduce(
     (s, l) => s + l.quantity * (l.child_standard_cost ?? 0),
@@ -3110,7 +3111,7 @@ function BillOfMaterialsInner() {
                           variant="outline"
                           size="sm"
                           className="h-8 text-xs gap-1.5"
-                          onClick={() => window.print()}
+                          onClick={() => printWithLightMode()}
                           disabled={!treeData || treeData.children.length === 0}
                         >
                           <Printer className="h-3 w-3" /> Print BOM Tree

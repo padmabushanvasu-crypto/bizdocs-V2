@@ -531,3 +531,37 @@
     line-height: 1.3 !important;
   }
 }
+
+/* ── Force light mode for all prints ─────────────────────────────────────────
+   CSS variables are overridden here as a second layer of defence.
+   The primary mechanism is the printWithLightMode() JS helper which removes
+   the .dark class before calling window.print() and restores it after.
+   ───────────────────────────────────────────────────────────────────────── */
+@media print {
+  :root,
+  .dark {
+    --background: 0 0% 100% !important;
+    --foreground: 0 0% 0% !important;
+    --card: 0 0% 100% !important;
+    --card-foreground: 0 0% 0% !important;
+    --muted: 0 0% 96% !important;
+    --muted-foreground: 0 0% 30% !important;
+    --border: 0 0% 80% !important;
+    --primary: 221 83% 40% !important;
+    --primary-foreground: 0 0% 100% !important;
+  }
+
+  /* Override dark mode utility classes */
+  .dark body,
+  .dark * {
+    background-color: white !important;
+    color: black !important;
+    border-color: #ccc !important;
+  }
+
+  /* Exceptions — keep coloured badges readable */
+  .dark [class*="text-red"]   { color: #dc2626 !important; }
+  .dark [class*="text-green"] { color: #16a34a !important; }
+  .dark [class*="text-blue"]  { color: #2563eb !important; }
+  .dark [class*="text-amber"] { color: #d97706 !important; }
+}

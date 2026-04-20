@@ -1,4 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
+import { printWithLightMode } from "@/lib/print-utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Edit, X, Truck, CheckCircle2, RotateCcw, AlertTriangle, Printer, ChevronLeft, Trash2, Plus, Lock, CheckCircle, XCircle } from "lucide-react";
 import { EditableSection } from "@/components/EditableSection";
@@ -1410,7 +1411,7 @@ export default function DeliveryChallanDetail() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPrintDialogOpen(false)}>Cancel</Button>
-            <Button onClick={() => { setPrintDialogOpen(false); setTimeout(() => window.print(), 100); }}>
+            <Button onClick={() => { setPrintDialogOpen(false); setTimeout(() => printWithLightMode(), 100); }}>
               <Printer className="h-3.5 w-3.5 mr-1" /> Print
             </Button>
           </DialogFooter>
