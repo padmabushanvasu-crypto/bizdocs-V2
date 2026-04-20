@@ -88,6 +88,7 @@ export async function fetchPurchaseOrders(filters: POFilters = {}) {
     .order("created_at", { ascending: false })
     .range(from, to);
 
+  if (status !== "deleted") query = query.neq("status", "deleted");
   if (status && status !== "all") query = query.eq("status", status);
   if (search?.trim()) {
     const sanitized = sanitizeSearchTerm(search);

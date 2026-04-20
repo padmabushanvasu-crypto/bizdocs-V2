@@ -35,8 +35,8 @@ export default function ReadyToMoveQueue() {
       <div className="flex items-center gap-3">
         <PackageCheck className="h-6 w-6 text-emerald-600" />
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Ready to Move to Store</h1>
-          <p className="text-xs text-slate-500">
+          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Ready to Move to Store</h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
             GRNs cleared by QC — move these to the store and notify the storekeeper
           </p>
         </div>
@@ -72,7 +72,7 @@ export default function ReadyToMoveQueue() {
           {Object.entries(grouped).map(([grnId, items]) => {
             const first = items[0];
             return (
-              <div key={grnId} className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+              <div key={grnId} className="border border-slate-200 dark:border-white/10 rounded-xl overflow-hidden shadow-sm">
                 {/* GRN header */}
                 <div className="bg-emerald-800 px-4 py-3 flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -108,25 +108,25 @@ export default function ReadyToMoveQueue() {
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse text-sm">
                     <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200">
-                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-left">
+                      <tr className="bg-slate-50 dark:bg-[#0a0e1a] border-b border-slate-200 dark:border-white/10">
+                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-left">
                           Description
                         </th>
-                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-left">
+                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-left">
                           Drawing No.
                         </th>
-                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">
+                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-right">
                           QC Accepted Qty
                         </th>
                       </tr>
                     </thead>
                     <tbody>
                       {items.map((item) => (
-                        <tr key={item.id} className="border-b border-slate-100 last:border-0 bg-white">
-                          <td className="px-3 py-2.5 text-slate-800 font-medium">
+                        <tr key={item.id} className="border-b border-slate-100 dark:border-white/5 last:border-0 bg-white dark:bg-[#0f1525]">
+                          <td className="px-3 py-2.5 text-slate-800 dark:text-slate-200 font-medium">
                             {item.description}
                           </td>
-                          <td className="px-3 py-2.5 text-slate-500 font-mono text-xs">
+                          <td className="px-3 py-2.5 text-slate-500 dark:text-slate-400 font-mono text-xs">
                             {item.drawing_number || "—"}
                           </td>
                           <td className="px-3 py-2.5 text-right tabular-nums font-mono font-semibold text-emerald-800">
@@ -150,8 +150,8 @@ export default function ReadyToMoveQueue() {
                 </div>
 
                 {/* Card footer */}
-                <div className="bg-slate-50 border-t border-slate-200 px-4 py-2.5">
-                  <p className="text-xs text-slate-500">
+                <div className="bg-slate-50 dark:bg-[#0a0e1a] border-t border-slate-200 dark:border-white/10 px-4 py-2.5">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
                     QC cleared — move items to store and notify storekeeper to confirm receipt via the
                     <button
                       className="ml-1 text-primary underline underline-offset-2 hover:text-primary/80"

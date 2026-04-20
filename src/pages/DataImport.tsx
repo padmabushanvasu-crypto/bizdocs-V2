@@ -752,20 +752,12 @@ function BOMImportTab() {
   };
 
   const bomImportFn: BatchImportFn = async (rows, rowNums) => {
-    console.log("[BOM import / DataImport] bomImportFn called — total rows:", rows.length);
-    if (rows.length > 0) {
-      console.log("[BOM import / DataImport] Sample rows (first 3):", rows.slice(0, 3));
-      console.log("[BOM import / DataImport] Keys in first row:", Object.keys(rows[0]));
-    }
-
     const companyId = await getCompanyId();
-    console.log("[BOM import / DataImport] company_id:", companyId);
 
     // Pre-fetch ALL items in one query — used by findItemByCode (3-level lookup)
     const { data: allItems, error: itemsError } = await supabase
       .from("items").select("id, item_code, drawing_revision, drawing_number").eq("company_id", companyId);
     if (itemsError) console.error("[BOM import / DataImport] Failed to fetch items:", itemsError);
-    console.log("[BOM import / DataImport] allItems fetched:", allItems?.length ?? 0, "items");
 
     // Pre-fetch parties (vendors) for vendor lookup
     const { data: allParties } = await (supabase as any)
@@ -773,12 +765,10 @@ function BOMImportTab() {
       .select("id, name")
       .in("party_type", ["vendor", "both"])
       .eq("company_id", companyId);
-    console.log("[BOM import] Parties loaded:", (allParties ?? []).length, "— first 3:", (allParties ?? []).slice(0, 3).map((p: any) => p.name));
     const partyNameToVendor = new Map<string, { id: string; name: string }>();
     for (const p of (allParties ?? []) as any[]) {
       if (p.name) partyNameToVendor.set((p.name as string).toLowerCase(), { id: p.id, name: p.name });
     }
-    console.log("[BOM import / DataImport] partyNameToVendor entries:", partyNameToVendor.size);
 
     // Internal process codes that should be skipped — not external vendor parties
     const INTERNAL_VENDOR_PATTERNS = [
@@ -831,7 +821,6 @@ function BOMImportTab() {
         skipped++;
         const missingCode = !parentId ? parentCode : childCode;
         const reason = `Item '${missingCode}' not found — checked both item code and drawing number`;
-        console.warn(`[BOM import / DataImport] Row ${excelRow} skipped: ${reason} (parent="${parentCode}", child="${childCode}")`);
         skipReasons.push({ row: excelRow, value: parentCode, reason });
         continue;
       }
@@ -858,9 +847,7 @@ function BOMImportTab() {
       });
     }
 
-    console.log("[BOM import / DataImport] Resolved rows:", resolvedRows.length, "— skipped (lookup fail):", skipped);
     if (resolvedRows.length === 0) {
-      console.warn("[BOM import / DataImport] No rows resolved — returning early with 0 imported");
       return { imported: 0, skipped, errors, skipReasons };
     }
 
@@ -871,7 +858,6 @@ function BOMImportTab() {
     ]);
     if (varErr) console.error("[BOM import / DataImport] Failed to fetch existing variants:", varErr?.message || varErr?.code || JSON.stringify(varErr));
     if (bomErr) console.error("[BOM import / DataImport] Failed to fetch existing bom_lines:", bomErr?.message || bomErr?.code || JSON.stringify(bomErr));
-    console.log("[BOM import / DataImport] Existing bom_lines count:", (existingBomLines ?? []).length);
 
     const variantMap = new Map<string, string>(
       (existingVariants ?? []).map((v: any) => [`${v.item_id}:${v.variant_name}`, v.id as string])
@@ -919,8 +905,6 @@ function BOMImportTab() {
       }
     }
 
-    console.log("[BOM import / DataImport] toInsert:", toInsert.length, "— toUpdate:", toUpdate.length);
-
     let imported = 0;
     // bomLineId lookup for vendor insertion: parentId:childId → bomLineId
     const insertedLineIds = new Map<string, string>();
@@ -932,7 +916,6 @@ function BOMImportTab() {
           .from("bom_lines").insert(toInsert.map((r) => r.payload)).select("id, parent_item_id, child_item_id");
         if (error) throw error;
         imported += toInsert.length;
-        console.log("[BOM import / DataImport] Bulk insert succeeded:", toInsert.length, "rows");
         for (const row of (inserted ?? []) as any[]) {
           insertedLineIds.set(`${row.parent_item_id}:${row.child_item_id}`, row.id as string);
         }
@@ -962,7 +945,6 @@ function BOMImportTab() {
         const { error } = await (supabase as any).from("bom_lines").upsert(upsertPayloads, { onConflict: "id" });
         if (error) throw error;
         imported += chunk.length;
-        console.log("[BOM import / DataImport] Upsert chunk succeeded:", chunk.length, "rows (offset", i, ")");
       } catch (upsertErr: any) {
         console.error("[BOM import / DataImport] Upsert chunk failed, falling back to row-by-row updates:", upsertErr);
         for (const line of chunk) {
@@ -979,8 +961,6 @@ function BOMImportTab() {
       }
     }
 
-    console.log("[BOM import / DataImport] Done — imported:", imported, "skipped:", skipped);
-
     // Collect all vendor records for inline BOM rows and batch insert
     const allRowsWithVendors = [
       ...toInsert.map((r) => ({ lineId: insertedLineIds.get(`${r.parentId}:${r.childId}`) ?? null, vendors: r.vendors })),
@@ -993,17 +973,14 @@ function BOMImportTab() {
       for (let vi = 0; vi < vendors.length; vi++) {
         const ve = vendors[vi];
         if (isInternalVendor(ve.code)) {
-          console.log(`[BOM import / DataImport] Inline vendor skipped — internal code: "${ve.code}"`);
           continue;
         }
         const found = resolveVendor(ve.code);
         if (!found) {
           inlineVendorNotFound++;
-          console.warn(`[BOM import / DataImport] Inline vendor not found: "${ve.code}" (lineId=${lineId})`);
           skipReasons.push({ row: 0, value: ve.code, reason: `Vendor '${ve.code}' not found in Parties master` });
           continue;
         }
-        console.log(`[BOM import / DataImport] Inline vendor resolved: "${ve.code}" → "${found.name}"`);
         bomVendorRecords.push({
           company_id: companyId,
           bom_line_id: lineId,
@@ -1017,7 +994,6 @@ function BOMImportTab() {
         });
       }
     }
-    console.log("[BOM import / DataImport] Inline vendor records to insert:", bomVendorRecords.length, "— not found:", inlineVendorNotFound);
     const BOM_CHUNK = 500;
     let inlineVendorInserted = 0;
     for (let i = 0; i < bomVendorRecords.length; i += BOM_CHUNK) {
@@ -1031,7 +1007,6 @@ function BOMImportTab() {
       }
       await new Promise<void>((r) => setTimeout(r, 10));
     }
-    console.log("[BOM import / DataImport] Inline vendor records inserted:", inlineVendorInserted);
 
     // Process vendor sheet rows (if any) — adds vendors to ALL BOM lines containing the component
     // Build item lookup maps from allItems (needed for vendor sheet component code resolution)
@@ -1045,7 +1020,6 @@ function BOMImportTab() {
     );
 
     let vendorMappingsCount = 0;
-    console.log("[BOM import / DataImport] Vendor sheet rows to process:", vendorSheetRows.length);
     if (vendorSheetRows.length > 0) {
       // Build childId → all lineIds map (covers both newly inserted and pre-existing lines)
       const childToLineIds = new Map<string, string[]>();
@@ -1064,28 +1038,22 @@ function BOMImportTab() {
           if (!arr.includes(lineId)) { arr.push(lineId); childToLineIds.set(childId, arr); }
         }
       }
-      console.log("[BOM import / DataImport] childToLineIds map size:", childToLineIds.size);
-
       const sheetVendorRecords: any[] = [];
       let sheetVendorSkipped = 0;
       for (const vRow of vendorSheetRows) {
         const compCode = vRow["component_code"]?.trim() ?? "";
         const rawVendCode = vRow["vendor_code"]?.trim() ?? "";
-        console.log(`[BOM import / DataImport] Vendor sheet row — component_code="${compCode}" vendor_code="${rawVendCode}"`);
         if (!compCode || !rawVendCode) {
-          console.warn("[BOM import / DataImport] Vendor sheet row skipped: missing component_code or vendor_code");
           sheetVendorSkipped++;
           continue;
         }
         const childId = codeToId.get(compCode.toLowerCase()) ?? drawingToId.get(compCode.toLowerCase());
         if (!childId) {
-          console.warn(`[BOM import / DataImport] Vendor sheet row skipped: component "${compCode}" not found in items`);
           sheetVendorSkipped++;
           continue;
         }
         const lineIds = childToLineIds.get(childId) ?? [];
         if (lineIds.length === 0) {
-          console.warn(`[BOM import / DataImport] Vendor sheet row skipped: no BOM line found for childId=${childId}`);
           sheetVendorSkipped++;
           continue;
         }
@@ -1096,18 +1064,15 @@ function BOMImportTab() {
 
         for (const vendName of vendorNames) {
           if (isInternalVendor(vendName)) {
-            console.log(`[BOM import / DataImport] Vendor sheet row skipped — internal code: "${vendName}" (component="${compCode}")`);
             sheetVendorSkipped++;
             continue;
           }
           const found = resolveVendor(vendName);
           if (!found) {
-            console.warn(`[BOM import / DataImport] Vendor sheet row skipped: vendor "${vendName}" not found by code, exact name, starts-with, or contains match`);
             skipReasons.push({ row: 0, value: vendName, reason: `Vendor '${vendName}' not found in Parties master` });
             sheetVendorSkipped++;
             continue;
           }
-          console.log(`[BOM import / DataImport] Vendor sheet resolved: "${vendName}" → "${found.name}" — ${lineIds.length} BOM line(s)`);
           for (const lineId of lineIds) {
             sheetVendorRecords.push({
               company_id: companyId,
@@ -1124,7 +1089,6 @@ function BOMImportTab() {
           }
         }
       }
-      console.log("[BOM import / DataImport] Sheet vendor records to insert:", sheetVendorRecords.length, "— skipped:", sheetVendorSkipped);
       let sheetVendorInserted = 0;
       for (let i = 0; i < sheetVendorRecords.length; i += BOM_CHUNK) {
         const chunk = sheetVendorRecords.slice(i, i + BOM_CHUNK);
@@ -1137,7 +1101,6 @@ function BOMImportTab() {
         }
         await new Promise<void>((r) => setTimeout(r, 10));
       }
-      console.log("[BOM import / DataImport] Sheet vendor records inserted:", sheetVendorInserted);
     }
 
     return { imported, skipped, errors, skipReasons, vendorMappings: vendorMappingsCount } as any;

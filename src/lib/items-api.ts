@@ -257,7 +257,6 @@ export async function fetchStockStatus() {
   // direct FK (both reference items.id independently), so nested select fails.
   // Column is quantity_to_build (not qty_to_build).
   // Valid statuses: draft | pending_materials | in_progress | complete | cancelled
-  console.log("[fetchStockStatus] querying AWOs for company_id:", companyId);
   const { data: awoData, error: awoError } = await (supabase as any)
     .from("assembly_work_orders")
     .select("id, item_id, quantity_to_build")
@@ -267,7 +266,6 @@ export async function fetchStockStatus() {
   if (awoError) console.error("[fetchStockStatus] AWO query error:", awoError);
 
   const activeAwos = (awoData ?? []) as Array<{ id: string; item_id: string; quantity_to_build: number }>;
-  console.log("[fetchStockStatus] activeAwos:", activeAwos);
 
   // For each active AWO, fetch its BOM lines (parent_item_id = item being built, child_item_id = component)
   let bomLines: Array<{ parent_item_id: string; child_item_id: string; quantity: number }> = [];
@@ -280,7 +278,6 @@ export async function fetchStockStatus() {
       .in("parent_item_id", awoItemIds);
     if (bomError) console.error("[fetchStockStatus] bom_lines query error:", bomError);
     bomLines = (bomData ?? []) as typeof bomLines;
-    console.log("[fetchStockStatus] bomLines for active AWOs:", bomLines);
   }
 
   // Build a per-item awo_qty map:
@@ -297,8 +294,6 @@ export async function fetchStockStatus() {
       awoQtyMap.set(line.child_item_id, (awoQtyMap.get(line.child_item_id) ?? 0) + componentQty);
     }
   }
-  console.log("[fetchStockStatus] awoQtyMap:", Object.fromEntries(awoQtyMap));
-
   // Compute stock_status and effective_min_stock client-side (same logic as the view)
   const rows = (data ?? []).map((item: any) => {
     // Use || not ?? so that a stored value of 0 is treated as "not set"
@@ -426,7 +421,6 @@ export async function importItemsBatch(
   if (!session) throw new Error("Import failed: session expired. Please sign out and sign in again.");
   const companyId = await getCompanyId();
   if (!companyId) throw new Error("Import failed: company ID is missing. Please complete company setup.");
-  console.log("[importItemsBatch] start:", { companyId, userId: session.user.id, rowCount: rows.length, firstRow: rows[0] });
 
   const { data: existingItems } = await supabase
     .from("items").select("id, item_code, drawing_revision").eq("company_id", companyId);
@@ -658,9 +652,6 @@ export async function importItemsPatchBatch(
   rowNums: number[],
   onProgress?: (pct: number) => void
 ): Promise<{ imported: number; skipped: number; errors: string[]; skipReasons: SkipReason[]; updated?: number }> {
-  console.log('[patch] rows received:', rows.length, '| first row keys:', Object.keys(rows[0] || {}));
-  console.log('[patch] first row:', JSON.stringify(rows[0]));
-
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error("Import failed: session expired. Please sign out and sign in again.");
   const companyId = await getCompanyId();
@@ -697,8 +688,6 @@ export async function importItemsPatchBatch(
     return true;
   });
 
-  console.log('[patch] DB rows fetched:', existingItems?.length ?? 0, '| unique by item_code:', uniqueItems.length);
-
   // Two separate maps so size = actual unique item count
   const byCode = new Map<string, ExistingItem>();       // key: item_code.toLowerCase()
   const byCodeNorm = new Map<string, ExistingItem>();   // key: normalizeItemCode(item_code)
@@ -711,8 +700,6 @@ export async function importItemsPatchBatch(
     }
     if (item.drawing_revision) byDrawing.set(item.drawing_revision.toLowerCase(), item);
   }
-
-  console.log('[patch] byCode size:', byCode.size);
 
   let imported = 0;
   let updatedCount = 0;
@@ -732,11 +719,6 @@ export async function importItemsPatchBatch(
     const drawingNum = row["drawing_revision"]?.trim() || "";
     const desc = row["description"]?.trim() || "";
     const displayKey = code || drawingNum || desc.slice(0, 30);
-
-    // Log first 3 rows so we can see exactly what keys and values arrived
-    if (i < 3) {
-      console.log(`[patch] row ${i}: item_code=${JSON.stringify(code)} drawing_revision=${JSON.stringify(drawingNum)} description=${JSON.stringify(desc.slice(0, 40))} min_stock=${JSON.stringify(row["min_stock"])}`);
-    }
 
     if (!code && !drawingNum && !desc) {
       skipped++;
@@ -762,11 +744,6 @@ export async function importItemsPatchBatch(
     }
 
     if (resolvedCode) codeToRow.set(resolvedCode.toLowerCase(), excelRow);
-
-    if (i < 3) {
-      console.log(`[patch] row ${i}: existing=${existing ? existing.item_code : 'NOT FOUND'} | byCode size=${byCode.size}`);
-      console.log(`[patch] row ${i}: existing min_stock=${existing?.min_stock} (${typeof existing?.min_stock}) | will patch: ${!existing?.min_stock}`);
-    }
 
     if (!existing) {
       // New item — insert normally (description required for new items)
@@ -821,11 +798,6 @@ export async function importItemsPatchBatch(
         row["MinStock"] ??
         row["minimum_quantity"] ??
         undefined;
-      console.log('[patch] min_stock raw keys tried:',
-        'min_stock=', row["min_stock"],
-        'Minimum Quantity=', row["Minimum Quantity"],
-        'Min Stock=', row["Min Stock"],
-        '→ resolved:', rawMinStock, '→ parsed:', parseFloat(String(rawMinStock ?? "")) || 0);
       const newMinStock = parseFloat(String(rawMinStock ?? "")) || 0;
       if (newMinStock > 0 && (!existing.min_stock && existing.min_stock !== undefined)) {
         patch.min_stock = newMinStock;
@@ -845,10 +817,6 @@ export async function importItemsPatchBatch(
       const newCost = parseFloat(row["standard_cost"] as string) || 0;
       if (newCost > 0 && (!existing.standard_cost && existing.standard_cost !== undefined)) {
         patch.standard_cost = newCost;
-      }
-
-      if (i < 3) {
-        console.log(`[patch] row ${i}: patch object for ${existing.item_code}:`, JSON.stringify(patch));
       }
 
       if (Object.keys(patch).length > 0) {

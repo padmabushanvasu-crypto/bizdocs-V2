@@ -197,8 +197,8 @@ export default function GrnStoreQueue() {
       <div className="flex items-center gap-3">
         <PackageCheck className="h-6 w-6 text-amber-600" />
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Inward Receipt Queue</h1>
-          <p className="text-xs text-slate-500">
+          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Inward Receipt Queue</h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
             GRNs cleared by QC and awaiting physical receipt confirmation
           </p>
         </div>
@@ -246,7 +246,7 @@ export default function GrnStoreQueue() {
             return (
               <div
                 key={grnId}
-                className="border border-slate-200 rounded-xl overflow-hidden shadow-sm"
+                className="border border-slate-200 dark:border-white/10 rounded-xl overflow-hidden shadow-sm"
               >
                 {/* GRN card header */}
                 <div className="bg-slate-800 px-4 py-3 flex items-center justify-between">
@@ -283,30 +283,30 @@ export default function GrnStoreQueue() {
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse text-sm">
                     <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200">
+                      <tr className="bg-slate-50 dark:bg-[#0a0e1a] border-b border-slate-200 dark:border-white/10">
                         <th className="px-3 py-2 w-8" />
-                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-left">
+                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-left">
                           Description
                         </th>
-                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-left">
+                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-left">
                           Drawing No.
                         </th>
-                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">
+                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-right">
                           QC Accepted
                         </th>
-                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">
+                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-right">
                           Store Qty
                         </th>
-                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">
+                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-right">
                           Damaged Qty
                         </th>
-                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-left">
+                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-left">
                           Damage Reason
                         </th>
-                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-left">
+                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-left">
                           Location / Rack
                         </th>
-                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-left">
+                        <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-left">
                           Notes
                         </th>
                       </tr>
@@ -317,8 +317,8 @@ export default function GrnStoreQueue() {
                         return (
                           <tr
                             key={item.id}
-                            className={`border-b border-slate-100 last:border-0 transition-colors ${
-                              itemState?.checked ? "bg-white" : "bg-slate-50/60 opacity-60"
+                            className={`border-b border-slate-100 dark:border-white/5 last:border-0 transition-colors ${
+                              itemState?.checked ? "bg-white dark:bg-[#0f1525]" : "bg-slate-50/60 dark:bg-[#0a0e1a]/60 opacity-60"
                             }`}
                           >
                             {/* Confirm checkbox */}
@@ -333,15 +333,15 @@ export default function GrnStoreQueue() {
                               />
                             </td>
                             {/* Description */}
-                            <td className="px-3 py-2.5 text-slate-800">
+                            <td className="px-3 py-2.5 text-slate-800 dark:text-slate-200">
                               <p className="font-medium leading-snug">{item.description}</p>
                             </td>
                             {/* Drawing number */}
-                            <td className="px-3 py-2.5 text-slate-500 font-mono text-xs">
+                            <td className="px-3 py-2.5 text-slate-500 dark:text-slate-400 font-mono text-xs">
                               {item.drawing_number || "—"}
                             </td>
                             {/* QC accepted qty */}
-                            <td className="px-3 py-2.5 text-right tabular-nums font-mono font-semibold text-slate-800">
+                            <td className="px-3 py-2.5 text-right tabular-nums font-mono font-semibold text-slate-800 dark:text-slate-200">
                               {item.conforming_qty != null ? (
                                 <>
                                   {item.conforming_qty}
@@ -426,9 +426,9 @@ export default function GrnStoreQueue() {
                 </div>
 
                 {/* Card footer — confirm fields + button */}
-                <div className="bg-slate-50 border-t border-slate-200 px-4 py-3 flex flex-wrap items-end gap-4">
+                <div className="bg-slate-50 dark:bg-[#0a0e1a] border-t border-slate-200 dark:border-white/10 px-4 py-3 flex flex-wrap items-end gap-4">
                   <div className="flex-1 min-w-[180px]">
-                    <Label className="text-xs font-medium text-slate-600">
+                    <Label className="text-xs font-medium text-slate-600 dark:text-slate-300">
                       Received By <span className="text-red-400">*</span>
                     </Label>
                     <Input
@@ -439,7 +439,7 @@ export default function GrnStoreQueue() {
                     />
                   </div>
                   <div>
-                    <Label className="text-xs font-medium text-slate-600">Date Received</Label>
+                    <Label className="text-xs font-medium text-slate-600 dark:text-slate-300">Date Received</Label>
                     <Input
                       type="date"
                       value={form?.confirmedAt ?? ""}
@@ -464,11 +464,11 @@ export default function GrnStoreQueue() {
       )}
 
       {/* Divider */}
-      <div className="border-t border-slate-200 pt-6">
+      <div className="border-t border-slate-200 dark:border-white/10 pt-6">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <History className="h-4 w-4 text-slate-400" />
-            <h2 className="text-base font-semibold text-slate-800">Receipt History</h2>
+            <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">Receipt History</h2>
             <span className="text-xs text-slate-400 tabular-nums">({history.length} items)</span>
           </div>
           <div className="relative w-64">
@@ -483,7 +483,7 @@ export default function GrnStoreQueue() {
         </div>
 
         {filteredHistory.length === 0 ? (
-          <div className="border border-dashed border-slate-200 rounded-xl p-8 text-center text-slate-400">
+          <div className="border border-dashed border-slate-200 dark:border-white/10 rounded-xl p-8 text-center text-slate-400 dark:text-slate-500">
             <p className="text-sm">
               {history.length === 0
                 ? "No store receipts confirmed yet"
@@ -491,26 +491,26 @@ export default function GrnStoreQueue() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-slate-200">
+          <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-white/10">
             <table className="w-full border-collapse text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200">
+              <thead className="bg-slate-50 dark:bg-[#0a0e1a] border-b border-slate-200 dark:border-white/10">
                 <tr>
-                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-left">
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-left">
                     Description
                   </th>
-                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-right">
                     Qty
                   </th>
-                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-left">
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-left">
                     GRN Reference
                   </th>
-                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-left">
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-left">
                     Confirmed By
                   </th>
-                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-left">
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-left">
                     Date &amp; Time
                   </th>
-                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide text-left">
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-left">
                     Location
                   </th>
                 </tr>
@@ -519,23 +519,23 @@ export default function GrnStoreQueue() {
                 {filteredHistory.map((item: StoreConfirmedItem) => (
                   <tr
                     key={item.id}
-                    className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50"
+                    className="border-b border-slate-100 dark:border-white/5 last:border-0 hover:bg-slate-50/50 dark:hover:bg-white/5"
                   >
-                    <td className="px-3 py-2 text-sm text-slate-700 text-left">
+                    <td className="px-3 py-2 text-sm text-slate-700 dark:text-slate-200 text-left">
                       <p className="font-medium leading-snug">{item.description}</p>
                       {item.drawing_number && (
-                        <p className="text-xs text-slate-400 font-mono mt-0.5">
+                        <p className="text-xs text-slate-400 dark:text-slate-500 font-mono mt-0.5">
                           {item.drawing_number}
                         </p>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-sm text-slate-700 text-right tabular-nums font-mono font-semibold">
+                    <td className="px-3 py-2 text-sm text-slate-700 dark:text-slate-200 text-right tabular-nums font-mono font-semibold">
                       {item.conforming_qty != null ? item.conforming_qty : "—"}
                       {item.unit && (
-                        <span className="text-xs text-slate-400 ml-1 font-normal">{item.unit}</span>
+                        <span className="text-xs text-slate-400 dark:text-slate-500 ml-1 font-normal">{item.unit}</span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-sm text-slate-700 text-left">
+                    <td className="px-3 py-2 text-sm text-slate-700 dark:text-slate-200 text-left">
                       <button
                         className="font-mono text-xs font-semibold text-blue-700 hover:underline"
                         onClick={() => navigate(`/grn/${item.grn_id}`)}
@@ -557,15 +557,15 @@ export default function GrnStoreQueue() {
                         </>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-sm text-slate-700 text-left">
+                    <td className="px-3 py-2 text-sm text-slate-700 dark:text-slate-200 text-left">
                       {item.store_confirmed_by || "—"}
                     </td>
-                    <td className="px-3 py-2 text-sm text-slate-700 text-left tabular-nums whitespace-nowrap">
+                    <td className="px-3 py-2 text-sm text-slate-700 dark:text-slate-200 text-left tabular-nums whitespace-nowrap">
                       {item.store_confirmed_at
                         ? format(new Date(item.store_confirmed_at), "dd MMM yyyy, hh:mm a")
                         : "—"}
                     </td>
-                    <td className="px-3 py-2 text-sm text-slate-700 text-left">
+                    <td className="px-3 py-2 text-sm text-slate-700 dark:text-slate-200 text-left">
                       {item.store_location || "—"}
                     </td>
                   </tr>

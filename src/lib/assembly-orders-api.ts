@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
 import { logAudit } from "@/lib/audit-api";
 import { getNextDocNumber } from "@/lib/doc-number-utils";
+import { updateStockBucket } from "@/lib/items-api";
 
 // ============================================================
 // Interfaces
@@ -419,6 +420,7 @@ export async function confirmAssemblyOrder(
       .from("items")
       .update({ current_stock: newStock })
       .eq("id", line.item_id);
+    await updateStockBucket(line.item_id, "free", -line.consumed_qty).catch(console.error);
 
     // Stock ledger: assembly_consumption
     await (supabase as any).from("stock_ledger").insert({
@@ -466,6 +468,7 @@ export async function confirmAssemblyOrder(
       standard_cost: Math.round(newAvgCost * 100) / 100,
     })
     .eq("id", ao.item_id);
+  await updateStockBucket(ao.item_id, "in_fg_ready", +quantityBuilt).catch(console.error);
 
   // Stock ledger: assembly_output for parent item
   await (supabase as any).from("stock_ledger").insert({
@@ -697,6 +700,7 @@ export async function completeProductionRun(id: string): Promise<void> {
     totalCost += lineTotal;
 
     await (supabase as any).from("items").update({ current_stock: newStock }).eq("id", line.item_id);
+    await updateStockBucket(line.item_id, "free", -line.consumed_qty).catch(console.error);
 
     await (supabase as any).from("stock_ledger").insert({
       company_id: companyId,
@@ -738,6 +742,7 @@ export async function completeProductionRun(id: string): Promise<void> {
     .from("items")
     .update({ current_stock: newParentStock, standard_cost: Math.round(newAvgCost * 100) / 100 })
     .eq("id", ao.item_id);
+  await updateStockBucket(ao.item_id, "in_fg_ready", +quantityBuilt).catch(console.error);
 
   await (supabase as any).from("stock_ledger").insert({
     company_id: companyId,

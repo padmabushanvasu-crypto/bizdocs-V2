@@ -234,6 +234,7 @@ export async function fetchDeliveryChallans(filters: DCFilters = {}) {
   const to = from + pageSize - 1;
 
   let query = supabase.from("delivery_challans").select("*", { count: "exact" }).order("created_at", { ascending: false }).range(from, to);
+  query = query.neq("status", "deleted");
   if (status && status !== "all" && status !== "overdue") query = query.eq("status", status);
   if (search?.trim()) {
     const sanitized = sanitizeSearchTerm(search);
@@ -457,6 +458,21 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
 }
 
 export async function issueDeliveryChallan(id: string) {
+  const { data: dcCheck, error: fetchErr } = await supabase
+    .from('delivery_challans')
+    .select('id, approved_at')
+    .eq('id', id)
+    .single();
+
+  if (fetchErr || !dcCheck) {
+    throw new Error('DC not found');
+  }
+  if (!(dcCheck as any).approved_at) {
+    throw new Error(
+      'This DC must be approved before it can be issued.'
+    );
+  }
+
   const { error } = await supabase.from("delivery_challans").update({ status: "issued", issued_at: new Date().toISOString() } as any).eq("id", id);
   if (error) throw error;
 
@@ -487,7 +503,6 @@ export async function issueDeliveryChallan(id: string) {
     if (isReturnable) {
       await updateStockBucket(rec.id, 'free', -qty).catch(console.error);
       await updateStockBucket(rec.id, 'in_process', +qty).catch(console.error);
-      console.log('[Stock] DC issued:', dc.dc_number, 'item:', rec.id, 'qty:', qty);
     }
     await addStockLedgerEntry({
       item_id: rec.id,

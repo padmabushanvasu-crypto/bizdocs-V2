@@ -188,10 +188,8 @@ export interface GrnReceiptEvent {
 export async function fetchGRNs(filters: GRNFilters = {}) {
   const companyId = await getCompanyId();
   if (!companyId) {
-    console.warn('[fetchGRNs] getCompanyId() returned null — returning empty');
     return { data: [], count: 0 };
   }
-  console.log('[fetchGRNs] company_id:', companyId, '| month:', filters.month, '| grn_stage:', filters.grn_stage);
   const { search, status = "all", grn_type, month, page = 1, pageSize = 20 } = filters;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
@@ -926,7 +924,6 @@ export async function saveQuantitativeStage(
       over_receipt_qty: line.over_receipt_qty ?? null,
       jig_confirmed: jigReturnConfirmed ? jigReturnConfirmed.has(line.id) : false,
     };
-    console.log('[GRN Stage 1] payload:', JSON.stringify(linePayload));
     const { error } = await (supabase as any)
       .from('grn_line_items')
       .update(linePayload)
@@ -1431,7 +1428,6 @@ export async function storeConfirmGRN(
       }
       if (!itemId) continue;
 
-      console.log('[Stock] GRN confirmed:', grnHeader.grn_number, 'item:', itemId, 'qty:', qty);
       await updateStockBucket(itemId, 'free', +qty).catch(console.error);
       await addStockLedgerEntry({
         item_id: itemId,
