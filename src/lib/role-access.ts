@@ -81,6 +81,8 @@ const STOREKEEPER_MAP: Record<string, PageAccess> = {
   'stock-register':    { canView: true, canEdit: false, canExport: false, hideCosts: true },
   'stock-ledger':      { canView: true, canEdit: false, canExport: false, hideCosts: true },
   'items':             { canView: true, canEdit: false, canExport: false, hideCosts: true },
+  'consumables':       { canView: true, canEdit: true,  canExport: true,  hideCosts: true },
+  'scrap-register':    { canView: true, canEdit: false, canExport: false, hideCosts: true },
   // All other pages return NO_ACCESS via fallback
 };
 

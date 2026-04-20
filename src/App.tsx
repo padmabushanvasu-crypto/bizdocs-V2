@@ -88,6 +88,8 @@ import AssetsRegister from "@/pages/AssetsRegister";
 import OpeningStock from "@/pages/OpeningStock";
 import DangerZone from "@/pages/DangerZone";
 import FollowUpTracker from "@/pages/FollowUpTracker";
+import Consumables from "@/pages/Consumables";
+import ConsumableIssueDetail from "@/pages/ConsumableIssueDetail";
 import { ImportQueueProvider } from "@/lib/import-queue";
 
 function PageGuard({ page, children }: { page: string; children: React.ReactNode; }) {
@@ -218,6 +220,9 @@ const App = () => (
               <Route path="/assets-register" element={<PageGuard page="assets-register"><AssetsRegister /></PageGuard>} />
 
               <Route path="/opening-stock" element={<PageGuard page="opening-stock"><OpeningStock /></PageGuard>} />
+
+              <Route path="/consumables" element={<PageGuard page="consumables"><Consumables /></PageGuard>} />
+              <Route path="/consumables/:id" element={<PageGuard page="consumables"><ConsumableIssueDetail /></PageGuard>} />
 
               <Route path="/settings" element={<PageGuard page="settings"><SettingsPage /></PageGuard>} />
               <Route path="/settings/notifications" element={<PageGuard page="settings"><NotificationsSettings /></PageGuard>} />

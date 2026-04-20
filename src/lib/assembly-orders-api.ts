@@ -109,6 +109,7 @@ export interface StockLedgerEntry {
     | "assembly_issue"
     | "assembly_return"
     | "scrap_write_off"
+    | "consumable_issue"
     | "invoice_dispatch"
     | "dc_issue"
     | "dc_return"

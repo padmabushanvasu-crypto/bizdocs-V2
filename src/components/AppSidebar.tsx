@@ -160,6 +160,7 @@ const ALL_SEARCH_ITEMS: { title: string; url: string }[] = [
   { title: "Opening Stock", url: "/opening-stock" },
   { title: "Reorder Alerts", url: "/reorder-intelligence" },
   { title: "Scrap Register", url: "/scrap-register" },
+  { title: "Consumables Issue", url: "/consumables" },
   { title: "Serial Numbers", url: "/serial-numbers" },
   { title: "FAT Certificates", url: "/fat-certificates" },
   { title: "GST Reports", url: "/gst-reports" },
@@ -182,7 +183,7 @@ const GROUP_PATHS: Record<string, string[]> = {
   "DAILY WORK":             ["/job-works", "/delivery-challans", "/dc-grn"],
   "PURCHASING & RECEIVING": ["/purchase-orders", "/grn", "/follow-up-tracker"],
   "PRODUCTION":             ["/wip-register", "/sub-assembly-work-orders", "/finished-good-work-orders"],
-  "STORE":                  ["/storekeeper", "/storekeeper-queue", "/stock-register", "/stock-ledger", "/opening-stock", "/scrap-register", "/ready-to-dispatch", "/dispatch-records"],
+  "STORE":                  ["/storekeeper", "/storekeeper-queue", "/stock-register", "/stock-ledger", "/opening-stock", "/scrap-register", "/consumables", "/ready-to-dispatch", "/dispatch-records"],
   "REPORTS":                ["/reorder-intelligence", "/serial-numbers", "/fat-certificates", "/gst-reports", "/vendor-scorecards"],
   "MASTER DATA":            ["/parties", "/items", "/bill-of-materials", "/jig-master", "/assets-register", "/settings"],
 };
@@ -855,10 +856,16 @@ export function AppSidebar() {
       allowedRoles: ['admin', 'finance'],
     },
     {
+      title: "Consumables Issue",
+      url: "/consumables",
+      icon: Wrench,
+      allowedRoles: ['admin', 'finance', 'storekeeper'],
+    },
+    {
       title: "Scrap Register",
       url: "/scrap-register",
       icon: Trash2,
-      allowedRoles: ['admin', 'finance', 'qc_team'],
+      allowedRoles: ['admin', 'finance', 'qc_team', 'storekeeper'],
     },
     {
       title: "Ready to Dispatch",
