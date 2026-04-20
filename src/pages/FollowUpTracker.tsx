@@ -30,7 +30,7 @@ function getDueDateInfo(dueDate: string | null): {
   if (!dueDate) return {
     urgency: "none",
     borderClass: "border-l-gray-200",
-    badgeClass: "bg-gray-100 text-gray-500",
+    badgeClass: "bg-gray-100 text-gray-500 dark:bg-gray-500/20 dark:text-gray-300",
     label: "No due date",
   };
   const today = new Date();
@@ -41,25 +41,25 @@ function getDueDateInfo(dueDate: string | null): {
   if (daysUntil < 0) return {
     urgency: "overdue",
     borderClass: "border-l-red-500",
-    badgeClass: "bg-red-100 text-red-700",
+    badgeClass: "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300",
     label: `Overdue by ${Math.abs(daysUntil)}d`,
   };
   if (daysUntil <= 2) return {
     urgency: "due2",
     borderClass: "border-l-orange-500",
-    badgeClass: "bg-orange-100 text-orange-700",
+    badgeClass: "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300",
     label: daysUntil === 0 ? "Due today" : `Due in ${daysUntil}d`,
   };
   if (daysUntil <= 7) return {
     urgency: "due7",
     borderClass: "border-l-amber-400",
-    badgeClass: "bg-amber-100 text-amber-700",
+    badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300",
     label: `Due in ${daysUntil}d`,
   };
   return {
     urgency: "ok",
     borderClass: "border-l-green-400",
-    badgeClass: "bg-green-100 text-green-700",
+    badgeClass: "bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-300",
     label: `Due in ${daysUntil}d`,
   };
 }
@@ -140,7 +140,7 @@ function FollowUpRow({
   };
 
   return (
-    <div className={`bg-white border border-slate-200 border-l-4 ${borderClass} rounded-lg p-4 flex gap-4 shadow-sm`}>
+    <div className={`bg-white dark:bg-[#0f1525] border border-slate-200 dark:border-white/10 border-l-4 ${borderClass} rounded-lg p-4 flex gap-4 shadow-sm`}>
       {/* Left — doc info */}
       <div className="min-w-[160px] max-w-[180px] shrink-0 space-y-1">
         <Link
@@ -275,9 +275,9 @@ function FollowUpRow({
 
 function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-3 text-center shadow-sm">
+    <div className="bg-white dark:bg-[#0f1525] border border-slate-200 dark:border-white/10 rounded-lg p-3 text-center shadow-sm">
       <p className={`text-xl font-bold font-mono ${color}`}>{value}</p>
-      <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
+      <p className="text-xs text-slate-500 dark:text-slate-300 mt-0.5">{label}</p>
     </div>
   );
 }
