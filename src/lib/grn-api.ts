@@ -1401,6 +1401,9 @@ export async function storeConfirmGRN(
       .eq('grn_id', grnId)
       .eq('is_final_grn', true);
 
+    // FIX 6: collect item IDs that were actually restocked
+    const restakedItemIds: string[] = [];
+
     for (const line of (poLines ?? []) as any[]) {
       // Use QC-verified accepted_qty (Phase 14); fall back to conforming_qty, then creation-time accepted_quantity
       const qty: number =
@@ -1429,6 +1432,7 @@ export async function storeConfirmGRN(
       if (!itemId) continue;
 
       await updateStockBucket(itemId, 'free', +qty).catch(console.error);
+      restakedItemIds.push(itemId);
       await addStockLedgerEntry({
         item_id: itemId,
         item_code: itemCode,
@@ -1448,6 +1452,33 @@ export async function storeConfirmGRN(
         from_state: 'incoming',
         to_state: 'free',
       });
+    }
+
+    // FIX 6: notify storekeeper of open MIR shortages for newly restocked items
+    try {
+      if (restakedItemIds.length > 0) {
+        const { data: shortageLines } = await (supabase as any)
+          .from('mir_line_items')
+          .select('id, item_id, item_code, item_description, shortage_qty, mir_id, material_issue_requests(mir_number, status)')
+          .in('item_id', restakedItemIds)
+          .gt('shortage_qty', 0);
+
+        for (const sl of (shortageLines ?? []) as any[]) {
+          const mirStatus = sl.material_issue_requests?.status;
+          if (!['pending', 'partially_issued'].includes(mirStatus)) continue;
+          await (supabase as any).from('notifications').insert({
+            company_id: grnHeader.company_id,
+            type: 'mir_restock',
+            title: 'Stock available for MIR',
+            message: `${sl.item_description ?? sl.item_code ?? 'Item'} restocked via GRN ${grnHeader.grn_number ?? ''}. MIR ${sl.material_issue_requests?.mir_number} has a shortage of ${sl.shortage_qty} — reissue from the storekeeper queue.`,
+            reference_type: 'material_issue_request',
+            reference_id: sl.mir_id,
+            created_by: data.confirmedBy,
+          }).catch(console.error);
+        }
+      }
+    } catch (e) {
+      console.error('[grn] MIR restock notification failed:', e);
     }
   }
 

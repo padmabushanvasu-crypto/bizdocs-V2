@@ -74,7 +74,9 @@ export default function StorekeeperQueue() {
     if (mirDetail?.line_items) {
       const edits: Record<string, { issued_qty: number; shortage_notes: string }> = {};
       for (const li of mirDetail.line_items) {
-        edits[li.id] = { issued_qty: li.requested_qty, shortage_notes: "" };
+        // FIX 3C: pre-fill with remaining qty, not total requested qty
+        const remaining = Math.max(0, li.requested_qty - (li.issued_qty ?? 0));
+        edits[li.id] = { issued_qty: remaining, shortage_notes: "" };
       }
       setLineEdits(edits);
     }
@@ -239,16 +241,23 @@ export default function StorekeeperQueue() {
             </thead>
             <tbody>
               {(mirDetail.line_items ?? []).map((li: MirLineItem) => {
-                const edit = lineEdits[li.id] ?? { issued_qty: li.requested_qty, shortage_notes: "" };
-                const hasShortage = edit.issued_qty < li.requested_qty;
+                const remaining = Math.max(0, li.requested_qty - (li.issued_qty ?? 0));
+                const edit = lineEdits[li.id] ?? { issued_qty: remaining, shortage_notes: "" };
+                const fullyIssued = remaining === 0;
+                const hasShortage = !fullyIssued && edit.issued_qty < remaining;
 
                 return (
-                  <tr key={li.id}>
+                  <tr key={li.id} className={fullyIssued ? "opacity-60" : undefined}>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-blue-700">{li.drawing_number ?? "—"}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                       <p className="text-sm font-medium">{li.item_code ?? "—"}</p>
                       {li.item_description && (
                         <p className="text-xs text-muted-foreground">{li.item_description}</p>
+                      )}
+                      {(li.issued_qty ?? 0) > 0 && (
+                        <p className="text-xs text-green-600 mt-0.5">
+                          Issued: {li.issued_qty} of {li.requested_qty}
+                        </p>
                       )}
                     </td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{li.requested_qty}</td>
@@ -260,16 +269,18 @@ export default function StorekeeperQueue() {
                       ) : "—"}
                     </td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right">
-                      {mirDetail.status === "issued" ? (
-                        <span className="font-mono tabular-nums text-sm">{edit.issued_qty}</span>
+                      {mirDetail.status === "issued" || fullyIssued ? (
+                        <span className="font-mono tabular-nums text-sm">
+                          {fullyIssued ? <span className="text-green-600">✓ Done</span> : edit.issued_qty}
+                        </span>
                       ) : (
                         <Input
                           type="number"
                           min={0}
-                          max={li.requested_qty}
+                          max={remaining}
                           value={edit.issued_qty}
                           onChange={(e) => {
-                            const val = Math.min(li.requested_qty, Math.max(0, Number(e.target.value)));
+                            const val = Math.min(remaining, Math.max(0, Number(e.target.value)));
                             setLineEdits((prev) => ({
                               ...prev,
                               [li.id]: { ...edit, issued_qty: val },
@@ -280,7 +291,7 @@ export default function StorekeeperQueue() {
                       )}
                     </td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
-                      {mirDetail.status === "issued" ? (
+                      {mirDetail.status === "issued" || fullyIssued ? (
                         <span className="text-muted-foreground text-sm">{edit.shortage_notes || "—"}</span>
                       ) : hasShortage ? (
                         <Input

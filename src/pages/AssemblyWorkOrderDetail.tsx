@@ -5,6 +5,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Printer, Package, CheckCircle, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -13,13 +15,28 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import {
   fetchAssemblyWorkOrder,
   fetchMaterialIssueRequests,
   createMaterialIssueRequest,
   completeAssemblyWorkOrder,
   cancelAssemblyWorkOrder,
+  reportComponentIssue,
   type AwoLineItem,
   type MaterialIssueRequest,
 } from "@/lib/production-api";
@@ -67,11 +84,21 @@ export default function AssemblyWorkOrderDetail() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { profile } = useAuth();
 
   const [confirmCompleteOpen, setConfirmCompleteOpen] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelOption, setCancelOption] = useState<StockAction>('none');
   const [partialLines, setPartialLines] = useState<Record<string, { return_qty: number; scrap_qty: number }>>({});
+
+  // FIX 5B: Report Issue dialog state
+  const [reportIssueOpen, setReportIssueOpen] = useState(false);
+  const [reportIssueLine, setReportIssueLine] = useState<AwoLineItem | null>(null);
+  const [reportIssueForm, setReportIssueForm] = useState<{
+    damage_qty: number;
+    disposition: 'scrap' | 'use_as_is' | 'return_to_vendor';
+    reason: string;
+  }>({ damage_qty: 0, disposition: 'scrap', reason: '' });
 
   const { data: awo, isLoading } = useQuery({
     queryKey: ["awo-detail", id],
@@ -143,7 +170,40 @@ export default function AssemblyWorkOrderDetail() {
     },
   });
 
+  // FIX 5C: Report Issue mutation
+  const reportIssueMutation = useMutation({
+    mutationFn: async () => {
+      if (!reportIssueLine) throw new Error("No line selected");
+      return reportComponentIssue(
+        reportIssueLine.id,
+        reportIssueForm.damage_qty,
+        reportIssueForm.disposition,
+        reportIssueForm.reason,
+        profile?.full_name ?? "Unknown",
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["awo-detail", id] });
+      setReportIssueOpen(false);
+      toast({ title: "Issue recorded successfully" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
   const latestMir: MaterialIssueRequest | undefined = mirs[0];
+
+  // FIX 5D: Derived unfulfilled lines for warning banner + button guard
+  const unfulfilledLines = (awo?.line_items ?? []).filter((li) => {
+    if ((li.issued_qty ?? 0) >= li.required_qty) return false;
+    if (li.disposition === 'use_as_is') return false;
+    const damageCovered =
+      (li.damage_qty ?? 0) > 0 &&
+      ((li.issued_qty ?? 0) + (li.damage_qty ?? 0)) >= li.required_qty;
+    return !damageCovered;
+  });
+  const hasUnfulfilled = unfulfilledLines.length > 0;
 
   if (isLoading) {
     return (
@@ -275,14 +335,28 @@ export default function AssemblyWorkOrderDetail() {
               </Button>
             )}
             {awo.status === 'in_progress' && (
-              <Button
-                size="sm"
-                className="bg-green-600 hover:bg-green-700 text-white"
-                onClick={() => setConfirmCompleteOpen(true)}
-              >
-                <CheckCircle className="w-4 h-4 mr-2" />
-                Complete Work Order
-              </Button>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span>
+                      <Button
+                        size="sm"
+                        className="bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
+                        onClick={() => setConfirmCompleteOpen(true)}
+                        disabled={hasUnfulfilled}
+                      >
+                        <CheckCircle className="w-4 h-4 mr-2" />
+                        Complete Work Order
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  {hasUnfulfilled && (
+                    <TooltipContent>
+                      <p>{unfulfilledLines.length} component(s) still short — resolve before completing</p>
+                    </TooltipContent>
+                  )}
+                </Tooltip>
+              </TooltipProvider>
             )}
             {(awo.status === 'draft' || awo.status === 'pending_materials' || awo.status === 'in_progress') && (
               <Button
@@ -297,6 +371,17 @@ export default function AssemblyWorkOrderDetail() {
           </div>
         </div>
       </div>
+
+      {/* FIX 5D: Warning banner — shown when in_progress with unfulfilled lines */}
+      {awo.status === 'in_progress' && hasUnfulfilled && (
+        <div className="no-print flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-900/20 px-4 py-3">
+          <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+          <p className="text-sm text-amber-800 dark:text-amber-300">
+            <b>{unfulfilledLines.length} component{unfulfilledLines.length !== 1 ? 's' : ''}</b> still short.
+            Issue remaining stock or record a disposition for each short item before completing the work order.
+          </p>
+        </div>
+      )}
 
       {/* BOM Checklist */}
       <div className="no-print space-y-3">
@@ -313,12 +398,13 @@ export default function AssemblyWorkOrderDetail() {
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Issued Qty</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Available</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {(awo.line_items ?? []).length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-3 py-8 text-center text-sm text-slate-400">No data found</td>
+                    <td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-400">No data found</td>
                   </tr>
                 ) : (
                   (awo.line_items ?? []).map((li) => (
@@ -338,6 +424,37 @@ export default function AssemblyWorkOrderDetail() {
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{li.issued_qty}</td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{li.stock_free ?? 0}</td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center"><AvailabilityCell line={li} /></td>
+                      <td className="px-3 py-2 border-b border-slate-100 text-center">
+                        {(li.issued_qty ?? 0) >= li.required_qty ? (
+                          <Badge className="bg-green-100 text-green-800">Fully Issued</Badge>
+                        ) : li.disposition === 'use_as_is' ? (
+                          <Badge className="bg-amber-100 text-amber-800">Accepted as-is</Badge>
+                        ) : (
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="text-red-600 text-xs font-medium">
+                              Short — {li.required_qty - (li.issued_qty ?? 0)} pending
+                            </span>
+                            {awo.status === 'in_progress' && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-xs h-6 px-2 text-amber-700 border-amber-300 hover:bg-amber-50"
+                                onClick={() => {
+                                  setReportIssueLine(li);
+                                  setReportIssueForm({
+                                    damage_qty: li.required_qty - (li.issued_qty ?? 0),
+                                    disposition: 'scrap',
+                                    reason: '',
+                                  });
+                                  setReportIssueOpen(true);
+                                }}
+                              >
+                                Report Issue
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                      </td>
                     </tr>
                   ))
                 )}
@@ -391,6 +508,72 @@ export default function AssemblyWorkOrderDetail() {
           </div>
         </div>
       )}
+
+      {/* FIX 5B: Report Issue dialog */}
+      <Dialog open={reportIssueOpen} onOpenChange={setReportIssueOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Report Component Issue</DialogTitle>
+            <DialogDescription>
+              {reportIssueLine?.item_description ?? reportIssueLine?.item_code ?? 'Component'} — short by{' '}
+              {reportIssueLine ? reportIssueLine.required_qty - (reportIssueLine.issued_qty ?? 0) : 0}{' '}
+              {reportIssueLine?.unit ?? ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Disposition</Label>
+              <Select
+                value={reportIssueForm.disposition}
+                onValueChange={(v) =>
+                  setReportIssueForm((f) => ({ ...f, disposition: v as typeof f.disposition }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="scrap">Scrap — write off damaged stock</SelectItem>
+                  <SelectItem value="use_as_is">Accept as-is — proceed with short qty</SelectItem>
+                  <SelectItem value="return_to_vendor">Return to vendor</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Quantity affected</Label>
+              <Input
+                type="number"
+                min={0}
+                value={reportIssueForm.damage_qty}
+                onChange={(e) =>
+                  setReportIssueForm((f) => ({ ...f, damage_qty: Number(e.target.value) }))
+                }
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Reason / notes</Label>
+              <Input
+                value={reportIssueForm.reason}
+                onChange={(e) => setReportIssueForm((f) => ({ ...f, reason: e.target.value }))}
+                placeholder="Describe the issue…"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReportIssueOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => reportIssueMutation.mutate()}
+              disabled={
+                reportIssueMutation.isPending ||
+                !reportIssueForm.reason.trim() ||
+                reportIssueForm.damage_qty <= 0
+              }
+            >
+              {reportIssueMutation.isPending ? "Saving…" : "Record Issue"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Complete confirmation dialog */}
       <Dialog open={confirmCompleteOpen} onOpenChange={setConfirmCompleteOpen}>

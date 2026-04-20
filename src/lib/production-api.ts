@@ -58,6 +58,12 @@ export interface AwoLineItem {
   is_critical: boolean;
   shortage_qty: number;
   notes: string | null;
+  damage_qty?: number;
+  damage_reason?: string | null;
+  disposition?: 'scrap' | 'use_as_is' | 'return_to_vendor' | null;
+  concession_note?: string | null;
+  concession_by?: string | null;
+  concession_at?: string | null;
   // enriched from items table
   stock_free?: number;
   created_at: string;
@@ -651,6 +657,10 @@ export async function confirmMaterialIssue(
   const mir = await fetchMaterialIssueRequest(mir_id);
   if (!mir) throw new Error("MIR not found");
 
+  // FIX 3A: determine correct WIP bucket from AWO type
+  const awoType = mir.awo?.awo_type;
+  const wip_bucket = awoType === 'finished_good' ? 'in_fg_wip' : 'in_subassembly_wip';
+
   let hasShortages = false;
 
   // Process all line items in parallel to avoid sequential-await timeouts
@@ -658,14 +668,17 @@ export async function confirmMaterialIssue(
     const mirLine = mir.line_items?.find((li) => li.id === issue.mir_line_item_id);
     if (!mirLine) return;
 
-    const shortage_qty = Math.max(0, mirLine.requested_qty - issue.issued_qty);
+    // FIX 3B: accumulate issued_qty instead of overwriting
+    const existingMirIssued = mirLine.issued_qty ?? 0;
+    const totalMirIssued = existingMirIssued + issue.issued_qty;
+    const shortage_qty = Math.max(0, mirLine.requested_qty - totalMirIssued);
     if (shortage_qty > 0) hasShortages = true;
 
-    // Update mir_line_items
+    // Update mir_line_items — accumulated total
     await (supabase as any)
       .from("mir_line_items")
       .update({
-        issued_qty: issue.issued_qty,
+        issued_qty: totalMirIssued,
         shortage_qty,
         shortage_notes: issue.shortage_notes ?? null,
       })
@@ -692,7 +705,7 @@ export async function confirmMaterialIssue(
     // Update stock buckets if item exists and issued_qty > 0
     if (mirLine.item_id && issue.issued_qty > 0) {
       await updateStockBucket(mirLine.item_id, 'free', -issue.issued_qty);
-      await updateStockBucket(mirLine.item_id, 'in_subassembly_wip', +issue.issued_qty);
+      await updateStockBucket(mirLine.item_id, wip_bucket, +issue.issued_qty);
 
       try {
         const awoNumber = mir.awo?.awo_number ?? '';
@@ -759,6 +772,22 @@ export async function completeAssemblyWorkOrder(id: string): Promise<void> {
 
   const awo = await fetchAssemblyWorkOrder(id);
   if (!awo) throw new Error("Work order not found");
+
+  // FIX 4: Completion guard — reject if any line is unfulfilled
+  const unfulfilledLines = (awo.line_items ?? []).filter((li) => {
+    if ((li.issued_qty ?? 0) >= li.required_qty) return false;
+    if (li.disposition === 'use_as_is') return false;
+    const damageCovered =
+      (li.damage_qty ?? 0) > 0 &&
+      ((li.issued_qty ?? 0) + (li.damage_qty ?? 0)) >= li.required_qty;
+    return !damageCovered;
+  });
+  if (unfulfilledLines.length > 0) {
+    throw new Error(
+      `Cannot complete: ${unfulfilledLines.length} component(s) are still short. ` +
+      `Issue remaining stock or record a disposition for each short item.`
+    );
+  }
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -912,6 +941,123 @@ export async function completeAssemblyWorkOrder(id: string): Promise<void> {
     })
     .eq("id", id)
     .eq("company_id", companyId);
+}
+
+// ── reportComponentIssue ─────────────────────────────────────────────────────
+
+export async function reportComponentIssue(
+  awo_line_item_id: string,
+  damage_qty: number,
+  disposition: 'scrap' | 'use_as_is' | 'return_to_vendor',
+  reason: string,
+  reported_by: string
+): Promise<void> {
+  const companyId = await getCompanyId();
+  if (!companyId) throw new Error("Not authenticated");
+
+  const today = new Date().toISOString().split('T')[0];
+
+  // Fetch line item with AWO info
+  const { data: awoLine, error: lineError } = await (supabase as any)
+    .from("awo_line_items")
+    .select("*, assembly_work_orders(awo_number, awo_type)")
+    .eq("id", awo_line_item_id)
+    .single();
+
+  if (lineError || !awoLine) throw new Error("AWO line item not found");
+
+  const awoType = (awoLine as any).assembly_work_orders?.awo_type;
+  const wip_bucket: string = awoType === 'finished_good' ? 'in_fg_wip' : 'in_subassembly_wip';
+  const awoNumber: string = (awoLine as any).assembly_work_orders?.awo_number ?? '';
+
+  // Build update payload for awo_line_items
+  const updatePayload: Record<string, unknown> = {
+    damage_qty,
+    damage_reason: reason,
+    disposition,
+  };
+  if (disposition === 'use_as_is') {
+    updatePayload.concession_note = reason;
+    updatePayload.concession_by = reported_by;
+    updatePayload.concession_at = new Date().toISOString();
+  }
+
+  const { error: updateError } = await (supabase as any)
+    .from("awo_line_items")
+    .update(updatePayload)
+    .eq("id", awo_line_item_id)
+    .eq("company_id", companyId);
+
+  if (updateError) throw updateError;
+
+  if (disposition === 'scrap' && awoLine.item_id && damage_qty > 0) {
+    await updateStockBucket(awoLine.item_id, wip_bucket, -damage_qty);
+    try {
+      await addStockLedgerEntry({
+        item_id: awoLine.item_id,
+        item_code: awoLine.item_code ?? null,
+        item_description: awoLine.item_description ?? null,
+        transaction_date: today,
+        transaction_type: 'scrap_write_off',
+        qty_in: 0,
+        qty_out: damage_qty,
+        balance_qty: 0,
+        unit_cost: 0,
+        total_value: 0,
+        reference_type: 'assembly_work_order',
+        reference_id: awoLine.awo_id,
+        reference_number: awoNumber,
+        notes: `Component scrapped — AWO #${awoNumber}: ${reason}`,
+        created_by: null,
+      });
+    } catch (e) { console.error('[production] scrap ledger failed:', e); }
+    try {
+      await (supabase as any).from("notifications").insert({
+        company_id: companyId,
+        type: 'scrap_component',
+        title: 'Component Scrapped',
+        message: `${awoLine.item_description ?? awoLine.item_code ?? 'Item'} (${damage_qty} ${awoLine.unit ?? ''}) scrapped on AWO #${awoNumber}. Reason: ${reason}`,
+        reference_type: 'assembly_work_order',
+        reference_id: awoLine.awo_id,
+        created_by: reported_by,
+      });
+    } catch (e) { console.error('[production] scrap notification failed:', e); }
+  }
+
+  if (disposition === 'return_to_vendor' && awoLine.item_id && damage_qty > 0) {
+    await updateStockBucket(awoLine.item_id, wip_bucket, -damage_qty);
+    await updateStockBucket(awoLine.item_id, 'free', +damage_qty);
+    try {
+      await addStockLedgerEntry({
+        item_id: awoLine.item_id,
+        item_code: awoLine.item_code ?? null,
+        item_description: awoLine.item_description ?? null,
+        transaction_date: today,
+        transaction_type: 'assembly_return',
+        qty_in: damage_qty,
+        qty_out: 0,
+        balance_qty: 0,
+        unit_cost: 0,
+        total_value: 0,
+        reference_type: 'assembly_work_order',
+        reference_id: awoLine.awo_id,
+        reference_number: awoNumber,
+        notes: `Component returned to vendor — AWO #${awoNumber}: ${reason}`,
+        created_by: null,
+      });
+    } catch (e) { console.error('[production] return ledger failed:', e); }
+    try {
+      await (supabase as any).from("notifications").insert({
+        company_id: companyId,
+        type: 'return_to_vendor',
+        title: 'Component Returned to Vendor',
+        message: `${awoLine.item_description ?? awoLine.item_code ?? 'Item'} (${damage_qty} ${awoLine.unit ?? ''}) returned to vendor from AWO #${awoNumber}. Reason: ${reason}`,
+        reference_type: 'assembly_work_order',
+        reference_id: awoLine.awo_id,
+        created_by: reported_by,
+      });
+    } catch (e) { console.error('[production] return notification failed:', e); }
+  }
 }
 
 // ── fetchAwoStats ─────────────────────────────────────────────────────────────
