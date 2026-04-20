@@ -44,7 +44,7 @@ export function AppLayout() {
   // Redirect focused roles to their queue on root path
   useEffect(() => {
     if (FOCUSED_ROLES.includes(role as AppRole)) {
-      const target = FOCUSED_ROLE_REDIRECT[role];
+      const target = role ? FOCUSED_ROLE_REDIRECT[role] : undefined;
       if (target) {
         const currentPath = window.location.pathname;
         if (currentPath === '/') {

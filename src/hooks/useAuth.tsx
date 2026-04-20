@@ -21,7 +21,7 @@ interface AuthContextType {
   user: User | null;
   profile: Profile | null;
   companyId: string | null;
-  role: string;
+  role: string | null;
   loading: boolean;
   authError: string | null;
   clearAuthError: () => void;
@@ -145,7 +145,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user: session?.user ?? null,
       profile,
       companyId: profile?.company_id ?? null,
-      role: (profile as any)?.role ?? 'admin',
+      role: (profile as any)?.role ?? null,
       loading,
       authError,
       clearAuthError,

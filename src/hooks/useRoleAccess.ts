@@ -19,7 +19,7 @@ const UNKNOWN_ROLE = '__unknown__' as AppRole;
  */
 export function useCurrentRole(): AppRole {
   const { role } = useAuth();
-  if (!VALID_ROLES.includes(role as AppRole)) {
+  if (!role || !VALID_ROLES.includes(role as AppRole)) {
     if (import.meta.env.DEV) {
       console.warn(`Unknown role: "${role}", defaulting to no access`);
     }

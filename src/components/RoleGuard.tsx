@@ -12,7 +12,7 @@ export function RoleGuard({ allowedRoles, children }: RoleGuardProps) {
   const { role } = useAuth();
   const navigate = useNavigate();
 
-  if (role === 'admin' || allowedRoles.includes(role)) {
+  if (role === 'admin' || (role !== null && allowedRoles.includes(role))) {
     return <>{children}</>;
   }
 
