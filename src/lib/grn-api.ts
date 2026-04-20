@@ -1574,6 +1574,40 @@ export async function storeConfirmGRNItems(
     if (error) throw error;
   }
 
+  // Write-off ledger entries for any damaged items
+  const damagedItems = items.filter((i) => i.damagedQty && i.damagedQty > 0);
+  if (damagedItems.length > 0) {
+    const today = new Date().toISOString().split('T')[0];
+    const { data: lineDetails } = await (supabase as any)
+      .from('grn_line_items')
+      .select('id, item_id, item_code, description')
+      .in('id', damagedItems.map((i) => i.id));
+    const lineMap = new Map<string, any>(
+      ((lineDetails ?? []) as any[]).map((l) => [l.id, l])
+    );
+    for (const item of damagedItems) {
+      const line = lineMap.get(item.id);
+      if (!line?.item_id) continue;
+      await addStockLedgerEntry({
+        item_id: line.item_id,
+        item_code: line.item_code ?? null,
+        item_description: line.description ?? null,
+        transaction_date: today,
+        transaction_type: 'rejection_writeoff',
+        qty_in: 0,
+        qty_out: item.damagedQty!,
+        balance_qty: 0,
+        unit_cost: 0,
+        total_value: 0,
+        reference_type: 'grn',
+        reference_id: grnId,
+        reference_number: null,
+        notes: `Damaged on arrival — ${item.damagedReason || 'no reason given'}`,
+        created_by: null,
+      }).catch(console.error);
+    }
+  }
+
   // Check whether all final GRN line items for this GRN are now confirmed
   const { data: remaining } = await (supabase as any)
     .from('grn_line_items')
