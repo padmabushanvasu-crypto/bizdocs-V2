@@ -539,6 +539,13 @@ export default function PurchaseOrderForm() {
         </p>
       </div>
 
+      {isEdit && existingPO?.status === 'rejected' && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300">
+          <Info className="h-4 w-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <span>This PO was rejected. Make your changes and re-submit for approval.</span>
+        </div>
+      )}
+
       {prefillApplied && (
         <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
           <Info className="h-4 w-4 mt-0.5 shrink-0 text-blue-500" />
@@ -996,7 +1003,7 @@ export default function PurchaseOrderForm() {
             </Button>
           ) : (
             <Button onClick={() => handleSave("pending_approval")} disabled={saveMutation.isPending} className="active:scale-[0.98] transition-transform">
-              Submit for Approval →
+              {isEdit && existingPO?.status === 'rejected' ? 'Re-submit for Approval →' : 'Submit for Approval →'}
             </Button>
           )
         ) : (

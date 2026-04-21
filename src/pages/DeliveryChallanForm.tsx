@@ -695,6 +695,13 @@ export default function DeliveryChallanForm() {
         </p>
       </div>
 
+      {isEdit && (existingDC as any)?.status === 'rejected' && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300">
+          <Info className="h-4 w-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <span>This DC was rejected. Make your changes and re-submit for approval.</span>
+        </div>
+      )}
+
       {/* DC Type Selector */}
       <div className="space-y-3">
         {/* Sub-type dropdown */}
@@ -1498,7 +1505,7 @@ export default function DeliveryChallanForm() {
           </Button>
         ) : isInwardTeam ? (
           <Button onClick={() => handleSave("pending_approval")} disabled={saveMutation.isPending}>
-            Submit for Approval →
+            {isEdit && (existingDC as any)?.status === 'rejected' ? 'Re-submit for Approval →' : 'Submit for Approval →'}
           </Button>
         ) : (
           <>

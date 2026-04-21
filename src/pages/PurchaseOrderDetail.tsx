@@ -366,19 +366,29 @@ export default function PurchaseOrderDetail() {
               {po.rejection_reason && (
                 <p className="text-sm text-red-700 mt-0.5">Reason: <strong>{po.rejection_reason}</strong></p>
               )}
-              <p className="text-sm text-red-600 mt-1">This request has been rejected. Please raise a new PO request if still required.</p>
+              <p className="text-sm text-red-600 mt-1">Review the reason, make your changes, and re-submit for approval.</p>
             </div>
-            {!po.rejection_noted && (
+            <div className="flex gap-2 shrink-0">
               <Button
                 variant="outline"
                 size="sm"
-                className="shrink-0 text-red-700 border-red-200"
-                onClick={() => markNotedMutation.mutate()}
-                disabled={markNotedMutation.isPending}
+                className="text-amber-700 border-amber-300 hover:bg-amber-50 dark:text-amber-400 dark:border-amber-500/40 dark:hover:bg-amber-500/10"
+                onClick={() => navigate(`/purchase-orders/${id}/edit`)}
               >
-                Mark as Noted
+                <Edit className="h-3.5 w-3.5 mr-1" /> Edit &amp; Resubmit
               </Button>
-            )}
+              {!po.rejection_noted && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-red-700 border-red-200"
+                  onClick={() => markNotedMutation.mutate()}
+                  disabled={markNotedMutation.isPending}
+                >
+                  Mark as Noted
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       )}
