@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
-import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search, Edit, Eye, MoreHorizontal, UserX, Users as UsersIcon, Upload, Download, CheckSquare, Square, XCircle, Trash2, Loader2 } from "lucide-react";
+import { Plus, Search, Edit, Eye, MoreHorizontal, UserX, Users as UsersIcon, Upload, Download, CheckSquare, Square, XCircle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -72,59 +72,41 @@ export default function PartiesList() {
     type: "all",
     vendor_type: "all",
     status: "active",
-    pageSize: 100,
   });
 
-  const {
-    data,
-    isLoading,
-    hasNextPage,
-    isFetchingNextPage,
-    fetchNextPage,
-  } = useInfiniteQuery({
-    queryKey: ["parties", filters],
-    queryFn: ({ pageParam }) => fetchParties({ ...filters, page: pageParam, pageSize: 100 }),
-    initialPageParam: 1,
-    getNextPageParam: (lastPage, allPages) =>
-      lastPage.data.length === 100 ? allPages.length + 1 : undefined,
+  const { data, isLoading } = useQuery({
+    queryKey: ["parties", { type: filters.type, status: filters.status, vendor_type: filters.vendor_type }],
+    queryFn: () => fetchParties({ type: filters.type, status: filters.status, vendor_type: filters.vendor_type }),
     enabled: !!companyId,
   });
 
-  const parties = data?.pages.flatMap((p) => p.data) ?? [];
-  const totalCount = data?.pages[0]?.count ?? 0;
+  const allParties = data?.data ?? [];
+  const totalCount = allParties.length;
 
-  useEffect(() => {
-    const handleScroll = () => {
-      if (
-        window.innerHeight + window.scrollY >= document.body.offsetHeight - 300 &&
-        hasNextPage &&
-        !isFetchingNextPage
-      ) {
-        fetchNextPage();
-      }
-    };
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  const parties = useMemo(() => {
+    if (!filters.search?.trim()) return allParties;
+    const q = filters.search.toLowerCase();
+    return allParties.filter((p) =>
+      p.name.toLowerCase().includes(q) ||
+      (p.gstin?.toLowerCase() ?? "").includes(q) ||
+      (p.phone1?.toLowerCase() ?? "").includes(q) ||
+      (p.city?.toLowerCase() ?? "").includes(q)
+    );
+  }, [allParties, filters.search]);
 
   const deletePartyMutation = useMutation({
     mutationFn: (id: string) => deleteParty(id),
     onMutate: async (id) => {
-      await queryClient.cancelQueries({ queryKey: ["parties", filters] });
-      const prev = queryClient.getQueryData(["parties", filters]);
-      queryClient.setQueryData(["parties", filters], (old: any) =>
-        old ? {
-          ...old,
-          pages: old.pages.map((p: any) => ({
-            ...p,
-            data: p.data.filter((party: any) => party.id !== id),
-          })),
-        } : old
+      const qKey = ["parties", { type: filters.type, status: filters.status, vendor_type: filters.vendor_type }];
+      await queryClient.cancelQueries({ queryKey: qKey });
+      const prev = queryClient.getQueryData(qKey);
+      queryClient.setQueryData(qKey, (old: any) =>
+        old ? { ...old, data: old.data.filter((party: any) => party.id !== id) } : old
       );
       return { prev };
     },
     onError: (_err, _id, ctx) => {
-      if (ctx?.prev) queryClient.setQueryData(["parties", filters], ctx.prev);
+      if (ctx?.prev) queryClient.invalidateQueries({ queryKey: ["parties"] });
       toast({ title: "Delete failed", variant: "destructive" });
     },
     onSuccess: (result) => {
@@ -138,23 +120,17 @@ export default function PartiesList() {
   });
 
   const handleDeactivate = async (id: string) => {
-    // Optimistic update
-    const prev = queryClient.getQueryData(["parties", filters]);
-    queryClient.setQueryData(["parties", filters], (old: any) =>
-      old ? {
-        ...old,
-        pages: old.pages.map((p: any) => ({
-          ...p,
-          data: p.data.filter((party: any) => party.id !== id),
-        })),
-      } : old
+    const qKey = ["parties", { type: filters.type, status: filters.status, vendor_type: filters.vendor_type }];
+    const prev = queryClient.getQueryData(qKey);
+    queryClient.setQueryData(qKey, (old: any) =>
+      old ? { ...old, data: old.data.filter((party: any) => party.id !== id) } : old
     );
     try {
       await deactivateParty(id);
       toast({ title: "Party deactivated" });
       queryClient.invalidateQueries({ queryKey: ["parties"] });
     } catch {
-      if (prev) queryClient.setQueryData(["parties", filters], prev);
+      if (prev) queryClient.setQueryData(qKey, prev);
       toast({ title: "Failed to deactivate party", variant: "destructive" });
     }
   };
@@ -162,23 +138,18 @@ export default function PartiesList() {
   const bulkDeactivateMutation = useMutation({
     mutationFn: (ids: string[]) => bulkDeleteParties(ids),
     onMutate: async (ids) => {
-      await queryClient.cancelQueries({ queryKey: ["parties", filters] });
-      const prev = queryClient.getQueryData(["parties", filters]);
+      const qKey = ["parties", { type: filters.type, status: filters.status, vendor_type: filters.vendor_type }];
+      await queryClient.cancelQueries({ queryKey: qKey });
+      const prev = queryClient.getQueryData(qKey);
       const idSet = new Set(ids);
-      queryClient.setQueryData(["parties", filters], (old: any) =>
-        old ? {
-          ...old,
-          pages: old.pages.map((p: any) => ({
-            ...p,
-            data: p.data.filter((party: any) => !idSet.has(party.id)),
-          })),
-        } : old
+      queryClient.setQueryData(qKey, (old: any) =>
+        old ? { ...old, data: old.data.filter((party: any) => !idSet.has(party.id)) } : old
       );
       setSelected(new Set());
       return { prev };
     },
     onError: (_err, _ids, ctx) => {
-      if (ctx?.prev) queryClient.setQueryData(["parties", filters], ctx.prev);
+      if (ctx?.prev) queryClient.invalidateQueries({ queryKey: ["parties"] });
       toast({ title: "Delete failed", variant: "destructive" });
     },
     onSuccess: (result) => {
@@ -234,7 +205,9 @@ export default function PartiesList() {
           <h1 className="text-2xl font-bold text-slate-900">Parties</h1>
           <p className="text-sm text-slate-500 mt-1">
             {totalCount > 0
-              ? `Showing ${parties.length} of ${totalCount} parties`
+              ? parties.length < totalCount
+                ? `Showing ${parties.length} of ${totalCount} parties`
+                : `${totalCount} parties`
               : "Manage vendors and customers"}
           </p>
         </div>
@@ -478,12 +451,6 @@ export default function PartiesList() {
             </table>
           </div>
 
-        </div>
-      )}
-
-      {isFetchingNextPage && (
-        <div className="flex justify-center py-4">
-          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
       )}
 

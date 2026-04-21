@@ -121,15 +121,12 @@ export interface ItemFilters {
 export async function fetchItems(filters: ItemFilters = {}) {
   const companyId = await getCompanyId();
   if (!companyId) return { data: [], count: 0 };
-  const { search, type = "all", types, status = "active", page = 1, pageSize = 100 } = filters;
-  const from = (page - 1) * pageSize;
-  const to = from + pageSize - 1;
+  const { search, type = "all", types, status = "active" } = filters;
 
   let query = supabase
     .from("items")
-    .select("*", { count: "exact" })
-    .order("item_code", { ascending: true })
-    .range(from, to);
+    .select("*")
+    .order("item_code", { ascending: true });
 
   if (status !== "all") query = query.eq("status", status);
   if (types && types.length > 0) {
@@ -146,9 +143,9 @@ export async function fetchItems(filters: ItemFilters = {}) {
     }
   }
 
-  const { data, error, count } = await query;
+  const { data, error } = await query;
   if (error) throw error;
-  return { data: (data ?? []) as Item[], count: count ?? 0 };
+  return { data: (data ?? []) as Item[], count: (data ?? []).length };
 }
 
 export async function fetchItem(id: string) {

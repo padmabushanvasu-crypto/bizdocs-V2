@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
-import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Package, Plus, Search, Edit, Trash2, X, Upload, Download, CheckSquare, Square, XCircle, Loader2, AlertTriangle } from "lucide-react";
+import { useState, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Package, Plus, Search, Edit, Trash2, X, Upload, Download, CheckSquare, Square, XCircle, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -66,23 +66,26 @@ export default function Items() {
   const [customClassifId, setCustomClassifId] = useState<string | null>(null);
   const [itemToDelete, setItemToDelete] = useState<Item | null>(null);
 
-  const {
-    data,
-    isLoading,
-    hasNextPage,
-    isFetchingNextPage,
-    fetchNextPage,
-  } = useInfiniteQuery({
-    queryKey: ["items", filters],
-    queryFn: ({ pageParam }) => fetchItems({ ...filters, page: pageParam, pageSize: 100 }),
-    initialPageParam: 1,
-    getNextPageParam: (lastPage, allPages) =>
-      lastPage.data.length === 100 ? allPages.length + 1 : undefined,
+  const { data, isLoading } = useQuery({
+    queryKey: ["items", { type: filters.type, status: filters.status }],
+    queryFn: () => fetchItems({ type: filters.type, status: filters.status }),
     enabled: !!companyId,
   });
 
-  const items = data?.pages.flatMap((p) => p.data) ?? [];
-  const totalCount = data?.pages[0]?.count ?? 0;
+  const allItems = data?.data ?? [];
+  const totalCount = allItems.length;
+
+  const items = useMemo(() => {
+    if (!filters.search?.trim()) return allItems;
+    const q = filters.search.toLowerCase();
+    return allItems.filter((item) =>
+      item.item_code.toLowerCase().includes(q) ||
+      item.description.toLowerCase().includes(q) ||
+      (item.drawing_number?.toLowerCase() ?? "").includes(q) ||
+      (item.drawing_revision?.toLowerCase() ?? "").includes(q) ||
+      (item.hsn_sac_code?.toLowerCase() ?? "").includes(q)
+    );
+  }, [allItems, filters.search]);
 
   const { data: classifications = [] } = useQuery({
     queryKey: ["item-classifications"],
@@ -102,39 +105,20 @@ export default function Items() {
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
-  useEffect(() => {
-    const handleScroll = () => {
-      if (
-        window.innerHeight + window.scrollY >= document.body.offsetHeight - 300 &&
-        hasNextPage &&
-        !isFetchingNextPage
-      ) {
-        fetchNextPage();
-      }
-    };
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
-
   // Optimistic single delete
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteItem(id),
     onMutate: async (id) => {
-      await queryClient.cancelQueries({ queryKey: ["items", filters] });
-      const prev = queryClient.getQueryData(["items", filters]);
-      queryClient.setQueryData(["items", filters], (old: any) =>
-        old ? {
-          ...old,
-          pages: old.pages.map((p: any) => ({
-            ...p,
-            data: p.data.filter((i: any) => i.id !== id),
-          })),
-        } : old
+      const qKey = ["items", { type: filters.type, status: filters.status }];
+      await queryClient.cancelQueries({ queryKey: qKey });
+      const prev = queryClient.getQueryData(qKey);
+      queryClient.setQueryData(qKey, (old: any) =>
+        old ? { ...old, data: old.data.filter((i: any) => i.id !== id) } : old
       );
       return { prev };
     },
     onError: (_err, _id, ctx) => {
-      if (ctx?.prev) queryClient.setQueryData(["items", filters], ctx.prev);
+      if (ctx?.prev) queryClient.invalidateQueries({ queryKey: ["items"] });
       toast({ title: "Delete failed", variant: "destructive" });
     },
     onSuccess: () => {
@@ -147,23 +131,18 @@ export default function Items() {
   const bulkDeleteMutation = useMutation({
     mutationFn: (ids: string[]) => bulkDeleteItems(ids),
     onMutate: async (ids) => {
-      await queryClient.cancelQueries({ queryKey: ["items", filters] });
-      const prev = queryClient.getQueryData(["items", filters]);
+      const qKey = ["items", { type: filters.type, status: filters.status }];
+      await queryClient.cancelQueries({ queryKey: qKey });
+      const prev = queryClient.getQueryData(qKey);
       const idSet = new Set(ids);
-      queryClient.setQueryData(["items", filters], (old: any) =>
-        old ? {
-          ...old,
-          pages: old.pages.map((p: any) => ({
-            ...p,
-            data: p.data.filter((i: any) => !idSet.has(i.id)),
-          })),
-        } : old
+      queryClient.setQueryData(qKey, (old: any) =>
+        old ? { ...old, data: old.data.filter((i: any) => !idSet.has(i.id)) } : old
       );
       setSelected(new Set());
       return { prev };
     },
     onError: (_err, _ids, ctx) => {
-      if (ctx?.prev) queryClient.setQueryData(["items", filters], ctx.prev);
+      if (ctx?.prev) queryClient.invalidateQueries({ queryKey: ["items"] });
       toast({ title: "Delete failed", variant: "destructive" });
     },
     onSuccess: (result) => {
@@ -271,7 +250,9 @@ export default function Items() {
           </div>
           <p className="text-sm text-slate-500 mt-1">
             {totalCount > 0
-              ? `Showing ${items.length} of ${totalCount} items`
+              ? items.length < totalCount
+                ? `Showing ${items.length} of ${totalCount} items`
+                : `${totalCount} items`
               : "Master list of products, materials, and services"}
           </p>
         </div>
@@ -425,12 +406,6 @@ export default function Items() {
           </table>
         </div>
       </div>
-
-      {isFetchingNextPage && (
-        <div className="flex justify-center py-4">
-          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-        </div>
-      )}
 
       {/* Add/Edit Dialog */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>

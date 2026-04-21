@@ -22,15 +22,12 @@ export interface PartiesFilters {
 export async function fetchParties(filters: PartiesFilters = {}) {
   const companyId = await getCompanyId();
   if (!companyId) return { data: [], count: 0 };
-  const { search, type = "all", vendor_type = "all", status = "active", page = 1, pageSize = 100 } = filters;
-  const from = (page - 1) * pageSize;
-  const to = from + pageSize - 1;
+  const { search, type = "all", vendor_type = "all", status = "active" } = filters;
 
   let query = supabase
     .from("parties")
-    .select("*", { count: "exact" })
-    .order("name", { ascending: true })
-    .range(from, to);
+    .select("*")
+    .order("name", { ascending: true });
 
   if (type !== "all") {
     if (type === "vendor") {
@@ -58,9 +55,9 @@ export async function fetchParties(filters: PartiesFilters = {}) {
     }
   }
 
-  const { data, error, count } = await query;
+  const { data, error } = await query;
   if (error) throw error;
-  return { data: data ?? [], count: count ?? 0 };
+  return { data: data ?? [], count: (data ?? []).length };
 }
 
 export async function fetchParty(id: string) {
