@@ -109,6 +109,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       (_event, session) => {
         setSession(session);
         if (session?.user) {
+          // Reset loading=true so ProtectedRoute waits for the profile fetch to complete.
+          // Without this, a login event arrives while loading=false (set by an earlier
+          // no-session getSession() call), causing a premature /setup redirect before
+          // the profile and company_id are available.
+          setLoading(true);
           // Defer to avoid Supabase auth deadlock, but keep loading=true until profile resolves
           setTimeout(() => loadProfile(session.user).finally(() => setLoading(false)), 0);
         } else {
