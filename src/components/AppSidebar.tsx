@@ -351,7 +351,7 @@ export function AppSidebar() {
     'START HERE':         ['purchase_team', 'inward_team', 'qc_team', 'storekeeper', 'assembly_team'],
     'PROCUREMENT':        ['purchase_team', 'inward_team', 'qc_team'],
     'INWARD & RECEIVING': ['purchase_team', 'inward_team', 'qc_team', 'storekeeper'],
-    'PRODUCTION':         ['qc_team', 'assembly_team'],
+    'PRODUCTION':         ['purchase_team', 'inward_team', 'qc_team', 'assembly_team'],
     'STORE':              ['purchase_team', 'inward_team', 'qc_team', 'storekeeper', 'assembly_team'],
     'DISPATCH & QUALITY': ['purchase_team', 'qc_team', 'assembly_team'],
     'REPORTS':            ['purchase_team', 'qc_team', 'assembly_team'],
