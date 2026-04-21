@@ -334,7 +334,7 @@ export default function PartiesList() {
         </div>
       ) : (
         <div className="paper-card !p-0">
-          <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
+          <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-120px)]">
             <table className="w-full border-collapse text-sm">
               <thead className="sticky top-0 z-10">
                 <tr>
