@@ -106,7 +106,8 @@ export default function PartiesList() {
       return { prev };
     },
     onError: (_err, _id, ctx) => {
-      if (ctx?.prev) queryClient.invalidateQueries({ queryKey: ["parties"] });
+      const qKey = ["parties", { type: filters.type, status: filters.status, vendor_type: filters.vendor_type }];
+      if (ctx?.prev) queryClient.setQueryData(qKey, ctx.prev);
       toast({ title: "Delete failed", variant: "destructive" });
     },
     onSuccess: (result) => {
@@ -149,7 +150,8 @@ export default function PartiesList() {
       return { prev };
     },
     onError: (_err, _ids, ctx) => {
-      if (ctx?.prev) queryClient.invalidateQueries({ queryKey: ["parties"] });
+      const qKey = ["parties", { type: filters.type, status: filters.status, vendor_type: filters.vendor_type }];
+      if (ctx?.prev) queryClient.setQueryData(qKey, ctx.prev);
       toast({ title: "Delete failed", variant: "destructive" });
     },
     onSuccess: (result) => {

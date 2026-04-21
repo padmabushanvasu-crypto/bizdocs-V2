@@ -167,8 +167,12 @@ export default function DocumentSettings() {
       const prefixFields = Object.fromEntries(
         DOC_SERIES.map((d) => [d.prefixKey, series[d.prefixKey].prefix])
       );
+      const financial_year_label = fyYear.length === 4
+        ? `${fyYear.slice(0, 2)}-${fyYear.slice(2, 4)}`
+        : undefined;
       await saveCompanySettings({
         fy_year: fyYear,
+        ...(financial_year_label ? { financial_year_label } : {}),
         ...prefixFields,
         ...invoiceDefaults,
         show_logo: printToggles.show_logo,

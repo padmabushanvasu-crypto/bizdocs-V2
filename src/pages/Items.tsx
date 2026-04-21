@@ -118,7 +118,8 @@ export default function Items() {
       return { prev };
     },
     onError: (_err, _id, ctx) => {
-      if (ctx?.prev) queryClient.invalidateQueries({ queryKey: ["items"] });
+      const qKey = ["items", { type: filters.type, status: filters.status }];
+      if (ctx?.prev) queryClient.setQueryData(qKey, ctx.prev);
       toast({ title: "Delete failed", variant: "destructive" });
     },
     onSuccess: () => {
@@ -142,7 +143,8 @@ export default function Items() {
       return { prev };
     },
     onError: (_err, _ids, ctx) => {
-      if (ctx?.prev) queryClient.invalidateQueries({ queryKey: ["items"] });
+      const qKey = ["items", { type: filters.type, status: filters.status }];
+      if (ctx?.prev) queryClient.setQueryData(qKey, ctx.prev);
       toast({ title: "Delete failed", variant: "destructive" });
     },
     onSuccess: (result) => {

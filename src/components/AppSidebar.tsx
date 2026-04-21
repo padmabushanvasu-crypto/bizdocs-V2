@@ -1265,7 +1265,15 @@ export function AppSidebar() {
           }}
         >
           {!railMode && (
-            <p className="text-slate-500 text-xs font-mono">FY 2025–26</p>
+            <p className="text-slate-500 text-xs font-mono">
+              {(() => {
+                const fyRaw = companySettingsData?.fy_year;
+                if (fyRaw && fyRaw.length === 4) return `FY ${fyRaw.slice(0, 2)}-${fyRaw.slice(2, 4)}`;
+                const now = new Date();
+                const y = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+                return `FY ${String(y).slice(2)}-${String(y + 1).slice(2)}`;
+              })()}
+            </p>
           )}
           <button
             onClick={toggleRailMode}
