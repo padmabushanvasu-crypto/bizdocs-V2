@@ -83,6 +83,8 @@ export default function DeliveryChallanDetail() {
   const { role, profile } = useAuth();
   const { hideCosts } = useRoleAccess();
   const isInwardTeam = role === 'inward_team';
+  const isPurchaseTeam = role === 'purchase_team';
+  const isFinanceOrAdmin = role === 'admin' || role === 'finance';
   const isApprover = role === 'admin' || role === 'finance' || role === 'purchase_team';
 
   // ── Delete dialog state ───────────────────────────────────────────────────
@@ -726,12 +728,22 @@ export default function DeliveryChallanDetail() {
               <Lock className="h-3 w-3" /> Print available after DC is issued
             </span>
           )}
-          {dc.status === "draft" && !isInwardTeam && (
+          {/* Edit button — visibility by status and role */}
+          {["draft", "pending_approval"].includes(dc.status) && (isPurchaseTeam || isInwardTeam || isFinanceOrAdmin) && (
             <Button variant="outline" size="sm" onClick={() => navigate(`/delivery-challans/${id}/edit`)}>
               <Edit className="h-3.5 w-3.5 mr-1" /> Edit
             </Button>
           )}
-          {dc.status === "draft" && isInwardTeam && (dc as any).approved_at && null /* Issue button in banner above */}
+          {["issued", "partially_returned"].includes(dc.status) && (isPurchaseTeam || isInwardTeam || isFinanceOrAdmin) && (
+            <Button variant="outline" size="sm" onClick={() => navigate(`/delivery-challans/${id}/edit`)}>
+              <Edit className="h-3.5 w-3.5 mr-1" /> Edit
+            </Button>
+          )}
+          {dc.status === "approved" && (isPurchaseTeam || isInwardTeam || isFinanceOrAdmin) && (
+            <Button variant="outline" size="sm" onClick={() => navigate(`/delivery-challans/${id}/edit`)}>
+              <Edit className="h-3.5 w-3.5 mr-1" /> Edit
+            </Button>
+          )}
           {isJobWorkDC && ["issued", "partially_returned"].includes(dc.status) && !isDeleted && (
             <Button variant="outline" size="sm" onClick={handleOpenJCDialog}>
               <Plus className="h-3.5 w-3.5 mr-1" /> Create Job Cards

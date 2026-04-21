@@ -122,6 +122,8 @@ export default function DeliveryChallanForm() {
   const queryClient = useQueryClient();
   const { role, profile } = useAuth();
   const isInwardTeam = role === 'inward_team';
+  const isPurchaseTeam = role === 'purchase_team';
+  const isFinanceOrAdmin = role === 'admin' || role === 'finance';
   const canEditDC = useCanEdit('delivery-challans');
   const [accessBlocked, setAccessBlocked] = useState(false);
 
@@ -502,8 +504,10 @@ export default function DeliveryChallanForm() {
         approval_requested_by: status === "pending_approval"
           ? ((profile as any)?.display_name || (profile as any)?.full_name || (profile as any)?.email || null)
           : null,
-        approved_at: null,
-        approved_by: null,
+        approved_at: status === "approved" ? new Date().toISOString() : null,
+        approved_by: status === "approved"
+          ? ((profile as any)?.display_name || (profile as any)?.full_name || (profile as any)?.email || null)
+          : null,
         rejection_reason: null,
         rejection_noted: false,
         vehicle_number: vehicleNumber || null,
@@ -567,8 +571,15 @@ export default function DeliveryChallanForm() {
       queryClient.invalidateQueries({ queryKey: ["dc-stats"] });
       queryClient.invalidateQueries({ queryKey: ["dc-pending-approval-count"] });
       if (status === "pending_approval") {
-        toast({ title: "DC request submitted", description: "Awaiting approval from purchase team." });
-        navigate("/delivery-challans");
+        const wasIssued = isEdit && (existingDC as any)?.status === 'issued';
+        toast({
+          title: wasIssued ? "DC updated and sent for re-approval" : "DC request submitted",
+          description: wasIssued ? "Issue will be available once approved." : "Awaiting approval from purchase team.",
+        });
+        navigate(wasIssued ? `/delivery-challans/${dcId}` : "/delivery-challans");
+      } else if (status === "approved") {
+        toast({ title: "DC updated", description: "DC updated. Can now be re-issued." });
+        navigate(`/delivery-challans/${dcId}`);
       } else if (status === "issued") {
         setSavedDCId(dcId as string);
         const isJW = dcType === "job_work_out" || dcType === "job_work_143";
@@ -660,7 +671,16 @@ export default function DeliveryChallanForm() {
         }
       }
     }
-    saveMutation.mutate(status);
+    // When editing an already-issued DC, override status based on role
+    let effectiveStatus = status;
+    if (isEdit && (existingDC as any)?.status === 'issued') {
+      if (isPurchaseTeam || isInwardTeam) {
+        effectiveStatus = 'pending_approval';
+      } else if (isFinanceOrAdmin) {
+        effectiveStatus = 'approved';
+      }
+    }
+    saveMutation.mutate(effectiveStatus);
   };
 
   const isJobWorkDC = dcType === "job_work_out" || dcType === "job_work_143";
@@ -699,6 +719,13 @@ export default function DeliveryChallanForm() {
         <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300">
           <Info className="h-4 w-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
           <span>This DC was rejected. Make your changes and re-submit for approval.</span>
+        </div>
+      )}
+
+      {isEdit && (existingDC as any)?.status === 'issued' && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300">
+          <Info className="h-4 w-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <span>This DC has been issued. Editing will require re-approval before it can be re-issued.</span>
         </div>
       )}
 
@@ -1499,7 +1526,15 @@ export default function DeliveryChallanForm() {
       {/* Sticky Action Bar */}
       <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-border p-3 flex justify-end gap-2 z-40">
         <Button variant="outline" onClick={() => { sessionStorage.removeItem(DRAFT_KEY); navigate("/delivery-challans"); }}>Cancel</Button>
-        {isInwardTeam && isEdit && (existingDC as any)?.approved_at ? (
+        {isEdit && (existingDC as any)?.status === 'issued' && (isPurchaseTeam || isInwardTeam) ? (
+          <Button onClick={() => handleSave("pending_approval")} disabled={saveMutation.isPending}>
+            Re-submit for Approval →
+          </Button>
+        ) : isEdit && (existingDC as any)?.status === 'issued' && isFinanceOrAdmin ? (
+          <Button onClick={() => handleSave("approved")} disabled={saveMutation.isPending}>
+            Save Changes →
+          </Button>
+        ) : isInwardTeam && isEdit && (existingDC as any)?.approved_at ? (
           <Button onClick={() => handleSave("issued")} disabled={saveMutation.isPending}>
             Issue DC →
           </Button>

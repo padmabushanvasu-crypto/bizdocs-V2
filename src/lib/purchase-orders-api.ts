@@ -342,7 +342,7 @@ export async function fetchPOStats() {
   const { data: allPOs, error } = await supabase.from("purchase_orders").select("id, po_date, grand_total, status, issued_at");
   if (error) throw error;
   const pos = (allPOs ?? []) as any[];
-  const active = pos.filter((p) => p.status !== "cancelled");
+  const active = pos.filter((p) => p.status !== "cancelled" && p.status !== "deleted");
   const thisMonth = active.filter((p) => p.po_date >= monthStart);
   const open = active.filter((p) => ["draft", "approved", "issued", "partially_received"].includes(p.status));
   const totalValueThisMonth = thisMonth.reduce((s: number, p: any) => s + (Number(p.grand_total) || 0), 0);
