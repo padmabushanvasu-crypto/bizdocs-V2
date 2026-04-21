@@ -311,15 +311,6 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
   const rows = alertData?.rows ?? [];
   const atMaxStockCount = alertData?.atMaxStockCount ?? 0;
 
-  // Refetch when the user navigates back to this tab/page
-  useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState === "visible") refetch();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [refetch]);
-
   // Items for WO dialog dropdown (only fetched when dialog is open)
   const { data: itemsData } = useQuery({
     queryKey: ["items", "sub_assembly"],
