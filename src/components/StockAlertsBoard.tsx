@@ -305,7 +305,7 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
     queryKey: ["stock-alerts-board", companyId],
     queryFn: () => fetchStockAlertBoard(companyId),
     staleTime: 30_000,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
     enabled: !!companyId,
   });
   const rows = alertData?.rows ?? [];

@@ -944,8 +944,8 @@ function BillOfMaterialsInner() {
       return result;
     },
     enabled: !!selectedItem,
-    staleTime: 0,
-    refetchOnWindowFocus: true,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   const { data: bomVariants = [], refetch: refetchVariants } = useQuery({
