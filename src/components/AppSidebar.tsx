@@ -460,7 +460,7 @@ export function AppSidebar() {
   const { data: fatStats } = useQuery({
     queryKey: ["fat-stats-sidebar"],
     queryFn: async () => { try { return await fetchFatStats(); } catch { return null; } },
-    refetchInterval: 60000,
+    refetchInterval: 300000,
   });
 
   const { data: reorderSummary } = useQuery({
@@ -479,7 +479,7 @@ export function AppSidebar() {
         return { critical: 0, warning: 0 };
       }
     },
-    refetchInterval: 120000,
+    refetchInterval: 600000,
   });
 
   const reorderCritical = reorderSummary?.critical ?? 0;
@@ -530,7 +530,7 @@ export function AppSidebar() {
       } catch { return 0; }
     },
     staleTime: 120_000,
-    refetchInterval: 120_000,
+    refetchInterval: 600000,
   });
 
   const { data: pendingApprovalCount = 0 } = useQuery({
@@ -550,7 +550,7 @@ export function AppSidebar() {
     },
     enabled: currentRole === 'admin' || currentRole === 'finance',
     staleTime: 120_000,
-    refetchInterval: 120_000,
+    refetchInterval: 600000,
   });
 
   const { data: unreadRejectionCount = 0 } = useQuery({
@@ -571,14 +571,14 @@ export function AppSidebar() {
     },
     enabled: currentRole === 'purchase_team',
     staleTime: 120_000,
-    refetchInterval: 120_000,
+    refetchInterval: 600000,
   });
 
   const { data: awaitingStoreCount = 0 } = useQuery({
     queryKey: ["awaiting-store-count"],
     queryFn: async () => { try { return await fetchAwaitingStoreCount(); } catch { return 0; } },
     staleTime: 60_000,
-    refetchInterval: 60_000,
+    refetchInterval: 300000,
   });
 
   const { data: grnQCCount = 0 } = useQuery({
@@ -599,7 +599,7 @@ export function AppSidebar() {
       } catch { return 0; }
     },
     staleTime: 60_000,
-    refetchInterval: 60_000,
+    refetchInterval: 300000,
   });
 
   const { data: openDCCount = 0 } = useQuery({
@@ -618,7 +618,7 @@ export function AppSidebar() {
       } catch { return 0; }
     },
     staleTime: 60_000,
-    refetchInterval: 60_000,
+    refetchInterval: 300000,
   });
 
   const { data: dcReturnQCCount = 0 } = useQuery({
@@ -640,7 +640,7 @@ export function AppSidebar() {
       } catch { return 0; }
     },
     staleTime: 60_000,
-    refetchInterval: 60_000,
+    refetchInterval: 300000,
   });
 
   const { data: jobCardCount = 0 } = useQuery({
@@ -659,7 +659,7 @@ export function AppSidebar() {
       } catch { return 0; }
     },
     staleTime: 60_000,
-    refetchInterval: 60_000,
+    refetchInterval: 300000,
   });
 
   const { data: pendingMIRCount = 0 } = useQuery({
@@ -678,7 +678,7 @@ export function AppSidebar() {
       } catch { return 0; }
     },
     staleTime: 60_000,
-    refetchInterval: 60_000,
+    refetchInterval: 300000,
   });
 
   const { data: pendingDCApprovalCount = 0 } = useQuery({
@@ -698,7 +698,7 @@ export function AppSidebar() {
     },
     enabled: currentRole === 'admin' || currentRole === 'finance' || currentRole === 'purchase_team',
     staleTime: 60_000,
-    refetchInterval: 60_000,
+    refetchInterval: 300000,
   });
 
   const { data: unreadDCRejectionCount = 0 } = useQuery({
@@ -719,7 +719,7 @@ export function AppSidebar() {
     },
     enabled: currentRole === 'inward_team',
     staleTime: 60_000,
-    refetchInterval: 60_000,
+    refetchInterval: 300000,
   });
 
   const companyNeedsSetup = !companySettingsData?.gstin ||

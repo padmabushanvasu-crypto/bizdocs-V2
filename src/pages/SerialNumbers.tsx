@@ -92,13 +92,13 @@ export default function SerialNumbers() {
   const { data: stats } = useQuery({
     queryKey: ["serial-stats"],
     queryFn: fetchSerialStats,
-    refetchInterval: 60000,
+    refetchInterval: 300000,
   });
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["serial-numbers", statusFilter, search],
     queryFn: () => fetchSerialNumbers({ status: statusFilter, search, pageSize: 200 }),
-    refetchInterval: 30000,
+    refetchInterval: 300000,
   });
 
   const rows = data?.data ?? [];

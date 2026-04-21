@@ -17,7 +17,7 @@ export default function WarrantyTracker() {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["warranty-serial-numbers"],
     queryFn: () => fetchSerialNumbers({ pageSize: 500 }),
-    refetchInterval: 60000,
+    refetchInterval: 300000,
   });
 
   const today = new Date().toISOString().split("T")[0];

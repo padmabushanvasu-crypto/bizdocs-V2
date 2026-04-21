@@ -155,7 +155,7 @@ export default function WipRegister() {
         .order("created_at", { ascending: false });
       return data ?? [];
     },
-    refetchInterval: 30000,
+    refetchInterval: 120000,
   });
 
   // Finished Good WIP (new AWO system)

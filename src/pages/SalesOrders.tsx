@@ -38,13 +38,13 @@ export default function SalesOrders() {
   const { data: stats } = useQuery({
     queryKey: ["so-stats"],
     queryFn: fetchSoStats,
-    refetchInterval: 60000,
+    refetchInterval: 300000,
   });
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["sales-orders", statusFilter, search, page],
     queryFn: () => fetchSalesOrders({ search, status: statusFilter, page, pageSize: 20 }),
-    refetchInterval: 30000,
+    refetchInterval: 300000,
   });
 
   const orders = data?.data ?? [];
