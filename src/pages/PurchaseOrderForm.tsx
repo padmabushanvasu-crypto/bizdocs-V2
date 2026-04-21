@@ -53,6 +53,7 @@ function emptyLineItem(serial: number): POLineItem {
 export default function PurchaseOrderForm() {
   const { id } = useParams();
   const isEdit = !!id;
+  const DRAFT_KEY = 'bizdocs_draft_po';
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -228,6 +229,64 @@ export default function PurchaseOrderForm() {
     }
   }, [isEdit, deliveryAddressAutoFilled, companyDeliveryAddress]);
 
+  // Restore draft from sessionStorage (once on mount, create mode only)
+  useEffect(() => {
+    if (isEdit) return;
+    if (prefillState || (location.state as any)?.prefillItem) return;
+    const raw = sessionStorage.getItem(DRAFT_KEY);
+    if (!raw) return;
+    try {
+      const draft = JSON.parse(raw);
+      if (draft.poDate) setPODate(new Date(draft.poDate));
+      if (draft.vendorId) setVendorId(draft.vendorId);
+      if (draft.selectedVendor) setSelectedVendor(draft.selectedVendor as Party);
+      if (draft.vendorReference !== undefined) setVendorReference(draft.vendorReference);
+      if (draft.vendorEmail !== undefined) setVendorEmail(draft.vendorEmail);
+      if (draft.referenceNumber !== undefined) setReferenceNumber(draft.referenceNumber);
+      if (draft.paymentTerms !== undefined) setPaymentTerms(draft.paymentTerms);
+      if (draft.customPaymentTerms !== undefined) setCustomPaymentTerms(draft.customPaymentTerms);
+      if (draft.deliveryAddress !== undefined) {
+        setDeliveryAddress(draft.deliveryAddress);
+        setDeliveryAddressAutoFilled(true);
+      }
+      if (draft.deliveryContactPerson !== undefined) setDeliveryContactPerson(draft.deliveryContactPerson);
+      if (draft.deliveryContactPhone !== undefined) setDeliveryContactPhone(draft.deliveryContactPhone);
+      if (draft.specialInstructions !== undefined) setSpecialInstructions(draft.specialInstructions);
+      if (draft.internalRemarks !== undefined) setInternalRemarks(draft.internalRemarks);
+      if (draft.lineItems?.length) setLineItems(draft.lineItems as POLineItem[]);
+      if (draft.gstRate !== undefined) setGstRate(draft.gstRate);
+      if (draft.additionalCharges !== undefined) setAdditionalCharges(draft.additionalCharges);
+    } catch {
+      sessionStorage.removeItem(DRAFT_KEY);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Save draft to sessionStorage (debounced 500ms, create mode only)
+  useEffect(() => {
+    if (isEdit) return;
+    const timer = setTimeout(() => {
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
+        poDate: poDate.toISOString(),
+        vendorId,
+        selectedVendor,
+        vendorReference,
+        vendorEmail,
+        referenceNumber,
+        paymentTerms,
+        customPaymentTerms,
+        deliveryAddress,
+        deliveryContactPerson,
+        deliveryContactPhone,
+        specialInstructions,
+        internalRemarks,
+        lineItems,
+        gstRate,
+        additionalCharges,
+      }));
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [isEdit, poDate, vendorId, selectedVendor, vendorReference, vendorEmail, referenceNumber, paymentTerms, customPaymentTerms, deliveryAddress, deliveryContactPerson, deliveryContactPhone, specialInstructions, internalRemarks, lineItems, gstRate, additionalCharges]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Vendor auto-fill from item_id in prefill state (Stock Alerts Board flow).
   // Looks up the most recent PO vendor for this item via po_line_items.
   // Silently skips if no match — vendor remains blank for manual selection.
@@ -393,6 +452,7 @@ export default function PurchaseOrderForm() {
       }
     },
     onSuccess: (poId, status) => {
+      sessionStorage.removeItem(DRAFT_KEY);
       queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
       queryClient.invalidateQueries({ queryKey: ["po-stats"] });
       queryClient.invalidateQueries({ queryKey: ["po-pending-approval-count"] });
@@ -902,7 +962,7 @@ export default function PurchaseOrderForm() {
 
       {/* Sticky Action Bar */}
       <div className="fixed bottom-0 left-0 right-0 md:left-[var(--sidebar-width)] bg-card border-t border-border p-3 flex justify-end gap-2 z-40">
-        <Button variant="outline" onClick={() => navigate("/purchase-orders")}>Cancel</Button>
+        <Button variant="outline" onClick={() => { sessionStorage.removeItem(DRAFT_KEY); navigate("/purchase-orders"); }}>Cancel</Button>
         {isPurchaseTeam ? (
           isEdit && existingPO?.approved_at ? (
             // Editing an approved draft — purchase_team can now issue it

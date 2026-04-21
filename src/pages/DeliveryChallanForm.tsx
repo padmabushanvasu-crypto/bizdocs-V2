@@ -115,6 +115,7 @@ function emptyLineItem(serial: number): DCLineItem {
 export default function DeliveryChallanForm() {
   const { id } = useParams();
   const isEdit = !!id;
+  const DRAFT_KEY = 'bizdocs_draft_dc';
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -352,6 +353,77 @@ export default function DeliveryChallanForm() {
     setTimeout(() => { firstQtyRef.current?.focus(); firstQtyRef.current?.select(); }, 150);
   }, [isEdit, location.state]);
 
+  // Restore draft from sessionStorage (once on mount, create mode only)
+  useEffect(() => {
+    if (isEdit) return;
+    if ((location.state as any)?.prefill || (location.state as any)?.prefillItem) return;
+    const raw = sessionStorage.getItem(DRAFT_KEY);
+    if (!raw) return;
+    try {
+      const draft = JSON.parse(raw);
+      if (draft.primaryChoice) setPrimaryChoice(draft.primaryChoice as "returnable" | "non_returnable");
+      if (draft.dcSubType !== undefined) setDcSubType(draft.dcSubType);
+      if (draft.dcDate) setDcDate(new Date(draft.dcDate));
+      if (draft.partyId) setPartyId(draft.partyId);
+      if (draft.selectedParty) setSelectedParty(draft.selectedParty as Party);
+      if (draft.referenceNumber !== undefined) setReferenceNumber(draft.referenceNumber);
+      if (draft.specialInstructions !== undefined) setSpecialInstructions(draft.specialInstructions);
+      if (draft.internalRemarks !== undefined) setInternalRemarks(draft.internalRemarks);
+      if (draft.returnDueDate) setReturnDueDate(new Date(draft.returnDueDate));
+      if (draft.natureOfJobWork !== undefined) setNatureOfJobWork(draft.natureOfJobWork);
+      if (draft.lineItems?.length) setLineItems(draft.lineItems as DCLineItem[]);
+      if (draft.vehicleNumber !== undefined) setVehicleNumber(draft.vehicleNumber);
+      if (draft.driverName !== undefined) setDriverName(draft.driverName);
+      if (draft.driverContact !== undefined) setDriverContact(draft.driverContact);
+      if (draft.loNumber !== undefined) setLoNumber(draft.loNumber);
+      if (draft.approxValue !== undefined) setApproxValue(draft.approxValue);
+      if (draft.gstRate !== undefined) setGstRate(draft.gstRate);
+      if (draft.preparedBy !== undefined) setPreparedBy(draft.preparedBy);
+      if (draft.checkedBy !== undefined) setCheckedBy(draft.checkedBy);
+      if (draft.lineBomStages) setLineBomStages(new Map(draft.lineBomStages));
+      if (draft.lineCompletedStages) setLineCompletedStages(new Map((draft.lineCompletedStages as [number, number[]][]).map(([k, v]) => [k, new Set(v)])));
+      if (draft.lineStageSelection) setLineStageSelection(new Map(draft.lineStageSelection));
+      if (draft.itemIdByIndex) setItemIdByIndex(new Map(draft.itemIdByIndex));
+      if (draft.lineItemStock) setLineItemStock(new Map(draft.lineItemStock));
+    } catch {
+      sessionStorage.removeItem(DRAFT_KEY);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Save draft to sessionStorage (debounced 500ms, create mode only)
+  useEffect(() => {
+    if (isEdit) return;
+    const timer = setTimeout(() => {
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
+        primaryChoice,
+        dcSubType,
+        dcDate: dcDate.toISOString(),
+        partyId,
+        selectedParty,
+        referenceNumber,
+        specialInstructions,
+        internalRemarks,
+        returnDueDate: returnDueDate?.toISOString() ?? null,
+        natureOfJobWork,
+        lineItems,
+        vehicleNumber,
+        driverName,
+        driverContact,
+        loNumber,
+        approxValue,
+        gstRate,
+        preparedBy,
+        checkedBy,
+        lineBomStages: Array.from(lineBomStages.entries()),
+        lineCompletedStages: Array.from(lineCompletedStages.entries()).map(([k, v]) => [k, Array.from(v)]),
+        lineStageSelection: Array.from(lineStageSelection.entries()),
+        itemIdByIndex: Array.from(itemIdByIndex.entries()),
+        lineItemStock: Array.from(lineItemStock.entries()),
+      }));
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [isEdit, primaryChoice, dcSubType, dcDate, partyId, selectedParty, referenceNumber, specialInstructions, internalRemarks, returnDueDate, natureOfJobWork, lineItems, vehicleNumber, driverName, driverContact, loNumber, approxValue, gstRate, preparedBy, checkedBy, lineBomStages, lineCompletedStages, lineStageSelection, itemIdByIndex, lineItemStock]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handlePartySelect = (party: Party) => {
     setPartyId(party.id);
     setSelectedParty(party);
@@ -489,6 +561,7 @@ export default function DeliveryChallanForm() {
       }
     },
     onSuccess: (dcId, status) => {
+      sessionStorage.removeItem(DRAFT_KEY);
       queryClient.invalidateQueries({ queryKey: ["delivery-challans"] });
       queryClient.invalidateQueries({ queryKey: ["dc-stats"] });
       queryClient.invalidateQueries({ queryKey: ["dc-pending-approval-count"] });
@@ -1416,7 +1489,7 @@ export default function DeliveryChallanForm() {
 
       {/* Sticky Action Bar */}
       <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-border p-3 flex justify-end gap-2 z-40">
-        <Button variant="outline" onClick={() => navigate("/delivery-challans")}>Cancel</Button>
+        <Button variant="outline" onClick={() => { sessionStorage.removeItem(DRAFT_KEY); navigate("/delivery-challans"); }}>Cancel</Button>
         {isInwardTeam && isEdit && (existingDC as any)?.approved_at ? (
           <Button onClick={() => handleSave("issued")} disabled={saveMutation.isPending}>
             Issue DC →
