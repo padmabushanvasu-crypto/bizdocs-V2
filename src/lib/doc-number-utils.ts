@@ -36,20 +36,32 @@ export async function getNextDocNumber(
   companyId: string,
   settingsKey?: string
 ): Promise<string> {
-  const fy = getCurrentFinancialYear();
-
-  let prefix = fy;
+  let prefix: string;
 
   if (settingsKey) {
+    // Fetch the doc prefix and fy_year in one query
     const { data: settings } = await supabase
       .from("company_settings")
-      .select(settingsKey)
+      .select(`${settingsKey}, fy_year`)
       .limit(1)
       .single();
+    const fyRaw = (settings as any)?.fy_year;
+    const fy = (fyRaw && fyRaw.length === 4)
+      ? `${fyRaw.slice(0, 2)}-${fyRaw.slice(2, 4)}`
+      : getCurrentFinancialYear();
     const customPrefix = (settings as any)?.[settingsKey];
-    if (customPrefix) {
-      prefix = `${customPrefix}-${fy}`;
-    }
+    prefix = customPrefix ? `${customPrefix}-${fy}` : fy;
+  } else {
+    // No prefix key — fetch only fy_year
+    const { data: settings } = await supabase
+      .from("company_settings")
+      .select("fy_year")
+      .limit(1)
+      .single();
+    const fyRaw = (settings as any)?.fy_year;
+    prefix = (fyRaw && fyRaw.length === 4)
+      ? `${fyRaw.slice(0, 2)}-${fyRaw.slice(2, 4)}`
+      : getCurrentFinancialYear();
   }
 
   const { data } = await supabase
