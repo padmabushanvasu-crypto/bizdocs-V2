@@ -485,6 +485,7 @@ export default function DeliveryChallanForm() {
         party_gstin: selectedParty?.gstin || null,
         party_state_code: selectedParty?.state_code || null,
         party_phone: selectedParty?.phone1 || null,
+        party_contact_person: selectedParty?.contact_person || null,
         reference_number: referenceNumber || null,
         approximate_value: grandTotal,
         special_instructions: specialInstructions || null,
@@ -807,6 +808,7 @@ export default function DeliveryChallanForm() {
                 )}
                 {selectedParty.gstin && <p className="font-mono text-xs">GSTIN: {selectedParty.gstin}</p>}
                 {selectedParty.phone1 && <p className="text-xs text-muted-foreground">Ph: {selectedParty.phone1}</p>}
+                {selectedParty.contact_person && <p className="text-xs text-muted-foreground">Contact: {selectedParty.contact_person}</p>}
               </div>
             )}
 

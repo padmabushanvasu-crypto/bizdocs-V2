@@ -193,7 +193,7 @@ export default function PurchaseOrderDetail() {
       queryClient.invalidateQueries({ queryKey: ["purchase-order", id] });
       queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
       queryClient.invalidateQueries({ queryKey: ["po-pending-approval-count"] });
-      toast({ title: "PO Approved", description: "PO moved to Draft — it can now be issued." });
+      toast({ title: "PO Approved", description: "PO approved. Purchase team can now issue it to the vendor." });
     },
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -406,7 +406,7 @@ export default function PurchaseOrderDetail() {
             </>
           )}
 
-          {po.status === "issued" && (
+          {po.status === "issued" && isFinanceOrAdmin && (
             <Button variant="outline" size="sm" onClick={() => navigate(`/purchase-orders/${id}/edit`)}>
               <Edit className="h-3.5 w-3.5 mr-1" /> Edit
             </Button>
@@ -518,6 +518,7 @@ export default function PurchaseOrderDetail() {
                 {po.vendor_gstin && <p className="text-sm font-mono">GSTIN: {po.vendor_gstin}</p>}
                 {po.vendor_phone && <p className="text-sm text-muted-foreground">Ph: {po.vendor_phone}</p>}
                 {(po as any).vendor_email && <p className="text-sm text-muted-foreground">{(po as any).vendor_email}</p>}
+                {(po as any).vendor_contact_person && <p className="text-sm text-muted-foreground">Contact: {(po as any).vendor_contact_person}</p>}
               </div>
               <div className="text-left md:text-right space-y-1">
                 <div className="flex md:justify-end gap-4">
@@ -586,6 +587,7 @@ export default function PurchaseOrderDetail() {
                   {po.vendor_gstin && <div style={{ fontSize: '8.5pt', fontFamily: 'monospace', lineHeight: 1.5 }}>GSTIN: {po.vendor_gstin}</div>}
                   {po.vendor_phone && <div style={{ fontSize: '9pt', color: '#475569', lineHeight: 1.5 }}>Ph: {po.vendor_phone}</div>}
                   {(po as any).vendor_email && <div style={{ fontSize: '9pt', color: '#475569', lineHeight: 1.5 }}>{(po as any).vendor_email}</div>}
+                  {(po as any).vendor_contact_person && <div style={{ fontSize: '8.5pt', color: '#475569', lineHeight: 1.5 }}>Contact: {(po as any).vendor_contact_person}</div>}
                 </div>
                 {deliverAddr && (
                   <div style={{ flex: '1', paddingLeft: '8px' }}>

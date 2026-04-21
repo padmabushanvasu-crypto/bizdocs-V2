@@ -394,6 +394,10 @@ export default function PurchaseOrderForm() {
   // Save
   const saveMutation = useMutation({
     mutationFn: async (status: string) => {
+      // Fix 2: Finance/admin editing an issued PO drops it back to 'approved' so purchase_team can re-issue
+      const effectiveStatus = (!isPurchaseTeam && isEdit && existingPO?.status === 'issued')
+        ? 'approved'
+        : status;
       const poData = {
         po_number: poNumber,
         po_date: format(poDate, "yyyy-MM-dd"),
@@ -407,6 +411,7 @@ export default function PurchaseOrderForm() {
         vendor_gstin: selectedVendor?.gstin || null,
         vendor_state_code: selectedVendor?.state_code || null,
         vendor_phone: selectedVendor?.phone1 || null,
+        vendor_contact_person: selectedVendor?.contact_person || null,
         vendor_reference: vendorReference || null,
         vendor_email: vendorEmail || null,
         reference_number: referenceNumber || null,
@@ -425,12 +430,12 @@ export default function PurchaseOrderForm() {
         total_gst: taxResult.total,
         grand_total: grandTotal,
         gst_rate: gstRate,
-        status,
-        issued_at: status === "issued" ? new Date().toISOString() : null,
+        status: effectiveStatus,
+        issued_at: effectiveStatus === "issued" ? new Date().toISOString() : null,
         cancelled_at: null,
         cancellation_reason: null,
-        approval_requested_at: status === "pending_approval" ? new Date().toISOString() : null,
-        approval_requested_by: status === "pending_approval" ? (profile?.display_name || profile?.full_name || profile?.email || null) : null,
+        approval_requested_at: effectiveStatus === "pending_approval" ? new Date().toISOString() : null,
+        approval_requested_by: effectiveStatus === "pending_approval" ? (profile?.display_name || profile?.full_name || profile?.email || null) : null,
         approved_at: null,
         approved_by: null,
         rejection_reason: null,
@@ -443,11 +448,11 @@ export default function PurchaseOrderForm() {
 
       if (isEdit) {
         await updatePurchaseOrder(id!, { po: poData, lineItems: items });
-        if (status === "issued") await issuePurchaseOrder(id!);
+        if (effectiveStatus === "issued") await issuePurchaseOrder(id!);
         return id;
       } else {
         const result = await createPurchaseOrder({ po: poData, lineItems: items });
-        if (status === "issued") await issuePurchaseOrder(result.id);
+        if (effectiveStatus === "issued") await issuePurchaseOrder(result.id);
         return result.id;
       }
     },
@@ -456,6 +461,12 @@ export default function PurchaseOrderForm() {
       queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
       queryClient.invalidateQueries({ queryKey: ["po-stats"] });
       queryClient.invalidateQueries({ queryKey: ["po-pending-approval-count"] });
+      // Fix 2: Finance/admin edited an issued PO — it's now 'approved' for purchase team to re-issue
+      if (!isPurchaseTeam && isEdit && existingPO?.status === 'issued') {
+        toast({ title: "PO updated", description: "Purchase team can now re-issue." });
+        navigate(`/purchase-orders/${poId}`);
+        return;
+      }
       if (status === "issued") {
         setSavedPOId(poId as string);
         setSuccessDialogOpen(true);
@@ -493,6 +504,19 @@ export default function PurchaseOrderForm() {
         </div>
         <p className="font-semibold text-foreground">You don't have permission to edit purchase orders</p>
         <p className="text-sm text-muted-foreground">Redirecting…</p>
+      </div>
+    );
+  }
+
+  // Fix 1: purchase_team cannot edit an issued PO — only finance/admin can
+  if (isPurchaseTeam && isEdit && existingPO?.status === 'issued') {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-3 text-center p-6">
+        <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
+          <Info className="h-5 w-5 text-red-600" />
+        </div>
+        <p className="font-semibold text-foreground">This PO has been issued and cannot be edited</p>
+        <p className="text-sm text-muted-foreground">Please contact admin or finance to make changes.</p>
       </div>
     );
   }
@@ -589,6 +613,7 @@ export default function PurchaseOrderForm() {
                 {selectedVendor.gstin && <p className="font-mono text-xs">GSTIN: {selectedVendor.gstin}</p>}
                 {selectedVendor.phone1 && <p className="text-muted-foreground">Ph: {selectedVendor.phone1}</p>}
                 {(selectedVendor as any).email1 && <p className="text-muted-foreground">{(selectedVendor as any).email1}</p>}
+                {selectedVendor.contact_person && <p className="text-xs text-muted-foreground">Contact: {selectedVendor.contact_person}</p>}
               </div>
             )}
 

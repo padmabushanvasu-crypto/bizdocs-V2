@@ -406,6 +406,7 @@ export default function DeliveryChallanDetail() {
             {dc.party_address && <div style={{ color: '#475569' }}>{dc.party_address}</div>}
             {dc.party_gstin && <div style={{ fontFamily: 'monospace', fontSize: '8pt' }}>GSTIN: {dc.party_gstin}</div>}
             {dc.party_phone && <div style={{ color: '#475569' }}>Ph: {dc.party_phone}</div>}
+            {(dc as any).party_contact_person && <div style={{ color: '#475569', fontSize: '8.5pt' }}>Contact: {(dc as any).party_contact_person}</div>}
           </div>
         </div>
 
@@ -922,6 +923,7 @@ export default function DeliveryChallanDetail() {
             {dc.party_address && <p className="text-sm text-muted-foreground">{dc.party_address}</p>}
             {dc.party_gstin && <p className="text-sm font-mono">GSTIN: {dc.party_gstin}</p>}
             {dc.party_phone && <p className="text-sm text-muted-foreground">Ph: {dc.party_phone}</p>}
+            {(dc as any).party_contact_person && <p className="text-sm text-muted-foreground">Contact: {(dc as any).party_contact_person}</p>}
           </div>
         </div>
 
