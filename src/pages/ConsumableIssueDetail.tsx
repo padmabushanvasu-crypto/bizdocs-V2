@@ -124,6 +124,11 @@ export default function ConsumableIssueDetail() {
       if (!issuedTo.trim()) throw new Error("Issued To is required");
       const validLines = lines.filter((l) => l.item_id && l.qty_issued > 0);
       if (validLines.length === 0) throw new Error("Add at least one line item with qty > 0");
+      const missingReason = validLines.filter(
+        (l) => l.return_status === "not_returned" && !l.return_reason.trim()
+      );
+      if (missingReason.length > 0)
+        throw new Error(`Line ${missingReason.map((l) => lines.indexOf(l) + 1).join(", ")}: reason required for items not returned`);
 
       const lineInputs: ConsumableIssueLineInput[] = validLines.map((l) => ({
         item_id: l.item_id,
@@ -246,6 +251,9 @@ export default function ConsumableIssueDetail() {
                     </td>
                     <td className="px-3 py-2.5">
                       {returnStatusBadge(line.return_status)}
+                      {line.return_status === "not_returned" && line.return_reason && (
+                        <p className="mt-1 text-xs text-muted-foreground">{line.return_reason}</p>
+                      )}
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums font-mono">
                       {line.return_status === "returned" ? `${line.qty_returned} ${line.unit}` : "—"}
@@ -495,6 +503,23 @@ export default function ConsumableIssueDetail() {
                     placeholder="Why was it returned?"
                     value={line.return_reason}
                     onChange={(e) => updateLine(line._key, "return_reason", e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Not-returned reason — required when item is not coming back */}
+            {line.return_status === "not_returned" && (
+              <div className="pt-1 border-t border-slate-100 dark:border-slate-800">
+                <div className="space-y-1.5">
+                  <Label>
+                    Reason <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    placeholder="Reason for not returning (e.g. Worn out, Lost in process)"
+                    value={line.return_reason}
+                    onChange={(e) => updateLine(line._key, "return_reason", e.target.value)}
+                    className="dark:bg-[#0a0e1a] dark:border-white/20 dark:text-slate-100"
                   />
                 </div>
               </div>
