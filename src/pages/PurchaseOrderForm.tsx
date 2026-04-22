@@ -725,8 +725,8 @@ export default function PurchaseOrderForm() {
                 )}
                 {selectedVendor.gstin && <p className="font-mono text-xs">GSTIN: {selectedVendor.gstin}</p>}
                 {selectedVendor.phone1 && <p className="text-muted-foreground">Ph: {selectedVendor.phone1}</p>}
-                {(selectedVendor as any).email1 && <p className="text-muted-foreground">{(selectedVendor as any).email1}</p>}
                 {selectedVendor.contact_person && <p className="text-xs text-muted-foreground">Contact: {selectedVendor.contact_person}</p>}
+                {selectedVendor.email1 && <p className="text-muted-foreground">{selectedVendor.email1}</p>}
               </div>
             )}
 

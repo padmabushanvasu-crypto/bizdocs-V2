@@ -514,7 +514,7 @@ export default function PurchaseOrderDetail() {
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontWeight: '700', fontSize: '11pt' }}>PO No: {po.po_number.replace("/-", "-")}</div>
               <div style={{ fontSize: '9.5pt' }}>Date: {new Date(po.po_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
-              {(po as any).vendor_reference && <div style={{ fontSize: '9pt' }}>Vendor Ref: {(po as any).vendor_reference}</div>}
+              {po.vendor_reference && <div style={{ fontSize: '9pt' }}>Vendor Ref: {po.vendor_reference}</div>}
               {po.reference_number && <div style={{ fontSize: '9pt' }}>Ref: {po.reference_number}</div>}
             </div>
           </div>
@@ -535,8 +535,8 @@ export default function PurchaseOrderDetail() {
                 {po.vendor_address && <p className="text-sm text-muted-foreground">{po.vendor_address}</p>}
                 {po.vendor_gstin && <p className="text-sm font-mono">GSTIN: {po.vendor_gstin}</p>}
                 {po.vendor_phone && <p className="text-sm text-muted-foreground">Ph: {po.vendor_phone}</p>}
-                {(po as any).vendor_email && <p className="text-sm text-muted-foreground">{(po as any).vendor_email}</p>}
-                {(po as any).vendor_contact_person && <p className="text-sm text-muted-foreground">Contact: {(po as any).vendor_contact_person}</p>}
+                {po.vendor_contact_person && <p className="text-sm text-muted-foreground">Contact: {po.vendor_contact_person}</p>}
+                {po.vendor_email && <p className="text-sm text-muted-foreground">{po.vendor_email}</p>}
               </div>
               <div className="text-left md:text-right space-y-1">
                 <div className="flex md:justify-end gap-4">
@@ -549,10 +549,10 @@ export default function PurchaseOrderDetail() {
                     <p>{new Date(po.po_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</p>
                   </div>
                 </div>
-                {(po as any).vendor_reference && (
+                {po.vendor_reference && (
                   <div className="md:text-right">
                     <p className="text-xs text-muted-foreground">Vendor Reference</p>
-                    <p className="text-sm">{(po as any).vendor_reference}</p>
+                    <p className="text-sm">{po.vendor_reference}</p>
                   </div>
                 )}
                 {po.reference_number && (
@@ -604,8 +604,8 @@ export default function PurchaseOrderDetail() {
                   {po.vendor_address && <div style={{ fontSize: '9pt', color: '#475569', lineHeight: 1.5 }}>{po.vendor_address}</div>}
                   {po.vendor_gstin && <div style={{ fontSize: '8.5pt', fontFamily: 'monospace', lineHeight: 1.5 }}>GSTIN: {po.vendor_gstin}</div>}
                   {po.vendor_phone && <div style={{ fontSize: '9pt', color: '#475569', lineHeight: 1.5 }}>Ph: {po.vendor_phone}</div>}
-                  {(po as any).vendor_email && <div style={{ fontSize: '9pt', color: '#475569', lineHeight: 1.5 }}>{(po as any).vendor_email}</div>}
-                  {(po as any).vendor_contact_person && <div style={{ fontSize: '8.5pt', color: '#475569', lineHeight: 1.5 }}>Contact: {(po as any).vendor_contact_person}</div>}
+                  {po.vendor_contact_person && <div style={{ fontSize: '8.5pt', color: '#475569', lineHeight: 1.5 }}>Contact: {po.vendor_contact_person}</div>}
+                  {po.vendor_email && <div style={{ fontSize: '9pt', color: '#475569', lineHeight: 1.5 }}>{po.vendor_email}</div>}
                 </div>
                 {deliverAddr && (
                   <div style={{ flex: '1', paddingLeft: '8px' }}>

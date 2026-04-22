@@ -29,6 +29,7 @@ export interface PurchaseOrder {
   vendor_phone: string | null;
   vendor_reference: string | null;
   vendor_email: string | null;
+  vendor_contact_person: string | null;
   reference_number: string | null;
   payment_terms: string | null;
   delivery_address: string | null;
@@ -139,6 +140,9 @@ export async function createPurchaseOrder({ po, lineItems }: CreatePOData) {
       po_number: po.po_number, po_date: po.po_date,
       vendor_id: po.vendor_id || null, vendor_name: po.vendor_name, vendor_address: po.vendor_address,
       vendor_gstin: po.vendor_gstin, vendor_state_code: po.vendor_state_code, vendor_phone: po.vendor_phone,
+      vendor_reference: po.vendor_reference || null,
+      vendor_email: po.vendor_email || null,
+      vendor_contact_person: po.vendor_contact_person || null,
       reference_number: po.reference_number, payment_terms: po.payment_terms,
       delivery_address: po.delivery_address,
         delivery_contact_person: po.delivery_contact_person,
@@ -183,6 +187,9 @@ export async function updatePurchaseOrder(id: string, { po, lineItems }: CreateP
     po_number: po.po_number, po_date: po.po_date,
     vendor_id: po.vendor_id, vendor_name: po.vendor_name, vendor_address: po.vendor_address,
     vendor_gstin: po.vendor_gstin, vendor_state_code: po.vendor_state_code, vendor_phone: po.vendor_phone,
+    vendor_reference: po.vendor_reference || null,
+    vendor_email: po.vendor_email || null,
+    vendor_contact_person: po.vendor_contact_person || null,
     reference_number: po.reference_number, payment_terms: po.payment_terms,
     delivery_address: po.delivery_address,
     delivery_contact_person: po.delivery_contact_person,

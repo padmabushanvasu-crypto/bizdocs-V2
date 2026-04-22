@@ -60,6 +60,8 @@ export interface DeliveryChallan {
   party_gstin: string | null;
   party_state_code: string | null;
   party_phone: string | null;
+  party_contact_person?: string | null;
+  party_email?: string | null;
   reference_number: string | null;
   approximate_value: number;
   special_instructions: string | null;
@@ -280,6 +282,7 @@ export async function createDeliveryChallan({ dc, lineItems }: CreateDCData) {
       dc_number: dc.dc_number, dc_date: dc.dc_date, dc_type: dc.dc_type,
       party_id: dc.party_id || null, party_name: dc.party_name, party_address: dc.party_address,
       party_gstin: dc.party_gstin, party_state_code: dc.party_state_code, party_phone: dc.party_phone,
+      party_contact_person: dc.party_contact_person || null,
       reference_number: dc.reference_number, approximate_value: dc.approximate_value,
       special_instructions: dc.special_instructions, internal_remarks: dc.internal_remarks,
       return_due_date: dc.return_due_date, nature_of_job_work: dc.nature_of_job_work,
@@ -354,6 +357,7 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
     dc_number: dc.dc_number, dc_date: dc.dc_date, dc_type: dc.dc_type,
     party_id: dc.party_id, party_name: dc.party_name, party_address: dc.party_address,
     party_gstin: dc.party_gstin, party_state_code: dc.party_state_code, party_phone: dc.party_phone,
+    party_contact_person: dc.party_contact_person || null,
     reference_number: dc.reference_number, approximate_value: dc.approximate_value,
     special_instructions: dc.special_instructions, internal_remarks: dc.internal_remarks,
     return_due_date: dc.return_due_date, nature_of_job_work: dc.nature_of_job_work,
