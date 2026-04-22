@@ -60,6 +60,9 @@ export interface PurchaseOrder {
   approved_by: string | null;
   rejection_reason: string | null;
   rejection_noted: boolean;
+  currency?: string | null;
+  currency_symbol?: string | null;
+  exchange_rate?: number | null;
   created_at: string;
   updated_at: string;
   line_items?: POLineItem[];
@@ -145,6 +148,9 @@ export async function createPurchaseOrder({ po, lineItems }: CreatePOData) {
       additional_charges: po.additional_charges as any, taxable_value: po.taxable_value,
       igst_amount: po.igst_amount, cgst_amount: po.cgst_amount, sgst_amount: po.sgst_amount,
       total_gst: po.total_gst, grand_total: po.grand_total, gst_rate: po.gst_rate,
+      currency: po.currency ?? 'INR',
+      currency_symbol: po.currency_symbol ?? '₹',
+      exchange_rate: po.exchange_rate ?? 1,
       status: po.status, issued_at: po.issued_at,
     } as any)
     .select().single();
@@ -186,6 +192,9 @@ export async function updatePurchaseOrder(id: string, { po, lineItems }: CreateP
     additional_charges: po.additional_charges as any, taxable_value: po.taxable_value,
     igst_amount: po.igst_amount, cgst_amount: po.cgst_amount, sgst_amount: po.sgst_amount,
     total_gst: po.total_gst, grand_total: po.grand_total, gst_rate: po.gst_rate,
+    currency: po.currency ?? 'INR',
+    currency_symbol: po.currency_symbol ?? '₹',
+    exchange_rate: po.exchange_rate ?? 1,
     status: po.status, issued_at: po.issued_at,
   } as any).eq("id", id);
   if (error) throw error;

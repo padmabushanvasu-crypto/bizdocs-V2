@@ -228,9 +228,9 @@ export default function PurchaseOrderDetail() {
   const itemCount = items.length;
   const compactClass = itemCount > 12 ? ' ultra-compact' : itemCount > 8 ? ' compact' : '';
   const isSameState = po.vendor_state_code === "33";
-  const isForeignPO = (po as any).currency && (po as any).currency !== "INR";
-  const poCurrencySymbol = (po as any).currency_symbol || "₹";
-  const poExchangeRate = (po as any).exchange_rate || 1;
+  const isForeignPO = po.currency != null && po.currency !== "INR";
+  const poCurrencySymbol = po.currency_symbol || "₹";
+  const poExchangeRate = po.exchange_rate || 1;
   const charges = po.additional_charges || [];
   const canRecordReceipt = ["approved", "issued", "partially_received"].includes(po.status) && po.status !== "deleted";
 
@@ -401,9 +401,9 @@ export default function PurchaseOrderDetail() {
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-display font-bold font-mono text-foreground">{po.po_number}</h1>
           <span className={statusClass[po.status] || "status-draft"}>{statusLabels[po.status] || po.status}</span>
-          {(po as any).currency && (po as any).currency !== "INR" && (
+          {po.currency && po.currency !== "INR" && (
             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/30">
-              {(po as any).currency}
+              {po.currency}
             </span>
           )}
         </div>
@@ -677,8 +677,8 @@ export default function PurchaseOrderDetail() {
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.quantity}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.unit}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center tabular-nums font-mono">{item.delivery_date ? new Date(item.delivery_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</td>
-                    {!hideCosts && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(item.unit_price)}</td>}
-                    {!hideCosts && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(item.line_total)}</td>}
+                    {!hideCosts && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{isForeignPO ? `${poCurrencySymbol}${Number(item.unit_price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : formatCurrency(item.unit_price)}</td>}
+                    {!hideCosts && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{isForeignPO ? `${poCurrencySymbol}${Number(item.line_total).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : formatCurrency(item.line_total)}</td>}
                   </tr>
                 );
               })}
@@ -695,18 +695,18 @@ export default function PurchaseOrderDetail() {
           <div className="w-full max-w-xs space-y-1.5 text-sm po-totals-block">
             <div className="flex justify-between po-totals-row">
               <span className="text-muted-foreground">Taxable Amount</span>
-              <span className="font-mono tabular-nums">{formatCurrency(po.sub_total)}</span>
+              <span className="font-mono tabular-nums">{isForeignPO ? `${poCurrencySymbol}${Number(po.sub_total).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : formatCurrency(po.sub_total)}</span>
             </div>
             {charges.length > 0 && charges.map((c: any, i: number) => (
               <div key={i} className="flex justify-between po-totals-row">
                 <span className="text-muted-foreground">{c.label || "Additional"}</span>
-                <span className="font-mono tabular-nums">{formatCurrency(c.amount)}</span>
+                <span className="font-mono tabular-nums">{isForeignPO ? `${poCurrencySymbol}${Number(c.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : formatCurrency(c.amount)}</span>
               </div>
             ))}
             {Math.abs((po.taxable_value || 0) - (po.sub_total || 0)) > 0.005 && (
               <div className="flex justify-between po-totals-row">
                 <span className="text-muted-foreground">Taxable Value</span>
-                <span className="font-mono tabular-nums">{formatCurrency(po.taxable_value)}</span>
+                <span className="font-mono tabular-nums">{isForeignPO ? `${poCurrencySymbol}${Number(po.taxable_value).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : formatCurrency(po.taxable_value)}</span>
               </div>
             )}
             <div className="border-t border-border my-1" />
