@@ -337,6 +337,9 @@ export default function DeliveryChallanDetail() {
   const subTotal = dc.sub_total || items.reduce((s, i) => s + (i.amount || 0), 0);
   const grandTotal = dc.grand_total || subTotal;
   const isCgstSgst = (dc.cgst_amount || 0) > 0;
+  const isForeignDC = (dc as any).currency && (dc as any).currency !== "INR";
+  const dcCurrencySymbol = (dc as any).currency_symbol || "₹";
+  const dcExchangeRate = (dc as any).exchange_rate || 1;
 
   // ── Compact A4 print copy renderer ────────────────────────────────────────
   const renderDCPrintCopy = (label: string) => {
@@ -710,6 +713,11 @@ export default function DeliveryChallanDetail() {
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-display font-bold font-mono text-foreground">{dc.dc_number.replace('/-', '-')}</h1>
           <span className={statusClass[dc.status] || "status-draft"}>{statusLabels[dc.status] || dc.status}</span>
+          {(dc as any).currency && (dc as any).currency !== "INR" && (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/30">
+              {(dc as any).currency}
+            </span>
+          )}
           {isOverdue && (
             <span className="bg-destructive/10 text-destructive border border-destructive/20 text-xs font-medium px-2.5 py-0.5 rounded-full">Overdue</span>
           )}
@@ -1003,9 +1011,15 @@ export default function DeliveryChallanDetail() {
           <div className="w-full max-w-xs space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Sub Total</span>
-              <span className="font-mono tabular-nums">{formatCurrency(subTotal)}</span>
+              <span className="font-mono tabular-nums">
+                {isForeignDC
+                  ? `${dcCurrencySymbol}${new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(subTotal)}`
+                  : formatCurrency(subTotal)}
+              </span>
             </div>
-            {isCgstSgst ? (
+            {isForeignDC ? (
+              <div className="text-xs text-blue-600 italic">No tax — foreign party</div>
+            ) : isCgstSgst ? (
               <>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">CGST @ {(dc.gst_rate || 18) / 2}%</span>
@@ -1025,12 +1039,24 @@ export default function DeliveryChallanDetail() {
             <div className="border-t border-border pt-2">
               <div className="flex justify-between text-base font-bold">
                 <span>Total Amount</span>
-                <span className="font-mono tabular-nums text-primary">{formatCurrency(grandTotal)}</span>
+                <span className="font-mono tabular-nums text-primary">
+                  {isForeignDC
+                    ? `${dcCurrencySymbol}${new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(grandTotal)}`
+                    : formatCurrency(grandTotal)}
+                </span>
               </div>
+              {isForeignDC && dcExchangeRate > 0 && (
+                <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                  <span>≈ INR Equivalent (@ {dcExchangeRate})</span>
+                  <span className="font-mono tabular-nums">₹{new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(grandTotal * dcExchangeRate)}</span>
+                </div>
+              )}
             </div>
-            <div className="bg-muted/50 rounded p-2 text-xs text-muted-foreground italic">
-              {amountInWords(grandTotal)}
-            </div>
+            {!isForeignDC && (
+              <div className="bg-muted/50 rounded p-2 text-xs text-muted-foreground italic">
+                {amountInWords(grandTotal)}
+              </div>
+            )}
           </div>
         </div>}
 

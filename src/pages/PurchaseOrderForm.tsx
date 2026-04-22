@@ -35,6 +35,22 @@ import { useCanEdit } from "@/hooks/useCanEdit";
 
 const PAYMENT_TERMS = ["Immediate", "7 Days", "15 Days", "30 Days", "45 Days", "60 Days", "Custom"];
 const GST_RATES = [0, 5, 12, 18, 28];
+
+const CURRENCIES = [
+  { code: "INR", symbol: "₹", name: "Indian Rupee" },
+  { code: "USD", symbol: "$", name: "US Dollar" },
+  { code: "EUR", symbol: "€", name: "Euro" },
+  { code: "GBP", symbol: "£", name: "British Pound" },
+  { code: "AED", symbol: "د.إ", name: "UAE Dirham" },
+  { code: "CNY", symbol: "¥", name: "Chinese Yuan" },
+  { code: "JPY", symbol: "¥", name: "Japanese Yen" },
+  { code: "KRW", symbol: "₩", name: "South Korean Won" },
+  { code: "SGD", symbol: "S$", name: "Singapore Dollar" },
+  { code: "CHF", symbol: "CHF", name: "Swiss Franc" },
+  { code: "CAD", symbol: "C$", name: "Canadian Dollar" },
+  { code: "AUD", symbol: "A$", name: "Australian Dollar" },
+];
+
 // Company state code fetched dynamically from settings
 
 function emptyLineItem(serial: number): POLineItem {
@@ -91,6 +107,14 @@ export default function PurchaseOrderForm() {
   const [additionalCharges, setAdditionalCharges] = useState<{ label: string; amount: number }[]>([]);
   const [successDialogOpen, setSuccessDialogOpen] = useState(false);
   const [savedPOId, setSavedPOId] = useState<string | null>(null);
+
+  // Foreign currency state
+  const [currency, setCurrency] = useState("INR");
+  const [currencySymbol, setCurrencySymbol] = useState("₹");
+  const [exchangeRate, setExchangeRate] = useState(1);
+  const [isForeignVendor, setIsForeignVendor] = useState(false);
+  const [fetchingRate, setFetchingRate] = useState(false);
+  const [rateFetchStatus, setRateFetchStatus] = useState<"idle" | "live" | "manual">("idle");
 
   // Fetch company settings for state code
   const { data: companySettings } = useQuery({
@@ -166,6 +190,15 @@ export default function PurchaseOrderForm() {
       if (existingPO.line_items?.length) {
         setLineItems(existingPO.line_items);
       }
+      // Restore currency
+      const poCurrency = (existingPO as any).currency || "INR";
+      const poCurrencySymbol = (existingPO as any).currency_symbol || "₹";
+      const poExchangeRate = (existingPO as any).exchange_rate || 1;
+      setCurrency(poCurrency);
+      setCurrencySymbol(poCurrencySymbol);
+      setExchangeRate(poExchangeRate);
+      setIsForeignVendor(poCurrency !== "INR");
+      if (poCurrency !== "INR") setRateFetchStatus("manual");
       // Find vendor
       if (existingPO.vendor_id) {
         const v = vendors.find((v) => v.id === existingPO.vendor_id);
@@ -256,6 +289,9 @@ export default function PurchaseOrderForm() {
       if (draft.lineItems?.length) setLineItems(draft.lineItems as POLineItem[]);
       if (draft.gstRate !== undefined) setGstRate(draft.gstRate);
       if (draft.additionalCharges !== undefined) setAdditionalCharges(draft.additionalCharges);
+      if (draft.currency !== undefined) { setCurrency(draft.currency); setIsForeignVendor(draft.currency !== "INR"); }
+      if (draft.currencySymbol !== undefined) setCurrencySymbol(draft.currencySymbol);
+      if (draft.exchangeRate !== undefined) { setExchangeRate(draft.exchangeRate); if (draft.currency !== "INR") setRateFetchStatus("manual"); }
     } catch {
       sessionStorage.removeItem(DRAFT_KEY);
     }
@@ -282,10 +318,13 @@ export default function PurchaseOrderForm() {
         lineItems,
         gstRate,
         additionalCharges,
+        currency,
+        currencySymbol,
+        exchangeRate,
       }));
     }, 500);
     return () => clearTimeout(timer);
-  }, [isEdit, poDate, vendorId, selectedVendor, vendorReference, vendorEmail, referenceNumber, paymentTerms, customPaymentTerms, deliveryAddress, deliveryContactPerson, deliveryContactPhone, specialInstructions, internalRemarks, lineItems, gstRate, additionalCharges]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isEdit, poDate, vendorId, selectedVendor, vendorReference, vendorEmail, referenceNumber, paymentTerms, customPaymentTerms, deliveryAddress, deliveryContactPerson, deliveryContactPhone, specialInstructions, internalRemarks, lineItems, gstRate, additionalCharges, currency, currencySymbol, exchangeRate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Vendor auto-fill from item_id in prefill state (Stock Alerts Board flow).
   // Looks up the most recent PO vendor for this item via po_line_items.
@@ -329,6 +368,30 @@ export default function PurchaseOrderForm() {
     })();
   }, [isEdit, prefillApplied, vendors]);
 
+  const fetchExchangeRate = async (targetCurrency: string) => {
+    if (targetCurrency === "INR") {
+      setExchangeRate(1);
+      setRateFetchStatus("idle");
+      return;
+    }
+    setFetchingRate(true);
+    setRateFetchStatus("idle");
+    try {
+      const res = await fetch("https://open.er-api.com/v6/latest/INR");
+      const data = await res.json();
+      if (data?.rates?.[targetCurrency]) {
+        // data.rates[X] = how many X per 1 INR, so INR per X = 1 / rate
+        const rate = Math.round((1 / data.rates[targetCurrency]) * 10000) / 10000;
+        setExchangeRate(rate);
+        setRateFetchStatus("live");
+      }
+    } catch {
+      setRateFetchStatus("manual");
+    } finally {
+      setFetchingRate(false);
+    }
+  };
+
   const handleVendorSelect = (vendor: Party) => {
     setVendorId(vendor.id);
     setSelectedVendor(vendor);
@@ -338,6 +401,39 @@ export default function PurchaseOrderForm() {
     }
     if ((vendor as any).email1) {
       setVendorEmail((vendor as any).email1);
+    }
+    // Detect foreign vendor
+    const vendorCountry = (vendor as any).country;
+    const isForeign = vendorCountry && vendorCountry !== "India";
+    setIsForeignVendor(!!isForeign);
+    if (isForeign) {
+      // Map common countries to currencies
+      const countryCurrencyMap: Record<string, string> = {
+        "United Arab Emirates": "AED",
+        "China": "CNY",
+        "United States": "USD",
+        "United Kingdom": "GBP",
+        "Germany": "EUR",
+        "France": "EUR",
+        "Italy": "EUR",
+        "Japan": "JPY",
+        "South Korea": "KRW",
+        "Singapore": "SGD",
+        "Switzerland": "CHF",
+        "Canada": "CAD",
+        "Australia": "AUD",
+      };
+      const detectedCurrency = countryCurrencyMap[vendorCountry] || "USD";
+      const currencyInfo = CURRENCIES.find(c => c.code === detectedCurrency) || CURRENCIES[1];
+      setCurrency(currencyInfo.code);
+      setCurrencySymbol(currencyInfo.symbol);
+      fetchExchangeRate(currencyInfo.code);
+    } else {
+      setCurrency("INR");
+      setCurrencySymbol("₹");
+      setExchangeRate(1);
+      setIsForeignVendor(false);
+      setRateFetchStatus("idle");
     }
   };
 
@@ -398,6 +494,7 @@ export default function PurchaseOrderForm() {
       const effectiveStatus = (!isPurchaseTeam && isEdit && existingPO?.status === 'issued')
         ? 'approved'
         : status;
+      const effectiveGstRate = isForeignVendor ? 0 : gstRate;
       const poData = {
         po_number: poNumber,
         po_date: format(poDate, "yyyy-MM-dd"),
@@ -424,12 +521,15 @@ export default function PurchaseOrderForm() {
         sub_total: subTotal,
         additional_charges: additionalCharges,
         taxable_value: taxableValue,
-        igst_amount: taxResult.igst,
-        cgst_amount: taxResult.cgst,
-        sgst_amount: taxResult.sgst,
-        total_gst: taxResult.total,
-        grand_total: grandTotal,
-        gst_rate: gstRate,
+        igst_amount: isForeignVendor ? 0 : taxResult.igst,
+        cgst_amount: isForeignVendor ? 0 : taxResult.cgst,
+        sgst_amount: isForeignVendor ? 0 : taxResult.sgst,
+        total_gst: isForeignVendor ? 0 : taxResult.total,
+        grand_total: isForeignVendor ? taxableValue : grandTotal,
+        gst_rate: effectiveGstRate,
+        currency,
+        currency_symbol: currencySymbol,
+        exchange_rate: exchangeRate,
         status: effectiveStatus,
         issued_at: effectiveStatus === "issued" ? new Date().toISOString() : null,
         cancelled_at: null,
@@ -444,7 +544,7 @@ export default function PurchaseOrderForm() {
 
       const items = lineItems
         .filter((i) => i.description.trim())
-        .map((i, idx) => ({ ...i, serial_number: idx + 1, gst_rate: gstRate }));
+        .map((i, idx) => ({ ...i, serial_number: idx + 1, gst_rate: effectiveGstRate }));
 
       if (isEdit) {
         await updatePurchaseOrder(id!, { po: poData, lineItems: items });
@@ -610,17 +710,81 @@ export default function PurchaseOrderForm() {
                        selectedVendor.vendor_type === "customer" ? "Customer" : "Supplier & Processor"}
                     </span>
                   )}
+                  {isForeignVendor && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/30">
+                      Foreign Vendor
+                    </span>
+                  )}
                 </div>
                 {selectedVendor.address_line1 && <p className="text-muted-foreground">{selectedVendor.address_line1}</p>}
                 {selectedVendor.city && (
                   <p className="text-muted-foreground">
                     {selectedVendor.city}{selectedVendor.state ? `, ${selectedVendor.state}` : ""}
+                    {(selectedVendor as any).country && (selectedVendor as any).country !== "India" ? `, ${(selectedVendor as any).country}` : ""}
                   </p>
                 )}
                 {selectedVendor.gstin && <p className="font-mono text-xs">GSTIN: {selectedVendor.gstin}</p>}
                 {selectedVendor.phone1 && <p className="text-muted-foreground">Ph: {selectedVendor.phone1}</p>}
                 {(selectedVendor as any).email1 && <p className="text-muted-foreground">{(selectedVendor as any).email1}</p>}
                 {selectedVendor.contact_person && <p className="text-xs text-muted-foreground">Contact: {selectedVendor.contact_person}</p>}
+              </div>
+            )}
+
+            {/* Foreign Currency Section */}
+            {isForeignVendor && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-500/10 dark:border-blue-500/30 p-3 space-y-3">
+                <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 uppercase tracking-wide">Foreign Currency</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <Label className="text-xs text-slate-600 dark:text-slate-400">Currency</Label>
+                    <Select
+                      value={currency}
+                      onValueChange={(v) => {
+                        const c = CURRENCIES.find(x => x.code === v) || CURRENCIES[0];
+                        setCurrency(c.code);
+                        setCurrencySymbol(c.symbol);
+                        setRateFetchStatus("manual");
+                        fetchExchangeRate(c.code);
+                      }}
+                    >
+                      <SelectTrigger className="mt-1 h-8 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CURRENCIES.filter(c => c.code !== "INR").map((c) => (
+                          <SelectItem key={c.code} value={c.code}>{c.code} — {c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-slate-600 dark:text-slate-400">Exchange Rate (1 {currency} = ? INR)</Label>
+                    <Input
+                      type="number"
+                      step="0.0001"
+                      value={exchangeRate}
+                      onChange={(e) => { setExchangeRate(Number(e.target.value)); setRateFetchStatus("manual"); }}
+                      className="mt-1 h-8 text-sm font-mono"
+                    />
+                  </div>
+                  <div className="flex flex-col justify-end">
+                    {fetchingRate ? (
+                      <p className="text-xs text-slate-500 dark:text-slate-400 pb-1">Fetching live rate…</p>
+                    ) : rateFetchStatus === "live" ? (
+                      <p className="text-xs text-green-600 dark:text-green-400 pb-1">Live rate fetched</p>
+                    ) : rateFetchStatus === "manual" ? (
+                      <p className="text-xs text-amber-600 dark:text-amber-400 pb-1">Manual rate</p>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => fetchExchangeRate(currency)}
+                      className="text-xs text-blue-600 hover:underline text-left"
+                    >
+                      Refresh rate
+                    </button>
+                  </div>
+                </div>
+                <p className="text-xs text-blue-600 dark:text-blue-400">No GST applicable for foreign vendors. Amounts shown in {currency}.</p>
               </div>
             )}
 
@@ -738,19 +902,21 @@ export default function PurchaseOrderForm() {
               {lineItems.filter((i) => i.description.trim()).length}
             </span>
           </div>
-          <div className="flex items-center gap-3">
-            <Label className="text-xs text-muted-foreground">GST Rate:</Label>
-            <Select value={String(gstRate)} onValueChange={(v) => setGstRate(Number(v))}>
-              <SelectTrigger className="w-[90px] h-8">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {GST_RATES.map((r) => (
-                  <SelectItem key={r} value={String(r)}>{r}%</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {!isForeignVendor && (
+            <div className="flex items-center gap-3">
+              <Label className="text-xs text-muted-foreground">GST Rate:</Label>
+              <Select value={String(gstRate)} onValueChange={(v) => setGstRate(Number(v))}>
+                <SelectTrigger className="w-[90px] h-8">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {GST_RATES.map((r) => (
+                    <SelectItem key={r} value={String(r)}>{r}%</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
 
         <div className="overflow-x-auto">
@@ -763,9 +929,9 @@ export default function PurchaseOrderForm() {
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-32">Drawing No</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-20">Qty</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-24">Unit</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-28">Unit Price ₹</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-28">Unit Price {currencySymbol}</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-36">Delivery Date</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-28">Amount ₹</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-28">Amount {currencySymbol}</th>
                 <th className="w-10"></th>
               </tr>
             </thead>
@@ -779,7 +945,7 @@ export default function PurchaseOrderForm() {
                       onChange={(v) => updateLineItem(index, "description", v)}
                       onSelect={(selectedItem) => {
                         updateLineItem(index, "description", selectedItem.description);
-                        updateLineItem(index, "drawing_number", selectedItem.drawing_revision || "");
+                        updateLineItem(index, "drawing_number", selectedItem.drawing_number || selectedItem.drawing_revision || "");
                         updateLineItem(index, "unit", selectedItem.unit || "NOS");
                         if (!item.unit_price) updateLineItem(index, "unit_price", selectedItem.standard_cost || 0);
                         updateLineItem(index, "gst_rate", selectedItem.gst_rate || 18);
@@ -847,7 +1013,7 @@ export default function PurchaseOrderForm() {
                   </td>
                   <td className="px-3 py-2 w-28 bg-slate-50 text-right text-sm font-medium text-slate-700 font-mono tabular-nums">
                     {item.line_total
-                      ? `₹${new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(item.line_total)}`
+                      ? `${currencySymbol}${new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(item.line_total)}`
                       : "—"}
                   </td>
                   <td className="px-2 w-10">
@@ -879,40 +1045,48 @@ export default function PurchaseOrderForm() {
         {/* GST Info */}
         <div className="paper-card space-y-2">
           <h3 className="text-sm font-medium text-slate-700 border-b border-border pb-2">GST Information</h3>
-          {!COMPANY_STATE_CODE && (
-            <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold">
-              <Info className="h-3 w-3 shrink-0" /> Company state not set —{" "}
-              <button type="button" className="underline hover:no-underline" onClick={() => navigate("/settings/company")}>
-                set it in Settings
-              </button>
+          {isForeignVendor ? (
+            <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 dark:bg-blue-500/10 dark:border-blue-500/30 dark:text-blue-300 text-xs font-semibold">
+              <Info className="h-3 w-3 shrink-0" /> No tax applicable for foreign vendor
             </div>
-          )}
-          {selectedVendor ? (
+          ) : (
             <>
-              <p className="text-sm">
-                <span className="text-muted-foreground">Vendor:</span>{" "}
-                <span className="font-medium">{getStateName(selectedVendor.state_code) || selectedVendor.state || "N/A"} ({selectedVendor.state_code || "??"})</span>
-              </p>
-              <p className="text-sm">
-                <span className="text-muted-foreground">Your Company:</span>{" "}
-                <span className="font-medium">{getStateName(COMPANY_STATE_CODE) || companySettings?.state || "N/A"} ({COMPANY_STATE_CODE || "?"})</span>
-              </p>
-              {gstType === 'cgst_sgst' ? (
-                <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold mt-1">
-                  <Info className="h-3 w-3 shrink-0" /> Intra-state — Input CGST + SGST
-                </div>
-              ) : !selectedVendor.state_code ? (
-                <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold mt-1">
-                  <Info className="h-3 w-3 shrink-0" /> Vendor state unknown — defaulting to IGST
-                </div>
-              ) : (
-                <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold mt-1">
-                  <Info className="h-3 w-3 shrink-0" /> Inter-state — Input IGST
+              {!COMPANY_STATE_CODE && (
+                <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold">
+                  <Info className="h-3 w-3 shrink-0" /> Company state not set —{" "}
+                  <button type="button" className="underline hover:no-underline" onClick={() => navigate("/settings/company")}>
+                    set it in Settings
+                  </button>
                 </div>
               )}
+              {selectedVendor ? (
+                <>
+                  <p className="text-sm">
+                    <span className="text-muted-foreground">Vendor:</span>{" "}
+                    <span className="font-medium">{getStateName(selectedVendor.state_code) || selectedVendor.state || "N/A"} ({selectedVendor.state_code || "??"})</span>
+                  </p>
+                  <p className="text-sm">
+                    <span className="text-muted-foreground">Your Company:</span>{" "}
+                    <span className="font-medium">{getStateName(COMPANY_STATE_CODE) || companySettings?.state || "N/A"} ({COMPANY_STATE_CODE || "?"})</span>
+                  </p>
+                  {gstType === 'cgst_sgst' ? (
+                    <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold mt-1">
+                      <Info className="h-3 w-3 shrink-0" /> Intra-state — Input CGST + SGST
+                    </div>
+                  ) : !selectedVendor.state_code ? (
+                    <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold mt-1">
+                      <Info className="h-3 w-3 shrink-0" /> Vendor state unknown — defaulting to IGST
+                    </div>
+                  ) : (
+                    <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold mt-1">
+                      <Info className="h-3 w-3 shrink-0" /> Inter-state — Input IGST
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">Select a vendor to see GST details</p>
+              )}
             </>
-          ) : (
-            <p className="text-sm text-muted-foreground">Select a vendor to see GST details</p>
           )}
         </div>
 
@@ -950,20 +1124,22 @@ export default function PurchaseOrderForm() {
           <div className="space-y-1.5 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Sub Total</span>
-              <span className="font-mono tabular-nums">{formatCurrency(subTotal)}</span>
+              <span className="font-mono tabular-nums">{currencySymbol}{new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(subTotal)}</span>
             </div>
             {additionalTotal > 0 && (
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Additional</span>
-                <span className="font-mono tabular-nums">{formatCurrency(additionalTotal)}</span>
+                <span className="font-mono tabular-nums">{currencySymbol}{new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(additionalTotal)}</span>
               </div>
             )}
             <div className="flex justify-between">
               <span className="text-muted-foreground">Taxable Value</span>
-              <span className="font-mono tabular-nums">{formatCurrency(taxableValue)}</span>
+              <span className="font-mono tabular-nums">{currencySymbol}{new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(taxableValue)}</span>
             </div>
             <div className="border-t border-border my-2" />
-            {gstType === 'cgst_sgst' ? (
+            {isForeignVendor ? (
+              <div className="text-xs text-blue-600 dark:text-blue-400 italic">No tax applicable for foreign vendor</div>
+            ) : gstType === 'cgst_sgst' ? (
               <>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Input CGST @ {gstRate / 2}%</span>
@@ -983,12 +1159,22 @@ export default function PurchaseOrderForm() {
             <div className="border-t border-border my-2" />
             <div className="flex justify-between text-base font-bold">
               <span>Grand Total</span>
-              <span className="font-mono tabular-nums text-primary">{formatCurrency(grandTotal)}</span>
+              <span className="font-mono tabular-nums text-primary">
+                {currencySymbol}{new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(isForeignVendor ? taxableValue : grandTotal)}
+              </span>
             </div>
+            {isForeignVendor && exchangeRate > 0 && (
+              <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
+                <span>≈ INR Equivalent</span>
+                <span className="font-mono tabular-nums">₹{new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(taxableValue * exchangeRate)}</span>
+              </div>
+            )}
           </div>
-          <p className="text-[10px] text-muted-foreground mt-3 italic">
-            {amountInWords(grandTotal)}
-          </p>
+          {!isForeignVendor && (
+            <p className="text-[10px] text-muted-foreground mt-3 italic">
+              {amountInWords(grandTotal)}
+            </p>
+          )}
         </div>
       </div>
 

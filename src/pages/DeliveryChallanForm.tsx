@@ -35,6 +35,37 @@ import { fetchProcessingRoute, fetchProcessingRouteAll, fetchJigsForDrawing, fet
 import { formatCurrency, amountInWords } from "@/lib/gst-utils";
 import { getGSTType, calculateLineTax, round2, resolveStateCode, type GSTType } from "@/lib/tax-utils";
 
+const CURRENCIES_DC = [
+  { code: "INR", symbol: "₹", name: "Indian Rupee" },
+  { code: "USD", symbol: "$", name: "US Dollar" },
+  { code: "EUR", symbol: "€", name: "Euro" },
+  { code: "GBP", symbol: "£", name: "British Pound" },
+  { code: "AED", symbol: "د.إ", name: "UAE Dirham" },
+  { code: "CNY", symbol: "¥", name: "Chinese Yuan" },
+  { code: "JPY", symbol: "¥", name: "Japanese Yen" },
+  { code: "KRW", symbol: "₩", name: "South Korean Won" },
+  { code: "SGD", symbol: "S$", name: "Singapore Dollar" },
+  { code: "CHF", symbol: "CHF", name: "Swiss Franc" },
+  { code: "CAD", symbol: "C$", name: "Canadian Dollar" },
+  { code: "AUD", symbol: "A$", name: "Australian Dollar" },
+];
+
+const COUNTRY_CURRENCY_MAP_DC: Record<string, string> = {
+  "United Arab Emirates": "AED",
+  "China": "CNY",
+  "United States": "USD",
+  "United Kingdom": "GBP",
+  "Germany": "EUR",
+  "France": "EUR",
+  "Italy": "EUR",
+  "Japan": "JPY",
+  "South Korea": "KRW",
+  "Singapore": "SGD",
+  "Switzerland": "CHF",
+  "Canada": "CAD",
+  "Australia": "AUD",
+};
+
 const RETURNABLE_SUBTYPES = [
   { value: "job_work_143", label: "Job Work (Section 143)" },
   { value: "job_work_out", label: "Job Work (Rule 45)" },
@@ -157,6 +188,13 @@ export default function DeliveryChallanForm() {
   const [gstRate, setGstRate] = useState(18);
   const [preparedBy, setPreparedBy] = useState("");
   const [checkedBy, setCheckedBy] = useState("");
+  // Foreign currency state
+  const [currency, setCurrency] = useState("INR");
+  const [currencySymbol, setCurrencySymbol] = useState("₹");
+  const [exchangeRate, setExchangeRate] = useState(1);
+  const [isForeignParty, setIsForeignParty] = useState(false);
+  const [fetchingRate, setFetchingRate] = useState(false);
+  const [rateFetchStatus, setRateFetchStatus] = useState<"idle" | "live" | "manual">("idle");
   // BOM stages state
   const [lineBomStages, setLineBomStages] = useState<Map<number, any[]>>(new Map());
   const [lineCompletedStages, setLineCompletedStages] = useState<Map<number, Set<number>>>(new Map());
@@ -277,6 +315,15 @@ export default function DeliveryChallanForm() {
       setGstRate(existingDC.gst_rate || 18);
       setPreparedBy(existingDC.prepared_by || "");
       setCheckedBy(existingDC.checked_by || "");
+      // Restore currency
+      const dcCurrency = (existingDC as any).currency || "INR";
+      const dcCurrencySymbol = (existingDC as any).currency_symbol || "₹";
+      const dcExchangeRate = (existingDC as any).exchange_rate || 1;
+      setCurrency(dcCurrency);
+      setCurrencySymbol(dcCurrencySymbol);
+      setExchangeRate(dcExchangeRate);
+      setIsForeignParty(dcCurrency !== "INR");
+      if (dcCurrency !== "INR") setRateFetchStatus("manual");
       if (existingDC.return_due_date) setReturnDueDate(new Date(existingDC.return_due_date));
       if (existingDC.line_items?.length) {
         setLineItems(existingDC.line_items);
@@ -382,6 +429,9 @@ export default function DeliveryChallanForm() {
       if (draft.gstRate !== undefined) setGstRate(draft.gstRate);
       if (draft.preparedBy !== undefined) setPreparedBy(draft.preparedBy);
       if (draft.checkedBy !== undefined) setCheckedBy(draft.checkedBy);
+      if (draft.currency !== undefined) { setCurrency(draft.currency); setIsForeignParty(draft.currency !== "INR"); }
+      if (draft.currencySymbol !== undefined) setCurrencySymbol(draft.currencySymbol);
+      if (draft.exchangeRate !== undefined) { setExchangeRate(draft.exchangeRate); if (draft.currency !== "INR") setRateFetchStatus("manual"); }
       if (draft.lineBomStages) setLineBomStages(new Map(draft.lineBomStages));
       if (draft.lineCompletedStages) setLineCompletedStages(new Map((draft.lineCompletedStages as [number, number[]][]).map(([k, v]) => [k, new Set(v)])));
       if (draft.lineStageSelection) setLineStageSelection(new Map(draft.lineStageSelection));
@@ -416,6 +466,9 @@ export default function DeliveryChallanForm() {
         gstRate,
         preparedBy,
         checkedBy,
+        currency,
+        currencySymbol,
+        exchangeRate,
         lineBomStages: Array.from(lineBomStages.entries()),
         lineCompletedStages: Array.from(lineCompletedStages.entries()).map(([k, v]) => [k, Array.from(v)]),
         lineStageSelection: Array.from(lineStageSelection.entries()),
@@ -424,12 +477,52 @@ export default function DeliveryChallanForm() {
       }));
     }, 500);
     return () => clearTimeout(timer);
-  }, [isEdit, primaryChoice, dcSubType, dcDate, partyId, selectedParty, referenceNumber, specialInstructions, internalRemarks, returnDueDate, natureOfJobWork, lineItems, vehicleNumber, driverName, driverContact, loNumber, approxValue, gstRate, preparedBy, checkedBy, lineBomStages, lineCompletedStages, lineStageSelection, itemIdByIndex, lineItemStock]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isEdit, primaryChoice, dcSubType, dcDate, partyId, selectedParty, referenceNumber, specialInstructions, internalRemarks, returnDueDate, natureOfJobWork, lineItems, vehicleNumber, driverName, driverContact, loNumber, approxValue, gstRate, preparedBy, checkedBy, currency, currencySymbol, exchangeRate, lineBomStages, lineCompletedStages, lineStageSelection, itemIdByIndex, lineItemStock]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const fetchExchangeRateDC = async (targetCurrency: string) => {
+    if (targetCurrency === "INR") {
+      setExchangeRate(1);
+      setRateFetchStatus("idle");
+      return;
+    }
+    setFetchingRate(true);
+    setRateFetchStatus("idle");
+    try {
+      const res = await fetch("https://open.er-api.com/v6/latest/INR");
+      const data = await res.json();
+      if (data?.rates?.[targetCurrency]) {
+        const rate = Math.round((1 / data.rates[targetCurrency]) * 10000) / 10000;
+        setExchangeRate(rate);
+        setRateFetchStatus("live");
+      }
+    } catch {
+      setRateFetchStatus("manual");
+    } finally {
+      setFetchingRate(false);
+    }
+  };
 
   const handlePartySelect = (party: Party) => {
     setPartyId(party.id);
     setSelectedParty(party);
     setPartyOpen(false);
+    // Detect foreign party
+    const partyCountry = (party as any).country;
+    const isForeign = partyCountry && partyCountry !== "India";
+    setIsForeignParty(!!isForeign);
+    if (isForeign) {
+      const detectedCurrency = COUNTRY_CURRENCY_MAP_DC[partyCountry] || "USD";
+      const currencyInfo = CURRENCIES_DC.find(c => c.code === detectedCurrency) || CURRENCIES_DC[1];
+      setCurrency(currencyInfo.code);
+      setCurrencySymbol(currencyInfo.symbol);
+      fetchExchangeRateDC(currencyInfo.code);
+    } else {
+      setCurrency("INR");
+      setCurrencySymbol("₹");
+      setExchangeRate(1);
+      setIsForeignParty(false);
+      setRateFetchStatus("idle");
+    }
   };
 
   // Line item handlers
@@ -516,12 +609,15 @@ export default function DeliveryChallanForm() {
         lo_number: null,
         approx_value: approxValue ?? null,
         sub_total: subTotal,
-        cgst_amount: taxResult.cgst,
-        sgst_amount: taxResult.sgst,
-        igst_amount: taxResult.igst,
-        total_gst: taxResult.total,
-        grand_total: grandTotal,
-        gst_rate: gstRate,
+        cgst_amount: isForeignParty ? 0 : taxResult.cgst,
+        sgst_amount: isForeignParty ? 0 : taxResult.sgst,
+        igst_amount: isForeignParty ? 0 : taxResult.igst,
+        total_gst: isForeignParty ? 0 : taxResult.total,
+        grand_total: isForeignParty ? subTotal : grandTotal,
+        gst_rate: isForeignParty ? 0 : gstRate,
+        currency,
+        currency_symbol: currencySymbol,
+        exchange_rate: exchangeRate,
         challan_category: "supply_on_approval",
         prepared_by: preparedBy || null,
         checked_by: checkedBy || null,
@@ -833,16 +929,82 @@ export default function DeliveryChallanForm() {
 
             {selectedParty && (
               <div className="bg-muted/50 rounded-lg p-3 border border-border text-sm space-y-1">
-                <p className="font-medium text-foreground">{selectedParty.name}</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="font-medium text-foreground">{selectedParty.name}</p>
+                  {isForeignParty && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/30">
+                      Foreign Party
+                    </span>
+                  )}
+                </div>
                 {selectedParty.address_line1 && <p className="text-muted-foreground">{selectedParty.address_line1}</p>}
                 {selectedParty.city && (
                   <p className="text-muted-foreground">
                     {[selectedParty.city, selectedParty.state, selectedParty.pin_code].filter(Boolean).join(", ")}
+                    {(selectedParty as any).country && (selectedParty as any).country !== "India" ? `, ${(selectedParty as any).country}` : ""}
                   </p>
                 )}
                 {selectedParty.gstin && <p className="font-mono text-xs">GSTIN: {selectedParty.gstin}</p>}
                 {selectedParty.phone1 && <p className="text-xs text-muted-foreground">Ph: {selectedParty.phone1}</p>}
                 {selectedParty.contact_person && <p className="text-xs text-muted-foreground">Contact: {selectedParty.contact_person}</p>}
+              </div>
+            )}
+
+            {/* Foreign Currency Section */}
+            {isForeignParty && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-500/10 dark:border-blue-500/30 p-3 space-y-3">
+                <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 uppercase tracking-wide">Foreign Currency</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <Label className="text-xs text-slate-600 dark:text-slate-400">Currency</Label>
+                    <Select
+                      value={currency}
+                      onValueChange={(v) => {
+                        const c = CURRENCIES_DC.find(x => x.code === v) || CURRENCIES_DC[0];
+                        setCurrency(c.code);
+                        setCurrencySymbol(c.symbol);
+                        setRateFetchStatus("manual");
+                        fetchExchangeRateDC(c.code);
+                      }}
+                    >
+                      <SelectTrigger className="mt-1 h-8 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CURRENCIES_DC.filter(c => c.code !== "INR").map((c) => (
+                          <SelectItem key={c.code} value={c.code}>{c.code} — {c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-slate-600 dark:text-slate-400">Exchange Rate (1 {currency} = ? INR)</Label>
+                    <Input
+                      type="number"
+                      step="0.0001"
+                      value={exchangeRate}
+                      onChange={(e) => { setExchangeRate(Number(e.target.value)); setRateFetchStatus("manual"); }}
+                      className="mt-1 h-8 text-sm font-mono"
+                    />
+                  </div>
+                  <div className="flex flex-col justify-end">
+                    {fetchingRate ? (
+                      <p className="text-xs text-slate-500 dark:text-slate-400 pb-1">Fetching live rate…</p>
+                    ) : rateFetchStatus === "live" ? (
+                      <p className="text-xs text-green-600 dark:text-green-400 pb-1">Live rate fetched</p>
+                    ) : rateFetchStatus === "manual" ? (
+                      <p className="text-xs text-amber-600 dark:text-amber-400 pb-1">Manual rate</p>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => fetchExchangeRateDC(currency)}
+                      className="text-xs text-blue-600 hover:underline text-left"
+                    >
+                      Refresh rate
+                    </button>
+                  </div>
+                </div>
+                <p className="text-xs text-blue-600 dark:text-blue-400">No GST applicable for foreign parties. Amounts shown in {currency}.</p>
               </div>
             )}
 
@@ -923,8 +1085,8 @@ export default function DeliveryChallanForm() {
                 <th className="px-3 py-2 text-left w-48 text-xs font-medium text-slate-400 uppercase tracking-wider">Nature of Process</th>
                 <th className="px-3 py-2 text-right w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Qty</th>
                 <th className="px-3 py-2 text-left w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Unit</th>
-                <th className="px-3 py-2 text-right w-28 text-xs font-medium text-slate-400 uppercase tracking-wider">Rate ₹</th>
-                <th className="px-3 py-2 text-right w-28 text-xs font-medium text-slate-400 uppercase tracking-wider">Amount ₹</th>
+                <th className="px-3 py-2 text-right w-28 text-xs font-medium text-slate-400 uppercase tracking-wider">Rate {currencySymbol}</th>
+                <th className="px-3 py-2 text-right w-28 text-xs font-medium text-slate-400 uppercase tracking-wider">Amount {currencySymbol}</th>
                 <th className="w-10"></th>
               </tr>
             </thead>
@@ -1477,22 +1639,28 @@ export default function DeliveryChallanForm() {
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Sub Total</span>
-              <span className="font-mono tabular-nums font-medium">{formatCurrency(subTotal)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground flex items-center gap-1">
-                GST Rate
-                <Select value={String(gstRate)} onValueChange={(v) => setGstRate(Number(v))}>
-                  <SelectTrigger className="h-7 w-[80px] text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {[0, 5, 12, 18, 28].map((r) => (
-                      <SelectItem key={r} value={String(r)}>{r}%</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <span className="font-mono tabular-nums font-medium">
+                {currencySymbol}{new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(subTotal)}
               </span>
             </div>
-            {isJobWork143 ? (
+            {!isForeignParty && (
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground flex items-center gap-1">
+                  GST Rate
+                  <Select value={String(gstRate)} onValueChange={(v) => setGstRate(Number(v))}>
+                    <SelectTrigger className="h-7 w-[80px] text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {[0, 5, 12, 18, 28].map((r) => (
+                        <SelectItem key={r} value={String(r)}>{r}%</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </span>
+              </div>
+            )}
+            {isForeignParty ? (
+              <div className="text-xs text-blue-600 dark:text-blue-400 italic">No tax applicable for foreign party</div>
+            ) : isJobWork143 ? (
               <div className="text-xs text-blue-600 italic">No GST — Sec 143 Job Work</div>
             ) : gstType === 'cgst_sgst' ? (
               <>
@@ -1514,11 +1682,21 @@ export default function DeliveryChallanForm() {
             <div className="border-t border-border my-1" />
             <div className="flex justify-between text-base font-bold">
               <span>Grand Total</span>
-              <span className="font-mono tabular-nums text-primary">{formatCurrency(grandTotal)}</span>
+              <span className="font-mono tabular-nums text-primary">
+                {currencySymbol}{new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(isForeignParty ? subTotal : grandTotal)}
+              </span>
             </div>
-            <div className="bg-muted/50 rounded p-2 text-xs text-muted-foreground">
-              {amountInWords(grandTotal)}
-            </div>
+            {isForeignParty && exchangeRate > 0 && (
+              <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
+                <span>≈ INR Equivalent</span>
+                <span className="font-mono tabular-nums">₹{new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(subTotal * exchangeRate)}</span>
+              </div>
+            )}
+            {!isForeignParty && (
+              <div className="bg-muted/50 rounded p-2 text-xs text-muted-foreground">
+                {amountInWords(grandTotal)}
+              </div>
+            )}
           </div>
         </div>
       </div>

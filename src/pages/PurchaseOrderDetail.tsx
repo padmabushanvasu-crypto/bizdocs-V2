@@ -228,6 +228,9 @@ export default function PurchaseOrderDetail() {
   const itemCount = items.length;
   const compactClass = itemCount > 12 ? ' ultra-compact' : itemCount > 8 ? ' compact' : '';
   const isSameState = po.vendor_state_code === "33";
+  const isForeignPO = (po as any).currency && (po as any).currency !== "INR";
+  const poCurrencySymbol = (po as any).currency_symbol || "₹";
+  const poExchangeRate = (po as any).exchange_rate || 1;
   const charges = po.additional_charges || [];
   const canRecordReceipt = ["approved", "issued", "partially_received"].includes(po.status) && po.status !== "deleted";
 
@@ -398,6 +401,11 @@ export default function PurchaseOrderDetail() {
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-display font-bold font-mono text-foreground">{po.po_number}</h1>
           <span className={statusClass[po.status] || "status-draft"}>{statusLabels[po.status] || po.status}</span>
+          {(po as any).currency && (po as any).currency !== "INR" && (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/30">
+              {(po as any).currency}
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={() => setPrintPreview((p) => !p)}>
@@ -702,7 +710,9 @@ export default function PurchaseOrderDetail() {
               </div>
             )}
             <div className="border-t border-border my-1" />
-            {isSameState ? (
+            {isForeignPO ? (
+              <div className="text-xs text-blue-600 italic">No tax — foreign vendor</div>
+            ) : isSameState ? (
               <>
                 <div className="flex justify-between po-totals-row">
                   <span className="text-muted-foreground">CGST @ {(po.gst_rate || 18) / 2}%</span>
@@ -722,9 +732,19 @@ export default function PurchaseOrderDetail() {
             <div className="border-t border-border my-1" />
             <div className="flex justify-between text-base font-bold po-totals-row">
               <span>Grand Total</span>
-              <span className="font-mono tabular-nums text-primary">{formatCurrency(po.grand_total)}</span>
+              <span className="font-mono tabular-nums text-primary">
+                {isForeignPO
+                  ? `${poCurrencySymbol}${new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(po.grand_total)}`
+                  : formatCurrency(po.grand_total)}
+              </span>
             </div>
-            <p className="text-[10px] text-muted-foreground italic pt-1 po-amount-words">{amountInWords(po.grand_total)}</p>
+            {isForeignPO && poExchangeRate > 0 && (
+              <div className="flex justify-between text-xs text-muted-foreground po-totals-row">
+                <span>≈ INR Equivalent (@ {poExchangeRate})</span>
+                <span className="font-mono tabular-nums">₹{new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(po.grand_total * poExchangeRate)}</span>
+              </div>
+            )}
+            {!isForeignPO && <p className="text-[10px] text-muted-foreground italic pt-1 po-amount-words">{amountInWords(po.grand_total)}</p>}
           </div>
         </div>}
 

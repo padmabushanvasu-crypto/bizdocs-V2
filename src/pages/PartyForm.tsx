@@ -28,6 +28,7 @@ interface FormData {
   city: string;
   state: string;
   pin_code: string;
+  country: string;
   gstin: string;
   pan: string;
   payment_terms: string;
@@ -36,10 +37,123 @@ interface FormData {
   notes: string;
 }
 
+const COUNTRIES = [
+  "India",
+  "United Arab Emirates",
+  "China",
+  "United States",
+  "United Kingdom",
+  "Germany",
+  "France",
+  "Italy",
+  "Japan",
+  "South Korea",
+  "Afghanistan",
+  "Albania",
+  "Algeria",
+  "Angola",
+  "Argentina",
+  "Armenia",
+  "Australia",
+  "Austria",
+  "Azerbaijan",
+  "Bahrain",
+  "Bangladesh",
+  "Belarus",
+  "Belgium",
+  "Bolivia",
+  "Bosnia and Herzegovina",
+  "Brazil",
+  "Bulgaria",
+  "Cambodia",
+  "Cameroon",
+  "Canada",
+  "Chile",
+  "Colombia",
+  "Croatia",
+  "Czech Republic",
+  "Denmark",
+  "Ecuador",
+  "Egypt",
+  "Ethiopia",
+  "Finland",
+  "Georgia",
+  "Ghana",
+  "Greece",
+  "Guatemala",
+  "Hong Kong",
+  "Hungary",
+  "Indonesia",
+  "Iran",
+  "Iraq",
+  "Ireland",
+  "Israel",
+  "Jordan",
+  "Kazakhstan",
+  "Kenya",
+  "Kuwait",
+  "Kyrgyzstan",
+  "Laos",
+  "Latvia",
+  "Lebanon",
+  "Libya",
+  "Lithuania",
+  "Luxembourg",
+  "Malaysia",
+  "Mexico",
+  "Moldova",
+  "Morocco",
+  "Mozambique",
+  "Myanmar",
+  "Nepal",
+  "Netherlands",
+  "New Zealand",
+  "Nigeria",
+  "Norway",
+  "Oman",
+  "Pakistan",
+  "Peru",
+  "Philippines",
+  "Poland",
+  "Portugal",
+  "Qatar",
+  "Romania",
+  "Russia",
+  "Saudi Arabia",
+  "Senegal",
+  "Serbia",
+  "Singapore",
+  "Slovakia",
+  "Slovenia",
+  "South Africa",
+  "Spain",
+  "Sri Lanka",
+  "Sudan",
+  "Sweden",
+  "Switzerland",
+  "Syria",
+  "Taiwan",
+  "Tajikistan",
+  "Tanzania",
+  "Thailand",
+  "Tunisia",
+  "Turkey",
+  "Turkmenistan",
+  "Uganda",
+  "Ukraine",
+  "Uruguay",
+  "Uzbekistan",
+  "Venezuela",
+  "Vietnam",
+  "Yemen",
+  "Zambia",
+  "Zimbabwe",
+];
+
 const emptyForm: FormData = {
   name: "", contact_person: "", phone1: "", phone2: "", email1: "", email2: "",
   website: "", address_line1: "", address_line2: "", address_line3: "",
-  city: "", state: "", pin_code: "", gstin: "", pan: "",
+  city: "", state: "", pin_code: "", country: "India", gstin: "", pan: "",
   payment_terms: "", custom_payment_terms: "", credit_limit: "", notes: "",
 };
 
@@ -89,6 +203,7 @@ export default function PartyForm() {
         city: existingParty.city || "",
         state: existingParty.state || "",
         pin_code: existingParty.pin_code || "",
+        country: (existingParty as any).country || "India",
         gstin: existingParty.gstin || "",
         pan: existingParty.pan || "",
         payment_terms: isCustom ? "Custom" : (existingParty.payment_terms || ""),
@@ -180,6 +295,7 @@ export default function PartyForm() {
         state: form.state || null,
         state_code: stateCode || null,
         pin_code: form.pin_code || null,
+        country: form.country || "India",
         gstin: form.gstin.toUpperCase() || null,
         pan: form.pan.toUpperCase() || null,
         payment_terms: paymentTerms || null,
@@ -370,6 +486,19 @@ export default function PartyForm() {
             <div className="w-full sm:w-1/2">
               <Label htmlFor="pin">PIN Code</Label>
               <Input id="pin" value={form.pin_code} onChange={(e) => updateField("pin_code", e.target.value)} placeholder="600032" maxLength={6} />
+            </div>
+            <div className="w-full sm:w-1/2">
+              <Label htmlFor="country">Country</Label>
+              <Select value={form.country || "India"} onValueChange={(v) => updateField("country", v)}>
+                <SelectTrigger id="country" className="mt-1">
+                  <SelectValue placeholder="Select country" />
+                </SelectTrigger>
+                <SelectContent>
+                  {COUNTRIES.map((c) => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </FormSection>
