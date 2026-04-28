@@ -28,6 +28,7 @@ import {
 } from "@/lib/delivery-challans-api";
 import { logAudit } from "@/lib/audit-api";
 import { useAuth } from "@/hooks/useAuth";
+import { useCanEdit } from "@/hooks/useCanEdit";
 
 const DELETION_REASONS_DC_DETAIL = [
   { value: 'data_entry_error',        label: 'Data entry error' },
@@ -86,6 +87,7 @@ export default function DeliveryChallanDetail() {
   const isPurchaseTeam = role === 'purchase_team';
   const isFinanceOrAdmin = role === 'admin' || role === 'finance';
   const isApprover = role === 'admin' || role === 'finance' || role === 'purchase_team';
+  const canEditDC = useCanEdit('delivery-challans');
 
   // ── Delete dialog state ───────────────────────────────────────────────────
   const [deleteDialogOpen,   setDeleteDialogOpen]   = useState(false);
@@ -737,18 +739,8 @@ export default function DeliveryChallanDetail() {
               <Lock className="h-3 w-3" /> Print available after DC is issued
             </span>
           )}
-          {/* Edit button — visibility by status and role */}
-          {["draft", "pending_approval"].includes(dc.status) && (isPurchaseTeam || isInwardTeam || isFinanceOrAdmin) && (
-            <Button variant="outline" size="sm" onClick={() => navigate(`/delivery-challans/${id}/edit`)}>
-              <Edit className="h-3.5 w-3.5 mr-1" /> Edit
-            </Button>
-          )}
-          {["issued", "partially_returned"].includes(dc.status) && (isPurchaseTeam || isInwardTeam || isFinanceOrAdmin) && (
-            <Button variant="outline" size="sm" onClick={() => navigate(`/delivery-challans/${id}/edit`)}>
-              <Edit className="h-3.5 w-3.5 mr-1" /> Edit
-            </Button>
-          )}
-          {dc.status === "approved" && (isPurchaseTeam || isInwardTeam || isFinanceOrAdmin) && (
+          {/* Edit — any user with canEdit access, except cancelled/deleted */}
+          {canEditDC && !["cancelled", "deleted"].includes(dc.status) && (
             <Button variant="outline" size="sm" onClick={() => navigate(`/delivery-challans/${id}/edit`)}>
               <Edit className="h-3.5 w-3.5 mr-1" /> Edit
             </Button>

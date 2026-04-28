@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useCanEdit } from "@/hooks/useCanEdit";
+import { logAudit } from "@/lib/audit-api";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { fetchParties, type Party } from "@/lib/parties-api";
@@ -653,8 +654,16 @@ export default function DeliveryChallanForm() {
         });
 
       if (isEdit) {
+        const prevStatus = (existingDC as any)?.status;
         await updateDeliveryChallan(id!, { dc: dcData as any, lineItems: items });
         if (status === "issued") await issueDeliveryChallan(id!);
+        const userName = (profile as any)?.display_name || (profile as any)?.full_name || (profile as any)?.email || null;
+        await logAudit("delivery_challan", id!, "dc_edited", {
+          previous_status: prevStatus,
+          new_status: status,
+          details: `DC edited by ${userName}. Previous status: ${prevStatus}. New status: ${status}.`,
+          performed_by: userName,
+        });
         return id;
       } else {
         const result = await createDeliveryChallan({ dc: dcData as any, lineItems: items });
@@ -668,12 +677,13 @@ export default function DeliveryChallanForm() {
       queryClient.invalidateQueries({ queryKey: ["dc-stats"] });
       queryClient.invalidateQueries({ queryKey: ["dc-pending-approval-count"] });
       if (status === "pending_approval") {
-        const wasIssued = isEdit && (existingDC as any)?.status === 'issued';
+        const prevStatus = (existingDC as any)?.status;
+        const wasResubmitted = isEdit && prevStatus && ['approved', 'issued', 'partially_returned'].includes(prevStatus);
         toast({
-          title: wasIssued ? "DC updated and sent for re-approval" : "DC request submitted",
-          description: wasIssued ? "Issue will be available once approved." : "Awaiting approval from purchase team.",
+          title: wasResubmitted ? "DC updated and sent for re-approval" : isEdit ? "DC re-submitted for approval" : "DC request submitted",
+          description: wasResubmitted ? "Issue will be available once approved." : "Awaiting approval.",
         });
-        navigate(wasIssued ? `/delivery-challans/${dcId}` : "/delivery-challans");
+        navigate(isEdit ? `/delivery-challans/${dcId}` : "/delivery-challans");
       } else if (status === "approved") {
         toast({ title: "DC updated", description: "DC updated. Can now be re-issued." });
         navigate(`/delivery-challans/${dcId}`);
@@ -768,15 +778,8 @@ export default function DeliveryChallanForm() {
         }
       }
     }
-    // When editing an already-issued DC, override status based on role
-    let effectiveStatus = status;
-    if (isEdit && (existingDC as any)?.status === 'issued') {
-      if (isPurchaseTeam || isInwardTeam) {
-        effectiveStatus = 'pending_approval';
-      } else if (isFinanceOrAdmin) {
-        effectiveStatus = 'approved';
-      }
-    }
+    // All edits always go to pending_approval for re-approval
+    const effectiveStatus = isEdit ? 'pending_approval' : status;
     saveMutation.mutate(effectiveStatus);
   };
 
@@ -819,10 +822,10 @@ export default function DeliveryChallanForm() {
         </div>
       )}
 
-      {isEdit && (existingDC as any)?.status === 'issued' && (
+      {isEdit && ['issued', 'partially_returned'].includes((existingDC as any)?.status) && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300">
           <Info className="h-4 w-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
-          <span>This DC has been issued. Editing will require re-approval before it can be re-issued.</span>
+          <span>Editing this DC will require re-approval before it can be re-issued.</span>
         </div>
       )}
 
@@ -1706,28 +1709,20 @@ export default function DeliveryChallanForm() {
       {/* Sticky Action Bar */}
       <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-border p-3 flex justify-end gap-2 z-40">
         <Button variant="outline" onClick={() => { sessionStorage.removeItem(DRAFT_KEY); navigate("/delivery-challans"); }}>Cancel</Button>
-        {isEdit && (existingDC as any)?.status === 'issued' && (isPurchaseTeam || isInwardTeam) ? (
-          <Button onClick={() => handleSave("pending_approval")} disabled={saveMutation.isPending}>
-            Re-submit for Approval →
-          </Button>
-        ) : isEdit && (existingDC as any)?.status === 'issued' && isFinanceOrAdmin ? (
-          <Button onClick={() => handleSave("approved")} disabled={saveMutation.isPending}>
-            Save Changes →
-          </Button>
-        ) : isInwardTeam && isEdit && (existingDC as any)?.approved_at ? (
-          <Button onClick={() => handleSave("issued")} disabled={saveMutation.isPending}>
-            Issue DC →
+        {isEdit ? (
+          <Button onClick={() => handleSave("pending_approval")} disabled={saveMutation.isPending} className="active:scale-[0.98] transition-transform">
+            {saveMutation.isPending ? "Saving…" : "Save & Submit for Approval →"}
           </Button>
         ) : isInwardTeam ? (
-          <Button onClick={() => handleSave("pending_approval")} disabled={saveMutation.isPending}>
-            {isEdit && (existingDC as any)?.status === 'rejected' ? 'Re-submit for Approval →' : 'Submit for Approval →'}
+          <Button onClick={() => handleSave("pending_approval")} disabled={saveMutation.isPending} className="active:scale-[0.98] transition-transform">
+            Submit for Approval →
           </Button>
         ) : (
           <>
             <Button variant="outline" onClick={() => handleSave("draft")} disabled={saveMutation.isPending}>
               Save as Draft
             </Button>
-            <Button onClick={() => handleSave("issued")} disabled={saveMutation.isPending}>
+            <Button onClick={() => handleSave("issued")} disabled={saveMutation.isPending} className="active:scale-[0.98] transition-transform">
               Issue DC →
             </Button>
           </>

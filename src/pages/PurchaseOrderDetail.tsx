@@ -31,6 +31,7 @@ import { DocumentActions } from "@/components/DocumentActions";
 import { DocumentSignature } from "@/components/DocumentSignature";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
 import { useAuth } from "@/hooks/useAuth";
+import { useCanEdit } from "@/hooks/useCanEdit";
 
 const statusClass: Record<string, string> = {
   draft: "status-draft",
@@ -57,6 +58,7 @@ export default function PurchaseOrderDetail() {
   const { role, profile } = useAuth();
   const isFinanceOrAdmin = role === 'admin' || role === 'finance';
   const isPurchaseTeam = role === 'purchase_team';
+  const canEditPO = useCanEdit('purchase-orders');
   const queryClient = useQueryClient();
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
@@ -412,22 +414,13 @@ export default function PurchaseOrderDetail() {
             {printPreview ? <><EyeOff className="h-3.5 w-3.5 mr-1" /> Exit Preview</> : <><Eye className="h-3.5 w-3.5 mr-1" /> Preview Print</>}
           </Button>
           <DocumentActions documentNumber={po.po_number} documentType="Purchase Order" documentData={po as Record<string, unknown>} />
-          {(po.status === "draft" || po.status === "approved") && (
-            <>
-              <Button variant="outline" size="sm" onClick={() => navigate(`/purchase-orders/${id}/edit`)}>
-                <Edit className="h-3.5 w-3.5 mr-1" /> Edit
-              </Button>
-              {/* Hide top-bar Issue button for purchase_team when the approved banner (with its own Issue button) is visible */}
-              {!(isPurchaseTeam && (po.status === "approved" || po.approved_at)) && (
-                <Button size="sm" onClick={() => issueMutation.mutate()}>Issue PO →</Button>
-              )}
-            </>
-          )}
-
-          {po.status === "issued" && isFinanceOrAdmin && (
+          {canEditPO && !["cancelled", "deleted"].includes(po.status) && (
             <Button variant="outline" size="sm" onClick={() => navigate(`/purchase-orders/${id}/edit`)}>
               <Edit className="h-3.5 w-3.5 mr-1" /> Edit
             </Button>
+          )}
+          {(po.status === "draft" || po.status === "approved") && !(isPurchaseTeam && (po.status === "approved" || po.approved_at)) && (
+            <Button size="sm" onClick={() => issueMutation.mutate()}>Issue PO →</Button>
           )}
           {canRecordReceipt && (
             <Button size="sm" disabled={createGrnMutation.isPending} onClick={() => createGrnMutation.mutate()}>
