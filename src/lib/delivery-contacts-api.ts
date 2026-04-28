@@ -12,8 +12,11 @@ export async function fetchDeliveryContacts(companyId: string): Promise<Delivery
     .select("id, name, phone")
     .eq("company_id", companyId)
     .order("name");
-  if (error) throw error;
-  return data ?? [];
+  if (error) {
+    console.error("fetchDeliveryContacts error:", error);
+    return [];
+  }
+  return (data ?? []) as DeliveryContact[];
 }
 
 export async function saveDeliveryContact(
@@ -27,5 +30,8 @@ export async function saveDeliveryContact(
       { company_id: companyId, name, phone: phone || null, updated_at: new Date().toISOString() },
       { onConflict: "company_id,name" }
     );
-  if (error) throw error;
+  if (error) {
+    console.error("saveDeliveryContact error:", error);
+    throw error;
+  }
 }

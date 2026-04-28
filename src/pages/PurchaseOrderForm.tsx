@@ -147,9 +147,9 @@ export default function PurchaseOrderForm() {
 
   const { data: deliveryContacts } = useQuery({
     queryKey: ["delivery-contacts", profile?.company_id],
-    queryFn: () => fetchDeliveryContacts(profile!.company_id),
+    queryFn: () => fetchDeliveryContacts(profile!.company_id!),
     enabled: !!profile?.company_id,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 0,
   });
 
   const companyDeliveryAddress = useMemo(() => {
