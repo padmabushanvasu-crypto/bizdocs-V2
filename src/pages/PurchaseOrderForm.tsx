@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, Search, Info, ChevronDown, ChevronLeft, X } from "lucide-react";
+import { Plus, Trash2, Search, Info, ChevronDown, ChevronLeft } from "lucide-react";
 import { ItemSuggest } from "@/components/ItemSuggest";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +33,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useCanEdit } from "@/hooks/useCanEdit";
 import { logAudit } from "@/lib/audit-api";
+import { fetchDeliveryContacts, saveDeliveryContact } from "@/lib/delivery-contacts-api";
 
 const PAYMENT_TERMS = ["Immediate", "7 Days", "15 Days", "30 Days", "45 Days", "60 Days", "Custom"];
 const GST_RATES = [0, 5, 12, 18, 28];
@@ -98,11 +99,10 @@ export default function PurchaseOrderForm() {
   const [paymentTerms, setPaymentTerms] = useState("");
   const [customPaymentTerms, setCustomPaymentTerms] = useState("");
   const [deliveryAddress, setDeliveryAddress] = useState("");
-  const [deliveryContactPersons, setDeliveryContactPersons] = useState<string[]>([]);
-  const [deliveryContactPhones, setDeliveryContactPhones] = useState<string[]>([]);
-  const [contactPersonInput, setContactPersonInput] = useState("");
+  const [deliveryContactPerson, setDeliveryContactPerson] = useState("");
+  const [deliveryContactPhone, setDeliveryContactPhone] = useState("");
   const [contactPersonOpen, setContactPersonOpen] = useState(false);
-  const [contactPhoneInput, setContactPhoneInput] = useState("");
+  const [contactPhoneOpen, setContactPhoneOpen] = useState(false);
   const [deliveryAddressAutoFilled, setDeliveryAddressAutoFilled] = useState(false);
   const [specialInstructions, setSpecialInstructions] = useState("");
   const [internalRemarks, setInternalRemarks] = useState("");
@@ -128,7 +128,7 @@ export default function PurchaseOrderForm() {
   });
   const COMPANY_STATE_CODE = resolveStateCode(companySettings?.state_code, companySettings?.gstin);
 
-  // Profiles for delivery contact person dropdown (Innventive internal staff)
+  // Profiles for delivery contact person dropdown (internal staff)
   const { data: companyProfiles } = useQuery({
     queryKey: ["profiles-for-company", profile?.company_id],
     queryFn: async () => {
@@ -141,6 +141,13 @@ export default function PurchaseOrderForm() {
         .order("full_name");
       return (data ?? []) as { full_name: string; email: string | null }[];
     },
+    enabled: !!profile?.company_id,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: deliveryContacts } = useQuery({
+    queryKey: ["delivery-contacts", profile?.company_id],
+    queryFn: () => fetchDeliveryContacts(profile!.company_id),
     enabled: !!profile?.company_id,
     staleTime: 5 * 60 * 1000,
   });
@@ -202,12 +209,8 @@ export default function PurchaseOrderForm() {
       setReferenceNumber(existingPO.reference_number || "");
       setPaymentTerms(existingPO.payment_terms || "");
       setDeliveryAddress(existingPO.delivery_address || "");
-      setDeliveryContactPersons(
-        ((existingPO as any).delivery_contact_person || "").split(",").map((s: string) => s.trim()).filter(Boolean)
-      );
-      setDeliveryContactPhones(
-        ((existingPO as any).delivery_contact_phone || "").split(",").map((s: string) => s.trim()).filter(Boolean)
-      );
+      setDeliveryContactPerson((existingPO as any).delivery_contact_person || "");
+      setDeliveryContactPhone((existingPO as any).delivery_contact_phone || "");
       setSpecialInstructions(existingPO.special_instructions || "");
       setInternalRemarks(existingPO.internal_remarks || "");
       setGstRate(existingPO.gst_rate || 18);
@@ -307,12 +310,8 @@ export default function PurchaseOrderForm() {
         setDeliveryAddress(draft.deliveryAddress);
         setDeliveryAddressAutoFilled(true);
       }
-      if (draft.deliveryContactPerson !== undefined) {
-        setDeliveryContactPersons(String(draft.deliveryContactPerson).split(",").map((s: string) => s.trim()).filter(Boolean));
-      }
-      if (draft.deliveryContactPhone !== undefined) {
-        setDeliveryContactPhones(String(draft.deliveryContactPhone).split(",").map((s: string) => s.trim()).filter(Boolean));
-      }
+      if (draft.deliveryContactPerson !== undefined) setDeliveryContactPerson(String(draft.deliveryContactPerson));
+      if (draft.deliveryContactPhone !== undefined) setDeliveryContactPhone(String(draft.deliveryContactPhone));
       if (draft.specialInstructions !== undefined) setSpecialInstructions(draft.specialInstructions);
       if (draft.internalRemarks !== undefined) setInternalRemarks(draft.internalRemarks);
       if (draft.lineItems?.length) setLineItems(draft.lineItems as POLineItem[]);
@@ -340,8 +339,8 @@ export default function PurchaseOrderForm() {
         paymentTerms,
         customPaymentTerms,
         deliveryAddress,
-        deliveryContactPerson: deliveryContactPersons.join(", "),
-        deliveryContactPhone: deliveryContactPhones.join(", "),
+        deliveryContactPerson,
+        deliveryContactPhone,
         specialInstructions,
         internalRemarks,
         lineItems,
@@ -353,7 +352,7 @@ export default function PurchaseOrderForm() {
       }));
     }, 500);
     return () => clearTimeout(timer);
-  }, [isEdit, poDate, vendorId, selectedVendor, vendorReference, vendorEmail, referenceNumber, paymentTerms, customPaymentTerms, deliveryAddress, deliveryContactPersons, deliveryContactPhones, specialInstructions, internalRemarks, lineItems, gstRate, additionalCharges, currency, currencySymbol, exchangeRate]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isEdit, poDate, vendorId, selectedVendor, vendorReference, vendorEmail, referenceNumber, paymentTerms, customPaymentTerms, deliveryAddress, deliveryContactPerson, deliveryContactPhone, specialInstructions, internalRemarks, lineItems, gstRate, additionalCharges, currency, currencySymbol, exchangeRate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Vendor auto-fill from item_id in prefill state (Stock Alerts Board flow).
   // Looks up the most recent PO vendor for this item via po_line_items.
@@ -516,6 +515,31 @@ export default function PurchaseOrderForm() {
   );
   const grandTotal = round2(taxableValue + taxResult.total);
 
+  const personSuggestions = useMemo(() => {
+    const profileNames = (companyProfiles ?? []).map(p => p.full_name);
+    const savedNames = (deliveryContacts ?? []).map(c => c.name);
+    const all = Array.from(new Set([...profileNames, ...savedNames]));
+    const q = deliveryContactPerson.trim().toLowerCase();
+    return q ? all.filter(n => n.toLowerCase().includes(q)) : all;
+  }, [companyProfiles, deliveryContacts, deliveryContactPerson]);
+
+  const isPersonSaved = useMemo(() =>
+    (deliveryContacts ?? []).some(c => c.name.toLowerCase() === deliveryContactPerson.trim().toLowerCase()),
+    [deliveryContacts, deliveryContactPerson]);
+
+  const phoneSuggestions = useMemo(() => {
+    const all = (deliveryContacts ?? []).filter(c => c.phone).map(c => ({ name: c.name, phone: c.phone! }));
+    const match = (deliveryContacts ?? []).find(c => c.name.toLowerCase() === deliveryContactPerson.trim().toLowerCase());
+    const sorted = match?.phone ? [{ name: match.name, phone: match.phone }, ...all.filter(p => p.phone !== match.phone)] : all;
+    const q = deliveryContactPhone.trim().toLowerCase();
+    return q ? sorted.filter(p => p.phone.toLowerCase().includes(q)) : sorted;
+  }, [deliveryContacts, deliveryContactPerson, deliveryContactPhone]);
+
+  const isPhoneSaved = useMemo(() =>
+    (deliveryContacts ?? []).some(c =>
+      c.name.toLowerCase() === deliveryContactPerson.trim().toLowerCase() && c.phone === deliveryContactPhone.trim()
+    ), [deliveryContacts, deliveryContactPerson, deliveryContactPhone]);
+
   // Save
   const saveMutation = useMutation({
     mutationFn: async (status: string) => {
@@ -542,8 +566,8 @@ export default function PurchaseOrderForm() {
         reference_number: referenceNumber || null,
         payment_terms: paymentTerms === "Custom" ? customPaymentTerms : paymentTerms || null,
         delivery_address: deliveryAddress || null,
-        delivery_contact_person: deliveryContactPersons.join(", ") || null,
-        delivery_contact_phone: deliveryContactPhones.join(", ") || null,
+        delivery_contact_person: deliveryContactPerson || null,
+        delivery_contact_phone: deliveryContactPhone || null,
         special_instructions: specialInstructions || null,
         internal_remarks: internalRemarks || null,
         sub_total: subTotal,
@@ -911,154 +935,101 @@ export default function PurchaseOrderForm() {
               )}
               <Textarea value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} className="mt-1" rows={2} placeholder="Delivery address" />
               <div className="grid grid-cols-2 gap-3 mt-2">
-                {/* Contact Person — multi-select with profile dropdown */}
-                <div>
+                {/* Contact Person */}
+                <div className="relative">
                   <Label className="text-xs font-medium text-slate-600 dark:text-slate-400">Contact Person</Label>
-                  <Popover open={contactPersonOpen} onOpenChange={setContactPersonOpen}>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" role="combobox" className="w-full justify-between mt-1 h-8 text-sm font-normal">
-                        <span className="text-muted-foreground truncate">
-                          {deliveryContactPersons.length > 0 ? `${deliveryContactPersons.length} selected` : "Search or type…"}
-                        </span>
-                        <ChevronDown className="ml-1 h-3.5 w-3.5 shrink-0 opacity-50" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-56 p-0" align="start">
-                      <Command>
-                        <CommandInput
-                          placeholder="Search or type name…"
-                          value={contactPersonInput}
-                          onValueChange={setContactPersonInput}
-                        />
-                        <CommandList>
-                          <CommandEmpty>
-                            {contactPersonInput.trim() ? (
-                              <button
-                                type="button"
-                                className="w-full text-left px-3 py-2 text-sm hover:bg-accent"
-                                onClick={() => {
-                                  const val = contactPersonInput.trim();
-                                  if (val && !deliveryContactPersons.includes(val)) {
-                                    setDeliveryContactPersons(prev => [...prev, val]);
-                                  }
-                                  setContactPersonInput("");
-                                  setContactPersonOpen(false);
-                                }}
-                              >
-                                Add "{contactPersonInput.trim()}"
-                              </button>
-                            ) : "No profiles found."}
-                          </CommandEmpty>
-                          <CommandGroup>
-                            {(companyProfiles ?? [])
-                              .filter(p => !deliveryContactPersons.includes(p.full_name))
-                              .filter(p => !contactPersonInput || p.full_name.toLowerCase().includes(contactPersonInput.toLowerCase()))
-                              .map((p) => (
-                                <CommandItem
-                                  key={p.email || p.full_name}
-                                  value={p.full_name}
-                                  onSelect={(val) => {
-                                    if (!deliveryContactPersons.includes(val)) {
-                                      setDeliveryContactPersons(prev => [...prev, val]);
-                                    }
-                                    setContactPersonInput("");
-                                  }}
-                                >
-                                  {p.full_name}
-                                </CommandItem>
-                              ))}
-                            {contactPersonInput.trim() && !(companyProfiles ?? []).some(p => p.full_name === contactPersonInput.trim()) && (
-                              <CommandItem
-                                value={`__custom__${contactPersonInput}`}
-                                onSelect={() => {
-                                  const val = contactPersonInput.trim();
-                                  if (val && !deliveryContactPersons.includes(val)) {
-                                    setDeliveryContactPersons(prev => [...prev, val]);
-                                  }
-                                  setContactPersonInput("");
-                                }}
-                              >
-                                Add "{contactPersonInput.trim()}"
-                              </CommandItem>
-                            )}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
-                  {deliveryContactPersons.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1.5">
-                      {deliveryContactPersons.map((name) => (
-                        <span
+                  <input
+                    type="text"
+                    value={deliveryContactPerson}
+                    onChange={(e) => { setDeliveryContactPerson(e.target.value); setContactPersonOpen(true); }}
+                    onFocus={() => setContactPersonOpen(true)}
+                    onBlur={() => setTimeout(() => setContactPersonOpen(false), 150)}
+                    placeholder="Name"
+                    className="mt-1 w-full h-8 rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                  />
+                  {contactPersonOpen && (personSuggestions.length > 0 || (deliveryContactPerson.trim() && !isPersonSaved)) && (
+                    <div className="absolute z-50 top-full left-0 right-0 mt-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-md max-h-48 overflow-y-auto">
+                      {personSuggestions.map((name) => (
+                        <button
                           key={name}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-700 dark:text-slate-200 dark:border-slate-600"
+                          type="button"
+                          onMouseDown={() => {
+                            setDeliveryContactPerson(name);
+                            const contact = (deliveryContacts ?? []).find(c => c.name === name);
+                            if (contact?.phone) setDeliveryContactPhone(contact.phone);
+                            setContactPersonOpen(false);
+                          }}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
                         >
                           {name}
-                          <button
-                            type="button"
-                            onClick={() => setDeliveryContactPersons(prev => prev.filter(n => n !== name))}
-                            className="hover:text-destructive transition-colors"
-                          >
-                            <X className="h-2.5 w-2.5" />
-                          </button>
-                        </span>
+                        </button>
                       ))}
+                      {deliveryContactPerson.trim() && !isPersonSaved && (
+                        <button
+                          type="button"
+                          onMouseDown={async () => {
+                            if (!profile?.company_id) return;
+                            try {
+                              await saveDeliveryContact(profile.company_id, deliveryContactPerson.trim(), deliveryContactPhone || undefined);
+                              queryClient.invalidateQueries({ queryKey: ["delivery-contacts", profile.company_id] });
+                              toast({ title: "Contact saved" });
+                            } catch {
+                              toast({ title: "Could not save contact", variant: "destructive" });
+                            }
+                            setContactPersonOpen(false);
+                          }}
+                          className="w-full text-left px-3 py-2 text-xs italic text-muted-foreground hover:bg-slate-100 dark:hover:bg-slate-700 border-t border-slate-100 dark:border-slate-800"
+                        >
+                          + Save "{deliveryContactPerson.trim()}" for future use
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
-                {/* Contact Phone — free-text multi-entry with pills */}
-                <div>
+                {/* Contact Phone */}
+                <div className="relative">
                   <Label className="text-xs font-medium text-slate-600 dark:text-slate-400">Contact Phone</Label>
-                  <div className="flex gap-1 mt-1">
-                    <Input
-                      value={contactPhoneInput}
-                      onChange={(e) => setContactPhoneInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          const val = contactPhoneInput.trim();
-                          if (val && !deliveryContactPhones.includes(val)) {
-                            setDeliveryContactPhones(prev => [...prev, val]);
-                          }
-                          setContactPhoneInput("");
-                        }
-                      }}
-                      className="h-8 text-sm flex-1"
-                      placeholder="Type & Enter"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8 px-2 shrink-0"
-                      onClick={() => {
-                        const val = contactPhoneInput.trim();
-                        if (val && !deliveryContactPhones.includes(val)) {
-                          setDeliveryContactPhones(prev => [...prev, val]);
-                        }
-                        setContactPhoneInput("");
-                      }}
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                  {deliveryContactPhones.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1.5">
-                      {deliveryContactPhones.map((phone) => (
-                        <span
+                  <input
+                    type="text"
+                    value={deliveryContactPhone}
+                    onChange={(e) => { setDeliveryContactPhone(e.target.value); setContactPhoneOpen(true); }}
+                    onFocus={() => setContactPhoneOpen(true)}
+                    onBlur={() => setTimeout(() => setContactPhoneOpen(false), 150)}
+                    placeholder="Phone number"
+                    className="mt-1 w-full h-8 rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                  />
+                  {contactPhoneOpen && (phoneSuggestions.length > 0 || (deliveryContactPerson.trim() && deliveryContactPhone.trim() && !isPhoneSaved)) && (
+                    <div className="absolute z-50 top-full left-0 right-0 mt-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-md max-h-48 overflow-y-auto">
+                      {phoneSuggestions.map(({ name, phone }) => (
+                        <button
                           key={phone}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-700 dark:text-slate-200 dark:border-slate-600"
+                          type="button"
+                          onMouseDown={() => { setDeliveryContactPhone(phone); setContactPhoneOpen(false); }}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
                         >
                           {phone}
-                          <button
-                            type="button"
-                            onClick={() => setDeliveryContactPhones(prev => prev.filter(p => p !== phone))}
-                            className="hover:text-destructive transition-colors"
-                          >
-                            <X className="h-2.5 w-2.5" />
-                          </button>
-                        </span>
+                          <span className="ml-2 text-xs text-muted-foreground">{name}</span>
+                        </button>
                       ))}
+                      {deliveryContactPerson.trim() && deliveryContactPhone.trim() && !isPhoneSaved && (
+                        <button
+                          type="button"
+                          onMouseDown={async () => {
+                            if (!profile?.company_id) return;
+                            try {
+                              await saveDeliveryContact(profile.company_id, deliveryContactPerson.trim(), deliveryContactPhone.trim());
+                              queryClient.invalidateQueries({ queryKey: ["delivery-contacts", profile.company_id] });
+                              toast({ title: "Contact saved" });
+                            } catch {
+                              toast({ title: "Could not save contact", variant: "destructive" });
+                            }
+                            setContactPhoneOpen(false);
+                          }}
+                          className="w-full text-left px-3 py-2 text-xs italic text-muted-foreground hover:bg-slate-100 dark:hover:bg-slate-700 border-t border-slate-100 dark:border-slate-800"
+                        >
+                          + Save this contact for future use
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
