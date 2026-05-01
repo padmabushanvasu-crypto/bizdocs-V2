@@ -167,7 +167,13 @@ export async function deleteCustomField(id: string) {
   if (error) throw error;
 }
 
-// Notification Settings (stored in company_settings as JSON-compatible fields via localStorage)
+// Notification Settings
+//
+// Email-schedule fields (po_email_*, dc_email_*) live on company_settings and
+// are read by the weekly Edge Functions. The remaining fields (stock alert,
+// business summary, stock editor names) are still localStorage-only — those
+// features have no Edge Function yet, so persisting them server-side would
+// have no effect.
 export interface NotificationSettings {
   stock_alert_enabled: boolean;
   stock_alert_time: string;
@@ -178,9 +184,16 @@ export interface NotificationSettings {
   weekly_summary_day: string;
   weekly_summary_time: string;
   weekly_summary_recipients: string[];
-  // Phase 19: Weekly PO email
+  // Phase 19+: Weekly PO email (server-side schedule)
   po_email_enabled: boolean;
+  po_email_day: string;
+  po_email_time: string;
   po_email_recipients: string[];
+  // Weekly DC email (server-side schedule)
+  dc_email_enabled: boolean;
+  dc_email_day: string;
+  dc_email_time: string;
+  dc_email_recipients: string[];
   // Stock editor names for opening stock audit trail
   stock_editor_names: string[];
 }
@@ -198,22 +211,87 @@ const NS_DEFAULTS: NotificationSettings = {
   weekly_summary_time: "08:00",
   weekly_summary_recipients: [],
   po_email_enabled: true,
+  po_email_day: "Monday",
+  po_email_time: "08:00",
   po_email_recipients: [],
+  dc_email_enabled: false,
+  dc_email_day: "Monday",
+  dc_email_time: "08:00",
+  dc_email_recipients: [],
   stock_editor_names: [],
 };
 
+const toStringArray = (raw: unknown): string[] => {
+  if (Array.isArray(raw)) return raw.filter((x): x is string => typeof x === "string");
+  return [];
+};
+
 export async function fetchNotificationSettings(): Promise<NotificationSettings> {
+  // Start with localStorage values for fields without server backing
+  let merged: NotificationSettings = { ...NS_DEFAULTS };
   try {
     const stored = localStorage.getItem(NS_KEY);
-    if (stored) return { ...NS_DEFAULTS, ...JSON.parse(stored) };
+    if (stored) merged = { ...merged, ...JSON.parse(stored) };
   } catch { /* ignore */ }
-  return { ...NS_DEFAULTS };
+
+  // Overlay server-backed schedule fields from company_settings (source of truth)
+  try {
+    const cs = await fetchCompanySettings();
+    if (cs) {
+      const c = cs as any;
+      merged = {
+        ...merged,
+        po_email_enabled:    c.po_email_enabled ?? merged.po_email_enabled,
+        po_email_day:        c.po_email_day     ?? merged.po_email_day,
+        po_email_time:       c.po_email_time    ?? merged.po_email_time,
+        po_email_recipients: toStringArray(c.po_email_recipients),
+        dc_email_enabled:    c.dc_email_enabled ?? merged.dc_email_enabled,
+        dc_email_day:        c.dc_email_day     ?? merged.dc_email_day,
+        dc_email_time:       c.dc_email_time    ?? merged.dc_email_time,
+        dc_email_recipients: toStringArray(c.dc_email_recipients),
+      };
+    }
+  } catch { /* ignore — DB may be unavailable, fall back to localStorage/defaults */ }
+
+  return merged;
 }
 
 export async function saveNotificationSettings(settings: NotificationSettings): Promise<void> {
+  // Persist non-schedule fields (still localStorage-only — no server feature yet)
   localStorage.setItem(NS_KEY, JSON.stringify(settings));
+
+  // Persist schedule fields to company_settings (read by Edge Functions)
+  await saveEmailScheduleSettingsToDB({
+    po_email_enabled:    settings.po_email_enabled,
+    po_email_day:        settings.po_email_day,
+    po_email_time:       settings.po_email_time,
+    po_email_recipients: settings.po_email_recipients,
+    dc_email_enabled:    settings.dc_email_enabled,
+    dc_email_day:        settings.dc_email_day,
+    dc_email_time:       settings.dc_email_time,
+    dc_email_recipients: settings.dc_email_recipients,
+  });
 }
 
+export async function saveEmailScheduleSettingsToDB(fields: {
+  po_email_enabled: boolean;
+  po_email_day: string;
+  po_email_time: string;
+  po_email_recipients: string[];
+  dc_email_enabled: boolean;
+  dc_email_day: string;
+  dc_email_time: string;
+  dc_email_recipients: string[];
+}): Promise<void> {
+  const existing = await fetchCompanySettings();
+  if (!existing) return;
+  await supabase
+    .from("company_settings")
+    .update(fields as any)
+    .eq("id", existing.id);
+}
+
+// Kept for backwards compatibility with any caller still passing only PO fields.
 export async function savePOEmailSettingsToDB(
   po_email_enabled: boolean,
   po_email_recipients: string[]

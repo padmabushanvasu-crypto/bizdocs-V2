@@ -10,7 +10,6 @@ import { useToast } from "@/hooks/use-toast";
 import {
   fetchNotificationSettings,
   saveNotificationSettings,
-  savePOEmailSettingsToDB,
   type NotificationSettings,
 } from "@/lib/settings-api";
 
@@ -27,7 +26,13 @@ const DEFAULTS: NotificationSettings = {
   weekly_summary_time: "08:00",
   weekly_summary_recipients: [],
   po_email_enabled: true,
+  po_email_day: "Monday",
+  po_email_time: "08:00",
   po_email_recipients: [],
+  dc_email_enabled: false,
+  dc_email_day: "Monday",
+  dc_email_time: "08:00",
+  dc_email_recipients: [],
   stock_editor_names: [],
 };
 
@@ -195,7 +200,6 @@ export default function NotificationsSettings() {
     setSaving(true);
     try {
       await saveNotificationSettings(settings);
-      await savePOEmailSettingsToDB(settings.po_email_enabled, settings.po_email_recipients);
       toast({ title: "Notification settings saved" });
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
@@ -373,14 +377,31 @@ export default function NotificationsSettings() {
         </div>
 
         <div className={`space-y-4 ${!settings.po_email_enabled ? "opacity-50 pointer-events-none" : ""}`}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2.5">
-              <p className="text-[11px] text-muted-foreground font-medium">Send Day</p>
-              <p className="text-sm font-semibold text-slate-800 mt-0.5">Monday</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-slate-700">Day of Week</Label>
+              <Select
+                value={settings.po_email_day}
+                onValueChange={(v) => set({ po_email_day: v })}
+              >
+                <SelectTrigger className="h-9 text-sm w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DAYS.map((d) => (
+                    <SelectItem key={d} value={d}>{d}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2.5">
-              <p className="text-[11px] text-muted-foreground font-medium">Send Time</p>
-              <p className="text-sm font-semibold text-slate-800 mt-0.5">8:00 AM IST</p>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-slate-700">Send Time (HH:MM IST)</Label>
+              <Input
+                type="time"
+                value={settings.po_email_time}
+                onChange={(e) => set({ po_email_time: e.target.value })}
+                className="h-9 text-sm w-32"
+              />
             </div>
           </div>
           <div className="space-y-1.5">
@@ -392,15 +413,77 @@ export default function NotificationsSettings() {
             />
           </div>
           <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2.5 text-xs text-blue-700 space-y-0.5">
-            <p className="font-semibold">Report includes:</p>
-            <p>Sheet 1 — POs raised last week with totals</p>
-            <p>Sheet 2 — Open POs with due date alerts (amber: due in 7 days, red: overdue)</p>
-            <p>Sheet 3 — All overdue POs sorted by days overdue</p>
+            <p className="font-semibold">Report includes (.xlsx attachment):</p>
+            <p>Sheet 1 — POs raised in the last 7 days, one row per line item</p>
+            <p>Sheet 2 — Open POs with due-date alerts (amber: due in 7 days, red: overdue)</p>
+            <p>Sheet 3 — Partially received POs with qty pending</p>
+            <p>Sheet 4 — POs issued more than 30 days ago and still open</p>
           </div>
         </div>
       </div>
 
-      {/* Section 4 — Stock Editors */}
+      {/* Section 4 — Weekly DC Summary Email */}
+      <div className="paper-card space-y-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-slate-900 text-sm">Weekly DC Summary Email</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Returnable Delivery Challans — track outstanding job-work and overdue returns
+            </p>
+          </div>
+          <Switch
+            checked={settings.dc_email_enabled}
+            onCheckedChange={(v) => set({ dc_email_enabled: v })}
+          />
+        </div>
+
+        <div className={`space-y-4 ${!settings.dc_email_enabled ? "opacity-50 pointer-events-none" : ""}`}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-slate-700">Day of Week</Label>
+              <Select
+                value={settings.dc_email_day}
+                onValueChange={(v) => set({ dc_email_day: v })}
+              >
+                <SelectTrigger className="h-9 text-sm w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DAYS.map((d) => (
+                    <SelectItem key={d} value={d}>{d}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-slate-700">Send Time (HH:MM IST)</Label>
+              <Input
+                type="time"
+                value={settings.dc_email_time}
+                onChange={(e) => set({ dc_email_time: e.target.value })}
+                className="h-9 text-sm w-32"
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-slate-700">Recipients</Label>
+            <EmailTagInput
+              value={settings.dc_email_recipients}
+              onChange={(v) => set({ dc_email_recipients: v })}
+              placeholder="DC follow-up emails — press Enter"
+            />
+          </div>
+          <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2.5 text-xs text-blue-700 space-y-0.5">
+            <p className="font-semibold">Report includes (.xlsx attachment):</p>
+            <p>Sheet 1 — DCs raised in the last 7 days, line-level</p>
+            <p>Sheet 2 — Open DCs awaiting return with alerts (amber: due in 7 days, red: overdue)</p>
+            <p>Sheet 3 — Overdue returns sorted by days overdue</p>
+            <p>Sheet 4 — Partially returned DCs with qty pending</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Section 5 — Stock Editors */}
       <StockEditorsSection
         names={settings.stock_editor_names ?? []}
         onChange={(names) => set({ stock_editor_names: names })}
