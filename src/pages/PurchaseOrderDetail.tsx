@@ -31,6 +31,7 @@ import { DocumentActions } from "@/components/DocumentActions";
 import { DocumentSignature } from "@/components/DocumentSignature";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
 import { useAuth } from "@/hooks/useAuth";
+import { useCanEdit } from "@/hooks/useCanEdit";
 
 const statusClass: Record<string, string> = {
   draft: "status-draft",
@@ -57,6 +58,7 @@ export default function PurchaseOrderDetail() {
   const { role, profile } = useAuth();
   const isFinanceOrAdmin = role === 'admin' || role === 'finance';
   const isPurchaseTeam = role === 'purchase_team';
+  const canEditPO = useCanEdit('purchase-orders');
   const queryClient = useQueryClient();
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
@@ -193,7 +195,7 @@ export default function PurchaseOrderDetail() {
       queryClient.invalidateQueries({ queryKey: ["purchase-order", id] });
       queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
       queryClient.invalidateQueries({ queryKey: ["po-pending-approval-count"] });
-      toast({ title: "PO Approved", description: "PO moved to Draft — it can now be issued." });
+      toast({ title: "PO Approved", description: "PO approved. Purchase team can now issue it to the vendor." });
     },
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -228,6 +230,9 @@ export default function PurchaseOrderDetail() {
   const itemCount = items.length;
   const compactClass = itemCount > 12 ? ' ultra-compact' : itemCount > 8 ? ' compact' : '';
   const isSameState = po.vendor_state_code === "33";
+  const isForeignPO = po.currency != null && po.currency !== "INR";
+  const poCurrencySymbol = po.currency_symbol || "₹";
+  const poExchangeRate = po.exchange_rate || 1;
   const charges = po.additional_charges || [];
   const canRecordReceipt = ["approved", "issued", "partially_received"].includes(po.status) && po.status !== "deleted";
   // Alt. Qty / Alt. Unit columns: shown on screen always, hidden in print unless at least one line uses them.
@@ -369,19 +374,29 @@ export default function PurchaseOrderDetail() {
               {po.rejection_reason && (
                 <p className="text-sm text-red-700 mt-0.5">Reason: <strong>{po.rejection_reason}</strong></p>
               )}
-              <p className="text-sm text-red-600 mt-1">This request has been rejected. Please raise a new PO request if still required.</p>
+              <p className="text-sm text-red-600 mt-1">Review the reason, make your changes, and re-submit for approval.</p>
             </div>
-            {!po.rejection_noted && (
+            <div className="flex gap-2 shrink-0">
               <Button
                 variant="outline"
                 size="sm"
-                className="shrink-0 text-red-700 border-red-200"
-                onClick={() => markNotedMutation.mutate()}
-                disabled={markNotedMutation.isPending}
+                className="text-amber-700 border-amber-300 hover:bg-amber-50 dark:text-amber-400 dark:border-amber-500/40 dark:hover:bg-amber-500/10"
+                onClick={() => navigate(`/purchase-orders/${id}/edit`)}
               >
-                Mark as Noted
+                <Edit className="h-3.5 w-3.5 mr-1" /> Edit &amp; Resubmit
               </Button>
-            )}
+              {!po.rejection_noted && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-red-700 border-red-200"
+                  onClick={() => markNotedMutation.mutate()}
+                  disabled={markNotedMutation.isPending}
+                >
+                  Mark as Noted
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -391,28 +406,24 @@ export default function PurchaseOrderDetail() {
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-display font-bold font-mono text-foreground">{po.po_number}</h1>
           <span className={statusClass[po.status] || "status-draft"}>{statusLabels[po.status] || po.status}</span>
+          {po.currency && po.currency !== "INR" && (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/30">
+              {po.currency}
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={() => setPrintPreview((p) => !p)}>
             {printPreview ? <><EyeOff className="h-3.5 w-3.5 mr-1" /> Exit Preview</> : <><Eye className="h-3.5 w-3.5 mr-1" /> Preview Print</>}
           </Button>
           <DocumentActions documentNumber={po.po_number} documentType="Purchase Order" documentData={po as Record<string, unknown>} />
-          {(po.status === "draft" || po.status === "approved") && (
-            <>
-              <Button variant="outline" size="sm" onClick={() => navigate(`/purchase-orders/${id}/edit`)}>
-                <Edit className="h-3.5 w-3.5 mr-1" /> Edit
-              </Button>
-              {/* Hide top-bar Issue button for purchase_team when the approved banner (with its own Issue button) is visible */}
-              {!(isPurchaseTeam && (po.status === "approved" || po.approved_at)) && (
-                <Button size="sm" onClick={() => issueMutation.mutate()}>Issue PO →</Button>
-              )}
-            </>
-          )}
-
-          {po.status === "issued" && (
+          {canEditPO && !["cancelled", "deleted"].includes(po.status) && (
             <Button variant="outline" size="sm" onClick={() => navigate(`/purchase-orders/${id}/edit`)}>
               <Edit className="h-3.5 w-3.5 mr-1" /> Edit
             </Button>
+          )}
+          {(po.status === "draft" || po.status === "approved") && !(isPurchaseTeam && (po.status === "approved" || po.approved_at)) && (
+            <Button size="sm" onClick={() => issueMutation.mutate()}>Issue PO →</Button>
           )}
           {canRecordReceipt && (
             <Button size="sm" disabled={createGrnMutation.isPending} onClick={() => createGrnMutation.mutate()}>
@@ -499,7 +510,7 @@ export default function PurchaseOrderDetail() {
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontWeight: '700', fontSize: '11pt' }}>PO No: {po.po_number.replace("/-", "-")}</div>
               <div style={{ fontSize: '9.5pt' }}>Date: {new Date(po.po_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
-              {(po as any).vendor_reference && <div style={{ fontSize: '9pt' }}>Vendor Ref: {(po as any).vendor_reference}</div>}
+              {po.vendor_reference && <div style={{ fontSize: '9pt' }}>Vendor Ref: {po.vendor_reference}</div>}
               {po.reference_number && <div style={{ fontSize: '9pt' }}>Ref: {po.reference_number}</div>}
             </div>
           </div>
@@ -520,7 +531,8 @@ export default function PurchaseOrderDetail() {
                 {po.vendor_address && <p className="text-sm text-muted-foreground">{po.vendor_address}</p>}
                 {po.vendor_gstin && <p className="text-sm font-mono">GSTIN: {po.vendor_gstin}</p>}
                 {po.vendor_phone && <p className="text-sm text-muted-foreground">Ph: {po.vendor_phone}</p>}
-                {(po as any).vendor_email && <p className="text-sm text-muted-foreground">{(po as any).vendor_email}</p>}
+                {po.vendor_contact_person && <p className="text-sm text-muted-foreground">Contact: {po.vendor_contact_person}</p>}
+                {po.vendor_email && <p className="text-sm text-muted-foreground">{po.vendor_email}</p>}
               </div>
               <div className="text-left md:text-right space-y-1">
                 <div className="flex md:justify-end gap-4">
@@ -533,10 +545,10 @@ export default function PurchaseOrderDetail() {
                     <p>{new Date(po.po_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</p>
                   </div>
                 </div>
-                {(po as any).vendor_reference && (
+                {po.vendor_reference && (
                   <div className="md:text-right">
                     <p className="text-xs text-muted-foreground">Vendor Reference</p>
-                    <p className="text-sm">{(po as any).vendor_reference}</p>
+                    <p className="text-sm">{po.vendor_reference}</p>
                   </div>
                 )}
                 {po.reference_number && (
@@ -588,7 +600,8 @@ export default function PurchaseOrderDetail() {
                   {po.vendor_address && <div style={{ fontSize: '9pt', color: '#475569', lineHeight: 1.5 }}>{po.vendor_address}</div>}
                   {po.vendor_gstin && <div style={{ fontSize: '8.5pt', fontFamily: 'monospace', lineHeight: 1.5 }}>GSTIN: {po.vendor_gstin}</div>}
                   {po.vendor_phone && <div style={{ fontSize: '9pt', color: '#475569', lineHeight: 1.5 }}>Ph: {po.vendor_phone}</div>}
-                  {(po as any).vendor_email && <div style={{ fontSize: '9pt', color: '#475569', lineHeight: 1.5 }}>{(po as any).vendor_email}</div>}
+                  {po.vendor_contact_person && <div style={{ fontSize: '8.5pt', color: '#475569', lineHeight: 1.5 }}>Contact: {po.vendor_contact_person}</div>}
+                  {po.vendor_email && <div style={{ fontSize: '9pt', color: '#475569', lineHeight: 1.5 }}>{po.vendor_email}</div>}
                 </div>
                 {deliverAddr && (
                   <div style={{ flex: '1', paddingLeft: '8px' }}>
@@ -664,8 +677,8 @@ export default function PurchaseOrderDetail() {
                     <td className={`px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono${altPrintHidden}`}>{Number(item.quantity_2) > 0 ? item.quantity_2 : "—"}</td>
                     <td className={`px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left${altPrintHidden}`}>{Number(item.quantity_2) > 0 ? (item.unit_2 || "—") : "—"}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center tabular-nums font-mono">{item.delivery_date ? new Date(item.delivery_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</td>
-                    {!hideCosts && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(item.unit_price)}</td>}
-                    {!hideCosts && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(item.line_total)}</td>}
+                    {!hideCosts && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{isForeignPO ? `${poCurrencySymbol}${Number(item.unit_price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : formatCurrency(item.unit_price)}</td>}
+                    {!hideCosts && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{isForeignPO ? `${poCurrencySymbol}${Number(item.line_total).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : formatCurrency(item.line_total)}</td>}
                   </tr>
                 );
               })}
@@ -682,22 +695,24 @@ export default function PurchaseOrderDetail() {
           <div className="w-full max-w-xs space-y-1.5 text-sm po-totals-block">
             <div className="flex justify-between po-totals-row">
               <span className="text-muted-foreground">Taxable Amount</span>
-              <span className="font-mono tabular-nums">{formatCurrency(po.sub_total)}</span>
+              <span className="font-mono tabular-nums">{isForeignPO ? `${poCurrencySymbol}${Number(po.sub_total).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : formatCurrency(po.sub_total)}</span>
             </div>
             {charges.length > 0 && charges.map((c: any, i: number) => (
               <div key={i} className="flex justify-between po-totals-row">
                 <span className="text-muted-foreground">{c.label || "Additional"}</span>
-                <span className="font-mono tabular-nums">{formatCurrency(c.amount)}</span>
+                <span className="font-mono tabular-nums">{isForeignPO ? `${poCurrencySymbol}${Number(c.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : formatCurrency(c.amount)}</span>
               </div>
             ))}
             {Math.abs((po.taxable_value || 0) - (po.sub_total || 0)) > 0.005 && (
               <div className="flex justify-between po-totals-row">
                 <span className="text-muted-foreground">Taxable Value</span>
-                <span className="font-mono tabular-nums">{formatCurrency(po.taxable_value)}</span>
+                <span className="font-mono tabular-nums">{isForeignPO ? `${poCurrencySymbol}${Number(po.taxable_value).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : formatCurrency(po.taxable_value)}</span>
               </div>
             )}
             <div className="border-t border-border my-1" />
-            {isSameState ? (
+            {isForeignPO ? (
+              <div className="text-xs text-blue-600 italic">No tax — foreign vendor</div>
+            ) : isSameState ? (
               <>
                 <div className="flex justify-between po-totals-row">
                   <span className="text-muted-foreground">CGST @ {(po.gst_rate || 18) / 2}%</span>
@@ -717,9 +732,19 @@ export default function PurchaseOrderDetail() {
             <div className="border-t border-border my-1" />
             <div className="flex justify-between text-base font-bold po-totals-row">
               <span>Grand Total</span>
-              <span className="font-mono tabular-nums text-primary">{formatCurrency(po.grand_total)}</span>
+              <span className="font-mono tabular-nums text-primary">
+                {isForeignPO
+                  ? `${poCurrencySymbol}${new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(po.grand_total)}`
+                  : formatCurrency(po.grand_total)}
+              </span>
             </div>
-            <p className="text-[10px] text-muted-foreground italic pt-1 po-amount-words">{amountInWords(po.grand_total)}</p>
+            {isForeignPO && poExchangeRate > 0 && (
+              <div className="flex justify-between text-xs text-muted-foreground po-totals-row">
+                <span>≈ INR Equivalent (@ {poExchangeRate})</span>
+                <span className="font-mono tabular-nums">₹{new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(po.grand_total * poExchangeRate)}</span>
+              </div>
+            )}
+            {!isForeignPO && <p className="text-[10px] text-muted-foreground italic pt-1 po-amount-words">{amountInWords(po.grand_total)}</p>}
           </div>
         </div>}
 

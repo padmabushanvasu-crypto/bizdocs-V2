@@ -51,7 +51,7 @@ export function NotificationBell() {
   const { data } = useQuery({
     queryKey: ["notifications"],
     queryFn: fetchNotifications,
-    refetchInterval: 60000,
+    refetchInterval: 120000,
   });
 
   // Filter out role-targeted notifications the current user shouldn't see.

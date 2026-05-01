@@ -39,7 +39,7 @@ export default function FatCertificates() {
   const { data: stats } = useQuery({
     queryKey: ["fat-stats"],
     queryFn: fetchFatStats,
-    refetchInterval: 60000,
+    refetchInterval: 300000,
   });
 
   const { data: itemsData } = useQuery({
@@ -58,7 +58,7 @@ export default function FatCertificates() {
       page,
       pageSize: 20,
     }),
-    refetchInterval: 30000,
+    refetchInterval: 300000,
   });
 
   const certs = data?.data ?? [];

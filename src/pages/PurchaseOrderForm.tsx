@@ -32,9 +32,27 @@ import { UNITS } from "@/lib/constants";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useCanEdit } from "@/hooks/useCanEdit";
+import { logAudit } from "@/lib/audit-api";
+import { fetchDeliveryContacts, saveDeliveryContact } from "@/lib/delivery-contacts-api";
 
 const PAYMENT_TERMS = ["Immediate", "7 Days", "15 Days", "30 Days", "45 Days", "60 Days", "Custom"];
 const GST_RATES = [0, 5, 12, 18, 28];
+
+const CURRENCIES = [
+  { code: "INR", symbol: "₹", name: "Indian Rupee" },
+  { code: "USD", symbol: "$", name: "US Dollar" },
+  { code: "EUR", symbol: "€", name: "Euro" },
+  { code: "GBP", symbol: "£", name: "British Pound" },
+  { code: "AED", symbol: "د.إ", name: "UAE Dirham" },
+  { code: "CNY", symbol: "¥", name: "Chinese Yuan" },
+  { code: "JPY", symbol: "¥", name: "Japanese Yen" },
+  { code: "KRW", symbol: "₩", name: "South Korean Won" },
+  { code: "SGD", symbol: "S$", name: "Singapore Dollar" },
+  { code: "CHF", symbol: "CHF", name: "Swiss Franc" },
+  { code: "CAD", symbol: "C$", name: "Canadian Dollar" },
+  { code: "AUD", symbol: "A$", name: "Australian Dollar" },
+];
+
 // Company state code fetched dynamically from settings
 
 function emptyLineItem(serial: number): POLineItem {
@@ -55,6 +73,7 @@ function emptyLineItem(serial: number): POLineItem {
 export default function PurchaseOrderForm() {
   const { id } = useParams();
   const isEdit = !!id;
+  const DRAFT_KEY = 'bizdocs_draft_po';
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -84,6 +103,8 @@ export default function PurchaseOrderForm() {
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [deliveryContactPerson, setDeliveryContactPerson] = useState("");
   const [deliveryContactPhone, setDeliveryContactPhone] = useState("");
+  const [contactPersonOpen, setContactPersonOpen] = useState(false);
+  const [contactPhoneOpen, setContactPhoneOpen] = useState(false);
   const [deliveryAddressAutoFilled, setDeliveryAddressAutoFilled] = useState(false);
   const [specialInstructions, setSpecialInstructions] = useState("");
   const [internalRemarks, setInternalRemarks] = useState("");
@@ -93,6 +114,14 @@ export default function PurchaseOrderForm() {
   const [successDialogOpen, setSuccessDialogOpen] = useState(false);
   const [savedPOId, setSavedPOId] = useState<string | null>(null);
 
+  // Foreign currency state
+  const [currency, setCurrency] = useState("INR");
+  const [currencySymbol, setCurrencySymbol] = useState("₹");
+  const [exchangeRate, setExchangeRate] = useState(1);
+  const [isForeignVendor, setIsForeignVendor] = useState(false);
+  const [fetchingRate, setFetchingRate] = useState(false);
+  const [rateFetchStatus, setRateFetchStatus] = useState<"idle" | "live" | "manual">("idle");
+
   // Fetch company settings for state code
   const { data: companySettings } = useQuery({
     queryKey: ["company-settings"],
@@ -100,6 +129,30 @@ export default function PurchaseOrderForm() {
     staleTime: 5 * 60 * 1000,
   });
   const COMPANY_STATE_CODE = resolveStateCode(companySettings?.state_code, companySettings?.gstin);
+
+  // Profiles for delivery contact person dropdown (internal staff)
+  const { data: companyProfiles } = useQuery({
+    queryKey: ["profiles-for-company", profile?.company_id],
+    queryFn: async () => {
+      if (!profile?.company_id) return [];
+      const { data } = await (supabase as any)
+        .from("profiles")
+        .select("full_name, email")
+        .eq("company_id", profile.company_id)
+        .not("full_name", "is", null)
+        .order("full_name");
+      return (data ?? []) as { full_name: string; email: string | null }[];
+    },
+    enabled: !!profile?.company_id,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: deliveryContacts } = useQuery({
+    queryKey: ["delivery-contacts", profile?.company_id],
+    queryFn: () => fetchDeliveryContacts(profile!.company_id!),
+    enabled: !!profile?.company_id,
+    staleTime: 0,
+  });
 
   const companyDeliveryAddress = useMemo(() => {
     if (!companySettings) return "";
@@ -167,6 +220,15 @@ export default function PurchaseOrderForm() {
       if (existingPO.line_items?.length) {
         setLineItems(existingPO.line_items);
       }
+      // Restore currency
+      const poCurrency = (existingPO as any).currency || "INR";
+      const poCurrencySymbol = (existingPO as any).currency_symbol || "₹";
+      const poExchangeRate = (existingPO as any).exchange_rate || 1;
+      setCurrency(poCurrency);
+      setCurrencySymbol(poCurrencySymbol);
+      setExchangeRate(poExchangeRate);
+      setIsForeignVendor(poCurrency !== "INR");
+      if (poCurrency !== "INR") setRateFetchStatus("manual");
       // Find vendor
       if (existingPO.vendor_id) {
         const v = vendors.find((v) => v.id === existingPO.vendor_id);
@@ -230,6 +292,70 @@ export default function PurchaseOrderForm() {
     }
   }, [isEdit, deliveryAddressAutoFilled, companyDeliveryAddress]);
 
+  // Restore draft from sessionStorage (once on mount, create mode only)
+  useEffect(() => {
+    if (isEdit) return;
+    if (prefillState || (location.state as any)?.prefillItem) return;
+    const raw = sessionStorage.getItem(DRAFT_KEY);
+    if (!raw) return;
+    try {
+      const draft = JSON.parse(raw);
+      if (draft.poDate) setPODate(new Date(draft.poDate));
+      if (draft.vendorId) setVendorId(draft.vendorId);
+      if (draft.selectedVendor) setSelectedVendor(draft.selectedVendor as Party);
+      if (draft.vendorReference !== undefined) setVendorReference(draft.vendorReference);
+      if (draft.vendorEmail !== undefined) setVendorEmail(draft.vendorEmail);
+      if (draft.referenceNumber !== undefined) setReferenceNumber(draft.referenceNumber);
+      if (draft.paymentTerms !== undefined) setPaymentTerms(draft.paymentTerms);
+      if (draft.customPaymentTerms !== undefined) setCustomPaymentTerms(draft.customPaymentTerms);
+      if (draft.deliveryAddress !== undefined) {
+        setDeliveryAddress(draft.deliveryAddress);
+        setDeliveryAddressAutoFilled(true);
+      }
+      if (draft.deliveryContactPerson !== undefined) setDeliveryContactPerson(String(draft.deliveryContactPerson));
+      if (draft.deliveryContactPhone !== undefined) setDeliveryContactPhone(String(draft.deliveryContactPhone));
+      if (draft.specialInstructions !== undefined) setSpecialInstructions(draft.specialInstructions);
+      if (draft.internalRemarks !== undefined) setInternalRemarks(draft.internalRemarks);
+      if (draft.lineItems?.length) setLineItems(draft.lineItems as POLineItem[]);
+      if (draft.gstRate !== undefined) setGstRate(draft.gstRate);
+      if (draft.additionalCharges !== undefined) setAdditionalCharges(draft.additionalCharges);
+      if (draft.currency !== undefined) { setCurrency(draft.currency); setIsForeignVendor(draft.currency !== "INR"); }
+      if (draft.currencySymbol !== undefined) setCurrencySymbol(draft.currencySymbol);
+      if (draft.exchangeRate !== undefined) { setExchangeRate(draft.exchangeRate); if (draft.currency !== "INR") setRateFetchStatus("manual"); }
+    } catch {
+      sessionStorage.removeItem(DRAFT_KEY);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Save draft to sessionStorage (debounced 500ms, create mode only)
+  useEffect(() => {
+    if (isEdit) return;
+    const timer = setTimeout(() => {
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
+        poDate: poDate.toISOString(),
+        vendorId,
+        selectedVendor,
+        vendorReference,
+        vendorEmail,
+        referenceNumber,
+        paymentTerms,
+        customPaymentTerms,
+        deliveryAddress,
+        deliveryContactPerson,
+        deliveryContactPhone,
+        specialInstructions,
+        internalRemarks,
+        lineItems,
+        gstRate,
+        additionalCharges,
+        currency,
+        currencySymbol,
+        exchangeRate,
+      }));
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [isEdit, poDate, vendorId, selectedVendor, vendorReference, vendorEmail, referenceNumber, paymentTerms, customPaymentTerms, deliveryAddress, deliveryContactPerson, deliveryContactPhone, specialInstructions, internalRemarks, lineItems, gstRate, additionalCharges, currency, currencySymbol, exchangeRate]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Vendor auto-fill from item_id in prefill state (Stock Alerts Board flow).
   // Looks up the most recent PO vendor for this item via po_line_items.
   // Silently skips if no match — vendor remains blank for manual selection.
@@ -272,6 +398,30 @@ export default function PurchaseOrderForm() {
     })();
   }, [isEdit, prefillApplied, vendors]);
 
+  const fetchExchangeRate = async (targetCurrency: string) => {
+    if (targetCurrency === "INR") {
+      setExchangeRate(1);
+      setRateFetchStatus("idle");
+      return;
+    }
+    setFetchingRate(true);
+    setRateFetchStatus("idle");
+    try {
+      const res = await fetch("https://open.er-api.com/v6/latest/INR");
+      const data = await res.json();
+      if (data?.rates?.[targetCurrency]) {
+        // data.rates[X] = how many X per 1 INR, so INR per X = 1 / rate
+        const rate = Math.round((1 / data.rates[targetCurrency]) * 10000) / 10000;
+        setExchangeRate(rate);
+        setRateFetchStatus("live");
+      }
+    } catch {
+      setRateFetchStatus("manual");
+    } finally {
+      setFetchingRate(false);
+    }
+  };
+
   const handleVendorSelect = (vendor: Party) => {
     setVendorId(vendor.id);
     setSelectedVendor(vendor);
@@ -281,6 +431,39 @@ export default function PurchaseOrderForm() {
     }
     if ((vendor as any).email1) {
       setVendorEmail((vendor as any).email1);
+    }
+    // Detect foreign vendor
+    const vendorCountry = (vendor as any).country;
+    const isForeign = vendorCountry && vendorCountry !== "India";
+    setIsForeignVendor(!!isForeign);
+    if (isForeign) {
+      // Map common countries to currencies
+      const countryCurrencyMap: Record<string, string> = {
+        "United Arab Emirates": "AED",
+        "China": "CNY",
+        "United States": "USD",
+        "United Kingdom": "GBP",
+        "Germany": "EUR",
+        "France": "EUR",
+        "Italy": "EUR",
+        "Japan": "JPY",
+        "South Korea": "KRW",
+        "Singapore": "SGD",
+        "Switzerland": "CHF",
+        "Canada": "CAD",
+        "Australia": "AUD",
+      };
+      const detectedCurrency = countryCurrencyMap[vendorCountry] || "USD";
+      const currencyInfo = CURRENCIES.find(c => c.code === detectedCurrency) || CURRENCIES[1];
+      setCurrency(currencyInfo.code);
+      setCurrencySymbol(currencyInfo.symbol);
+      fetchExchangeRate(currencyInfo.code);
+    } else {
+      setCurrency("INR");
+      setCurrencySymbol("₹");
+      setExchangeRate(1);
+      setIsForeignVendor(false);
+      setRateFetchStatus("idle");
     }
   };
 
@@ -334,9 +517,38 @@ export default function PurchaseOrderForm() {
   );
   const grandTotal = round2(taxableValue + taxResult.total);
 
+  const personSuggestions = useMemo(() => {
+    const profileNames = (companyProfiles ?? []).map(p => p.full_name);
+    const savedNames = (deliveryContacts ?? []).map(c => c.name);
+    const all = Array.from(new Set([...profileNames, ...savedNames]));
+    const q = deliveryContactPerson.trim().toLowerCase();
+    return q ? all.filter(n => n.toLowerCase().includes(q)) : all;
+  }, [companyProfiles, deliveryContacts, deliveryContactPerson]);
+
+  const isPersonSaved = useMemo(() =>
+    (deliveryContacts ?? []).some(c => c.name.toLowerCase() === deliveryContactPerson.trim().toLowerCase()),
+    [deliveryContacts, deliveryContactPerson]);
+
+  const phoneSuggestions = useMemo(() => {
+    const all = (deliveryContacts ?? []).filter(c => c.phone).map(c => ({ name: c.name, phone: c.phone! }));
+    const match = (deliveryContacts ?? []).find(c => c.name.toLowerCase() === deliveryContactPerson.trim().toLowerCase());
+    const sorted = match?.phone ? [{ name: match.name, phone: match.phone }, ...all.filter(p => p.phone !== match.phone)] : all;
+    const q = deliveryContactPhone.trim().toLowerCase();
+    return q ? sorted.filter(p => p.phone.toLowerCase().includes(q)) : sorted;
+  }, [deliveryContacts, deliveryContactPerson, deliveryContactPhone]);
+
+  const isPhoneSaved = useMemo(() =>
+    (deliveryContacts ?? []).some(c =>
+      c.name.toLowerCase() === deliveryContactPerson.trim().toLowerCase() && c.phone === deliveryContactPhone.trim()
+    ), [deliveryContacts, deliveryContactPerson, deliveryContactPhone]);
+
   // Save
   const saveMutation = useMutation({
     mutationFn: async (status: string) => {
+      const previousStatus = existingPO?.status;
+      // All edits always go to pending_approval for re-approval workflow
+      const effectiveStatus = isEdit ? 'pending_approval' : status;
+      const effectiveGstRate = isForeignVendor ? 0 : gstRate;
       const poData = {
         po_number: poNumber,
         po_date: format(poDate, "yyyy-MM-dd"),
@@ -350,6 +562,7 @@ export default function PurchaseOrderForm() {
         vendor_gstin: selectedVendor?.gstin || null,
         vendor_state_code: selectedVendor?.state_code || null,
         vendor_phone: selectedVendor?.phone1 || null,
+        vendor_contact_person: selectedVendor?.contact_person || null,
         vendor_reference: vendorReference || null,
         vendor_email: vendorEmail || null,
         reference_number: referenceNumber || null,
@@ -362,18 +575,21 @@ export default function PurchaseOrderForm() {
         sub_total: subTotal,
         additional_charges: additionalCharges,
         taxable_value: taxableValue,
-        igst_amount: taxResult.igst,
-        cgst_amount: taxResult.cgst,
-        sgst_amount: taxResult.sgst,
-        total_gst: taxResult.total,
-        grand_total: grandTotal,
-        gst_rate: gstRate,
-        status,
-        issued_at: status === "issued" ? new Date().toISOString() : null,
+        igst_amount: isForeignVendor ? 0 : taxResult.igst,
+        cgst_amount: isForeignVendor ? 0 : taxResult.cgst,
+        sgst_amount: isForeignVendor ? 0 : taxResult.sgst,
+        total_gst: isForeignVendor ? 0 : taxResult.total,
+        grand_total: isForeignVendor ? taxableValue : grandTotal,
+        gst_rate: effectiveGstRate,
+        currency,
+        currency_symbol: currencySymbol,
+        exchange_rate: exchangeRate,
+        status: effectiveStatus,
+        issued_at: effectiveStatus === "issued" ? new Date().toISOString() : null,
         cancelled_at: null,
         cancellation_reason: null,
-        approval_requested_at: status === "pending_approval" ? new Date().toISOString() : null,
-        approval_requested_by: status === "pending_approval" ? (profile?.display_name || profile?.full_name || profile?.email || null) : null,
+        approval_requested_at: effectiveStatus === "pending_approval" ? new Date().toISOString() : null,
+        approval_requested_by: effectiveStatus === "pending_approval" ? (profile?.display_name || profile?.full_name || profile?.email || null) : null,
         approved_at: null,
         approved_by: null,
         rejection_reason: null,
@@ -382,26 +598,43 @@ export default function PurchaseOrderForm() {
 
       const items = lineItems
         .filter((i) => i.description.trim())
-        .map((i, idx) => ({ ...i, serial_number: idx + 1, gst_rate: gstRate }));
+        .map((i, idx) => ({ ...i, serial_number: idx + 1, gst_rate: effectiveGstRate }));
 
       if (isEdit) {
         await updatePurchaseOrder(id!, { po: poData, lineItems: items });
-        if (status === "issued") await issuePurchaseOrder(id!);
+        const userName = profile?.display_name || profile?.full_name || profile?.email || null;
+        await logAudit("purchase_order", id!, "po_edited", {
+          previous_status: previousStatus,
+          new_status: effectiveStatus,
+          details: `PO edited by ${userName}. Previous status: ${previousStatus}. New status: ${effectiveStatus}.`,
+          performed_by: userName,
+        });
         return id;
       } else {
         const result = await createPurchaseOrder({ po: poData, lineItems: items });
-        if (status === "issued") await issuePurchaseOrder(result.id);
+        if (effectiveStatus === "issued") await issuePurchaseOrder(result.id);
         return result.id;
       }
     },
-    onSuccess: (poId, status) => {
+    onSuccess: (poId, intendedStatus) => {
+      sessionStorage.removeItem(DRAFT_KEY);
       queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
       queryClient.invalidateQueries({ queryKey: ["po-stats"] });
       queryClient.invalidateQueries({ queryKey: ["po-pending-approval-count"] });
-      if (status === "issued") {
+      if (isEdit) {
+        const prevStatus = existingPO?.status;
+        const wasResubmitted = prevStatus && ['approved', 'issued', 'partially_received'].includes(prevStatus);
+        toast({
+          title: wasResubmitted ? "PO updated and sent for re-approval." : "PO submitted for approval",
+          description: wasResubmitted ? "Approval required before this PO can be re-issued." : `PO ${poNumber} sent to Finance for approval.`,
+        });
+        navigate(`/purchase-orders/${poId}`);
+        return;
+      }
+      if (intendedStatus === "issued") {
         setSavedPOId(poId as string);
         setSuccessDialogOpen(true);
-      } else if (status === "pending_approval") {
+      } else if (intendedStatus === "pending_approval") {
         toast({ title: "PO submitted for approval", description: `PO ${poNumber} sent to Finance for approval.` });
         navigate("/purchase-orders");
       } else {
@@ -456,6 +689,20 @@ export default function PurchaseOrderForm() {
           {isEdit ? `Editing PO ${poNumber}` : "Create a new purchase order for your vendor"}
         </p>
       </div>
+
+      {isEdit && existingPO?.status === 'rejected' && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300">
+          <Info className="h-4 w-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <span>This PO was rejected. Make your changes and re-submit for approval.</span>
+        </div>
+      )}
+
+      {isEdit && ['issued', 'partially_received'].includes(existingPO?.status ?? '') && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300">
+          <Info className="h-4 w-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <span>Editing this PO will require re-approval before it can be re-issued.</span>
+        </div>
+      )}
 
       {prefillApplied && (
         <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
@@ -521,16 +768,81 @@ export default function PurchaseOrderForm() {
                        selectedVendor.vendor_type === "customer" ? "Customer" : "Supplier & Processor"}
                     </span>
                   )}
+                  {isForeignVendor && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/30">
+                      Foreign Vendor
+                    </span>
+                  )}
                 </div>
                 {selectedVendor.address_line1 && <p className="text-muted-foreground">{selectedVendor.address_line1}</p>}
                 {selectedVendor.city && (
                   <p className="text-muted-foreground">
                     {selectedVendor.city}{selectedVendor.state ? `, ${selectedVendor.state}` : ""}
+                    {(selectedVendor as any).country && (selectedVendor as any).country !== "India" ? `, ${(selectedVendor as any).country}` : ""}
                   </p>
                 )}
                 {selectedVendor.gstin && <p className="font-mono text-xs">GSTIN: {selectedVendor.gstin}</p>}
                 {selectedVendor.phone1 && <p className="text-muted-foreground">Ph: {selectedVendor.phone1}</p>}
-                {(selectedVendor as any).email1 && <p className="text-muted-foreground">{(selectedVendor as any).email1}</p>}
+                {selectedVendor.contact_person && <p className="text-xs text-muted-foreground">Contact: {selectedVendor.contact_person}</p>}
+                {selectedVendor.email1 && <p className="text-muted-foreground">{selectedVendor.email1}</p>}
+              </div>
+            )}
+
+            {/* Foreign Currency Section */}
+            {isForeignVendor && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-500/10 dark:border-blue-500/30 p-3 space-y-3">
+                <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 uppercase tracking-wide">Foreign Currency</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <Label className="text-xs text-slate-600 dark:text-slate-400">Currency</Label>
+                    <Select
+                      value={currency}
+                      onValueChange={(v) => {
+                        const c = CURRENCIES.find(x => x.code === v) || CURRENCIES[0];
+                        setCurrency(c.code);
+                        setCurrencySymbol(c.symbol);
+                        setRateFetchStatus("manual");
+                        fetchExchangeRate(c.code);
+                      }}
+                    >
+                      <SelectTrigger className="mt-1 h-8 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CURRENCIES.filter(c => c.code !== "INR").map((c) => (
+                          <SelectItem key={c.code} value={c.code}>{c.code} — {c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-slate-600 dark:text-slate-400">Exchange Rate (1 {currency} = ? INR)</Label>
+                    <Input
+                      type="number"
+                      step="0.0001"
+                      value={exchangeRate}
+                      onChange={(e) => { setExchangeRate(Number(e.target.value)); setRateFetchStatus("manual"); }}
+                      className="mt-1 h-8 text-sm font-mono"
+                    />
+                  </div>
+                  <div className="flex flex-col justify-end">
+                    {fetchingRate ? (
+                      <p className="text-xs text-slate-500 dark:text-slate-400 pb-1">Fetching live rate…</p>
+                    ) : rateFetchStatus === "live" ? (
+                      <p className="text-xs text-green-600 dark:text-green-400 pb-1">Live rate fetched</p>
+                    ) : rateFetchStatus === "manual" ? (
+                      <p className="text-xs text-amber-600 dark:text-amber-400 pb-1">Manual rate</p>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => fetchExchangeRate(currency)}
+                      className="text-xs text-blue-600 hover:underline text-left"
+                    >
+                      Refresh rate
+                    </button>
+                  </div>
+                </div>
+                <p className="text-xs text-blue-600 dark:text-blue-400">No GST applicable for foreign vendors. Amounts shown in {currency}.</p>
               </div>
             )}
 
@@ -625,13 +937,103 @@ export default function PurchaseOrderForm() {
               )}
               <Textarea value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} className="mt-1" rows={2} placeholder="Delivery address" />
               <div className="grid grid-cols-2 gap-3 mt-2">
-                <div>
-                  <Label className="text-xs font-medium text-slate-600">Contact Person</Label>
-                  <Input value={deliveryContactPerson} onChange={(e) => setDeliveryContactPerson(e.target.value)} className="mt-1 h-8 text-sm" placeholder="Name" />
+                {/* Contact Person */}
+                <div className="relative">
+                  <Label className="text-xs font-medium text-slate-600 dark:text-slate-400">Contact Person</Label>
+                  <input
+                    type="text"
+                    value={deliveryContactPerson}
+                    onChange={(e) => { setDeliveryContactPerson(e.target.value); setContactPersonOpen(true); }}
+                    onFocus={() => setContactPersonOpen(true)}
+                    onBlur={() => setTimeout(() => setContactPersonOpen(false), 150)}
+                    placeholder="Name"
+                    className="mt-1 w-full h-8 rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                  />
+                  {contactPersonOpen && (personSuggestions.length > 0 || (deliveryContactPerson.trim() && !isPersonSaved)) && (
+                    <div className="absolute z-50 top-full left-0 right-0 mt-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-md max-h-48 overflow-y-auto">
+                      {personSuggestions.map((name) => (
+                        <button
+                          key={name}
+                          type="button"
+                          onMouseDown={() => {
+                            setDeliveryContactPerson(name);
+                            const contact = (deliveryContacts ?? []).find(c => c.name === name);
+                            if (contact?.phone) setDeliveryContactPhone(contact.phone);
+                            setContactPersonOpen(false);
+                          }}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
+                        >
+                          {name}
+                        </button>
+                      ))}
+                      {deliveryContactPerson.trim() && !isPersonSaved && (
+                        <button
+                          type="button"
+                          onMouseDown={async () => {
+                            if (!profile?.company_id) return;
+                            try {
+                              await saveDeliveryContact(profile.company_id, deliveryContactPerson.trim(), deliveryContactPhone || undefined);
+                              queryClient.invalidateQueries({ queryKey: ["delivery-contacts", profile.company_id] });
+                              toast({ title: "Contact saved" });
+                            } catch {
+                              toast({ title: "Could not save contact", variant: "destructive" });
+                            }
+                            setContactPersonOpen(false);
+                          }}
+                          className="w-full text-left px-3 py-2 text-xs italic text-muted-foreground hover:bg-slate-100 dark:hover:bg-slate-700 border-t border-slate-100 dark:border-slate-800"
+                        >
+                          + Save "{deliveryContactPerson.trim()}" for future use
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <Label className="text-xs font-medium text-slate-600">Contact Phone</Label>
-                  <Input value={deliveryContactPhone} onChange={(e) => setDeliveryContactPhone(e.target.value)} className="mt-1 h-8 text-sm" placeholder="Phone" />
+                {/* Contact Phone */}
+                <div className="relative">
+                  <Label className="text-xs font-medium text-slate-600 dark:text-slate-400">Contact Phone</Label>
+                  <input
+                    type="text"
+                    value={deliveryContactPhone}
+                    onChange={(e) => { setDeliveryContactPhone(e.target.value); setContactPhoneOpen(true); }}
+                    onFocus={() => setContactPhoneOpen(true)}
+                    onBlur={() => setTimeout(() => setContactPhoneOpen(false), 150)}
+                    placeholder="Phone number"
+                    className="mt-1 w-full h-8 rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                  />
+                  {contactPhoneOpen && (phoneSuggestions.length > 0 || (deliveryContactPerson.trim() && deliveryContactPhone.trim() && !isPhoneSaved)) && (
+                    <div className="absolute z-50 top-full left-0 right-0 mt-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-md max-h-48 overflow-y-auto">
+                      {phoneSuggestions.map(({ name, phone }) => (
+                        <button
+                          key={phone}
+                          type="button"
+                          onMouseDown={() => { setDeliveryContactPhone(phone); setContactPhoneOpen(false); }}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
+                        >
+                          {phone}
+                          <span className="ml-2 text-xs text-muted-foreground">{name}</span>
+                        </button>
+                      ))}
+                      {deliveryContactPerson.trim() && deliveryContactPhone.trim() && !isPhoneSaved && (
+                        <button
+                          type="button"
+                          onMouseDown={async () => {
+                            if (!profile?.company_id) return;
+                            try {
+                              await saveDeliveryContact(profile.company_id, deliveryContactPerson.trim(), deliveryContactPhone.trim());
+                              queryClient.invalidateQueries({ queryKey: ["delivery-contacts", profile.company_id] });
+                              toast({ title: "Contact saved" });
+                            } catch {
+                              toast({ title: "Could not save contact", variant: "destructive" });
+                            }
+                            setContactPhoneOpen(false);
+                          }}
+                          className="w-full text-left px-3 py-2 text-xs italic text-muted-foreground hover:bg-slate-100 dark:hover:bg-slate-700 border-t border-slate-100 dark:border-slate-800"
+                        >
+                          + Save this contact for future use
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -648,19 +1050,21 @@ export default function PurchaseOrderForm() {
               {lineItems.filter((i) => i.description.trim()).length}
             </span>
           </div>
-          <div className="flex items-center gap-3">
-            <Label className="text-xs text-muted-foreground">GST Rate:</Label>
-            <Select value={String(gstRate)} onValueChange={(v) => setGstRate(Number(v))}>
-              <SelectTrigger className="w-[90px] h-8">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {GST_RATES.map((r) => (
-                  <SelectItem key={r} value={String(r)}>{r}%</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {!isForeignVendor && (
+            <div className="flex items-center gap-3">
+              <Label className="text-xs text-muted-foreground">GST Rate:</Label>
+              <Select value={String(gstRate)} onValueChange={(v) => setGstRate(Number(v))}>
+                <SelectTrigger className="w-[90px] h-8">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {GST_RATES.map((r) => (
+                    <SelectItem key={r} value={String(r)}>{r}%</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
 
         <div className="overflow-x-auto">
@@ -675,9 +1079,9 @@ export default function PurchaseOrderForm() {
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-24">Unit</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-20">Alt. Qty</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-24">Alt. Unit</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-28">Unit Price ₹</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-28">Unit Price {currencySymbol}</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-36">Delivery Date</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-28">Amount ₹</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-28">Amount {currencySymbol}</th>
                 <th className="w-10"></th>
               </tr>
             </thead>
@@ -691,7 +1095,7 @@ export default function PurchaseOrderForm() {
                       onChange={(v) => updateLineItem(index, "description", v)}
                       onSelect={(selectedItem) => {
                         updateLineItem(index, "description", selectedItem.description);
-                        updateLineItem(index, "drawing_number", selectedItem.drawing_revision || "");
+                        updateLineItem(index, "drawing_number", selectedItem.drawing_number || selectedItem.drawing_revision || "");
                         updateLineItem(index, "unit", selectedItem.unit || "NOS");
                         if (!item.unit_price) updateLineItem(index, "unit_price", selectedItem.standard_cost || 0);
                         updateLineItem(index, "gst_rate", selectedItem.gst_rate || 18);
@@ -792,7 +1196,7 @@ export default function PurchaseOrderForm() {
                   </td>
                   <td className="px-3 py-2 w-28 bg-slate-50 text-right text-sm font-medium text-slate-700 font-mono tabular-nums">
                     {item.line_total
-                      ? `₹${new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(item.line_total)}`
+                      ? `${currencySymbol}${new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(item.line_total)}`
                       : "—"}
                   </td>
                   <td className="px-2 w-10">
@@ -824,40 +1228,48 @@ export default function PurchaseOrderForm() {
         {/* GST Info */}
         <div className="paper-card space-y-2">
           <h3 className="text-sm font-medium text-slate-700 border-b border-border pb-2">GST Information</h3>
-          {!COMPANY_STATE_CODE && (
-            <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold">
-              <Info className="h-3 w-3 shrink-0" /> Company state not set —{" "}
-              <button type="button" className="underline hover:no-underline" onClick={() => navigate("/settings/company")}>
-                set it in Settings
-              </button>
+          {isForeignVendor ? (
+            <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 dark:bg-blue-500/10 dark:border-blue-500/30 dark:text-blue-300 text-xs font-semibold">
+              <Info className="h-3 w-3 shrink-0" /> No tax applicable for foreign vendor
             </div>
-          )}
-          {selectedVendor ? (
+          ) : (
             <>
-              <p className="text-sm">
-                <span className="text-muted-foreground">Vendor:</span>{" "}
-                <span className="font-medium">{getStateName(selectedVendor.state_code) || selectedVendor.state || "N/A"} ({selectedVendor.state_code || "??"})</span>
-              </p>
-              <p className="text-sm">
-                <span className="text-muted-foreground">Your Company:</span>{" "}
-                <span className="font-medium">{getStateName(COMPANY_STATE_CODE) || companySettings?.state || "N/A"} ({COMPANY_STATE_CODE || "?"})</span>
-              </p>
-              {gstType === 'cgst_sgst' ? (
-                <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold mt-1">
-                  <Info className="h-3 w-3 shrink-0" /> Intra-state — Input CGST + SGST
-                </div>
-              ) : !selectedVendor.state_code ? (
-                <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold mt-1">
-                  <Info className="h-3 w-3 shrink-0" /> Vendor state unknown — defaulting to IGST
-                </div>
-              ) : (
-                <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold mt-1">
-                  <Info className="h-3 w-3 shrink-0" /> Inter-state — Input IGST
+              {!COMPANY_STATE_CODE && (
+                <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold">
+                  <Info className="h-3 w-3 shrink-0" /> Company state not set —{" "}
+                  <button type="button" className="underline hover:no-underline" onClick={() => navigate("/settings/company")}>
+                    set it in Settings
+                  </button>
                 </div>
               )}
+              {selectedVendor ? (
+                <>
+                  <p className="text-sm">
+                    <span className="text-muted-foreground">Vendor:</span>{" "}
+                    <span className="font-medium">{getStateName(selectedVendor.state_code) || selectedVendor.state || "N/A"} ({selectedVendor.state_code || "??"})</span>
+                  </p>
+                  <p className="text-sm">
+                    <span className="text-muted-foreground">Your Company:</span>{" "}
+                    <span className="font-medium">{getStateName(COMPANY_STATE_CODE) || companySettings?.state || "N/A"} ({COMPANY_STATE_CODE || "?"})</span>
+                  </p>
+                  {gstType === 'cgst_sgst' ? (
+                    <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold mt-1">
+                      <Info className="h-3 w-3 shrink-0" /> Intra-state — Input CGST + SGST
+                    </div>
+                  ) : !selectedVendor.state_code ? (
+                    <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold mt-1">
+                      <Info className="h-3 w-3 shrink-0" /> Vendor state unknown — defaulting to IGST
+                    </div>
+                  ) : (
+                    <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold mt-1">
+                      <Info className="h-3 w-3 shrink-0" /> Inter-state — Input IGST
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">Select a vendor to see GST details</p>
+              )}
             </>
-          ) : (
-            <p className="text-sm text-muted-foreground">Select a vendor to see GST details</p>
           )}
         </div>
 
@@ -895,20 +1307,22 @@ export default function PurchaseOrderForm() {
           <div className="space-y-1.5 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Sub Total</span>
-              <span className="font-mono tabular-nums">{formatCurrency(subTotal)}</span>
+              <span className="font-mono tabular-nums">{currencySymbol}{new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(subTotal)}</span>
             </div>
             {additionalTotal > 0 && (
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Additional</span>
-                <span className="font-mono tabular-nums">{formatCurrency(additionalTotal)}</span>
+                <span className="font-mono tabular-nums">{currencySymbol}{new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(additionalTotal)}</span>
               </div>
             )}
             <div className="flex justify-between">
               <span className="text-muted-foreground">Taxable Value</span>
-              <span className="font-mono tabular-nums">{formatCurrency(taxableValue)}</span>
+              <span className="font-mono tabular-nums">{currencySymbol}{new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(taxableValue)}</span>
             </div>
             <div className="border-t border-border my-2" />
-            {gstType === 'cgst_sgst' ? (
+            {isForeignVendor ? (
+              <div className="text-xs text-blue-600 dark:text-blue-400 italic">No tax applicable for foreign vendor</div>
+            ) : gstType === 'cgst_sgst' ? (
               <>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Input CGST @ {gstRate / 2}%</span>
@@ -928,29 +1342,36 @@ export default function PurchaseOrderForm() {
             <div className="border-t border-border my-2" />
             <div className="flex justify-between text-base font-bold">
               <span>Grand Total</span>
-              <span className="font-mono tabular-nums text-primary">{formatCurrency(grandTotal)}</span>
+              <span className="font-mono tabular-nums text-primary">
+                {currencySymbol}{new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(isForeignVendor ? taxableValue : grandTotal)}
+              </span>
             </div>
+            {isForeignVendor && exchangeRate > 0 && (
+              <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
+                <span>≈ INR Equivalent</span>
+                <span className="font-mono tabular-nums">₹{new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(taxableValue * exchangeRate)}</span>
+              </div>
+            )}
           </div>
-          <p className="text-[10px] text-muted-foreground mt-3 italic">
-            {amountInWords(grandTotal)}
-          </p>
+          {!isForeignVendor && (
+            <p className="text-[10px] text-muted-foreground mt-3 italic">
+              {amountInWords(grandTotal)}
+            </p>
+          )}
         </div>
       </div>
 
       {/* Sticky Action Bar */}
       <div className="fixed bottom-0 left-0 right-0 md:left-[var(--sidebar-width)] bg-card border-t border-border p-3 flex justify-end gap-2 z-40">
-        <Button variant="outline" onClick={() => navigate("/purchase-orders")}>Cancel</Button>
-        {isPurchaseTeam ? (
-          isEdit && existingPO?.approved_at ? (
-            // Editing an approved draft — purchase_team can now issue it
-            <Button onClick={() => handleSave("issued")} disabled={saveMutation.isPending} className="active:scale-[0.98] transition-transform">
-              Issue PO →
-            </Button>
-          ) : (
-            <Button onClick={() => handleSave("pending_approval")} disabled={saveMutation.isPending} className="active:scale-[0.98] transition-transform">
-              Submit for Approval →
-            </Button>
-          )
+        <Button variant="outline" onClick={() => { sessionStorage.removeItem(DRAFT_KEY); navigate("/purchase-orders"); }}>Cancel</Button>
+        {isEdit ? (
+          <Button onClick={() => handleSave("pending_approval")} disabled={saveMutation.isPending} className="active:scale-[0.98] transition-transform">
+            {saveMutation.isPending ? "Saving…" : "Save & Submit for Approval →"}
+          </Button>
+        ) : isPurchaseTeam ? (
+          <Button onClick={() => handleSave("pending_approval")} disabled={saveMutation.isPending} className="active:scale-[0.98] transition-transform">
+            Submit for Approval →
+          </Button>
         ) : (
           <>
             <Button variant="secondary" onClick={() => handleSave("draft")} disabled={saveMutation.isPending}>

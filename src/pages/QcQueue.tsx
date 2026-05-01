@@ -39,7 +39,7 @@ export default function QcQueue() {
   const { data: grns = [], isLoading } = useQuery({
     queryKey: ["qc-queue"],
     queryFn: fetchQcPendingGrns,
-    refetchInterval: 30_000,
+    refetchInterval: 120000,
   });
 
   return (

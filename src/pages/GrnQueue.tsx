@@ -40,7 +40,7 @@ export default function GrnQueue() {
   const { data: grns = [], isLoading } = useQuery({
     queryKey: ["grn-queue"],
     queryFn: fetchPendingGrns,
-    refetchInterval: 30_000,
+    refetchInterval: 120000,
   });
 
   return (

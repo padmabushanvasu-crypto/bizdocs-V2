@@ -31,6 +31,7 @@ export interface PurchaseOrder {
   vendor_phone: string | null;
   vendor_reference: string | null;
   vendor_email: string | null;
+  vendor_contact_person: string | null;
   reference_number: string | null;
   payment_terms: string | null;
   delivery_address: string | null;
@@ -62,6 +63,9 @@ export interface PurchaseOrder {
   approved_by: string | null;
   rejection_reason: string | null;
   rejection_noted: boolean;
+  currency?: string | null;
+  currency_symbol?: string | null;
+  exchange_rate?: number | null;
   created_at: string;
   updated_at: string;
   line_items?: POLineItem[];
@@ -138,6 +142,9 @@ export async function createPurchaseOrder({ po, lineItems }: CreatePOData) {
       po_number: po.po_number, po_date: po.po_date,
       vendor_id: po.vendor_id || null, vendor_name: po.vendor_name, vendor_address: po.vendor_address,
       vendor_gstin: po.vendor_gstin, vendor_state_code: po.vendor_state_code, vendor_phone: po.vendor_phone,
+      vendor_reference: po.vendor_reference || null,
+      vendor_email: po.vendor_email || null,
+      vendor_contact_person: po.vendor_contact_person || null,
       reference_number: po.reference_number, payment_terms: po.payment_terms,
       delivery_address: po.delivery_address,
         delivery_contact_person: po.delivery_contact_person,
@@ -147,6 +154,9 @@ export async function createPurchaseOrder({ po, lineItems }: CreatePOData) {
       additional_charges: po.additional_charges as any, taxable_value: po.taxable_value,
       igst_amount: po.igst_amount, cgst_amount: po.cgst_amount, sgst_amount: po.sgst_amount,
       total_gst: po.total_gst, grand_total: po.grand_total, gst_rate: po.gst_rate,
+      currency: po.currency ?? 'INR',
+      currency_symbol: po.currency_symbol ?? '₹',
+      exchange_rate: po.exchange_rate ?? 1,
       status: po.status, issued_at: po.issued_at,
     } as any)
     .select().single();
@@ -180,6 +190,9 @@ export async function updatePurchaseOrder(id: string, { po, lineItems }: CreateP
     po_number: po.po_number, po_date: po.po_date,
     vendor_id: po.vendor_id, vendor_name: po.vendor_name, vendor_address: po.vendor_address,
     vendor_gstin: po.vendor_gstin, vendor_state_code: po.vendor_state_code, vendor_phone: po.vendor_phone,
+    vendor_reference: po.vendor_reference || null,
+    vendor_email: po.vendor_email || null,
+    vendor_contact_person: po.vendor_contact_person || null,
     reference_number: po.reference_number, payment_terms: po.payment_terms,
     delivery_address: po.delivery_address,
     delivery_contact_person: po.delivery_contact_person,
@@ -189,6 +202,9 @@ export async function updatePurchaseOrder(id: string, { po, lineItems }: CreateP
     additional_charges: po.additional_charges as any, taxable_value: po.taxable_value,
     igst_amount: po.igst_amount, cgst_amount: po.cgst_amount, sgst_amount: po.sgst_amount,
     total_gst: po.total_gst, grand_total: po.grand_total, gst_rate: po.gst_rate,
+    currency: po.currency ?? 'INR',
+    currency_symbol: po.currency_symbol ?? '₹',
+    exchange_rate: po.exchange_rate ?? 1,
     status: po.status, issued_at: po.issued_at,
   } as any).eq("id", id);
   if (error) throw error;
@@ -346,7 +362,7 @@ export async function fetchPOStats() {
   const { data: allPOs, error } = await supabase.from("purchase_orders").select("id, po_date, grand_total, status, issued_at");
   if (error) throw error;
   const pos = (allPOs ?? []) as any[];
-  const active = pos.filter((p) => p.status !== "cancelled");
+  const active = pos.filter((p) => p.status !== "cancelled" && p.status !== "deleted");
   const thisMonth = active.filter((p) => p.po_date >= monthStart);
   const open = active.filter((p) => ["draft", "approved", "issued", "partially_received"].includes(p.status));
   const totalValueThisMonth = thisMonth.reduce((s: number, p: any) => s + (Number(p.grand_total) || 0), 0);

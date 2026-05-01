@@ -5,8 +5,8 @@ import { normalizePartyType, type SkipReason } from "@/lib/import-utils";
 
 export type VendorType = "raw_material_supplier" | "processor" | "both" | "customer";
 
-// Extend generated type with vendor_type column added via migration
-export type Party = Tables<"parties"> & { vendor_type?: VendorType | null };
+// Extend generated type with vendor_type and country columns added via migration
+export type Party = Tables<"parties"> & { vendor_type?: VendorType | null; country?: string | null };
 export type PartyInsert = TablesInsert<"parties">;
 export type PartyUpdate = TablesUpdate<"parties">;
 

@@ -69,6 +69,7 @@ export async function getNextDocNumber(
     .select(numberColumn)
     .eq("company_id", companyId)
     .ilike(numberColumn, `${prefix}/%`)
+    .neq("status", "deleted")
     .order(numberColumn, { ascending: false })
     .limit(1);
 

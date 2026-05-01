@@ -28,13 +28,13 @@ export default function DispatchNotes() {
   const { data: stats } = useQuery({
     queryKey: ["dn-stats"],
     queryFn: fetchDnStats,
-    refetchInterval: 60000,
+    refetchInterval: 300000,
   });
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["dispatch-notes", statusFilter, search, page],
     queryFn: () => fetchDispatchNotes({ search, status: statusFilter, page, pageSize: 20 }),
-    refetchInterval: 30000,
+    refetchInterval: 300000,
   });
 
   const notes = data?.data ?? [];

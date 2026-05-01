@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Plus, Trash2, Wrench, CheckCircle } from "lucide-react";
@@ -118,6 +118,33 @@ export default function ConsumableIssueDetail() {
   const [lines, setLines] = useState<LineFormRow[]>([emptyLine()]);
   const [openComboKey, setOpenComboKey] = useState<string | null>(null);
 
+  const DRAFT_KEY = 'bizdocs_draft_consumable';
+
+  // Restore draft (once on mount, create mode only)
+  useEffect(() => {
+    if (!isNew) return;
+    const raw = sessionStorage.getItem(DRAFT_KEY);
+    if (!raw) return;
+    try {
+      const draft = JSON.parse(raw);
+      if (draft.issueDate) setIssueDate(draft.issueDate);
+      if (draft.issuedTo !== undefined) setIssuedTo(draft.issuedTo);
+      if (draft.notes !== undefined) setNotes(draft.notes);
+      if (draft.lines?.length) setLines(draft.lines as LineFormRow[]);
+    } catch {
+      sessionStorage.removeItem(DRAFT_KEY);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Save draft (debounced 500ms, create mode only)
+  useEffect(() => {
+    if (!isNew) return;
+    const timer = setTimeout(() => {
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ issueDate, issuedTo, notes, lines }));
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [isNew, issueDate, issuedTo, notes, lines]);
+
   // ── Mutations ─────────────────────────────────────────────────────────────
   const createMutation = useMutation({
     mutationFn: () => {
@@ -152,6 +179,7 @@ export default function ConsumableIssueDetail() {
       });
     },
     onSuccess: (created) => {
+      sessionStorage.removeItem(DRAFT_KEY);
       queryClient.invalidateQueries({ queryKey: ["consumable-issues"] });
       queryClient.invalidateQueries({ queryKey: ["consumable-stats"] });
       toast({ title: `${created.issue_number} created successfully` });
@@ -280,7 +308,7 @@ export default function ConsumableIssueDetail() {
     <div className="p-4 md:p-6 space-y-5 max-w-4xl">
       {/* Header */}
       <div className="flex items-center gap-3 flex-wrap">
-        <Button variant="ghost" size="sm" onClick={() => navigate("/consumables")}>
+        <Button variant="ghost" size="sm" onClick={() => { sessionStorage.removeItem(DRAFT_KEY); navigate("/consumables"); }}>
           <ArrowLeft className="w-4 h-4 mr-1" />
           Back
         </Button>

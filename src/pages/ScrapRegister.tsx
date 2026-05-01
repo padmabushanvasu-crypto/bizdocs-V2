@@ -167,7 +167,7 @@ export default function ScrapRegister() {
   const { data: stats } = useQuery({
     queryKey: ["scrap-stats"],
     queryFn: fetchScrapStats,
-    refetchInterval: 60000,
+    refetchInterval: 300000,
   });
 
   const { data: itemsData } = useQuery({

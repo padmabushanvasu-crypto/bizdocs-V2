@@ -28,6 +28,7 @@ import {
 } from "@/lib/delivery-challans-api";
 import { logAudit } from "@/lib/audit-api";
 import { useAuth } from "@/hooks/useAuth";
+import { useCanEdit } from "@/hooks/useCanEdit";
 
 const DELETION_REASONS_DC_DETAIL = [
   { value: 'data_entry_error',        label: 'Data entry error' },
@@ -83,7 +84,10 @@ export default function DeliveryChallanDetail() {
   const { role, profile } = useAuth();
   const { hideCosts } = useRoleAccess();
   const isInwardTeam = role === 'inward_team';
+  const isPurchaseTeam = role === 'purchase_team';
+  const isFinanceOrAdmin = role === 'admin' || role === 'finance';
   const isApprover = role === 'admin' || role === 'finance' || role === 'purchase_team';
+  const canEditDC = useCanEdit('delivery-challans');
 
   // ── Delete dialog state ───────────────────────────────────────────────────
   const [deleteDialogOpen,   setDeleteDialogOpen]   = useState(false);
@@ -336,6 +340,9 @@ export default function DeliveryChallanDetail() {
   const subTotal = dc.sub_total || items.reduce((s, i) => s + (i.amount || 0), 0);
   const grandTotal = dc.grand_total || subTotal;
   const isCgstSgst = (dc.cgst_amount || 0) > 0;
+  const isForeignDC = (dc as any).currency && (dc as any).currency !== "INR";
+  const dcCurrencySymbol = (dc as any).currency_symbol || "₹";
+  const dcExchangeRate = (dc as any).exchange_rate || 1;
 
   // ── Compact A4 print copy renderer ────────────────────────────────────────
   const renderDCPrintCopy = (label: string) => {
@@ -407,6 +414,8 @@ export default function DeliveryChallanDetail() {
             {dc.party_address && <div style={{ color: '#475569' }}>{dc.party_address}</div>}
             {dc.party_gstin && <div style={{ fontFamily: 'monospace', fontSize: '8pt' }}>GSTIN: {dc.party_gstin}</div>}
             {dc.party_phone && <div style={{ color: '#475569' }}>Ph: {dc.party_phone}</div>}
+            {dc.party_contact_person && <div style={{ color: '#475569', fontSize: '8.5pt' }}>Contact: {dc.party_contact_person}</div>}
+            {dc.party_email && <div style={{ color: '#475569', fontSize: '8.5pt' }}>{dc.party_email}</div>}
           </div>
         </div>
 
@@ -680,19 +689,29 @@ export default function DeliveryChallanDetail() {
               {(dc as any).rejection_reason && (
                 <p className="text-sm text-red-700 mt-0.5">Reason: <strong>{(dc as any).rejection_reason}</strong></p>
               )}
-              <p className="text-sm text-red-600 mt-1">Please raise a new DC if still required.</p>
+              <p className="text-sm text-red-600 mt-1">Review the reason, make your changes, and re-submit for approval.</p>
             </div>
-            {!(dc as any).rejection_noted && (
+            <div className="flex gap-2 shrink-0">
               <Button
                 variant="outline"
                 size="sm"
-                className="shrink-0 text-red-700 border-red-200"
-                onClick={() => markNotedMutation.mutate()}
-                disabled={markNotedMutation.isPending}
+                className="text-amber-700 border-amber-300 hover:bg-amber-50 dark:text-amber-400 dark:border-amber-500/40 dark:hover:bg-amber-500/10"
+                onClick={() => navigate(`/delivery-challans/${id}/edit`)}
               >
-                Mark as Noted
+                <Edit className="h-3.5 w-3.5 mr-1" /> Edit &amp; Resubmit
               </Button>
-            )}
+              {!(dc as any).rejection_noted && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-red-700 border-red-200"
+                  onClick={() => markNotedMutation.mutate()}
+                  disabled={markNotedMutation.isPending}
+                >
+                  Mark as Noted
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -702,6 +721,11 @@ export default function DeliveryChallanDetail() {
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-display font-bold font-mono text-foreground">{dc.dc_number.replace('/-', '-')}</h1>
           <span className={statusClass[dc.status] || "status-draft"}>{statusLabels[dc.status] || dc.status}</span>
+          {(dc as any).currency && (dc as any).currency !== "INR" && (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/30">
+              {(dc as any).currency}
+            </span>
+          )}
           {isOverdue && (
             <span className="bg-destructive/10 text-destructive border border-destructive/20 text-xs font-medium px-2.5 py-0.5 rounded-full">Overdue</span>
           )}
@@ -720,12 +744,12 @@ export default function DeliveryChallanDetail() {
               <Lock className="h-3 w-3" /> Print available after DC is issued
             </span>
           )}
-          {dc.status === "draft" && !isInwardTeam && (
+          {/* Edit — any user with canEdit access, except cancelled/deleted */}
+          {canEditDC && !["cancelled", "deleted"].includes(dc.status) && (
             <Button variant="outline" size="sm" onClick={() => navigate(`/delivery-challans/${id}/edit`)}>
               <Edit className="h-3.5 w-3.5 mr-1" /> Edit
             </Button>
           )}
-          {dc.status === "draft" && isInwardTeam && (dc as any).approved_at && null /* Issue button in banner above */}
           {isJobWorkDC && ["issued", "partially_returned"].includes(dc.status) && !isDeleted && (
             <Button variant="outline" size="sm" onClick={handleOpenJCDialog}>
               <Plus className="h-3.5 w-3.5 mr-1" /> Create Job Cards
@@ -927,6 +951,8 @@ export default function DeliveryChallanDetail() {
             {dc.party_address && <p className="text-sm text-muted-foreground">{dc.party_address}</p>}
             {dc.party_gstin && <p className="text-sm font-mono">GSTIN: {dc.party_gstin}</p>}
             {dc.party_phone && <p className="text-sm text-muted-foreground">Ph: {dc.party_phone}</p>}
+            {dc.party_contact_person && <p className="text-sm text-muted-foreground">Contact: {dc.party_contact_person}</p>}
+            {dc.party_email && <p className="text-sm text-muted-foreground">{dc.party_email}</p>}
           </div>
         </div>
 
@@ -988,9 +1014,15 @@ export default function DeliveryChallanDetail() {
           <div className="w-full max-w-xs space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Sub Total</span>
-              <span className="font-mono tabular-nums">{formatCurrency(subTotal)}</span>
+              <span className="font-mono tabular-nums">
+                {isForeignDC
+                  ? `${dcCurrencySymbol}${new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(subTotal)}`
+                  : formatCurrency(subTotal)}
+              </span>
             </div>
-            {isCgstSgst ? (
+            {isForeignDC ? (
+              <div className="text-xs text-blue-600 italic">No tax — foreign party</div>
+            ) : isCgstSgst ? (
               <>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">CGST @ {(dc.gst_rate || 18) / 2}%</span>
@@ -1010,12 +1042,24 @@ export default function DeliveryChallanDetail() {
             <div className="border-t border-border pt-2">
               <div className="flex justify-between text-base font-bold">
                 <span>Total Amount</span>
-                <span className="font-mono tabular-nums text-primary">{formatCurrency(grandTotal)}</span>
+                <span className="font-mono tabular-nums text-primary">
+                  {isForeignDC
+                    ? `${dcCurrencySymbol}${new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(grandTotal)}`
+                    : formatCurrency(grandTotal)}
+                </span>
               </div>
+              {isForeignDC && dcExchangeRate > 0 && (
+                <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                  <span>≈ INR Equivalent (@ {dcExchangeRate})</span>
+                  <span className="font-mono tabular-nums">₹{new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(grandTotal * dcExchangeRate)}</span>
+                </div>
+              )}
             </div>
-            <div className="bg-muted/50 rounded p-2 text-xs text-muted-foreground italic">
-              {amountInWords(grandTotal)}
-            </div>
+            {!isForeignDC && (
+              <div className="bg-muted/50 rounded p-2 text-xs text-muted-foreground italic">
+                {amountInWords(grandTotal)}
+              </div>
+            )}
           </div>
         </div>}
 

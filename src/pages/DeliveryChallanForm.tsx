@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useCanEdit } from "@/hooks/useCanEdit";
+import { logAudit } from "@/lib/audit-api";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { fetchParties, type Party } from "@/lib/parties-api";
@@ -34,6 +35,37 @@ import { JobCardCreationDialog } from "@/components/JobCardCreationDialog";
 import { fetchProcessingRoute, fetchProcessingRouteAll, fetchJigsForDrawing, fetchStageVendors, fetchMouldItemsForDrawing, fetchItemIdByDrawingNumber, type ProcessingRoute, type JigMasterRecord, type MouldItem } from "@/lib/dc-intelligence-api";
 import { formatCurrency, amountInWords } from "@/lib/gst-utils";
 import { getGSTType, calculateLineTax, round2, resolveStateCode, type GSTType } from "@/lib/tax-utils";
+
+const CURRENCIES_DC = [
+  { code: "INR", symbol: "₹", name: "Indian Rupee" },
+  { code: "USD", symbol: "$", name: "US Dollar" },
+  { code: "EUR", symbol: "€", name: "Euro" },
+  { code: "GBP", symbol: "£", name: "British Pound" },
+  { code: "AED", symbol: "د.إ", name: "UAE Dirham" },
+  { code: "CNY", symbol: "¥", name: "Chinese Yuan" },
+  { code: "JPY", symbol: "¥", name: "Japanese Yen" },
+  { code: "KRW", symbol: "₩", name: "South Korean Won" },
+  { code: "SGD", symbol: "S$", name: "Singapore Dollar" },
+  { code: "CHF", symbol: "CHF", name: "Swiss Franc" },
+  { code: "CAD", symbol: "C$", name: "Canadian Dollar" },
+  { code: "AUD", symbol: "A$", name: "Australian Dollar" },
+];
+
+const COUNTRY_CURRENCY_MAP_DC: Record<string, string> = {
+  "United Arab Emirates": "AED",
+  "China": "CNY",
+  "United States": "USD",
+  "United Kingdom": "GBP",
+  "Germany": "EUR",
+  "France": "EUR",
+  "Italy": "EUR",
+  "Japan": "JPY",
+  "South Korea": "KRW",
+  "Singapore": "SGD",
+  "Switzerland": "CHF",
+  "Canada": "CAD",
+  "Australia": "AUD",
+};
 
 const RETURNABLE_SUBTYPES = [
   { value: "job_work_143", label: "Job Work (Section 143)" },
@@ -117,12 +149,15 @@ function emptyLineItem(serial: number): DCLineItem {
 export default function DeliveryChallanForm() {
   const { id } = useParams();
   const isEdit = !!id;
+  const DRAFT_KEY = 'bizdocs_draft_dc';
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { role, profile } = useAuth();
   const isInwardTeam = role === 'inward_team';
+  const isPurchaseTeam = role === 'purchase_team';
+  const isFinanceOrAdmin = role === 'admin' || role === 'finance';
   const canEditDC = useCanEdit('delivery-challans');
   const [accessBlocked, setAccessBlocked] = useState(false);
 
@@ -156,6 +191,13 @@ export default function DeliveryChallanForm() {
   const [gstRate, setGstRate] = useState(18);
   const [preparedBy, setPreparedBy] = useState("");
   const [checkedBy, setCheckedBy] = useState("");
+  // Foreign currency state
+  const [currency, setCurrency] = useState("INR");
+  const [currencySymbol, setCurrencySymbol] = useState("₹");
+  const [exchangeRate, setExchangeRate] = useState(1);
+  const [isForeignParty, setIsForeignParty] = useState(false);
+  const [fetchingRate, setFetchingRate] = useState(false);
+  const [rateFetchStatus, setRateFetchStatus] = useState<"idle" | "live" | "manual">("idle");
   // BOM stages state
   const [lineBomStages, setLineBomStages] = useState<Map<number, any[]>>(new Map());
   const [lineCompletedStages, setLineCompletedStages] = useState<Map<number, Set<number>>>(new Map());
@@ -276,6 +318,15 @@ export default function DeliveryChallanForm() {
       setGstRate(existingDC.gst_rate || 18);
       setPreparedBy(existingDC.prepared_by || "");
       setCheckedBy(existingDC.checked_by || "");
+      // Restore currency
+      const dcCurrency = (existingDC as any).currency || "INR";
+      const dcCurrencySymbol = (existingDC as any).currency_symbol || "₹";
+      const dcExchangeRate = (existingDC as any).exchange_rate || 1;
+      setCurrency(dcCurrency);
+      setCurrencySymbol(dcCurrencySymbol);
+      setExchangeRate(dcExchangeRate);
+      setIsForeignParty(dcCurrency !== "INR");
+      if (dcCurrency !== "INR") setRateFetchStatus("manual");
       if (existingDC.return_due_date) setReturnDueDate(new Date(existingDC.return_due_date));
       if (existingDC.line_items?.length) {
         setLineItems(existingDC.line_items);
@@ -354,10 +405,127 @@ export default function DeliveryChallanForm() {
     setTimeout(() => { firstQtyRef.current?.focus(); firstQtyRef.current?.select(); }, 150);
   }, [isEdit, location.state]);
 
+  // Restore draft from sessionStorage (once on mount, create mode only)
+  useEffect(() => {
+    if (isEdit) return;
+    if ((location.state as any)?.prefill || (location.state as any)?.prefillItem) return;
+    const raw = sessionStorage.getItem(DRAFT_KEY);
+    if (!raw) return;
+    try {
+      const draft = JSON.parse(raw);
+      if (draft.primaryChoice) setPrimaryChoice(draft.primaryChoice as "returnable" | "non_returnable");
+      if (draft.dcSubType !== undefined) setDcSubType(draft.dcSubType);
+      if (draft.dcDate) setDcDate(new Date(draft.dcDate));
+      if (draft.partyId) setPartyId(draft.partyId);
+      if (draft.selectedParty) setSelectedParty(draft.selectedParty as Party);
+      if (draft.referenceNumber !== undefined) setReferenceNumber(draft.referenceNumber);
+      if (draft.specialInstructions !== undefined) setSpecialInstructions(draft.specialInstructions);
+      if (draft.internalRemarks !== undefined) setInternalRemarks(draft.internalRemarks);
+      if (draft.returnDueDate) setReturnDueDate(new Date(draft.returnDueDate));
+      if (draft.natureOfJobWork !== undefined) setNatureOfJobWork(draft.natureOfJobWork);
+      if (draft.lineItems?.length) setLineItems(draft.lineItems as DCLineItem[]);
+      if (draft.vehicleNumber !== undefined) setVehicleNumber(draft.vehicleNumber);
+      if (draft.driverName !== undefined) setDriverName(draft.driverName);
+      if (draft.driverContact !== undefined) setDriverContact(draft.driverContact);
+      if (draft.loNumber !== undefined) setLoNumber(draft.loNumber);
+      if (draft.approxValue !== undefined) setApproxValue(draft.approxValue);
+      if (draft.gstRate !== undefined) setGstRate(draft.gstRate);
+      if (draft.preparedBy !== undefined) setPreparedBy(draft.preparedBy);
+      if (draft.checkedBy !== undefined) setCheckedBy(draft.checkedBy);
+      if (draft.currency !== undefined) { setCurrency(draft.currency); setIsForeignParty(draft.currency !== "INR"); }
+      if (draft.currencySymbol !== undefined) setCurrencySymbol(draft.currencySymbol);
+      if (draft.exchangeRate !== undefined) { setExchangeRate(draft.exchangeRate); if (draft.currency !== "INR") setRateFetchStatus("manual"); }
+      if (draft.lineBomStages) setLineBomStages(new Map(draft.lineBomStages));
+      if (draft.lineCompletedStages) setLineCompletedStages(new Map((draft.lineCompletedStages as [number, number[]][]).map(([k, v]) => [k, new Set(v)])));
+      if (draft.lineStageSelection) setLineStageSelection(new Map(draft.lineStageSelection));
+      if (draft.itemIdByIndex) setItemIdByIndex(new Map(draft.itemIdByIndex));
+      if (draft.lineItemStock) setLineItemStock(new Map(draft.lineItemStock));
+    } catch {
+      sessionStorage.removeItem(DRAFT_KEY);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Save draft to sessionStorage (debounced 500ms, create mode only)
+  useEffect(() => {
+    if (isEdit) return;
+    const timer = setTimeout(() => {
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
+        primaryChoice,
+        dcSubType,
+        dcDate: dcDate.toISOString(),
+        partyId,
+        selectedParty,
+        referenceNumber,
+        specialInstructions,
+        internalRemarks,
+        returnDueDate: returnDueDate?.toISOString() ?? null,
+        natureOfJobWork,
+        lineItems,
+        vehicleNumber,
+        driverName,
+        driverContact,
+        loNumber,
+        approxValue,
+        gstRate,
+        preparedBy,
+        checkedBy,
+        currency,
+        currencySymbol,
+        exchangeRate,
+        lineBomStages: Array.from(lineBomStages.entries()),
+        lineCompletedStages: Array.from(lineCompletedStages.entries()).map(([k, v]) => [k, Array.from(v)]),
+        lineStageSelection: Array.from(lineStageSelection.entries()),
+        itemIdByIndex: Array.from(itemIdByIndex.entries()),
+        lineItemStock: Array.from(lineItemStock.entries()),
+      }));
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [isEdit, primaryChoice, dcSubType, dcDate, partyId, selectedParty, referenceNumber, specialInstructions, internalRemarks, returnDueDate, natureOfJobWork, lineItems, vehicleNumber, driverName, driverContact, loNumber, approxValue, gstRate, preparedBy, checkedBy, currency, currencySymbol, exchangeRate, lineBomStages, lineCompletedStages, lineStageSelection, itemIdByIndex, lineItemStock]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const fetchExchangeRateDC = async (targetCurrency: string) => {
+    if (targetCurrency === "INR") {
+      setExchangeRate(1);
+      setRateFetchStatus("idle");
+      return;
+    }
+    setFetchingRate(true);
+    setRateFetchStatus("idle");
+    try {
+      const res = await fetch("https://open.er-api.com/v6/latest/INR");
+      const data = await res.json();
+      if (data?.rates?.[targetCurrency]) {
+        const rate = Math.round((1 / data.rates[targetCurrency]) * 10000) / 10000;
+        setExchangeRate(rate);
+        setRateFetchStatus("live");
+      }
+    } catch {
+      setRateFetchStatus("manual");
+    } finally {
+      setFetchingRate(false);
+    }
+  };
+
   const handlePartySelect = (party: Party) => {
     setPartyId(party.id);
     setSelectedParty(party);
     setPartyOpen(false);
+    // Detect foreign party
+    const partyCountry = (party as any).country;
+    const isForeign = partyCountry && partyCountry !== "India";
+    setIsForeignParty(!!isForeign);
+    if (isForeign) {
+      const detectedCurrency = COUNTRY_CURRENCY_MAP_DC[partyCountry] || "USD";
+      const currencyInfo = CURRENCIES_DC.find(c => c.code === detectedCurrency) || CURRENCIES_DC[1];
+      setCurrency(currencyInfo.code);
+      setCurrencySymbol(currencyInfo.symbol);
+      fetchExchangeRateDC(currencyInfo.code);
+    } else {
+      setCurrency("INR");
+      setCurrencySymbol("₹");
+      setExchangeRate(1);
+      setIsForeignParty(false);
+      setRateFetchStatus("idle");
+    }
   };
 
   // Line item handlers
@@ -415,6 +583,8 @@ export default function DeliveryChallanForm() {
         party_gstin: selectedParty?.gstin || null,
         party_state_code: selectedParty?.state_code || null,
         party_phone: selectedParty?.phone1 || null,
+        party_contact_person: selectedParty?.contact_person || null,
+        party_email: selectedParty?.email1 || null,
         reference_number: referenceNumber || null,
         approximate_value: grandTotal,
         special_instructions: specialInstructions || null,
@@ -431,8 +601,10 @@ export default function DeliveryChallanForm() {
         approval_requested_by: status === "pending_approval"
           ? ((profile as any)?.display_name || (profile as any)?.full_name || (profile as any)?.email || null)
           : null,
-        approved_at: null,
-        approved_by: null,
+        approved_at: status === "approved" ? new Date().toISOString() : null,
+        approved_by: status === "approved"
+          ? ((profile as any)?.display_name || (profile as any)?.full_name || (profile as any)?.email || null)
+          : null,
         rejection_reason: null,
         rejection_noted: false,
         vehicle_number: vehicleNumber || null,
@@ -441,12 +613,15 @@ export default function DeliveryChallanForm() {
         lo_number: null,
         approx_value: approxValue ?? null,
         sub_total: subTotal,
-        cgst_amount: taxResult.cgst,
-        sgst_amount: taxResult.sgst,
-        igst_amount: taxResult.igst,
-        total_gst: taxResult.total,
-        grand_total: grandTotal,
-        gst_rate: gstRate,
+        cgst_amount: isForeignParty ? 0 : taxResult.cgst,
+        sgst_amount: isForeignParty ? 0 : taxResult.sgst,
+        igst_amount: isForeignParty ? 0 : taxResult.igst,
+        total_gst: isForeignParty ? 0 : taxResult.total,
+        grand_total: isForeignParty ? subTotal : grandTotal,
+        gst_rate: isForeignParty ? 0 : gstRate,
+        currency,
+        currency_symbol: currencySymbol,
+        exchange_rate: exchangeRate,
         challan_category: "supply_on_approval",
         prepared_by: preparedBy || null,
         checked_by: checkedBy || null,
@@ -481,8 +656,16 @@ export default function DeliveryChallanForm() {
         });
 
       if (isEdit) {
+        const prevStatus = (existingDC as any)?.status;
         await updateDeliveryChallan(id!, { dc: dcData as any, lineItems: items });
         if (status === "issued") await issueDeliveryChallan(id!);
+        const userName = (profile as any)?.display_name || (profile as any)?.full_name || (profile as any)?.email || null;
+        await logAudit("delivery_challan", id!, "dc_edited", {
+          previous_status: prevStatus,
+          new_status: status,
+          details: `DC edited by ${userName}. Previous status: ${prevStatus}. New status: ${status}.`,
+          performed_by: userName,
+        });
         return id;
       } else {
         const result = await createDeliveryChallan({ dc: dcData as any, lineItems: items });
@@ -491,12 +674,21 @@ export default function DeliveryChallanForm() {
       }
     },
     onSuccess: (dcId, status) => {
+      sessionStorage.removeItem(DRAFT_KEY);
       queryClient.invalidateQueries({ queryKey: ["delivery-challans"] });
       queryClient.invalidateQueries({ queryKey: ["dc-stats"] });
       queryClient.invalidateQueries({ queryKey: ["dc-pending-approval-count"] });
       if (status === "pending_approval") {
-        toast({ title: "DC request submitted", description: "Awaiting approval from purchase team." });
-        navigate("/delivery-challans");
+        const prevStatus = (existingDC as any)?.status;
+        const wasResubmitted = isEdit && prevStatus && ['approved', 'issued', 'partially_returned'].includes(prevStatus);
+        toast({
+          title: wasResubmitted ? "DC updated and sent for re-approval" : isEdit ? "DC re-submitted for approval" : "DC request submitted",
+          description: wasResubmitted ? "Issue will be available once approved." : "Awaiting approval.",
+        });
+        navigate(isEdit ? `/delivery-challans/${dcId}` : "/delivery-challans");
+      } else if (status === "approved") {
+        toast({ title: "DC updated", description: "DC updated. Can now be re-issued." });
+        navigate(`/delivery-challans/${dcId}`);
       } else if (status === "issued") {
         setSavedDCId(dcId as string);
         const isJW = dcType === "job_work_out" || dcType === "job_work_143";
@@ -588,7 +780,9 @@ export default function DeliveryChallanForm() {
         }
       }
     }
-    saveMutation.mutate(status);
+    // All edits always go to pending_approval for re-approval
+    const effectiveStatus = isEdit ? 'pending_approval' : status;
+    saveMutation.mutate(effectiveStatus);
   };
 
   const isJobWorkDC = dcType === "job_work_out" || dcType === "job_work_143";
@@ -622,6 +816,20 @@ export default function DeliveryChallanForm() {
           {isEdit ? `Editing DC ${dcNumber}` : "Create a new delivery challan"}
         </p>
       </div>
+
+      {isEdit && (existingDC as any)?.status === 'rejected' && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300">
+          <Info className="h-4 w-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <span>This DC was rejected. Make your changes and re-submit for approval.</span>
+        </div>
+      )}
+
+      {isEdit && ['issued', 'partially_returned'].includes((existingDC as any)?.status) && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300">
+          <Info className="h-4 w-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <span>Editing this DC will require re-approval before it can be re-issued.</span>
+        </div>
+      )}
 
       {/* DC Type Selector */}
       <div className="space-y-3">
@@ -727,15 +935,83 @@ export default function DeliveryChallanForm() {
 
             {selectedParty && (
               <div className="bg-muted/50 rounded-lg p-3 border border-border text-sm space-y-1">
-                <p className="font-medium text-foreground">{selectedParty.name}</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="font-medium text-foreground">{selectedParty.name}</p>
+                  {isForeignParty && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/30">
+                      Foreign Party
+                    </span>
+                  )}
+                </div>
                 {selectedParty.address_line1 && <p className="text-muted-foreground">{selectedParty.address_line1}</p>}
                 {selectedParty.city && (
                   <p className="text-muted-foreground">
                     {[selectedParty.city, selectedParty.state, selectedParty.pin_code].filter(Boolean).join(", ")}
+                    {(selectedParty as any).country && (selectedParty as any).country !== "India" ? `, ${(selectedParty as any).country}` : ""}
                   </p>
                 )}
                 {selectedParty.gstin && <p className="font-mono text-xs">GSTIN: {selectedParty.gstin}</p>}
                 {selectedParty.phone1 && <p className="text-xs text-muted-foreground">Ph: {selectedParty.phone1}</p>}
+                {selectedParty.contact_person && <p className="text-xs text-muted-foreground">Contact: {selectedParty.contact_person}</p>}
+                {selectedParty.email1 && <p className="text-xs text-muted-foreground">{selectedParty.email1}</p>}
+              </div>
+            )}
+
+            {/* Foreign Currency Section */}
+            {isForeignParty && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-500/10 dark:border-blue-500/30 p-3 space-y-3">
+                <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 uppercase tracking-wide">Foreign Currency</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <Label className="text-xs text-slate-600 dark:text-slate-400">Currency</Label>
+                    <Select
+                      value={currency}
+                      onValueChange={(v) => {
+                        const c = CURRENCIES_DC.find(x => x.code === v) || CURRENCIES_DC[0];
+                        setCurrency(c.code);
+                        setCurrencySymbol(c.symbol);
+                        setRateFetchStatus("manual");
+                        fetchExchangeRateDC(c.code);
+                      }}
+                    >
+                      <SelectTrigger className="mt-1 h-8 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CURRENCIES_DC.filter(c => c.code !== "INR").map((c) => (
+                          <SelectItem key={c.code} value={c.code}>{c.code} — {c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-slate-600 dark:text-slate-400">Exchange Rate (1 {currency} = ? INR)</Label>
+                    <Input
+                      type="number"
+                      step="0.0001"
+                      value={exchangeRate}
+                      onChange={(e) => { setExchangeRate(Number(e.target.value)); setRateFetchStatus("manual"); }}
+                      className="mt-1 h-8 text-sm font-mono"
+                    />
+                  </div>
+                  <div className="flex flex-col justify-end">
+                    {fetchingRate ? (
+                      <p className="text-xs text-slate-500 dark:text-slate-400 pb-1">Fetching live rate…</p>
+                    ) : rateFetchStatus === "live" ? (
+                      <p className="text-xs text-green-600 dark:text-green-400 pb-1">Live rate fetched</p>
+                    ) : rateFetchStatus === "manual" ? (
+                      <p className="text-xs text-amber-600 dark:text-amber-400 pb-1">Manual rate</p>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => fetchExchangeRateDC(currency)}
+                      className="text-xs text-blue-600 hover:underline text-left"
+                    >
+                      Refresh rate
+                    </button>
+                  </div>
+                </div>
+                <p className="text-xs text-blue-600 dark:text-blue-400">No GST applicable for foreign parties. Amounts shown in {currency}.</p>
               </div>
             )}
 
@@ -818,8 +1094,8 @@ export default function DeliveryChallanForm() {
                 <th className="px-3 py-2 text-left w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Unit</th>
                 <th className="px-3 py-2 text-right w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Alt. Qty</th>
                 <th className="px-3 py-2 text-left w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Alt. Unit</th>
-                <th className="px-3 py-2 text-right w-28 text-xs font-medium text-slate-400 uppercase tracking-wider">Rate ₹</th>
-                <th className="px-3 py-2 text-right w-28 text-xs font-medium text-slate-400 uppercase tracking-wider">Amount ₹</th>
+                <th className="px-3 py-2 text-right w-28 text-xs font-medium text-slate-400 uppercase tracking-wider">Rate {currencySymbol}</th>
+                <th className="px-3 py-2 text-right w-28 text-xs font-medium text-slate-400 uppercase tracking-wider">Amount {currencySymbol}</th>
                 <th className="w-10"></th>
               </tr>
             </thead>
@@ -1401,22 +1677,28 @@ export default function DeliveryChallanForm() {
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Sub Total</span>
-              <span className="font-mono tabular-nums font-medium">{formatCurrency(subTotal)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground flex items-center gap-1">
-                GST Rate
-                <Select value={String(gstRate)} onValueChange={(v) => setGstRate(Number(v))}>
-                  <SelectTrigger className="h-7 w-[80px] text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {[0, 5, 12, 18, 28].map((r) => (
-                      <SelectItem key={r} value={String(r)}>{r}%</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <span className="font-mono tabular-nums font-medium">
+                {currencySymbol}{new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(subTotal)}
               </span>
             </div>
-            {isJobWork143 ? (
+            {!isForeignParty && (
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground flex items-center gap-1">
+                  GST Rate
+                  <Select value={String(gstRate)} onValueChange={(v) => setGstRate(Number(v))}>
+                    <SelectTrigger className="h-7 w-[80px] text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {[0, 5, 12, 18, 28].map((r) => (
+                        <SelectItem key={r} value={String(r)}>{r}%</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </span>
+              </div>
+            )}
+            {isForeignParty ? (
+              <div className="text-xs text-blue-600 dark:text-blue-400 italic">No tax applicable for foreign party</div>
+            ) : isJobWork143 ? (
               <div className="text-xs text-blue-600 italic">No GST — Sec 143 Job Work</div>
             ) : gstType === 'cgst_sgst' ? (
               <>
@@ -1438,24 +1720,34 @@ export default function DeliveryChallanForm() {
             <div className="border-t border-border my-1" />
             <div className="flex justify-between text-base font-bold">
               <span>Grand Total</span>
-              <span className="font-mono tabular-nums text-primary">{formatCurrency(grandTotal)}</span>
+              <span className="font-mono tabular-nums text-primary">
+                {currencySymbol}{new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(isForeignParty ? subTotal : grandTotal)}
+              </span>
             </div>
-            <div className="bg-muted/50 rounded p-2 text-xs text-muted-foreground">
-              {amountInWords(grandTotal)}
-            </div>
+            {isForeignParty && exchangeRate > 0 && (
+              <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
+                <span>≈ INR Equivalent</span>
+                <span className="font-mono tabular-nums">₹{new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(subTotal * exchangeRate)}</span>
+              </div>
+            )}
+            {!isForeignParty && (
+              <div className="bg-muted/50 rounded p-2 text-xs text-muted-foreground">
+                {amountInWords(grandTotal)}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
       {/* Sticky Action Bar */}
       <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-border p-3 flex justify-end gap-2 z-40">
-        <Button variant="outline" onClick={() => navigate("/delivery-challans")}>Cancel</Button>
-        {isInwardTeam && isEdit && (existingDC as any)?.approved_at ? (
-          <Button onClick={() => handleSave("issued")} disabled={saveMutation.isPending}>
-            Issue DC →
+        <Button variant="outline" onClick={() => { sessionStorage.removeItem(DRAFT_KEY); navigate("/delivery-challans"); }}>Cancel</Button>
+        {isEdit ? (
+          <Button onClick={() => handleSave("pending_approval")} disabled={saveMutation.isPending} className="active:scale-[0.98] transition-transform">
+            {saveMutation.isPending ? "Saving…" : "Save & Submit for Approval →"}
           </Button>
         ) : isInwardTeam ? (
-          <Button onClick={() => handleSave("pending_approval")} disabled={saveMutation.isPending}>
+          <Button onClick={() => handleSave("pending_approval")} disabled={saveMutation.isPending} className="active:scale-[0.98] transition-transform">
             Submit for Approval →
           </Button>
         ) : (
@@ -1463,7 +1755,7 @@ export default function DeliveryChallanForm() {
             <Button variant="outline" onClick={() => handleSave("draft")} disabled={saveMutation.isPending}>
               Save as Draft
             </Button>
-            <Button onClick={() => handleSave("issued")} disabled={saveMutation.isPending}>
+            <Button onClick={() => handleSave("issued")} disabled={saveMutation.isPending} className="active:scale-[0.98] transition-transform">
               Issue DC →
             </Button>
           </>

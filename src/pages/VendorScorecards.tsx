@@ -98,7 +98,7 @@ export default function VendorScorecards() {
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ["vendor-scorecards"],
     queryFn: () => fetchVendorScorecards(),
-    refetchInterval: 60000,
+    refetchInterval: 300000,
   });
 
   // Fetch GRN quality metrics for each vendor (Phase 14)
