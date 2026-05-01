@@ -1,7 +1,11 @@
 // Shared application constants
 
 export const UNITS = [
-  "NOS", "KG", "KGS", "GMS", "MTR", "MM", "LTR", "ML",
-  "SFT", "SET", "ROLL", "SHEET", "COIL", "BOX", "PKT",
-  "PRS", "PAIR", "LOT", "BUNDLE", "BAG",
+  "NOS", "KG", "KGS", "GMS",
+  "MTR", "MM", "CM", "LTR", "ML",
+  "SFT", "SQM", "RFT", "SET",
+  "ROLL", "SHEET", "COIL",
+  "BOX", "PKT", "PCS", "PRS",
+  "PAIR", "LOT", "BUNDLE", "BAG",
+  "OTHER",
 ];

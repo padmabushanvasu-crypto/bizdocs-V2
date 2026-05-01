@@ -31,6 +31,7 @@ import {
 } from "@/lib/delivery-challans-api";
 import { fetchCompletedStepsForItem } from "@/lib/job-works-api";
 import { getCompanyId } from "@/lib/auth-helpers";
+import { UNITS } from "@/lib/constants";
 import { JobCardCreationDialog } from "@/components/JobCardCreationDialog";
 import { fetchProcessingRoute, fetchProcessingRouteAll, fetchJigsForDrawing, fetchStageVendors, fetchMouldItemsForDrawing, fetchItemIdByDrawingNumber, type ProcessingRoute, type JigMasterRecord, type MouldItem } from "@/lib/dc-intelligence-api";
 import { formatCurrency, amountInWords } from "@/lib/gst-utils";
@@ -1229,16 +1230,20 @@ export default function DeliveryChallanForm() {
                       className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm text-right font-mono tabular-nums"
                     />
                   </td>
-                  <td className="p-0 w-24">
-                    <select
+                  <td className="px-1 py-1 w-24">
+                    <Select
                       value={item.unit || "NOS"}
-                      onChange={(e) => updateLineItem(index, "unit", e.target.value)}
-                      className="w-full min-h-[44px] px-2 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm"
+                      onValueChange={(v) => updateLineItem(index, "unit", v)}
                     >
-                      {["NOS","KG","KGS","MTR","SFT","SET","ROLL","SHEET","OTHER"].map((u) => (
-                        <option key={u} value={u}>{u}</option>
-                      ))}
-                    </select>
+                      <SelectTrigger className="h-8 text-sm border-slate-200 dark:border-white/20 dark:bg-[#0a0e1a] dark:text-slate-100">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {UNITS.map((u) => (
+                          <SelectItem key={u} value={u}>{u}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </td>
                   <td className="p-0 w-24">
                     <input
@@ -1254,17 +1259,21 @@ export default function DeliveryChallanForm() {
                       className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 dark:focus:bg-[#0a0e1a] dark:text-slate-100 text-sm text-right font-mono tabular-nums"
                     />
                   </td>
-                  <td className="p-0 w-24">
+                  <td className="px-1 py-1 w-24">
                     {Number(item.quantity_2) > 0 ? (
-                      <select
+                      <Select
                         value={item.unit_2 || "NOS"}
-                        onChange={(e) => updateLineItem(index, "unit_2", e.target.value)}
-                        className="w-full min-h-[44px] px-2 py-2 bg-transparent border-none outline-none focus:bg-blue-50 dark:focus:bg-[#0a0e1a] dark:text-slate-100 text-sm"
+                        onValueChange={(v) => updateLineItem(index, "unit_2", v)}
                       >
-                        {["NOS","KGS","KG","MTR","SFT","LTR","SET","PCS","BOX","PKT","RFT","SQM"].map((u) => (
-                          <option key={u} value={u}>{u}</option>
-                        ))}
-                      </select>
+                        <SelectTrigger className="h-8 text-sm border-slate-200 dark:border-white/20 dark:bg-[#0a0e1a] dark:text-slate-100">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {UNITS.map((u) => (
+                            <SelectItem key={u} value={u}>{u}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     ) : (
                       <span className="text-xs text-muted-foreground px-3">—</span>
                     )}
