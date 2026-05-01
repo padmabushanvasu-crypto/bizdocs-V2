@@ -656,13 +656,17 @@ export async function createGrnFromPO(data: CreateGrnFromPOData): Promise<GRN> {
     unit: item.unit ?? 'NOS',
     po_quantity: item.quantity ?? 0,
     ordered_qty: item.quantity ?? 0,
+    ordered_qty_2: item.quantity_2 ?? null,
+    unit_2: item.unit_2 ?? null,
     previously_received: prevReceived,
     previously_received_qty: prevReceived,
     pending_quantity: pendingQty,
     receiving_now: 0,
     received_now: 0,
+    received_now_2: null,
     accepted_quantity: 0,
     accepted_qty: 0,
+    accepted_qty_2: null,
     rejected_quantity: 0,
     rejected_qty: 0,
     stage1_complete: false,
@@ -745,13 +749,17 @@ export async function createGrnFromDC(data: CreateGrnFromDCData): Promise<GRN> {
     unit: item.unit ?? 'NOS',
     po_quantity: item.quantity ?? 0,
     ordered_qty: item.quantity ?? 0,
+    ordered_qty_2: item.quantity_2 ?? null,
+    unit_2: item.unit_2 ?? null,
     previously_received: prevReceived,
     previously_received_qty: prevReceived,
     pending_quantity: pendingQty,
     receiving_now: pendingQty,
     received_now: 0,
+    received_now_2: null,
     accepted_quantity: 0,
     accepted_qty: 0,
+    accepted_qty_2: null,
     rejected_quantity: 0,
     rejected_qty: 0,
     stage1_complete: false,
@@ -891,6 +899,10 @@ export interface QuantitativeLineData {
   mismatch_reason?: string | null;
   mismatch_disposition?: string | null;
   over_receipt_qty?: number | null;
+  received_now_2?: number | null;
+  // dc_line_item_id is needed when GRN is a DC return so the alt
+  // returned quantity can also be written back to dc_line_items.returned_qty_2.
+  dc_line_item_id?: string | null;
 }
 
 export async function saveQuantitativeStage(
@@ -922,6 +934,7 @@ export async function saveQuantitativeStage(
       mismatch_reason: line.mismatch_reason ?? null,
       mismatch_disposition: line.mismatch_disposition ?? null,
       over_receipt_qty: line.over_receipt_qty ?? null,
+      received_now_2: line.received_now_2 ?? null,
       jig_confirmed: jigReturnConfirmed ? jigReturnConfirmed.has(line.id) : false,
     };
     const { error } = await (supabase as any)
@@ -929,6 +942,16 @@ export async function saveQuantitativeStage(
       .update(linePayload)
       .eq('id', line.id);
     if (error) throw error;
+
+    // For DC-return GRNs: also stamp the alt-qty back onto the linked DC line
+    // so the source DC reflects the returned alt quantity.
+    if (line.dc_line_item_id && line.received_now_2 != null) {
+      await (supabase as any)
+        .from('dc_line_items')
+        .update({ returned_qty_2: line.received_now_2 })
+        .eq('id', line.dc_line_item_id)
+        .then((r: any) => { if (r?.error) console.error('[GRN] DC alt-qty back-write failed:', r.error); });
+    }
   }
 
   // Determine next stage based on product identity check outcomes

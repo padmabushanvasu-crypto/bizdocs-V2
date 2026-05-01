@@ -95,6 +95,8 @@ function emptyLineItem(serial: number): DCLineItem {
     drawing_number: "",
     unit: "NOS",
     quantity: 0,
+    quantity_2: null,
+    unit_2: null,
     rate: 0,
     amount: 0,
     remarks: "",
@@ -814,6 +816,8 @@ export default function DeliveryChallanForm() {
                 <th className="px-3 py-2 text-left w-48 text-xs font-medium text-slate-400 uppercase tracking-wider">Nature of Process</th>
                 <th className="px-3 py-2 text-right w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Qty</th>
                 <th className="px-3 py-2 text-left w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Unit</th>
+                <th className="px-3 py-2 text-right w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Alt. Qty</th>
+                <th className="px-3 py-2 text-left w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Alt. Unit</th>
                 <th className="px-3 py-2 text-right w-28 text-xs font-medium text-slate-400 uppercase tracking-wider">Rate ₹</th>
                 <th className="px-3 py-2 text-right w-28 text-xs font-medium text-slate-400 uppercase tracking-wider">Amount ₹</th>
                 <th className="w-10"></th>
@@ -960,6 +964,35 @@ export default function DeliveryChallanForm() {
                       ))}
                     </select>
                   </td>
+                  <td className="p-0 w-24">
+                    <input
+                      type="number"
+                      value={item.quantity_2 ?? ""}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        updateLineItem(index, "quantity_2", raw === "" ? null : Number(raw));
+                      }}
+                      step="any"
+                      min={0}
+                      placeholder="—"
+                      className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 dark:focus:bg-[#0a0e1a] dark:text-slate-100 text-sm text-right font-mono tabular-nums"
+                    />
+                  </td>
+                  <td className="p-0 w-24">
+                    {Number(item.quantity_2) > 0 ? (
+                      <select
+                        value={item.unit_2 || "NOS"}
+                        onChange={(e) => updateLineItem(index, "unit_2", e.target.value)}
+                        className="w-full min-h-[44px] px-2 py-2 bg-transparent border-none outline-none focus:bg-blue-50 dark:focus:bg-[#0a0e1a] dark:text-slate-100 text-sm"
+                      >
+                        {["NOS","KGS","KG","MTR","SFT","LTR","SET","PCS","BOX","PKT","RFT","SQM"].map((u) => (
+                          <option key={u} value={u}>{u}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-xs text-muted-foreground px-3">—</span>
+                    )}
+                  </td>
                   <td className="p-0 w-28">
                     <div className="relative">
                       <input
@@ -997,7 +1030,7 @@ export default function DeliveryChallanForm() {
                 {(lineBomStages.get(index)?.length ?? 0) > 0 && (
                   <tr key={`stage-${index}`} className="bg-blue-50/40 border-b border-blue-100">
                     <td />
-                    <td colSpan={10} className="px-3 py-2">
+                    <td colSpan={12} className="px-3 py-2">
                       <div className="flex items-start gap-4 flex-wrap">
                         <div className="flex-1 min-w-[280px]">
                           <Label className="text-xs text-blue-700 font-medium">Processing Stage</Label>
@@ -1064,7 +1097,7 @@ export default function DeliveryChallanForm() {
                 {(lineRoutes.get(index)?.length ?? 0) > 0 && (
                   <tr key={`route-${index}`} className="bg-blue-50/30 border-b border-blue-100">
                     <td />
-                    <td colSpan={10} className="px-3 py-2">
+                    <td colSpan={12} className="px-3 py-2">
                       <div className="mt-1 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                         <p className="text-xs font-semibold text-blue-700 mb-2">Processing Route</p>
                         <div className="flex flex-wrap gap-1 mb-2">
@@ -1148,7 +1181,7 @@ export default function DeliveryChallanForm() {
                       {notReadyJigs.length > 0 && (
                         <tr key={`jigs-notready-${index}`} className="bg-red-50/30 border-b border-red-100">
                           <td />
-                          <td colSpan={10} className="px-3 py-2">
+                          <td colSpan={12} className="px-3 py-2">
                             <div className="p-3 bg-red-50 border border-red-300 rounded-lg">
                               <p className="text-xs font-semibold text-red-700 mb-1.5 flex items-center gap-1">
                                 <AlertTriangle className="h-3.5 w-3.5" /> Jig Not Ready — Do Not Dispatch
@@ -1167,7 +1200,7 @@ export default function DeliveryChallanForm() {
                       {okJigs.length > 0 && (
                         <tr key={`jigs-ok-${index}`} className="bg-amber-50/30 border-b border-amber-100">
                           <td />
-                          <td colSpan={10} className="px-3 py-2">
+                          <td colSpan={12} className="px-3 py-2">
                             <div className="mt-1 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                               <p className="text-xs font-semibold text-amber-700 mb-2 flex items-center gap-1">
                                 <AlertTriangle className="h-3.5 w-3.5" /> Jig Required — must be sent with this component
@@ -1204,7 +1237,7 @@ export default function DeliveryChallanForm() {
                 {(lineMouldItems.get(index)?.length ?? 0) > 0 && (
                   <tr key={`mould-${index}`} className="bg-amber-50/40 border-b border-amber-100">
                     <td />
-                    <td colSpan={10} className="px-3 py-2">
+                    <td colSpan={12} className="px-3 py-2">
                       <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2">
                         {(lineMouldItems.get(index) ?? []).map((mould) => (
                           <div key={mould.id} className="flex items-start gap-2">
@@ -1239,7 +1272,7 @@ export default function DeliveryChallanForm() {
                 {(lineAllRoutes.get(index)?.length ?? 0) > 0 && (
                   <tr key={`allroute-${index}`} className="border-b border-slate-100">
                     <td />
-                    <td colSpan={10} className="px-3 py-1.5">
+                    <td colSpan={12} className="px-3 py-1.5">
                       <button
                         type="button"
                         onClick={() =>
@@ -1299,7 +1332,7 @@ export default function DeliveryChallanForm() {
                   return (
                     <tr key={`stock-warn-${index}`} className="bg-amber-50/60">
                       <td />
-                      <td colSpan={10} className="px-3 pb-2">
+                      <td colSpan={12} className="px-3 pb-2">
                         <p className="text-xs text-amber-700 flex items-center gap-1.5">
                           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
                           Current stock: {stock} {item.unit || "NOS"}. You are issuing {qty} {item.unit || "NOS"}. Stock will go negative after this DC is issued. Please verify before proceeding.

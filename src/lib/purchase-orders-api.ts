@@ -10,6 +10,8 @@ export interface POLineItem {
   drawing_number?: string;
   quantity: number;
   unit: string;
+  quantity_2?: number | null;
+  unit_2?: string | null;
   unit_price: number;
   delivery_date?: string;
   line_total: number;
@@ -159,6 +161,7 @@ export async function createPurchaseOrder({ po, lineItems }: CreatePOData) {
       po_id: (newPO as any).id, serial_number: item.serial_number, description: item.description,
       item_id: item.item_id || null,
       drawing_number: item.drawing_number || null, quantity: item.quantity, unit: item.unit,
+      quantity_2: item.quantity_2 ?? null, unit_2: item.unit_2 ?? null,
       unit_price: item.unit_price, delivery_date: item.delivery_date || null,
       line_total: item.line_total, gst_rate: item.gst_rate, hsn_sac_code: item.hsn_sac_code || null,
     }));
@@ -197,6 +200,7 @@ export async function updatePurchaseOrder(id: string, { po, lineItems }: CreateP
       po_id: id, serial_number: item.serial_number, description: item.description,
       item_id: item.item_id || null,
       drawing_number: item.drawing_number || null, quantity: item.quantity, unit: item.unit,
+      quantity_2: item.quantity_2 ?? null, unit_2: item.unit_2 ?? null,
       unit_price: item.unit_price, delivery_date: item.delivery_date || null,
       line_total: item.line_total, gst_rate: item.gst_rate, hsn_sac_code: item.hsn_sac_code || null,
     }));

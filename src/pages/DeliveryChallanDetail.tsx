@@ -329,6 +329,7 @@ export default function DeliveryChallanDetail() {
   const hasDrawingNumber = items.some((i) => i.drawing_number);
   const hasQtyKgs = items.some((i) => (i as any).qty_kgs != null);
   const hasQtySft = items.some((i) => (i as any).qty_sft != null);
+  const hasAltQty = items.some((i) => Number((i as any).quantity_2) > 0);
   const today = new Date().toISOString().split("T")[0];
   const isOverdue = dc.return_due_date && dc.return_due_date < today && !["fully_returned", "cancelled"].includes(dc.status);
 
@@ -429,6 +430,8 @@ export default function DeliveryChallanDetail() {
               <th style={{ padding: rowPadding, textAlign: 'center', width: '22pt', fontWeight: 700 }}>Unit</th>
               <th style={{ padding: rowPadding, textAlign: 'center', width: '46pt', fontWeight: 700 }}>Delivery Date</th>
               <th style={{ padding: rowPadding, textAlign: 'right', width: '30pt', fontWeight: 700 }}>Qty</th>
+              {hasAltQty && <th style={{ padding: rowPadding, textAlign: 'right', width: '34pt', fontWeight: 700 }}>Alt. Qty</th>}
+              {hasAltQty && <th style={{ padding: rowPadding, textAlign: 'left', width: '24pt', fontWeight: 700 }}>Alt. Unit</th>}
               {hasQtyKgs && <th style={{ padding: rowPadding, textAlign: 'right', width: '34pt', fontWeight: 700 }}>KGS</th>}
               {hasQtySft && <th style={{ padding: rowPadding, textAlign: 'right', width: '34pt', fontWeight: 700 }}>SFT</th>}
               <th style={{ padding: rowPadding, textAlign: 'right', width: '44pt', fontWeight: 700 }}>Rate (₹)</th>
@@ -445,6 +448,8 @@ export default function DeliveryChallanDetail() {
                 <td style={{ padding: rowPadding, textAlign: 'center', color: '#475569' }}>{item.unit || 'NOS'}</td>
                 <td style={{ padding: rowPadding, textAlign: 'center', color: '#475569' }}>{(item as any).delivery_date ? new Date((item as any).delivery_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
                 <td style={{ padding: rowPadding, textAlign: 'right', fontFamily: 'monospace' }}>{formatNumber(item.quantity || item.qty_nos || 0)}</td>
+                {hasAltQty && <td style={{ padding: rowPadding, textAlign: 'right', fontFamily: 'monospace' }}>{Number((item as any).quantity_2) > 0 ? formatNumber((item as any).quantity_2) : '—'}</td>}
+                {hasAltQty && <td style={{ padding: rowPadding, textAlign: 'left', color: '#475569' }}>{Number((item as any).quantity_2) > 0 ? ((item as any).unit_2 || '—') : '—'}</td>}
                 {hasQtyKgs && <td style={{ padding: rowPadding, textAlign: 'right', fontFamily: 'monospace' }}>{(item as any).qty_kgs != null ? formatNumber((item as any).qty_kgs) : '—'}</td>}
                 {hasQtySft && <td style={{ padding: rowPadding, textAlign: 'right', fontFamily: 'monospace' }}>{(item as any).qty_sft != null ? formatNumber((item as any).qty_sft) : '—'}</td>}
                 <td style={{ padding: rowPadding, textAlign: 'right', fontFamily: 'monospace' }}>{formatCurrency(item.rate || 0)}</td>
@@ -936,6 +941,8 @@ export default function DeliveryChallanDetail() {
                 {hasNatureOfProcess && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Nature of Process</th>}
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Unit</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty (NOS)</th>
+                {hasAltQty && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Alt. Qty</th>}
+                {hasAltQty && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Alt. Unit</th>}
                 {hasQtyKgs && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty (KGS)</th>}
                 {hasQtySft && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty (SFT)</th>}
                 {!hideCosts && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Rate (₹)</th>}
@@ -955,6 +962,8 @@ export default function DeliveryChallanDetail() {
                   {hasNatureOfProcess && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{(item as any).nature_of_process || "—"}</td>}
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">{item.unit || "NOS"}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(item.quantity || item.qty_nos || 0)}</td>
+                  {hasAltQty && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{Number((item as any).quantity_2) > 0 ? formatNumber((item as any).quantity_2) : "—"}</td>}
+                  {hasAltQty && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">{Number((item as any).quantity_2) > 0 ? ((item as any).unit_2 || "—") : "—"}</td>}
                   {hasQtyKgs && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{(item as any).qty_kgs != null ? formatNumber((item as any).qty_kgs) : "—"}</td>}
                   {hasQtySft && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{(item as any).qty_sft != null ? formatNumber((item as any).qty_sft) : "—"}</td>}
                   {!hideCosts && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(item.rate || 0)}</td>}

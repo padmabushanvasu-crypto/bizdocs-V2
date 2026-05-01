@@ -44,6 +44,8 @@ function emptyLineItem(serial: number): POLineItem {
     drawing_number: "",
     quantity: 0,
     unit: "NOS",
+    quantity_2: null,
+    unit_2: null,
     unit_price: 0,
     line_total: 0,
     gst_rate: 18,
@@ -662,7 +664,7 @@ export default function PurchaseOrderForm() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[800px]">
+          <table className="w-full min-w-[1000px]">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-8">#</th>
@@ -671,6 +673,8 @@ export default function PurchaseOrderForm() {
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-32">Drawing No</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-20">Qty</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-24">Unit</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-20">Alt. Qty</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-24">Alt. Unit</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-28">Unit Price ₹</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-36">Delivery Date</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-28">Amount ₹</th>
@@ -735,6 +739,39 @@ export default function PurchaseOrderForm() {
                         ))}
                       </SelectContent>
                     </Select>
+                  </td>
+                  <td className="p-0 w-20">
+                    <input
+                      type="number"
+                      value={item.quantity_2 ?? ""}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        updateLineItem(index, "quantity_2", raw === "" ? null : Number(raw));
+                      }}
+                      step="any"
+                      min={0}
+                      placeholder="—"
+                      className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 dark:focus:bg-[#0a0e1a] dark:text-slate-100 text-sm text-right font-mono tabular-nums"
+                    />
+                  </td>
+                  <td className="px-1 py-1 w-24">
+                    {(item.quantity_2 ?? 0) > 0 ? (
+                      <Select
+                        value={item.unit_2 || "NOS"}
+                        onValueChange={(v) => updateLineItem(index, "unit_2", v)}
+                      >
+                        <SelectTrigger className="h-8 text-sm border-slate-200 dark:border-white/20 dark:bg-[#0a0e1a] dark:text-slate-100">
+                          <SelectValue placeholder="Unit" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {UNITS.map((u) => (
+                            <SelectItem key={u} value={u}>{u}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
                   </td>
                   <td className="p-0 w-28">
                     <input

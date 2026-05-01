@@ -230,6 +230,9 @@ export default function PurchaseOrderDetail() {
   const isSameState = po.vendor_state_code === "33";
   const charges = po.additional_charges || [];
   const canRecordReceipt = ["approved", "issued", "partially_received"].includes(po.status) && po.status !== "deleted";
+  // Alt. Qty / Alt. Unit columns: shown on screen always, hidden in print unless at least one line uses them.
+  const hasAltQty = items.some((i: any) => Number(i.quantity_2) > 0);
+  const altPrintHidden = hasAltQty ? "" : " print:hidden";
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-5xl mx-auto po-page-wrapper">
@@ -617,6 +620,8 @@ export default function PurchaseOrderDetail() {
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right print:hidden" style={{ width: '7%' }}>Pending</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right" style={{ width: '8%' }}>Qty</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left" style={{ width: '7%' }}>Unit</th>
+                <th className={`px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right${altPrintHidden}`} style={{ width: '8%' }}>Alt. Qty</th>
+                <th className={`px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left${altPrintHidden}`} style={{ width: '7%' }}>Alt. Unit</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center" style={{ width: '10%' }}>Delivery Date</th>
                 {!hideCosts && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right" style={{ width: '17%' }}>Unit Price</th>}
                 {!hideCosts && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right" style={{ width: '20%' }}>Amount</th>}
@@ -656,6 +661,8 @@ export default function PurchaseOrderDetail() {
                     </td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.quantity}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.unit}</td>
+                    <td className={`px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono${altPrintHidden}`}>{Number(item.quantity_2) > 0 ? item.quantity_2 : "—"}</td>
+                    <td className={`px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left${altPrintHidden}`}>{Number(item.quantity_2) > 0 ? (item.unit_2 || "—") : "—"}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center tabular-nums font-mono">{item.delivery_date ? new Date(item.delivery_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</td>
                     {!hideCosts && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(item.unit_price)}</td>}
                     {!hideCosts && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(item.line_total)}</td>}

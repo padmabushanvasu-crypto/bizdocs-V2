@@ -102,6 +102,12 @@ interface S1Line {
   jig_confirmed?: boolean;
   jigs_sent?: string | string[] | null;
   unit: string;
+  // Alt. Qty / Alt. Unit (optional secondary measurement)
+  ordered_qty_2?: number | null;
+  unit_2?: string | null;
+  received_now_2?: number | null;
+  // Carried through so saveStage1 can stamp returned_qty_2 back onto dc_line_items
+  dc_line_item_id?: string | null;
 }
 
 // Normalise jigs_sent which may be a string or a JSON array (JSONB column)
@@ -250,6 +256,9 @@ function Stage1Table({
             const pending = Math.max(0, line.pending_quantity - line.received_qty);
             const nonMatching = Math.max(0, line.received_qty - line.matching_units);
             const showSubRow = line.received_qty > 0 && nonMatching > 0;
+            const altOrdered = Number(line.ordered_qty_2 ?? 0);
+            const showAltRow = altOrdered > 0;
+            const altUnit = line.unit_2 || "";
 
             const rowBg = line.received_qty > 0 && line.matching_units === 0
               ? "bg-red-50"
@@ -419,6 +428,39 @@ function Stage1Table({
                   </td>
                 </tr>
 
+                {/* Alt-qty sub-row — appears only when the linked PO/DC line has Alt. Qty set */}
+                {showAltRow && (
+                  <tr className="bg-slate-50/60 dark:bg-[#0a0e1a]/60">
+                    <td colSpan={12} className="px-4 py-2">
+                      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
+                        <div className="text-slate-600 dark:text-slate-300">
+                          <span className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 dark:text-slate-400 mr-2">Alt. Qty Ordered</span>
+                          <span className="font-mono text-slate-800 dark:text-slate-100">{altOrdered}</span>
+                          {altUnit && <span className="text-muted-foreground ml-1">{altUnit}</span>}
+                        </div>
+                        <label className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
+                          <span className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 dark:text-slate-400">Alt. Qty Receiving Now</span>
+                          <input
+                            type="number"
+                            className="w-24 text-right border border-slate-200 dark:border-white/20 dark:bg-[#0a0e1a] dark:text-slate-100 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                            value={line.received_now_2 ?? ""}
+                            min={0}
+                            max={altOrdered}
+                            disabled={disabled}
+                            placeholder="—"
+                            onChange={(e) => {
+                              const raw = e.target.value;
+                              const v = raw === "" ? null : Math.max(0, Math.min(altOrdered, Number(raw)));
+                              onChange(idx, "received_now_2", v);
+                            }}
+                          />
+                          {altUnit && <span className="text-muted-foreground">{altUnit}</span>}
+                        </label>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+
                 {/* Sub-row — appears only when non-matching units > 0 */}
                 {showSubRow && (
                   <tr className={line.matching_units === 0 ? "bg-red-50/80" : "bg-amber-50/80"}>
@@ -547,6 +589,24 @@ function Stage1ReadOnly({ lines, isDcGrn }: { lines: S1Line[]; isDcGrn?: boolean
                     </td>
                   )}
                 </tr>
+                {Number(l.ordered_qty_2 ?? 0) > 0 && (
+                  <tr className="bg-slate-50/60 dark:bg-[#0a0e1a]/60">
+                    <td colSpan={10 + (hasStoreTracking ? 1 : 0) + (hasJigData ? 1 : 0)} className="px-4 py-2 text-xs">
+                      <div className="flex flex-wrap gap-x-6 gap-y-1 items-baseline text-slate-600 dark:text-slate-300">
+                        <div>
+                          <span className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 dark:text-slate-400 mr-2">Alt. Qty Ordered</span>
+                          <span className="font-mono">{l.ordered_qty_2}</span>
+                          {l.unit_2 && <span className="text-muted-foreground ml-1">{l.unit_2}</span>}
+                        </div>
+                        <div>
+                          <span className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 dark:text-slate-400 mr-2">Alt. Qty Received</span>
+                          <span className="font-mono">{l.received_now_2 ?? "—"}</span>
+                          {l.unit_2 && (l.received_now_2 != null) && <span className="text-muted-foreground ml-1">{l.unit_2}</span>}
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
                 {hasMismatch && (
                   <tr className={l.matching_units === 0 ? "bg-red-50/70" : "bg-amber-50/70"}>
                     <td colSpan={10 + (hasStoreTracking ? 1 : 0) + (hasJigData ? 1 : 0)} className="px-4 py-2">
@@ -1327,6 +1387,10 @@ export default function GRNDetail() {
           jig_confirmed:        a.jig_confirmed ?? false,
           jigs_sent:            (a as any).jigs_sent ?? null,
           unit:                 a.unit ?? "NOS",
+          ordered_qty_2:        a.ordered_qty_2 ?? null,
+          unit_2:               a.unit_2 ?? null,
+          received_now_2:       a.received_now_2 ?? null,
+          dc_line_item_id:      a.dc_line_item_id ?? null,
         };
       })
     );
@@ -1474,6 +1538,8 @@ export default function GRNDetail() {
           mismatch_reason:      l.mismatch_reason || null,
           mismatch_disposition: l.mismatch_disposition || null,
           over_receipt_qty:     tier?.tier === "within_tolerance" ? (tier as any).excess : null,
+          received_now_2:       (l.ordered_qty_2 ?? 0) > 0 ? (l.received_now_2 ?? null) : null,
+          dc_line_item_id:      l.dc_line_item_id ?? null,
         };
       });
 
