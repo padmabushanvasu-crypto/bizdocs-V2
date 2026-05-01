@@ -1,12 +1,14 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bell, Save, X, ChevronLeft, UserCheck, Plus } from "lucide-react";
+import { Bell, Save, X, ChevronLeft, UserCheck, Plus, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 import {
   fetchNotificationSettings,
   saveNotificationSettings,
@@ -177,11 +179,131 @@ function StockEditorsSection({
   );
 }
 
+// ── Download Report Card ──────────────────────────────────────────────────────
+
+function DownloadReportCard({
+  title,
+  subtitle,
+  functionName,
+  filenamePrefix,
+  companyId,
+}: {
+  title: string;
+  subtitle: string;
+  functionName: "weekly-po-email" | "weekly-dc-email";
+  filenamePrefix: "PO_Report" | "DC_Report";
+  companyId: string | null;
+}) {
+  const { toast } = useToast();
+  const today = new Date().toISOString().split("T")[0];
+  const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0];
+  const [from, setFrom] = useState(sevenDaysAgo);
+  const [to, setTo] = useState(today);
+  const [loading, setLoading] = useState(false);
+
+  const handleDownload = async () => {
+    if (!companyId) {
+      toast({
+        title: "Cannot download",
+        description: "Your account is not linked to a company.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!from || !to || from > to) {
+      toast({
+        title: "Invalid date range",
+        description: "From date must be on or before To date.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      const baseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+      const url =
+        `${baseUrl}/functions/v1/${functionName}` +
+        `?download=true&from=${encodeURIComponent(from)}` +
+        `&to=${encodeURIComponent(to)}` +
+        `&company_id=${encodeURIComponent(companyId)}`;
+
+      const res = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `HTTP ${res.status}`);
+      }
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `${filenamePrefix}_${from}_to_${to}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch (e: any) {
+      toast({
+        title: "Failed to generate report",
+        description: e?.message ?? "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="bg-slate-50 dark:bg-[#0a0e1a] border border-slate-200 dark:border-white/10 rounded-lg p-4 space-y-3">
+      <div>
+        <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{title}</h4>
+        <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs font-medium text-slate-700 dark:text-slate-300">From</Label>
+          <Input
+            type="date"
+            value={from}
+            max={to || undefined}
+            onChange={(e) => setFrom(e.target.value)}
+            className="h-9 text-sm dark:bg-[#0f1525] dark:border-white/20 dark:text-slate-100"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs font-medium text-slate-700 dark:text-slate-300">To</Label>
+          <Input
+            type="date"
+            value={to}
+            min={from || undefined}
+            onChange={(e) => setTo(e.target.value)}
+            className="h-9 text-sm dark:bg-[#0f1525] dark:border-white/20 dark:text-slate-100"
+          />
+        </div>
+      </div>
+      <Button
+        type="button"
+        size="sm"
+        onClick={handleDownload}
+        disabled={loading || !companyId}
+        className="gap-1.5"
+      >
+        <Download className="h-3.5 w-3.5" />
+        {loading ? "Generating…" : "Download Excel Report"}
+      </Button>
+    </div>
+  );
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function NotificationsSettings() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { companyId } = useAuth();
   const [settings, setSettings] = useState<NotificationSettings>(DEFAULTS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -412,6 +534,13 @@ export default function NotificationsSettings() {
               placeholder="Purchase team emails — press Enter"
             />
           </div>
+          <DownloadReportCard
+            title="Download PO Report"
+            subtitle="Generate and download the PO summary for any date range"
+            functionName="weekly-po-email"
+            filenamePrefix="PO_Report"
+            companyId={companyId}
+          />
           <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2.5 text-xs text-blue-700 space-y-0.5">
             <p className="font-semibold">Report includes (.xlsx attachment):</p>
             <p>Sheet 1 — POs raised in the last 7 days, one row per line item</p>
@@ -473,6 +602,13 @@ export default function NotificationsSettings() {
               placeholder="DC follow-up emails — press Enter"
             />
           </div>
+          <DownloadReportCard
+            title="Download DC Report"
+            subtitle="Generate and download the DC summary for any date range"
+            functionName="weekly-dc-email"
+            filenamePrefix="DC_Report"
+            companyId={companyId}
+          />
           <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2.5 text-xs text-blue-700 space-y-0.5">
             <p className="font-semibold">Report includes (.xlsx attachment):</p>
             <p>Sheet 1 — DCs raised in the last 7 days, line-level</p>
