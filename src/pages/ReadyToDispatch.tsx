@@ -86,7 +86,7 @@ export default function ReadyToDispatch() {
                       size="sm"
                       variant="outline"
                       onClick={() =>
-                        navigate(`/dispatch-records/new?serial=${encodeURIComponent(unit.serial_number)}`)
+                        navigate(`/dispatch-records/new?item=${encodeURIComponent(unit.item_id ?? '')}`)
                       }
                     >
                       Create Dispatch Record
