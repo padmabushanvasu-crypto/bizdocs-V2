@@ -126,7 +126,7 @@ async function buildDCWorkbook(
       `id, dc_number, dc_date, dc_type, party_name, party_phone, nature_of_job_work, status, return_due_date, issued_at, line_items:dc_line_items(${lineItemSelect})`
     )
     .eq("company_id", companyId)
-    .eq("dc_type", "returnable")
+    .in("dc_type", ["returnable", "job_work_143", "job_work_out", "sample", "loan_borrow"])
     .gte("dc_date", dateFromStr)
     .lte("dc_date", dateToStr)
     .order("dc_date", { ascending: true });
@@ -137,7 +137,7 @@ async function buildDCWorkbook(
       `id, dc_number, dc_date, dc_type, party_name, party_phone, nature_of_job_work, status, return_due_date, issued_at, line_items:dc_line_items(${lineItemSelect})`
     )
     .eq("company_id", companyId)
-    .eq("dc_type", "returnable")
+    .in("dc_type", ["returnable", "job_work_143", "job_work_out", "sample", "loan_borrow"])
     .in("status", ["issued", "partially_returned"])
     .order("return_due_date", { ascending: true, nullsLast: true });
 
@@ -146,6 +146,7 @@ async function buildDCWorkbook(
     { key: "dc_number", header: "DC Number", width: 16 },
     { key: "dc_date", header: "DC Date", width: 14 },
     { key: "party", header: "Party", width: 28 },
+    { key: "party_phone", header: "Party Phone", width: 16 },
     { key: "nature_job", header: "Nature of Job Work", width: 24 },
     { key: "drawing", header: "Drawing No.", width: 16 },
     { key: "description", header: "Item Description", width: 36 },
@@ -163,6 +164,7 @@ async function buildDCWorkbook(
         dc_number: dc.dc_number,
         dc_date: fmtDate(dc.dc_date),
         party: dc.party_name ?? "",
+        party_phone: dc.party_phone ?? "",
         nature_job: dc.nature_of_job_work ?? "",
         drawing: "",
         description: "(no line items)",
@@ -178,6 +180,7 @@ async function buildDCWorkbook(
           dc_number: dc.dc_number,
           dc_date: fmtDate(dc.dc_date),
           party: dc.party_name ?? "",
+          party_phone: dc.party_phone ?? "",
           nature_job: dc.nature_of_job_work ?? "",
           drawing: li.drawing_number ?? "",
           description: li.description ?? "",
@@ -316,6 +319,7 @@ async function buildDCWorkbook(
     { key: "dc_number", header: "DC Number", width: 16 },
     { key: "dc_date", header: "Date", width: 14 },
     { key: "party", header: "Party", width: 28 },
+    { key: "party_phone", header: "Party Phone", width: 16 },
     { key: "drawing", header: "Drawing No.", width: 16 },
     { key: "description", header: "Item Description", width: 36 },
     { key: "stage", header: "Stage", width: 24 },
@@ -335,6 +339,7 @@ async function buildDCWorkbook(
         dc_number: dc.dc_number,
         dc_date: fmtDate(dc.dc_date),
         party: dc.party_name ?? "",
+        party_phone: dc.party_phone ?? "",
         drawing: li.drawing_number ?? "",
         description: li.description ?? "",
         stage: li.nature_of_process ?? "",

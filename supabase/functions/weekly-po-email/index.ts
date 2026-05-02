@@ -130,7 +130,7 @@ async function buildPOWorkbook(
   const { data: rangePOs } = await supabase
     .from("purchase_orders")
     .select(
-      "id, po_number, po_date, vendor_name, status, line_items:po_line_items(drawing_number, description, quantity, unit, unit_price, line_total, serial_number)"
+      "id, po_number, po_date, vendor_name, vendor_phone, status, line_items:po_line_items(drawing_number, description, quantity, unit, unit_price, line_total, serial_number)"
     )
     .eq("company_id", companyId)
     .gte("po_date", dateFromStr)
@@ -151,6 +151,7 @@ async function buildPOWorkbook(
     { key: "po_number", header: "PO Number", width: 16 },
     { key: "po_date", header: "PO Date", width: 14 },
     { key: "vendor", header: "Vendor", width: 28 },
+    { key: "vendor_phone", header: "Vendor Phone", width: 16 },
     { key: "drawing", header: "Drawing No.", width: 16 },
     { key: "description", header: "Item Description", width: 36 },
     { key: "qty", header: "Qty", width: 8, numFmt: "#,##0", align: "right" },
@@ -168,6 +169,7 @@ async function buildPOWorkbook(
         po_number: po.po_number,
         po_date: fmtDate(po.po_date),
         vendor: po.vendor_name ?? "",
+        vendor_phone: po.vendor_phone ?? "",
         drawing: "",
         description: "(no line items)",
         qty: "",
@@ -183,6 +185,7 @@ async function buildPOWorkbook(
           po_number: po.po_number,
           po_date: fmtDate(po.po_date),
           vendor: po.vendor_name ?? "",
+          vendor_phone: po.vendor_phone ?? "",
           drawing: li.drawing_number ?? "",
           description: li.description ?? "",
           qty: li.quantity ?? 0,
@@ -270,6 +273,7 @@ async function buildPOWorkbook(
     { key: "po_number", header: "PO Number", width: 16 },
     { key: "po_date", header: "PO Date", width: 14 },
     { key: "vendor", header: "Vendor", width: 28 },
+    { key: "vendor_phone", header: "Vendor Phone", width: 16 },
     { key: "drawing", header: "Drawing No.", width: 16 },
     { key: "description", header: "Item Description", width: 36 },
     { key: "qty_ordered", header: "Qty Ordered", width: 12, numFmt: "#,##0", align: "right" },
@@ -289,6 +293,7 @@ async function buildPOWorkbook(
         po_number: po.po_number,
         po_date: fmtDate(po.po_date),
         vendor: po.vendor_name ?? "",
+        vendor_phone: po.vendor_phone ?? "",
         drawing: li.drawing_number ?? "",
         description: li.description ?? "",
         qty_ordered: qOrd,
