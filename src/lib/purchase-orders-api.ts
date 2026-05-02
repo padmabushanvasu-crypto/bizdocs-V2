@@ -115,6 +115,27 @@ export async function fetchPurchaseOrders(filters: POFilters = {}) {
   return { data: (data ?? []) as unknown as PurchaseOrder[], count: count ?? 0 };
 }
 
+// Fetch all POs in a date range (no pagination) for the Export modal —
+// embeds full line items so the report builder can emit a line-level sheet.
+export async function fetchAllPOsForExport(
+  dateFrom: string,
+  dateTo: string,
+  companyId: string
+): Promise<PurchaseOrder[]> {
+  const { data, error } = await supabase
+    .from("purchase_orders")
+    .select(
+      `*, line_items:po_line_items(serial_number, description, drawing_number, quantity, unit, unit_price, line_total, delivery_date, hsn_sac_code)`
+    )
+    .eq("company_id", companyId)
+    .neq("status", "deleted")
+    .gte("po_date", dateFrom)
+    .lte("po_date", dateTo)
+    .order("po_date", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as unknown as PurchaseOrder[];
+}
+
 export async function fetchPurchaseOrder(id: string): Promise<PurchaseOrder> {
   const { data: po, error } = await supabase.from("purchase_orders").select("*").eq("id", id).single();
   if (error) throw error;

@@ -17,10 +17,13 @@ import {
   fetchDCApprovalHistory,
   approveDC,
   rejectDC,
+  fetchAllDCsForExport,
+  fetchAllDCReturnsForExport,
   type DCFilters,
   type DcDeleteStockAction,
 } from "@/lib/delivery-challans-api";
-import { exportToExcel, DC_EXPORT_COLS } from "@/lib/export-utils";
+import { exportDCReport, exportDCReturnsReport } from "@/lib/export-utils";
+import { ExportModal } from "@/components/ExportModal";
 import { getDaysOpen, getDaysOpenClass } from "@/lib/days-open";
 import { logAudit } from "@/lib/audit-api";
 import { useToast } from "@/hooks/use-toast";
@@ -382,10 +385,14 @@ function DeliveryChallansRegisterInner() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { role, profile } = useAuth();
+  const { role, profile, companyId } = useAuth();
   const access = useRoleAccess();
+  const canExport = access.canExport;
   const isInwardTeam = role === 'inward_team';
   const isApprover = role === 'admin' || role === 'finance' || role === 'purchase_team';
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [returnsExportModalOpen, setReturnsExportModalOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const [filters, setFilters] = useState<DCFilters>({
     search: "",
@@ -499,9 +506,16 @@ function DeliveryChallansRegisterInner() {
         <p className="text-sm text-slate-500 mt-1">Track outgoing material and returns</p>
       </div>
       <div className="flex flex-wrap gap-2 flex-shrink-0">
-        <Button variant="outline" onClick={() => exportToExcel(dcs, DC_EXPORT_COLS, `Delivery_Challans_${new Date().toISOString().split("T")[0]}.xlsx`, "Delivery Challans")} disabled={dcs.length === 0}>
-          <Download className="h-4 w-4 mr-1" /> Export
-        </Button>
+        {canExport && (
+          <>
+            <Button variant="outline" onClick={() => setExportModalOpen(true)}>
+              <Download className="h-4 w-4 mr-1" /> Export
+            </Button>
+            <Button variant="outline" onClick={() => setReturnsExportModalOpen(true)}>
+              <Download className="h-4 w-4 mr-1" /> Export DC Returns
+            </Button>
+          </>
+        )}
         {access.canEdit && (
           <Button onClick={() => navigate("/delivery-challans/new")} className="active:scale-[0.98] transition-transform">
             <Plus className="h-4 w-4 mr-1" /> New DC
@@ -829,6 +843,54 @@ function DeliveryChallansRegisterInner() {
           })()}
         </DialogContent>
       </Dialog>
+
+      <ExportModal
+        open={exportModalOpen}
+        onClose={() => setExportModalOpen(false)}
+        docType="Delivery Challans"
+        isExporting={isExporting}
+        onExport={async (dateFrom, dateTo, includeLineItems) => {
+          if (!companyId) {
+            toast({ title: "Cannot export", description: "Account not linked to a company.", variant: "destructive" });
+            return;
+          }
+          setIsExporting(true);
+          try {
+            const data = await fetchAllDCsForExport(dateFrom, dateTo, companyId);
+            exportDCReport(data, includeLineItems, dateFrom, dateTo);
+            setExportModalOpen(false);
+            toast({ title: "Export ready", description: `${data.length} delivery challans exported.` });
+          } catch (e: any) {
+            toast({ title: "Export failed", description: e?.message ?? "Unknown error", variant: "destructive" });
+          } finally {
+            setIsExporting(false);
+          }
+        }}
+      />
+
+      <ExportModal
+        open={returnsExportModalOpen}
+        onClose={() => setReturnsExportModalOpen(false)}
+        docType="DC Returns"
+        isExporting={isExporting}
+        onExport={async (dateFrom, dateTo, includeLineItems) => {
+          if (!companyId) {
+            toast({ title: "Cannot export", description: "Account not linked to a company.", variant: "destructive" });
+            return;
+          }
+          setIsExporting(true);
+          try {
+            const data = await fetchAllDCReturnsForExport(dateFrom, dateTo, companyId);
+            exportDCReturnsReport(data, includeLineItems, dateFrom, dateTo);
+            setReturnsExportModalOpen(false);
+            toast({ title: "Export ready", description: `${data.length} DCs with returns exported.` });
+          } catch (e: any) {
+            toast({ title: "Export failed", description: e?.message ?? "Unknown error", variant: "destructive" });
+          } finally {
+            setIsExporting(false);
+          }
+        }}
+      />
     </div>
   );
 }

@@ -258,6 +258,49 @@ export async function fetchDeliveryChallans(filters: DCFilters = {}) {
   return { data: dcs, count: count ?? 0 };
 }
 
+// Fetch all DCs in a date range (no pagination) for the Export modal —
+// embeds full line items.
+export async function fetchAllDCsForExport(
+  dateFrom: string,
+  dateTo: string,
+  companyId: string
+): Promise<DeliveryChallan[]> {
+  const { data, error } = await supabase
+    .from("delivery_challans")
+    .select(
+      `*, line_items:dc_line_items(serial_number, description, drawing_number, quantity, unit, rate, amount, nature_of_process, qty_nos, qty_kg, qty_sft, returned_qty_nos, returned_qty_kg, returned_qty_sft)`
+    )
+    .eq("company_id", companyId)
+    .neq("status", "deleted")
+    .gte("dc_date", dateFrom)
+    .lte("dc_date", dateTo)
+    .order("dc_date", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as unknown as DeliveryChallan[];
+}
+
+// Fetch DCs that have at least one return — i.e. status partially_returned or
+// fully_returned — within the given date range. Includes line items with the
+// returned-qty columns so the report can show qty pending per line.
+export async function fetchAllDCReturnsForExport(
+  dateFrom: string,
+  dateTo: string,
+  companyId: string
+): Promise<DeliveryChallan[]> {
+  const { data, error } = await supabase
+    .from("delivery_challans")
+    .select(
+      `*, line_items:dc_line_items(serial_number, description, drawing_number, quantity, unit, rate, amount, nature_of_process, qty_nos, qty_kg, qty_sft, returned_qty_nos, returned_qty_kg, returned_qty_sft)`
+    )
+    .eq("company_id", companyId)
+    .in("status", ["partially_returned", "fully_returned"])
+    .gte("dc_date", dateFrom)
+    .lte("dc_date", dateTo)
+    .order("dc_date", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as unknown as DeliveryChallan[];
+}
+
 export async function fetchDeliveryChallan(id: string): Promise<DeliveryChallan> {
   const { data: dc, error } = await supabase.from("delivery_challans").select("*").eq("id", id).single();
   if (error) throw error;

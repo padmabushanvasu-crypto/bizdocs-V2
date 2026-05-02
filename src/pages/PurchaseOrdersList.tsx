@@ -17,10 +17,12 @@ import {
   softDeletePurchaseOrder,
   approvePurchaseOrder,
   rejectPurchaseOrder,
+  fetchAllPOsForExport,
   type POFilters,
 } from "@/lib/purchase-orders-api";
 import { formatCurrency } from "@/lib/gst-utils";
-import { exportToExcel, PO_EXPORT_COLS } from "@/lib/export-utils";
+import { exportPOReport } from "@/lib/export-utils";
+import { ExportModal } from "@/components/ExportModal";
 import { getDaysOpen, getDaysOpenClass } from "@/lib/days-open";
 import { logAudit } from "@/lib/audit-api";
 import { useToast } from "@/hooks/use-toast";
@@ -355,10 +357,12 @@ export default function PurchaseOrdersList() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { hideCosts, canExport, canEdit } = useRoleAccess();
-  const { role, profile } = useAuth();
+  const { role, profile, companyId } = useAuth();
   const isPurchaseTeam = role === 'purchase_team';
   const isFinanceOrAdmin = role === 'admin' || role === 'finance';
   const queryClient = useQueryClient();
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [filters, setFilters] = useState<POFilters>({
     search: "",
     status: "all",
@@ -412,11 +416,7 @@ export default function PurchaseOrdersList() {
       </div>
       <div className="flex flex-wrap gap-2 flex-shrink-0">
         {canExport && (
-          <Button
-            variant="outline"
-            onClick={() => exportToExcel(pos, PO_EXPORT_COLS, `Purchase_Orders_${new Date().toISOString().split("T")[0]}.xlsx`, "Purchase Orders")}
-            disabled={pos.length === 0}
-          >
+          <Button variant="outline" onClick={() => setExportModalOpen(true)}>
             <Download className="h-4 w-4 mr-1" /> Export
           </Button>
         )}
@@ -644,6 +644,30 @@ export default function PurchaseOrdersList() {
       ) : (
         allPOsContent
       )}
+
+      <ExportModal
+        open={exportModalOpen}
+        onClose={() => setExportModalOpen(false)}
+        docType="Purchase Orders"
+        isExporting={isExporting}
+        onExport={async (dateFrom, dateTo, includeLineItems) => {
+          if (!companyId) {
+            toast({ title: "Cannot export", description: "Account not linked to a company.", variant: "destructive" });
+            return;
+          }
+          setIsExporting(true);
+          try {
+            const data = await fetchAllPOsForExport(dateFrom, dateTo, companyId);
+            exportPOReport(data, includeLineItems, dateFrom, dateTo);
+            setExportModalOpen(false);
+            toast({ title: "Export ready", description: `${data.length} purchase orders exported.` });
+          } catch (e: any) {
+            toast({ title: "Export failed", description: e?.message ?? "Unknown error", variant: "destructive" });
+          } finally {
+            setIsExporting(false);
+          }
+        }}
+      />
     </div>
   );
 }

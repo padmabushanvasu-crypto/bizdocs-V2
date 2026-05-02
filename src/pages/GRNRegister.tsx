@@ -7,11 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { MetricCard } from "@/components/MetricCard";
-import { fetchGRNs, fetchGRNStats, softDeleteGRN, fetchPendingQCGRNs, type GRNFilters, type GrnDeleteStockAction } from "@/lib/grn-api";
+import { fetchGRNs, fetchGRNStats, softDeleteGRN, fetchPendingQCGRNs, fetchAllGRNsForExport, type GRNFilters, type GrnDeleteStockAction } from "@/lib/grn-api";
 import { logAudit } from "@/lib/audit-api";
-import { exportToExcel, GRN_EXPORT_COLS } from "@/lib/export-utils";
+import { exportGRNReport } from "@/lib/export-utils";
+import { ExportModal } from "@/components/ExportModal";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { useRoleAccess } from "@/hooks/useRoleAccess";
 
 const DELETION_REASONS = [
   { value: 'data_entry_error',        label: 'Data entry error' },
@@ -84,7 +86,8 @@ function GRNRegisterInner() {
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { role } = useAuth();
+  const { role, companyId } = useAuth();
+  const { canExport } = useRoleAccess();
 
   // ── Deletion dialog state ─────────────────────────────────────────────────
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
@@ -92,6 +95,8 @@ function GRNRegisterInner() {
   const [deleteReason, setDeleteReason] = useState('');
   const [deleteCustomReason, setDeleteCustomReason] = useState('');
   const [deleteStockAction, setDeleteStockAction] = useState<GrnDeleteStockAction | ''>('');
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const monthOptions = useMemo(() => {
     const opts: { value: string; label: string }[] = [];
@@ -213,9 +218,11 @@ function GRNRegisterInner() {
           <Button variant={showDeleted ? "secondary" : "outline"} size="sm" onClick={() => setShowDeleted(d => !d)}>
             <Trash2 className="h-3.5 w-3.5 mr-1" /> {showDeleted ? "Hide Deleted" : "Show Deleted"}
           </Button>
-          <Button variant="outline" onClick={() => exportToExcel(grns, GRN_EXPORT_COLS, `GRNs_${new Date().toISOString().split("T")[0]}.xlsx`, "GRNs")} disabled={grns.length === 0}>
-            <Download className="h-4 w-4 mr-1" /> Export
-          </Button>
+          {canExport && (
+            <Button variant="outline" onClick={() => setExportModalOpen(true)}>
+              <Download className="h-4 w-4 mr-1" /> Export
+            </Button>
+          )}
           <Button onClick={() => navigate("/grn/new")} className="active:scale-[0.98] transition-transform">
             <Plus className="h-4 w-4 mr-1" /> New GRN
           </Button>
@@ -443,6 +450,30 @@ function GRNRegisterInner() {
           })()}
         </DialogContent>
       </Dialog>
+
+      <ExportModal
+        open={exportModalOpen}
+        onClose={() => setExportModalOpen(false)}
+        docType="GRNs"
+        isExporting={isExporting}
+        onExport={async (dateFrom, dateTo, includeLineItems) => {
+          if (!companyId) {
+            toast({ title: "Cannot export", description: "Account not linked to a company.", variant: "destructive" });
+            return;
+          }
+          setIsExporting(true);
+          try {
+            const data = await fetchAllGRNsForExport(dateFrom, dateTo, companyId);
+            exportGRNReport(data, includeLineItems, dateFrom, dateTo);
+            setExportModalOpen(false);
+            toast({ title: "Export ready", description: `${data.length} GRNs exported.` });
+          } catch (e: any) {
+            toast({ title: "Export failed", description: e?.message ?? "Unknown error", variant: "destructive" });
+          } finally {
+            setIsExporting(false);
+          }
+        }}
+      />
     </div>
   );
 }

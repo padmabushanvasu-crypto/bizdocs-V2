@@ -337,3 +337,243 @@ export const DOC_SETTINGS_EXPORT_COLS: ExportColumn[] = [
   { key: "show_bank_details", label: "Show Bank Details" },
   { key: "show_gst_breakup", label: "Show GST Breakup" },
 ];
+
+// ── Date-range Report Builders ────────────────────────────────────────────────
+// Used by the ExportModal flow on PO / DC / GRN list pages. Each builder takes
+// the parent records (with embedded line_items where applicable) and writes a
+// single-sheet summary or a two-sheet workbook (summary + line items).
+
+const PO_REPORT_SUMMARY_COLS: ExportColumn[] = [
+  { key: "po_number", label: "PO Number" },
+  { key: "po_date", label: "PO Date", type: "date" },
+  { key: "vendor_name", label: "Vendor", width: 24 },
+  { key: "vendor_phone", label: "Vendor Phone", width: 16 },
+  { key: "reference_number", label: "Reference" },
+  { key: "payment_terms", label: "Payment Terms" },
+  { key: "sub_total", label: "Sub Total", type: "currency" },
+  { key: "total_gst", label: "GST Amount", type: "currency" },
+  { key: "grand_total", label: "Grand Total", type: "currency" },
+  { key: "status", label: "Status" },
+];
+
+const PO_REPORT_LINE_COLS: ExportColumn[] = [
+  { key: "po_number", label: "PO Number" },
+  { key: "vendor_name", label: "Vendor", width: 24 },
+  { key: "drawing_number", label: "Drawing No." },
+  { key: "description", label: "Description", width: 30 },
+  { key: "hsn_sac_code", label: "HSN" },
+  { key: "quantity", label: "Qty", type: "number" },
+  { key: "unit", label: "Unit" },
+  { key: "unit_price", label: "Unit Price", type: "currency" },
+  { key: "line_total", label: "Line Total", type: "currency" },
+  { key: "delivery_date", label: "Delivery Date", type: "date" },
+];
+
+export function exportPOReport(
+  pos: any[],
+  includeLineItems: boolean,
+  dateFrom: string,
+  dateTo: string
+): void {
+  const filename = `PO_Report_${dateFrom}_to_${dateTo}.xlsx`;
+  if (!includeLineItems) {
+    exportToExcel(pos, PO_REPORT_SUMMARY_COLS, filename, "PO Summary");
+    return;
+  }
+  const lineRows = pos.flatMap((po) =>
+    (po.line_items ?? []).map((li: any) => ({
+      po_number: po.po_number,
+      vendor_name: po.vendor_name,
+      drawing_number: li.drawing_number,
+      description: li.description,
+      hsn_sac_code: li.hsn_sac_code,
+      quantity: li.quantity,
+      unit: li.unit,
+      unit_price: li.unit_price,
+      line_total: li.line_total,
+      delivery_date: li.delivery_date,
+    }))
+  );
+  exportMultiSheet(
+    [
+      { sheetName: "PO Summary", columns: PO_REPORT_SUMMARY_COLS, data: pos },
+      { sheetName: "PO Line Items", columns: PO_REPORT_LINE_COLS, data: lineRows },
+    ],
+    filename
+  );
+}
+
+const DC_REPORT_SUMMARY_COLS: ExportColumn[] = [
+  { key: "dc_number", label: "DC Number" },
+  { key: "dc_date", label: "DC Date", type: "date" },
+  { key: "party_name", label: "Party", width: 24 },
+  { key: "party_phone", label: "Party Phone", width: 16 },
+  { key: "dc_type", label: "DC Type" },
+  { key: "nature_of_job_work", label: "Nature of Job Work", width: 24 },
+  { key: "reference_number", label: "Reference" },
+  { key: "return_due_date", label: "Return Due Date", type: "date" },
+  { key: "grand_total", label: "Grand Total", type: "currency" },
+  { key: "status", label: "Status" },
+];
+
+const DC_REPORT_LINE_COLS: ExportColumn[] = [
+  { key: "dc_number", label: "DC Number" },
+  { key: "party_name", label: "Party", width: 24 },
+  { key: "drawing_number", label: "Drawing No." },
+  { key: "description", label: "Description", width: 30 },
+  { key: "nature_of_process", label: "Stage / Process", width: 22 },
+  { key: "quantity", label: "Qty", type: "number" },
+  { key: "unit", label: "Unit" },
+  { key: "rate", label: "Rate", type: "currency" },
+  { key: "amount", label: "Amount", type: "currency" },
+];
+
+export function exportDCReport(
+  dcs: any[],
+  includeLineItems: boolean,
+  dateFrom: string,
+  dateTo: string
+): void {
+  const filename = `DC_Report_${dateFrom}_to_${dateTo}.xlsx`;
+  if (!includeLineItems) {
+    exportToExcel(dcs, DC_REPORT_SUMMARY_COLS, filename, "DC Summary");
+    return;
+  }
+  const lineRows = dcs.flatMap((dc) =>
+    (dc.line_items ?? []).map((li: any) => ({
+      dc_number: dc.dc_number,
+      party_name: dc.party_name,
+      drawing_number: li.drawing_number,
+      description: li.description,
+      nature_of_process: li.nature_of_process,
+      quantity: li.quantity ?? li.qty_nos,
+      unit: li.unit,
+      rate: li.rate,
+      amount: li.amount,
+    }))
+  );
+  exportMultiSheet(
+    [
+      { sheetName: "DC Summary", columns: DC_REPORT_SUMMARY_COLS, data: dcs },
+      { sheetName: "DC Line Items", columns: DC_REPORT_LINE_COLS, data: lineRows },
+    ],
+    filename
+  );
+}
+
+const DC_RETURNS_SUMMARY_COLS: ExportColumn[] = [
+  { key: "dc_number", label: "DC Number" },
+  { key: "dc_date", label: "DC Date", type: "date" },
+  { key: "party_name", label: "Party", width: 24 },
+  { key: "party_phone", label: "Party Phone", width: 16 },
+  { key: "nature_of_job_work", label: "Nature of Job Work", width: 24 },
+  { key: "return_due_date", label: "Return Due Date", type: "date" },
+  { key: "status", label: "Status" },
+];
+
+const DC_RETURNS_LINE_COLS: ExportColumn[] = [
+  { key: "dc_number", label: "DC Number" },
+  { key: "party_name", label: "Party", width: 24 },
+  { key: "drawing_number", label: "Drawing No." },
+  { key: "description", label: "Description", width: 30 },
+  { key: "qty_sent", label: "Qty Sent", type: "number" },
+  { key: "qty_returned", label: "Qty Returned", type: "number" },
+  { key: "qty_pending", label: "Qty Pending", type: "number" },
+  { key: "unit", label: "Unit" },
+];
+
+export function exportDCReturnsReport(
+  dcs: any[],
+  includeLineItems: boolean,
+  dateFrom: string,
+  dateTo: string
+): void {
+  const filename = `DC_Returns_Report_${dateFrom}_to_${dateTo}.xlsx`;
+  if (!includeLineItems) {
+    exportToExcel(dcs, DC_RETURNS_SUMMARY_COLS, filename, "DC Returns Summary");
+    return;
+  }
+  const lineRows = dcs.flatMap((dc) =>
+    (dc.line_items ?? []).map((li: any) => {
+      const sent = Number(li.qty_nos ?? li.quantity ?? 0);
+      const returned = Number(li.returned_qty_nos ?? 0);
+      const pending = Math.max(0, sent - returned);
+      return {
+        dc_number: dc.dc_number,
+        party_name: dc.party_name,
+        drawing_number: li.drawing_number,
+        description: li.description,
+        qty_sent: sent,
+        qty_returned: returned,
+        qty_pending: pending,
+        unit: li.unit ?? "NOS",
+      };
+    })
+  );
+  exportMultiSheet(
+    [
+      { sheetName: "DC Returns Summary", columns: DC_RETURNS_SUMMARY_COLS, data: dcs },
+      { sheetName: "Items Returned", columns: DC_RETURNS_LINE_COLS, data: lineRows },
+    ],
+    filename
+  );
+}
+
+const GRN_REPORT_SUMMARY_COLS: ExportColumn[] = [
+  { key: "grn_number", label: "GRN Number" },
+  { key: "grn_date", label: "GRN Date", type: "date" },
+  { key: "vendor_name", label: "Vendor", width: 24 },
+  { key: "po_number", label: "Linked PO" },
+  { key: "vendor_invoice_number", label: "Vendor Invoice" },
+  { key: "total_received", label: "Total Received", type: "number" },
+  { key: "total_accepted", label: "Total Accepted", type: "number" },
+  { key: "total_rejected", label: "Total Rejected", type: "number" },
+  { key: "status", label: "Status" },
+];
+
+const GRN_REPORT_LINE_COLS: ExportColumn[] = [
+  { key: "grn_number", label: "GRN Number" },
+  { key: "vendor_name", label: "Vendor", width: 24 },
+  { key: "drawing_number", label: "Drawing No." },
+  { key: "description", label: "Item Description", width: 30 },
+  { key: "ordered_qty", label: "Ordered Qty", type: "number" },
+  { key: "received_now", label: "Received", type: "number" },
+  { key: "accepted_qty", label: "Accepted", type: "number" },
+  { key: "rejected_qty", label: "Rejected", type: "number" },
+  { key: "store_confirmed_qty", label: "Store Confirmed", type: "number" },
+  { key: "unit", label: "Unit" },
+];
+
+export function exportGRNReport(
+  grns: any[],
+  includeLineItems: boolean,
+  dateFrom: string,
+  dateTo: string
+): void {
+  const filename = `GRN_Report_${dateFrom}_to_${dateTo}.xlsx`;
+  if (!includeLineItems) {
+    exportToExcel(grns, GRN_REPORT_SUMMARY_COLS, filename, "GRN Summary");
+    return;
+  }
+  const lineRows = grns.flatMap((g) =>
+    (g.line_items ?? []).map((li: any) => ({
+      grn_number: g.grn_number,
+      vendor_name: g.vendor_name,
+      drawing_number: li.drawing_number,
+      description: li.description,
+      ordered_qty: li.ordered_qty ?? li.po_quantity,
+      received_now: li.received_now ?? li.receiving_now,
+      accepted_qty: li.accepted_qty ?? li.accepted_quantity,
+      rejected_qty: li.rejected_qty ?? li.rejected_quantity,
+      store_confirmed_qty: li.store_confirmed_qty,
+      unit: li.unit,
+    }))
+  );
+  exportMultiSheet(
+    [
+      { sheetName: "GRN Summary", columns: GRN_REPORT_SUMMARY_COLS, data: grns },
+      { sheetName: "GRN Line Items", columns: GRN_REPORT_LINE_COLS, data: lineRows },
+    ],
+    filename
+  );
+}

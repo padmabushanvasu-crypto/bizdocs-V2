@@ -219,6 +219,27 @@ export async function fetchDcGrns(filters: GRNFilters = {}) {
   return fetchGRNs({ ...filters, grn_type: 'dc_grn' });
 }
 
+// Fetch all GRNs in a date range (no pagination) for the Export modal —
+// embeds full line items.
+export async function fetchAllGRNsForExport(
+  dateFrom: string,
+  dateTo: string,
+  companyId: string
+): Promise<GRN[]> {
+  const { data, error } = await (supabase as any)
+    .from("grns")
+    .select(
+      `*, line_items:grn_line_items(serial_number, description, drawing_number, ordered_qty, po_quantity, received_now, receiving_now, accepted_qty, accepted_quantity, rejected_qty, rejected_quantity, unit, store_confirmed_qty)`
+    )
+    .eq("company_id", companyId)
+    .not("status", "in", "(deleted,cancelled)")
+    .gte("grn_date", dateFrom)
+    .lte("grn_date", dateTo)
+    .order("grn_date", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as unknown as GRN[];
+}
+
 export async function fetchGRN(id: string): Promise<GRN> {
   const { data: grn, error } = await supabase.from("grns").select("*").eq("id", id).single();
   if (error) throw error;

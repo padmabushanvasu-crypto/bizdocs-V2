@@ -49,9 +49,9 @@ const PURCHASE_TEAM_MAP: Record<string, PageAccess> = {
 
 const INWARD_TEAM_MAP: Record<string, PageAccess> = {
   'dashboard':          { canView: true,  canEdit: false, canExport: false, hideCosts: true },
-  'follow-up-tracker':  { canView: true,  canEdit: true,  canExport: false, hideCosts: true },
-  'delivery-challans':  { canView: true,  canEdit: true,  canExport: false, hideCosts: false },
-  'grn':                { canView: true,  canEdit: true,  canExport: false, hideCosts: true },
+  'follow-up-tracker':  { canView: true,  canEdit: true,  canExport: true,  hideCosts: true },
+  'delivery-challans':  { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
+  'grn':                { canView: true,  canEdit: true,  canExport: true,  hideCosts: true },
   'dc-grn':             { canView: true,  canEdit: true,  canExport: false, hideCosts: true },
   'ready-to-move':      { canView: true,  canEdit: false, canExport: false, hideCosts: true },
   'job-works':          { canView: true,  canEdit: false, canExport: false, hideCosts: true },
