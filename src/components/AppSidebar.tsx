@@ -886,7 +886,7 @@ export function AppSidebar() {
       title: "Dispatch Records",
       url: "/dispatch-records",
       icon: Truck,
-      allowedRoles: ['admin', 'finance', 'purchase_team'],
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'assembly_team'],
     },
     {
       title: "Serial Numbers",

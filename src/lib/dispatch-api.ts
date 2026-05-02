@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { updateStockBucket } from "@/lib/items-api";
+import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
 
 async function getCompanyId(): Promise<string | null> {
   const { data: { user } } = await supabase.auth.getUser();
@@ -63,6 +64,14 @@ export interface ReadyToDispatchUnit {
   fat_completed_at: string | null;
   days_since_fat: number;
   status: string;
+}
+
+export interface FinishedGoodItem {
+  id: string;
+  item_code: string;
+  description: string;
+  unit: string;
+  stock_in_fg_ready: number;
 }
 
 // ── Functions ──────────────────────────────────────────────────────────────────
@@ -232,34 +241,42 @@ export async function confirmDispatch(id: string): Promise<void> {
   const today = new Date().toISOString().split('T')[0];
 
   for (const item of dr.items ?? []) {
-    if (item.item_id) {
-      await updateStockBucket(item.item_id, 'in_fg_ready', -item.quantity);
+    if (!item.item_id) continue;
 
-      // Update serial number status
-      if (item.serial_number_id) {
-        await (supabase as any)
-          .from("serial_numbers")
-          .update({ status: 'dispatched', dispatch_date: today })
-          .eq("id", item.serial_number_id);
-      } else if (item.serial_number) {
-        await (supabase as any)
-          .from("serial_numbers")
-          .update({ status: 'dispatched', dispatch_date: today })
-          .eq("serial_number", item.serial_number)
-          .eq("company_id", companyId);
-      }
+    await updateStockBucket(item.item_id, 'in_fg_ready', -item.quantity);
 
-      // Insert stock ledger entry
+    // Update serial number status — only if a serial is linked to this line
+    if (item.serial_number_id) {
       await (supabase as any)
-        .from("stock_ledger")
-        .insert({
-          company_id: companyId,
-          item_id: item.item_id,
-          transaction_type: 'dispatch',
-          quantity: -item.quantity,
-          notes: `DR ${dr.dr_number} — ${dr.customer_name ?? 'Customer'}`,
-        });
+        .from("serial_numbers")
+        .update({ status: 'dispatched', dispatch_date: today })
+        .eq("id", item.serial_number_id);
+    } else if (item.serial_number) {
+      await (supabase as any)
+        .from("serial_numbers")
+        .update({ status: 'dispatched', dispatch_date: today })
+        .eq("serial_number", item.serial_number)
+        .eq("company_id", companyId);
     }
+
+    // Stock ledger entry — match StockLedgerEntry shape used elsewhere
+    await addStockLedgerEntry({
+      item_id: item.item_id,
+      item_code: item.item_code ?? null,
+      item_description: item.item_description ?? null,
+      transaction_date: today,
+      transaction_type: 'invoice_dispatch',
+      qty_in: 0,
+      qty_out: item.quantity,
+      balance_qty: 0,
+      unit_cost: 0,
+      total_value: 0,
+      reference_type: 'dispatch_record',
+      reference_id: dr.id,
+      reference_number: dr.dr_number,
+      notes: `Dispatched to ${dr.customer_name ?? 'Customer'} — DR ${dr.dr_number}`,
+      created_by: null,
+    });
   }
 
   const { error } = await (supabase as any)
@@ -273,6 +290,28 @@ export async function confirmDispatch(id: string): Promise<void> {
     .eq("company_id", companyId);
 
   if (error) throw error;
+}
+
+export async function fetchFinishedGoodItems(): Promise<FinishedGoodItem[]> {
+  const companyId = await getCompanyId();
+  if (!companyId) return [];
+
+  const { data, error } = await (supabase as any)
+    .from("items")
+    .select("id, item_code, description, unit, stock_in_fg_ready")
+    .eq("company_id", companyId)
+    .in("item_type", ["finished_good", "product"])
+    .gt("stock_in_fg_ready", 0)
+    .order("item_code");
+
+  if (error) return [];
+  return ((data ?? []) as any[]).map((i) => ({
+    id: i.id,
+    item_code: i.item_code ?? "",
+    description: i.description ?? "",
+    unit: i.unit ?? "NOS",
+    stock_in_fg_ready: Number(i.stock_in_fg_ready ?? 0),
+  }));
 }
 
 export async function markDelivered(id: string): Promise<void> {

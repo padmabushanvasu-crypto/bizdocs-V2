@@ -98,6 +98,7 @@ const ASSEMBLY_TEAM_MAP: Record<string, PageAccess> = {
   'serial-numbers':             { canView: true,  canEdit: false, canExport: true,  hideCosts: false },
   'fat-certificates':           { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
   'ready-to-dispatch':          { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
+  'dispatch-records':           { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
   'items':                      { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
   'bill-of-materials':          { canView: true,  canEdit: true,  canExport: false, hideCosts: true  },
   'jig-master':                 { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
