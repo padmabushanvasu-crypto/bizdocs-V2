@@ -6,10 +6,15 @@
 //      days. Returnable DCs only.
 //   2. On-demand download: GET ?download=true&from=YYYY-MM-DD&to=YYYY-MM-DD
 //      &company_id=<uuid> — returns the .xlsx binary directly.
+//
+// Uses the SheetJS community build from cdn.sheetjs.com (xlsx.mjs) — a
+// native ES module that resolves cleanly in Deno. The community build does
+// not write cell styles, so the workbook is plain (data + column widths
+// only); coloured headers and overdue/due-soon row fills are not written.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import * as XLSX from "https://esm.sh/xlsx-js-style@1.2.0?target=deno";
+import * as XLSX from "https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -70,68 +75,29 @@ interface RowMeta {
 function buildStyledSheet(
   cols: ColSpec[],
   rows: Array<Record<string, unknown>>,
-  meta: RowMeta[] = [],
+  _meta: RowMeta[] = [],
   emptyMessage = "No data"
 ) {
+  // Note: SheetJS Community Edition (cdn.sheetjs.com) does not write cell
+  // styles, so this builds a plain workbook — column widths via !cols still
+  // work; header fills, zebra stripes and overdue/due-soon row colours are
+  // dropped. The _meta argument is kept for call-site compatibility.
   const aoa: unknown[][] = [cols.map((c) => c.header)];
   if (rows.length === 0) {
     aoa.push([emptyMessage, ...new Array(cols.length - 1).fill("")]);
   } else {
-    for (const r of rows) aoa.push(cols.map((c) => r[c.key] ?? ""));
+    for (const r of rows) {
+      aoa.push(
+        cols.map((c) => {
+          const v = r[c.key];
+          return v == null ? "" : v;
+        })
+      );
+    }
   }
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws["!cols"] = cols.map((c) => ({ wch: c.width }));
-  ws["!freeze"] = { xSplit: 0, ySplit: 1 };
-  ws["!frozen"] = ws["!freeze"];
-
-  const bandByGroup: Record<string, "light" | "dark"> = {};
-  let bandToggle = false;
-  for (let i = 0; i < meta.length; i++) {
-    const key = meta[i]?.groupKey;
-    if (!key) continue;
-    if (!(key in bandByGroup)) {
-      bandByGroup[key] = bandToggle ? "dark" : "light";
-      bandToggle = !bandToggle;
-    }
-  }
-
-  const range = XLSX.utils.decode_range(ws["!ref"] || "A1:A1");
-  for (let R = range.s.r; R <= range.e.r; R++) {
-    for (let C = range.s.c; C <= range.e.c; C++) {
-      const ref = XLSX.utils.encode_cell({ r: R, c: C });
-      const cell = ws[ref];
-      if (!cell) continue;
-      const col = cols[C];
-
-      if (R === 0) {
-        cell.s = { ...HEADER_STYLE };
-      } else {
-        const dataIdx = R - 1;
-        const m = meta[dataIdx];
-        const fill = m?.fill
-          ? m.fill
-          : m?.groupKey
-            ? (bandByGroup[m.groupKey] === "dark" ? ZEBRA_DARK : ZEBRA_LIGHT)
-            : ZEBRA_LIGHT;
-        cell.s = {
-          fill,
-          border: thinBorder(),
-          alignment: {
-            vertical: "center",
-            horizontal: col?.align ?? (typeof cell.v === "number" ? "right" : "left"),
-            wrapText: false,
-          },
-          font: { sz: 10 },
-        };
-        if (col?.numFmt) {
-          cell.s.numFmt = col.numFmt;
-          cell.z = col.numFmt;
-        }
-      }
-    }
-  }
-
   return ws;
 }
 
@@ -387,7 +353,7 @@ async function buildDCWorkbook(
   XLSX.utils.book_append_sheet(wb, buildStyledSheet(s3Cols, s3Rows, s3Meta), "Overdue Returns");
   XLSX.utils.book_append_sheet(wb, buildStyledSheet(s4Cols, s4Rows, s4Meta), "Partially Returned");
 
-  const xlsxBuffer = XLSX.write(wb, { type: "array", bookType: "xlsx", cellStyles: true });
+  const xlsxBuffer = XLSX.write(wb, { type: "array", bookType: "xlsx" });
   const bytes = new Uint8Array(xlsxBuffer as ArrayBuffer);
 
   const totals: DCReportTotals = {
