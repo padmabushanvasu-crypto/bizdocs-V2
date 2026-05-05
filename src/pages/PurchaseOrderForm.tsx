@@ -151,7 +151,7 @@ export default function PurchaseOrderForm() {
     queryKey: ["delivery-contacts", profile?.company_id],
     queryFn: () => fetchDeliveryContacts(profile!.company_id!),
     enabled: !!profile?.company_id,
-    staleTime: 0,
+    staleTime: 30 * 60 * 1000,
   });
 
   const companyDeliveryAddress = useMemo(() => {

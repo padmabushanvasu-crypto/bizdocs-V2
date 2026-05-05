@@ -11,30 +11,25 @@ async function fetchPendingGrns() {
   const { data: profile } = await supabase.from("profiles").select("company_id").eq("id", user.id).single();
   if (!profile?.company_id) return [];
 
+  // Single round-trip — embed grn_line_items so we can filter for any
+  // line that's not Stage 1 complete without N+1 lookups.
   const { data: grns } = await (supabase as any)
     .from("grns")
-    .select("id, grn_number, grn_date, vendor_name, vehicle_number, driver_name, grn_type, created_at")
+    .select(
+      `id, grn_number, grn_date, vendor_name, vehicle_number, driver_name, grn_type, created_at,
+       line_items:grn_line_items(id, stage1_complete)`
+    )
     .eq("company_id", profile.company_id)
     .neq("status", "deleted")
     .neq("status", "cancelled")
     .order("created_at", { ascending: false })
-    .limit(100);
+    .limit(50);
 
   if (!grns) return [];
 
-  const result = [];
-  for (const grn of grns) {
-    const { data: lines } = await (supabase as any)
-      .from("grn_line_items")
-      .select("id, stage1_complete")
-      .eq("grn_id", grn.id);
-
-    const hasPendingStage1 = (lines ?? []).some((l: any) => !l.stage1_complete);
-    if (hasPendingStage1) {
-      result.push({ ...grn, line_count: lines?.length ?? 0 });
-    }
-  }
-  return result;
+  return (grns as any[])
+    .filter((grn) => (grn.line_items ?? []).some((l: any) => !l.stage1_complete))
+    .map((grn) => ({ ...grn, line_count: grn.line_items?.length ?? 0 }));
 }
 
 export default function GrnQueue() {
@@ -42,7 +37,8 @@ export default function GrnQueue() {
   const { data: grns = [], isLoading } = useQuery({
     queryKey: ["grn-queue"],
     queryFn: fetchPendingGrns,
-    refetchInterval: 120000,
+    staleTime: 2 * 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
   });
 
   return (

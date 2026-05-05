@@ -460,7 +460,7 @@ export function AppSidebar() {
   const { data: fatStats } = useQuery({
     queryKey: ["fat-stats-sidebar"],
     queryFn: async () => { try { return await fetchFatStats(); } catch { return null; } },
-    refetchInterval: 300000,
+    refetchInterval: 10 * 60 * 1000,
   });
 
   const { data: reorderSummary } = useQuery({
@@ -506,7 +506,7 @@ export function AppSidebar() {
         return { sa_active: 0, fg_active: 0 };
       }
     },
-    staleTime: 60_000,
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data: dispatchStats } = useQuery({
@@ -514,7 +514,7 @@ export function AppSidebar() {
     queryFn: async () => {
       try { return await fetchDispatchStats(); } catch { return { ready_to_dispatch: 0 }; }
     },
-    staleTime: 60_000,
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data: overduePOCount } = useQuery({
@@ -529,7 +529,7 @@ export function AppSidebar() {
         return count ?? 0;
       } catch { return 0; }
     },
-    staleTime: 120_000,
+    staleTime: 5 * 60 * 1000,
     refetchInterval: 600000,
   });
 
@@ -549,7 +549,7 @@ export function AppSidebar() {
       } catch { return 0; }
     },
     enabled: currentRole === 'admin' || currentRole === 'finance',
-    staleTime: 120_000,
+    staleTime: 5 * 60 * 1000,
     refetchInterval: 600000,
   });
 
@@ -570,15 +570,15 @@ export function AppSidebar() {
       } catch { return 0; }
     },
     enabled: currentRole === 'purchase_team',
-    staleTime: 120_000,
+    staleTime: 5 * 60 * 1000,
     refetchInterval: 600000,
   });
 
   const { data: awaitingStoreCount = 0 } = useQuery({
     queryKey: ["awaiting-store-count"],
     queryFn: async () => { try { return await fetchAwaitingStoreCount(); } catch { return 0; } },
-    staleTime: 60_000,
-    refetchInterval: 300000,
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 10 * 60 * 1000,
   });
 
   const { data: grnQCCount = 0 } = useQuery({
@@ -598,8 +598,8 @@ export function AppSidebar() {
         return count ?? 0;
       } catch { return 0; }
     },
-    staleTime: 60_000,
-    refetchInterval: 300000,
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 10 * 60 * 1000,
   });
 
   const { data: openDCCount = 0 } = useQuery({
@@ -617,8 +617,8 @@ export function AppSidebar() {
         return count ?? 0;
       } catch { return 0; }
     },
-    staleTime: 60_000,
-    refetchInterval: 300000,
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 10 * 60 * 1000,
   });
 
   const { data: dcReturnQCCount = 0 } = useQuery({
@@ -639,8 +639,8 @@ export function AppSidebar() {
         return count ?? 0;
       } catch { return 0; }
     },
-    staleTime: 60_000,
-    refetchInterval: 300000,
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 10 * 60 * 1000,
   });
 
   const { data: jobCardCount = 0 } = useQuery({
@@ -658,8 +658,8 @@ export function AppSidebar() {
         return count ?? 0;
       } catch { return 0; }
     },
-    staleTime: 60_000,
-    refetchInterval: 300000,
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 10 * 60 * 1000,
   });
 
   const { data: pendingMIRCount = 0 } = useQuery({
@@ -677,8 +677,8 @@ export function AppSidebar() {
         return count ?? 0;
       } catch { return 0; }
     },
-    staleTime: 60_000,
-    refetchInterval: 300000,
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 10 * 60 * 1000,
   });
 
   const { data: pendingDCApprovalCount = 0 } = useQuery({
@@ -697,8 +697,8 @@ export function AppSidebar() {
       } catch { return 0; }
     },
     enabled: currentRole === 'admin' || currentRole === 'finance' || currentRole === 'purchase_team',
-    staleTime: 60_000,
-    refetchInterval: 300000,
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 10 * 60 * 1000,
   });
 
   const { data: unreadDCRejectionCount = 0 } = useQuery({
@@ -718,8 +718,8 @@ export function AppSidebar() {
       } catch { return 0; }
     },
     enabled: currentRole === 'inward_team',
-    staleTime: 60_000,
-    refetchInterval: 300000,
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 10 * 60 * 1000,
   });
 
   const companyNeedsSetup = !companySettingsData?.gstin ||
