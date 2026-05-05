@@ -554,6 +554,78 @@ export async function softDeleteGRN(
     .update({ status: 'deleted', deletion_reason: deletion_reason ?? null })
     .eq('id', id);
   if (error) throw error;
+
+  // Rewind the linked PO's received quantities and recalc its status. This
+  // runs after the GRN is marked deleted, in a try/catch so a rewind failure
+  // does NOT undo the deletion. DC-linked GRNs are skipped — those don't
+  // touch po_line_items.
+  try {
+    const { data: grnHeader } = await (supabase as any)
+      .from('grns')
+      .select('po_id, grn_type')
+      .eq('id', id)
+      .single();
+
+    if (grnHeader?.grn_type === 'po_grn' && grnHeader?.po_id) {
+      const { data: grnLines } = await (supabase as any)
+        .from('grn_line_items')
+        .select('po_line_item_id, accepted_qty, accepted_quantity, received_now, store_confirmed_qty')
+        .eq('grn_id', id);
+
+      for (const line of (grnLines ?? []) as any[]) {
+        if (!line.po_line_item_id) continue;
+        const qty: number =
+          line.accepted_qty ??
+          line.accepted_quantity ??
+          line.store_confirmed_qty ??
+          0;
+        if (qty <= 0) continue;
+
+        const { data: poLine } = await supabase
+          .from('po_line_items')
+          .select('received_quantity, quantity')
+          .eq('id', line.po_line_item_id)
+          .single();
+
+        const currentReceived = (poLine as any)?.received_quantity ?? 0;
+        const ordered = (poLine as any)?.quantity ?? 0;
+        const newReceived = Math.max(0, currentReceived - qty);
+        const newPending = Math.max(0, ordered - newReceived);
+
+        await supabase
+          .from('po_line_items')
+          .update({ received_quantity: newReceived, pending_quantity: newPending } as any)
+          .eq('id', line.po_line_item_id);
+      }
+
+      // Recalculate parent PO status from the rewound line totals
+      const { data: allPoLines } = await supabase
+        .from('po_line_items')
+        .select('quantity, received_quantity')
+        .eq('po_id', grnHeader.po_id);
+
+      const totalOrdered = ((allPoLines ?? []) as any[]).reduce(
+        (s: number, l: any) => s + Number(l.quantity ?? 0),
+        0,
+      );
+      const totalReceived = ((allPoLines ?? []) as any[]).reduce(
+        (s: number, l: any) => s + Number(l.received_quantity ?? 0),
+        0,
+      );
+
+      let newPoStatus: string;
+      if (totalReceived <= 0) newPoStatus = 'issued';
+      else if (totalReceived >= totalOrdered) newPoStatus = 'fully_received';
+      else newPoStatus = 'partially_received';
+
+      await supabase
+        .from('purchase_orders')
+        .update({ status: newPoStatus } as any)
+        .eq('id', grnHeader.po_id);
+    }
+  } catch (rewindErr) {
+    console.error('GRN deleted but PO rewind failed:', rewindErr);
+  }
 }
 
 // ── Phase 14: Two-Stage GRN API functions ────────────────────────────────────
