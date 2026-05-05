@@ -25,3 +25,4 @@ dist-ssr
 .claude/
 .claude/
 supabase/.temp/
+FETCH_HEAD
