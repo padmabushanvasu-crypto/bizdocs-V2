@@ -2692,6 +2692,12 @@ export default function GRNDetail() {
                       ))}
                     </div>
                   )}
+
+                  {(grn as any)?.grn_type === 'po_grn' && (grn as any)?.po_id && (
+                    <div className="rounded-md border border-blue-200 dark:border-blue-400/30 bg-blue-50 dark:bg-blue-500/10 px-3 py-2 text-xs text-blue-800 dark:text-blue-200">
+                      The PO received quantities will be automatically adjusted. You will be able to raise a new GRN against this PO after deletion.
+                    </div>
+                  )}
                 </div>
 
                 <DialogFooter>

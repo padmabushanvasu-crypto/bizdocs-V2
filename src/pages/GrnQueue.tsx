@@ -15,6 +15,8 @@ async function fetchPendingGrns() {
     .from("grns")
     .select("id, grn_number, grn_date, vendor_name, vehicle_number, driver_name, grn_type, created_at")
     .eq("company_id", profile.company_id)
+    .neq("status", "deleted")
+    .neq("status", "cancelled")
     .order("created_at", { ascending: false })
     .limit(100);
 
