@@ -77,6 +77,7 @@ export interface POFilters {
   vendorSearch?: string;
   dateFrom?: string;
   dateTo?: string;
+  drawingNumber?: string;
   page?: number;
   pageSize?: number;
 }
@@ -84,15 +85,30 @@ export interface POFilters {
 export async function fetchPurchaseOrders(filters: POFilters = {}) {
   const companyId = await getCompanyId();
   if (!companyId) return { data: [], count: 0 };
-  const { search, status = "all", vendorSearch, dateFrom, dateTo, page = 1, pageSize = 20 } = filters;
+  const { search, status = "all", vendorSearch, dateFrom, dateTo, drawingNumber, page = 1, pageSize = 20 } = filters;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
+
+  // Drawing-number filter — find parent PO ids whose line items match.
+  // Done first so we can short-circuit when nothing matches.
+  let drawingPoIds: string[] | null = null;
+  if (drawingNumber?.trim()) {
+    const term = sanitizeSearchTerm(drawingNumber);
+    if (term) {
+      const { data: lineMatches } = await supabase
+        .from("po_line_items")
+        .select("po_id")
+        .eq("company_id", companyId)
+        .ilike("drawing_number", `%${term}%`);
+      drawingPoIds = [...new Set(((lineMatches ?? []) as any[]).map((r) => r.po_id).filter(Boolean))] as string[];
+      if (drawingPoIds.length === 0) return { data: [], count: 0 };
+    }
+  }
 
   let query = supabase
     .from("purchase_orders")
     .select("*", { count: "exact" })
-    .order("created_at", { ascending: false })
-    .range(from, to);
+    .order("created_at", { ascending: false });
 
   if (status !== "deleted") query = query.neq("status", "deleted");
   if (status && status !== "all") query = query.eq("status", status);
@@ -109,6 +125,9 @@ export async function fetchPurchaseOrders(filters: POFilters = {}) {
   }
   if (dateFrom) query = query.gte("po_date", dateFrom);
   if (dateTo) query = query.lte("po_date", dateTo);
+  if (drawingPoIds) query = query.in("id", drawingPoIds);
+
+  query = query.range(from, to);
 
   const { data, error, count } = await query;
   if (error) throw error;

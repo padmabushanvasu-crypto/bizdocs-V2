@@ -366,6 +366,7 @@ export default function PurchaseOrdersList() {
   const [filters, setFilters] = useState<POFilters>({
     search: "",
     status: "all",
+    drawingNumber: "",
     page: 1,
     pageSize: 20,
   });
@@ -456,6 +457,15 @@ export default function PurchaseOrdersList() {
             className="pl-9"
             value={filters.search}
             onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value, page: 1 }))}
+          />
+        </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Drawing No..."
+            value={filters.drawingNumber ?? ""}
+            onChange={(e) => setFilters((f) => ({ ...f, drawingNumber: e.target.value, page: 1 }))}
+            className="pl-9 w-40 dark:bg-[#0a0e1a] dark:border-white/20"
           />
         </div>
         <Select

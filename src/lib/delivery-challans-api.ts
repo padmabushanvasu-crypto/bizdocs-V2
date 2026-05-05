@@ -227,6 +227,7 @@ export interface EnhancedReturnResult {
 export interface DCFilters {
   search?: string;
   status?: string;
+  drawingNumber?: string;
   page?: number;
   pageSize?: number;
 }
@@ -234,11 +235,25 @@ export interface DCFilters {
 export async function fetchDeliveryChallans(filters: DCFilters = {}) {
   const companyId = await getCompanyId();
   if (!companyId) return { data: [], count: 0 };
-  const { search, status = "all", page = 1, pageSize = 20 } = filters;
+  const { search, status = "all", drawingNumber, page = 1, pageSize = 20 } = filters;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
-  let query = supabase.from("delivery_challans").select("*", { count: "exact" }).order("created_at", { ascending: false }).range(from, to);
+  let drawingDcIds: string[] | null = null;
+  if (drawingNumber?.trim()) {
+    const term = sanitizeSearchTerm(drawingNumber);
+    if (term) {
+      const { data: lineMatches } = await supabase
+        .from("dc_line_items")
+        .select("dc_id")
+        .eq("company_id", companyId)
+        .ilike("drawing_number", `%${term}%`);
+      drawingDcIds = [...new Set(((lineMatches ?? []) as any[]).map((r) => r.dc_id).filter(Boolean))] as string[];
+      if (drawingDcIds.length === 0) return { data: [], count: 0 };
+    }
+  }
+
+  let query = supabase.from("delivery_challans").select("*", { count: "exact" }).order("created_at", { ascending: false });
   query = query.neq("status", "deleted");
   if (status && status !== "all" && status !== "overdue") query = query.eq("status", status);
   if (search?.trim()) {
@@ -248,6 +263,8 @@ export async function fetchDeliveryChallans(filters: DCFilters = {}) {
       query = query.or(`dc_number.ilike.${term},party_name.ilike.${term}`);
     }
   }
+  if (drawingDcIds) query = query.in("id", drawingDcIds);
+  query = query.range(from, to);
   const { data, error, count } = await query;
   if (error) throw error;
   let dcs = (data ?? []) as unknown as DeliveryChallan[];
