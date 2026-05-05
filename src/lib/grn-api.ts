@@ -168,6 +168,7 @@ export interface GRNFilters {
   grn_type?: 'po_grn' | 'dc_grn' | 'all';
   grn_stage?: string;
   month?: string;
+  drawingNumber?: string;
   page?: number;
   pageSize?: number;
   showDeleted?: boolean;
@@ -190,10 +191,25 @@ export async function fetchGRNs(filters: GRNFilters = {}) {
   if (!companyId) {
     return { data: [], count: 0 };
   }
-  const { search, status = "all", grn_type, month, page = 1, pageSize = 20 } = filters;
+  const { search, status = "all", grn_type, month, drawingNumber, page = 1, pageSize = 20 } = filters;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
-  let query = (supabase as any).from("grns").select("*", { count: "exact" }).order("created_at", { ascending: false }).range(from, to);
+
+  let drawingGrnIds: string[] | null = null;
+  if (drawingNumber?.trim()) {
+    const term = sanitizeSearchTerm(drawingNumber);
+    if (term) {
+      const { data: lineMatches } = await (supabase as any)
+        .from("grn_line_items")
+        .select("grn_id")
+        .eq("company_id", companyId)
+        .ilike("drawing_number", `%${term}%`);
+      drawingGrnIds = [...new Set(((lineMatches ?? []) as any[]).map((r) => r.grn_id).filter(Boolean))] as string[];
+      if (drawingGrnIds.length === 0) return { data: [], count: 0 };
+    }
+  }
+
+  let query = (supabase as any).from("grns").select("*", { count: "exact" }).order("created_at", { ascending: false });
   if (!filters.showDeleted) query = query.neq("status", "deleted");
   if (status && status !== "all") query = query.eq("status", status);
   if (grn_type && grn_type !== "all") query = query.eq("grn_type", grn_type);
@@ -210,6 +226,8 @@ export async function fetchGRNs(filters: GRNFilters = {}) {
       query = query.or(`grn_number.ilike.${term},vendor_name.ilike.${term},po_number.ilike.${term}`);
     }
   }
+  if (drawingGrnIds) query = query.in("id", drawingGrnIds);
+  query = query.range(from, to);
   const { data, error, count } = await query;
   if (error) throw error;
   return { data: (data ?? []) as unknown as GRN[], count: count ?? 0 };

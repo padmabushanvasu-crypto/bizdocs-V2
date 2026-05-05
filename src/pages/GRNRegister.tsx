@@ -113,6 +113,7 @@ function GRNRegisterInner() {
   const [showDeleted, setShowDeleted] = useState(false);
   const [stageFilter, setStageFilter] = useState(searchParams.get('stage') ?? 'all');
   const [filters, setFilters] = useState<GRNFilters>({
+    drawingNumber: "",
     search: "",
     status: "all",
     month: monthOptions[0].value,
@@ -266,6 +267,15 @@ function GRNRegisterInner() {
             className="pl-9"
             value={filters.search}
             onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value, page: 1 }))}
+          />
+        </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Drawing No..."
+            value={filters.drawingNumber ?? ""}
+            onChange={(e) => setFilters((f) => ({ ...f, drawingNumber: e.target.value, page: 1 }))}
+            className="pl-9 w-40 dark:bg-[#0a0e1a] dark:border-white/20"
           />
         </div>
         <Select value={filters.month ?? "__all_months__"} onValueChange={(v) => setFilters((f) => ({ ...f, month: v === "__all_months__" ? undefined : v, page: 1 }))}>
