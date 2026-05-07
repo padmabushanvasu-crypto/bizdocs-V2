@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Check, AlertTriangle, Info } from "lucide-react";
@@ -171,6 +171,11 @@ export default function PartyForm() {
   const [stateSearch, setStateSearch] = useState("");
   const [showStateDropdown, setShowStateDropdown] = useState(false);
 
+  // Prefill once when the existing-party fetch first lands. Without this,
+  // any subsequent refetch (cache invalidation, background refresh) would
+  // re-run the effect and clobber the user's unsaved edits.
+  const prefillApplied = useRef(false);
+
   const { data: existingParty } = useQuery({
     queryKey: ["party", id],
     queryFn: () => fetchParty(id!),
@@ -178,7 +183,8 @@ export default function PartyForm() {
   });
 
   useEffect(() => {
-    if (existingParty) {
+    if (existingParty && !prefillApplied.current) {
+      prefillApplied.current = true;
       const pt = existingParty.party_type;
       if (pt === "both") setPartyTypes(new Set(["vendor", "customer"]));
       else if (pt === "vendor") setPartyTypes(new Set(["vendor"]));
