@@ -78,6 +78,8 @@ export default function PartiesList() {
     queryKey: ["parties", { type: filters.type, status: filters.status, vendor_type: filters.vendor_type }],
     queryFn: () => fetchParties({ type: filters.type, status: filters.status, vendor_type: filters.vendor_type }),
     enabled: !!companyId,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const allParties = data?.data ?? [];
