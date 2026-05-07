@@ -3,7 +3,7 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { MobileNav } from "@/components/MobileNav";
 import { NotificationBell } from "@/components/NotificationBell";
-import { Outlet, useNavigate } from "react-router-dom";
+import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -19,7 +19,17 @@ export function AppLayout() {
   const { user, profile, signOut, role } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
+  const location = useLocation();
   const [showChangePassword, setShowChangePassword] = useState(false);
+
+  // Radix dialogs occasionally leave pointer-events: none on document.body
+  // (and a data-scroll-locked attribute) when they close mid-navigation —
+  // the body then swallows clicks until the next full reload. Clear both on
+  // every route change so subsequent pages stay interactive.
+  useEffect(() => {
+    document.body.style.pointerEvents = "";
+    document.body.removeAttribute("data-scroll-locked");
+  }, [location.pathname]);
 
   const isFocused = FOCUSED_ROLES.includes(role as AppRole);
   const isAdminOrFinance = role === 'admin' || role === 'finance';
