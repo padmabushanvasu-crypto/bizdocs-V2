@@ -1094,6 +1094,7 @@ export default function PurchaseOrderForm() {
                       value={item.description}
                       onChange={(v) => updateLineItem(index, "description", v)}
                       onSelect={(selectedItem) => {
+                        updateLineItem(index, "item_id", selectedItem.id);
                         updateLineItem(index, "description", selectedItem.description);
                         updateLineItem(index, "drawing_number", selectedItem.drawing_number || selectedItem.drawing_revision || "");
                         updateLineItem(index, "unit", selectedItem.unit || "NOS");
