@@ -146,7 +146,7 @@ export function AppLayout() {
           </header>
 
           <main className="flex-1 overflow-hidden bg-white">
-            <div className="animate-fade-in h-full overflow-y-auto pb-24">
+            <div className="pointer-events-auto h-full overflow-y-auto pb-24">
               <Outlet />
             </div>
           </main>
