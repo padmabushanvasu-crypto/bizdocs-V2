@@ -1874,3 +1874,98 @@ export async function fetchStoreConfirmedHistory(): Promise<StoreConfirmedItem[]
       linked_dc_number: grnMap[l.grn_id]?.linked_dc_number ?? null,
     }));
 }
+
+// ── Inward Receipt Queue (GrnQueue page) ──────────────────────────────────
+// Two queries: GRNs that have cleared QC and are waiting for store, and the
+// historical list of confirmed GRNs.
+
+const GRN_QUEUE_SELECT = `
+  id, grn_number, grn_date, vendor_name, vehicle_number, driver_name,
+  grn_type, created_at, grn_stage, po_id, linked_dc_id,
+  store_confirmed, store_confirmed_at, store_confirmed_by,
+  line_items:grn_line_items(
+    id, description, drawing_number, accepted_qty,
+    store_confirmed, store_confirmed_qty, unit, item_id
+  )
+`;
+
+export interface QueueGRNLine {
+  id: string;
+  description: string | null;
+  drawing_number: string | null;
+  accepted_qty: number | null;
+  store_confirmed: boolean | null;
+  store_confirmed_qty: number | null;
+  unit: string | null;
+  item_id: string | null;
+}
+
+export interface QueueGRN {
+  id: string;
+  grn_number: string;
+  grn_date: string;
+  vendor_name: string | null;
+  vehicle_number: string | null;
+  driver_name: string | null;
+  grn_type: 'po_grn' | 'dc_grn';
+  created_at: string;
+  grn_stage: GRNStage | null;
+  po_id: string | null;
+  linked_dc_id: string | null;
+  store_confirmed: boolean | null;
+  store_confirmed_at: string | null;
+  store_confirmed_by: string | null;
+  line_items: QueueGRNLine[];
+}
+
+export async function fetchPendingStoreGRNs(): Promise<QueueGRN[]> {
+  const companyId = await getCompanyId();
+  if (!companyId) return [];
+  const { data, error } = await (supabase as any)
+    .from("grns")
+    .select(GRN_QUEUE_SELECT)
+    .eq("company_id", companyId)
+    .eq("store_confirmed", false)
+    .not("status", "in", "(deleted,cancelled)")
+    .not("grn_stage", "in", "(quantitative_pending,quality_pending)")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as unknown as QueueGRN[];
+}
+
+export interface ConfirmedGRNFilters {
+  search?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+export async function fetchConfirmedGRNs(
+  filters: ConfirmedGRNFilters = {}
+): Promise<QueueGRN[]> {
+  const companyId = await getCompanyId();
+  if (!companyId) return [];
+  const { search, dateFrom, dateTo } = filters;
+
+  let query = (supabase as any)
+    .from("grns")
+    .select(GRN_QUEUE_SELECT)
+    .eq("company_id", companyId)
+    .eq("store_confirmed", true)
+    .not("status", "in", "(deleted,cancelled)")
+    .order("store_confirmed_at", { ascending: false })
+    .limit(100);
+
+  if (search?.trim()) {
+    const sanitized = sanitizeSearchTerm(search);
+    if (sanitized) {
+      const term = `%${sanitized}%`;
+      query = query.or(`grn_number.ilike.${term},vendor_name.ilike.${term}`);
+    }
+  }
+  if (dateFrom) query = query.gte("store_confirmed_at", dateFrom);
+  if (dateTo) query = query.lte("store_confirmed_at", `${dateTo}T23:59:59.999Z`);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as unknown as QueueGRN[];
+}
