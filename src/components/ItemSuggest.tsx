@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { fetchItems, type Item } from "@/lib/items-api";
@@ -45,7 +45,25 @@ export function ItemSuggest({
     staleTime: 30_000,
   });
 
-  const items = data?.data ?? [];
+  // Server-side fetchItems already searches across item_code / description /
+  // drawing_number / drawing_revision / hsn_sac_code via OR ilike. Re-sort
+  // client-side so rows whose drawing number / revision contains the query
+  // float to the top — drawings are the primary identifier here.
+  const rawItems = data?.data ?? [];
+  const items = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return rawItems;
+    const matchesDrawing = (i: Item) => {
+      const dn = (i.drawing_number ?? "").toLowerCase();
+      const dr = (i.drawing_revision ?? "").toLowerCase();
+      return dn.includes(q) || dr.includes(q);
+    };
+    return [...rawItems].sort((a, b) => {
+      const aRank = matchesDrawing(a) ? 0 : 1;
+      const bRank = matchesDrawing(b) ? 0 : 1;
+      return aRank - bRank;
+    });
+  }, [rawItems, search]);
 
   useEffect(() => {
     setActiveIndex(-1);
@@ -117,49 +135,47 @@ export function ItemSuggest({
             style={dropdownStyle}
             className="bg-popover border border-border rounded-md shadow-xl"
           >
-            {items.map((item, idx) => (
-              <button
-                key={item.id}
-                type="button"
-                className={`w-full text-left px-3 py-2.5 text-sm transition-colors border-b border-border last:border-0 ${
-                  idx === activeIndex ? "bg-accent" : "hover:bg-accent"
-                }`}
-                onMouseDown={() => {
-                  onSelect(item);
-                  setOpen(false);
-                }}
-                onMouseEnter={() => setActiveIndex(idx)}
-              >
-                {/* Row 1: drawing number (primary) + description + type badge + unit */}
-                <div className="flex items-center gap-2 min-w-0">
-                  {(item.drawing_revision || item.drawing_number) && (
-                    <span className="font-mono text-sm font-semibold text-blue-600 shrink-0">
-                      {item.drawing_revision ?? item.drawing_number}
+            {items.map((item, idx) => {
+              const drawing = item.drawing_number || item.drawing_revision || "";
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`w-full text-left px-3 py-2.5 text-sm transition-colors border-b border-border last:border-0 ${
+                    idx === activeIndex ? "bg-accent" : "hover:bg-accent"
+                  }`}
+                  onMouseDown={() => {
+                    onSelect(item);
+                    setOpen(false);
+                  }}
+                  onMouseEnter={() => setActiveIndex(idx)}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-medium font-mono text-foreground shrink-0">
+                      {item.item_code}
                     </span>
-                  )}
-                  <span className="font-bold text-foreground truncate flex-1">
-                    {item.description}
-                  </span>
-                  <div className="flex items-center gap-1.5 shrink-0 ml-auto">
-                    {item.item_type && (
-                      <span className="text-[10px] font-mono bg-muted text-muted-foreground px-1.5 py-0.5 rounded">
-                        {TYPE_SHORT[item.item_type] ?? item.item_type}
+                    <span className="text-sm text-foreground truncate flex-1">
+                      {item.description}
+                    </span>
+                    {drawing && (
+                      <span className="text-xs text-muted-foreground font-mono shrink-0">
+                        DRW: {drawing}
                       </span>
                     )}
-                    {item.unit && (
-                      <span className="text-xs text-muted-foreground">{item.unit}</span>
-                    )}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {item.item_type && (
+                        <span className="text-[10px] font-mono bg-muted text-muted-foreground px-1.5 py-0.5 rounded">
+                          {TYPE_SHORT[item.item_type] ?? item.item_type}
+                        </span>
+                      )}
+                      {item.unit && (
+                        <span className="text-xs text-muted-foreground">{item.unit}</span>
+                      )}
+                    </div>
                   </div>
-                </div>
-                {/* Row 2: item code in small grey if no drawing number shown */}
-                {!(item.drawing_revision || item.drawing_number) && item.item_code && (
-                  <p className="text-xs text-muted-foreground font-mono mt-0.5">{item.item_code}</p>
-                )}
-                {(item.drawing_revision || item.drawing_number) && item.item_code && (
-                  <p className="text-xs text-slate-400 font-mono mt-0.5">{item.item_code}</p>
-                )}
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>,
           document.body
         )

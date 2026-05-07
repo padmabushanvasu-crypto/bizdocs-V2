@@ -1110,6 +1110,7 @@ export default function DeliveryChallanForm() {
                       value={item.description}
                       onChange={(v) => updateLineItem(index, "description", v)}
                       onSelect={(selectedItem) => {
+                        updateLineItem(index, "item_id", selectedItem.id);
                         updateLineItem(index, "item_code", selectedItem.item_code);
                         updateLineItem(index, "description", selectedItem.description);
                         updateLineItem(index, "unit", selectedItem.unit || "NOS");
