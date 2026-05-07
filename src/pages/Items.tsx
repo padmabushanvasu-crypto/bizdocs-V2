@@ -70,6 +70,8 @@ export default function Items() {
     queryKey: ["items", { type: filters.type, status: filters.status }],
     queryFn: () => fetchItems({ type: filters.type, status: filters.status }),
     enabled: !!companyId,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const allItems = data?.data ?? [];
