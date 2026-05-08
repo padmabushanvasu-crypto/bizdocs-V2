@@ -1,8 +1,9 @@
-import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useCallback, ReactNode } from "react";
 import { Session, User } from "@supabase/supabase-js";
 import * as Sentry from "@sentry/react";
 import { supabase } from "@/integrations/supabase/client";
 import { setCompanyId, clearCompanyId } from "@/lib/auth-helpers";
+import { toast } from "@/hooks/use-toast";
 
 interface Profile {
   id: string;
@@ -104,19 +105,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user) await loadProfile(user);
   }, [loadProfile]);
 
+  // Track the last seen session so we can detect a real expiry (had session, now
+  // null) versus an initial no-session render. Without this, the toast would
+  // fire on every fresh page-load when the user isn't logged in.
+  const prevSessionRef = useRef<Session | null>(null);
+
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setSession(session);
+      (event, session) => {
         if (session?.user) {
-          // Reset loading=true so ProtectedRoute waits for the profile fetch to complete.
-          // Without this, a login event arrives while loading=false (set by an earlier
-          // no-session getSession() call), causing a premature /setup redirect before
-          // the profile and company_id are available.
-          setLoading(true);
-          // Defer to avoid Supabase auth deadlock, but keep loading=true until profile resolves
-          setTimeout(() => loadProfile(session.user).finally(() => setLoading(false)), 0);
+          // Real sign-in / user update / first hydrate — re-fetch profile and
+          // hold the loading flag until that finishes. TOKEN_REFRESHED arrives
+          // every ~50 minutes and would otherwise flash the loading screen and
+          // wipe in-page state (open dialogs, half-typed forms). For those we
+          // just swap the session quietly.
+          if (event === "SIGNED_IN" || event === "USER_UPDATED" || event === "INITIAL_SESSION") {
+            setSession(session);
+            setLoading(true);
+            // Defer to avoid Supabase auth deadlock, but keep loading=true until profile resolves
+            setTimeout(() => loadProfile(session.user).finally(() => setLoading(false)), 0);
+          } else {
+            setSession(session);
+          }
+          prevSessionRef.current = session;
         } else {
+          // Session went null. If we previously had a session, the user was just
+          // signed out (token expired, session cleared, etc.) — surface a toast
+          // rather than a silent redirect. Skip when this is the initial
+          // no-session render (no prior session ever).
+          if (prevSessionRef.current && event !== "INITIAL_SESSION") {
+            toast({
+              title: "Session expired",
+              description: "You have been signed out. Please log in again.",
+              variant: "destructive",
+            });
+          }
+          prevSessionRef.current = null;
+          setSession(null);
           setProfile(null);
           clearCompanyId();
           setLoading(false);
@@ -127,6 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session?.user) {
+        prevSessionRef.current = session;
         loadProfile(session.user).finally(() => setLoading(false));
       } else {
         setLoading(false);

@@ -3,7 +3,7 @@ import { printWithLightMode } from "@/lib/print-utils";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  ChevronLeft, Printer, CheckCircle2, Clock, AlertTriangle, Trash2, Plus, PackageCheck, Lock,
+  ChevronLeft, Printer, CheckCircle2, Clock, AlertTriangle, Trash2, Plus, PackageCheck, Lock, Info,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -108,6 +108,8 @@ interface S1Line {
   received_now_2?: number | null;
   // Carried through so saveStage1 can stamp returned_qty_2 back onto dc_line_items
   dc_line_item_id?: string | null;
+  // For DC-return GRNs — the job-work stage / process this line was sent out for
+  nature_of_process?: string | null;
 }
 
 // Normalise jigs_sent which may be a string or a JSON array (JSONB column)
@@ -275,8 +277,13 @@ function Stage1Table({
                 <tr className={`transition-colors ${rowBg}`}>
                   <td className="px-3 py-2 text-slate-400 text-xs">{idx + 1}</td>
                   <td className="px-3 py-2 font-mono text-xs text-slate-500">{line.item_code || "—"}</td>
-                  <td className="px-3 py-2 font-medium text-slate-800 max-w-[200px]">
+                  <td className="px-3 py-2 font-medium text-slate-800 dark:text-slate-100 max-w-[200px]">
                     <span className="block truncate" title={line.description}>{line.description}</span>
+                    {line.nature_of_process && (
+                      <p className="text-xs text-muted-foreground mt-0.5 truncate" title={line.nature_of_process}>
+                        Process: {line.nature_of_process}
+                      </p>
+                    )}
                   </td>
 
                   {/* Ordered — with muted unit suffix */}
@@ -547,7 +554,12 @@ function Stage1ReadOnly({ lines, isDcGrn }: { lines: S1Line[]; isDcGrn?: boolean
                 <tr className={l.received_qty !== l.po_quantity ? "bg-yellow-50/40" : "bg-white"}>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{idx + 1}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-xs text-slate-500">{l.item_code || "—"}</td>
-                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium text-slate-800">{l.description}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium text-slate-800">
+                    {l.description}
+                    {l.nature_of_process && (
+                      <p className="text-xs text-muted-foreground mt-0.5">Process: {l.nature_of_process}</p>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-slate-500">{l.po_quantity}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-semibold text-slate-800">{l.received_qty}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
@@ -1285,10 +1297,30 @@ export default function GRNDetail() {
       if (!dcId) return null;
       const { data } = await (supabase as any)
         .from("delivery_challans")
-        .select("id, dc_number, dc_date, status")
+        .select(
+          `id, dc_number, dc_date, status, nature_of_job_work, dc_type, party_name, party_phone, return_due_date,
+           dc_line_items(description, drawing_number, nature_of_process, qty_nos, unit)`
+        )
         .eq("id", dcId)
         .single();
-      return data as { id: string; dc_number: string; dc_date: string; status: string } | null;
+      return data as {
+        id: string;
+        dc_number: string;
+        dc_date: string;
+        status: string;
+        nature_of_job_work: string | null;
+        dc_type: string | null;
+        party_name: string | null;
+        party_phone: string | null;
+        return_due_date: string | null;
+        dc_line_items: Array<{
+          description: string | null;
+          drawing_number: string | null;
+          nature_of_process: string | null;
+          qty_nos: number | null;
+          unit: string | null;
+        }> | null;
+      } | null;
     },
     enabled: !!(grn as any)?.linked_dc_id,
   });
@@ -1391,6 +1423,7 @@ export default function GRNDetail() {
           unit_2:               a.unit_2 ?? null,
           received_now_2:       a.received_now_2 ?? null,
           dc_line_item_id:      a.dc_line_item_id ?? null,
+          nature_of_process:    a.nature_of_process ?? null,
         };
       })
     );
@@ -2060,6 +2093,63 @@ export default function GRNDetail() {
               </div>
             );
           })()}
+          {/* DC job-work context — only for dc_grn with a linked DC */}
+          {g.grn_type === 'dc_grn' && g.linked_dc_id && linkedDC && (
+            <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 p-4 mb-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                <span className="font-semibold text-blue-800 dark:text-blue-300">
+                  Material returned from job work
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-xs text-slate-700 dark:text-slate-200">
+                {linkedDC.party_name && (
+                  <div><span className="text-muted-foreground">Party:</span> <span className="font-medium">{linkedDC.party_name}</span>{linkedDC.party_phone ? <span className="text-muted-foreground"> · {linkedDC.party_phone}</span> : null}</div>
+                )}
+                {linkedDC.nature_of_job_work && (
+                  <div><span className="text-muted-foreground">Process / Job Work:</span> <span className="font-medium">{linkedDC.nature_of_job_work}</span></div>
+                )}
+                {linkedDC.dc_type && (
+                  <div><span className="text-muted-foreground">DC Type:</span> <span className="font-medium capitalize">{linkedDC.dc_type.replace(/_/g, ' ')}</span></div>
+                )}
+                {linkedDC.dc_number && (
+                  <div><span className="text-muted-foreground">DC Number:</span> <span className="font-mono font-medium">{linkedDC.dc_number}</span></div>
+                )}
+                {linkedDC.return_due_date && (
+                  <div><span className="text-muted-foreground">Return Due:</span> <span className="font-medium">{new Date(linkedDC.return_due_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span></div>
+                )}
+              </div>
+              {(linkedDC.dc_line_items ?? []).length > 0 && (
+                <div className="mt-3 pt-3 border-t border-blue-200/70 dark:border-blue-800/60">
+                  <p className="text-xs font-semibold text-blue-800 dark:text-blue-300 mb-1.5">Items sent for processing</p>
+                  <div className="overflow-x-auto rounded border border-blue-200/70 dark:border-blue-800/60 bg-white/60 dark:bg-blue-950/20">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-left text-[11px] uppercase tracking-wide text-blue-800/70 dark:text-blue-300/80 bg-blue-100/40 dark:bg-blue-900/30">
+                          <th className="px-2 py-1.5 font-semibold">Drawing No.</th>
+                          <th className="px-2 py-1.5 font-semibold">Description</th>
+                          <th className="px-2 py-1.5 font-semibold">Stage / Process</th>
+                          <th className="px-2 py-1.5 font-semibold text-right">Qty Sent</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(linkedDC.dc_line_items ?? []).map((dli, idx) => (
+                          <tr key={idx} className="border-t border-blue-200/40 dark:border-blue-800/40">
+                            <td className="px-2 py-1 font-mono text-slate-700 dark:text-slate-200">{dli.drawing_number ?? '—'}</td>
+                            <td className="px-2 py-1 text-slate-700 dark:text-slate-200">{dli.description ?? '—'}</td>
+                            <td className="px-2 py-1 text-slate-700 dark:text-slate-200">{dli.nature_of_process ?? '—'}</td>
+                            <td className="px-2 py-1 text-right font-mono text-slate-700 dark:text-slate-200">
+                              {dli.qty_nos ?? 0} {dli.unit ?? ''}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           {s1Editable ? (
             <Stage1Table
               lines={s1Lines}
