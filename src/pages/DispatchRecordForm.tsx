@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Plus, Trash2, Truck, AlertCircle } from "lucide-react";
@@ -74,6 +74,39 @@ export default function DispatchRecordForm() {
   const [lineItems, setLineItems] = useState<LineItem[]>([]);
   const [showErrors, setShowErrors] = useState(false);
   const [itemPopoverIndex, setItemPopoverIndex] = useState<number | null>(null);
+
+  // Draft persistence — create mode only. Mirrors PO/DC pattern.
+  const DRAFT_KEY = "bizdocs_draft_dispatch";
+  const draftRestored = useRef(false);
+
+  useEffect(() => {
+    if (isEdit) return;
+    if (draftRestored.current) return;
+    draftRestored.current = true;
+    try {
+      const raw = sessionStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      const draft = JSON.parse(raw) as { form?: typeof form; lineItems?: LineItem[] };
+      if (draft.form) setForm(draft.form);
+      if (Array.isArray(draft.lineItems)) setLineItems(draft.lineItems);
+    } catch {
+      /* ignore malformed draft */
+    }
+  }, [isEdit]);
+
+  useEffect(() => {
+    if (isEdit) return;
+    const t = setTimeout(() => {
+      try {
+        sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ form, lineItems }));
+      } catch { /* quota / disabled — ignore */ }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [isEdit, form, lineItems]);
+
+  const clearDispatchDraft = () => {
+    try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
+  };
 
   const { data: existingDR } = useQuery({
     queryKey: ["dispatch-record", id],
@@ -234,6 +267,7 @@ export default function DispatchRecordForm() {
       queryClient.invalidateQueries({ queryKey: ["dispatch-stats"] });
       queryClient.invalidateQueries({ queryKey: ["finished-good-items"] });
       queryClient.invalidateQueries({ queryKey: ["ready-to-dispatch"] });
+      clearDispatchDraft();
       toast({
         title: action === "confirm" ? "Dispatch Confirmed" : "Saved as Draft",
         description:
@@ -634,7 +668,7 @@ export default function DispatchRecordForm() {
 
       {/* Footer actions */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <Button variant="ghost" onClick={() => navigate(-1)}>
+        <Button variant="ghost" onClick={() => { clearDispatchDraft(); navigate(-1); }}>
           Cancel
         </Button>
         <div className="flex gap-2">

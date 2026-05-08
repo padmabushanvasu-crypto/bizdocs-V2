@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Package, Plus, Search, Edit, Trash2, X, Upload, Download, CheckSquare, Square, XCircle, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -65,6 +65,28 @@ export default function Items() {
   const [classifForm, setClassifForm] = useState({ name: "", description: "", affects_stock: true, affects_reorder: true, affects_bom: true });
   const [customClassifId, setCustomClassifId] = useState<string | null>(null);
   const [itemToDelete, setItemToDelete] = useState<Item | null>(null);
+
+  // Draft persistence for the Add Item dialog. Snapshot the form on every
+  // change while the dialog is open in create mode; restore on next open;
+  // clear on save success or any dialog close.
+  const ITEM_DRAFT_KEY = "bizdocs_draft_item";
+  const itemDraftSavedRef = useRef(false);
+
+  useEffect(() => {
+    if (!formOpen || editingItem) return;
+    const t = setTimeout(() => {
+      try {
+        sessionStorage.setItem(ITEM_DRAFT_KEY, JSON.stringify({ form }));
+        itemDraftSavedRef.current = true;
+      } catch { /* ignore */ }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [formOpen, editingItem, form]);
+
+  const clearItemDraft = () => {
+    try { sessionStorage.removeItem(ITEM_DRAFT_KEY); } catch { /* ignore */ }
+    itemDraftSavedRef.current = false;
+  };
 
   const { data, isLoading } = useQuery({
     queryKey: ["items", { type: filters.type, status: filters.status }],
@@ -180,6 +202,7 @@ export default function Items() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["items"] });
+      clearItemDraft();
       setFormOpen(false);
       toast({ title: editingItem ? "Item updated" : "Item created" });
     },
@@ -209,7 +232,16 @@ export default function Items() {
 
   const openNew = () => {
     setEditingItem(null);
-    setForm(emptyItem);
+    // Restore in-progress draft if one was left behind, otherwise start fresh.
+    let initial: typeof emptyItem = emptyItem;
+    try {
+      const raw = sessionStorage.getItem(ITEM_DRAFT_KEY);
+      if (raw) {
+        const draft = JSON.parse(raw) as { form?: typeof emptyItem };
+        if (draft.form) initial = { ...emptyItem, ...draft.form };
+      }
+    } catch { /* ignore malformed draft */ }
+    setForm(initial);
     setCustomClassifId(null);
     setFormOpen(true);
   };
@@ -412,7 +444,13 @@ export default function Items() {
       </div>
 
       {/* Add/Edit Dialog */}
-      <Dialog open={formOpen} onOpenChange={setFormOpen}>
+      <Dialog
+        open={formOpen}
+        onOpenChange={(open) => {
+          if (!open) clearItemDraft();
+          setFormOpen(open);
+        }}
+      >
         <DialogContent
           className="max-w-lg max-h-[85vh] overflow-y-auto"
           onInteractOutside={(e) => e.preventDefault()}
