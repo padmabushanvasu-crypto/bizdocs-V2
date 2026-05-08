@@ -176,6 +176,52 @@ export default function PartyForm() {
   // re-run the effect and clobber the user's unsaved edits.
   const prefillApplied = useRef(false);
 
+  // Draft persistence for create mode — survives accidental tab close /
+  // route nav / token refresh. Mirrors the PO/DC pattern.
+  const DRAFT_KEY = "bizdocs_draft_party";
+  const draftRestored = useRef(false);
+
+  // Restore draft once on mount, create mode only
+  useEffect(() => {
+    if (isEdit) return;
+    if (draftRestored.current) return;
+    draftRestored.current = true;
+    try {
+      const raw = sessionStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      const draft = JSON.parse(raw) as {
+        form?: FormData;
+        partyTypes?: Array<"vendor" | "customer">;
+        vendorType?: VendorType;
+      };
+      if (draft.form) setForm(draft.form);
+      if (Array.isArray(draft.partyTypes)) setPartyTypes(new Set(draft.partyTypes));
+      if (draft.vendorType) setVendorType(draft.vendorType);
+    } catch {
+      /* ignore malformed draft */
+    }
+  }, [isEdit]);
+
+  // Save draft (debounced 500ms) — create mode only
+  useEffect(() => {
+    if (isEdit) return;
+    const t = setTimeout(() => {
+      try {
+        sessionStorage.setItem(
+          DRAFT_KEY,
+          JSON.stringify({ form, partyTypes: [...partyTypes], vendorType }),
+        );
+      } catch {
+        /* quota / disabled — ignore */
+      }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [isEdit, form, partyTypes, vendorType]);
+
+  const clearPartyDraft = () => {
+    try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
+  };
+
   const { data: existingParty } = useQuery({
     queryKey: ["party", id],
     queryFn: () => fetchParty(id!),
@@ -317,6 +363,7 @@ export default function PartyForm() {
       }
 
       queryClient.invalidateQueries({ queryKey: ["parties"] });
+      clearPartyDraft();
       toast({ title: `Party ${isEdit ? "updated" : "saved"} successfully` });
       navigate(`/parties/${result.id}`);
     } catch (err: any) {
@@ -631,7 +678,7 @@ export default function PartyForm() {
 
       {/* Sticky bottom bar */}
       <div className="fixed bottom-0 left-0 right-0 md:left-[240px] bg-card border-t border-border px-6 py-3 flex items-center justify-end gap-3 z-40">
-        <Button variant="outline" onClick={() => navigate("/parties")}>Cancel</Button>
+        <Button variant="outline" onClick={() => { clearPartyDraft(); navigate("/parties"); }}>Cancel</Button>
         <Button onClick={handleSave} disabled={saving} className="active:scale-[0.98] transition-transform">
           {saving ? "Saving..." : isEdit ? "Update Party" : "Save Party"}
         </Button>

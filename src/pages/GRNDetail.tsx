@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { printWithLightMode } from "@/lib/print-utils";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -1501,6 +1501,133 @@ export default function GRNDetail() {
     setScrapNotes(g.scrap_notes ?? "");
   }, [grn]);
 
+  // ── Draft persistence — Stage 1 + Stage 2 (per-GRN key) ──────────────────
+  // Survives accidental tab close / route nav / token refresh while the
+  // inspector is mid-entry. Only active while the GRN's grn_stage is still
+  // 'quantitative_pending' or 'quality_pending' — once the stage is saved
+  // server-side we drop the draft (server is source of truth).
+
+  const grnDraftRestored = useRef(false);
+
+  const isPendingStage = (stage: string | null | undefined): boolean =>
+    stage === "quantitative_pending" || stage === "quality_pending";
+
+  const clearGrnDraft = (grnId: string | undefined) => {
+    if (!grnId) return;
+    try { sessionStorage.removeItem(`bizdocs_draft_grn_${grnId}`); } catch { /* ignore */ }
+  };
+
+  // Restore on top of the freshly-prefilled state (prefill effect above runs
+  // first because of source-order). One-shot per page mount.
+  useEffect(() => {
+    if (!grn || !id) return;
+    if (grnDraftRestored.current) return;
+    const stage = (grn as any).grn_stage as string | null;
+    if (!isPendingStage(stage)) {
+      // Stage already advanced — server is authoritative, nuke any stale draft
+      clearGrnDraft(id);
+      grnDraftRestored.current = true;
+      return;
+    }
+    grnDraftRestored.current = true;
+    try {
+      const raw = sessionStorage.getItem(`bizdocs_draft_grn_${id}`);
+      if (!raw) return;
+      const draft = JSON.parse(raw) as {
+        stage1?: {
+          s1Lines?: S1Line[];
+          s1VerifiedBy?: string;
+          s1Date?: string;
+          s1InvoiceNumber?: string;
+          s1InvoiceDate?: string;
+          s1Notes?: string;
+          jigReturnConfirmed?: string[];
+        };
+        stage2?: {
+          qcRows?: QCRow[];
+          ncSummaries?: NCSummary[];
+          s2InspectedBy?: string;
+          s2ApprovedBy?: string;
+          s2Date?: string;
+          s2Remarks?: string;
+          scrapReturned?: boolean;
+          scrapNotes?: string;
+          finalGrnPerLine?: Record<string, boolean>;
+        };
+      };
+      if (draft.stage1) {
+        const s1 = draft.stage1;
+        if (Array.isArray(s1.s1Lines)) setS1Lines(s1.s1Lines);
+        if (typeof s1.s1VerifiedBy === "string") setS1VerifiedBy(s1.s1VerifiedBy);
+        if (typeof s1.s1Date === "string") setS1Date(s1.s1Date);
+        if (typeof s1.s1InvoiceNumber === "string") setS1InvoiceNumber(s1.s1InvoiceNumber);
+        if (typeof s1.s1InvoiceDate === "string") setS1InvoiceDate(s1.s1InvoiceDate);
+        if (typeof s1.s1Notes === "string") setS1Notes(s1.s1Notes);
+        if (Array.isArray(s1.jigReturnConfirmed)) {
+          setJigReturnConfirmed(new Set(s1.jigReturnConfirmed));
+        }
+      }
+      if (draft.stage2) {
+        const s2 = draft.stage2;
+        if (Array.isArray(s2.qcRows)) setQcRows(s2.qcRows);
+        if (Array.isArray(s2.ncSummaries)) setNcSummaries(s2.ncSummaries);
+        if (typeof s2.s2InspectedBy === "string") setS2InspectedBy(s2.s2InspectedBy);
+        if (typeof s2.s2ApprovedBy === "string") setS2ApprovedBy(s2.s2ApprovedBy);
+        if (typeof s2.s2Date === "string") setS2Date(s2.s2Date);
+        if (typeof s2.s2Remarks === "string") setS2Remarks(s2.s2Remarks);
+        if (typeof s2.scrapReturned === "boolean") setScrapReturned(s2.scrapReturned);
+        if (typeof s2.scrapNotes === "string") setScrapNotes(s2.scrapNotes);
+        if (s2.finalGrnPerLine && typeof s2.finalGrnPerLine === "object") {
+          setFinalGrnPerLine(s2.finalGrnPerLine as Record<string, boolean>);
+        }
+      }
+    } catch { /* ignore malformed draft */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grn, id]);
+
+  // Save (debounced 500ms) — only while in a pending stage
+  useEffect(() => {
+    if (!id || !grn) return;
+    const stage = (grn as any).grn_stage as string | null;
+    if (!isPendingStage(stage)) return;
+    const t = setTimeout(() => {
+      try {
+        sessionStorage.setItem(
+          `bizdocs_draft_grn_${id}`,
+          JSON.stringify({
+            stage1: {
+              s1Lines,
+              s1VerifiedBy,
+              s1Date,
+              s1InvoiceNumber,
+              s1InvoiceDate,
+              s1Notes,
+              jigReturnConfirmed: [...jigReturnConfirmed],
+            },
+            stage2: {
+              qcRows,
+              ncSummaries,
+              s2InspectedBy,
+              s2ApprovedBy,
+              s2Date,
+              s2Remarks,
+              scrapReturned,
+              scrapNotes,
+              finalGrnPerLine,
+            },
+          }),
+        );
+      } catch { /* quota / disabled — ignore */ }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [
+    id, grn,
+    s1Lines, s1VerifiedBy, s1Date, s1InvoiceNumber, s1InvoiceDate, s1Notes,
+    jigReturnConfirmed,
+    qcRows, ncSummaries, s2InspectedBy, s2ApprovedBy, s2Date, s2Remarks,
+    scrapReturned, scrapNotes, finalGrnPerLine,
+  ]);
+
   // ── NC summary auto-update from QC rows ──────────────────────────────────
 
   useEffect(() => {
@@ -1614,6 +1741,7 @@ export default function GRNDetail() {
       queryClient.invalidateQueries({ queryKey: ["grns"] });
       queryClient.invalidateQueries({ queryKey: ["pending-qc-grns"] });
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      clearGrnDraft(id);
       setS1Editing(false);
       if (needsFinanceApproval) {
         toast({ title: "Submitted for finance approval", description: "Finance team has been notified. QC will begin after approval." });
@@ -1682,6 +1810,7 @@ export default function GRNDetail() {
       queryClient.invalidateQueries({ queryKey: ["grn-stages", id] });
       queryClient.invalidateQueries({ queryKey: ["grns"] });
       queryClient.invalidateQueries({ queryKey: ["pending-qc-grns"] });
+      clearGrnDraft(id);
       toast({
         title: "Quality inspection complete",
         description: (Object.values(finalGrnPerLine).some(v => v) || (grn?.line_items ?? []).some((item) => ["bought_out","consumable","service"].includes(lineItemTypes?.[(item as any).drawing_number ?? ""] ?? ""))) ? "GRN is awaiting store confirmation." : "GRN is now closed.",
