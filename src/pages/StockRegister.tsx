@@ -1,7 +1,7 @@
 import { useState, useMemo, Component, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Package, Shield, ArrowDownCircle, ArrowUpCircle, BarChart2, Database, X } from "lucide-react";
+import { Package, Shield, ArrowDownCircle, ArrowUpCircle, BarChart2, Database, X, Download } from "lucide-react";
 import { format } from "date-fns";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { StockStatusBadge } from "@/components/StockStatusBadge";
 import { fetchStockStatus, fetchStockMovements, type StockStatusRow, type StockMovement } from "@/lib/items-api";
 import { fetchPendingQCGRNs } from "@/lib/grn-api";
+import { fetchCompanySettings } from "@/lib/settings-api";
 import { formatCurrency } from "@/lib/gst-utils";
+import { buildStockRegisterWorkbook, downloadWorkbook } from "@/lib/export-utils";
+import { useToast } from "@/hooks/use-toast";
 
 // ── Error boundary ─────────────────────────────────────────────────────────────
 
@@ -193,11 +196,36 @@ function StockRegisterInner() {
 
   const [selectedItem, setSelectedItem] = useState<StockStatusRow | null>(null);
   const [ledgerOpen, setLedgerOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const { toast } = useToast();
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ["stock_status"],
     queryFn: fetchStockStatus,
   });
+
+  const { data: companySettings } = useQuery({
+    queryKey: ["company-settings"],
+    queryFn: fetchCompanySettings,
+    staleTime: 5 * 60 * 1000,
+  });
+  const companyName = companySettings?.company_name ?? "client";
+
+  const handleExport = (mode: "view" | "all") => {
+    if (isExporting) return;
+    const dataset = mode === "view" ? filtered : rows;
+    setIsExporting(true);
+    try {
+      const { workbook, filename } = buildStockRegisterWorkbook(dataset, { companyName, mode });
+      downloadWorkbook(workbook, filename);
+      toast({ title: `Exported ${dataset.length} row${dataset.length === 1 ? "" : "s"} to ${filename}` });
+    } catch (err) {
+      console.error("[StockRegister] export failed:", err);
+      toast({ title: "Export failed", description: "See console for details.", variant: "destructive" });
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const { data: movements = [], isLoading: movementsLoading } = useQuery({
     queryKey: ["stock-movements", selectedItem?.id],
@@ -418,6 +446,30 @@ function StockRegisterInner() {
           <option value="locked">Engaged</option>
           <option value="healthy">Healthy</option>
         </select>
+
+        {/* Export buttons — right-aligned */}
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9"
+            disabled={isExporting}
+            onClick={() => handleExport("view")}
+          >
+            <Download className="h-4 w-4 mr-1.5" />
+            {isExporting ? "Exporting…" : "Export view"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9"
+            disabled={isExporting}
+            onClick={() => handleExport("all")}
+          >
+            <Download className="h-4 w-4 mr-1.5" />
+            {isExporting ? "Exporting…" : "Export all items"}
+          </Button>
+        </div>
       </div>
 
       {/* ── Filters row 2 ──────────────────────────────────────────────────── */}
