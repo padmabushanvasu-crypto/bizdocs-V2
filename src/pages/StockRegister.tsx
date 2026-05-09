@@ -284,6 +284,36 @@ function StockRegisterInner() {
     return result;
   }, [rows, search, typeFilter, availability, alertFilter]);
 
+  // Footer cost rollups across the currently filtered set. Sums the same
+  // per-row cost_* fields that the body cells render (so footer can never
+  // disagree with the body). awo_qty is excluded — costs reflect the 5
+  // physical buckets only.
+  const footerTotals = useMemo(() => {
+    let sum_cost_free = 0;
+    let sum_cost_in_process = 0;
+    let sum_cost_in_subassembly_wip = 0;
+    let sum_cost_in_fg_wip = 0;
+    let sum_cost_in_fg_ready = 0;
+    let sum_cost_total = 0;
+    for (const r of filtered) {
+      sum_cost_free               += Number(r.cost_free               ?? 0);
+      sum_cost_in_process         += Number(r.cost_in_process         ?? 0);
+      sum_cost_in_subassembly_wip += Number(r.cost_in_subassembly_wip ?? 0);
+      sum_cost_in_fg_wip          += Number(r.cost_in_fg_wip          ?? 0);
+      sum_cost_in_fg_ready        += Number(r.cost_in_fg_ready        ?? 0);
+      sum_cost_total              += Number(r.cost_total              ?? 0);
+    }
+    return {
+      sum_cost_free,
+      sum_cost_in_process,
+      sum_cost_in_subassembly_wip,
+      sum_cost_in_fg_wip,
+      sum_cost_in_fg_ready,
+      sum_cost_total,
+      filteredCount: filtered.length,
+    };
+  }, [filtered]);
+
   const clearFilters = () => {
     setSearch("");
     setAvailability("all");
@@ -468,7 +498,7 @@ function StockRegisterInner() {
                 <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
                   Cost: FG Ready
                 </th>
-                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap font-semibold">
+                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-700 uppercase tracking-wider whitespace-nowrap">
                   Cost: TOTAL
                 </th>
                 <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
@@ -758,6 +788,80 @@ function StockRegisterInner() {
                 })
               )}
             </tbody>
+            <tfoot className="sticky bottom-0 z-20 bg-white">
+              <tr className="border-t-2 border-border">
+                {/* Item col — label + filtered count */}
+                <td className="px-4 py-3 align-top">
+                  <p className="text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                    TOTAL (filtered)
+                  </p>
+                  <p className="text-[11px] text-slate-500 font-mono leading-none mt-0.5">
+                    ({footerTotals.filteredCount} item{footerTotals.filteredCount === 1 ? "" : "s"})
+                  </p>
+                </td>
+
+                {/* Type */}
+                <td className="px-3 py-3" />
+                {/* In Store qty */}
+                <td className="px-3 py-3" />
+                {/* At Vendor qty */}
+                <td className="px-3 py-3" />
+                {/* In Production qty */}
+                <td className="px-3 py-3" />
+                {/* Ready to Ship qty */}
+                <td className="px-3 py-3" />
+                {/* Total qty */}
+                <td className="px-3 py-3" />
+
+                {/* Cost: In Store */}
+                <td className="px-3 py-3 text-right whitespace-nowrap border-l border-border">
+                  <span className="text-sm font-mono tabular-nums text-slate-700">
+                    {formatCurrency(footerTotals.sum_cost_free)}
+                  </span>
+                </td>
+                {/* Cost: At Vendor */}
+                <td className="px-3 py-3 text-right whitespace-nowrap">
+                  <span className="text-sm font-mono tabular-nums text-slate-700">
+                    {formatCurrency(footerTotals.sum_cost_in_process)}
+                  </span>
+                </td>
+                {/* Cost: Sub-Assy */}
+                <td className="px-3 py-3 text-right whitespace-nowrap">
+                  <span className="text-sm font-mono tabular-nums text-slate-700">
+                    {formatCurrency(footerTotals.sum_cost_in_subassembly_wip)}
+                  </span>
+                </td>
+                {/* Cost: FG WIP */}
+                <td className="px-3 py-3 text-right whitespace-nowrap">
+                  <span className="text-sm font-mono tabular-nums text-slate-700">
+                    {formatCurrency(footerTotals.sum_cost_in_fg_wip)}
+                  </span>
+                </td>
+                {/* Cost: FG Ready */}
+                <td className="px-3 py-3 text-right whitespace-nowrap">
+                  <span className="text-sm font-mono tabular-nums text-slate-700">
+                    {formatCurrency(footerTotals.sum_cost_in_fg_ready)}
+                  </span>
+                </td>
+                {/* Cost: TOTAL */}
+                <td className="px-3 py-3 text-right whitespace-nowrap">
+                  <span className="text-base font-mono tabular-nums font-semibold text-slate-900">
+                    {formatCurrency(footerTotals.sum_cost_total)}
+                  </span>
+                </td>
+
+                {/* Min Required */}
+                <td className="px-3 py-3" />
+                {/* Aimed */}
+                <td className="px-3 py-3" />
+                {/* Pending QC */}
+                <td className="px-3 py-3" />
+                {/* Status */}
+                <td className="px-3 py-3" />
+                {/* Action */}
+                <td className="px-3 py-3" />
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>
