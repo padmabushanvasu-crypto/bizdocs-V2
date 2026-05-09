@@ -10,7 +10,7 @@ import { StockStatusBadge } from "@/components/StockStatusBadge";
 import { fetchStockStatus, fetchStockMovements, type StockStatusRow, type StockMovement } from "@/lib/items-api";
 import { fetchPendingQCGRNs } from "@/lib/grn-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
-import { formatCurrency } from "@/lib/gst-utils";
+import { formatCurrency, formatNumber } from "@/lib/gst-utils";
 import { buildStockRegisterWorkbook, downloadWorkbook } from "@/lib/export-utils";
 import { useToast } from "@/hooks/use-toast";
 
@@ -1051,16 +1051,16 @@ function StockRegisterInner() {
                           </td>
                           <td className="px-3 py-2 text-right font-mono tabular-nums">
                             {m.movement_type === "in"
-                              ? <span className="text-emerald-600 font-semibold">+{m.quantity}</span>
+                              ? <span className="text-emerald-600 font-semibold">+{formatNumber(m.quantity)}</span>
                               : <span className="text-slate-300">—</span>}
                           </td>
                           <td className="px-3 py-2 text-right font-mono tabular-nums">
                             {m.movement_type === "out"
-                              ? <span className="text-red-500 font-semibold">−{m.quantity}</span>
+                              ? <span className="text-red-500 font-semibold">−{formatNumber(m.quantity)}</span>
                               : <span className="text-slate-300">—</span>}
                           </td>
                           <td className={`px-3 py-2 text-right font-mono tabular-nums font-semibold ${balanceColor}`}>
-                            {m.running_balance}
+                            {formatNumber(m.running_balance)}
                           </td>
                         </tr>
                       );

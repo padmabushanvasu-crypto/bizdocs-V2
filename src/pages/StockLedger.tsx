@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { fetchStockLedger, type StockLedgerFilters } from "@/lib/assembly-orders-api";
 import { fetchItems, type Item } from "@/lib/items-api";
 import { exportToExcel } from "@/lib/export-utils";
-import { formatCurrency } from "@/lib/gst-utils";
+import { formatCurrency, formatNumber } from "@/lib/gst-utils";
 import { format } from "date-fns";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
 
@@ -329,20 +329,20 @@ export default function StockLedger() {
                       </td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right font-mono tabular-nums">
                         {entry.qty_in > 0 ? (
-                          <span className="text-green-600 font-semibold">+{entry.qty_in}</span>
+                          <span className="text-green-600 font-semibold">+{formatNumber(entry.qty_in)}</span>
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
                       </td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right font-mono tabular-nums">
                         {entry.qty_out > 0 ? (
-                          <span className="text-red-600 font-semibold">−{entry.qty_out}</span>
+                          <span className="text-red-600 font-semibold">−{formatNumber(entry.qty_out)}</span>
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
                       </td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right font-mono tabular-nums font-semibold text-slate-900">
-                        {entry.balance_qty}
+                        {formatNumber(entry.balance_qty)}
                       </td>
                       {!hideCosts && (
                         <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right font-mono tabular-nums text-muted-foreground">
