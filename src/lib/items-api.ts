@@ -105,6 +105,15 @@ export interface StockStatusRow {
   stock_in_subassembly_wip: number;
   stock_in_fg_wip: number;
   stock_in_fg_ready: number;
+  // Per-bucket stock value = bucket qty × standard_cost. Computed in
+  // fetchStockStatus so the page and any export read from one source.
+  // awo_qty is intentionally excluded — costs reflect the 5 physical buckets.
+  cost_free: number;
+  cost_in_process: number;
+  cost_in_subassembly_wip: number;
+  cost_in_fg_wip: number;
+  cost_in_fg_ready: number;
+  cost_total: number;
   // Calculated from active AWOs — not stored in DB, computed in fetchStockStatus
   awo_qty: number;
 }
@@ -299,11 +308,26 @@ export async function fetchStockStatus() {
     let stock_status: "green" | "amber" | "red" = "green";
     if (item.current_stock <= 0) stock_status = "red";
     else if (effectiveMin > 0 && item.current_stock <= effectiveMin) stock_status = "amber";
+    // Per-bucket stock value (qty × standard_cost) — physical buckets only.
+    const cost = Number(item.standard_cost ?? 0);
+    const cost_free                = Number(item.stock_free ?? 0)                * cost;
+    const cost_in_process          = Number(item.stock_in_process ?? 0)          * cost;
+    const cost_in_subassembly_wip  = Number(item.stock_in_subassembly_wip ?? 0)  * cost;
+    const cost_in_fg_wip           = Number(item.stock_in_fg_wip ?? 0)           * cost;
+    const cost_in_fg_ready         = Number(item.stock_in_fg_ready ?? 0)         * cost;
+    const cost_total =
+      cost_free + cost_in_process + cost_in_subassembly_wip + cost_in_fg_wip + cost_in_fg_ready;
     return {
       ...item,
       effective_min_stock: effectiveMin,
       stock_status,
       stock_alert_level: item.stock_alert_level ?? 'healthy',
+      cost_free,
+      cost_in_process,
+      cost_in_subassembly_wip,
+      cost_in_fg_wip,
+      cost_in_fg_ready,
+      cost_total,
       awo_qty: awoQtyMap.get(item.id) ?? 0,
     } as StockStatusRow;
   });
