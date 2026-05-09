@@ -1,7 +1,7 @@
 import { useState, useMemo, Component, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Package, Shield, ArrowDownCircle, ArrowUpCircle, BarChart2, Database, X } from "lucide-react";
+import { Package, Shield, ArrowDownCircle, ArrowUpCircle, BarChart2, Database, X, Download } from "lucide-react";
 import { format } from "date-fns";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { StockStatusBadge } from "@/components/StockStatusBadge";
 import { fetchStockStatus, fetchStockMovements, type StockStatusRow, type StockMovement } from "@/lib/items-api";
 import { fetchPendingQCGRNs } from "@/lib/grn-api";
+import { fetchCompanySettings } from "@/lib/settings-api";
+import { formatCurrency } from "@/lib/gst-utils";
+import { buildStockRegisterWorkbook, downloadWorkbook } from "@/lib/export-utils";
+import { useToast } from "@/hooks/use-toast";
 
 // ── Error boundary ─────────────────────────────────────────────────────────────
 
@@ -192,11 +196,36 @@ function StockRegisterInner() {
 
   const [selectedItem, setSelectedItem] = useState<StockStatusRow | null>(null);
   const [ledgerOpen, setLedgerOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const { toast } = useToast();
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ["stock_status"],
     queryFn: fetchStockStatus,
   });
+
+  const { data: companySettings } = useQuery({
+    queryKey: ["company-settings"],
+    queryFn: fetchCompanySettings,
+    staleTime: 5 * 60 * 1000,
+  });
+  const companyName = companySettings?.company_name ?? "client";
+
+  const handleExport = (mode: "view" | "all") => {
+    if (isExporting) return;
+    const dataset = mode === "view" ? filtered : rows;
+    setIsExporting(true);
+    try {
+      const { workbook, filename } = buildStockRegisterWorkbook(dataset, { companyName, mode });
+      downloadWorkbook(workbook, filename);
+      toast({ title: `Exported ${dataset.length} row${dataset.length === 1 ? "" : "s"} to ${filename}` });
+    } catch (err) {
+      console.error("[StockRegister] export failed:", err);
+      toast({ title: "Export failed", description: "See console for details.", variant: "destructive" });
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const { data: movements = [], isLoading: movementsLoading } = useQuery({
     queryKey: ["stock-movements", selectedItem?.id],
@@ -282,6 +311,36 @@ function StockRegisterInner() {
 
     return result;
   }, [rows, search, typeFilter, availability, alertFilter]);
+
+  // Footer cost rollups across the currently filtered set. Sums the same
+  // per-row cost_* fields that the body cells render (so footer can never
+  // disagree with the body). awo_qty is excluded — costs reflect the 5
+  // physical buckets only.
+  const footerTotals = useMemo(() => {
+    let sum_cost_free = 0;
+    let sum_cost_in_process = 0;
+    let sum_cost_in_subassembly_wip = 0;
+    let sum_cost_in_fg_wip = 0;
+    let sum_cost_in_fg_ready = 0;
+    let sum_cost_total = 0;
+    for (const r of filtered) {
+      sum_cost_free               += Number(r.cost_free               ?? 0);
+      sum_cost_in_process         += Number(r.cost_in_process         ?? 0);
+      sum_cost_in_subassembly_wip += Number(r.cost_in_subassembly_wip ?? 0);
+      sum_cost_in_fg_wip          += Number(r.cost_in_fg_wip          ?? 0);
+      sum_cost_in_fg_ready        += Number(r.cost_in_fg_ready        ?? 0);
+      sum_cost_total              += Number(r.cost_total              ?? 0);
+    }
+    return {
+      sum_cost_free,
+      sum_cost_in_process,
+      sum_cost_in_subassembly_wip,
+      sum_cost_in_fg_wip,
+      sum_cost_in_fg_ready,
+      sum_cost_total,
+      filteredCount: filtered.length,
+    };
+  }, [filtered]);
 
   const clearFilters = () => {
     setSearch("");
@@ -387,6 +446,30 @@ function StockRegisterInner() {
           <option value="locked">Engaged</option>
           <option value="healthy">Healthy</option>
         </select>
+
+        {/* Export buttons — right-aligned */}
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9"
+            disabled={isExporting}
+            onClick={() => handleExport("view")}
+          >
+            <Download className="h-4 w-4 mr-1.5" />
+            {isExporting ? "Exporting…" : "Export view"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9"
+            disabled={isExporting}
+            onClick={() => handleExport("all")}
+          >
+            <Download className="h-4 w-4 mr-1.5" />
+            {isExporting ? "Exporting…" : "Export all items"}
+          </Button>
+        </div>
       </div>
 
       {/* ── Filters row 2 ──────────────────────────────────────────────────── */}
@@ -451,6 +534,25 @@ function StockRegisterInner() {
                 <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
                   Total
                 </th>
+                {/* ── Cost block — qty × standard_cost per Phase-13 bucket ── */}
+                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap border-l border-border">
+                  Cost: In Store
+                </th>
+                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                  Cost: At Vendor
+                </th>
+                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                  Cost: Sub-Assy
+                </th>
+                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                  Cost: FG WIP
+                </th>
+                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                  Cost: FG Ready
+                </th>
+                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-700 uppercase tracking-wider whitespace-nowrap">
+                  Cost: TOTAL
+                </th>
                 <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
                   Min Required
                 </th>
@@ -472,13 +574,13 @@ function StockRegisterInner() {
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={12} className="text-center py-12 text-slate-400 text-sm">
+                  <td colSpan={18} className="text-center py-12 text-slate-400 text-sm">
                     Loading…
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-16">
+                  <td colSpan={18} className="py-16">
                     <div className="flex flex-col items-center gap-3">
                       <Package className="h-10 w-10 text-slate-300" />
                       <div className="text-center">
@@ -552,6 +654,48 @@ function StockRegisterInner() {
                             {total}
                           </span>
                         )}
+                      </td>
+
+                      {/* Cost: In Store */}
+                      <td className="px-3 py-3 text-right whitespace-nowrap border-l border-border">
+                        <span className="text-sm font-mono tabular-nums text-slate-600">
+                          {formatCurrency(row.cost_free)}
+                        </span>
+                      </td>
+
+                      {/* Cost: At Vendor */}
+                      <td className="px-3 py-3 text-right whitespace-nowrap">
+                        <span className="text-sm font-mono tabular-nums text-slate-600">
+                          {formatCurrency(row.cost_in_process)}
+                        </span>
+                      </td>
+
+                      {/* Cost: Sub-Assy */}
+                      <td className="px-3 py-3 text-right whitespace-nowrap">
+                        <span className="text-sm font-mono tabular-nums text-slate-600">
+                          {formatCurrency(row.cost_in_subassembly_wip)}
+                        </span>
+                      </td>
+
+                      {/* Cost: FG WIP */}
+                      <td className="px-3 py-3 text-right whitespace-nowrap">
+                        <span className="text-sm font-mono tabular-nums text-slate-600">
+                          {formatCurrency(row.cost_in_fg_wip)}
+                        </span>
+                      </td>
+
+                      {/* Cost: FG Ready */}
+                      <td className="px-3 py-3 text-right whitespace-nowrap">
+                        <span className="text-sm font-mono tabular-nums text-slate-600">
+                          {formatCurrency(row.cost_in_fg_ready)}
+                        </span>
+                      </td>
+
+                      {/* Cost: TOTAL */}
+                      <td className="px-3 py-3 text-right whitespace-nowrap font-semibold">
+                        <span className="text-sm font-mono tabular-nums font-semibold text-slate-800">
+                          {formatCurrency(row.cost_total)}
+                        </span>
                       </td>
 
                       {/* Min Required */}
@@ -696,6 +840,80 @@ function StockRegisterInner() {
                 })
               )}
             </tbody>
+            <tfoot className="sticky bottom-0 z-20 bg-white">
+              <tr className="border-t-2 border-border">
+                {/* Item col — label + filtered count */}
+                <td className="px-4 py-3 align-top">
+                  <p className="text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                    TOTAL (filtered)
+                  </p>
+                  <p className="text-[11px] text-slate-500 font-mono leading-none mt-0.5">
+                    ({footerTotals.filteredCount} item{footerTotals.filteredCount === 1 ? "" : "s"})
+                  </p>
+                </td>
+
+                {/* Type */}
+                <td className="px-3 py-3" />
+                {/* In Store qty */}
+                <td className="px-3 py-3" />
+                {/* At Vendor qty */}
+                <td className="px-3 py-3" />
+                {/* In Production qty */}
+                <td className="px-3 py-3" />
+                {/* Ready to Ship qty */}
+                <td className="px-3 py-3" />
+                {/* Total qty */}
+                <td className="px-3 py-3" />
+
+                {/* Cost: In Store */}
+                <td className="px-3 py-3 text-right whitespace-nowrap border-l border-border">
+                  <span className="text-sm font-mono tabular-nums text-slate-700">
+                    {formatCurrency(footerTotals.sum_cost_free)}
+                  </span>
+                </td>
+                {/* Cost: At Vendor */}
+                <td className="px-3 py-3 text-right whitespace-nowrap">
+                  <span className="text-sm font-mono tabular-nums text-slate-700">
+                    {formatCurrency(footerTotals.sum_cost_in_process)}
+                  </span>
+                </td>
+                {/* Cost: Sub-Assy */}
+                <td className="px-3 py-3 text-right whitespace-nowrap">
+                  <span className="text-sm font-mono tabular-nums text-slate-700">
+                    {formatCurrency(footerTotals.sum_cost_in_subassembly_wip)}
+                  </span>
+                </td>
+                {/* Cost: FG WIP */}
+                <td className="px-3 py-3 text-right whitespace-nowrap">
+                  <span className="text-sm font-mono tabular-nums text-slate-700">
+                    {formatCurrency(footerTotals.sum_cost_in_fg_wip)}
+                  </span>
+                </td>
+                {/* Cost: FG Ready */}
+                <td className="px-3 py-3 text-right whitespace-nowrap">
+                  <span className="text-sm font-mono tabular-nums text-slate-700">
+                    {formatCurrency(footerTotals.sum_cost_in_fg_ready)}
+                  </span>
+                </td>
+                {/* Cost: TOTAL */}
+                <td className="px-3 py-3 text-right whitespace-nowrap">
+                  <span className="text-base font-mono tabular-nums font-semibold text-slate-900">
+                    {formatCurrency(footerTotals.sum_cost_total)}
+                  </span>
+                </td>
+
+                {/* Min Required */}
+                <td className="px-3 py-3" />
+                {/* Aimed */}
+                <td className="px-3 py-3" />
+                {/* Pending QC */}
+                <td className="px-3 py-3" />
+                {/* Status */}
+                <td className="px-3 py-3" />
+                {/* Action */}
+                <td className="px-3 py-3" />
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>

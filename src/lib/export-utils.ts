@@ -577,3 +577,289 @@ export function exportGRNReport(
     filename
   );
 }
+
+// ── Stock Register workbook ───────────────────────────────────────────────────
+// Built bespoke (not via buildSheet) because it needs real numeric cells with
+// per-column number formats — buildSheet stringifies everything via the
+// ExportColumn type system. The styling tokens still mirror buildSheet's
+// header (deep-indigo bg, white bold text) and zebra (slate-50) so the file
+// looks of a piece with the existing PO/DC/GRN exports.
+
+interface StockStatusRowLike {
+  item_code?: string;
+  description?: string;
+  item_type?: string;
+  unit?: string;
+  standard_cost?: number | null;
+  stock_free?: number | null;
+  stock_in_process?: number | null;
+  stock_in_subassembly_wip?: number | null;
+  stock_in_fg_wip?: number | null;
+  stock_in_fg_ready?: number | null;
+  cost_free?: number | null;
+  cost_in_process?: number | null;
+  cost_in_subassembly_wip?: number | null;
+  cost_in_fg_wip?: number | null;
+  cost_in_fg_ready?: number | null;
+  cost_total?: number | null;
+  effective_min_stock?: number | null;
+  aimed_stock?: number | null;
+  stock_alert_level?: string | null;
+}
+
+const RUPEE_FMT = '"₹"#,##,##0.00';
+const QTY_INT_FMT = "#,##0";
+const QTY_DEC_FMT = "#,##0.00";
+
+function slugifyCompanyName(name: string): string {
+  return (name || "client")
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "") || "client";
+}
+
+function nowStampLocal(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
+}
+
+export function buildStockRegisterWorkbook(
+  rows: StockStatusRowLike[],
+  opts: { companyName: string; mode: "view" | "all" }
+): { workbook: XLSX.WorkBook; filename: string } {
+  // Header titles (display order matches the spec)
+  const headers = [
+    "Item Code",                  // 1
+    "Description",                // 2
+    "Type",                       // 3
+    "UOM",                        // 4
+    "Standard Cost (₹)",          // 5
+    "Stock — In Store",           // 6
+    "Stock — At Vendor",          // 7
+    "Stock — Sub-Assy WIP",       // 8
+    "Stock — FG WIP",             // 9
+    "Stock — FG Ready",           // 10
+    "Stock — TOTAL",              // 11
+    "Cost — In Store (₹)",        // 12
+    "Cost — At Vendor (₹)",       // 13
+    "Cost — Sub-Assy WIP (₹)",    // 14
+    "Cost — FG WIP (₹)",          // 15
+    "Cost — FG Ready (₹)",        // 16
+    "Cost — TOTAL (₹)",           // 17
+    "Min Required",               // 18
+    "Aimed Stock",                // 19
+    "Alert Level",                // 20
+  ];
+
+  // Coerce + derive each row's numeric values. Keep numbers as numbers so the
+  // sheet writes real numeric cells (sortable/summable in Excel).
+  type RowVals = {
+    code: string;
+    desc: string;
+    type: string;
+    uom: string;
+    std: number;
+    s_free: number;
+    s_proc: number;
+    s_sa: number;
+    s_fgwip: number;
+    s_fgr: number;
+    s_total: number;
+    c_free: number;
+    c_proc: number;
+    c_sa: number;
+    c_fgwip: number;
+    c_fgr: number;
+    c_total: number;
+    minreq: number;
+    aimed: number;
+    alert: string;
+  };
+  const rowVals: RowVals[] = rows.map((r) => {
+    const s_free   = Number(r.stock_free               ?? 0);
+    const s_proc   = Number(r.stock_in_process         ?? 0);
+    const s_sa     = Number(r.stock_in_subassembly_wip ?? 0);
+    const s_fgwip  = Number(r.stock_in_fg_wip          ?? 0);
+    const s_fgr    = Number(r.stock_in_fg_ready        ?? 0);
+    return {
+      code:    r.item_code ?? "",
+      desc:    r.description ?? "",
+      type:    humanize(r.item_type ?? ""),
+      uom:     r.unit ?? "",
+      std:     Number(r.standard_cost ?? 0),
+      s_free, s_proc, s_sa, s_fgwip, s_fgr,
+      s_total: s_free + s_proc + s_sa + s_fgwip + s_fgr,
+      c_free:  Number(r.cost_free               ?? 0),
+      c_proc:  Number(r.cost_in_process         ?? 0),
+      c_sa:    Number(r.cost_in_subassembly_wip ?? 0),
+      c_fgwip: Number(r.cost_in_fg_wip          ?? 0),
+      c_fgr:   Number(r.cost_in_fg_ready        ?? 0),
+      c_total: Number(r.cost_total              ?? 0),
+      minreq:  Number(r.effective_min_stock ?? 0),
+      aimed:   Number(r.aimed_stock         ?? 0),
+      alert:   r.stock_alert_level ?? "",
+    };
+  });
+
+  // Decide qty format — integer if every qty across the dataset is whole, else
+  // 2 decimals. Standard Cost / Cost cols always use the rupee format.
+  const allWholeQty = rowVals.every(
+    (v) =>
+      Number.isInteger(v.s_free) &&
+      Number.isInteger(v.s_proc) &&
+      Number.isInteger(v.s_sa) &&
+      Number.isInteger(v.s_fgwip) &&
+      Number.isInteger(v.s_fgr) &&
+      Number.isInteger(v.s_total) &&
+      Number.isInteger(v.minreq) &&
+      Number.isInteger(v.aimed),
+  );
+  const qtyFmt = allWholeQty ? QTY_INT_FMT : QTY_DEC_FMT;
+
+  // Column-index → number-format map (omit text columns)
+  const numFmtByCol: Record<number, string> = {
+    4:  RUPEE_FMT, // Standard Cost
+    5:  qtyFmt,    // Stock — In Store
+    6:  qtyFmt,    // Stock — At Vendor
+    7:  qtyFmt,    // Stock — Sub-Assy WIP
+    8:  qtyFmt,    // Stock — FG WIP
+    9:  qtyFmt,    // Stock — FG Ready
+    10: qtyFmt,    // Stock — TOTAL
+    11: RUPEE_FMT, // Cost — In Store
+    12: RUPEE_FMT, // Cost — At Vendor
+    13: RUPEE_FMT, // Cost — Sub-Assy WIP
+    14: RUPEE_FMT, // Cost — FG WIP
+    15: RUPEE_FMT, // Cost — FG Ready
+    16: RUPEE_FMT, // Cost — TOTAL
+    17: qtyFmt,    // Min Required
+    18: qtyFmt,    // Aimed Stock
+  };
+
+  // Build AOA: header + rows + totals
+  const aoa: any[][] = [headers];
+  for (const v of rowVals) {
+    aoa.push([
+      v.code, v.desc, v.type, v.uom,
+      v.std,
+      v.s_free, v.s_proc, v.s_sa, v.s_fgwip, v.s_fgr, v.s_total,
+      v.c_free, v.c_proc, v.c_sa, v.c_fgwip, v.c_fgr, v.c_total,
+      v.minreq, v.aimed,
+      humanize(v.alert),
+    ]);
+  }
+
+  // Footer totals — precomputed sums (aligns with the on-page tfoot)
+  const sum = (k: keyof RowVals): number =>
+    rowVals.reduce((s, r) => s + Number((r[k] ?? 0) as number), 0);
+
+  const footer: any[] = [
+    "TOTAL", "", "", "",
+    "",                    // standard cost — meaningless to sum
+    sum("s_free"), sum("s_proc"), sum("s_sa"), sum("s_fgwip"), sum("s_fgr"), sum("s_total"),
+    sum("c_free"), sum("c_proc"), sum("c_sa"), sum("c_fgwip"), sum("c_fgr"), sum("c_total"),
+    "", "", "",
+  ];
+  aoa.push(footer);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const headerRow = 0;
+  const totalsRow = aoa.length - 1;
+
+  // Apply per-cell formats and styling.
+  for (let r = 0; r < aoa.length; r++) {
+    for (let c = 0; c < headers.length; c++) {
+      const ref = XLSX.utils.encode_cell({ r, c });
+      const cell: any = ws[ref];
+      if (!cell) continue;
+
+      if (r === headerRow) {
+        // Header — match buildSheet's existing PO/DC/GRN export tokens
+        cell.s = {
+          font: { bold: true, color: { rgb: "FFFFFF" }, sz: 11 },
+          fill: { fgColor: { rgb: "2D3282" } },
+          alignment: { horizontal: "center", vertical: "center" },
+        };
+        continue;
+      }
+
+      const isTotalsRow = r === totalsRow;
+      const fmt = numFmtByCol[c];
+      const isNumericCol = fmt !== undefined;
+
+      // Coerce numeric cells — make sure they're real numbers, not strings
+      if (isNumericCol && typeof cell.v === "number") {
+        cell.t = "n";
+        cell.z = fmt;
+      }
+
+      const baseFill = !isTotalsRow && r % 2 === 0
+        ? { fill: { fgColor: { rgb: "F8FAFC" } } }
+        : {};
+
+      if (isTotalsRow) {
+        cell.s = {
+          ...baseFill,
+          font: { bold: true, sz: 11 },
+          alignment: { horizontal: isNumericCol ? "right" : "left", vertical: "center" },
+          border: {
+            top: { style: "medium", color: { rgb: "94A3B8" } },
+          },
+          ...(isNumericCol ? { numFmt: fmt } : {}),
+        };
+      } else {
+        cell.s = {
+          ...baseFill,
+          alignment: { horizontal: isNumericCol ? "right" : "left", vertical: "center" },
+          ...(isNumericCol ? { numFmt: fmt } : {}),
+        };
+      }
+    }
+  }
+
+  // Column widths
+  ws["!cols"] = [
+    { wch: 14 }, // Item Code
+    { wch: 40 }, // Description
+    { wch: 14 }, // Type
+    { wch: 8  }, // UOM
+    { wch: 16 }, // Standard Cost
+    { wch: 16 }, // Stock — In Store
+    { wch: 16 }, // Stock — At Vendor
+    { wch: 18 }, // Stock — Sub-Assy WIP
+    { wch: 16 }, // Stock — FG WIP
+    { wch: 16 }, // Stock — FG Ready
+    { wch: 16 }, // Stock — TOTAL
+    { wch: 18 }, // Cost — In Store
+    { wch: 18 }, // Cost — At Vendor
+    { wch: 20 }, // Cost — Sub-Assy WIP
+    { wch: 18 }, // Cost — FG WIP
+    { wch: 18 }, // Cost — FG Ready
+    { wch: 20 }, // Cost — TOTAL
+    { wch: 14 }, // Min Required
+    { wch: 14 }, // Aimed Stock
+    { wch: 14 }, // Alert Level
+  ];
+
+  // Freeze pane intentionally not set — xlsx-js-style v1.2.0 has no
+  // frozen-pane writer (ws['!freeze'] / '!sheetView' / '!views' are all
+  // silently dropped on write). The existing PO / DC / GRN exports share
+  // this limitation. Excel users will need to freeze row 1 manually if
+  // they want a sticky header while scrolling.
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Stock Register");
+
+  // Filename: stock-register_<slug>_<mode>_YYYY-MM-DD_HHmm.xlsx
+  const slug = slugifyCompanyName(opts.companyName);
+  const stamp = nowStampLocal();
+  const filename = `stock-register_${slug}_${opts.mode}_${stamp}.xlsx`;
+
+  return { workbook: wb, filename };
+}
+
+export function downloadWorkbook(workbook: XLSX.WorkBook, filename: string): void {
+  XLSX.writeFile(workbook, filename);
+}
