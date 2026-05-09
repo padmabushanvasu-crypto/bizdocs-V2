@@ -843,8 +843,11 @@ export function buildStockRegisterWorkbook(
     { wch: 14 }, // Alert Level
   ];
 
-  // Freeze header row
-  ws["!freeze"] = { xSplit: 0, ySplit: 1 };
+  // Freeze pane intentionally not set — xlsx-js-style v1.2.0 has no
+  // frozen-pane writer (ws['!freeze'] / '!sheetView' / '!views' are all
+  // silently dropped on write). The existing PO / DC / GRN exports share
+  // this limitation. Excel users will need to freeze row 1 manually if
+  // they want a sticky header while scrolling.
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Stock Register");
