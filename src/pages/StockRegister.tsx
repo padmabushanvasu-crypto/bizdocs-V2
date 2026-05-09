@@ -9,6 +9,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { StockStatusBadge } from "@/components/StockStatusBadge";
 import { fetchStockStatus, fetchStockMovements, type StockStatusRow, type StockMovement } from "@/lib/items-api";
 import { fetchPendingQCGRNs } from "@/lib/grn-api";
+import { formatCurrency } from "@/lib/gst-utils";
 
 // ── Error boundary ─────────────────────────────────────────────────────────────
 
@@ -451,6 +452,25 @@ function StockRegisterInner() {
                 <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
                   Total
                 </th>
+                {/* ── Cost block — qty × standard_cost per Phase-13 bucket ── */}
+                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap border-l border-border">
+                  Cost: In Store
+                </th>
+                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                  Cost: At Vendor
+                </th>
+                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                  Cost: Sub-Assy
+                </th>
+                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                  Cost: FG WIP
+                </th>
+                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                  Cost: FG Ready
+                </th>
+                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap font-semibold">
+                  Cost: TOTAL
+                </th>
                 <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
                   Min Required
                 </th>
@@ -472,13 +492,13 @@ function StockRegisterInner() {
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={12} className="text-center py-12 text-slate-400 text-sm">
+                  <td colSpan={18} className="text-center py-12 text-slate-400 text-sm">
                     Loading…
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-16">
+                  <td colSpan={18} className="py-16">
                     <div className="flex flex-col items-center gap-3">
                       <Package className="h-10 w-10 text-slate-300" />
                       <div className="text-center">
@@ -552,6 +572,48 @@ function StockRegisterInner() {
                             {total}
                           </span>
                         )}
+                      </td>
+
+                      {/* Cost: In Store */}
+                      <td className="px-3 py-3 text-right whitespace-nowrap border-l border-border">
+                        <span className="text-sm font-mono tabular-nums text-slate-600">
+                          {formatCurrency(row.cost_free)}
+                        </span>
+                      </td>
+
+                      {/* Cost: At Vendor */}
+                      <td className="px-3 py-3 text-right whitespace-nowrap">
+                        <span className="text-sm font-mono tabular-nums text-slate-600">
+                          {formatCurrency(row.cost_in_process)}
+                        </span>
+                      </td>
+
+                      {/* Cost: Sub-Assy */}
+                      <td className="px-3 py-3 text-right whitespace-nowrap">
+                        <span className="text-sm font-mono tabular-nums text-slate-600">
+                          {formatCurrency(row.cost_in_subassembly_wip)}
+                        </span>
+                      </td>
+
+                      {/* Cost: FG WIP */}
+                      <td className="px-3 py-3 text-right whitespace-nowrap">
+                        <span className="text-sm font-mono tabular-nums text-slate-600">
+                          {formatCurrency(row.cost_in_fg_wip)}
+                        </span>
+                      </td>
+
+                      {/* Cost: FG Ready */}
+                      <td className="px-3 py-3 text-right whitespace-nowrap">
+                        <span className="text-sm font-mono tabular-nums text-slate-600">
+                          {formatCurrency(row.cost_in_fg_ready)}
+                        </span>
+                      </td>
+
+                      {/* Cost: TOTAL */}
+                      <td className="px-3 py-3 text-right whitespace-nowrap font-semibold">
+                        <span className="text-sm font-mono tabular-nums font-semibold text-slate-800">
+                          {formatCurrency(row.cost_total)}
+                        </span>
                       </td>
 
                       {/* Min Required */}
