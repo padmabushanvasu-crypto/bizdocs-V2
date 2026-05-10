@@ -43,10 +43,14 @@ export const COST_MASTER_FIELD_MAP: Record<string, string[]> = {
 // ── Shared text normaliser ───────────────────────────────────────────────────
 // Must mirror cost_master_bindings.source_text_norm so learned bindings line up
 // with what we compute client-side at match time.
+//
+// Character class covers ASCII whitespace (`\s`), U+00A0 NBSP and U+200B ZWSP
+// — both creep in when users paste from Word / Excel — plus the literal `.`
+// so "ASSY." and "ASSY" collapse to the same key.
 export function normalizeForMatch(s: string | null | undefined): string {
   return String(s ?? "")
     .toUpperCase()
-    .replace(/[\s\.]+/g, " ")
+    .replace(/[\s\u00A0\u200B\.]+/g, " ")
     .trim();
 }
 
@@ -163,6 +167,13 @@ export function matchCostMasterRows(
 ): MatchResult[] {
   if (rows.length === 0) return [];
 
+  if (items.length === 0) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      "[CostMaster] matchCostMasterRows received 0 items in haystack — every row will be classified as 'No matching item in master'. Check fetchItemsLite.",
+    );
+  }
+
   // ── Index items for the cascade ────────────────────────────────────────────
   const byCodeLower = new Map<string, ItemLite[]>();
   const byCodeNorm = new Map<string, ItemLite[]>();
@@ -176,7 +187,8 @@ export function matchCostMasterRows(
     else m.set(k, [v]);
   };
 
-  const stripCode = (s: string) => s.toUpperCase().replace(/[\s.]/g, "");
+  // Same character class as normalizeForMatch — covers NBSP / ZWSP / ASCII ws + `.`
+  const stripCode = (s: string) => s.toUpperCase().replace(/[\s\u00A0\u200B\.]/g, "");
 
   for (const it of items) {
     if (it.item_code) {
@@ -300,17 +312,38 @@ export function matchCostMasterRows(
 }
 
 // ── DB fetchers ──────────────────────────────────────────────────────────────
+// PostgREST silently caps a single response at the server's `max-rows` setting
+// (default 1000). With ~1000+ active items, a one-shot select drops the tail
+// of the alphabet — V-codes etc. — and the matcher classifies them as
+// "No matching item in master". Paginate via .range() until a chunk is short.
 export async function fetchItemsLite(): Promise<ItemLite[]> {
   const companyId = await getCompanyId();
   if (!companyId) return [];
-  const { data, error } = await (supabase as any)
-    .from("items")
-    .select("id, item_code, description, drawing_number, drawing_revision, standard_cost")
-    .eq("company_id", companyId)
-    .eq("status", "active")
-    .order("item_code", { ascending: true });
-  if (error) throw error;
-  return (data ?? []).map((r: any) => ({
+
+  const PAGE = 1000;
+  const all: any[] = [];
+  let start = 0;
+  let pages = 0;
+  while (true) {
+    const { data, error } = await (supabase as any)
+      .from("items")
+      .select("id, item_code, description, drawing_number, drawing_revision, standard_cost")
+      .eq("company_id", companyId)
+      .eq("status", "active")
+      .order("item_code", { ascending: true })
+      .range(start, start + PAGE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    pages++;
+    if (data.length < PAGE) break;
+    start += PAGE;
+  }
+
+  // eslint-disable-next-line no-console
+  console.info(`[CostMaster] fetched ${all.length} active items in ${pages} page${pages === 1 ? "" : "s"}`);
+
+  return all.map((r: any) => ({
     id: r.id as string,
     item_code: (r.item_code ?? "") as string,
     description: (r.description ?? "") as string,
@@ -322,11 +355,23 @@ export async function fetchItemsLite(): Promise<ItemLite[]> {
 
 export async function fetchCostMasterBindings(): Promise<BindingLite[]> {
   // RLS scopes by company — no explicit company_id filter needed.
-  const { data, error } = await (supabase as any)
-    .from("cost_master_bindings")
-    .select("source_text_norm, item_id");
-  if (error) throw error;
-  return (data ?? []) as BindingLite[];
+  // Same paginated pattern as fetchItemsLite — bindings table will grow over
+  // time as users resolve ambiguous matches; future-proof against the 1000-row cap.
+  const PAGE = 1000;
+  const all: any[] = [];
+  let start = 0;
+  while (true) {
+    const { data, error } = await (supabase as any)
+      .from("cost_master_bindings")
+      .select("source_text_norm, item_id")
+      .range(start, start + PAGE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < PAGE) break;
+    start += PAGE;
+  }
+  return all as BindingLite[];
 }
 
 // ── Apply ────────────────────────────────────────────────────────────────────
