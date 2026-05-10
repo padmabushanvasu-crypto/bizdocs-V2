@@ -435,10 +435,10 @@ export default function AssemblyWorkOrderDetail() {
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{li.stock_free ?? 0}</td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center"><AvailabilityCell line={li} /></td>
                       <td className="px-3 py-2 border-b border-slate-100 text-center">
-                        {(li.issued_qty ?? 0) >= li.required_qty ? (
-                          <Badge className="bg-green-100 text-green-800">Fully Issued</Badge>
-                        ) : li.disposition === 'use_as_is' ? (
+                        {li.disposition === 'use_as_is' ? (
                           <Badge className="bg-amber-100 text-amber-800">Accepted as-is</Badge>
+                        ) : (li.issued_qty ?? 0) >= li.required_qty ? (
+                          <span className="text-muted-foreground">—</span>
                         ) : (
                           <div className="flex flex-col items-center gap-1">
                             <span className="text-red-600 text-xs font-medium">
