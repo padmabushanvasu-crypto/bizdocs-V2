@@ -950,7 +950,7 @@ export async function reportComponentIssue(
   damage_qty: number,
   disposition: 'scrap' | 'use_as_is' | 'return_to_vendor',
   reason: string,
-  reported_by: string
+  reported_by_user_id: string
 ): Promise<void> {
   const companyId = await getCompanyId();
   if (!companyId) throw new Error("Not authenticated");
@@ -978,7 +978,7 @@ export async function reportComponentIssue(
   };
   if (disposition === 'use_as_is') {
     updatePayload.concession_note = reason;
-    updatePayload.concession_by = reported_by;
+    updatePayload.concession_by = reported_by_user_id;
     updatePayload.concession_at = new Date().toISOString();
   }
 
@@ -1019,7 +1019,7 @@ export async function reportComponentIssue(
         message: `${awoLine.item_description ?? awoLine.item_code ?? 'Item'} (${damage_qty} ${awoLine.unit ?? ''}) scrapped on AWO #${awoNumber}. Reason: ${reason}`,
         reference_type: 'assembly_work_order',
         reference_id: awoLine.awo_id,
-        created_by: reported_by,
+        created_by: reported_by_user_id,
       });
     } catch (e) { console.error('[production] scrap notification failed:', e); }
   }
@@ -1054,7 +1054,7 @@ export async function reportComponentIssue(
         message: `${awoLine.item_description ?? awoLine.item_code ?? 'Item'} (${damage_qty} ${awoLine.unit ?? ''}) returned to vendor from AWO #${awoNumber}. Reason: ${reason}`,
         reference_type: 'assembly_work_order',
         reference_id: awoLine.awo_id,
-        created_by: reported_by,
+        created_by: reported_by_user_id,
       });
     } catch (e) { console.error('[production] return notification failed:', e); }
   }
