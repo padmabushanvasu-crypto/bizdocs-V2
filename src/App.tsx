@@ -50,6 +50,7 @@ import AssemblyOrders from "@/pages/AssemblyOrders";
 import AssemblyOrderDetail from "@/pages/AssemblyOrderDetail";
 import StockLedger from "@/pages/StockLedger";
 import DataImport from "@/pages/DataImport";
+import CostMasterImport from "@/pages/CostMasterImport";
 import DocumentSettings from "@/pages/DocumentSettings";
 import SerialNumbers from "@/pages/SerialNumbers";
 import FatCertificates from "@/pages/FatCertificates";
@@ -237,6 +238,7 @@ const App = () => (
               <Route path="/settings/notifications" element={<PageGuard page="settings"><NotificationsSettings /></PageGuard>} />
               <Route path="/settings/documents" element={<PageGuard page="settings"><DocumentSettings /></PageGuard>} />
               <Route path="/settings/import" element={<PageGuard page="settings"><DataImport /></PageGuard>} />
+              <Route path="/settings/cost-master" element={<PageGuard page="settings"><CostMasterImport /></PageGuard>} />
               <Route path="/settings/users" element={<PageGuard page="settings"><UserManagement /></PageGuard>} />
               <Route path="/settings/company" element={<PageGuard page="settings"><CompanySettings /></PageGuard>} />
               <Route path="/settings/process-library" element={<PageGuard page="settings"><ProcessLibrary /></PageGuard>} />

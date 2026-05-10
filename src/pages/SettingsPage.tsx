@@ -67,6 +67,14 @@ export default function SettingsPage() {
       action: () => navigate("/settings/import"),
     },
     {
+      icon: Upload,
+      iconBg: "bg-emerald-50",
+      iconColor: "text-emerald-600",
+      title: "Cost Master",
+      description: "Bulk-update standard cost on items master from an Excel file.",
+      action: () => navigate("/settings/cost-master"),
+    },
+    {
       icon: FileSpreadsheet,
       iconBg: "bg-blue-50",
       iconColor: "text-blue-600",
