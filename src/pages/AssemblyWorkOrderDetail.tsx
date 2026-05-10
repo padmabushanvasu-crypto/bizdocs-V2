@@ -408,12 +408,13 @@ export default function AssemblyWorkOrderDetail() {
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-300 uppercase tracking-wide bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-right">Available</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-300 uppercase tracking-wide bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-center">Status</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-300 uppercase tracking-wide bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-center">Action</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-300 uppercase tracking-wide bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-center">Damage</th>
                 </tr>
               </thead>
               <tbody>
                 {(awo.line_items ?? []).length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-400">No data found</td>
+                    <td colSpan={9} className="px-3 py-8 text-center text-sm text-slate-400">No data found</td>
                   </tr>
                 ) : (
                   (awo.line_items ?? []).map((li) => (
@@ -435,28 +436,7 @@ export default function AssemblyWorkOrderDetail() {
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center"><AvailabilityCell line={li} /></td>
                       <td className="px-3 py-2 border-b border-slate-100 text-center">
                         {(li.issued_qty ?? 0) >= li.required_qty ? (
-                          <div className="flex flex-col items-center gap-1">
-                            <Badge className="bg-green-100 text-green-800">Fully Issued</Badge>
-                            {awo.status === 'in_progress' && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="text-xs h-6 px-2 text-orange-700 border-orange-300 hover:bg-orange-50"
-                                onClick={() => {
-                                  setReportIssueLine(li);
-                                  setReportIssueForm({
-                                    damage_qty: 1,
-                                    disposition: 'scrap',
-                                    reason: '',
-                                  });
-                                  setReportIssueOpen(true);
-                                }}
-                              >
-                                <AlertTriangle className="w-3 h-3 mr-1" />
-                                Report Damage
-                              </Button>
-                            )}
-                          </div>
+                          <Badge className="bg-green-100 text-green-800">Fully Issued</Badge>
                         ) : li.disposition === 'use_as_is' ? (
                           <Badge className="bg-amber-100 text-amber-800">Accepted as-is</Badge>
                         ) : (
@@ -483,6 +463,29 @@ export default function AssemblyWorkOrderDetail() {
                               </Button>
                             )}
                           </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 border-b border-slate-100 text-center">
+                        {(li.issued_qty ?? 0) >= li.required_qty && awo.status === 'in_progress' ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs h-6 px-2 text-orange-700 border-orange-300 hover:bg-orange-50"
+                            onClick={() => {
+                              setReportIssueLine(li);
+                              setReportIssueForm({
+                                damage_qty: 1,
+                                disposition: 'scrap',
+                                reason: '',
+                              });
+                              setReportIssueOpen(true);
+                            }}
+                          >
+                            <AlertTriangle className="w-3 h-3 mr-1" />
+                            Report Damage
+                          </Button>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
                         )}
                       </td>
                     </tr>
