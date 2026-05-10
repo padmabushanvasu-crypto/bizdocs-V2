@@ -328,3 +328,177 @@ export async function fetchCostMasterBindings(): Promise<BindingLite[]> {
   if (error) throw error;
   return (data ?? []) as BindingLite[];
 }
+
+// ── Apply ────────────────────────────────────────────────────────────────────
+export interface ApplyPlanItem {
+  item_id: string;
+  new_cost: number;
+  old_cost: number;
+  source_text: string;        // raw — for binding source_text and audit details
+  source_text_norm: string;   // normalised — for binding key
+  match_via: MatchVia;
+  binding_used: boolean;
+  needs_binding_persist: boolean;  // true for needs_review rows that user resolved
+  source_row_no: number;
+}
+
+export interface ApplyResult {
+  total_planned: number;
+  updated: number;
+  failed: number;
+  failures: Array<{ item_id: string; error: string }>;
+  bindings_saved: number;
+  audit_rows_written: number;
+  batch_id: string;
+}
+
+export interface ApplyMeta {
+  source_file_name: string;
+  user_id: string | null;
+  user_email: string | null;
+  user_name: string | null;
+}
+
+// Apply standard_cost updates to items, write audit rows, persist user bindings.
+//
+// Flow:
+//   1. Generate batch_id (one per apply call, stamped on every audit row).
+//   2. Update items in chunks of 100 — parallel within chunk via allSettled,
+//      sequential across chunks. Per-item failures are collected, never abort.
+//   3. After every chunk, fire onProgress(done, total).
+//   4. Build audit_log rows for successful updates only and insert in chunks
+//      of 200. Audit-insert errors are logged, not thrown — the cost change
+//      is real even if its log row fails. We never roll back a successful
+//      update on audit failure.
+//   5. UPSERT cost_master_bindings for items where needs_binding_persist is
+//      true AND the update succeeded. Conflict target is the unique index
+//      (company_id, source_text_norm). Chunks of 100.
+//   6. Return ApplyResult — totals, batch_id, per-item failures.
+export async function applyCostMasterUpdates(
+  plan: ApplyPlanItem[],
+  meta: ApplyMeta,
+  onProgress?: (done: number, total: number) => void,
+): Promise<ApplyResult> {
+  const batch_id =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `batch-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  const total = plan.length;
+  const result: ApplyResult = {
+    total_planned: total,
+    updated: 0,
+    failed: 0,
+    failures: [],
+    bindings_saved: 0,
+    audit_rows_written: 0,
+    batch_id,
+  };
+
+  if (total === 0) return result;
+
+  const companyId = await getCompanyId();
+
+  // ── Step 2-3: update items in chunks of 100 ───────────────────────────────
+  const UPDATE_CHUNK = 100;
+  const successfulItemIds = new Set<string>();
+  let done = 0;
+
+  for (let i = 0; i < plan.length; i += UPDATE_CHUNK) {
+    const chunk = plan.slice(i, i + UPDATE_CHUNK);
+    const settled = await Promise.allSettled(
+      chunk.map(async (p) => {
+        const { error } = await (supabase as any)
+          .from("items")
+          .update({ standard_cost: p.new_cost })
+          .eq("id", p.item_id);
+        if (error) throw new Error(error.message ?? JSON.stringify(error));
+        return p.item_id;
+      }),
+    );
+    settled.forEach((s, idx) => {
+      const p = chunk[idx];
+      if (s.status === "fulfilled") {
+        successfulItemIds.add(p.item_id);
+        result.updated++;
+      } else {
+        result.failed++;
+        result.failures.push({
+          item_id: p.item_id,
+          error: s.reason?.message ?? String(s.reason ?? "unknown"),
+        });
+      }
+    });
+    done += chunk.length;
+    onProgress?.(done, total);
+  }
+
+  // ── Step 4: audit rows (best-effort) ──────────────────────────────────────
+  const auditRows = plan
+    .filter((p) => successfulItemIds.has(p.item_id))
+    .map((p) => ({
+      company_id: companyId,
+      document_type: "item",
+      document_id: p.item_id,
+      action: "cost_updated_via_master",
+      details: {
+        old_cost: p.old_cost,
+        new_cost: p.new_cost,
+        source_file_name: meta.source_file_name,
+        source_text: p.source_text,
+        match_via: p.match_via,
+        binding_used: p.binding_used,
+        batch_id,
+      },
+      user_id: meta.user_id,
+      user_email: meta.user_email,
+      user_name: meta.user_name,
+    }));
+
+  const AUDIT_CHUNK = 200;
+  for (let i = 0; i < auditRows.length; i += AUDIT_CHUNK) {
+    const chunk = auditRows.slice(i, i + AUDIT_CHUNK);
+    try {
+      const { error } = await (supabase as any).from("audit_log").insert(chunk);
+      if (error) throw error;
+      result.audit_rows_written += chunk.length;
+    } catch (err: any) {
+      // eslint-disable-next-line no-console
+      console.error("[CostMaster] audit_log insert failed (cost change still applied):", err);
+    }
+  }
+
+  // ── Step 5: persist user-confirmed bindings (UPSERT) ──────────────────────
+  const bindingRows = plan
+    .filter((p) => p.needs_binding_persist && successfulItemIds.has(p.item_id) && p.source_text_norm)
+    .map((p) => ({
+      company_id: companyId,
+      source_text: p.source_text,
+      source_text_norm: p.source_text_norm,
+      item_id: p.item_id,
+      confirmed_by: meta.user_id,
+    }));
+
+  // De-dupe inside this batch on source_text_norm (last wins) so the upsert
+  // doesn't get "ON CONFLICT DO UPDATE command cannot affect row a second time".
+  const dedup = new Map<string, (typeof bindingRows)[number]>();
+  for (const b of bindingRows) dedup.set(b.source_text_norm, b);
+  const dedupedBindings = Array.from(dedup.values());
+
+  const BIND_CHUNK = 100;
+  for (let i = 0; i < dedupedBindings.length; i += BIND_CHUNK) {
+    const chunk = dedupedBindings.slice(i, i + BIND_CHUNK);
+    try {
+      const { error } = await (supabase as any)
+        .from("cost_master_bindings")
+        .upsert(chunk, { onConflict: "company_id,source_text_norm" });
+      if (error) throw error;
+      result.bindings_saved += chunk.length;
+    } catch (err: any) {
+      // eslint-disable-next-line no-console
+      console.error("[CostMaster] cost_master_bindings upsert failed:", err);
+    }
+  }
+
+  return result;
+}

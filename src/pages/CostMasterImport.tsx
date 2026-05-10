@@ -42,9 +42,13 @@ import {
 } from "@/lib/import-utils";
 import {
   COST_MASTER_FIELD_MAP,
+  applyCostMasterUpdates,
   fetchCostMasterBindings,
   fetchItemsLite,
   matchCostMasterRows,
+  normalizeForMatch,
+  type ApplyPlanItem,
+  type ApplyResult,
   type CostMasterRow,
   type ItemLite,
   type MatchResult,
@@ -70,7 +74,7 @@ const VIA_LABEL: Record<MatchVia, string> = {
 };
 
 export default function CostMasterImport() {
-  const { role } = useAuth();
+  const { role, user, profile } = useAuth();
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -83,6 +87,10 @@ export default function CostMasterImport() {
   const [matchResults, setMatchResults] = useState<MatchResult[] | null>(null);
   const [reviewSelections, setReviewSelections] = useState<Record<number, ReviewSelection>>({});
 
+  const [isApplying, setIsApplying] = useState(false);
+  const [applyProgress, setApplyProgress] = useState<{ done: number; total: number } | null>(null);
+  const [applyResult, setApplyResult] = useState<ApplyResult | null>(null);
+
   if (role !== "admin" && role !== "finance") {
     return <Navigate to="/" replace />;
   }
@@ -93,6 +101,8 @@ export default function CostMasterImport() {
     setParseSummary(null);
     setMatchResults(null);
     setReviewSelections({});
+    setApplyResult(null);
+    setApplyProgress(null);
     if (fileRef.current) fileRef.current.value = "";
   };
 
@@ -201,13 +211,107 @@ export default function CostMasterImport() {
     }
   };
 
-  const handleApply = () => {
-    // eslint-disable-next-line no-console
-    console.log("apply not implemented in step 3b — will be wired in step 3c");
-    toast({
-      title: "Apply will be enabled in next build step",
-      description: "This step ships the matcher and review screen only.",
+  const handleApply = async () => {
+    if (!matchResults || !parseSummary) return;
+
+    // Build the apply plan from buckets:
+    //   - will_update rows  → auto-matched, no binding to persist
+    //   - needs_review rows → only those the user resolved (non-skip), with a
+    //     binding write so next upload auto-matches
+    const plan: ApplyPlanItem[] = [];
+
+    matchResults.forEach((r, idx) => {
+      const sourceText = (r.row.item_code || r.row.description || "").trim();
+      const sourceTextNorm = normalizeForMatch(sourceText);
+
+      if (r.bucket === "will_update" && r.matched_item && r.match_via) {
+        plan.push({
+          item_id: r.matched_item.id,
+          new_cost: r.row.standard_cost,
+          old_cost: Number(r.matched_item.standard_cost ?? 0),
+          source_text: sourceText,
+          source_text_norm: sourceTextNorm,
+          match_via: r.match_via,
+          binding_used: !!r.binding_used,
+          needs_binding_persist: false,
+          source_row_no: r.row.row_no,
+        });
+        return;
+      }
+
+      if (r.bucket === "needs_review") {
+        const sel = reviewSelections[idx];
+        if (!sel || sel === "skip") return;
+        const chosen = (r.candidates ?? []).find((c) => c.id === sel);
+        if (!chosen) return;
+        plan.push({
+          item_id: chosen.id,
+          new_cost: r.row.standard_cost,
+          old_cost: Number(chosen.standard_cost ?? 0),
+          source_text: sourceText,
+          source_text_norm: sourceTextNorm,
+          match_via: r.match_via ?? "fuzzy_description",
+          binding_used: false,
+          needs_binding_persist: true,
+          source_row_no: r.row.row_no,
+        });
+      }
     });
+
+    if (plan.length === 0) {
+      toast({
+        title: "Nothing to apply",
+        description: "No will-update rows and no resolved review rows.",
+      });
+      return;
+    }
+
+    setIsApplying(true);
+    setApplyProgress({ done: 0, total: plan.length });
+
+    try {
+      const userName =
+        profile?.display_name ||
+        profile?.full_name ||
+        (user?.user_metadata as any)?.full_name ||
+        (user?.user_metadata as any)?.name ||
+        user?.email ||
+        null;
+
+      const res = await applyCostMasterUpdates(
+        plan,
+        {
+          source_file_name: parseSummary.fileName,
+          user_id: user?.id ?? null,
+          user_email: user?.email ?? null,
+          user_name: userName,
+        },
+        (done, total) => setApplyProgress({ done, total }),
+      );
+
+      if (res.failures.length > 0) {
+        // eslint-disable-next-line no-console
+        console.warn("[CostMaster] per-item failures:", res.failures);
+      }
+
+      setApplyResult(res);
+      toast({
+        title: "Cost Master applied",
+        description:
+          `${res.updated} updated · ${res.failed} failed · ` +
+          `${res.bindings_saved} binding${res.bindings_saved === 1 ? "" : "s"} saved`,
+      });
+    } catch (err: any) {
+      // eslint-disable-next-line no-console
+      console.error("[CostMaster] apply failed:", err);
+      toast({
+        title: "Apply failed",
+        description: err?.message ?? String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setIsApplying(false);
+    }
   };
 
   // ── Bucket the results ──
@@ -243,7 +347,7 @@ export default function CostMasterImport() {
       </div>
 
       {/* ── Upload card (hidden once we have results) ── */}
-      {!matchResults && (
+      {!matchResults && !applyResult && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -327,7 +431,7 @@ export default function CostMasterImport() {
       )}
 
       {/* ── Results ── */}
-      {matchResults && (
+      {matchResults && !applyResult && (
         <div className="space-y-4">
           {/* Summary banner */}
           <div className="rounded-lg border bg-slate-50 p-4">
@@ -462,6 +566,7 @@ export default function CostMasterImport() {
                                 onValueChange={(v) =>
                                   setReviewSelections((prev) => ({ ...prev, [idx]: v as ReviewSelection }))
                                 }
+                                disabled={isApplying}
                               >
                                 <SelectTrigger className="h-8 text-xs min-w-[260px]">
                                   <SelectValue />
@@ -597,19 +702,63 @@ export default function CostMasterImport() {
 
           {/* Action bar */}
           <div className="flex items-center justify-end gap-2 pt-2">
-            <Button variant="ghost" onClick={resetAll}>
+            <Button variant="ghost" onClick={resetAll} disabled={isApplying}>
               Cancel / Start Over
             </Button>
-            <Button onClick={handleApply} disabled={applyDisabled}>
-              Apply Updates
-              {(buckets.willUpdate.length > 0 || resolvedReviewCount > 0) && (
-                <span className="ml-1 text-xs opacity-90">
-                  ({buckets.willUpdate.length + resolvedReviewCount})
-                </span>
+            <Button onClick={handleApply} disabled={applyDisabled || isApplying}>
+              {isApplying ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Applying… ({applyProgress?.done ?? 0} of {applyProgress?.total ?? 0})
+                </>
+              ) : (
+                <>
+                  Apply Updates
+                  {(buckets.willUpdate.length > 0 || resolvedReviewCount > 0) && (
+                    <span className="ml-1 text-xs opacity-90">
+                      ({buckets.willUpdate.length + resolvedReviewCount})
+                    </span>
+                  )}
+                </>
               )}
             </Button>
           </div>
         </div>
+      )}
+
+      {/* ── Apply result banner ── */}
+      {applyResult && (
+        <Card>
+          <CardContent className="pt-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <CheckCircle2 className="h-6 w-6 text-emerald-600 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <h2 className="text-lg font-semibold tracking-tight">Cost Master applied</h2>
+                <p className="text-sm text-slate-700 mt-1">
+                  <span className="font-medium text-emerald-700">{applyResult.updated}</span>{" "}
+                  item{applyResult.updated === 1 ? "" : "s"} updated.
+                </p>
+                {applyResult.failed > 0 && (
+                  <p className="text-sm text-red-700 mt-0.5">
+                    <XCircle className="h-3.5 w-3.5 inline-block mr-1 -mt-0.5" />
+                    {applyResult.failed} item{applyResult.failed === 1 ? "" : "s"} failed —
+                    see browser console for details.
+                  </p>
+                )}
+                <p className="text-sm text-slate-600 mt-0.5">
+                  {applyResult.bindings_saved} user-confirmed binding
+                  {applyResult.bindings_saved === 1 ? "" : "s"} remembered for next upload.
+                </p>
+                <p className="text-xs text-muted-foreground mt-2 font-mono">
+                  batch: {applyResult.batch_id}
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={resetAll}>Start Over</Button>
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );
