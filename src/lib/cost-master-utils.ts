@@ -54,6 +54,20 @@ export function normalizeForMatch(s: string | null | undefined): string {
     .trim();
 }
 
+// \u2500\u2500 Binding key normaliser \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// Used ONLY for cost_master_bindings storage and lookup. Deliberately weaker
+// than normalizeForMatch \u2014 case-insensitive raw text, nothing else. This stops
+// physically different items from colliding into one binding key:
+//   "10MM"  and "10mm"        \u2192 SAME key
+//   "10MM"  and "10 MM"       \u2192 DIFFERENT keys (space matters)
+//   "10MM"  and "10mm WASHER" \u2192 DIFFERENT keys (entire string matters)
+// Old bindings written with normalizeForMatch stay in the DB but won't match
+// anything in the new flow until the user re-confirms \u2014 which is the desired
+// behaviour, since some of those old bindings were the bug.
+export function normalizeForBinding(s: string | null | undefined): string {
+  return String(s ?? "").toLowerCase().trim();
+}
+
 // ── Levenshtein-based similarity, 0..1 ───────────────────────────────────────
 export function similarity(a: string, b: string): number {
   const s1 = normalizeForMatch(a);
@@ -227,8 +241,8 @@ export function matchCostMasterRows(
       };
     };
 
-    // Step 1: learned binding
-    const bindingKey = normalizeForMatch(code || desc);
+    // Step 1: learned binding (uses lowercase-trim only — see normalizeForBinding)
+    const bindingKey = normalizeForBinding(code || desc);
     if (bindingKey) {
       const itemId = bindingByNorm.get(bindingKey);
       if (itemId) {
@@ -238,10 +252,40 @@ export function matchCostMasterRows(
       }
     }
 
+    // Short item_codes (≤6 chars) like "10MM", "6mm", "3x10" are too generic
+    // for an item_code-only match to be safe — "RIVET 6mm" and "HOLE LUG"
+    // both legitimately have item_code "6MM" in some masters. When the source
+    // row carries a description, we require at least faint description
+    // similarity (≥ 0.30) to corroborate the code match. Returns a demoted
+    // needs_review MatchResult, or null if the match should stand.
+    const SHORT_CODE_LEN = 6;
+    const CORROBORATION_THRESHOLD = 0.30;
+    const corroborate = (item: ItemLite): MatchResult | null => {
+      if (item.item_code.length <= SHORT_CODE_LEN && desc) {
+        const sim = similarity(
+          desc.toUpperCase().trim(),
+          (item.description ?? "").toUpperCase().trim(),
+        );
+        if (sim < CORROBORATION_THRESHOLD) {
+          return {
+            row,
+            bucket: "needs_review",
+            reason: "Short item_code match — please confirm description matches",
+            candidates: [item],
+          };
+        }
+      }
+      return null;
+    };
+
     // Steps 2-5: exact lookups (any with 2+ matches → needs_review)
     if (code) {
       const exact = byCodeLower.get(code.toLowerCase());
-      if (exact && exact.length === 1) return finalize(exact[0], "item_code");
+      if (exact && exact.length === 1) {
+        const demoted = corroborate(exact[0]);
+        if (demoted) return demoted;
+        return finalize(exact[0], "item_code");
+      }
       if (exact && exact.length > 1) {
         return {
           row,
@@ -254,7 +298,11 @@ export function matchCostMasterRows(
       const stripped = stripCode(code);
       if (stripped) {
         const norm = byCodeNorm.get(stripped);
-        if (norm && norm.length === 1) return finalize(norm[0], "item_code_norm");
+        if (norm && norm.length === 1) {
+          const demoted = corroborate(norm[0]);
+          if (demoted) return demoted;
+          return finalize(norm[0], "item_code_norm");
+        }
         if (norm && norm.length > 1) {
           return {
             row,
@@ -514,15 +562,21 @@ export async function applyCostMasterUpdates(
   }
 
   // ── Step 5: persist user-confirmed bindings (UPSERT) ──────────────────────
+  // source_text_norm is ALWAYS recomputed here via normalizeForBinding so the
+  // function enforces the binding-key contract regardless of what the caller
+  // put on the plan item. Old bindings written with the aggressive
+  // normalizeForMatch are left in the DB but won't match anything in the new
+  // lookup; users will re-confirm and the new binding lands here cleanly.
   const bindingRows = plan
-    .filter((p) => p.needs_binding_persist && successfulItemIds.has(p.item_id) && p.source_text_norm)
+    .filter((p) => p.needs_binding_persist && successfulItemIds.has(p.item_id) && p.source_text)
     .map((p) => ({
       company_id: companyId,
       source_text: p.source_text,
-      source_text_norm: p.source_text_norm,
+      source_text_norm: normalizeForBinding(p.source_text),
       item_id: p.item_id,
       confirmed_by: meta.user_id,
-    }));
+    }))
+    .filter((b) => b.source_text_norm.length > 0);
 
   // De-dupe inside this batch on source_text_norm (last wins) so the upsert
   // doesn't get "ON CONFLICT DO UPDATE command cannot affect row a second time".
