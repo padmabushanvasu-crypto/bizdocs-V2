@@ -84,7 +84,7 @@ export default function AssemblyWorkOrderDetail() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { profile } = useAuth();
+  const { user } = useAuth();
 
   const [confirmCompleteOpen, setConfirmCompleteOpen] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
@@ -174,12 +174,16 @@ export default function AssemblyWorkOrderDetail() {
   const reportIssueMutation = useMutation({
     mutationFn: async () => {
       if (!reportIssueLine) throw new Error("No line selected");
+      // concession_by is a uuid FK to auth.users(id) — must pass a UUID,
+      // not a display name. Bail before the API call if no UUID is available
+      // so we surface a clean toast rather than a Postgres FK error.
+      if (!user?.id) throw new Error("Not authenticated");
       return reportComponentIssue(
         reportIssueLine.id,
         reportIssueForm.damage_qty,
         reportIssueForm.disposition,
         reportIssueForm.reason,
-        profile?.full_name ?? "Unknown",
+        user.id,
       );
     },
     onSuccess: () => {
@@ -194,15 +198,20 @@ export default function AssemblyWorkOrderDetail() {
 
   const latestMir: MaterialIssueRequest | undefined = mirs[0];
 
-  // FIX 5D: Derived unfulfilled lines for warning banner + button guard
-  const unfulfilledLines = (awo?.line_items ?? []).filter((li) => {
-    if ((li.issued_qty ?? 0) >= li.required_qty) return false;
-    if (li.disposition === 'use_as_is') return false;
-    const damageCovered =
-      (li.damage_qty ?? 0) > 0 &&
-      ((li.issued_qty ?? 0) + (li.damage_qty ?? 0)) >= li.required_qty;
-    return !damageCovered;
-  });
+  // FIX 5D: Derived unfulfilled lines for warning banner + button guard.
+  // damage_qty only counts toward fulfilment when the disposition is
+  // use_as_is — i.e. the team accepts the gap and proceeds with short qty.
+  // For scrap or return_to_vendor the line is genuinely short by damage_qty
+  // and needs replacement before the WO can complete.
+  const effectivelyIssued = (li: AwoLineItem): number => {
+    const issued = li.issued_qty ?? 0;
+    const damage = li.damage_qty ?? 0;
+    const useAsIs = li.disposition === 'use_as_is';
+    return issued + (useAsIs ? damage : 0);
+  };
+  const unfulfilledLines = (awo?.line_items ?? []).filter(
+    (li) => effectivelyIssued(li) < li.required_qty,
+  );
   const hasUnfulfilled = unfulfilledLines.length > 0;
 
   if (isLoading) {
@@ -426,7 +435,28 @@ export default function AssemblyWorkOrderDetail() {
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center"><AvailabilityCell line={li} /></td>
                       <td className="px-3 py-2 border-b border-slate-100 text-center">
                         {(li.issued_qty ?? 0) >= li.required_qty ? (
-                          <Badge className="bg-green-100 text-green-800">Fully Issued</Badge>
+                          <div className="flex flex-col items-center gap-1">
+                            <Badge className="bg-green-100 text-green-800">Fully Issued</Badge>
+                            {awo.status === 'in_progress' && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-xs h-6 px-2 text-orange-700 border-orange-300 hover:bg-orange-50"
+                                onClick={() => {
+                                  setReportIssueLine(li);
+                                  setReportIssueForm({
+                                    damage_qty: 1,
+                                    disposition: 'scrap',
+                                    reason: '',
+                                  });
+                                  setReportIssueOpen(true);
+                                }}
+                              >
+                                <AlertTriangle className="w-3 h-3 mr-1" />
+                                Report Damage
+                              </Button>
+                            )}
+                          </div>
                         ) : li.disposition === 'use_as_is' ? (
                           <Badge className="bg-amber-100 text-amber-800">Accepted as-is</Badge>
                         ) : (
@@ -509,69 +539,112 @@ export default function AssemblyWorkOrderDetail() {
         </div>
       )}
 
-      {/* FIX 5B: Report Issue dialog */}
+      {/* FIX 5B: Report Issue / Damage dialog — adapts to two scenarios:
+          (1) Short line — assembler explains why MIR fell short
+          (2) Fully issued line — assembler reports a unit damaged during build */}
       <Dialog open={reportIssueOpen} onOpenChange={setReportIssueOpen}>
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Report Component Issue</DialogTitle>
-            <DialogDescription>
-              {reportIssueLine?.item_description ?? reportIssueLine?.item_code ?? 'Component'} — short by{' '}
-              {reportIssueLine ? reportIssueLine.required_qty - (reportIssueLine.issued_qty ?? 0) : 0}{' '}
-              {reportIssueLine?.unit ?? ''}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label>Disposition</Label>
-              <Select
-                value={reportIssueForm.disposition}
-                onValueChange={(v) =>
-                  setReportIssueForm((f) => ({ ...f, disposition: v as typeof f.disposition }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="scrap">Scrap — write off damaged stock</SelectItem>
-                  <SelectItem value="use_as_is">Accept as-is — proceed with short qty</SelectItem>
-                  <SelectItem value="return_to_vendor">Return to vendor</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Quantity affected</Label>
-              <Input
-                type="number"
-                min={0}
-                value={reportIssueForm.damage_qty}
-                onChange={(e) =>
-                  setReportIssueForm((f) => ({ ...f, damage_qty: Number(e.target.value) }))
-                }
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Reason / notes</Label>
-              <Input
-                value={reportIssueForm.reason}
-                onChange={(e) => setReportIssueForm((f) => ({ ...f, reason: e.target.value }))}
-                placeholder="Describe the issue…"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setReportIssueOpen(false)}>Cancel</Button>
-            <Button
-              onClick={() => reportIssueMutation.mutate()}
-              disabled={
-                reportIssueMutation.isPending ||
-                !reportIssueForm.reason.trim() ||
-                reportIssueForm.damage_qty <= 0
-              }
-            >
-              {reportIssueMutation.isPending ? "Saving…" : "Record Issue"}
-            </Button>
-          </DialogFooter>
+          {(() => {
+            const issued = reportIssueLine?.issued_qty ?? 0;
+            const required = reportIssueLine?.required_qty ?? 0;
+            const isFullyIssued = issued >= required;
+            const gap = Math.max(0, required - issued);
+            // Cap the qty input: for fully-issued lines, can't damage more
+            // than what was actually issued; for short lines, can't claim
+            // more units damaged than the open gap. Math.max with 1 keeps
+            // the boundary edge cases from disabling the form entirely.
+            const maxAllowed = Math.max(issued, isFullyIssued ? 1 : gap);
+            const qtyValid =
+              reportIssueForm.damage_qty > 0 &&
+              reportIssueForm.damage_qty <= maxAllowed;
+            const reasonValid = reportIssueForm.reason.trim().length > 0;
+            const isValid = qtyValid && reasonValid;
+            const unit = reportIssueLine?.unit ?? '';
+            const consequence =
+              reportIssueForm.disposition === 'scrap'
+                ? ' and write a scrap_write_off ledger entry'
+                : reportIssueForm.disposition === 'return_to_vendor'
+                ? ', return them to free stock, and write an assembly_return ledger entry'
+                : ' (use-as-is — no stock movement, just records concession)';
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle>
+                    {isFullyIssued ? 'Report Component Damage' : 'Report Component Issue'}
+                  </DialogTitle>
+                  <DialogDescription>
+                    {reportIssueLine?.item_description ?? reportIssueLine?.item_code ?? 'Component'}
+                    {' — '}
+                    {isFullyIssued
+                      ? 'report units damaged during assembly'
+                      : `short by ${gap} ${unit}`}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-2">
+                  <div className="space-y-1.5">
+                    <Label>Disposition</Label>
+                    <Select
+                      value={reportIssueForm.disposition}
+                      onValueChange={(v) =>
+                        setReportIssueForm((f) => ({ ...f, disposition: v as typeof f.disposition }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="scrap">Scrap — write off damaged stock</SelectItem>
+                        <SelectItem value="use_as_is">Accept as-is — proceed with short qty</SelectItem>
+                        <SelectItem value="return_to_vendor">Return to vendor</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Quantity affected</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={maxAllowed}
+                      value={reportIssueForm.damage_qty}
+                      onChange={(e) =>
+                        setReportIssueForm((f) => ({ ...f, damage_qty: Number(e.target.value) }))
+                      }
+                    />
+                    {!qtyValid && (
+                      <p className="text-xs text-red-600">
+                        {reportIssueForm.damage_qty <= 0
+                          ? 'Quantity must be greater than 0.'
+                          : `Quantity must be between 1 and ${maxAllowed} ${unit}.`}
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Reason / notes</Label>
+                    <Input
+                      value={reportIssueForm.reason}
+                      onChange={(e) => setReportIssueForm((f) => ({ ...f, reason: e.target.value }))}
+                      placeholder="Describe the issue…"
+                    />
+                    {!reasonValid && (
+                      <p className="text-xs text-red-600">Reason is required.</p>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    This will deduct {reportIssueForm.damage_qty || 0} {unit} from WIP{consequence}, then notify the storekeeper.
+                  </p>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setReportIssueOpen(false)}>Cancel</Button>
+                  <Button
+                    onClick={() => reportIssueMutation.mutate()}
+                    disabled={reportIssueMutation.isPending || !isValid}
+                  >
+                    {reportIssueMutation.isPending ? "Saving…" : "Record Issue"}
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
