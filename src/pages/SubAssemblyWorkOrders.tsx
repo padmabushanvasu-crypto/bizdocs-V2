@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -89,6 +90,7 @@ export default function SubAssemblyWorkOrders() {
     }
   }, []);
   const [search, setSearch] = useState("");
+  const [showCancelled, setShowCancelled] = useState(false);
 
   const monthOptions = useMemo(() => {
     const opts: { value: string; label: string }[] = [];
@@ -153,6 +155,7 @@ export default function SubAssemblyWorkOrders() {
   });
 
   const filtered = awos.filter((awo) => {
+    if (!showCancelled && awo.status === 'cancelled') return false;
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return (
@@ -218,6 +221,13 @@ export default function SubAssemblyWorkOrders() {
             ))}
           </SelectContent>
         </Select>
+        <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+          <Checkbox
+            checked={showCancelled}
+            onCheckedChange={(checked) => setShowCancelled(!!checked)}
+          />
+          Show cancelled
+        </label>
       </div>
 
       {/* Table */}
