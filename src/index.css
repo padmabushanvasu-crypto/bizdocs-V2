@@ -378,6 +378,21 @@
     overflow: visible !important;
   }
 
+  /* Print truncation fix — AppLayout's h-screen + inner h-full clips
+     to one viewport when printing. Reset height/overflow on the
+     layout containers so the browser can paginate naturally. */
+  .h-screen,
+  .h-full {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+  }
+
+  main > div.h-full,
+  [class*="overflow-hidden"] {
+    overflow: visible !important;
+  }
+
   /* The SidebarProvider flex wrapper */
   .min-h-screen.flex.w-full {
     display: block !important;
