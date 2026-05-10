@@ -394,6 +394,7 @@ export const ITEMS_IMPORT_CONFIG: ImportConfig = {
     { key: "sale_price", label: "Default Sale Price", description: "₹ amount", required: false, example: "650", validate: (v) => validators.positiveNumber("Sale Price")(v) },
     { key: "gst_rate", label: "Default GST Rate", description: "0/5/12/18/28", required: false, example: "18", validate: (v) => validators.gstRate(v) },
     { key: "hsn_sac_code", label: "HSN/SAC Code", description: "HSN or SAC code", required: false, example: "8483" },
+    { key: "standard_cost", label: "Standard Cost", description: "Internal cost ₹/unit (used for stock valuation)", required: false, example: "120.50", validate: (v) => validators.positiveNumber("Standard Cost")(v) },
     { key: "notes", label: "Notes", description: "Any notes", required: false, example: "" },
   ],
 };
@@ -659,7 +660,7 @@ export const ITEM_FIELD_MAP: Record<string, string[]> = {
   is_critical: ["is critical", "critical", "critical item", "critical component"],
   notes: ["notes", "remarks", "comments"],
   drawing_number: ["drawing number (alt)", "alt drawing", "drawing ref"],
-  standard_cost: ["standard cost", "std cost"],
+  standard_cost: ["standard cost", "std cost", "standard_cost", "cost per unit", "cost/unit", "unit cost", "cost"],
   purchase_price: ["default purchase price", "purchase price", "buy price"],
   sale_price: ["default sale price", "sale price", "selling price"],
 };
