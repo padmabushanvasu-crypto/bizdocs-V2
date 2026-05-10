@@ -26,6 +26,15 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
   Upload,
   ChevronDown,
   ChevronRight,
@@ -46,7 +55,7 @@ import {
   fetchCostMasterBindings,
   fetchItemsLite,
   matchCostMasterRows,
-  normalizeForMatch,
+  normalizeForBinding,
   type ApplyPlanItem,
   type ApplyResult,
   type CostMasterRow,
@@ -91,6 +100,12 @@ export default function CostMasterImport() {
   const [applyProgress, setApplyProgress] = useState<{ done: number; total: number } | null>(null);
   const [applyResult, setApplyResult] = useState<ApplyResult | null>(null);
 
+  // Big-apply confirmation: applies > 50 rows must be typed-confirmed.
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const [pendingPlan, setPendingPlan] = useState<ApplyPlanItem[] | null>(null);
+  const BIG_APPLY_THRESHOLD = 50;
+
   if (role !== "admin" && role !== "finance") {
     return <Navigate to="/" replace />;
   }
@@ -103,6 +118,9 @@ export default function CostMasterImport() {
     setReviewSelections({});
     setApplyResult(null);
     setApplyProgress(null);
+    setConfirmOpen(false);
+    setConfirmText("");
+    setPendingPlan(null);
     if (fileRef.current) fileRef.current.value = "";
   };
 
@@ -211,18 +229,16 @@ export default function CostMasterImport() {
     }
   };
 
-  const handleApply = async () => {
-    if (!matchResults || !parseSummary) return;
-
-    // Build the apply plan from buckets:
-    //   - will_update rows  → auto-matched, no binding to persist
-    //   - needs_review rows → only those the user resolved (non-skip), with a
-    //     binding write so next upload auto-matches
+  // Build the apply plan from current matchResults + reviewSelections.
+  //   - will_update rows  → auto-matched, no binding to persist
+  //   - needs_review rows → only those the user resolved (non-skip), with a
+  //     binding write so next upload auto-matches
+  const buildPlan = (): ApplyPlanItem[] => {
+    if (!matchResults) return [];
     const plan: ApplyPlanItem[] = [];
-
     matchResults.forEach((r, idx) => {
       const sourceText = (r.row.item_code || r.row.description || "").trim();
-      const sourceTextNorm = normalizeForMatch(sourceText);
+      const sourceTextNorm = normalizeForBinding(sourceText);
 
       if (r.bucket === "will_update" && r.matched_item && r.match_via) {
         plan.push({
@@ -257,15 +273,12 @@ export default function CostMasterImport() {
         });
       }
     });
+    return plan;
+  };
 
-    if (plan.length === 0) {
-      toast({
-        title: "Nothing to apply",
-        description: "No will-update rows and no resolved review rows.",
-      });
-      return;
-    }
-
+  // Actually run the apply against the DB. Always invoked with a non-empty plan.
+  const runApply = async (plan: ApplyPlanItem[]) => {
+    if (!parseSummary) return;
     setIsApplying(true);
     setApplyProgress({ done: 0, total: plan.length });
 
@@ -312,6 +325,40 @@ export default function CostMasterImport() {
     } finally {
       setIsApplying(false);
     }
+  };
+
+  // Apply button entry point. Decides direct-run (≤50) vs typed confirmation.
+  const handleApply = async () => {
+    if (!matchResults || !parseSummary) return;
+    const plan = buildPlan();
+    if (plan.length === 0) {
+      toast({
+        title: "Nothing to apply",
+        description: "No will-update rows and no resolved review rows.",
+      });
+      return;
+    }
+    if (plan.length > BIG_APPLY_THRESHOLD) {
+      setPendingPlan(plan);
+      setConfirmText("");
+      setConfirmOpen(true);
+      return;
+    }
+    await runApply(plan);
+  };
+
+  const handleConfirmApply = async () => {
+    const plan = pendingPlan;
+    setConfirmOpen(false);
+    setConfirmText("");
+    setPendingPlan(null);
+    if (plan && plan.length > 0) await runApply(plan);
+  };
+
+  const handleConfirmCancel = () => {
+    setConfirmOpen(false);
+    setConfirmText("");
+    setPendingPlan(null);
   };
 
   // ── Bucket the results ──
@@ -760,6 +807,53 @@ export default function CostMasterImport() {
           </CardContent>
         </Card>
       )}
+
+      {/* ── Big-apply typed confirmation ── */}
+      <Dialog
+        open={confirmOpen}
+        onOpenChange={(open) => {
+          if (!open && !isApplying) handleConfirmCancel();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm Cost Master apply</DialogTitle>
+            <DialogDescription>
+              You are about to update{" "}
+              <span className="font-semibold text-slate-900">
+                {pendingPlan?.length ?? 0}
+              </span>{" "}
+              item costs. This action writes to the items master and cannot be
+              auto-undone (audit log is preserved). Type{" "}
+              <span className="font-mono font-semibold">APPLY</span> in the box
+              below to confirm.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            autoFocus
+            placeholder="Type APPLY"
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            disabled={isApplying}
+          />
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={handleConfirmCancel}
+              disabled={isApplying}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmApply}
+              disabled={confirmText !== "APPLY" || isApplying}
+            >
+              Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
