@@ -14,6 +14,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { fetchItems, createItem, updateItem, deleteItem, bulkDeleteItems, fetchItemClassifications, createItemClassification, type Item, type ItemFilters, type ItemClassification } from "@/lib/items-api";
 import ItemsImportDialog from "@/components/ItemsImportDialog";
 import { exportToExcel, ITEMS_EXPORT_COLS } from "@/lib/export-utils";
+import { formatCurrency } from "@/lib/gst-utils";
 import { UNITS } from "@/lib/constants";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
 
@@ -378,15 +379,16 @@ export default function Items() {
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Min Stock</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Aimed Qty</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">GST%</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Standard Cost</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center w-20">Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={11} className="px-3 py-8 text-center text-sm text-slate-400">Loading...</td></tr>
+                <tr><td colSpan={12} className="px-3 py-8 text-center text-sm text-slate-400">Loading...</td></tr>
 
               ) : items.length === 0 ? (
-                <tr><td colSpan={11} className="px-3 py-8 text-center text-sm text-slate-400">No items found. Add your first item.</td></tr>
+                <tr><td colSpan={12} className="px-3 py-8 text-center text-sm text-slate-400">No items found. Add your first item.</td></tr>
               ) : (
                 items.map((item) => (
                   <tr key={item.id} className={`transition-colors ${canEdit ? "hover:bg-muted/50 cursor-pointer" : ""} ${selected.has(item.id) ? "bg-blue-50/60" : ""}`} onClick={canEdit ? () => openEdit(item) : undefined}>
@@ -421,6 +423,7 @@ export default function Items() {
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.min_stock || "—"}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{(item as any).aimed_stock || "—"}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.gst_rate}%</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(item.standard_cost ?? 0)}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                       <div className="flex gap-1 justify-center" onClick={(e) => e.stopPropagation()}>
                         {canEdit && (
