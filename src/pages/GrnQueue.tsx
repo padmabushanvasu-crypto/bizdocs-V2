@@ -220,7 +220,7 @@ export default function GrnQueue() {
     <div className="p-4 max-w-3xl mx-auto">
       <div className="mb-5">
         <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-          Inward Receipt Queue
+          GRN Receiving Queue
         </h1>
         <p className="text-sm text-muted-foreground">
           Track GRNs from QC to store confirmation
