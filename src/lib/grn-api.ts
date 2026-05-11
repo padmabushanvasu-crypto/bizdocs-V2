@@ -1756,7 +1756,7 @@ export async function storeConfirmGRNItems(
   const lineIds = items.map((i) => i.id);
   const { data: currentLines, error: fetchErr } = await (supabase as any)
     .from('grn_line_items')
-    .select('id, grn_id, item_id, item_code, description, drawing_number, conforming_qty, store_confirmed_qty, damaged_qty, store_confirmed')
+    .select('id, grn_id, item_id, description, drawing_number, conforming_qty, store_confirmed_qty, damaged_qty, store_confirmed')
     .in('id', lineIds);
   if (fetchErr) throw fetchErr;
 
@@ -1852,7 +1852,7 @@ export async function storeConfirmGRNItems(
         companyId: grnHeader?.company_id,
         confirmedBy: data.confirmedBy,
         linkedDcId: grnHeader?.linked_dc_id ?? null,
-        itemCode: line.item_code ?? null,
+        itemCode: null, // column doesn't exist on grn_line_items; could be looked up via items table by line.item_id if needed
         itemDescription: line.description ?? null,
       });
     }
@@ -1862,7 +1862,7 @@ export async function storeConfirmGRNItems(
     if (inDmg > 0 && line.item_id) {
       damagedLedgerEntries.push({
         item_id: line.item_id,
-        item_code: line.item_code ?? null,
+        item_code: null, // column doesn't exist on grn_line_items; could be looked up via items table by line.item_id if needed
         description: line.description ?? null,
         qty: inDmg,
         reason: input.damagedReason ?? null,
@@ -2082,7 +2082,7 @@ export async function fetchGrnStoreReceiptQueue(
   const { data: lineItems, error: lineErr } = await (supabase as any)
     .from('grn_line_items')
     .select(
-      'id, grn_id, item_id, item_code, description, drawing_number, unit, conforming_qty, store_confirmed_qty, damaged_qty, store_confirmed, store_confirmed_at, store_confirmed_by, damaged_reason, store_confirmation_notes, store_location'
+      'id, grn_id, item_id, description, drawing_number, unit, conforming_qty, store_confirmed_qty, damaged_qty, store_confirmed, store_confirmed_at, store_confirmed_by, damaged_reason, store_confirmation_notes, store_location'
     )
     .eq('company_id', companyId)
     .eq('is_final_grn', true);
@@ -2109,7 +2109,7 @@ export async function fetchGrnStoreReceiptQueue(
       return {
         id: l.id,
         item_id: l.item_id ?? null,
-        item_code: l.item_code ?? null,
+        item_code: null, // column doesn't exist on grn_line_items; could be looked up via items table if needed
         description: l.description ?? '',
         drawing_number: l.drawing_number ?? null,
         unit: l.unit ?? null,
