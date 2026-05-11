@@ -2174,6 +2174,16 @@ export async function fetchGrnStoreReceiptQueue(
     cards.sort((a, b) => (b.grn_date ?? '').localeCompare(a.grn_date ?? ''));
   }
 
+  // Step 7 — safety cap when the month filter is empty ("All months"). Cards
+  // are already sorted newest-first for confirmed / partial / all, so we trim
+  // the tail and always return the 200 most recent matches. Raise the cap if
+  // an audit/report needs a deeper window — this is purely defensive against
+  // accidental full-table loads as GRN history grows.
+  const UNBOUNDED_CAP = 200;
+  if (!filters.month && cards.length > UNBOUNDED_CAP) {
+    cards = cards.slice(0, UNBOUNDED_CAP);
+  }
+
   // Strip the internal sort key before returning.
   return cards.map(({ _latestConfirmedAt: _omit, ...rest }) => rest);
 }

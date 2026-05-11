@@ -79,9 +79,12 @@ function buildInitialFormForCard(card: GrnStoreReceiptCard): GrnFormState {
   return { confirmedBy: "", confirmedAt: today, items };
 }
 
-// Last-6-months options (matches StorekeeperQueue's pattern).
-const monthOptions = (() => {
-  const opts: { value: string; label: string }[] = [];
+// Last-6-months options, prefixed with an "All months" sentinel (value="")
+// so confirmed / partial / all views can show the full history floor.
+const monthOptions: { value: string; label: string }[] = (() => {
+  const opts: { value: string; label: string }[] = [
+    { value: "", label: "All months" },
+  ];
   const now = new Date();
   for (let i = 0; i < 6; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -92,13 +95,39 @@ const monthOptions = (() => {
   return opts;
 })();
 
+// First non-sentinel entry = current month (operational default for "pending").
+const CURRENT_MONTH = monthOptions[1].value;
+
+const monthLabel = (m: string): string => {
+  if (!m) return "All months";
+  const [y, mo] = m.split("-").map(Number);
+  if (!y || !mo) return m;
+  return new Date(y, mo - 1, 1).toLocaleString("en-US", {
+    month: "short",
+    year: "numeric",
+  });
+};
+
 export default function GrnStoreQueue() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
-  const [month, setMonth] = useState<string>(monthOptions[0].value);
+  const [month, setMonth] = useState<string>(CURRENT_MONTH);
+
+  // When the user flips status away from "pending", auto-broaden to All months
+  // so the history floor stays visible without forcing them to also pick a month.
+  // When they flip back to "pending" from All months, restore the current-month
+  // operational default. (Manual month picks after the auto-switch are honored.)
+  const onStatusChange = (newStatus: StatusFilter) => {
+    setStatusFilter(newStatus);
+    if (newStatus !== "pending") {
+      setMonth("");
+    } else if (month === "") {
+      setMonth(CURRENT_MONTH);
+    }
+  };
 
   const { data: cardsData, isLoading } = useQuery({
     queryKey: ["grn-store-queue", statusFilter, month],
@@ -206,7 +235,8 @@ export default function GrnStoreQueue() {
     }
   }
 
-  // Status-aware empty-state copy + icon.
+  // Status-aware empty-state copy + icon. Month-aware where useful to hint at
+  // the "All months" escape hatch when a narrow month picks up nothing.
   const emptyState = {
     pending: {
       title: "All caught up",
@@ -215,20 +245,32 @@ export default function GrnStoreQueue() {
       tone: "emerald" as const,
     },
     confirmed: {
-      title: "No confirmations match the selected filters",
-      detail: "Try a different month or status",
+      title: month
+        ? `No confirmations in ${monthLabel(month)}`
+        : "No confirmations match the selected filters",
+      detail: month
+        ? "Try 'All months' or pick a different period"
+        : "Try switching the month filter",
       Icon: PackageCheck,
       tone: "slate" as const,
     },
     partial: {
-      title: "No GRNs with damaged items this period",
-      detail: "All receipts came in clean",
+      title: month
+        ? `No GRNs with damaged items in ${monthLabel(month)}`
+        : "No GRNs with damaged items",
+      detail: month
+        ? "Try 'All months' or pick a different period"
+        : "All receipts came in clean",
       Icon: CheckCircle2,
       tone: "emerald" as const,
     },
     all: {
-      title: "No GRN inward records this month",
-      detail: "No QC-cleared receipts in the selected period",
+      title: month
+        ? `No GRN inward records in ${monthLabel(month)}`
+        : "No GRN inward records",
+      detail: month
+        ? "Try 'All months' for full history"
+        : "Limited to 200 most recent",
       Icon: PackageCheck,
       tone: "slate" as const,
     },
@@ -252,7 +294,7 @@ export default function GrnStoreQueue() {
 
       {/* Filters */}
       <div className="flex flex-wrap gap-2">
-        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
+        <Select value={statusFilter} onValueChange={(v) => onStatusChange(v as StatusFilter)}>
           <SelectTrigger className="w-[200px]">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
