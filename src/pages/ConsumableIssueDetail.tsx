@@ -37,6 +37,7 @@ import {
   type ConsumableIssueLineInput,
   type ConsumableItem,
 } from "@/lib/consumables-api";
+import { formatNumber } from "@/lib/gst-utils";
 import { format, parseISO } from "date-fns";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -434,7 +435,7 @@ export default function ConsumableIssueDetail() {
                               <span className="text-xs text-muted-foreground">{item.description}</span>
                             </div>
                             <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-                              Free: {item.stock_free}
+                              Free: {formatNumber(item.stock_free ?? 0)}
                             </span>
                           </CommandItem>
                         ))}
@@ -446,7 +447,7 @@ export default function ConsumableIssueDetail() {
               {line.item_id && (
                 <p className="text-xs text-muted-foreground">
                   {line.drawing_number && <span className="font-mono mr-3">{line.drawing_number}</span>}
-                  Free stock: <span className={line.stock_free < line.qty_issued ? "text-amber-600 font-medium" : "text-green-600 font-medium"}>{line.stock_free}</span>
+                  Free stock: <span className={line.stock_free < line.qty_issued ? "text-amber-600 font-medium" : "text-green-600 font-medium"}>{formatNumber(line.stock_free ?? 0)}</span>
                 </p>
               )}
             </div>

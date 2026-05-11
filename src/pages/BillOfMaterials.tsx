@@ -50,7 +50,7 @@ import BackgroundImportDialog from "@/components/BackgroundImportDialog";
 import { BOM_FIELD_MAP } from "@/lib/import-utils";
 import { fetchParties, type Party } from "@/lib/parties-api";
 import { fetchItems, type Item } from "@/lib/items-api";
-import { formatCurrency } from "@/lib/gst-utils";
+import { formatCurrency, formatNumber } from "@/lib/gst-utils";
 import { exportToExcel } from "@/lib/export-utils";
 import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
@@ -146,11 +146,11 @@ function TreeRow({
         <td className="text-center">
           {node.is_sufficient ? (
             <span className="text-xs text-green-600 font-medium">
-              ✓ {node.current_stock}
+              ✓ {formatNumber(node.current_stock ?? 0)}
             </span>
           ) : (
             <span className="text-xs text-red-600 font-semibold">
-              ✗ {node.current_stock}
+              ✗ {formatNumber(node.current_stock ?? 0)}
             </span>
           )}
         </td>
@@ -1652,7 +1652,7 @@ function BillOfMaterialsInner() {
                     <td>{row.unit}</td>
                     <td style={{ textAlign: "right" }}>{formatCurrency(row.unit_cost)}</td>
                     <td style={{ textAlign: "right" }}>{formatCurrency(row.total_cost)}</td>
-                    <td style={{ textAlign: "right" }}>{row.current_stock}</td>
+                    <td style={{ textAlign: "right" }}>{formatNumber(row.current_stock ?? 0)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -2030,7 +2030,7 @@ function BillOfMaterialsInner() {
                                       </button>
                                     </td>
                                     <td className="text-right font-mono tabular-nums text-sm">
-                                      {line.quantity}
+                                      {formatNumber(line.quantity ?? 0)}
                                     </td>
                                     <td className="text-xs text-muted-foreground">
                                       {line.child_unit ?? line.unit ?? ""}
@@ -2803,7 +2803,7 @@ function BillOfMaterialsInner() {
                                 <td className="px-3 py-2 border-b border-slate-100 text-center">
                                   <TypeBadge type={r.parent_item_type} />
                                 </td>
-                                <td className="px-3 py-2 border-b border-slate-100 text-right font-mono tabular-nums">{r.quantity_used}</td>
+                                <td className="px-3 py-2 border-b border-slate-100 text-right font-mono tabular-nums">{formatNumber(r.quantity_used ?? 0)}</td>
                                 <td className="px-3 py-2 border-b border-slate-100 text-xs text-muted-foreground">{r.unit}</td>
                                 <td className="px-3 py-2 border-b border-slate-100 text-xs text-muted-foreground">
                                   {r.variant_name ?? (
@@ -3016,7 +3016,7 @@ function BillOfMaterialsInner() {
                                   <div key={l.id} className="text-xs bg-red-50 border border-red-200 rounded px-3 py-1.5 mb-1 flex justify-between">
                                     <span className="font-mono text-red-700">{l.child_item_code}</span>
                                     <span className="text-red-600">{l.child_item_description}</span>
-                                    <span className="font-mono text-red-600">× {l.quantity}</span>
+                                    <span className="font-mono text-red-600">× {formatNumber(l.quantity ?? 0)}</span>
                                   </div>
                                 ))}
                               </div>
@@ -3031,7 +3031,7 @@ function BillOfMaterialsInner() {
                                   <div key={l.id} className="text-xs bg-blue-50 border border-blue-200 rounded px-3 py-1.5 mb-1 flex justify-between">
                                     <span className="font-mono text-blue-700">{l.child_item_code}</span>
                                     <span className="text-blue-600">{l.child_item_description}</span>
-                                    <span className="font-mono text-blue-600">× {l.quantity}</span>
+                                    <span className="font-mono text-blue-600">× {formatNumber(l.quantity ?? 0)}</span>
                                   </div>
                                 ))}
                               </div>
@@ -3047,7 +3047,7 @@ function BillOfMaterialsInner() {
                                     <span className="font-mono text-amber-700">{line_v1.child_item_code}</span>
                                     <span className="text-amber-600 truncate">{line_v1.child_item_description}</span>
                                     <span className="font-mono text-amber-700 shrink-0">
-                                      {line_v1.quantity} → {line_v2.quantity}
+                                      {formatNumber(line_v1.quantity ?? 0)} → {formatNumber(line_v2.quantity ?? 0)}
                                     </span>
                                   </div>
                                 ))}
@@ -3241,7 +3241,7 @@ function BillOfMaterialsInner() {
                                 <p className="text-sm font-medium">{item.description}</p>
                               )}
                               <p className="text-xs text-muted-foreground capitalize">
-                                {item.item_code} · {item.item_type?.replace(/_/g, " ")} · Stock: {item.current_stock}{" "}
+                                {item.item_code} · {item.item_type?.replace(/_/g, " ")} · Stock: {formatNumber(item.current_stock ?? 0)}{" "}
                                 {item.unit}
                               </p>
                             </div>
@@ -3383,7 +3383,7 @@ function BillOfMaterialsInner() {
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Current stock</span>
                   <span className="font-mono">
-                    {selectedChild.current_stock} {selectedChild.unit}
+                    {formatNumber(selectedChild.current_stock ?? 0)} {selectedChild.unit}
                   </span>
                 </div>
                 <div className="flex justify-between">

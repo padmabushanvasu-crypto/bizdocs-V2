@@ -13,6 +13,7 @@ import {
 } from "@/lib/production-api";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { formatNumber } from "@/lib/gst-utils";
 import { format, parseISO } from "date-fns";
 
 function mirStatusBadge(status: string) {
@@ -256,22 +257,22 @@ export default function StorekeeperQueue() {
                       )}
                       {(li.issued_qty ?? 0) > 0 && (
                         <p className="text-xs text-green-600 mt-0.5">
-                          Issued: {li.issued_qty} of {li.requested_qty}
+                          Issued: {formatNumber(li.issued_qty ?? 0)} of {formatNumber(li.requested_qty)}
                         </p>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{li.requested_qty}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(li.requested_qty)}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                       {li.stock_free != null ? (
                         <span className={li.stock_free >= li.requested_qty ? "text-green-600" : "text-amber-600"}>
-                          {li.stock_free}
+                          {formatNumber(li.stock_free ?? 0)}
                         </span>
                       ) : "—"}
                     </td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right">
                       {mirDetail.status === "issued" || fullyIssued ? (
                         <span className="font-mono tabular-nums text-sm">
-                          {fullyIssued ? <span className="text-green-600">✓ Done</span> : edit.issued_qty}
+                          {fullyIssued ? <span className="text-green-600">✓ Done</span> : formatNumber(edit.issued_qty ?? 0)}
                         </span>
                       ) : (
                         <Input

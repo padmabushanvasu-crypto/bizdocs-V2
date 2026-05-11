@@ -15,6 +15,7 @@ import {
   type StoreConfirmedItem,
 } from "@/lib/grn-api";
 import { logAudit } from "@/lib/audit-api";
+import { formatNumber } from "@/lib/gst-utils";
 
 // ── per-item editable state ──────────────────────────────────────────────────
 type ItemState = {
@@ -344,7 +345,7 @@ export default function GrnStoreQueue() {
                             <td className="px-3 py-2.5 text-right tabular-nums font-mono font-semibold text-slate-800 dark:text-slate-200">
                               {item.conforming_qty != null ? (
                                 <>
-                                  {item.conforming_qty}
+                                  {formatNumber(item.conforming_qty ?? 0)}
                                   {item.unit && (
                                     <span className="text-xs text-slate-400 ml-1 font-normal">
                                       {item.unit}
@@ -530,7 +531,7 @@ export default function GrnStoreQueue() {
                       )}
                     </td>
                     <td className="px-3 py-2 text-sm text-slate-700 dark:text-slate-200 text-right tabular-nums font-mono font-semibold">
-                      {item.conforming_qty != null ? item.conforming_qty : "—"}
+                      {item.conforming_qty != null ? formatNumber(item.conforming_qty) : "—"}
                       {item.unit && (
                         <span className="text-xs text-slate-400 dark:text-slate-500 ml-1 font-normal">{item.unit}</span>
                       )}

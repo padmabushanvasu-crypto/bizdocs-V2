@@ -47,6 +47,7 @@ import {
 } from "@/lib/reorder-api";
 import { fetchItems, type Item } from "@/lib/items-api";
 import { fetchParties, type Party } from "@/lib/parties-api";
+import { formatNumber } from "@/lib/gst-utils";
 
 // ── Dialog form state ─────────────────────────────────────────────────────────
 
@@ -282,13 +283,13 @@ export default function ReorderRules() {
                     </td>
                     <td className="px-3 py-2 text-sm border-b border-slate-100 text-right tabular-nums font-mono">
                       {rule.aimed_qty > 0 ? (
-                        <span className="text-blue-700 font-medium">{rule.aimed_qty}</span>
+                        <span className="text-blue-700 font-medium">{formatNumber(rule.aimed_qty ?? 0)}</span>
                       ) : (
                         <span className="text-slate-300">—</span>
                       )}
                     </td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
-                      {rule.reorder_qty}
+                      {formatNumber(rule.reorder_qty ?? 0)}
                     </td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-muted-foreground">
                       {rule.lead_time_days}d

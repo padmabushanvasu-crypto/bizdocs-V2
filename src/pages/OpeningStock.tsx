@@ -17,6 +17,7 @@ import {
 } from "@/lib/settings-api";
 import { format } from "date-fns";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
+import { formatNumber } from "@/lib/gst-utils";
 
 const ITEM_TYPE_LABELS: Record<string, { label: string; cls: string }> = {
   raw_material:   { label: "Raw Material",  cls: "bg-slate-100 text-slate-700" },
@@ -316,17 +317,17 @@ export default function OpeningStock() {
                     </td>
                     <td className="px-4 py-3 text-slate-600">{item.unit}</td>
                     <td className="px-4 py-3 text-right font-medium text-slate-800">
-                      {(item.stock_free ?? 0).toLocaleString("en-IN", { maximumFractionDigits: 3 })}
+                      {formatNumber(item.stock_free ?? 0)}
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-sm text-blue-700">
                       {(item as any).aimed_stock > 0
-                        ? (item as any).aimed_stock.toLocaleString("en-IN", { maximumFractionDigits: 3 })
+                        ? formatNumber((item as any).aimed_stock ?? 0)
                         : <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-4 py-3 text-right text-slate-500">
                       {entry ? (
                         <span title={entry.transaction_date}>
-                          {entry.qty.toLocaleString("en-IN", { maximumFractionDigits: 3 })} on{" "}
+                          {formatNumber(entry.qty ?? 0)} on{" "}
                           {format(new Date(entry.transaction_date), "dd MMM yyyy")}
                         </span>
                       ) : (
@@ -462,7 +463,7 @@ export default function OpeningStock() {
                     placeholder="0"
                   />
                   <p className="text-xs text-slate-400">
-                    Current free stock: {(editState.item.stock_free ?? 0).toLocaleString("en-IN", { maximumFractionDigits: 3 })}
+                    Current free stock: {formatNumber(editState.item.stock_free ?? 0)}
                   </p>
                 </div>
 

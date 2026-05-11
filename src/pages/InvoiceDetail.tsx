@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { useToast } from "@/hooks/use-toast";
 import { fetchInvoice, fetchInvoicePayments, cancelInvoice, recordPayment, getNextReceiptNumber } from "@/lib/invoices-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
-import { formatCurrency, amountInWords } from "@/lib/gst-utils";
+import { formatCurrency, formatNumber, amountInWords } from "@/lib/gst-utils";
 import { format } from "date-fns";
 import { DocumentHeader } from "@/components/DocumentHeader";
 import { DocumentActions } from "@/components/DocumentActions";
@@ -317,7 +317,7 @@ export default function InvoiceDetail() {
                     {li.drawing_number && <div className="text-xs text-muted-foreground font-normal">Dwg: {li.drawing_number}</div>}
                   </td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">{li.hsn_sac_code || "—"}</td>
-                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{li.quantity}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(li.quantity ?? 0)}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{li.unit}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(li.unit_price)}</td>
                   <td className={`px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right${allDiscountsZero ? " print:hidden" : ""}`}>

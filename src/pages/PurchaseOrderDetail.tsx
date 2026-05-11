@@ -23,7 +23,7 @@ import {
   type PurchaseOrder,
 } from "@/lib/purchase-orders-api";
 import { fetchGRNsForPO, createGrnFromPO } from "@/lib/grn-api";
-import { formatCurrency, amountInWords } from "@/lib/gst-utils";
+import { formatCurrency, formatNumber, amountInWords } from "@/lib/gst-utils";
 import { AuditTimeline } from "@/components/AuditTimeline";
 import { logAudit } from "@/lib/audit-api";
 import { DocumentHeader } from "@/components/DocumentHeader";
@@ -672,9 +672,9 @@ export default function PurchaseOrderDetail() {
                         <span className="text-emerald-600">✓</span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.quantity}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(item.quantity ?? 0)}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.unit}</td>
-                    <td className={`px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono${altPrintHidden}`}>{Number(item.quantity_2) > 0 ? item.quantity_2 : "—"}</td>
+                    <td className={`px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono${altPrintHidden}`}>{Number(item.quantity_2) > 0 ? formatNumber(item.quantity_2) : "—"}</td>
                     <td className={`px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left${altPrintHidden}`}>{Number(item.quantity_2) > 0 ? (item.unit_2 || "—") : "—"}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center tabular-nums font-mono">{item.delivery_date ? new Date(item.delivery_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</td>
                     {!hideCosts && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{isForeignPO ? `${poCurrencySymbol}${Number(item.unit_price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : formatCurrency(item.unit_price)}</td>}

@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
 import { fetchDispatchNote, cancelDN } from "@/lib/sales-orders-api";
-import { formatCurrency, amountInWords } from "@/lib/gst-utils";
+import { formatCurrency, formatNumber, amountInWords } from "@/lib/gst-utils";
 import { DocumentHeader } from "@/components/DocumentHeader";
 import { DocumentActions } from "@/components/DocumentActions";
 import { AuditTimeline } from "@/components/AuditTimeline";
@@ -200,7 +200,7 @@ export default function DispatchNoteDetail() {
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-semibold text-blue-700">{item.drawing_number || item.item_code || "—"}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">{item.description}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.unit || "NOS"}</td>
-                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.quantity}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(item.quantity ?? 0)}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(item.rate || 0)}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-medium">{formatCurrency(item.amount || 0)}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{item.serial_number_ref || "—"}</td>
@@ -307,7 +307,7 @@ export default function DispatchNoteDetail() {
                 <tr key={item.serial_number}>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{item.serial_number}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">{item.description}</td>
-                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.quantity}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(item.quantity ?? 0)}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.unit}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.weight_kg ?? "—"}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.dimensions || "—"}</td>

@@ -5,6 +5,7 @@ import { PackageCheck, ArrowRight, CheckCircle2 } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { fetchAwaitingStoreLineItems, type AwaitingStoreLineItem } from "@/lib/grn-api";
+import { formatNumber } from "@/lib/gst-utils";
 
 export default function ReadyToMoveQueue() {
   const navigate = useNavigate();
@@ -132,7 +133,7 @@ export default function ReadyToMoveQueue() {
                           <td className="px-3 py-2.5 text-right tabular-nums font-mono font-semibold text-emerald-800">
                             {item.conforming_qty != null ? (
                               <>
-                                {item.conforming_qty}
+                                {formatNumber(item.conforming_qty ?? 0)}
                                 {item.unit && (
                                   <span className="text-xs text-slate-400 ml-1 font-normal">
                                     {item.unit}

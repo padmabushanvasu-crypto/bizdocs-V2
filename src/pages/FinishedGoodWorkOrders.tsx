@@ -31,6 +31,7 @@ import {
 } from "@/lib/production-api";
 import { fetchItems } from "@/lib/items-api";
 import { fetchBomVariants } from "@/lib/bom-api";
+import { formatNumber } from "@/lib/gst-utils";
 import { format, differenceInDays, parseISO } from "date-fns";
 
 function statusBadge(status: string) {
@@ -283,7 +284,7 @@ export default function FinishedGoodWorkOrders() {
                         <p className="text-xs text-muted-foreground truncate max-w-[180px]">{awo.item_description}</p>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{awo.quantity_to_build}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(awo.quantity_to_build)}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{awo.raised_by ?? "—"}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">{statusBadge(awo.status)}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
