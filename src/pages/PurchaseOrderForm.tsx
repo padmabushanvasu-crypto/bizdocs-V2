@@ -721,7 +721,9 @@ export default function PurchaseOrderForm() {
               <Popover open={vendorOpen} onOpenChange={setVendorOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" role="combobox" className="w-full justify-between mt-1 font-normal">
-                    {selectedVendor ? selectedVendor.name : "Select vendor..."}
+                    {selectedVendor
+                      ? selectedVendor.name
+                      : ((existingPO as any)?.vendor_name ?? "Select vendor...")}
                     <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
@@ -737,7 +739,12 @@ export default function PurchaseOrderForm() {
                       </CommandEmpty>
                       <CommandGroup>
                         {vendors.map((v) => (
-                          <CommandItem key={v.id} value={v.name} onSelect={() => handleVendorSelect(v)}>
+                          <CommandItem
+                            key={v.id}
+                            value={v.id}
+                            keywords={[v.name, v.gstin ?? "", v.city ?? ""].filter(Boolean)}
+                            onSelect={() => handleVendorSelect(v)}
+                          >
                             <div>
                               <p className="font-medium">{v.name}</p>
                               <p className="text-xs text-muted-foreground">{v.city}{v.gstin ? ` · ${v.gstin}` : ""}</p>
