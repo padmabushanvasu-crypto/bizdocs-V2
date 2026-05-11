@@ -123,12 +123,15 @@ export interface ConsumableItem {
 
 export async function fetchConsumableItems(): Promise<ConsumableItem[]> {
   const companyId = await getCompanyId();
+  // Scoped to is_consumable=true items only (drill bits, taps, reamers, end mills,
+  // centre bits etc). The is_consumable flag was added to the items master to make
+  // the picker tractable — was previously showing every non-finished_good item.
   const { data, error } = await (supabase as any)
     .from("items")
     .select("id, item_code, description, drawing_number, unit, stock_free, item_type")
     .eq("company_id", companyId)
     .eq("status", "active")
-    .neq("item_type", "finished_good")
+    .eq("is_consumable", true)
     .order("item_code", { ascending: true });
   if (error) throw error;
   return (data ?? []) as ConsumableItem[];
