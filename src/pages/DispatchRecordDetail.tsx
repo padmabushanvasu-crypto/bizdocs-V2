@@ -9,6 +9,7 @@ import {
   confirmDispatch,
   markDelivered,
 } from "@/lib/dispatch-api";
+import { formatNumber } from "@/lib/gst-utils";
 import { format, parseISO } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
@@ -186,7 +187,7 @@ export default function DispatchRecordDetail() {
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{item.serial_number ?? "—"}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.item_code ?? "—"}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.item_description ?? "—"}</td>
-                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.quantity}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(item.quantity ?? 0)}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">{item.unit}</td>
                 </tr>
               ))}
@@ -222,7 +223,7 @@ export default function DispatchRecordDetail() {
                 <td style={{ border: "1px solid #000", padding: 6 }}>{i + 1}</td>
                 <td style={{ border: "1px solid #000", padding: 6 }}>{item.serial_number}</td>
                 <td style={{ border: "1px solid #000", padding: 6 }}>{item.item_description}</td>
-                <td style={{ border: "1px solid #000", padding: 6, textAlign: "center" }}>{item.quantity}</td>
+                <td style={{ border: "1px solid #000", padding: 6, textAlign: "center" }}>{formatNumber(item.quantity ?? 0)}</td>
                 <td style={{ border: "1px solid #000", padding: 6, textAlign: "center" }}>{item.unit}</td>
               </tr>
             ))}

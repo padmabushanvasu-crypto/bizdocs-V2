@@ -14,7 +14,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { fetchItems, createItem, updateItem, deleteItem, bulkDeleteItems, fetchItemClassifications, createItemClassification, type Item, type ItemFilters, type ItemClassification } from "@/lib/items-api";
 import ItemsImportDialog from "@/components/ItemsImportDialog";
 import { exportToExcel, ITEMS_EXPORT_COLS } from "@/lib/export-utils";
-import { formatCurrency } from "@/lib/gst-utils";
+import { formatCurrency, formatNumber } from "@/lib/gst-utils";
 import { UNITS } from "@/lib/constants";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
 
@@ -420,8 +420,8 @@ export default function Items() {
                     </td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.unit}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{item.hsn_sac_code || "—"}</td>
-                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.min_stock || "—"}</td>
-                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{(item as any).aimed_stock || "—"}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.min_stock != null ? formatNumber(item.min_stock) : "—"}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{(item as any).aimed_stock != null ? formatNumber((item as any).aimed_stock) : "—"}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{item.gst_rate}%</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(item.standard_cost ?? 0)}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">

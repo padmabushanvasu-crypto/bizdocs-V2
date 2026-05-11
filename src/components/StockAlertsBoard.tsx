@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { formatNumber } from "@/lib/gst-utils";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
@@ -525,21 +526,21 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
                         </span>
                       </td>
                       <td className="px-4 py-2 text-right font-mono text-sm tabular-nums text-slate-700">
-                        {row.current_stock.toFixed(2)}
+                        {formatNumber(row.current_stock ?? 0)}
                       </td>
                       <td className="px-4 py-2 text-right font-mono text-sm tabular-nums text-slate-500">
-                        {row.min_stock.toFixed(2)}
+                        {formatNumber(row.min_stock ?? 0)}
                       </td>
                       <td className="px-4 py-2 text-right font-mono text-sm tabular-nums text-slate-400">
-                        {row.aimed_stock > 0 ? row.aimed_stock.toFixed(2) : "—"}
+                        {row.aimed_stock > 0 ? formatNumber(row.aimed_stock) : "—"}
                       </td>
                       <td className="px-4 py-2 text-right font-mono text-sm tabular-nums font-semibold text-red-600">
-                        {row.shortage.toFixed(2)}
+                        {formatNumber(row.shortage ?? 0)}
                       </td>
                       <td className="px-4 py-2 text-right font-mono text-sm tabular-nums font-semibold text-blue-700">
                         {row.aimed_stock > 0
-                          ? Math.max(0, row.aimed_stock - row.current_stock).toFixed(2)
-                          : row.shortage.toFixed(2)}
+                          ? formatNumber(Math.max(0, (row.aimed_stock ?? 0) - (row.current_stock ?? 0)))
+                          : formatNumber(row.shortage ?? 0)}
                       </td>
                       <td className="px-4 py-2 text-center">
                         {row.actionedWith === "PO" ? (
