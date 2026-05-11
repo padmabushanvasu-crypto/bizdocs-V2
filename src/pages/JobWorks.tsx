@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { Activity, Search, AlertTriangle } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchJobWorks, type JobWorkSummary } from "@/lib/job-works-api";
 
 const STATUS_PILLS = [
@@ -57,11 +59,11 @@ export default function JobWorks() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 25;
+  const [pageSize, setPageSize] = useState(25);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["job-works", { search, status, page }],
-    queryFn: () => fetchJobWorks({ search, status, page, pageSize: PAGE_SIZE }),
+    queryKey: ["job-works", { search, status, page, pageSize }],
+    queryFn: () => fetchJobWorks({ search, status, page, pageSize }),
   });
 
   const rows: JobWorkSummary[] = data?.data ?? [];
@@ -205,29 +207,51 @@ export default function JobWorks() {
         </div>
       </div>
 
-      {/* Pagination */}
-
-      {total > PAGE_SIZE && (
-        <div className="flex justify-center gap-2">
-          <button
-            disabled={page <= 1}
-            onClick={() => setPage((p) => p - 1)}
-            className="px-3 py-1.5 text-xs rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50 transition-colors"
+      {/* Pagination footer — "Per page" always visible; prev/next only when count exceeds pageSize */}
+      <div className="flex flex-wrap justify-between items-center gap-3">
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Per page</span>
+          <Select
+            value={String(pageSize)}
+            onValueChange={(v) => {
+              setPageSize(Number(v));
+              setPage(1);
+            }}
           >
-            Previous
-          </button>
-          <span className="text-xs text-slate-500 flex items-center px-2">
-            Page {page} of {Math.ceil(total / PAGE_SIZE)}
-          </span>
-          <button
-            disabled={page * PAGE_SIZE >= total}
-            onClick={() => setPage((p) => p + 1)}
-            className="px-3 py-1.5 text-xs rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50 transition-colors"
-          >
-            Next
-          </button>
+            <SelectTrigger className="w-[80px] h-8">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="25">25</SelectItem>
+              <SelectItem value="50">50</SelectItem>
+              <SelectItem value="100">100</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-      )}
+        {total > pageSize && (
+          <div className="flex gap-2 items-center">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => p - 1)}
+            >
+              Previous
+            </Button>
+            <span className="text-sm text-muted-foreground flex items-center px-2">
+              Page {page} of {Math.ceil(total / pageSize)}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page * pageSize >= total}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
