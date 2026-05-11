@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { markAsRead } from "@/lib/notifications-api";
 import { getCompanyId } from "@/lib/auth-helpers";
+import { formatNumber } from "@/lib/gst-utils";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -115,15 +116,15 @@ export function GRNFinanceApproval({ grnId, grnNumber, overReceiptLines, role }:
                       <span className="block truncate" title={line.description}>{line.description}</span>
                     </td>
                     <td className="px-3 py-2 text-right font-mono text-xs tabular-nums text-slate-500">
-                      {line.pending_quantity}
+                      {formatNumber(line.pending_quantity ?? 0)}
                       <span className="ml-1 text-[10px] text-muted-foreground">{line.unit}</span>
                     </td>
                     <td className="px-3 py-2 text-right font-mono text-xs tabular-nums text-slate-700">
-                      {line.received_qty}
+                      {formatNumber(line.received_qty ?? 0)}
                       <span className="ml-1 text-[10px] text-muted-foreground">{line.unit}</span>
                     </td>
                     <td className="px-3 py-2 text-right font-mono text-xs tabular-nums">
-                      <span className="text-amber-700 font-semibold">+{excess}</span>
+                      <span className="text-amber-700 font-semibold">+{formatNumber(excess)}</span>
                       <span className="ml-1 text-[10px] text-muted-foreground">{line.unit}</span>
                     </td>
                     <td className="px-3 py-2 text-center text-xs text-slate-500">{line.unit || "NOS"}</td>

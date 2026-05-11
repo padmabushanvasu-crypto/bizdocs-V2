@@ -8,6 +8,7 @@ import {
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { formatNumber } from "@/lib/gst-utils";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
@@ -318,19 +319,19 @@ function Stage1Table({
                     </div>
                     {isOverQty && (
                       <p className="text-xs text-red-600 mt-0.5 text-right font-medium">
-                        Exceeds max {tolerancePct > 0 ? `(${line.pending_quantity + Math.floor(line.pending_quantity * tolerancePct / 100)} ${unit})` : `(${line.pending_quantity} ${unit})`}
+                        Exceeds max {tolerancePct > 0 ? `(${formatNumber((line.pending_quantity ?? 0) + Math.floor((line.pending_quantity ?? 0) * tolerancePct / 100))} ${unit})` : `(${formatNumber(line.pending_quantity ?? 0)} ${unit})`}
                       </p>
                     )}
                     {isWithinTolerance && !isOverQty && (
                       <p className="text-xs text-amber-700 mt-0.5 text-right">
-                        +{line.received_qty - line.pending_quantity} over PO · within {tolerancePct}% tolerance
+                        +{formatNumber((line.received_qty ?? 0) - (line.pending_quantity ?? 0))} over PO · within {tolerancePct}% tolerance
                       </p>
                     )}
                   </td>
 
                   {/* Pending — auto, read-only, muted */}
                   <td className="px-3 py-2 text-right tabular-nums text-slate-400">
-                    <span className="font-mono">{pending}</span>
+                    <span className="font-mono">{formatNumber(pending)}</span>
                     <span className="text-xs text-muted-foreground ml-1">{unit}</span>
                   </td>
 
@@ -560,15 +561,15 @@ function Stage1ReadOnly({ lines, isDcGrn }: { lines: S1Line[]; isDcGrn?: boolean
                       <p className="text-xs text-muted-foreground mt-0.5">Process: {l.nature_of_process}</p>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-slate-500">{l.po_quantity}</td>
-                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-semibold text-slate-800">{l.received_qty}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-slate-500">{formatNumber(l.po_quantity ?? 0)}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-semibold text-slate-800">{formatNumber(l.received_qty ?? 0)}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
-                    {l.qty_matched}
+                    {formatNumber(l.qty_matched ?? 0)}
                     {l.qty_matched >= l.received_qty ? <span className="ml-1 text-green-600">✓</span> : null}
                   </td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                     {l.received_qty - l.qty_matched > 0 ? (
-                      <span className="text-amber-600 font-semibold">{l.received_qty - l.qty_matched}</span>
+                      <span className="text-amber-600 font-semibold">{formatNumber((l.received_qty ?? 0) - (l.qty_matched ?? 0))}</span>
                     ) : <span className="text-slate-300">—</span>}
                   </td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center text-xs capitalize">{(l.condition_on_arrival || "good").replace(/_/g, " ")}</td>
@@ -698,7 +699,7 @@ function QCMeasurementEditor({
               <span className={`text-xs font-semibold ${hasNC ? "text-amber-800" : "text-blue-800"}`}>
                 <span className="font-mono">{item.item_code || "—"}</span>
                 {" — "}{item.description}
-                <span className="font-normal ml-2">· Inspecting: {item.matching_units ?? item.received_qty} {item.unit} (matched in Stage 1)</span>
+                <span className="font-normal ml-2">· Inspecting: {formatNumber((item.matching_units ?? item.received_qty) ?? 0)} {item.unit} (matched in Stage 1)</span>
               </span>
               <button
                 type="button"
@@ -903,7 +904,7 @@ function QCMeasurementReadOnly({
               <span className={`text-xs font-semibold ${hasNC ? "text-amber-800" : "text-blue-800"}`}>
                 <span className="font-mono">{item.item_code || "—"}</span>
                 {" — "}{item.description}
-                <span className="font-normal ml-2">· Inspecting: {item.matching_units ?? item.received_qty} {item.unit}</span>
+                <span className="font-normal ml-2">· Inspecting: {formatNumber((item.matching_units ?? item.received_qty) ?? 0)} {item.unit}</span>
               </span>
             </div>
             <div className="overflow-x-auto rounded-lg border border-slate-200">
@@ -1065,10 +1066,10 @@ function GRNPrintView({
                 <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0" }}>{idx + 1}</td>
                 <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", fontFamily: "Courier New, monospace" }}>{l.item_code || "—"}</td>
                 <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0" }}>{l.description}</td>
-                <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "right" }}>{l.po_quantity}</td>
-                <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "right", fontWeight: "bold" }}>{l.received_qty}</td>
-                <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "right" }}>{l.qty_matched}{l.qty_matched >= l.received_qty ? " ✓" : ""}</td>
-                <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "right" }}>{l.received_qty - l.qty_matched > 0 ? l.received_qty - l.qty_matched : "—"}</td>
+                <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "right" }}>{formatNumber(l.po_quantity ?? 0)}</td>
+                <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "right", fontWeight: "bold" }}>{formatNumber(l.received_qty ?? 0)}</td>
+                <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "right" }}>{formatNumber(l.qty_matched ?? 0)}{l.qty_matched >= l.received_qty ? " ✓" : ""}</td>
+                <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "right" }}>{(l.received_qty ?? 0) - (l.qty_matched ?? 0) > 0 ? formatNumber((l.received_qty ?? 0) - (l.qty_matched ?? 0)) : "—"}</td>
                 <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textTransform: "capitalize" }}>{(l.condition_on_arrival || "good").replace(/_/g, " ")}</td>
                 <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "center" }}>{l.packing_intact ? "Yes" : "No"}</td>
               </tr>
@@ -1139,7 +1140,7 @@ function GRNPrintView({
                       {itemCode && <span style={{ fontFamily: "Courier New, monospace" }}>{itemCode}</span>}
                       {itemCode && " — "}
                       {item.description}
-                      {s1 && <span style={{ fontWeight: "normal" }}> · Received: {s1.received_qty} {item.unit}</span>}
+                      {s1 && <span style={{ fontWeight: "normal" }}> · Received: {formatNumber(s1.received_qty ?? 0)} {item.unit}</span>}
                     </td>
                   </tr>
                   {/* Measurement rows */}
@@ -1197,8 +1198,8 @@ function GRNPrintView({
                   <tr key={idx}>
                     <td style={{ padding: "2pt 4pt", borderBottom: "0.5pt solid #FDE68A", fontFamily: "Courier New, monospace" }}>{itemCode || "—"}</td>
                     <td style={{ padding: "2pt 4pt", borderBottom: "0.5pt solid #FDE68A" }}>{item?.description || "—"}</td>
-                    <td style={{ padding: "2pt 4pt", borderBottom: "0.5pt solid #FDE68A", textAlign: "center" }}>{nc.conforming_qty}</td>
-                    <td style={{ padding: "2pt 4pt", borderBottom: "0.5pt solid #FDE68A", textAlign: "center", fontWeight: "bold", color: "#DC2626" }}>{nc.non_conforming_qty}</td>
+                    <td style={{ padding: "2pt 4pt", borderBottom: "0.5pt solid #FDE68A", textAlign: "center" }}>{formatNumber(nc.conforming_qty ?? 0)}</td>
+                    <td style={{ padding: "2pt 4pt", borderBottom: "0.5pt solid #FDE68A", textAlign: "center", fontWeight: "bold", color: "#DC2626" }}>{formatNumber(nc.non_conforming_qty ?? 0)}</td>
                     <td style={{ padding: "2pt 4pt", borderBottom: "0.5pt solid #FDE68A", textTransform: "capitalize" }}>{(nc.disposition || "—").replace(/_/g, " ")}</td>
                   </tr>
                 );
@@ -2268,7 +2269,7 @@ export default function GRNDetail() {
                             <td className="px-2 py-1 text-slate-700 dark:text-slate-200">{dli.description ?? '—'}</td>
                             <td className="px-2 py-1 text-slate-700 dark:text-slate-200">{dli.nature_of_process ?? '—'}</td>
                             <td className="px-2 py-1 text-right font-mono text-slate-700 dark:text-slate-200">
-                              {dli.qty_nos ?? 0} {dli.unit ?? ''}
+                              {formatNumber(dli.qty_nos ?? 0)} {dli.unit ?? ''}
                             </td>
                           </tr>
                         ))}
@@ -2538,8 +2539,8 @@ export default function GRNDetail() {
                           <div className="flex flex-wrap items-center gap-3 text-xs">
                             <span className="font-mono text-slate-500">{item.item_code || "—"}</span>
                             <span className="font-medium text-slate-700">{item.description}</span>
-                            <span className="text-green-700">Conforming: <strong>{nc.conforming_qty} {unit}</strong></span>
-                            <span className="text-amber-700">Non-Conforming: <strong>{nc.non_conforming_qty} {unit}</strong></span>
+                            <span className="text-green-700">Conforming: <strong>{formatNumber(nc.conforming_qty ?? 0)} {unit}</strong></span>
+                            <span className="text-amber-700">Non-Conforming: <strong>{formatNumber(nc.non_conforming_qty ?? 0)} {unit}</strong></span>
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="text-slate-500">Disposition:</span>
                               <select
@@ -2641,12 +2642,12 @@ export default function GRNDetail() {
                 {/* DC deduction alert — job work NC items */}
                 {g.linked_dc_id && ncItemsWithData.some((s) => s.non_conforming_qty > 0 && s.disposition !== 'return_to_vendor') && (
                   <div className="border border-amber-200 bg-amber-50 rounded-lg p-4 space-y-2 text-xs">
-                    <p className="font-semibold text-amber-800">⚠ Deduction Alert — {ncItemsWithData.filter((s) => s.non_conforming_qty > 0).reduce((t, s) => t + s.non_conforming_qty, 0)} non-conforming unit(s) found on job work return.</p>
+                    <p className="font-semibold text-amber-800">⚠ Deduction Alert — {formatNumber(ncItemsWithData.filter((s) => s.non_conforming_qty > 0).reduce((t, s) => t + (s.non_conforming_qty ?? 0), 0))} non-conforming unit(s) found on job work return.</p>
                     {ncItemsWithData.filter((s) => s.non_conforming_qty > 0 && s.disposition !== 'return_to_vendor').map((nc) => {
                       const item = s1Lines.find((l) => l.id === nc.lineItemId);
                       return item ? (
                         <div key={nc.lineItemId} className="text-amber-700">
-                          {item.description} × {nc.non_conforming_qty} unit(s) — Amount: To be determined
+                          {item.description} × {formatNumber(nc.non_conforming_qty ?? 0)} unit(s) — Amount: To be determined
                         </div>
                       ) : null;
                     })}
@@ -2761,8 +2762,8 @@ export default function GRNDetail() {
                     <tr key={idx} className="border-b border-amber-100">
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-slate-500">{item?.item_code || "—"}</td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium text-slate-800">{item?.description || "—"}</td>
-                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-green-700 font-semibold">{nc.conforming_qty} {unit}</td>
-                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-amber-700 font-semibold">{nc.non_conforming_qty} {unit}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-green-700 font-semibold">{formatNumber(nc.conforming_qty ?? 0)} {unit}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-amber-700 font-semibold">{formatNumber(nc.non_conforming_qty ?? 0)} {unit}</td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center capitalize">{(nc.disposition || "—").replace(/_/g, " ")}</td>
                       <td className="px-3 py-2 text-sm border-b border-slate-100 text-left text-xs text-slate-500 max-w-[200px]">
                         {nc.qc_notes ? nc.qc_notes : <span className="text-slate-300">—</span>}
