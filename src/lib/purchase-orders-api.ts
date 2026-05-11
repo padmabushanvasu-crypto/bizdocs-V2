@@ -256,6 +256,23 @@ export async function updatePurchaseOrder(id: string, { po, lineItems }: CreateP
   // DB level by idx_po_line_items_po_serial unique index).
   if (!companyId) throw new Error("Not authenticated");
 
+  // Preserve received_quantity from existing rows — the form payload doesn't
+  // include this (UI doesn't expose it to the editor), so without this merge
+  // the RPC would reset all received_quantity to 0, wiping receipt history.
+  // Known limitation: matched by serial_number, so if the user re-orders
+  // lines (changes serial_numbers), receipts may mis-attribute. Re-ordering
+  // is rare and typically happens before any receipts, so we accept this.
+  const { data: existingLines, error: fetchErr } = await supabase
+    .from("po_line_items")
+    .select("serial_number, received_quantity")
+    .eq("po_id", id);
+  if (fetchErr) throw fetchErr;
+
+  const receivedBySerial = new Map<number, number>();
+  for (const line of (existingLines ?? []) as any[]) {
+    receivedBySerial.set(Number(line.serial_number), Number(line.received_quantity ?? 0));
+  }
+
   const { error: replaceError } = await (supabase as any).rpc('replace_po_line_items', {
     p_po_id: id,
     p_company_id: companyId,
@@ -270,7 +287,10 @@ export async function updatePurchaseOrder(id: string, { po, lineItems }: CreateP
       line_total: item.line_total ?? 0,
       gst_rate: item.gst_rate ?? 18,
       hsn_sac_code: item.hsn_sac_code ?? null,
-      received_quantity: item.received_quantity ?? 0,
+      received_quantity:
+        receivedBySerial.get(Number(item.serial_number))
+        ?? item.received_quantity
+        ?? 0,
       item_id: item.item_id ?? null,
       quantity_2: item.quantity_2 ?? null,
       unit_2: item.unit_2 ?? null,
