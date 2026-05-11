@@ -368,7 +368,7 @@ export default function PurchaseOrdersList() {
     status: "all",
     drawingNumber: "",
     page: 1,
-    pageSize: 20,
+    pageSize: 25,
   });
   const [showDeleted, setShowDeleted] = useState(false);
 
@@ -588,30 +588,50 @@ export default function PurchaseOrdersList() {
         </div>
       </div>
 
-      {/* Pagination */}
-      {(data?.count ?? 0) > (filters.pageSize ?? 20) && (
-        <div className="flex justify-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={(filters.page ?? 1) <= 1}
-            onClick={() => setFilters((f) => ({ ...f, page: (f.page ?? 1) - 1 }))}
+      {/* Pagination footer — "Per page" always visible; prev/next only when count exceeds pageSize */}
+      <div className="flex flex-wrap justify-between items-center gap-3">
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Per page</span>
+          <Select
+            value={String(filters.pageSize ?? 25)}
+            onValueChange={(v) =>
+              setFilters((f) => ({ ...f, pageSize: Number(v), page: 1 }))
+            }
           >
-            Previous
-          </Button>
-          <span className="text-sm text-muted-foreground flex items-center px-2">
-            Page {filters.page} of {Math.ceil((data?.count ?? 0) / (filters.pageSize ?? 20))}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={(filters.page ?? 1) * (filters.pageSize ?? 20) >= (data?.count ?? 0)}
-            onClick={() => setFilters((f) => ({ ...f, page: (f.page ?? 1) + 1 }))}
-          >
-            Next
-          </Button>
+            <SelectTrigger className="w-[80px] h-8">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="25">25</SelectItem>
+              <SelectItem value="50">50</SelectItem>
+              <SelectItem value="100">100</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-      )}
+        {(data?.count ?? 0) > (filters.pageSize ?? 25) && (
+          <div className="flex gap-2 items-center">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={(filters.page ?? 1) <= 1}
+              onClick={() => setFilters((f) => ({ ...f, page: (f.page ?? 1) - 1 }))}
+            >
+              Previous
+            </Button>
+            <span className="text-sm text-muted-foreground flex items-center px-2">
+              Page {filters.page} of {Math.ceil((data?.count ?? 0) / (filters.pageSize ?? 25))}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={(filters.page ?? 1) * (filters.pageSize ?? 25) >= (data?.count ?? 0)}
+              onClick={() => setFilters((f) => ({ ...f, page: (f.page ?? 1) + 1 }))}
+            >
+              Next
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   );
 
