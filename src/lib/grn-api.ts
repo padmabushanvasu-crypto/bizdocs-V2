@@ -1998,6 +1998,186 @@ export async function fetchStoreConfirmedHistory(): Promise<StoreConfirmedItem[]
     }));
 }
 
+// ── Unified store-receipt queue (new GrnStoreQueue UI) ────────────────────
+// Single fetcher driving the redesigned Inward Receipt Queue. Returns one card
+// per GRN with its full line set + aggregate fields so the page can filter on
+// status (pending / confirmed / partial-with-damage / all) and month, without
+// running separate "pending" and "history" queries.
+
+export interface GrnStoreReceiptQueueFilters {
+  status?: 'pending' | 'confirmed' | 'partial' | 'all';
+  month?: string; // 'YYYY-MM' format, scoped to grns.grn_date
+}
+
+export interface GrnStoreReceiptCardLine {
+  id: string;
+  item_id: string | null;
+  item_code: string | null;
+  description: string;
+  drawing_number: string | null;
+  unit: string | null;
+  conforming_qty: number;
+  store_confirmed_qty: number;
+  damaged_qty: number;
+  remaining_qty: number;
+  store_confirmed: boolean;
+  store_confirmed_at: string | null;
+  store_confirmed_by: string | null;
+  damaged_reason: string | null;
+  store_confirmation_notes: string | null;
+  store_location: string | null;
+}
+
+export interface GrnStoreReceiptCard {
+  grn_id: string;
+  grn_number: string;
+  grn_date: string;
+  vendor_name: string;
+  grn_type: string; // po_grn | dc_grn
+  line_items: GrnStoreReceiptCardLine[];
+  total_lines: number;
+  pending_lines: number;          // store_confirmed = false
+  fully_confirmed_lines: number;  // store_confirmed = true
+  has_damaged_qty: boolean;       // any line with damaged_qty > 0
+  card_status: 'pending' | 'confirmed' | 'partial';
+}
+
+export async function fetchGrnStoreReceiptQueue(
+  filters: GrnStoreReceiptQueueFilters = {}
+): Promise<GrnStoreReceiptCard[]> {
+  const companyId = await getCompanyId();
+  if (!companyId) return [];
+
+  // Step 1 — pull GRNs in the selected month window (or all if no month).
+  let grnQuery = (supabase as any)
+    .from('grns')
+    .select('id, grn_number, grn_date, vendor_name, grn_type')
+    .eq('company_id', companyId)
+    .not('status', 'in', '(deleted,cancelled)');
+
+  if (filters.month) {
+    const [y, m] = filters.month.split('-').map(Number);
+    if (y && m) {
+      const start = `${y}-${String(m).padStart(2, '0')}-01`;
+      const nextMonth =
+        m === 12
+          ? `${y + 1}-01-01`
+          : `${y}-${String(m + 1).padStart(2, '0')}-01`;
+      grnQuery = grnQuery.gte('grn_date', start).lt('grn_date', nextMonth);
+    }
+  }
+
+  const { data: grns, error: grnErr } = await grnQuery;
+  if (grnErr) throw grnErr;
+  if (!grns?.length) return [];
+
+  const grnIds = (grns as any[]).map((g: any) => g.id as string);
+
+  // Step 2 — pull all is_final_grn lines for those GRNs.
+  const { data: lineItems, error: lineErr } = await (supabase as any)
+    .from('grn_line_items')
+    .select(
+      'id, grn_id, item_id, item_code, description, drawing_number, unit, conforming_qty, store_confirmed_qty, damaged_qty, store_confirmed, store_confirmed_at, store_confirmed_by, damaged_reason, store_confirmation_notes, store_location'
+    )
+    .eq('company_id', companyId)
+    .eq('is_final_grn', true)
+    .in('grn_id', grnIds);
+  if (lineErr) throw lineErr;
+  if (!lineItems?.length) return [];
+
+  const grnMap: Record<string, any> = {};
+  for (const g of grns as any[]) grnMap[g.id] = g;
+
+  // Step 3 — group lines by grn_id.
+  const groups: Record<string, any[]> = {};
+  for (const li of lineItems as any[]) {
+    if (!groups[li.grn_id]) groups[li.grn_id] = [];
+    groups[li.grn_id].push(li);
+  }
+
+  // Step 4 — build card + aggregates. card_status is derived per card.
+  type CardWithSortKey = GrnStoreReceiptCard & { _latestConfirmedAt: string | null };
+  let cards: CardWithSortKey[] = Object.entries(groups).map(([grnId, lines]) => {
+    const grn = grnMap[grnId];
+    const mappedLines: GrnStoreReceiptCardLine[] = (lines as any[]).map((l: any) => {
+      const conforming = Number(l.conforming_qty ?? 0);
+      const sConfirmed = Number(l.store_confirmed_qty ?? 0);
+      const dmg = Number(l.damaged_qty ?? 0);
+      return {
+        id: l.id,
+        item_id: l.item_id ?? null,
+        item_code: l.item_code ?? null,
+        description: l.description ?? '',
+        drawing_number: l.drawing_number ?? null,
+        unit: l.unit ?? null,
+        conforming_qty: conforming,
+        store_confirmed_qty: sConfirmed,
+        damaged_qty: dmg,
+        remaining_qty: Math.max(0, conforming - sConfirmed - dmg),
+        store_confirmed: Boolean(l.store_confirmed),
+        store_confirmed_at: l.store_confirmed_at ?? null,
+        store_confirmed_by: l.store_confirmed_by ?? null,
+        damaged_reason: l.damaged_reason ?? null,
+        store_confirmation_notes: l.store_confirmation_notes ?? null,
+        store_location: l.store_location ?? null,
+      };
+    });
+
+    const pendingLines = mappedLines.filter((l) => !l.store_confirmed).length;
+    const fullyConfirmedLines = mappedLines.length - pendingLines;
+    const hasDamaged = mappedLines.some((l) => l.damaged_qty > 0);
+
+    let cardStatus: 'pending' | 'confirmed' | 'partial';
+    if (pendingLines > 0) cardStatus = 'pending';
+    else if (hasDamaged) cardStatus = 'partial';
+    else cardStatus = 'confirmed';
+
+    const latestConfirmedAt =
+      mappedLines
+        .map((l) => l.store_confirmed_at)
+        .filter((d): d is string => !!d)
+        .sort()
+        .pop() ?? null;
+
+    return {
+      grn_id: grnId,
+      grn_number: grn?.grn_number ?? '—',
+      grn_date: grn?.grn_date ?? '',
+      vendor_name: grn?.vendor_name ?? '',
+      grn_type: grn?.grn_type ?? 'po_grn',
+      line_items: mappedLines,
+      total_lines: mappedLines.length,
+      pending_lines: pendingLines,
+      fully_confirmed_lines: fullyConfirmedLines,
+      has_damaged_qty: hasDamaged,
+      card_status: cardStatus,
+      _latestConfirmedAt: latestConfirmedAt,
+    };
+  });
+
+  // Step 5 — apply status filter (client-side because card_status is derived).
+  const statusFilter = filters.status ?? 'pending';
+  if (statusFilter !== 'all') {
+    cards = cards.filter((c) => c.card_status === statusFilter);
+  }
+
+  // Step 6 — sort.
+  if (statusFilter === 'pending') {
+    cards.sort((a, b) => (a.grn_date ?? '').localeCompare(b.grn_date ?? ''));
+  } else if (statusFilter === 'confirmed' || statusFilter === 'partial') {
+    cards.sort((a, b) => {
+      const aT = a._latestConfirmedAt ?? '';
+      const bT = b._latestConfirmedAt ?? '';
+      return bT.localeCompare(aT);
+    });
+  } else {
+    cards.sort((a, b) => (b.grn_date ?? '').localeCompare(a.grn_date ?? ''));
+  }
+
+  // Strip the internal sort key before returning.
+  return cards.map(({ _latestConfirmedAt: _omit, ...rest }) => rest);
+}
+
 // ── Inward Receipt Queue (GrnQueue page) ──────────────────────────────────
 // Two queries: GRNs that have cleared QC and are waiting for store, and the
 // historical list of confirmed GRNs.
