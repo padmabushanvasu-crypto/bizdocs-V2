@@ -1468,11 +1468,155 @@ export async function saveGRNScrapItems(
   }
 }
 
-export async function storeConfirmGRN(
+/**
+ * Credit stock_free for a single partial store confirmation increment.
+ * Handles both PO-GRN (incoming -> free) and DC-return (in_process -> free) paths.
+ * Writes the corresponding stock_ledger entry per increment.
+ * For PO-GRN paths only, also fires MIR shortage notifications if newly-credited
+ * stock matches open MIR shortage lines.
+ *
+ * Pre-conditions:
+ *  - storeQty > 0 (caller must guard)
+ *  - parent GRN's grn_type is known
+ *  - if itemId is null, will attempt drawing_revision lookup before bailing
+ */
+async function creditPartialStock(
+  grnId: string,
+  lineId: string,
+  itemId: string | null,
+  storeQty: number,
+  opts: {
+    grnType: 'po_grn' | 'dc_grn' | string;
+    grnNumber: string | null;
+    drawingNumber: string | null;
+    companyId: string;
+    confirmedBy: string;
+    linkedDcId?: string | null;
+    itemCode?: string | null;
+    itemDescription?: string | null;
+  }
+): Promise<void> {
+  if (!(storeQty > 0)) return;
+
+  // Resolve item_id by drawing_revision fallback if FK is missing.
+  let resolvedItemId: string | null = itemId;
+  let itemCode: string | null = opts.itemCode ?? null;
+  let itemDesc: string | null = opts.itemDescription ?? null;
+  if (!resolvedItemId && opts.drawingNumber) {
+    const { data: itemRec } = await (supabase as any)
+      .from('items')
+      .select('id, item_code, description')
+      .eq('drawing_revision', opts.drawingNumber)
+      .eq('company_id', opts.companyId)
+      .maybeSingle();
+    if (itemRec) {
+      resolvedItemId = (itemRec as any).id;
+      itemCode = (itemRec as any).item_code;
+      itemDesc = (itemRec as any).description;
+    }
+  }
+  if (!resolvedItemId) {
+    console.warn(
+      `[grn] creditPartialStock — unable to resolve item_id for grn=${grnId} line=${lineId}; skipping stock credit.`
+    );
+    return;
+  }
+
+  const today = new Date().toISOString().split('T')[0];
+  const isDcReturn = opts.grnType === 'dc_grn' || !!opts.linkedDcId;
+
+  if (isDcReturn) {
+    // DC return: move from in_process -> free
+    await updateStockBucket(resolvedItemId, 'in_process', -storeQty).catch(console.error);
+    await updateStockBucket(resolvedItemId, 'free', +storeQty).catch(console.error);
+    await addStockLedgerEntry({
+      item_id: resolvedItemId,
+      item_code: itemCode,
+      item_description: itemDesc,
+      transaction_date: today,
+      transaction_type: 'dc_return',
+      qty_in: storeQty,
+      qty_out: 0,
+      balance_qty: 0,
+      unit_cost: 0,
+      total_value: 0,
+      reference_type: 'grn',
+      reference_id: grnId,
+      reference_number: opts.grnNumber,
+      notes: 'DC return — storekeeper confirmed (partial)',
+      created_by: null,
+      from_state: 'in_process',
+      to_state: 'free',
+    }).catch(console.error);
+    return;
+  }
+
+  // PO-GRN: credit stock_free from incoming
+  await updateStockBucket(resolvedItemId, 'free', +storeQty).catch(console.error);
+  await addStockLedgerEntry({
+    item_id: resolvedItemId,
+    item_code: itemCode,
+    item_description: itemDesc,
+    transaction_date: today,
+    transaction_type: 'grn_receipt',
+    qty_in: storeQty,
+    qty_out: 0,
+    balance_qty: 0,
+    unit_cost: 0,
+    total_value: 0,
+    reference_type: 'grn',
+    reference_id: grnId,
+    reference_number: opts.grnNumber,
+    notes: `GRN ${opts.grnNumber ?? ''} store confirmed (partial)`.trim(),
+    created_by: null,
+    from_state: 'incoming',
+    to_state: 'free',
+  }).catch(console.error);
+
+  // MIR shortage notifications — fire as soon as stock lands, not at full-close.
+  // Notification spam risk: each partial that touches an item with an open shortage
+  // emits one notification per matching mir_line_item. Acceptable given storekeepers
+  // need to know stock just landed; consider dedup later if it becomes noisy.
+  try {
+    const { data: shortageLines } = await (supabase as any)
+      .from('mir_line_items')
+      .select('id, item_id, item_code, item_description, shortage_qty, mir_id, material_issue_requests(mir_number, status)')
+      .eq('item_id', resolvedItemId)
+      .gt('shortage_qty', 0);
+
+    for (const sl of (shortageLines ?? []) as any[]) {
+      const mirStatus = sl.material_issue_requests?.status;
+      if (!['pending', 'partially_issued'].includes(mirStatus)) continue;
+      await (supabase as any).from('notifications').insert({
+        company_id: opts.companyId,
+        type: 'mir_restock',
+        title: 'Stock available for MIR',
+        message: `${sl.item_description ?? sl.item_code ?? 'Item'} restocked via GRN ${opts.grnNumber ?? ''}. MIR ${sl.material_issue_requests?.mir_number} has a shortage of ${sl.shortage_qty} — reissue from the storekeeper queue.`,
+        reference_type: 'material_issue_request',
+        reference_id: sl.mir_id,
+        created_by: opts.confirmedBy,
+      }).catch(console.error);
+    }
+  } catch (e) {
+    console.error('[grn] MIR restock notification failed:', e);
+  }
+}
+
+/**
+ * Internal close-ceremony helper. Called by storeConfirmGRNItems after all
+ * lines on a GRN reach fully-confirmed state. Does NOT credit stock —
+ * stock is credited per-partial via creditPartialStock during the line-update
+ * loop in storeConfirmGRNItems. This function only updates the parent GRN
+ * status row and recomputes DC-return status if applicable.
+ *
+ * DO NOT call this directly from new code paths. Use storeConfirmGRNItems
+ * as the public entry point for any store confirmation, partial or full.
+ */
+async function storeConfirmGRN(
   grnId: string,
   data: { confirmedBy: string; confirmedAt: string; location?: string | null; notes?: string | null }
 ): Promise<void> {
-  // Idempotency guard — prevent double stock movement if called twice
+  // Idempotency guard — refuse if GRN already store-confirmed.
   const { data: grnCheck, error: checkErr } = await (supabase as any)
     .from('grns')
     .select('store_confirmed')
@@ -1483,138 +1627,12 @@ export async function storeConfirmGRN(
     throw new Error('This GRN has already been store-confirmed. Please refresh the page.');
   }
 
-  // For DC return GRNs: move accepted stock from in_process → free on storekeeper confirmation
+  // Read header to decide DC-return status recompute path. No stock math here.
   const { data: grnHeader } = await (supabase as any)
     .from('grns')
-    .select('grn_type, linked_dc_id, company_id, grn_number')
+    .select('grn_type, linked_dc_id')
     .eq('id', grnId)
     .single();
-
-  if (grnHeader?.grn_type === 'dc_grn') {
-    const today = new Date().toISOString().split('T')[0];
-    const { data: lines } = await (supabase as any)
-      .from('grn_line_items')
-      .select('item_id, conforming_qty, is_final_grn')
-      .eq('grn_id', grnId)
-      .eq('is_final_grn', true);
-
-    for (const line of (lines ?? []) as any[]) {
-      const qty: number = line.conforming_qty ?? 0;
-      if (!line.item_id || qty <= 0) continue;
-      await updateStockBucket(line.item_id, 'in_process', -qty).catch(console.error);
-      await updateStockBucket(line.item_id, 'free', +qty).catch(console.error);
-      await addStockLedgerEntry({
-        item_id: line.item_id,
-        item_code: null,
-        item_description: null,
-        transaction_date: today,
-        transaction_type: 'dc_return',
-        qty_in: qty,
-        qty_out: 0,
-        balance_qty: 0,
-        unit_cost: 0,
-        total_value: 0,
-        reference_type: 'grn',
-        reference_id: grnId,
-        reference_number: null,
-        notes: 'DC return — storekeeper confirmed',
-        created_by: null,
-        from_state: 'in_process',
-        to_state: 'free',
-      });
-    }
-  }
-
-  // For PO-GRN: move QC-accepted stock into stock_free on storekeeper confirmation.
-  // Stock intentionally NOT moved at GRN creation — only moved here after QC verdict is set.
-  if (grnHeader?.grn_type !== 'dc_grn' && !grnHeader?.linked_dc_id) {
-    const today = new Date().toISOString().split('T')[0];
-    const { data: poLines } = await (supabase as any)
-      .from('grn_line_items')
-      .select('item_id, drawing_number, accepted_qty, conforming_qty, accepted_quantity')
-      .eq('grn_id', grnId)
-      .eq('is_final_grn', true);
-
-    // FIX 6: collect item IDs that were actually restocked
-    const restakedItemIds: string[] = [];
-
-    for (const line of (poLines ?? []) as any[]) {
-      // Use QC-verified accepted_qty (Phase 14); fall back to conforming_qty, then creation-time accepted_quantity
-      const qty: number =
-        (line.accepted_qty ?? 0) > 0 ? line.accepted_qty
-        : (line.conforming_qty ?? 0) > 0 ? line.conforming_qty
-        : (line.accepted_quantity ?? 0);
-      if (qty <= 0) continue;
-
-      // Resolve item_id — use direct FK if available, else look up by drawing_revision
-      let itemId: string | null = line.item_id ?? null;
-      let itemCode: string | null = null;
-      let itemDesc: string | null = null;
-      if (!itemId && line.drawing_number) {
-        const { data: itemRec } = await (supabase as any)
-          .from('items')
-          .select('id, item_code, description')
-          .eq('drawing_revision', line.drawing_number)
-          .eq('company_id', grnHeader.company_id)
-          .maybeSingle();
-        if (itemRec) {
-          itemId = (itemRec as any).id;
-          itemCode = (itemRec as any).item_code;
-          itemDesc = (itemRec as any).description;
-        }
-      }
-      if (!itemId) continue;
-
-      await updateStockBucket(itemId, 'free', +qty).catch(console.error);
-      restakedItemIds.push(itemId);
-      await addStockLedgerEntry({
-        item_id: itemId,
-        item_code: itemCode,
-        item_description: itemDesc,
-        transaction_date: today,
-        transaction_type: 'grn_receipt',
-        qty_in: qty,
-        qty_out: 0,
-        balance_qty: 0,
-        unit_cost: 0,
-        total_value: 0,
-        reference_type: 'grn',
-        reference_id: grnId,
-        reference_number: grnHeader.grn_number ?? null,
-        notes: `GRN ${grnHeader.grn_number} store confirmed`,
-        created_by: null,
-        from_state: 'incoming',
-        to_state: 'free',
-      });
-    }
-
-    // FIX 6: notify storekeeper of open MIR shortages for newly restocked items
-    try {
-      if (restakedItemIds.length > 0) {
-        const { data: shortageLines } = await (supabase as any)
-          .from('mir_line_items')
-          .select('id, item_id, item_code, item_description, shortage_qty, mir_id, material_issue_requests(mir_number, status)')
-          .in('item_id', restakedItemIds)
-          .gt('shortage_qty', 0);
-
-        for (const sl of (shortageLines ?? []) as any[]) {
-          const mirStatus = sl.material_issue_requests?.status;
-          if (!['pending', 'partially_issued'].includes(mirStatus)) continue;
-          await (supabase as any).from('notifications').insert({
-            company_id: grnHeader.company_id,
-            type: 'mir_restock',
-            title: 'Stock available for MIR',
-            message: `${sl.item_description ?? sl.item_code ?? 'Item'} restocked via GRN ${grnHeader.grn_number ?? ''}. MIR ${sl.material_issue_requests?.mir_number} has a shortage of ${sl.shortage_qty} — reissue from the storekeeper queue.`,
-            reference_type: 'material_issue_request',
-            reference_id: sl.mir_id,
-            created_by: data.confirmedBy,
-          }).catch(console.error);
-        }
-      }
-    } catch (e) {
-      console.error('[grn] MIR restock notification failed:', e);
-    }
-  }
 
   const { error } = await (supabase as any)
     .from('grns')
@@ -1629,7 +1647,7 @@ export async function storeConfirmGRN(
     .eq('id', grnId);
   if (error) throw error;
 
-  // CHANGE 1+2: For DC return GRNs — set GRN status fully_received and update DC status
+  // DC-return status recompute (status-only, no stock math).
   if (grnHeader?.grn_type === 'dc_grn') {
     await recalculateGRNStatusFromLines(grnId).catch(console.error);
     if (grnHeader.linked_dc_id) {
@@ -1667,6 +1685,7 @@ export interface AwaitingStoreLineItem {
   unit: string | null;
   store_confirmed_qty: number | null;
   damaged_qty: number | null;
+  remaining_qty: number;
   damaged_reason: string | null;
   store_confirmation_notes: string | null;
 }
@@ -1692,21 +1711,28 @@ export async function fetchAwaitingStoreLineItems(): Promise<AwaitingStoreLineIt
   const grnMap: Record<string, any> = {};
   for (const g of (grns ?? []) as any[]) grnMap[g.id] = g;
 
-  return (lineItems as any[]).map((l: any) => ({
-    id: l.id,
-    grn_id: l.grn_id,
-    grn_number: grnMap[l.grn_id]?.grn_number ?? '—',
-    grn_date: grnMap[l.grn_id]?.grn_date ?? '',
-    vendor_name: grnMap[l.grn_id]?.vendor_name ?? null,
-    description: l.description,
-    drawing_number: l.drawing_number ?? null,
-    conforming_qty: l.conforming_qty ?? null,
-    unit: l.unit ?? null,
-    store_confirmed_qty: l.store_confirmed_qty ?? null,
-    damaged_qty: l.damaged_qty ?? null,
-    damaged_reason: l.damaged_reason ?? null,
-    store_confirmation_notes: l.store_confirmation_notes ?? null,
-  }));
+  return (lineItems as any[]).map((l: any) => {
+    const conforming = Number(l.conforming_qty ?? 0);
+    const alreadyConfirmed = Number(l.store_confirmed_qty ?? 0);
+    const alreadyDamaged = Number(l.damaged_qty ?? 0);
+    const remaining = Math.max(0, conforming - alreadyConfirmed - alreadyDamaged);
+    return {
+      id: l.id,
+      grn_id: l.grn_id,
+      grn_number: grnMap[l.grn_id]?.grn_number ?? '—',
+      grn_date: grnMap[l.grn_id]?.grn_date ?? '',
+      vendor_name: grnMap[l.grn_id]?.vendor_name ?? null,
+      description: l.description,
+      drawing_number: l.drawing_number ?? null,
+      conforming_qty: l.conforming_qty ?? null,
+      unit: l.unit ?? null,
+      store_confirmed_qty: l.store_confirmed_qty ?? null,
+      damaged_qty: l.damaged_qty ?? null,
+      remaining_qty: remaining,
+      damaged_reason: l.damaged_reason ?? null,
+      store_confirmation_notes: l.store_confirmation_notes ?? null,
+    };
+  });
 }
 
 export async function storeConfirmGRNItems(
@@ -1720,77 +1746,174 @@ export async function storeConfirmGRNItems(
     notes?: string | null;
   }>,
   data: { confirmedBy: string; confirmedAt: string }
-): Promise<void> {
+): Promise<{ fullyConfirmed: string[]; stillPending: string[] }> {
   const confirmedAt = new Date(data.confirmedAt).toISOString();
-  for (const item of items) {
-    const { error } = await (supabase as any)
-      .from('grn_line_items')
-      .update({
-        store_confirmed:          true,
-        store_confirmed_by:       data.confirmedBy,
-        store_confirmed_at:       confirmedAt,
-        store_location:           item.location ?? null,
-        store_confirmed_qty:      item.storeQty ?? null,
-        damaged_qty:              item.damagedQty ?? null,
-        damaged_reason:           item.damagedReason ?? null,
-        store_confirmation_notes: item.notes ?? null,
-      })
-      .eq('id', item.id);
-    if (error) throw error;
+  // Epsilon for 3dp numeric — protects against JS float drift on accumulation.
+  const EPS = 0.0005;
+
+  if (!items.length) return { fullyConfirmed: [], stillPending: [] };
+
+  const lineIds = items.map((i) => i.id);
+  const { data: currentLines, error: fetchErr } = await (supabase as any)
+    .from('grn_line_items')
+    .select('id, grn_id, item_id, item_code, description, drawing_number, conforming_qty, store_confirmed_qty, damaged_qty, store_confirmed')
+    .in('id', lineIds);
+  if (fetchErr) throw fetchErr;
+
+  const lineMap = new Map<string, any>(
+    ((currentLines ?? []) as any[]).map((l: any) => [l.id, l])
+  );
+
+  // Parent GRN header — needed by creditPartialStock to route PO vs DC and
+  // to stamp ledger reference_number / MIR notifications.
+  const { data: grnHeader, error: headerErr } = await (supabase as any)
+    .from('grns')
+    .select('grn_type, grn_number, linked_dc_id, company_id')
+    .eq('id', grnId)
+    .single();
+  if (headerErr) throw headerErr;
+
+  // Validate ownership and quantities up front, before any UPDATE.
+  for (const input of items) {
+    const line = lineMap.get(input.id);
+    if (!line) throw new Error(`Line item ${input.id} not found.`);
+    if (line.grn_id !== grnId) {
+      throw new Error(`Line item ${input.id} does not belong to GRN ${grnId}.`);
+    }
+    const conforming = Number(line.conforming_qty ?? 0);
+    const curStore = Number(line.store_confirmed_qty ?? 0);
+    const curDmg = Number(line.damaged_qty ?? 0);
+    const inStore = Number(input.storeQty ?? 0);
+    const inDmg = Number(input.damagedQty ?? 0);
+    if (inStore < 0 || inDmg < 0) {
+      throw new Error(`Quantities cannot be negative (line ${line.description ?? input.id}).`);
+    }
+    const remaining = conforming - curStore - curDmg;
+    if (inStore + inDmg > remaining + EPS) {
+      throw new Error(
+        `Confirmed (${inStore}) + damaged (${inDmg}) exceeds remaining (${remaining.toFixed(3)}) for line ${line.description ?? input.id}.`
+      );
+    }
   }
 
-  // Write-off ledger entries for any damaged items
-  const damagedItems = items.filter((i) => i.damagedQty && i.damagedQty > 0);
-  if (damagedItems.length > 0) {
-    const today = new Date().toISOString().split('T')[0];
-    const { data: lineDetails } = await (supabase as any)
+  const fullyConfirmed: string[] = [];
+  const stillPending: string[] = [];
+  const damagedLedgerEntries: Array<{
+    item_id: string;
+    item_code: string | null;
+    description: string | null;
+    qty: number;
+    reason: string | null;
+  }> = [];
+
+  for (const input of items) {
+    const line = lineMap.get(input.id);
+    const conforming = Number(line.conforming_qty ?? 0);
+    const curStore = Number(line.store_confirmed_qty ?? 0);
+    const curDmg = Number(line.damaged_qty ?? 0);
+    const inStore = Number(input.storeQty ?? 0);
+    const inDmg = Number(input.damagedQty ?? 0);
+
+    const newStore = curStore + inStore;
+    const newDmg = curDmg + inDmg;
+    const totalAccounted = newStore + newDmg;
+    const isFullyConfirmed = totalAccounted + EPS >= conforming;
+
+    const updatePayload: Record<string, any> = {
+      store_confirmed_qty: newStore,
+      damaged_qty: newDmg,
+      store_location: input.location ?? null,
+    };
+    // Append-only text fields: only overwrite if a new value was supplied this turn.
+    if (input.damagedReason) updatePayload.damaged_reason = input.damagedReason;
+    if (input.notes) updatePayload.store_confirmation_notes = input.notes;
+    if (isFullyConfirmed) {
+      updatePayload.store_confirmed = true;
+      updatePayload.store_confirmed_by = data.confirmedBy;
+      updatePayload.store_confirmed_at = confirmedAt;
+    }
+
+    const { error: updErr } = await (supabase as any)
       .from('grn_line_items')
-      .select('id, item_id, item_code, description')
-      .in('id', damagedItems.map((i) => i.id));
-    const lineMap = new Map<string, any>(
-      ((lineDetails ?? []) as any[]).map((l) => [l.id, l])
-    );
-    for (const item of damagedItems) {
-      const line = lineMap.get(item.id);
-      if (!line?.item_id) continue;
-      await addStockLedgerEntry({
+      .update(updatePayload)
+      .eq('id', input.id);
+    if (updErr) throw updErr;
+
+    if (isFullyConfirmed) fullyConfirmed.push(input.id);
+    else stillPending.push(input.id);
+
+    // Credit stock_free per partial increment (storeQty only, damaged units excluded).
+    // Safe to call repeatedly across partials — updateStockBucket is additive.
+    if (inStore > 0) {
+      await creditPartialStock(grnId, input.id, line.item_id ?? null, inStore, {
+        grnType: grnHeader?.grn_type ?? 'po_grn',
+        grnNumber: grnHeader?.grn_number ?? null,
+        drawingNumber: line.drawing_number ?? null,
+        companyId: grnHeader?.company_id,
+        confirmedBy: data.confirmedBy,
+        linkedDcId: grnHeader?.linked_dc_id ?? null,
+        itemCode: line.item_code ?? null,
+        itemDescription: line.description ?? null,
+      });
+    }
+
+    // Damaged write-off is keyed on the INCREMENT supplied this call, not the cumulative
+    // total — each partial confirmation that records new damage emits its own ledger entry.
+    if (inDmg > 0 && line.item_id) {
+      damagedLedgerEntries.push({
         item_id: line.item_id,
         item_code: line.item_code ?? null,
-        item_description: line.description ?? null,
+        description: line.description ?? null,
+        qty: inDmg,
+        reason: input.damagedReason ?? null,
+      });
+    }
+  }
+
+  if (damagedLedgerEntries.length > 0) {
+    const today = new Date().toISOString().split('T')[0];
+    for (const entry of damagedLedgerEntries) {
+      await addStockLedgerEntry({
+        item_id: entry.item_id,
+        item_code: entry.item_code,
+        item_description: entry.description,
         transaction_date: today,
         transaction_type: 'rejection_writeoff',
         qty_in: 0,
-        qty_out: item.damagedQty!,
+        qty_out: entry.qty,
         balance_qty: 0,
         unit_cost: 0,
         total_value: 0,
         reference_type: 'grn',
         reference_id: grnId,
         reference_number: null,
-        notes: `Damaged on arrival — ${item.damagedReason || 'no reason given'}`,
+        notes: `Damaged on arrival — ${entry.reason || 'no reason given'}`,
         created_by: null,
       }).catch(console.error);
     }
   }
 
-  // Check whether all final GRN line items for this GRN are now confirmed
-  const { data: remaining } = await (supabase as any)
+  // Recompute parent-GRN state from the authoritative line set.
+  const { data: remainingLines } = await (supabase as any)
     .from('grn_line_items')
     .select('id')
     .eq('grn_id', grnId)
     .eq('is_final_grn', true)
     .neq('store_confirmed', true);
 
-  if (!remaining?.length) {
-    // All items confirmed — close the GRN fully
+  if (!remainingLines?.length) {
+    // All lines on this GRN now fully confirmed — run the close ceremony only.
+    // Stock was already credited per partial via creditPartialStock above.
     await storeConfirmGRN(grnId, { confirmedBy: data.confirmedBy, confirmedAt: data.confirmedAt });
   } else {
-    // Partial — mark the flag without closing
+    // At least one line still open — mark partial without closing.
     await (supabase as any)
       .from('grns')
       .update({ partial_store_confirmed: true })
       .eq('id', grnId);
   }
+
+  return { fullyConfirmed, stillPending };
 }
 
 export async function storeConfirmLineItem(
