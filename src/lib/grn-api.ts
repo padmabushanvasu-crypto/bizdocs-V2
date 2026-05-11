@@ -2071,26 +2071,29 @@ export async function fetchGrnStoreReceiptQueue(
   if (grnErr) throw grnErr;
   if (!grns?.length) return [];
 
-  const grnIds = (grns as any[]).map((g: any) => g.id as string);
+  const grnMap: Record<string, any> = {};
+  for (const g of grns as any[]) grnMap[g.id] = g;
 
-  // Step 2 — pull all is_final_grn lines for those GRNs.
+  // Step 2 — pull all is_final_grn lines for this company. We deliberately
+  // don't use .in('grn_id', grnIds) here: when the month filter is broad
+  // (or "All months"), grnIds can hit hundreds of UUIDs and blow past
+  // PostgREST's URL length limit (returns 400 Bad Request). Filtering by
+  // grnMap in JS at Step 3 is cheaper and bound to company size.
   const { data: lineItems, error: lineErr } = await (supabase as any)
     .from('grn_line_items')
     .select(
       'id, grn_id, item_id, item_code, description, drawing_number, unit, conforming_qty, store_confirmed_qty, damaged_qty, store_confirmed, store_confirmed_at, store_confirmed_by, damaged_reason, store_confirmation_notes, store_location'
     )
     .eq('company_id', companyId)
-    .eq('is_final_grn', true)
-    .in('grn_id', grnIds);
+    .eq('is_final_grn', true);
   if (lineErr) throw lineErr;
   if (!lineItems?.length) return [];
 
-  const grnMap: Record<string, any> = {};
-  for (const g of grns as any[]) grnMap[g.id] = g;
-
-  // Step 3 — group lines by grn_id.
+  // Step 3 — group lines by grn_id, dropping any whose parent GRN isn't in
+  // our month/status-filtered set.
   const groups: Record<string, any[]> = {};
   for (const li of lineItems as any[]) {
+    if (!grnMap[li.grn_id]) continue;
     if (!groups[li.grn_id]) groups[li.grn_id] = [];
     groups[li.grn_id].push(li);
   }
