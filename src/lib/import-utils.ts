@@ -381,21 +381,27 @@ export const PARTIES_IMPORT_CONFIG: ImportConfig = {
   ],
 };
 
+// Items import template — columns match ITEMS_EXPORT_COLS in export-utils.ts
+// (minus "Current Stock", which is read-only). The Items page export can be
+// edited in Excel and re-uploaded without renaming any headers.
+// Old templates with headers like "Item Code"/"Item Type"/"Default Unit" are
+// rejected by the new parser (missing required headers after rename); users
+// must re-download the template after this change.
 export const ITEMS_IMPORT_CONFIG: ImportConfig = {
   type: "items",
   label: "Items",
   columns: [
-    { key: "item_code", label: "Item Code", description: "Your internal code", required: false, example: "230082" },
-    { key: "drawing_number", label: "Drawing Number", description: "Engineering drawing ref", required: false, example: "230082-R1" },
+    { key: "drawing_number", label: "Drawing No.", description: "Engineering drawing reference", required: false, example: "230082-R1" },
+    { key: "item_code", label: "Code", description: "Your internal item code", required: true, example: "230082" },
     { key: "description", label: "Description", description: "Item description", required: true, example: "Bearing Housing ASGB" },
-    { key: "item_type", label: "Item Type", description: "raw_material/finished_good/service/consumable", required: false, example: "raw_material" },
-    { key: "unit", label: "Default Unit", description: "NOS/KG/MTR/SFT/SET/ROLL etc", required: false, example: "NOS" },
-    { key: "purchase_price", label: "Default Purchase Price", description: "₹ amount", required: false, example: "450", validate: (v) => validators.positiveNumber("Purchase Price")(v) },
-    { key: "sale_price", label: "Default Sale Price", description: "₹ amount", required: false, example: "650", validate: (v) => validators.positiveNumber("Sale Price")(v) },
-    { key: "gst_rate", label: "Default GST Rate", description: "0/5/12/18/28", required: false, example: "18", validate: (v) => validators.gstRate(v) },
-    { key: "hsn_sac_code", label: "HSN/SAC Code", description: "HSN or SAC code", required: false, example: "8483" },
-    { key: "standard_cost", label: "Standard Cost", description: "Internal cost ₹/unit (used for stock valuation)", required: false, example: "120.50", validate: (v) => validators.positiveNumber("Standard Cost")(v) },
-    { key: "notes", label: "Notes", description: "Any notes", required: false, example: "" },
+    { key: "item_type", label: "Type", description: "raw_material/component/sub_assembly/bought_out/finished_good/consumable/service", required: true, example: "component" },
+    { key: "unit", label: "Unit", description: "NOS/KG/MTR/SFT/SET/ROLL etc", required: false, example: "NOS" },
+    { key: "hsn_sac_code", label: "HSN", description: "HSN or SAC code", required: false, example: "8483" },
+    { key: "min_stock", label: "Min Stock", description: "Minimum stock level (reorder trigger)", required: false, example: "10", validate: (v) => validators.positiveNumber("Min Stock")(v) },
+    { key: "aimed_stock", label: "Aimed Qty", description: "Target stock level (reorder-to quantity)", required: false, example: "50", validate: (v) => validators.positiveNumber("Aimed Qty")(v) },
+    { key: "gst_rate", label: "GST%", description: "0/5/12/18/28", required: false, example: "18", validate: (v) => validators.gstRate(v) },
+    { key: "standard_cost", label: "Standard Cost", description: "Internal cost per unit ₹ (stock valuation)", required: false, example: "120.50", validate: (v) => validators.positiveNumber("Standard Cost")(v) },
+    { key: "is_consumable", label: "Consumable", description: "Yes/No — flags tooling consumables for the Consumables Issue picker", required: false, example: "No" },
   ],
 };
 
@@ -647,16 +653,21 @@ export const PARTY_FIELD_MAP: Record<string, string[]> = {
   notes: ["notes", "remarks", "comments", "description"],
 };
 
+// Header aliases for the Items import. Canonical headers (first alias of each
+// group) match ITEMS_IMPORT_CONFIG above; legacy aliases preserved so older
+// custom sheets still resolve. normaliseHeader() strips punctuation and
+// lowercases, so "Drawing No." resolves to "drawing no" and matches.
 export const ITEM_FIELD_MAP: Record<string, string[]> = {
-  drawing_revision: ["drawing revision", "drawing number", "drawing no", "dwg no", "dwg number", "dwg rev", "drawing rev", "revision", "drg no", "drg number"],
-  item_code: ["item code", "code", "sku", "part number", "part no"],
+  drawing_revision: ["drawing no", "drawing no.", "drawing number", "drawing revision", "dwg no", "dwg number", "dwg rev", "drawing rev", "revision", "drg no", "drg number"],
+  item_code: ["code", "item code", "sku", "part number", "part no"],
   description: ["description", "item name", "name", "part description", "item description"],
-  item_type: ["item type", "type", "category"],
+  item_type: ["type", "item type", "category"],
   unit: ["unit", "uom", "unit of measure", "default unit"],
-  hsn_sac_code: ["hsn sac code", "hsnsac", "hsn", "sac", "hsn code", "sac code"],
-  gst_rate: ["gst rate %", "gst rate", "tax rate"],
+  hsn_sac_code: ["hsn", "hsn sac code", "hsnsac", "sac", "hsn code", "sac code"],
+  gst_rate: ["gst%", "gst rate %", "gst rate", "tax rate"],
   min_stock: ["min stock", "minimum stock", "min stock level", "reorder level", "minimum qty", "minimum quantity"],
-  aimed_stock: ["aimed stock", "aimed qty", "max stock", "max qty", "maximum stock", "target stock", "target qty"],
+  aimed_stock: ["aimed qty", "aimed stock", "max stock", "max qty", "maximum stock", "target stock", "target qty"],
+  is_consumable: ["consumable", "is consumable", "is_consumable"],
   is_critical: ["is critical", "critical", "critical item", "critical component"],
   notes: ["notes", "remarks", "comments"],
   drawing_number: ["drawing number (alt)", "alt drawing", "drawing ref"],

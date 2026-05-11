@@ -14,7 +14,7 @@ export function formatDateGST(value: any): string {
 export interface ExportColumn {
   key: string;
   label: string;
-  type?: "text" | "date" | "currency" | "number";
+  type?: "text" | "date" | "currency" | "number" | "boolean";
   width?: number;
 }
 
@@ -77,6 +77,10 @@ function buildSheet(sheetData: ExportSheetData): XLSX.WorkSheet {
       if (col.type === "date") return formatDateIN(value);
       if (col.type === "currency") return formatCurrencyIN(value);
       if (col.type === "number") return parseFloat(value) || 0;
+      if (col.type === "boolean") {
+        const truthy = value === true || value === 1 || value === "true" || value === "1" || value === "yes" || value === "Yes";
+        return truthy ? "Yes" : "No";
+      }
       if (typeof value === "string" && STATUS_LABELS[value]) return humanize(value);
       return String(value);
     })
@@ -171,16 +175,22 @@ export const PARTIES_EXPORT_COLS: ExportColumn[] = [
   { key: "status", label: "Status" },
 ];
 
+// Items export columns — must stay in lock-step with ITEMS_IMPORT_CONFIG below
+// so a user can export → edit → re-import without renaming headers. The only
+// addition here is "Current Stock" (read-only on import; ignored if present).
 export const ITEMS_EXPORT_COLS: ExportColumn[] = [
-  { key: "item_code", label: "Item Code" },
-  { key: "drawing_number", label: "Drawing Number" },
+  { key: "drawing_number", label: "Drawing No." },
+  { key: "item_code", label: "Code" },
   { key: "description", label: "Description", width: 30 },
-  { key: "item_type", label: "Item Type" },
-  { key: "unit", label: "Default Unit" },
-  { key: "purchase_price", label: "Purchase Price", type: "currency" },
-  { key: "sale_price", label: "Sale Price", type: "currency" },
-  { key: "gst_rate", label: "GST Rate", type: "number" },
-  { key: "hsn_sac_code", label: "HSN/SAC Code" },
+  { key: "item_type", label: "Type" },
+  { key: "unit", label: "Unit" },
+  { key: "hsn_sac_code", label: "HSN" },
+  { key: "min_stock", label: "Min Stock", type: "number" },
+  { key: "aimed_stock", label: "Aimed Qty", type: "number" },
+  { key: "gst_rate", label: "GST%", type: "number" },
+  { key: "standard_cost", label: "Standard Cost", type: "number" },
+  { key: "is_consumable", label: "Consumable", type: "boolean" },
+  { key: "current_stock", label: "Current Stock", type: "number" },
 ];
 
 export const PO_EXPORT_COLS: ExportColumn[] = [
