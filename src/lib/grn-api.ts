@@ -1756,7 +1756,7 @@ export async function storeConfirmGRNItems(
   const lineIds = items.map((i) => i.id);
   const { data: currentLines, error: fetchErr } = await (supabase as any)
     .from('grn_line_items')
-    .select('id, grn_id, item_id, item_code, description, drawing_number, conforming_qty, store_confirmed_qty, damaged_qty, store_confirmed')
+    .select('id, grn_id, item_id, description, drawing_number, conforming_qty, store_confirmed_qty, damaged_qty, store_confirmed')
     .in('id', lineIds);
   if (fetchErr) throw fetchErr;
 
@@ -1852,7 +1852,7 @@ export async function storeConfirmGRNItems(
         companyId: grnHeader?.company_id,
         confirmedBy: data.confirmedBy,
         linkedDcId: grnHeader?.linked_dc_id ?? null,
-        itemCode: line.item_code ?? null,
+        itemCode: null, // column doesn't exist on grn_line_items; could be looked up via items table by line.item_id if needed
         itemDescription: line.description ?? null,
       });
     }
@@ -1862,7 +1862,7 @@ export async function storeConfirmGRNItems(
     if (inDmg > 0 && line.item_id) {
       damagedLedgerEntries.push({
         item_id: line.item_id,
-        item_code: line.item_code ?? null,
+        item_code: null, // column doesn't exist on grn_line_items; could be looked up via items table by line.item_id if needed
         description: line.description ?? null,
         qty: inDmg,
         reason: input.damagedReason ?? null,
