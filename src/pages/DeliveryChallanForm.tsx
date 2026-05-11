@@ -906,7 +906,9 @@ export default function DeliveryChallanForm() {
               <Popover open={partyOpen} onOpenChange={setPartyOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" role="combobox" className="w-full justify-between mt-1 font-normal">
-                    {selectedParty ? selectedParty.name : "Select party..."}
+                    {selectedParty
+                      ? selectedParty.name
+                      : ((existingDC as any)?.party_name ?? "Select party...")}
                     <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
@@ -920,7 +922,12 @@ export default function DeliveryChallanForm() {
                       </CommandEmpty>
                       <CommandGroup>
                         {parties.map((p) => (
-                          <CommandItem key={p.id} value={p.name} onSelect={() => handlePartySelect(p)}>
+                          <CommandItem
+                            key={p.id}
+                            value={p.id}
+                            keywords={[p.name, p.gstin ?? "", p.city ?? ""].filter(Boolean)}
+                            onSelect={() => handlePartySelect(p)}
+                          >
                             <div>
                               <p className="font-medium">{p.name}</p>
                               <p className="text-xs text-muted-foreground">{p.city}{p.gstin ? ` · ${p.gstin}` : ""}</p>
