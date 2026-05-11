@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { formatNumber } from "@/lib/gst-utils";
 import {
   fetchAssemblyWorkOrder,
   fetchMaterialIssueRequests,
@@ -75,7 +76,7 @@ function AvailabilityCell({ line }: { line: AwoLineItem }) {
     return <Badge className="bg-amber-100 text-amber-800">Partial</Badge>;
   } else {
     const need = line.required_qty - stock;
-    return <span className="text-red-600 text-sm font-medium">Short — need {need} more</span>;
+    return <span className="text-red-600 text-sm font-medium">Short — need {formatNumber(need)} more</span>;
   }
 }
 
@@ -265,7 +266,7 @@ export default function AssemblyWorkOrderDetail() {
           <p>Serial Number: {awo.serial_number}</p>
         )}
         <p>Build: {awo.item_description} ({awo.item_code})</p>
-        <p>Quantity: {awo.quantity_to_build}</p>
+        <p>Quantity: {formatNumber(awo.quantity_to_build)}</p>
         <p>Raised By: {awo.raised_by}</p>
         <p>Date: {awo.awo_date}</p>
         <br />
@@ -286,7 +287,7 @@ export default function AssemblyWorkOrderDetail() {
                 <td style={{ border: "1px solid #ccc", padding: "6px" }}>{idx + 1}</td>
                 <td style={{ border: "1px solid #ccc", padding: "6px" }}>{li.drawing_number ?? "—"}</td>
                 <td style={{ border: "1px solid #ccc", padding: "6px" }}>{li.item_description ?? "—"}</td>
-                <td style={{ border: "1px solid #ccc", padding: "6px" }}>{li.required_qty}</td>
+                <td style={{ border: "1px solid #ccc", padding: "6px" }}>{formatNumber(li.required_qty)}</td>
                 <td style={{ border: "1px solid #ccc", padding: "6px" }}>{li.unit}</td>
                 <td style={{ border: "1px solid #ccc", padding: "6px" }}></td>
               </tr>
@@ -315,7 +316,7 @@ export default function AssemblyWorkOrderDetail() {
               {awo.item_description} <span className="text-sm font-mono">({awo.item_code})</span>
             </p>
             <div className="flex flex-wrap gap-4 mt-2 text-sm text-muted-foreground">
-              <span>Qty: <b className="text-foreground">{awo.quantity_to_build}</b></span>
+              <span>Qty: <b className="text-foreground">{formatNumber(awo.quantity_to_build)}</b></span>
               <span>Raised by: <b className="text-foreground">{awo.raised_by ?? "—"}</b></span>
               {awo.planned_date && (
                 <span>Planned: <b className="text-foreground">{format(parseISO(awo.planned_date), "dd MMM yyyy")}</b></span>
@@ -430,9 +431,9 @@ export default function AssemblyWorkOrderDetail() {
                           </span>
                         ) : "Standard"}
                       </td>
-                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{li.required_qty}</td>
-                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{li.issued_qty}</td>
-                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{li.stock_free ?? 0}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(li.required_qty)}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(li.issued_qty ?? 0)}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(li.stock_free ?? 0)}</td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center"><AvailabilityCell line={li} /></td>
                       <td className="px-3 py-2 border-b border-slate-100 text-center">
                         {li.disposition === 'use_as_is' ? (
@@ -442,7 +443,7 @@ export default function AssemblyWorkOrderDetail() {
                         ) : (
                           <div className="flex flex-col items-center gap-1">
                             <span className="text-red-600 text-xs font-medium">
-                              Short — {li.required_qty - (li.issued_qty ?? 0)} pending
+                              Short — {formatNumber(li.required_qty - (li.issued_qty ?? 0))} pending
                             </span>
                             {awo.status === 'in_progress' && (
                               <Button
@@ -525,10 +526,10 @@ export default function AssemblyWorkOrderDetail() {
                     <tr key={li.id}>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-blue-700">{li.drawing_number ?? "—"}</td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{li.item_description ?? "—"}</td>
-                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{li.requested_qty}</td>
-                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{li.issued_qty}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(li.requested_qty)}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(li.issued_qty ?? 0)}</td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-red-600">
-                        {li.shortage_qty > 0 ? li.shortage_qty : "—"}
+                        {li.shortage_qty > 0 ? formatNumber(li.shortage_qty) : "—"}
                       </td>
                     </tr>
                   ))}
@@ -580,7 +581,7 @@ export default function AssemblyWorkOrderDetail() {
                     {' — '}
                     {isFullyIssued
                       ? 'report units damaged during assembly'
-                      : `short by ${gap} ${unit}`}
+                      : `short by ${formatNumber(gap)} ${unit}`}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-2">
@@ -617,7 +618,7 @@ export default function AssemblyWorkOrderDetail() {
                       <p className="text-xs text-red-600">
                         {reportIssueForm.damage_qty <= 0
                           ? 'Quantity must be greater than 0.'
-                          : `Quantity must be between 1 and ${maxAllowed} ${unit}.`}
+                          : `Quantity must be between 1 and ${formatNumber(maxAllowed)} ${unit}.`}
                       </p>
                     )}
                   </div>
@@ -633,7 +634,7 @@ export default function AssemblyWorkOrderDetail() {
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    This will deduct {reportIssueForm.damage_qty || 0} {unit} from WIP{consequence}, then notify the storekeeper.
+                    This will deduct {formatNumber(reportIssueForm.damage_qty || 0)} {unit} from WIP{consequence}, then notify the storekeeper.
                   </p>
                 </div>
                 <DialogFooter>
@@ -665,7 +666,7 @@ export default function AssemblyWorkOrderDetail() {
               Components consumed: <b>{(awo.line_items ?? []).filter((li) => li.issued_qty > 0).length} items</b>
             </p>
             <p className="text-muted-foreground">
-              <b>{awo.item_description}</b> stock will increase by <b>{awo.quantity_to_build}</b>.
+              <b>{awo.item_description}</b> stock will increase by <b>{formatNumber(awo.quantity_to_build)}</b>.
             </p>
           </div>
           <DialogFooter>
@@ -764,7 +765,7 @@ export default function AssemblyWorkOrderDetail() {
                             <tr key={li.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
                               <td style={{ padding: "6px 10px", fontFamily: "monospace", color: "#3b82f6" }}>{li.drawing_number ?? li.item_code ?? "—"}</td>
                               <td style={{ padding: "6px 10px", color: "#334155", maxWidth: "160px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{li.item_description ?? "—"}</td>
-                              <td style={{ padding: "6px 10px", textAlign: "right", fontFamily: "monospace", color: "#475569" }}>{li.issued_qty}</td>
+                              <td style={{ padding: "6px 10px", textAlign: "right", fontFamily: "monospace", color: "#475569" }}>{formatNumber(li.issued_qty ?? 0)}</td>
                               <td style={{ padding: "6px 10px", textAlign: "right" }}>
                                 <input
                                   type="number"

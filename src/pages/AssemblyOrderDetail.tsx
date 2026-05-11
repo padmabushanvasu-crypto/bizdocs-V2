@@ -23,7 +23,7 @@ import {
   createFatCertificate,
   type SerialNumberRecord,
 } from "@/lib/fat-api";
-import { formatCurrency } from "@/lib/gst-utils";
+import { formatCurrency, formatNumber } from "@/lib/gst-utils";
 import { format } from "date-fns";
 
 const statusClass: Record<string, string> = {
@@ -450,11 +450,11 @@ export default function AssemblyOrderDetail() {
                         )}
                       </td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
-                        {line.required_qty} {line.unit ?? ""}
+                        {formatNumber(line.required_qty)} {line.unit ?? ""}
                       </td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                         <span className={line.available_qty >= line.required_qty ? "text-green-600 font-semibold" : "text-amber-600 font-semibold"}>
-                          {line.available_qty}
+                          {formatNumber(line.available_qty ?? 0)}
                         </span>
                       </td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">

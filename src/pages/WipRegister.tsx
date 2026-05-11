@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { supabase } from "@/integrations/supabase/client";
 import { exportMultiSheet } from "@/lib/export-utils";
+import { formatNumber } from "@/lib/gst-utils";
 import { format, differenceInDays, parseISO } from "date-fns";
 
 type WipTab = "all" | "component" | "subassembly" | "finished_good";
@@ -550,7 +551,7 @@ export default function WipRegister() {
                               <p className="text-xs text-muted-foreground truncate max-w-[180px]">{awo.item_description}</p>
                             )}
                           </td>
-                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{awo.quantity_to_build}</td>
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(awo.quantity_to_build)}</td>
                           <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right"><span className="text-muted-foreground text-sm">—</span></td>
                           <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-muted-foreground">{awo.work_order_ref ?? "—"}</td>
                           <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
@@ -639,7 +640,7 @@ export default function WipRegister() {
                               <p className="text-xs text-muted-foreground truncate max-w-[160px]">{awo.item_description}</p>
                             )}
                           </td>
-                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{awo.quantity_to_build}</td>
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(awo.quantity_to_build)}</td>
                           <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{awo.raised_by ?? "—"}</td>
                           <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${s.cls}`}>
