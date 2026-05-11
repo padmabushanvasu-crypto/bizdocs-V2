@@ -79,11 +79,14 @@ function buildInitialFormForCard(card: GrnStoreReceiptCard): GrnFormState {
   return { confirmedBy: "", confirmedAt: today, items };
 }
 
-// Last-6-months options, prefixed with an "All months" sentinel (value="")
-// so confirmed / partial / all views can show the full history floor.
+// Last-6-months options, prefixed with an "All months" sentinel so confirmed /
+// partial / all views can show the full history floor. We use "all" (not "")
+// because Radix Select forbids empty-string Item values (reserved for the
+// placeholder slot and throws at render).
+const ALL_MONTHS = "all";
 const monthOptions: { value: string; label: string }[] = (() => {
   const opts: { value: string; label: string }[] = [
-    { value: "", label: "All months" },
+    { value: ALL_MONTHS, label: "All months" },
   ];
   const now = new Date();
   for (let i = 0; i < 6; i++) {
@@ -99,7 +102,7 @@ const monthOptions: { value: string; label: string }[] = (() => {
 const CURRENT_MONTH = monthOptions[1].value;
 
 const monthLabel = (m: string): string => {
-  if (!m) return "All months";
+  if (!m || m === ALL_MONTHS) return "All months";
   const [y, mo] = m.split("-").map(Number);
   if (!y || !mo) return m;
   return new Date(y, mo - 1, 1).toLocaleString("en-US", {
@@ -123,8 +126,8 @@ export default function GrnStoreQueue() {
   const onStatusChange = (newStatus: StatusFilter) => {
     setStatusFilter(newStatus);
     if (newStatus !== "pending") {
-      setMonth("");
-    } else if (month === "") {
+      setMonth(ALL_MONTHS);
+    } else if (month === ALL_MONTHS) {
       setMonth(CURRENT_MONTH);
     }
   };
@@ -134,7 +137,7 @@ export default function GrnStoreQueue() {
     queryFn: () =>
       fetchGrnStoreReceiptQueue({
         status: statusFilter !== "all" ? statusFilter : undefined,
-        month: month || undefined,
+        month: month && month !== ALL_MONTHS ? month : undefined,
       }),
     staleTime: 30_000,
   });
@@ -245,32 +248,38 @@ export default function GrnStoreQueue() {
       tone: "emerald" as const,
     },
     confirmed: {
-      title: month
-        ? `No confirmations in ${monthLabel(month)}`
-        : "No confirmations match the selected filters",
-      detail: month
-        ? "Try 'All months' or pick a different period"
-        : "Try switching the month filter",
+      title:
+        month && month !== ALL_MONTHS
+          ? `No confirmations in ${monthLabel(month)}`
+          : "No confirmations match the selected filters",
+      detail:
+        month && month !== ALL_MONTHS
+          ? "Try 'All months' or pick a different period"
+          : "Try switching the month filter",
       Icon: PackageCheck,
       tone: "slate" as const,
     },
     partial: {
-      title: month
-        ? `No GRNs with damaged items in ${monthLabel(month)}`
-        : "No GRNs with damaged items",
-      detail: month
-        ? "Try 'All months' or pick a different period"
-        : "All receipts came in clean",
+      title:
+        month && month !== ALL_MONTHS
+          ? `No GRNs with damaged items in ${monthLabel(month)}`
+          : "No GRNs with damaged items",
+      detail:
+        month && month !== ALL_MONTHS
+          ? "Try 'All months' or pick a different period"
+          : "All receipts came in clean",
       Icon: CheckCircle2,
       tone: "emerald" as const,
     },
     all: {
-      title: month
-        ? `No GRN inward records in ${monthLabel(month)}`
-        : "No GRN inward records",
-      detail: month
-        ? "Try 'All months' for full history"
-        : "Limited to 200 most recent",
+      title:
+        month && month !== ALL_MONTHS
+          ? `No GRN inward records in ${monthLabel(month)}`
+          : "No GRN inward records",
+      detail:
+        month && month !== ALL_MONTHS
+          ? "Try 'All months' for full history"
+          : "Limited to 200 most recent",
       Icon: PackageCheck,
       tone: "slate" as const,
     },
