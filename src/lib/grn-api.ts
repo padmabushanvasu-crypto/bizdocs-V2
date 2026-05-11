@@ -1667,6 +1667,7 @@ export interface AwaitingStoreLineItem {
   unit: string | null;
   store_confirmed_qty: number | null;
   damaged_qty: number | null;
+  remaining_qty: number;
   damaged_reason: string | null;
   store_confirmation_notes: string | null;
 }
@@ -1692,21 +1693,28 @@ export async function fetchAwaitingStoreLineItems(): Promise<AwaitingStoreLineIt
   const grnMap: Record<string, any> = {};
   for (const g of (grns ?? []) as any[]) grnMap[g.id] = g;
 
-  return (lineItems as any[]).map((l: any) => ({
-    id: l.id,
-    grn_id: l.grn_id,
-    grn_number: grnMap[l.grn_id]?.grn_number ?? '—',
-    grn_date: grnMap[l.grn_id]?.grn_date ?? '',
-    vendor_name: grnMap[l.grn_id]?.vendor_name ?? null,
-    description: l.description,
-    drawing_number: l.drawing_number ?? null,
-    conforming_qty: l.conforming_qty ?? null,
-    unit: l.unit ?? null,
-    store_confirmed_qty: l.store_confirmed_qty ?? null,
-    damaged_qty: l.damaged_qty ?? null,
-    damaged_reason: l.damaged_reason ?? null,
-    store_confirmation_notes: l.store_confirmation_notes ?? null,
-  }));
+  return (lineItems as any[]).map((l: any) => {
+    const conforming = Number(l.conforming_qty ?? 0);
+    const alreadyConfirmed = Number(l.store_confirmed_qty ?? 0);
+    const alreadyDamaged = Number(l.damaged_qty ?? 0);
+    const remaining = Math.max(0, conforming - alreadyConfirmed - alreadyDamaged);
+    return {
+      id: l.id,
+      grn_id: l.grn_id,
+      grn_number: grnMap[l.grn_id]?.grn_number ?? '—',
+      grn_date: grnMap[l.grn_id]?.grn_date ?? '',
+      vendor_name: grnMap[l.grn_id]?.vendor_name ?? null,
+      description: l.description,
+      drawing_number: l.drawing_number ?? null,
+      conforming_qty: l.conforming_qty ?? null,
+      unit: l.unit ?? null,
+      store_confirmed_qty: l.store_confirmed_qty ?? null,
+      damaged_qty: l.damaged_qty ?? null,
+      remaining_qty: remaining,
+      damaged_reason: l.damaged_reason ?? null,
+      store_confirmation_notes: l.store_confirmation_notes ?? null,
+    };
+  });
 }
 
 export async function storeConfirmGRNItems(
@@ -1720,77 +1728,149 @@ export async function storeConfirmGRNItems(
     notes?: string | null;
   }>,
   data: { confirmedBy: string; confirmedAt: string }
-): Promise<void> {
+): Promise<{ fullyConfirmed: string[]; stillPending: string[] }> {
   const confirmedAt = new Date(data.confirmedAt).toISOString();
-  for (const item of items) {
-    const { error } = await (supabase as any)
-      .from('grn_line_items')
-      .update({
-        store_confirmed:          true,
-        store_confirmed_by:       data.confirmedBy,
-        store_confirmed_at:       confirmedAt,
-        store_location:           item.location ?? null,
-        store_confirmed_qty:      item.storeQty ?? null,
-        damaged_qty:              item.damagedQty ?? null,
-        damaged_reason:           item.damagedReason ?? null,
-        store_confirmation_notes: item.notes ?? null,
-      })
-      .eq('id', item.id);
-    if (error) throw error;
+  // Epsilon for 3dp numeric — protects against JS float drift on accumulation.
+  const EPS = 0.0005;
+
+  if (!items.length) return { fullyConfirmed: [], stillPending: [] };
+
+  const lineIds = items.map((i) => i.id);
+  const { data: currentLines, error: fetchErr } = await (supabase as any)
+    .from('grn_line_items')
+    .select('id, grn_id, item_id, item_code, description, conforming_qty, store_confirmed_qty, damaged_qty, store_confirmed')
+    .in('id', lineIds);
+  if (fetchErr) throw fetchErr;
+
+  const lineMap = new Map<string, any>(
+    ((currentLines ?? []) as any[]).map((l: any) => [l.id, l])
+  );
+
+  // Validate ownership and quantities up front, before any UPDATE.
+  for (const input of items) {
+    const line = lineMap.get(input.id);
+    if (!line) throw new Error(`Line item ${input.id} not found.`);
+    if (line.grn_id !== grnId) {
+      throw new Error(`Line item ${input.id} does not belong to GRN ${grnId}.`);
+    }
+    const conforming = Number(line.conforming_qty ?? 0);
+    const curStore = Number(line.store_confirmed_qty ?? 0);
+    const curDmg = Number(line.damaged_qty ?? 0);
+    const inStore = Number(input.storeQty ?? 0);
+    const inDmg = Number(input.damagedQty ?? 0);
+    if (inStore < 0 || inDmg < 0) {
+      throw new Error(`Quantities cannot be negative (line ${line.description ?? input.id}).`);
+    }
+    const remaining = conforming - curStore - curDmg;
+    if (inStore + inDmg > remaining + EPS) {
+      throw new Error(
+        `Confirmed (${inStore}) + damaged (${inDmg}) exceeds remaining (${remaining.toFixed(3)}) for line ${line.description ?? input.id}.`
+      );
+    }
   }
 
-  // Write-off ledger entries for any damaged items
-  const damagedItems = items.filter((i) => i.damagedQty && i.damagedQty > 0);
-  if (damagedItems.length > 0) {
-    const today = new Date().toISOString().split('T')[0];
-    const { data: lineDetails } = await (supabase as any)
+  const fullyConfirmed: string[] = [];
+  const stillPending: string[] = [];
+  const damagedLedgerEntries: Array<{
+    item_id: string;
+    item_code: string | null;
+    description: string | null;
+    qty: number;
+    reason: string | null;
+  }> = [];
+
+  for (const input of items) {
+    const line = lineMap.get(input.id);
+    const conforming = Number(line.conforming_qty ?? 0);
+    const curStore = Number(line.store_confirmed_qty ?? 0);
+    const curDmg = Number(line.damaged_qty ?? 0);
+    const inStore = Number(input.storeQty ?? 0);
+    const inDmg = Number(input.damagedQty ?? 0);
+
+    const newStore = curStore + inStore;
+    const newDmg = curDmg + inDmg;
+    const totalAccounted = newStore + newDmg;
+    const isFullyConfirmed = totalAccounted + EPS >= conforming;
+
+    const updatePayload: Record<string, any> = {
+      store_confirmed_qty: newStore,
+      damaged_qty: newDmg,
+      store_location: input.location ?? null,
+    };
+    // Append-only text fields: only overwrite if a new value was supplied this turn.
+    if (input.damagedReason) updatePayload.damaged_reason = input.damagedReason;
+    if (input.notes) updatePayload.store_confirmation_notes = input.notes;
+    if (isFullyConfirmed) {
+      updatePayload.store_confirmed = true;
+      updatePayload.store_confirmed_by = data.confirmedBy;
+      updatePayload.store_confirmed_at = confirmedAt;
+    }
+
+    const { error: updErr } = await (supabase as any)
       .from('grn_line_items')
-      .select('id, item_id, item_code, description')
-      .in('id', damagedItems.map((i) => i.id));
-    const lineMap = new Map<string, any>(
-      ((lineDetails ?? []) as any[]).map((l) => [l.id, l])
-    );
-    for (const item of damagedItems) {
-      const line = lineMap.get(item.id);
-      if (!line?.item_id) continue;
-      await addStockLedgerEntry({
+      .update(updatePayload)
+      .eq('id', input.id);
+    if (updErr) throw updErr;
+
+    if (isFullyConfirmed) fullyConfirmed.push(input.id);
+    else stillPending.push(input.id);
+
+    // Damaged write-off is keyed on the INCREMENT supplied this call, not the cumulative
+    // total — each partial confirmation that records new damage emits its own ledger entry.
+    if (inDmg > 0 && line.item_id) {
+      damagedLedgerEntries.push({
         item_id: line.item_id,
         item_code: line.item_code ?? null,
-        item_description: line.description ?? null,
+        description: line.description ?? null,
+        qty: inDmg,
+        reason: input.damagedReason ?? null,
+      });
+    }
+  }
+
+  if (damagedLedgerEntries.length > 0) {
+    const today = new Date().toISOString().split('T')[0];
+    for (const entry of damagedLedgerEntries) {
+      await addStockLedgerEntry({
+        item_id: entry.item_id,
+        item_code: entry.item_code,
+        item_description: entry.description,
         transaction_date: today,
         transaction_type: 'rejection_writeoff',
         qty_in: 0,
-        qty_out: item.damagedQty!,
+        qty_out: entry.qty,
         balance_qty: 0,
         unit_cost: 0,
         total_value: 0,
         reference_type: 'grn',
         reference_id: grnId,
         reference_number: null,
-        notes: `Damaged on arrival — ${item.damagedReason || 'no reason given'}`,
+        notes: `Damaged on arrival — ${entry.reason || 'no reason given'}`,
         created_by: null,
       }).catch(console.error);
     }
   }
 
-  // Check whether all final GRN line items for this GRN are now confirmed
-  const { data: remaining } = await (supabase as any)
+  // Recompute parent-GRN state from the authoritative line set.
+  const { data: remainingLines } = await (supabase as any)
     .from('grn_line_items')
     .select('id')
     .eq('grn_id', grnId)
     .eq('is_final_grn', true)
     .neq('store_confirmed', true);
 
-  if (!remaining?.length) {
-    // All items confirmed — close the GRN fully
+  if (!remainingLines?.length) {
+    // All lines on this GRN now fully confirmed — close it (also credits stock_free).
     await storeConfirmGRN(grnId, { confirmedBy: data.confirmedBy, confirmedAt: data.confirmedAt });
   } else {
-    // Partial — mark the flag without closing
+    // At least one line still open — mark partial without closing.
     await (supabase as any)
       .from('grns')
       .update({ partial_store_confirmed: true })
       .eq('id', grnId);
   }
+
+  return { fullyConfirmed, stillPending };
 }
 
 export async function storeConfirmLineItem(
