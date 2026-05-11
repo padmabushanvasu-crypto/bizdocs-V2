@@ -249,20 +249,35 @@ export async function updatePurchaseOrder(id: string, { po, lineItems }: CreateP
   } as any).eq("id", id);
   if (error) throw error;
 
-  await supabase.from("po_line_items").delete().eq("po_id", id);
-  if (lineItems.length > 0) {
-    const itemsToInsert = lineItems.map((item) => ({
-      company_id: companyId,
-      po_id: id, serial_number: item.serial_number, description: item.description,
-      item_id: item.item_id || null,
-      drawing_number: item.drawing_number || null, quantity: item.quantity, unit: item.unit,
-      quantity_2: item.quantity_2 ?? null, unit_2: item.unit_2 ?? null,
-      unit_price: item.unit_price, delivery_date: item.delivery_date || null,
-      line_total: item.line_total, gst_rate: item.gst_rate, hsn_sac_code: item.hsn_sac_code || null,
-    }));
-    const { error: itemsError } = await supabase.from("po_line_items").insert(itemsToInsert as any);
-    if (itemsError) throw itemsError;
-  }
+  // Atomic replacement of line items via DB function — see migration
+  // 20260511020000_replace_po_line_items_atomic.sql for the function body.
+  // This makes the DELETE + INSERT atomic and ensures no duplicate rows
+  // can be created by retries / double-submits (now also blocked at the
+  // DB level by idx_po_line_items_po_serial unique index).
+  if (!companyId) throw new Error("Not authenticated");
+
+  const { error: replaceError } = await (supabase as any).rpc('replace_po_line_items', {
+    p_po_id: id,
+    p_company_id: companyId,
+    p_line_items: lineItems.map((item: any) => ({
+      serial_number: item.serial_number,
+      description: item.description,
+      drawing_number: item.drawing_number ?? null,
+      quantity: item.quantity,
+      unit: item.unit,
+      unit_price: item.unit_price ?? 0,
+      delivery_date: item.delivery_date ?? null,
+      line_total: item.line_total ?? 0,
+      gst_rate: item.gst_rate ?? 18,
+      hsn_sac_code: item.hsn_sac_code ?? null,
+      received_quantity: item.received_quantity ?? 0,
+      item_id: item.item_id ?? null,
+      quantity_2: item.quantity_2 ?? null,
+      unit_2: item.unit_2 ?? null,
+    })),
+  });
+
+  if (replaceError) throw replaceError;
 }
 
 export async function issuePurchaseOrder(id: string) {
