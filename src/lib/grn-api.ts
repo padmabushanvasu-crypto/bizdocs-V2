@@ -2159,8 +2159,10 @@ export async function fetchGrnStoreReceiptQueue(
   });
 
   // Step 5 — apply status filter (client-side because card_status is derived).
-  const statusFilter = filters.status ?? 'pending';
-  if (statusFilter !== 'all') {
+  // When filters.status is undefined, show all cards (no filter). The UI passes
+  // undefined when "All Statuses" is selected.
+  const statusFilter = filters.status;
+  if (statusFilter && statusFilter !== 'all') {
     cards = cards.filter((c) => c.card_status === statusFilter);
   }
 
