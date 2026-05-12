@@ -16,6 +16,7 @@ export interface GRNLineItem {
   serial_number: number;
   po_line_item_id?: string;
   dc_line_item_id?: string | null;
+  item_id?: string | null;
   description: string;
   drawing_number?: string;
   unit: string;
@@ -326,6 +327,7 @@ export async function createGRN({ grn, lineItems }: CreateGRNData) {
       company_id: companyId,
       grn_id: (newGRN as any).id, po_line_item_id: item.po_line_item_id || null,
       dc_line_item_id: item.dc_line_item_id || null,
+      item_id: item.item_id ?? null,
       serial_number: item.serial_number, description: item.description,
       drawing_number: item.drawing_number || null, unit: item.unit,
       po_quantity: item.po_quantity, previously_received: item.previously_received,
@@ -854,6 +856,7 @@ export async function createGrnFromDC(data: CreateGrnFromDCData): Promise<GRN> {
     company_id: companyId,
     grn_id: grnId,
     dc_line_item_id: item.id,
+    item_id: item.item_id ?? null,
     serial_number: idx + 1,
     description: item.description,
     drawing_number: item.drawing_number ?? null,

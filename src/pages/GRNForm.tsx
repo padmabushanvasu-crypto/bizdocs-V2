@@ -408,6 +408,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
         const base: GRNLineItem = {
           serial_number: idx + 1,
           po_line_item_id: item.id,
+          item_id: item.item_id ?? null,
           description: item.description,
           drawing_number: item.drawing_number || "",
           unit: item.unit || "NOS",
@@ -467,6 +468,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
             accepted_quantity: 0,
             rejected_quantity: 0,
             dc_line_item_id: item.id,
+            item_id: item.item_id ?? null,
           };
           const state = toLineState(base, idx);
           state.s1_received_now = pending;
