@@ -276,6 +276,8 @@ export async function confirmDispatch(id: string): Promise<void> {
       reference_number: dr.dr_number,
       notes: `Dispatched to ${dr.customer_name ?? 'Customer'} — DR ${dr.dr_number}`,
       created_by: null,
+      from_state: 'finished_goods',
+      to_state: 'dispatched',
     });
   }
 

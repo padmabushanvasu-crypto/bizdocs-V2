@@ -359,6 +359,8 @@ export async function cancelAssemblyWorkOrder(
             reference_number: awoNumber,
             notes: 'Materials returned — AWO cancelled',
             created_by: null,
+            from_state: 'wip',
+            to_state: 'free',
           });
         } catch (e) { console.error('[production] return ledger failed:', e); }
       }
@@ -407,6 +409,8 @@ export async function cancelAssemblyWorkOrder(
               reference_number: awoNumber,
               notes: 'Materials returned — AWO cancelled',
               created_by: null,
+              from_state: 'wip',
+              to_state: 'free',
             });
           } catch (e) { console.error('[production] return ledger failed:', e); }
         }
@@ -725,6 +729,8 @@ export async function confirmMaterialIssue(
           reference_number: awoNumber,
           notes: `Material issued for AWO #${awoNumber}`,
           created_by: null,
+          from_state: 'free',
+          to_state: 'wip',
         });
       } catch (e) {
         console.error('[production] ledger write failed for MIR issue:', e);
@@ -1044,6 +1050,8 @@ export async function reportComponentIssue(
         reference_number: awoNumber,
         notes: `Component returned to vendor — AWO #${awoNumber}: ${reason}`,
         created_by: null,
+        from_state: 'wip',
+        to_state: 'free',
       });
     } catch (e) { console.error('[production] return ledger failed:', e); }
     try {
