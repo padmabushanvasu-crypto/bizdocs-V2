@@ -159,7 +159,7 @@ export async function issueInvoice(id: string) {
       notes: `Invoice dispatch: ${(invoice as any).invoice_number}`,
       created_by: null,
       from_state: "finished_goods",
-      to_state: null,
+      to_state: "dispatched",
     });
   }
 }
