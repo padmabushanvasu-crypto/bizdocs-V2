@@ -521,7 +521,7 @@ export default function ConsumableIssueDetail() {
     const isDeleted = issue.status === "deleted";
 
     return (
-      <div className="p-4 md:p-6 space-y-5 max-w-4xl">
+      <div className="p-4 md:p-6 space-y-5 w-full">
         {/* Back + header */}
         <div className="flex items-center gap-3 flex-wrap">
           <Button variant="ghost" size="sm" onClick={() => navigate("/consumables")}>
@@ -1121,7 +1121,7 @@ export default function ConsumableIssueDetail() {
 
   // ── CREATE mode render ────────────────────────────────────────────────────
   return (
-    <div className="p-4 md:p-6 space-y-5 max-w-4xl">
+    <div className="p-4 md:p-6 space-y-5 w-full">
       {/* Header */}
       <div className="flex items-center gap-3 flex-wrap">
         <Button variant="ghost" size="sm" onClick={() => { sessionStorage.removeItem(DRAFT_KEY); navigate("/consumables"); }}>
