@@ -326,6 +326,11 @@ export async function fetchDeliveryChallan(id: string): Promise<DeliveryChallan>
   return { ...(dc as unknown as DeliveryChallan), line_items: items as unknown as DCLineItem[] };
 }
 
+/**
+ * @deprecated The DB trigger trg_delivery_challans_assign_number assigns
+ *   dc_number on insert. Pass `dc_number: ''` to createDeliveryChallan and
+ *   read the value back from the returned row.
+ */
 export async function getNextDCNumber(): Promise<string> {
   const companyId = await getCompanyId();
   return getNextDocNumber("delivery_challans", "dc_number", companyId, "dc_prefix");
@@ -342,7 +347,11 @@ export async function createDeliveryChallan({ dc, lineItems }: CreateDCData) {
   try {
     const { data, error } = await supabase.from("delivery_challans").insert({
       company_id: companyId,
-      dc_number: dc.dc_number, dc_date: dc.dc_date, dc_type: dc.dc_type,
+      // dc_number is assigned by trg_delivery_challans_assign_number on
+      // insert. Manual override is preserved if a non-empty value is
+      // supplied (e.g. legacy import paths).
+      dc_number: dc.dc_number && dc.dc_number.trim() !== "" ? dc.dc_number : "",
+      dc_date: dc.dc_date, dc_type: dc.dc_type,
       party_id: dc.party_id || null, party_name: dc.party_name, party_address: dc.party_address,
       party_gstin: dc.party_gstin, party_state_code: dc.party_state_code, party_phone: dc.party_phone,
       party_contact_person: dc.party_contact_person || null,

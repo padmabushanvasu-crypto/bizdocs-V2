@@ -22,7 +22,6 @@ import { fetchParties, type Party } from "@/lib/parties-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import {
   fetchDeliveryChallan,
-  getNextDCNumber,
   createDeliveryChallan,
   updateDeliveryChallan,
   issueDeliveryChallan,
@@ -272,11 +271,10 @@ export default function DeliveryChallanForm() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const { data: nextNumber } = useQuery({
-    queryKey: ["next-dc-number"],
-    queryFn: getNextDCNumber,
-    enabled: !isEdit,
-  });
+  // DC number is now assigned by the DB trigger
+  // trg_delivery_challans_assign_number on insert (see migration
+  // 20260513000020). The form passes an empty string and reads the
+  // assigned value back from the insert result.
 
   const { data: existingDC } = useQuery({
     queryKey: ["delivery-challan", id],
@@ -295,9 +293,6 @@ export default function DeliveryChallanForm() {
     }
   }, [profile, canEditDC]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (!isEdit && nextNumber) setDcNumber(nextNumber);
-  }, [nextNumber, isEdit]);
 
   useEffect(() => {
     if (existingDC) {
@@ -667,14 +662,20 @@ export default function DeliveryChallanForm() {
           details: `DC edited by ${userName}. Previous status: ${prevStatus}. New status: ${status}.`,
           performed_by: userName,
         });
-        return id;
+        return { id: id!, dcNumber };
       } else {
         const result = await createDeliveryChallan({ dc: dcData as any, lineItems: items });
         if (status === "issued") await issueDeliveryChallan(result.id);
-        return result.id;
+        // dc_number was assigned by trg_delivery_challans_assign_number; read it back.
+        return { id: result.id, dcNumber: (result as any).dc_number ?? "" };
       }
     },
-    onSuccess: (dcId, status) => {
+    onSuccess: (data, status) => {
+      const assignedNumber = data.dcNumber || dcNumber;
+      if (assignedNumber && assignedNumber !== dcNumber) {
+        setDcNumber(assignedNumber);
+      }
+      const dcId = data.id;
       sessionStorage.removeItem(DRAFT_KEY);
       queryClient.invalidateQueries({ queryKey: ["delivery-challans"] });
       queryClient.invalidateQueries({ queryKey: ["dc-stats"] });
@@ -700,7 +701,7 @@ export default function DeliveryChallanForm() {
           setSuccessDialogOpen(true);
         }
       } else {
-        toast({ title: "DC saved", description: `DC ${dcNumber} saved as draft.` });
+        toast({ title: "DC saved", description: `DC ${assignedNumber} saved as draft.` });
         navigate("/delivery-challans");
       }
     },
@@ -1030,7 +1031,13 @@ export default function DeliveryChallanForm() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label className="text-sm font-medium text-slate-700">DC Number</Label>
-                <Input value={dcNumber} onChange={(e) => setDcNumber(e.target.value)} className="mt-1 font-mono" />
+                <Input
+                  value={dcNumber}
+                  onChange={(e) => setDcNumber(e.target.value)}
+                  className="mt-1 font-mono"
+                  readOnly
+                  placeholder={isEdit ? undefined : "Auto-generated on save"}
+                />
               </div>
               <div>
                 <Label className="text-sm font-medium text-slate-700">DC Date *</Label>

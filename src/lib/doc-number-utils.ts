@@ -21,6 +21,19 @@ export function getCurrentFinancialYear(): string {
 /**
  * Returns the next sequential document number for a given table/column/prefix.
  *
+ * @deprecated Race-prone. Reads MAX(num)+1 without a lock and without a DB
+ *   UNIQUE constraint backstop, so two concurrent inserts can collide. Use
+ *   the BEFORE INSERT trigger pattern instead: pass an empty string as the
+ *   document number on insert and let the DB-side trigger assign it inside
+ *   `generate_doc_number(...)` which holds a per-(company, prefix) advisory
+ *   lock. See migration 20260513000020_doc_number_triggers_and_uniqueness.sql.
+ *
+ *   Migrated to triggers: grns, purchase_orders, delivery_challans,
+ *   consumable_issues. Still calling this helper: job_cards,
+ *   fat_certificates, sales_orders, dispatch_notes, invoices, payments,
+ *   assembly_orders — these remain race-vulnerable and should be migrated
+ *   in a follow-up pass.
+ *
  * If settingsKey is provided, fetches the prefix from company_settings[settingsKey].
  * With prefix: "{PREFIX}-{fy}/{seq}" e.g. "GRN-25-26/001"
  * Without prefix: "{fy}/{seq}" e.g. "25-26/001"

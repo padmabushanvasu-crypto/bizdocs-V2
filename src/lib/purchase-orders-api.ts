@@ -163,6 +163,11 @@ export async function fetchPurchaseOrder(id: string): Promise<PurchaseOrder> {
   return { ...(po as unknown as PurchaseOrder), line_items: items as unknown as POLineItem[] };
 }
 
+/**
+ * @deprecated The DB trigger trg_purchase_orders_assign_number assigns
+ *   po_number on insert. Pass `po_number: ''` to createPurchaseOrder and
+ *   read the value back from the returned row.
+ */
 export async function getNextPONumber(): Promise<string> {
   const companyId = await getCompanyId();
   return getNextDocNumber("purchase_orders", "po_number", companyId, "po_prefix");
@@ -179,7 +184,11 @@ export async function createPurchaseOrder({ po, lineItems }: CreatePOData) {
     .from("purchase_orders")
     .insert({
       company_id: companyId,
-      po_number: po.po_number, po_date: po.po_date,
+      // po_number is assigned by trg_purchase_orders_assign_number on insert.
+      // Manual override is preserved if a non-empty value is supplied (e.g.
+      // legacy import paths).
+      po_number: po.po_number && po.po_number.trim() !== "" ? po.po_number : "",
+      po_date: po.po_date,
       vendor_id: po.vendor_id || null, vendor_name: po.vendor_name, vendor_address: po.vendor_address,
       vendor_gstin: po.vendor_gstin, vendor_state_code: po.vendor_state_code, vendor_phone: po.vendor_phone,
       vendor_reference: po.vendor_reference || null,
@@ -312,11 +321,11 @@ export async function cancelPurchaseOrder(id: string, reason: string) {
 
 export async function duplicatePurchaseOrder(id: string) {
   const original = await fetchPurchaseOrder(id);
-  const nextNumber = await getNextPONumber();
   return createPurchaseOrder({
     po: {
       ...original,
-      po_number: nextNumber,
+      // po_number is assigned by trg_purchase_orders_assign_number.
+      po_number: "",
       po_date: new Date().toISOString().split("T")[0],
       status: "draft",
       issued_at: null,

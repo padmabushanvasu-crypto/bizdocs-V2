@@ -20,7 +20,6 @@ import { fetchCompanySettings } from "@/lib/settings-api";
 import { fetchItems, type Item } from "@/lib/items-api";
 import {
   fetchPurchaseOrder,
-  getNextPONumber,
   createPurchaseOrder,
   updatePurchaseOrder,
   issuePurchaseOrder,
@@ -172,12 +171,10 @@ export default function PurchaseOrderForm() {
   });
   const vendors = vendorsData?.data ?? [];
 
-  // Fetch next PO number
-  const { data: nextNumber } = useQuery({
-    queryKey: ["next-po-number"],
-    queryFn: getNextPONumber,
-    enabled: !isEdit,
-  });
+  // PO number is now assigned by the DB trigger
+  // trg_purchase_orders_assign_number on insert (see migration
+  // 20260513000020). The form passes an empty string and reads the
+  // assigned value back from the insert result.
 
   // Load existing PO for edit
   const { data: existingPO } = useQuery({
@@ -197,9 +194,6 @@ export default function PurchaseOrderForm() {
     }
   }, [profile, canEditPO]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (!isEdit && nextNumber) setPONumber(nextNumber);
-  }, [nextNumber, isEdit]);
 
   useEffect(() => {
     if (existingPO) {
@@ -609,14 +603,19 @@ export default function PurchaseOrderForm() {
           details: `PO edited by ${userName}. Previous status: ${previousStatus}. New status: ${effectiveStatus}.`,
           performed_by: userName,
         });
-        return id;
+        return { id: id!, poNumber };
       } else {
         const result = await createPurchaseOrder({ po: poData, lineItems: items });
         if (effectiveStatus === "issued") await issuePurchaseOrder(result.id);
-        return result.id;
+        // po_number was assigned by trg_purchase_orders_assign_number; read it back.
+        return { id: result.id, poNumber: (result as any).po_number ?? "" };
       }
     },
-    onSuccess: (poId, intendedStatus) => {
+    onSuccess: (data, intendedStatus) => {
+      const assignedNumber = data.poNumber || poNumber;
+      if (assignedNumber && assignedNumber !== poNumber) {
+        setPONumber(assignedNumber);
+      }
       sessionStorage.removeItem(DRAFT_KEY);
       queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
       queryClient.invalidateQueries({ queryKey: ["po-stats"] });
@@ -626,19 +625,19 @@ export default function PurchaseOrderForm() {
         const wasResubmitted = prevStatus && ['approved', 'issued', 'partially_received'].includes(prevStatus);
         toast({
           title: wasResubmitted ? "PO updated and sent for re-approval." : "PO submitted for approval",
-          description: wasResubmitted ? "Approval required before this PO can be re-issued." : `PO ${poNumber} sent to Finance for approval.`,
+          description: wasResubmitted ? "Approval required before this PO can be re-issued." : `PO ${assignedNumber} sent to Finance for approval.`,
         });
-        navigate(`/purchase-orders/${poId}`);
+        navigate(`/purchase-orders/${data.id}`);
         return;
       }
       if (intendedStatus === "issued") {
-        setSavedPOId(poId as string);
+        setSavedPOId(data.id);
         setSuccessDialogOpen(true);
       } else if (intendedStatus === "pending_approval") {
-        toast({ title: "PO submitted for approval", description: `PO ${poNumber} sent to Finance for approval.` });
+        toast({ title: "PO submitted for approval", description: `PO ${assignedNumber} sent to Finance for approval.` });
         navigate("/purchase-orders");
       } else {
-        toast({ title: "Purchase order saved", description: `PO ${poNumber} saved as draft.` });
+        toast({ title: "Purchase order saved", description: `PO ${assignedNumber} saved as draft.` });
         navigate("/purchase-orders");
       }
     },
@@ -887,7 +886,13 @@ export default function PurchaseOrderForm() {
           <div className="space-y-4">
             <div>
               <Label className="text-sm font-medium text-slate-700">PO Number</Label>
-              <Input value={poNumber} onChange={(e) => setPONumber(e.target.value)} className="mt-1 font-mono" />
+              <Input
+                value={poNumber}
+                onChange={(e) => setPONumber(e.target.value)}
+                className="mt-1 font-mono"
+                readOnly
+                placeholder={isEdit ? undefined : "Auto-generated on save"}
+              />
             </div>
 
             <div>

@@ -267,6 +267,12 @@ export async function fetchGRN(id: string): Promise<GRN> {
   return { ...(grn as unknown as GRN), line_items: items as unknown as GRNLineItem[] };
 }
 
+/**
+ * @deprecated The DB trigger trg_grns_assign_number assigns grn_number on
+ *   insert. Pass `grn_number: ''` to createGRN and read the value back from
+ *   the returned row. This helper is retained for any read-only display
+ *   needs but should not be the source of truth at insert time.
+ */
 export async function getNextGRNNumber(): Promise<string> {
   const companyId = await getCompanyId();
   return getNextDocNumber("grns", "grn_number", companyId, "grn_prefix");
@@ -298,7 +304,11 @@ export async function createGRN({ grn, lineItems }: CreateGRNData) {
   const companyId = await getCompanyId();
   const { data: newGRN, error } = await supabase.from("grns").insert({
     company_id: companyId,
-    grn_number: grn.grn_number, grn_date: grn.grn_date,
+    // grn_number is assigned by trg_grns_assign_number on insert. The form
+    // may still pass a value (e.g. for legacy/import paths) — preserve it
+    // if non-empty so manual overrides still work.
+    grn_number: grn.grn_number && grn.grn_number.trim() !== "" ? grn.grn_number : "",
+    grn_date: grn.grn_date,
     grn_type: (grn as any).grn_type ?? 'po_grn',
     po_id: grn.po_id || null, po_number: grn.po_number || null,
     linked_dc_id: (grn as any).linked_dc_id ?? null,
@@ -713,7 +723,6 @@ export interface CreateGrnFromPOData {
 
 export async function createGrnFromPO(data: CreateGrnFromPOData): Promise<GRN> {
   const companyId = await getCompanyId();
-  const grnNumber = await getNextGRNNumber();
 
   // Fetch PO info
   const { data: po, error: poErr } = await supabase.from("purchase_orders").select("*").eq("id", data.po_id).single();
@@ -735,10 +744,10 @@ export async function createGrnFromPO(data: CreateGrnFromPOData): Promise<GRN> {
     throw new Error("This PO has been fully received. No pending quantity remaining.");
   }
 
-  // Create GRN header
+  // Create GRN header — grn_number is assigned by trg_grns_assign_number.
   const { data: newGRN, error: grnErr } = await (supabase as any).from("grns").insert({
     company_id: companyId,
-    grn_number: grnNumber,
+    grn_number: "",
     grn_date: data.date,
     grn_type: 'po_grn',
     grn_stage: 'quantitative_pending',
@@ -802,7 +811,6 @@ export interface CreateGrnFromDCData {
 
 export async function createGrnFromDC(data: CreateGrnFromDCData): Promise<GRN> {
   const companyId = await getCompanyId();
-  const grnNumber = await getNextGRNNumber();
 
   // Fetch DC info
   const { data: dc, error: dcErr } = await (supabase as any).from("delivery_challans").select("*").eq("id", data.dc_id).single();
@@ -827,10 +835,10 @@ export async function createGrnFromDC(data: CreateGrnFromDCData): Promise<GRN> {
     throw new Error("This DC has been fully received. No pending quantity remaining.");
   }
 
-  // Create GRN header — PROBLEM 1: set grn_stage: 'quantitative_pending'
+  // Create GRN header — grn_number is assigned by trg_grns_assign_number.
   const { data: newGRN, error: grnErr } = await (supabase as any).from("grns").insert({
     company_id: companyId,
-    grn_number: grnNumber,
+    grn_number: "",
     grn_date: data.date,
     grn_type: 'dc_grn',
     grn_stage: 'quantitative_pending',

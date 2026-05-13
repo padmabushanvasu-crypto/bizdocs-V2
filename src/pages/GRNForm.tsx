@@ -17,7 +17,6 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import {
-  getNextGRNNumber,
   fetchOpenPOs,
   fetchPOLineItemsForGRN,
   fetchDCReceiptSummary,
@@ -332,11 +331,9 @@ function GRNFormInner({ defaultGrnType }: Props) {
     enabled: grnType === 'dc_grn' || !!preselectedDCId,
   });
 
-  const { data: nextNumber } = useQuery({
-    queryKey: ["next-grn-number"],
-    queryFn: getNextGRNNumber,
-    enabled: !isExistingGrn,
-  });
+  // GRN number is now assigned by the DB trigger trg_grns_assign_number
+  // on insert (see migration 20260513000020). The form passes an empty
+  // string and reads the assigned value back from the insert result.
 
   // Load existing GRN
   const { data: existingGrn } = useQuery({
@@ -346,10 +343,6 @@ function GRNFormInner({ defaultGrnType }: Props) {
   });
 
   // ── Effects ────────────────────────────────────────────────────────────────
-
-  useEffect(() => {
-    if (nextNumber && !isExistingGrn) setGrnNumber(nextNumber);
-  }, [nextNumber, isExistingGrn]);
 
   useEffect(() => {
     if (existingGrn) {
@@ -593,6 +586,12 @@ function GRNFormInner({ defaultGrnType }: Props) {
       return await recordGRNAndUpdatePO({ grn: grnData, lineItems: items });
     },
     onSuccess: (result, status) => {
+      // Reflect the trigger-assigned number back into form state so the
+      // success dialog / toast renders the real GRN number.
+      const assignedNumber = (result as any)?.grn_number ?? grnNumber;
+      if (assignedNumber && assignedNumber !== grnNumber) {
+        setGrnNumber(assignedNumber);
+      }
       queryClient.invalidateQueries({ queryKey: ["grns"] });
       queryClient.invalidateQueries({ queryKey: ["grn-stats"] });
       queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
@@ -604,7 +603,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
         setSavedGRNId(result.id);
         setSuccessDialogOpen(true);
       } else {
-        toast({ title: "GRN saved as draft", description: `GRN ${grnNumber} saved.` });
+        toast({ title: "GRN saved as draft", description: `GRN ${assignedNumber} saved.` });
         navigate("/grn");
       }
     },
@@ -823,7 +822,13 @@ function GRNFormInner({ defaultGrnType }: Props) {
           <div className="space-y-4">
             <div>
               <Label className="text-sm font-medium text-slate-700">GRN Number</Label>
-              <Input value={grnNumber} onChange={(e) => setGrnNumber(e.target.value)} className="mt-1 font-mono" readOnly={isExistingGrn} />
+              <Input
+                value={grnNumber}
+                onChange={(e) => setGrnNumber(e.target.value)}
+                className="mt-1 font-mono"
+                readOnly
+                placeholder={isExistingGrn ? undefined : "Auto-generated on save"}
+              />
             </div>
 
             <div>
