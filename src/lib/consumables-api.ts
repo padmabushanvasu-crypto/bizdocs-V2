@@ -10,7 +10,7 @@ import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
 export interface ConsumableIssueLine {
   id: string;
   company_id: string;
-  issue_id: string;
+  consumable_issue_id: string;
   item_id: string | null;
   item_code: string | null;
   item_description: string | null;
@@ -169,7 +169,7 @@ export async function fetchConsumableStats(): Promise<ConsumableStats> {
       .from("consumable_issue_lines")
       .select("qty_issued, qty_returned, return_status")
       .eq("company_id", companyId)
-      .in("issue_id", issueIds);
+      .in("consumable_issue_id", issueIds);
 
     for (const line of (linesData ?? []) as any[]) {
       qty_issued_this_month += Number(line.qty_issued) || 0;
@@ -245,7 +245,7 @@ export async function createConsumableIssue(
   // 2. Insert lines
   const lineRows = input.lines.map((l) => ({
     company_id: companyId,
-    issue_id: issue.id,
+    consumable_issue_id: issue.id,
     item_id: l.item_id,
     item_code: l.item_code,
     item_description: l.item_description,
