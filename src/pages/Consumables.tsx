@@ -46,13 +46,8 @@ const STOCK_ACTIONS: {
 }[] = [
   {
     value: "recall_unused",
-    label: "Recall unused — credit full qty back to free stock",
-    desc: "Use when the issue was a mistake or items came back unused.",
-  },
-  {
-    value: "partial_return",
-    label: "Partial return — credit only qty_returned back to free stock",
-    desc: "Use when the returned portion is being put back; the rest stays consumed.",
+    label: "Recall unused — credit outstanding qty back to free stock",
+    desc: "Use when the issue was a mistake. Credits only what wasn't already returned via return events.",
   },
   {
     value: "already_consumed",

@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Plus, Trash2, Wrench, CheckCircle } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Wrench, CheckCircle, Pencil, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,10 +43,15 @@ import {
   createConsumableIssue,
   softDeleteConsumableIssue,
   deleteConsumableIssueLine,
+  recordConsumableReturn,
+  listConsumableReturnsForLine,
+  deleteConsumableReturn,
+  editConsumableIssue,
   type ConsumableIssueLine,
   type ConsumableIssueLineInput,
   type ConsumableIssueDeleteStockAction,
   type ConsumableItem,
+  type ConsumableReturn,
 } from "@/lib/consumables-api";
 import { logAudit } from "@/lib/audit-api";
 import { formatNumber } from "@/lib/gst-utils";
@@ -67,13 +72,8 @@ const STOCK_ACTIONS: {
 }[] = [
   {
     value: "recall_unused",
-    label: "Recall unused — credit full qty back to free stock",
-    desc: "Use when the issue was a mistake or items came back unused.",
-  },
-  {
-    value: "partial_return",
-    label: "Partial return — credit only qty_returned back to free stock",
-    desc: "Use when the returned portion is being put back; the rest stays consumed.",
+    label: "Recall unused — credit outstanding qty back to free stock",
+    desc: "Use when the issue was a mistake. Credits only what wasn't already returned via return events.",
   },
   {
     value: "already_consumed",
@@ -114,13 +114,6 @@ function emptyLine(): LineFormRow {
     return_reason: "",
     disposition: "",
   };
-}
-
-function returnStatusBadge(status: string) {
-  if (status === "returned") {
-    return <Badge className="bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">Returned</Badge>;
-  }
-  return <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">Not Returned</Badge>;
 }
 
 function issuedStatusBadge(status: string) {
@@ -249,6 +242,142 @@ export default function ConsumableIssueDetail() {
     if (deleteLineTarget) deleteLineMutation.mutate();
     else deleteIssueMutation.mutate();
   };
+
+  // ── Edit-issue state ─────────────────────────────────────────────────────
+  const [editMode, setEditMode] = useState(false);
+  const [editIssuedTo, setEditIssuedTo] = useState("");
+  const [editIssuedBy, setEditIssuedBy] = useState("");
+  const [editIssueDate, setEditIssueDate] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [editLineQtys, setEditLineQtys] = useState<Record<string, number>>({});
+
+  const startEdit = () => {
+    if (!issue) return;
+    setEditIssuedTo(issue.issued_to);
+    setEditIssuedBy(issue.issued_by ?? "");
+    setEditIssueDate(issue.issue_date);
+    setEditNotes(issue.notes ?? "");
+    const qtys: Record<string, number> = {};
+    for (const l of issue.lines ?? []) {
+      qtys[l.id] = Number(l.qty_issued);
+    }
+    setEditLineQtys(qtys);
+    setEditMode(true);
+  };
+  const cancelEdit = () => {
+    setEditMode(false);
+    setEditLineQtys({});
+  };
+
+  const editIssueMutation = useMutation({
+    mutationFn: async () => {
+      if (!id) throw new Error("Missing issue id");
+      const linesUpdate = Object.entries(editLineQtys)
+        .filter(([, qty]) => Number.isFinite(qty) && qty > 0)
+        .map(([lineId, qty]) => ({ id: lineId, qty_issued: qty }));
+      return editConsumableIssue(id, {
+        header: {
+          issued_to: editIssuedTo,
+          issued_by: editIssuedBy || null,
+          issue_date: editIssueDate,
+          notes: editNotes || null,
+        },
+        lines: linesUpdate.length > 0 ? linesUpdate : undefined,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["consumable-issue", id] });
+      queryClient.invalidateQueries({ queryKey: ["consumable-issues"] });
+      toast({ title: "Issue updated" });
+      cancelEdit();
+    },
+    onError: (err: any) =>
+      toast({
+        title: "Update failed",
+        description: err?.message ?? "Unknown error",
+        variant: "destructive",
+      }),
+  });
+
+  // ── Record-return state ──────────────────────────────────────────────────
+  const [returnsLineTarget, setReturnsLineTarget] =
+    useState<ConsumableIssueLine | null>(null);
+  const [returnQty, setReturnQty] = useState<number>(0);
+  const [returnDisposition, setReturnDisposition] =
+    useState<"returned_to_stock" | "scrap" | "lost">("returned_to_stock");
+  const [returnReturnedByName, setReturnReturnedByName] = useState("");
+  const [returnReturnedAt, setReturnReturnedAt] = useState<string>(
+    new Date().toISOString().slice(0, 10)
+  );
+  const [returnNotes, setReturnNotes] = useState("");
+
+  const openReturnsDialog = (line: ConsumableIssueLine) => {
+    setReturnsLineTarget(line);
+    setReturnQty(0);
+    setReturnDisposition("returned_to_stock");
+    setReturnReturnedByName(profile?.full_name ?? "");
+    setReturnReturnedAt(new Date().toISOString().slice(0, 10));
+    setReturnNotes("");
+  };
+  const closeReturnsDialog = () => {
+    setReturnsLineTarget(null);
+    setReturnQty(0);
+    setReturnNotes("");
+  };
+
+  const { data: returnsForLine = [] } = useQuery({
+    queryKey: ["consumable-returns-for-line", returnsLineTarget?.id],
+    queryFn: () => listConsumableReturnsForLine(returnsLineTarget!.id),
+    enabled: !!returnsLineTarget,
+  });
+
+  const recordReturnMutation = useMutation({
+    mutationFn: () => {
+      if (!returnsLineTarget) throw new Error("Missing line");
+      if (!(returnQty > 0)) throw new Error("Qty must be > 0");
+      return recordConsumableReturn(returnsLineTarget.id, {
+        qty: returnQty,
+        disposition: returnDisposition,
+        returned_at: new Date(returnReturnedAt).toISOString(),
+        returned_by_name: returnReturnedByName || null,
+        notes: returnNotes || null,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["consumable-issue", id] });
+      queryClient.invalidateQueries({ queryKey: ["consumable-stats"] });
+      queryClient.invalidateQueries({
+        queryKey: ["consumable-returns-for-line", returnsLineTarget?.id],
+      });
+      toast({ title: "Return recorded" });
+      setReturnQty(0);
+      setReturnNotes("");
+    },
+    onError: (err: any) =>
+      toast({
+        title: "Record failed",
+        description: err?.message ?? "Unknown error",
+        variant: "destructive",
+      }),
+  });
+
+  const deleteReturnMutation = useMutation({
+    mutationFn: (returnId: string) =>
+      deleteConsumableReturn(returnId, { reason: "Deleted from UI" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["consumable-issue", id] });
+      queryClient.invalidateQueries({
+        queryKey: ["consumable-returns-for-line", returnsLineTarget?.id],
+      });
+      toast({ title: "Return event removed" });
+    },
+    onError: (err: any) =>
+      toast({
+        title: "Delete failed",
+        description: err?.message ?? "Unknown error",
+        variant: "destructive",
+      }),
+  });
 
   // ── VIEW mode ─────────────────────────────────────────────────────────────
   const { data: issue, isLoading } = useQuery({
@@ -393,16 +522,40 @@ export default function ConsumableIssueDetail() {
             <span className="font-mono font-bold text-lg">{issue.issue_number}</span>
             {issuedStatusBadge(issue.status)}
           </div>
-          {canEdit && !isDeleted && (
-            <Button
-              variant="destructive"
-              size="sm"
-              className="ml-auto"
-              onClick={openIssueDelete}
-            >
-              <Trash2 className="w-4 h-4 mr-1" />
-              Delete Issue
-            </Button>
+          {canEdit && !isDeleted && !editMode && (
+            <div className="ml-auto flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={startEdit}>
+                <Pencil className="w-4 h-4 mr-1" />
+                Edit Issue
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={openIssueDelete}
+              >
+                <Trash2 className="w-4 h-4 mr-1" />
+                Delete Issue
+              </Button>
+            </div>
+          )}
+          {canEdit && !isDeleted && editMode && (
+            <div className="ml-auto flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={cancelEdit}
+                disabled={editIssueMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => editIssueMutation.mutate()}
+                disabled={editIssueMutation.isPending || !editIssuedTo.trim()}
+              >
+                {editIssueMutation.isPending ? "Saving…" : "Save Changes"}
+              </Button>
+            </div>
           )}
         </div>
 
@@ -428,12 +581,51 @@ export default function ConsumableIssueDetail() {
         )}
 
         {/* Meta */}
-        <div className="flex flex-wrap gap-4 text-sm text-muted-foreground p-4 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-200 dark:border-slate-700">
-          <span>Date: <b className="text-foreground">{format(parseISO(issue.issue_date), "dd MMM yyyy")}</b></span>
-          <span>Issued To: <b className="text-foreground">{issue.issued_to}</b></span>
-          {issue.issued_by && <span>Issued By: <b className="text-foreground">{issue.issued_by}</b></span>}
-          {issue.notes && <span>Notes: <b className="text-foreground">{issue.notes}</b></span>}
-        </div>
+        {!editMode ? (
+          <div className="flex flex-wrap gap-4 text-sm text-muted-foreground p-4 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-200 dark:border-slate-700">
+            <span>Date: <b className="text-foreground">{format(parseISO(issue.issue_date), "dd MMM yyyy")}</b></span>
+            <span>Issued To: <b className="text-foreground">{issue.issued_to}</b></span>
+            {issue.issued_by && <span>Issued By: <b className="text-foreground">{issue.issued_by}</b></span>}
+            {issue.notes && <span>Notes: <b className="text-foreground">{issue.notes}</b></span>}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-200 dark:border-slate-700">
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-issue-date">Issue Date</Label>
+              <Input
+                id="edit-issue-date"
+                type="date"
+                value={editIssueDate}
+                onChange={(e) => setEditIssueDate(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-issued-to">Issued To <span className="text-red-500">*</span></Label>
+              <Input
+                id="edit-issued-to"
+                value={editIssuedTo}
+                onChange={(e) => setEditIssuedTo(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-issued-by">Issued By</Label>
+              <Input
+                id="edit-issued-by"
+                value={editIssuedBy}
+                onChange={(e) => setEditIssuedBy(e.target.value)}
+              />
+            </div>
+            <div className="sm:col-span-3 space-y-1.5">
+              <Label htmlFor="edit-notes">Notes</Label>
+              <Textarea
+                id="edit-notes"
+                value={editNotes}
+                onChange={(e) => setEditNotes(e.target.value)}
+                rows={2}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Lines table */}
         <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-900">
@@ -444,16 +636,20 @@ export default function ConsumableIssueDetail() {
                   <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700">Drawing No</th>
                   <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700">Item</th>
                   <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700">Qty Issued</th>
-                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700">Return Status</th>
-                  <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700">Qty Returned</th>
-                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700">Reason / Disposition</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700">Returned</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700">Outstanding</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700">Disposition</th>
                   {canEdit && !isDeleted && (
                     <th className="px-3 py-2.5 border-b border-slate-200 dark:border-slate-700" />
                   )}
                 </tr>
               </thead>
               <tbody>
-                {(issue.lines ?? []).map((line: ConsumableIssueLine) => (
+                {(issue.lines ?? []).map((line: ConsumableIssueLine) => {
+                  const qtyReturnedAgg = Number(line.qty_returned ?? 0);
+                  const outstanding =
+                    Number(line.qty_issued) - qtyReturnedAgg;
+                  return (
                   <tr key={line.id} className="border-b border-slate-100 dark:border-slate-800">
                     <td className="px-3 py-2.5 font-mono text-blue-700 dark:text-blue-400">
                       {line.drawing_number ?? "—"}
@@ -465,39 +661,80 @@ export default function ConsumableIssueDetail() {
                       )}
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums font-mono">
-                      {line.qty_issued} {line.unit}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      {returnStatusBadge(line.return_status)}
-                      {line.return_status === "not_returned" && line.return_reason && (
-                        <p className="mt-1 text-xs text-muted-foreground">{line.return_reason}</p>
+                      {editMode ? (
+                        <Input
+                          type="number"
+                          min={qtyReturnedAgg}
+                          value={editLineQtys[line.id] ?? line.qty_issued}
+                          onChange={(e) =>
+                            setEditLineQtys((prev) => ({
+                              ...prev,
+                              [line.id]: Math.max(
+                                qtyReturnedAgg,
+                                Number(e.target.value) || 0
+                              ),
+                            }))
+                          }
+                          className="w-24 text-right tabular-nums font-mono"
+                        />
+                      ) : (
+                        <>{line.qty_issued} {line.unit}</>
                       )}
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums font-mono">
-                      {line.return_status === "returned" ? `${line.qty_returned} ${line.unit}` : "—"}
+                      {qtyReturnedAgg > 0 ? `${qtyReturnedAgg} ${line.unit}` : "—"}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums font-mono">
+                      <span
+                        className={
+                          outstanding === 0
+                            ? "text-muted-foreground"
+                            : "text-foreground font-semibold"
+                        }
+                      >
+                        {outstanding} {line.unit}
+                      </span>
                     </td>
                     <td className="px-3 py-2.5 text-muted-foreground text-xs">
-                      {line.return_reason && <span>{line.return_reason}</span>}
                       {line.disposition === "scrap" && (
-                        <Badge className="ml-1 bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">Scrap</Badge>
+                        <Badge className="bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">Scrap</Badge>
+                      )}
+                      {line.return_reason && (
+                        <span className="block">{line.return_reason}</span>
                       )}
                       {!line.return_reason && !line.disposition && "—"}
                     </td>
                     {canEdit && !isDeleted && (
                       <td className="px-3 py-2.5 text-right">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                          onClick={() => openLineDelete(line)}
-                          aria-label="Delete line"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          {!editMode && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openReturnsDialog(line)}
+                              aria-label="Manage returns"
+                            >
+                              <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                              Returns
+                            </Button>
+                          )}
+                          {!editMode && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => openLineDelete(line)}
+                              aria-label="Delete line"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
                       </td>
                     )}
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -600,6 +837,191 @@ export default function ConsumableIssueDetail() {
                 }
               >
                 {deletePending ? "Deleting…" : "Confirm Deletion"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Returns dialog */}
+        <Dialog
+          open={!!returnsLineTarget}
+          onOpenChange={(open) => {
+            if (!open && !recordReturnMutation.isPending) closeReturnsDialog();
+          }}
+        >
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>
+                Manage Returns
+                {returnsLineTarget && (
+                  <span className="ml-2 text-base font-normal text-muted-foreground">
+                    · {returnsLineTarget.item_code ?? "line"} ·{" "}
+                    Outstanding{" "}
+                    {Number(returnsLineTarget.qty_issued) -
+                      Number(returnsLineTarget.qty_returned ?? 0)}{" "}
+                    {returnsLineTarget.unit}
+                  </span>
+                )}
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              {/* Record new return */}
+              {returnsLineTarget && (
+                <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-4 space-y-3">
+                  <p className="text-sm font-semibold">Record return</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="space-y-1.5">
+                      <Label>Qty</Label>
+                      <Input
+                        type="number"
+                        min={0.0001}
+                        max={
+                          Number(returnsLineTarget.qty_issued) -
+                          Number(returnsLineTarget.qty_returned ?? 0)
+                        }
+                        value={returnQty || ""}
+                        onChange={(e) =>
+                          setReturnQty(Math.max(0, Number(e.target.value) || 0))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Disposition</Label>
+                      <Select
+                        value={returnDisposition}
+                        onValueChange={(v) =>
+                          setReturnDisposition(
+                            v as "returned_to_stock" | "scrap" | "lost"
+                          )
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="returned_to_stock">
+                            Returned to stock
+                          </SelectItem>
+                          <SelectItem value="scrap">Scrap</SelectItem>
+                          <SelectItem value="lost">Lost</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Returned at</Label>
+                      <Input
+                        type="date"
+                        value={returnReturnedAt}
+                        onChange={(e) => setReturnReturnedAt(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Returned by</Label>
+                      <Input
+                        placeholder="Name"
+                        value={returnReturnedByName}
+                        onChange={(e) => setReturnReturnedByName(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Notes (optional)</Label>
+                    <Input
+                      value={returnNotes}
+                      onChange={(e) => setReturnNotes(e.target.value)}
+                      placeholder="Why, condition, batch, etc."
+                    />
+                  </div>
+                  <div className="flex justify-end">
+                    <Button
+                      size="sm"
+                      onClick={() => recordReturnMutation.mutate()}
+                      disabled={
+                        recordReturnMutation.isPending ||
+                        !(returnQty > 0)
+                      }
+                    >
+                      {recordReturnMutation.isPending ? "Recording…" : "Record return"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* History */}
+              <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <div className="px-4 py-2 bg-slate-50 dark:bg-slate-800/60 text-xs font-semibold uppercase text-slate-500">
+                  Return history
+                </div>
+                {returnsForLine.length === 0 ? (
+                  <p className="p-4 text-sm text-muted-foreground text-center">
+                    No return events recorded yet.
+                  </p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-xs uppercase text-slate-500 border-b border-slate-200 dark:border-slate-700">
+                        <th className="px-3 py-2 text-left">Date</th>
+                        <th className="px-3 py-2 text-right">Qty</th>
+                        <th className="px-3 py-2 text-left">Disposition</th>
+                        <th className="px-3 py-2 text-left">By</th>
+                        <th className="px-3 py-2 text-left">Notes</th>
+                        <th className="px-3 py-2" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {returnsForLine.map((r: ConsumableReturn) => (
+                        <tr key={r.id} className="border-b border-slate-100 dark:border-slate-800">
+                          <td className="px-3 py-2 text-muted-foreground tabular-nums">
+                            {format(parseISO(r.returned_at), "dd MMM yyyy")}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums font-mono">
+                            {r.qty_returned}
+                          </td>
+                          <td className="px-3 py-2">
+                            {r.disposition === "returned_to_stock" && (
+                              <Badge className="bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">To stock</Badge>
+                            )}
+                            {r.disposition === "scrap" && (
+                              <Badge className="bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">Scrap</Badge>
+                            )}
+                            {r.disposition === "lost" && (
+                              <Badge className="bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300">Lost</Badge>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-muted-foreground">
+                            {r.returned_by_name ?? "—"}
+                          </td>
+                          <td className="px-3 py-2 text-muted-foreground text-xs">
+                            {r.notes ?? "—"}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => {
+                                if (window.confirm("Delete this return event? Stock will be reversed.")) {
+                                  deleteReturnMutation.mutate(r.id);
+                                }
+                              }}
+                              disabled={deleteReturnMutation.isPending}
+                              aria-label="Delete return event"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={closeReturnsDialog}>
+                Close
               </Button>
             </DialogFooter>
           </DialogContent>

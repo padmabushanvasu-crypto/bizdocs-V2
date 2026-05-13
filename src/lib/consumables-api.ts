@@ -42,10 +42,29 @@ export interface ConsumableIssue {
   lines?: ConsumableIssueLine[];
 }
 
+// 'partial_return' was removed when consumable_returns went event-sourced
+// (migration 20260513000030). Returns recorded via recordConsumableReturn
+// already credit stock as they happen, so a partial_return action on
+// delete became incoherent. recall_unused now credits only the
+// outstanding qty (qty_issued − sum of return events).
 export type ConsumableIssueDeleteStockAction =
   | "recall_unused"
-  | "already_consumed"
-  | "partial_return";
+  | "already_consumed";
+
+export interface ConsumableReturn {
+  id: string;
+  company_id: string;
+  consumable_issue_line_id: string;
+  qty_returned: number;
+  disposition: "returned_to_stock" | "scrap" | "lost";
+  returned_at: string;
+  returned_by_user_id: string | null;
+  returned_by_name: string | null;
+  notes: string | null;
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface ConsumableIssueFilters {
   month?: string;
@@ -267,19 +286,26 @@ export async function createConsumableIssue(
     disposition: l.disposition,
   }));
 
-  const { error: linesError } = await (supabase as any)
+  // Insert with .select() so we get the inserted line ids back; we need
+  // them to write consumable_returns events linked to each line. Supabase
+  // preserves input order in the returned rows, so we zip by index.
+  const { data: insertedLines, error: linesError } = await (supabase as any)
     .from("consumable_issue_lines")
-    .insert(lineRows);
+    .insert(lineRows)
+    .select();
   if (linesError) throw linesError;
+  const lineRowsOut = (insertedLines ?? []) as Array<{ id: string }>;
 
-  // 3. Stock movements + ledger entries per line
-  for (const line of input.lines) {
+  // 3. Stock movements + ledger entries + at-create return events
+  for (let i = 0; i < input.lines.length; i++) {
+    const line = input.lines[i];
+    const insertedLine = lineRowsOut[i];
     if (!line.item_id || line.qty_issued <= 0) continue;
 
     // Decrement free stock
     await updateStockBucket(line.item_id, "free", -line.qty_issued);
 
-    // Stock ledger entry
+    // Stock ledger entry for the issue itself
     await addStockLedgerEntry({
       item_id: line.item_id,
       item_code: line.item_code,
@@ -300,8 +326,83 @@ export async function createConsumableIssue(
       to_state: "consumed",
     });
 
-    // If returned as scrap: insert scrap_register audit record only
-    // Do NOT call createScrapEntry — stock already decremented above
+    // At-create-time return: route through the event table so
+    // line.qty_returned and consumable_returns stay in sync from day one.
+    // This fixes the prior data-loss bug where a later recordConsumableReturn
+    // call would overwrite line.qty_returned with the new (incomplete)
+    // aggregate, losing the at-create-time value.
+    if (line.qty_returned > 0 && insertedLine?.id) {
+      let eventDisposition:
+        | "returned_to_stock"
+        | "scrap"
+        | "lost"
+        | null = null;
+      if (line.disposition === "scrap") {
+        eventDisposition = "scrap";
+      } else if (line.return_status === "returned") {
+        eventDisposition = "returned_to_stock";
+      }
+      // return_status='not_returned' with qty_returned > 0 is an invalid
+      // combination; skip silently to match prior behaviour (no event,
+      // no stock side effects).
+
+      if (eventDisposition) {
+        try {
+          await (supabase as any).from("consumable_returns").insert({
+            company_id: companyId,
+            consumable_issue_line_id: insertedLine.id,
+            qty_returned: line.qty_returned,
+            disposition: eventDisposition,
+            returned_at: new Date(input.issue_date).toISOString(),
+            returned_by_user_id: null,
+            returned_by_name: input.issued_by ?? null,
+            notes: "Recorded at issue creation",
+          });
+        } catch (err) {
+          console.error("[consumables] at-create return event insert failed", err);
+        }
+
+        // Stock credit + ledger for 'returned_to_stock' — fixes the bug
+        // where create flow previously never credited stock_free for the
+        // returned-to-stock case (qty_returned was just metadata).
+        if (eventDisposition === "returned_to_stock") {
+          await updateStockBucket(line.item_id, "free", line.qty_returned).catch(
+            console.error
+          );
+          try {
+            await addStockLedgerEntry({
+              item_id: line.item_id,
+              item_code: line.item_code,
+              item_description: line.item_description,
+              transaction_date: input.issue_date,
+              transaction_type: "consumable_return",
+              qty_in: line.qty_returned,
+              qty_out: 0,
+              balance_qty: 0,
+              unit_cost: 0,
+              total_value: 0,
+              reference_type: "consumable_issue",
+              reference_id: issue.id,
+              reference_number: issue.issue_number,
+              notes: "Consumable return — recorded at issue creation",
+              created_by: null,
+              from_state: "consumed",
+              to_state: "free",
+            });
+          } catch {
+            /* ledger failures non-fatal */
+          }
+        }
+        // 'lost' has no stock effect beyond the event row.
+        // 'scrap' has no stock effect here either; the scrap_register row
+        // below is the legacy audit trail that is intentionally retained.
+      }
+    }
+
+    // Legacy scrap_register write — kept as-is for the at-create-time
+    // scrap path. The new flow's recordConsumableReturn writes its own
+    // scrap_register row with a different remarks suffix, so a later
+    // event-sourced scrap doesn't conflict with this legacy entry.
     if (
       line.return_status === "returned" &&
       line.disposition === "scrap" &&
@@ -357,7 +458,12 @@ async function reverseConsumableLineStock(
   if (!line.item_id) return;
 
   const qtyIssued = Number(line.qty_issued ?? 0);
-  const qtyReturned = Number(line.qty_returned ?? 0);
+  // The line's qty_returned aggregate represents qty already credited
+  // (or scrapped/lost) via active consumable_returns events. Reading
+  // off the line is cheap and sufficient because the recompute keeps
+  // the field in lockstep with the events.
+  const alreadyReturned = Number(line.qty_returned ?? 0);
+  const outstanding = Math.max(0, qtyIssued - alreadyReturned);
 
   let qtyToCredit = 0;
   let notes = "";
@@ -367,13 +473,22 @@ async function reverseConsumableLineStock(
   let to_state: string | null = "free";
 
   if (stockAction === "recall_unused") {
-    qtyToCredit = qtyIssued;
-    notes = `Consumable issue deleted — recalled unused${reason ? `: ${reason}` : ""}`;
-  } else if (stockAction === "partial_return") {
-    qtyToCredit = qtyReturned;
-    if (qtyToCredit <= 0) return;
-    notes = `Consumable issue deleted — partial return${reason ? `: ${reason}` : ""}`;
+    qtyToCredit = outstanding;
+    if (qtyToCredit <= 0) {
+      // Nothing outstanding (everything was already returned/scrapped/
+      // lost via events). Still write a trail-only ledger row so the
+      // deletion is traceable.
+      qtyToCredit = 0;
+      transaction_type = "manual_adjustment";
+      from_state = null;
+      to_state = null;
+    }
+    notes =
+      `Consumable issue deleted — recalled unused (${qtyToCredit} of ${qtyIssued} ` +
+      `outstanding, ${alreadyReturned} already returned via events)` +
+      (reason ? `: ${reason}` : "");
   } else {
+    // already_consumed — no stock writes, trail only.
     qtyToCredit = 0;
     notes = `Consumable issue deleted — already consumed, no stock reversal${reason ? `: ${reason}` : ""}`;
     transaction_type = "manual_adjustment";
@@ -411,16 +526,13 @@ async function reverseConsumableLineStock(
     /* ledger failures are non-fatal */
   }
 
-  // recall_unused on a scrap-disposition line: also remove the scrap_register
-  // row that was written by createConsumableIssue. Scrap rows are linked only
-  // by the remarks string "From consumable issue {issue_number}" plus item_id,
-  // so this match is best-effort — if two lines in the same issue share an
-  // item, both scrap rows get deleted on the first reversal.
-  if (
-    stockAction === "recall_unused" &&
-    line.disposition === "scrap" &&
-    qtyReturned > 0
-  ) {
+  // recall_unused: remove any scrap_register rows that were written by this
+  // issue (legacy at-create scrap or event-sourced scrap returns — both
+  // share the "From consumable issue {N}" remarks prefix). Best-effort
+  // ilike-match plus item_id filter; if two lines share an item, the
+  // cleanup may overshoot on a single-line delete, but a full-issue
+  // delete iterates every line so the net effect is correct.
+  if (stockAction === "recall_unused") {
     try {
       await (supabase as any)
         .from("scrap_register")
@@ -527,4 +639,510 @@ export async function deleteConsumableIssueLine(
     .eq("id", lineId)
     .eq("company_id", companyId);
   if (delErr) throw delErr;
+}
+
+// ============================================================
+// Event-sourced returns (introduced in 20260513000030)
+// ============================================================
+// A consumable_returns row is a single return event. The
+// line.qty_returned field is a denormalized aggregate of the
+// active (non-soft-deleted) rows here, recomputed by the API
+// after every mutation.
+
+async function sumActiveReturnsForLine(
+  lineId: string,
+  companyId: string
+): Promise<number> {
+  const { data, error } = await (supabase as any)
+    .from("consumable_returns")
+    .select("qty_returned")
+    .eq("consumable_issue_line_id", lineId)
+    .eq("company_id", companyId)
+    .is("deleted_at", null);
+  if (error) throw error;
+  return ((data ?? []) as { qty_returned: number }[]).reduce(
+    (s, r) => s + Number(r.qty_returned ?? 0),
+    0
+  );
+}
+
+async function recomputeLineQtyReturned(
+  lineId: string,
+  companyId: string
+): Promise<number> {
+  const total = await sumActiveReturnsForLine(lineId, companyId);
+  await (supabase as any)
+    .from("consumable_issue_lines")
+    .update({ qty_returned: total })
+    .eq("id", lineId)
+    .eq("company_id", companyId);
+  return total;
+}
+
+async function fetchLineForReturn(
+  lineId: string,
+  companyId: string
+): Promise<{
+  id: string;
+  company_id: string;
+  consumable_issue_id: string;
+  item_id: string | null;
+  item_code: string | null;
+  item_description: string | null;
+  drawing_number: string | null;
+  unit: string;
+  qty_issued: number;
+} & Record<string, any>> {
+  const { data, error } = await (supabase as any)
+    .from("consumable_issue_lines")
+    .select(
+      "id, company_id, consumable_issue_id, item_id, item_code, item_description, drawing_number, unit, qty_issued"
+    )
+    .eq("id", lineId)
+    .eq("company_id", companyId)
+    .single();
+  if (error) throw error;
+  if (!data) throw new Error("Consumable issue line not found");
+  return data;
+}
+
+async function fetchIssueNumberForLine(lineId: string): Promise<string> {
+  const { data: line } = await (supabase as any)
+    .from("consumable_issue_lines")
+    .select("consumable_issue_id")
+    .eq("id", lineId)
+    .single();
+  if (!line) return "";
+  const { data: issue } = await (supabase as any)
+    .from("consumable_issues")
+    .select("issue_number")
+    .eq("id", line.consumable_issue_id)
+    .single();
+  return (issue?.issue_number as string) ?? "";
+}
+
+export interface RecordConsumableReturnInput {
+  qty: number;
+  disposition: "returned_to_stock" | "scrap" | "lost";
+  returned_at?: string | null;
+  returned_by_name?: string | null;
+  notes?: string | null;
+}
+
+export async function recordConsumableReturn(
+  lineId: string,
+  input: RecordConsumableReturnInput
+): Promise<ConsumableReturn> {
+  const { qty, disposition } = input;
+  if (!(qty > 0)) throw new Error("Return qty must be greater than zero");
+
+  const companyId = await getCompanyId();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const line = await fetchLineForReturn(lineId, companyId);
+
+  // Server-side gate: cumulative returns must not exceed qty_issued.
+  const existingSum = await sumActiveReturnsForLine(lineId, companyId);
+  const outstanding = Number(line.qty_issued) - existingSum;
+  if (qty > outstanding + 1e-9) {
+    throw new Error(
+      `Return qty (${qty}) exceeds outstanding (${outstanding}). ` +
+        `${existingSum} of ${line.qty_issued} already returned.`
+    );
+  }
+
+  const issueNumber = await fetchIssueNumberForLine(lineId);
+  const transactionDate = (input.returned_at ?? new Date().toISOString()).slice(
+    0,
+    10
+  );
+
+  // 1. Insert the event row
+  const { data: inserted, error: insertErr } = await (supabase as any)
+    .from("consumable_returns")
+    .insert({
+      company_id: companyId,
+      consumable_issue_line_id: lineId,
+      qty_returned: qty,
+      disposition,
+      returned_at: input.returned_at ?? new Date().toISOString(),
+      returned_by_user_id: user?.id ?? null,
+      returned_by_name: input.returned_by_name ?? null,
+      notes: input.notes ?? null,
+    })
+    .select()
+    .single();
+  if (insertErr) throw insertErr;
+  const eventRow = inserted as ConsumableReturn;
+
+  // 2. Stock effects per disposition
+  if (line.item_id) {
+    if (disposition === "returned_to_stock") {
+      await updateStockBucket(line.item_id, "free", qty).catch(console.error);
+      try {
+        await addStockLedgerEntry({
+          item_id: line.item_id,
+          item_code: line.item_code,
+          item_description: line.item_description,
+          transaction_date: transactionDate,
+          transaction_type: "consumable_return",
+          qty_in: qty,
+          qty_out: 0,
+          balance_qty: 0,
+          unit_cost: 0,
+          total_value: 0,
+          reference_type: "consumable_issue",
+          reference_id: line.consumable_issue_id,
+          reference_number: issueNumber,
+          notes:
+            `Consumable return — returned to stock` +
+            (input.notes ? `: ${input.notes}` : ""),
+          created_by: null,
+          from_state: "consumed",
+          to_state: "free",
+        });
+      } catch {
+        /* ledger failures non-fatal */
+      }
+    } else if (disposition === "scrap") {
+      // Audit-only scrap_register row; stock_free is NOT credited
+      // because the issue already decremented it and the qty isn't
+      // coming back.
+      try {
+        await (supabase as any).from("scrap_register").insert({
+          company_id: companyId,
+          scrap_number: "",
+          scrap_date: transactionDate,
+          item_id: line.item_id,
+          item_code: line.item_code,
+          item_description: line.item_description,
+          drawing_number: line.drawing_number ?? null,
+          qty_scrapped: qty,
+          unit: line.unit,
+          scrap_reason: input.notes ?? "Consumable returned as scrap",
+          scrap_category: "other",
+          cost_per_unit: 0,
+          total_scrap_value: 0,
+          disposal_method: "write_off",
+          scrap_sale_value: 0,
+          remarks: `From consumable issue ${issueNumber} (return event ${eventRow.id})`,
+          recorded_by: input.returned_by_name ?? null,
+        });
+      } catch {
+        /* non-fatal */
+      }
+    }
+    // disposition='lost': pure audit; no stock effect.
+  }
+
+  // 3. Refresh denormalized aggregate on the parent line.
+  await recomputeLineQtyReturned(lineId, companyId);
+
+  // 4. Audit trail
+  try {
+    const auditModule = await import("@/lib/audit-api");
+    await auditModule.logAudit(
+      "consumable_return",
+      eventRow.id,
+      "recorded",
+      {
+        line_id: lineId,
+        issue_id: line.consumable_issue_id,
+        qty,
+        disposition,
+      }
+    );
+  } catch {
+    /* audit failures non-fatal */
+  }
+
+  return eventRow;
+}
+
+export async function listConsumableReturnsForLine(
+  lineId: string,
+  options: { includeDeleted?: boolean } = {}
+): Promise<ConsumableReturn[]> {
+  const companyId = await getCompanyId();
+  let query = (supabase as any)
+    .from("consumable_returns")
+    .select("*")
+    .eq("consumable_issue_line_id", lineId)
+    .eq("company_id", companyId)
+    .order("returned_at", { ascending: false });
+  if (!options.includeDeleted) query = query.is("deleted_at", null);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as ConsumableReturn[];
+}
+
+export async function deleteConsumableReturn(
+  returnId: string,
+  options: { reason?: string } = {}
+): Promise<void> {
+  const companyId = await getCompanyId();
+
+  // Load the row so we can reverse stock effects.
+  const { data: row, error } = await (supabase as any)
+    .from("consumable_returns")
+    .select("*")
+    .eq("id", returnId)
+    .eq("company_id", companyId)
+    .single();
+  if (error) throw error;
+  if (!row) throw new Error("Consumable return not found");
+  if (row.deleted_at) return; // idempotent
+
+  const event = row as ConsumableReturn;
+  const line = await fetchLineForReturn(
+    event.consumable_issue_line_id,
+    companyId
+  );
+  const issueNumber = await fetchIssueNumberForLine(event.consumable_issue_line_id);
+  const today = new Date().toISOString().slice(0, 10);
+
+  // 1. Reverse stock if the original event credited stock
+  if (line.item_id && event.disposition === "returned_to_stock") {
+    await updateStockBucket(line.item_id, "free", -Number(event.qty_returned)).catch(
+      console.error
+    );
+    try {
+      await addStockLedgerEntry({
+        item_id: line.item_id,
+        item_code: line.item_code,
+        item_description: line.item_description,
+        transaction_date: today,
+        transaction_type: "manual_adjustment",
+        qty_in: 0,
+        qty_out: Number(event.qty_returned),
+        balance_qty: 0,
+        unit_cost: 0,
+        total_value: 0,
+        reference_type: "consumable_issue",
+        reference_id: line.consumable_issue_id,
+        reference_number: issueNumber,
+        notes:
+          `Consumable return event deleted` +
+          (options.reason ? `: ${options.reason}` : ""),
+        created_by: null,
+        from_state: "free",
+        to_state: "consumed",
+      });
+    } catch {
+      /* non-fatal */
+    }
+  }
+  // disposition='scrap' or 'lost' leave their scrap_register / no-op
+  // trails untouched. Scrap audit rows are linked only by free-text
+  // remarks, so a precise reversal would be unsafe.
+
+  // 2. Soft delete the event row
+  const { error: updErr } = await (supabase as any)
+    .from("consumable_returns")
+    .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq("id", returnId)
+    .eq("company_id", companyId);
+  if (updErr) throw updErr;
+
+  // 3. Refresh aggregate
+  await recomputeLineQtyReturned(event.consumable_issue_line_id, companyId);
+
+  // 4. Audit
+  try {
+    const auditModule = await import("@/lib/audit-api");
+    await auditModule.logAudit("consumable_return", returnId, "deleted", {
+      line_id: event.consumable_issue_line_id,
+      issue_id: line.consumable_issue_id,
+      qty: event.qty_returned,
+      disposition: event.disposition,
+      reason: options.reason ?? null,
+    });
+  } catch {
+    /* non-fatal */
+  }
+}
+
+// ============================================================
+// Edit issue (header + line edits with returns gating)
+// ============================================================
+
+export interface EditConsumableIssueHeaderInput {
+  issued_to?: string;
+  issued_by?: string | null;
+  issue_date?: string;
+  notes?: string | null;
+}
+
+export interface EditConsumableIssueLineInput {
+  id: string;
+  qty_issued?: number;
+  item_id?: string | null;
+  item_code?: string | null;
+  item_description?: string | null;
+  drawing_number?: string | null;
+  unit?: string;
+  return_reason?: string | null;
+  disposition?: "scrap" | null;
+}
+
+export interface EditConsumableIssueInput {
+  header?: EditConsumableIssueHeaderInput;
+  lines?: EditConsumableIssueLineInput[];
+}
+
+export async function editConsumableIssue(
+  issueId: string,
+  input: EditConsumableIssueInput
+): Promise<ConsumableIssue> {
+  const companyId = await getCompanyId();
+
+  // Load before snapshot for audit
+  const { data: before, error: beforeErr } = await (supabase as any)
+    .from("consumable_issues")
+    .select("*, lines:consumable_issue_lines(*)")
+    .eq("id", issueId)
+    .eq("company_id", companyId)
+    .single();
+  if (beforeErr) throw beforeErr;
+  if (!before) throw new Error("Consumable issue not found");
+  if (before.status === "deleted")
+    throw new Error("Cannot edit a deleted consumable issue");
+
+  const linesById = new Map<string, any>(
+    ((before.lines ?? []) as any[]).map((l) => [l.id as string, l])
+  );
+
+  // 1. Header update
+  if (input.header && Object.keys(input.header).length > 0) {
+    const headerPatch: Record<string, any> = {};
+    if (input.header.issued_to !== undefined) headerPatch.issued_to = input.header.issued_to;
+    if (input.header.issued_by !== undefined) headerPatch.issued_by = input.header.issued_by;
+    if (input.header.issue_date !== undefined) headerPatch.issue_date = input.header.issue_date;
+    if (input.header.notes !== undefined) headerPatch.notes = input.header.notes;
+    if (Object.keys(headerPatch).length > 0) {
+      headerPatch.updated_at = new Date().toISOString();
+      const { error: hErr } = await (supabase as any)
+        .from("consumable_issues")
+        .update(headerPatch)
+        .eq("id", issueId)
+        .eq("company_id", companyId);
+      if (hErr) throw hErr;
+    }
+  }
+
+  // 2. Line updates with gating + stock deltas
+  for (const update of input.lines ?? []) {
+    const orig = linesById.get(update.id);
+    if (!orig) throw new Error(`Line ${update.id} not found on this issue`);
+
+    const newQtyIssued =
+      update.qty_issued !== undefined ? Number(update.qty_issued) : Number(orig.qty_issued);
+    const newItemId =
+      update.item_id !== undefined ? update.item_id : orig.item_id;
+
+    // Gate: qty_issued cannot drop below sum of active returns
+    const returnedSum = await sumActiveReturnsForLine(update.id, companyId);
+    if (newQtyIssued < returnedSum) {
+      throw new Error(
+        `Cannot reduce qty_issued of line ${orig.item_code ?? update.id} below total returned (${returnedSum}). ` +
+          `Delete return events first.`
+      );
+    }
+
+    // Stock delta — only re-credit/decrement the FREE bucket if the
+    // item or qty changed. Item-swap is treated as full reversal on
+    // the old item + fresh issue on the new item.
+    const itemChanged = newItemId !== orig.item_id;
+    const qtyChanged = newQtyIssued !== Number(orig.qty_issued);
+
+    if (itemChanged) {
+      // Reverse old item by original qty_issued (already had its
+      // partial returns credited via events, so the outstanding is
+      // qty_issued − returnedSum).
+      const outstandingOld = Number(orig.qty_issued) - returnedSum;
+      if (orig.item_id && outstandingOld > 0) {
+        await updateStockBucket(orig.item_id, "free", outstandingOld).catch(
+          console.error
+        );
+      }
+      // Decrement new item by full new qty.
+      if (newItemId && newQtyIssued > 0) {
+        await updateStockBucket(newItemId, "free", -newQtyIssued).catch(
+          console.error
+        );
+      }
+    } else if (qtyChanged) {
+      // Same item, just qty delta on outstanding portion.
+      const delta = newQtyIssued - Number(orig.qty_issued);
+      if (orig.item_id && delta !== 0) {
+        await updateStockBucket(orig.item_id, "free", -delta).catch(
+          console.error
+        );
+      }
+    }
+
+    const linePatch: Record<string, any> = {};
+    if (update.qty_issued !== undefined) linePatch.qty_issued = newQtyIssued;
+    if (update.item_id !== undefined) linePatch.item_id = newItemId;
+    if (update.item_code !== undefined) linePatch.item_code = update.item_code;
+    if (update.item_description !== undefined)
+      linePatch.item_description = update.item_description;
+    if (update.drawing_number !== undefined) linePatch.drawing_number = update.drawing_number;
+    if (update.unit !== undefined) linePatch.unit = update.unit;
+    if (update.return_reason !== undefined) linePatch.return_reason = update.return_reason;
+    if (update.disposition !== undefined) linePatch.disposition = update.disposition;
+
+    if (Object.keys(linePatch).length > 0) {
+      const { error: lErr } = await (supabase as any)
+        .from("consumable_issue_lines")
+        .update(linePatch)
+        .eq("id", update.id)
+        .eq("company_id", companyId);
+      if (lErr) throw lErr;
+    }
+  }
+
+  // 3. Reload after snapshot
+  const { data: after, error: afterErr } = await (supabase as any)
+    .from("consumable_issues")
+    .select("*, lines:consumable_issue_lines(*)")
+    .eq("id", issueId)
+    .eq("company_id", companyId)
+    .single();
+  if (afterErr) throw afterErr;
+
+  // 4. Audit with before/after snapshot
+  try {
+    const auditModule = await import("@/lib/audit-api");
+    await auditModule.logAudit("consumable_issue", issueId, "edited", {
+      before: {
+        issued_to: before.issued_to,
+        issued_by: before.issued_by,
+        issue_date: before.issue_date,
+        notes: before.notes,
+        lines: (before.lines ?? []).map((l: any) => ({
+          id: l.id,
+          qty_issued: l.qty_issued,
+          item_id: l.item_id,
+        })),
+      },
+      after: {
+        issued_to: after.issued_to,
+        issued_by: after.issued_by,
+        issue_date: after.issue_date,
+        notes: after.notes,
+        lines: (after.lines ?? []).map((l: any) => ({
+          id: l.id,
+          qty_issued: l.qty_issued,
+          item_id: l.item_id,
+        })),
+      },
+    });
+  } catch {
+    /* non-fatal */
+  }
+
+  return after as ConsumableIssue;
 }
