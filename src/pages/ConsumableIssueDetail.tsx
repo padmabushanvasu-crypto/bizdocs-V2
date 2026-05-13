@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Plus, Trash2, Wrench, CheckCircle, Pencil, RotateCcw } from "lucide-react";
@@ -299,7 +299,13 @@ export default function ConsumableIssueDetail() {
       }),
   });
 
-  // ── Record-return state ──────────────────────────────────────────────────
+  // ── Returns dialogs (history + record) ───────────────────────────────────
+  // History dialog is read-only and opens on row click; Record dialog has
+  // the form and opens via the per-row "Returns" button. Both target the
+  // same line and share the underlying query.
+  type ReturnDialogMode = "history" | "record" | null;
+  const [returnDialogMode, setReturnDialogMode] =
+    useState<ReturnDialogMode>(null);
   const [returnsLineTarget, setReturnsLineTarget] =
     useState<ConsumableIssueLine | null>(null);
   const [returnQty, setReturnQty] = useState<number>(0);
@@ -311,15 +317,21 @@ export default function ConsumableIssueDetail() {
   );
   const [returnNotes, setReturnNotes] = useState("");
 
-  const openReturnsDialog = (line: ConsumableIssueLine) => {
+  const openHistoryDialog = (line: ConsumableIssueLine) => {
+    setReturnsLineTarget(line);
+    setReturnDialogMode("history");
+  };
+  const openRecordDialog = (line: ConsumableIssueLine) => {
     setReturnsLineTarget(line);
     setReturnQty(0);
     setReturnDisposition("returned_to_stock");
     setReturnReturnedByName(profile?.full_name ?? "");
     setReturnReturnedAt(new Date().toISOString().slice(0, 10));
     setReturnNotes("");
+    setReturnDialogMode("record");
   };
   const closeReturnsDialog = () => {
+    setReturnDialogMode(null);
     setReturnsLineTarget(null);
     setReturnQty(0);
     setReturnNotes("");
@@ -350,8 +362,7 @@ export default function ConsumableIssueDetail() {
         queryKey: ["consumable-returns-for-line", returnsLineTarget?.id],
       });
       toast({ title: "Return recorded" });
-      setReturnQty(0);
-      setReturnNotes("");
+      closeReturnsDialog();
     },
     onError: (err: any) =>
       toast({
@@ -633,14 +644,14 @@ export default function ConsumableIssueDetail() {
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr className="bg-slate-50 dark:bg-slate-800/60">
-                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700">Drawing No</th>
-                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700">Item</th>
-                  <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700">Qty Issued</th>
-                  <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700">Returned</th>
-                  <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700">Outstanding</th>
-                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700">Disposition</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700 whitespace-nowrap">Drawing No</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700 w-full">Item</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700 whitespace-nowrap">Qty Issued</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700 whitespace-nowrap">Returned</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700 whitespace-nowrap">Outstanding</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700 whitespace-nowrap">Disposition</th>
                   {canEdit && !isDeleted && (
-                    <th className="px-3 py-2.5 border-b border-slate-200 dark:border-slate-700" />
+                    <th className="px-3 py-2.5 border-b border-slate-200 dark:border-slate-700 whitespace-nowrap" />
                   )}
                 </tr>
               </thead>
@@ -649,23 +660,34 @@ export default function ConsumableIssueDetail() {
                   const qtyReturnedAgg = Number(line.qty_returned ?? 0);
                   const outstanding =
                     Number(line.qty_issued) - qtyReturnedAgg;
+                  const rowClickable = !editMode;
                   return (
-                  <tr key={line.id} className="border-b border-slate-100 dark:border-slate-800">
-                    <td className="px-3 py-2.5 font-mono text-blue-700 dark:text-blue-400">
+                  <tr
+                    key={line.id}
+                    className={
+                      "border-b border-slate-100 dark:border-slate-800 " +
+                      (rowClickable
+                        ? "cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
+                        : "")
+                    }
+                    onClick={rowClickable ? () => openHistoryDialog(line) : undefined}
+                  >
+                    <td className="px-3 py-2.5 font-mono text-blue-700 dark:text-blue-400 whitespace-nowrap">
                       {line.drawing_number ?? "—"}
                     </td>
-                    <td className="px-3 py-2.5">
+                    <td className="px-3 py-2.5 min-w-0">
                       <p className="font-medium">{line.item_code ?? "—"}</p>
                       {line.item_description && (
                         <p className="text-xs text-muted-foreground">{line.item_description}</p>
                       )}
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums font-mono">
+                    <td className="px-3 py-2.5 text-right tabular-nums font-mono whitespace-nowrap">
                       {editMode ? (
                         <Input
                           type="number"
                           min={qtyReturnedAgg}
                           value={editLineQtys[line.id] ?? line.qty_issued}
+                          onClick={(e) => e.stopPropagation()}
                           onChange={(e) =>
                             setEditLineQtys((prev) => ({
                               ...prev,
@@ -681,10 +703,10 @@ export default function ConsumableIssueDetail() {
                         <>{line.qty_issued} {line.unit}</>
                       )}
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums font-mono">
+                    <td className="px-3 py-2.5 text-right tabular-nums font-mono whitespace-nowrap">
                       {qtyReturnedAgg > 0 ? `${qtyReturnedAgg} ${line.unit}` : "—"}
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums font-mono">
+                    <td className="px-3 py-2.5 text-right tabular-nums font-mono whitespace-nowrap">
                       <span
                         className={
                           outstanding === 0
@@ -695,7 +717,7 @@ export default function ConsumableIssueDetail() {
                         {outstanding} {line.unit}
                       </span>
                     </td>
-                    <td className="px-3 py-2.5 text-muted-foreground text-xs">
+                    <td className="px-3 py-2.5 text-muted-foreground text-xs whitespace-nowrap">
                       {line.disposition === "scrap" && (
                         <Badge className="bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">Scrap</Badge>
                       )}
@@ -705,14 +727,17 @@ export default function ConsumableIssueDetail() {
                       {!line.return_reason && !line.disposition && "—"}
                     </td>
                     {canEdit && !isDeleted && (
-                      <td className="px-3 py-2.5 text-right">
+                      <td className="px-3 py-2.5 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1">
                           {!editMode && (
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => openReturnsDialog(line)}
-                              aria-label="Manage returns"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openRecordDialog(line);
+                              }}
+                              aria-label="Record return"
                             >
                               <RotateCcw className="h-3.5 w-3.5 mr-1" />
                               Returns
@@ -723,7 +748,10 @@ export default function ConsumableIssueDetail() {
                               size="sm"
                               variant="ghost"
                               className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                              onClick={() => openLineDelete(line)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openLineDelete(line);
+                              }}
                               aria-label="Delete line"
                             >
                               <Trash2 className="h-4 w-4" />
@@ -842,44 +870,170 @@ export default function ConsumableIssueDetail() {
           </DialogContent>
         </Dialog>
 
-        {/* Returns dialog */}
+        {/* Return History dialog (read-only, opens on row click) */}
         <Dialog
-          open={!!returnsLineTarget}
+          open={returnDialogMode === "history"}
           onOpenChange={(open) => {
-            if (!open && !recordReturnMutation.isPending) closeReturnsDialog();
+            if (!open) closeReturnsDialog();
           }}
         >
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>
-                Manage Returns
-                {returnsLineTarget && (
-                  <span className="ml-2 text-base font-normal text-muted-foreground">
-                    · {returnsLineTarget.item_code ?? "line"} ·{" "}
-                    Outstanding{" "}
-                    {Number(returnsLineTarget.qty_issued) -
-                      Number(returnsLineTarget.qty_returned ?? 0)}{" "}
-                    {returnsLineTarget.unit}
-                  </span>
-                )}
-              </DialogTitle>
+              <DialogTitle>Return history</DialogTitle>
+              {returnsLineTarget && (
+                <div className="mt-1 text-sm text-muted-foreground">
+                  <p className="font-mono text-foreground">
+                    {returnsLineTarget.item_code ?? "—"}
+                  </p>
+                  {returnsLineTarget.item_description && (
+                    <p className="text-xs">{returnsLineTarget.item_description}</p>
+                  )}
+                  <p className="mt-1 text-xs">
+                    Issued{" "}
+                    <span className="font-mono text-foreground">
+                      {Number(returnsLineTarget.qty_issued)} {returnsLineTarget.unit}
+                    </span>{" "}
+                    · Returned{" "}
+                    <span className="font-mono text-foreground">
+                      {Number(returnsLineTarget.qty_returned ?? 0)} {returnsLineTarget.unit}
+                    </span>{" "}
+                    · Outstanding{" "}
+                    <span className="font-mono text-foreground">
+                      {Number(returnsLineTarget.qty_issued) -
+                        Number(returnsLineTarget.qty_returned ?? 0)}{" "}
+                      {returnsLineTarget.unit}
+                    </span>
+                  </p>
+                </div>
+              )}
             </DialogHeader>
 
-            <div className="space-y-4">
-              {/* Record new return */}
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+              {returnsForLine.length === 0 ? (
+                <p className="p-4 text-sm text-muted-foreground text-center">
+                  No return events recorded yet.
+                </p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs uppercase text-slate-500 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60">
+                      <th className="px-3 py-2 text-left whitespace-nowrap">Date</th>
+                      <th className="px-3 py-2 text-right whitespace-nowrap">Qty</th>
+                      <th className="px-3 py-2 text-left whitespace-nowrap">Disposition</th>
+                      <th className="px-3 py-2 text-left whitespace-nowrap">By</th>
+                      <th className="px-3 py-2 text-left w-full">Notes</th>
+                      {canEdit && !isDeleted && (
+                        <th className="px-3 py-2 whitespace-nowrap" />
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {returnsForLine.map((r: ConsumableReturn) => (
+                      <tr key={r.id} className="border-b border-slate-100 dark:border-slate-800">
+                        <td className="px-3 py-2 text-muted-foreground tabular-nums whitespace-nowrap">
+                          {format(parseISO(r.returned_at), "dd MMM yyyy")}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums font-mono whitespace-nowrap">
+                          {r.qty_returned}
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          {r.disposition === "returned_to_stock" && (
+                            <Badge className="bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">To stock</Badge>
+                          )}
+                          {r.disposition === "scrap" && (
+                            <Badge className="bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">Scrap</Badge>
+                          )}
+                          {r.disposition === "lost" && (
+                            <Badge className="bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300">Lost</Badge>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
+                          {r.returned_by_name ?? "—"}
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground text-xs">
+                          {r.notes ?? "—"}
+                        </td>
+                        {canEdit && !isDeleted && (
+                          <td className="px-3 py-2 text-right whitespace-nowrap">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => {
+                                if (window.confirm("Delete this return event? Stock will be reversed.")) {
+                                  deleteReturnMutation.mutate(r.id);
+                                }
+                              }}
+                              disabled={deleteReturnMutation.isPending}
+                              aria-label="Delete return event"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={closeReturnsDialog}>
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Record Return dialog (form, opens via the "Returns" button) */}
+        <Dialog
+          open={returnDialogMode === "record"}
+          onOpenChange={(open) => {
+            if (!open && !recordReturnMutation.isPending) closeReturnsDialog();
+          }}
+        >
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <DialogTitle>Record return</DialogTitle>
               {returnsLineTarget && (
-                <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-4 space-y-3">
-                  <p className="text-sm font-semibold">Record return</p>
+                <p className="text-sm text-muted-foreground mt-1 font-mono">
+                  {returnsLineTarget.item_code ?? "line"}
+                  {returnsLineTarget.item_description && (
+                    <span className="ml-2 font-sans">
+                      · {returnsLineTarget.item_description}
+                    </span>
+                  )}
+                </p>
+              )}
+            </DialogHeader>
+
+            {returnsLineTarget && (() => {
+              const issued = Number(returnsLineTarget.qty_issued);
+              const previouslyReturned = Number(returnsLineTarget.qty_returned ?? 0);
+              const outstandingBefore = issued - previouslyReturned;
+              const qty = Number(returnQty) || 0;
+              const safeQty = Math.min(Math.max(0, qty), outstandingBefore);
+              const returnedAfter = previouslyReturned + safeQty;
+              const outstandingAfter = issued - returnedAfter;
+              return (
+                <div className="space-y-4">
+                  {/* Summary strip */}
+                  <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 px-4 py-2.5 text-sm tabular-nums">
+                    <span>Issued: <b className="text-foreground">{issued} {returnsLineTarget.unit}</b></span>
+                    <span className="mx-2 text-muted-foreground">·</span>
+                    <span>Previously returned: <b className="text-foreground">{previouslyReturned} {returnsLineTarget.unit}</b></span>
+                    <span className="mx-2 text-muted-foreground">·</span>
+                    <span>Outstanding: <b className="text-foreground">{outstandingBefore} {returnsLineTarget.unit}</b></span>
+                  </div>
+
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div className="space-y-1.5">
-                      <Label>Qty</Label>
+                      <Label>Returning now</Label>
                       <Input
                         type="number"
                         min={0.0001}
-                        max={
-                          Number(returnsLineTarget.qty_issued) -
-                          Number(returnsLineTarget.qty_returned ?? 0)
-                        }
+                        max={outstandingBefore}
                         value={returnQty || ""}
                         onChange={(e) =>
                           setReturnQty(Math.max(0, Number(e.target.value) || 0))
@@ -891,18 +1045,14 @@ export default function ConsumableIssueDetail() {
                       <Select
                         value={returnDisposition}
                         onValueChange={(v) =>
-                          setReturnDisposition(
-                            v as "returned_to_stock" | "scrap" | "lost"
-                          )
+                          setReturnDisposition(v as "returned_to_stock" | "scrap" | "lost")
                         }
                       >
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="returned_to_stock">
-                            Returned to stock
-                          </SelectItem>
+                          <SelectItem value="returned_to_stock">Returned to stock</SelectItem>
                           <SelectItem value="scrap">Scrap</SelectItem>
                           <SelectItem value="lost">Lost</SelectItem>
                         </SelectContent>
@@ -933,95 +1083,34 @@ export default function ConsumableIssueDetail() {
                       placeholder="Why, condition, batch, etc."
                     />
                   </div>
-                  <div className="flex justify-end">
-                    <Button
-                      size="sm"
-                      onClick={() => recordReturnMutation.mutate()}
-                      disabled={
-                        recordReturnMutation.isPending ||
-                        !(returnQty > 0)
-                      }
-                    >
-                      {recordReturnMutation.isPending ? "Recording…" : "Record return"}
-                    </Button>
-                  </div>
-                </div>
-              )}
 
-              {/* History */}
-              <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
-                <div className="px-4 py-2 bg-slate-50 dark:bg-slate-800/60 text-xs font-semibold uppercase text-slate-500">
-                  Return history
+                  {/* Live preview */}
+                  {safeQty > 0 && (
+                    <p className="text-xs text-muted-foreground tabular-nums">
+                      After this return:{" "}
+                      <b className="text-foreground">{returnedAfter} {returnsLineTarget.unit}</b>{" "}
+                      returned ·{" "}
+                      <b className="text-foreground">{outstandingAfter} {returnsLineTarget.unit}</b>{" "}
+                      outstanding
+                    </p>
+                  )}
                 </div>
-                {returnsForLine.length === 0 ? (
-                  <p className="p-4 text-sm text-muted-foreground text-center">
-                    No return events recorded yet.
-                  </p>
-                ) : (
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-xs uppercase text-slate-500 border-b border-slate-200 dark:border-slate-700">
-                        <th className="px-3 py-2 text-left">Date</th>
-                        <th className="px-3 py-2 text-right">Qty</th>
-                        <th className="px-3 py-2 text-left">Disposition</th>
-                        <th className="px-3 py-2 text-left">By</th>
-                        <th className="px-3 py-2 text-left">Notes</th>
-                        <th className="px-3 py-2" />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {returnsForLine.map((r: ConsumableReturn) => (
-                        <tr key={r.id} className="border-b border-slate-100 dark:border-slate-800">
-                          <td className="px-3 py-2 text-muted-foreground tabular-nums">
-                            {format(parseISO(r.returned_at), "dd MMM yyyy")}
-                          </td>
-                          <td className="px-3 py-2 text-right tabular-nums font-mono">
-                            {r.qty_returned}
-                          </td>
-                          <td className="px-3 py-2">
-                            {r.disposition === "returned_to_stock" && (
-                              <Badge className="bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">To stock</Badge>
-                            )}
-                            {r.disposition === "scrap" && (
-                              <Badge className="bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">Scrap</Badge>
-                            )}
-                            {r.disposition === "lost" && (
-                              <Badge className="bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300">Lost</Badge>
-                            )}
-                          </td>
-                          <td className="px-3 py-2 text-muted-foreground">
-                            {r.returned_by_name ?? "—"}
-                          </td>
-                          <td className="px-3 py-2 text-muted-foreground text-xs">
-                            {r.notes ?? "—"}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                              onClick={() => {
-                                if (window.confirm("Delete this return event? Stock will be reversed.")) {
-                                  deleteReturnMutation.mutate(r.id);
-                                }
-                              }}
-                              disabled={deleteReturnMutation.isPending}
-                              aria-label="Delete return event"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </div>
+              );
+            })()}
 
             <DialogFooter>
-              <Button variant="outline" onClick={closeReturnsDialog}>
-                Close
+              <Button
+                variant="outline"
+                onClick={closeReturnsDialog}
+                disabled={recordReturnMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => recordReturnMutation.mutate()}
+                disabled={recordReturnMutation.isPending || !(returnQty > 0)}
+              >
+                {recordReturnMutation.isPending ? "Recording…" : "Record return"}
               </Button>
             </DialogFooter>
           </DialogContent>
