@@ -178,26 +178,36 @@ export async function fetchConsumableStats(): Promise<ConsumableStats> {
   const lastDay = new Date(year, mon, 0).getDate();
   const monthTo = `${year}-${String(mon).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
 
-  const { data: issuesData, error: issuesErr } = await (supabase as any)
+  const empty: ConsumableStats = {
+    issues_this_month: 0,
+    qty_issued_this_month: 0,
+    qty_returned_this_month: 0,
+    pending_returns: 0,
+  };
+
+  // 1. This-month active issues (status != 'deleted')
+  //    PostgREST `.neq` translates to SQL `column != value`, which excludes
+  //    NULLs as well — fine here because consumable_issues.status is NOT NULL.
+  const { data: monthIssuesData, error: monthIssuesErr } = await (supabase as any)
     .from("consumable_issues")
-    .select("id, issue_date")
+    .select("id")
     .eq("company_id", companyId)
+    .neq("status", "deleted")
     .gte("issue_date", monthFrom)
     .lte("issue_date", monthTo);
-  if (issuesErr) return { issues_this_month: 0, qty_issued_this_month: 0, qty_returned_this_month: 0, pending_returns: 0 };
+  if (monthIssuesErr) return empty;
 
-  const issueIds = (issuesData ?? []).map((i: any) => i.id) as string[];
+  const monthIssueIds = (monthIssuesData ?? []).map((i: any) => i.id) as string[];
 
   let qty_issued_this_month = 0;
   let qty_returned_this_month = 0;
-  let pending_returns = 0;
 
-  if (issueIds.length > 0) {
+  if (monthIssueIds.length > 0) {
     const { data: linesData } = await (supabase as any)
       .from("consumable_issue_lines")
-      .select("qty_issued, qty_returned, return_status")
+      .select("qty_issued, qty_returned")
       .eq("company_id", companyId)
-      .in("consumable_issue_id", issueIds);
+      .in("consumable_issue_id", monthIssueIds);
 
     for (const line of (linesData ?? []) as any[]) {
       qty_issued_this_month += Number(line.qty_issued) || 0;
@@ -205,17 +215,36 @@ export async function fetchConsumableStats(): Promise<ConsumableStats> {
     }
   }
 
-  // Pending returns: all time lines not returned
-  const { count: pendingCount } = await (supabase as any)
-    .from("consumable_issue_lines")
-    .select("*", { count: "exact", head: true })
+  // 2. Pending returns — outstanding sum across all-time ACTIVE issues.
+  //    Definition changed from "count of lines with return_status='not_returned'"
+  //    to "sum of (qty_issued − qty_returned) on lines belonging to non-deleted
+  //    issues". The new semantic matches the event-sourced model where
+  //    qty_returned is a denormalized aggregate of consumable_returns events,
+  //    so outstanding == real outstanding qty rather than a row count.
+  let pending_returns = 0;
+  const { data: activeIssuesData } = await (supabase as any)
+    .from("consumable_issues")
+    .select("id")
     .eq("company_id", companyId)
-    .eq("return_status", "not_returned");
+    .neq("status", "deleted");
+  const activeIssueIds = (activeIssuesData ?? []).map((i: any) => i.id) as string[];
 
-  pending_returns = pendingCount ?? 0;
+  if (activeIssueIds.length > 0) {
+    const { data: pendingLines } = await (supabase as any)
+      .from("consumable_issue_lines")
+      .select("qty_issued, qty_returned")
+      .eq("company_id", companyId)
+      .in("consumable_issue_id", activeIssueIds);
+
+    for (const line of (pendingLines ?? []) as any[]) {
+      const outstanding =
+        (Number(line.qty_issued) || 0) - (Number(line.qty_returned) || 0);
+      if (outstanding > 0) pending_returns += outstanding;
+    }
+  }
 
   return {
-    issues_this_month: issueIds.length,
+    issues_this_month: monthIssueIds.length,
     qty_issued_this_month,
     qty_returned_this_month,
     pending_returns,

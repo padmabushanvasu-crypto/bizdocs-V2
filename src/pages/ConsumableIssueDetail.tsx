@@ -288,6 +288,7 @@ export default function ConsumableIssueDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["consumable-issue", id] });
       queryClient.invalidateQueries({ queryKey: ["consumable-issues"] });
+      queryClient.invalidateQueries({ queryKey: ["consumable-stats"] });
       toast({ title: "Issue updated" });
       cancelEdit();
     },
@@ -377,6 +378,7 @@ export default function ConsumableIssueDetail() {
       deleteConsumableReturn(returnId, { reason: "Deleted from UI" }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["consumable-issue", id] });
+      queryClient.invalidateQueries({ queryKey: ["consumable-stats"] });
       queryClient.invalidateQueries({
         queryKey: ["consumable-returns-for-line", returnsLineTarget?.id],
       });

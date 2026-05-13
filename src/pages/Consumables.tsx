@@ -243,7 +243,7 @@ export default function Consumables() {
           </p>
         </div>
         <div className="rounded-xl p-4 space-y-1" style={glowBox(245, 158, 11, isDark)}>
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Pending Returns</p>
+          <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Outstanding Qty</p>
           <p className="text-3xl font-bold tabular-nums text-amber-600 dark:text-amber-400">
             {stats?.pending_returns ?? 0}
           </p>
