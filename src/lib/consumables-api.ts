@@ -32,11 +32,20 @@ export interface ConsumableIssue {
   issued_to: string;
   issued_by: string | null;
   notes: string | null;
-  status: "draft" | "issued";
+  status: "draft" | "issued" | "deleted";
+  deletion_reason: string | null;
+  deleted_at: string | null;
+  deleted_by: string | null;
+  stock_action: ConsumableIssueDeleteStockAction | null;
   created_at: string;
   updated_at: string;
   lines?: ConsumableIssueLine[];
 }
+
+export type ConsumableIssueDeleteStockAction =
+  | "recall_unused"
+  | "already_consumed"
+  | "partial_return";
 
 export interface ConsumableIssueFilters {
   month?: string;
@@ -287,7 +296,8 @@ export async function createConsumableIssue(
       reference_number: issue.issue_number,
       notes: `Consumable issue to: ${input.issued_to}`,
       created_by: null,
-      from_state: null,
+      from_state: "free",
+      to_state: "consumed",
     });
 
     // If returned as scrap: insert scrap_register audit record only
@@ -320,4 +330,201 @@ export async function createConsumableIssue(
   }
 
   return issue;
+}
+
+// ============================================================
+// Soft delete with stock reversal
+// ============================================================
+// Mirrors the GRN / DC softDelete pattern. Header gets
+// status='deleted' + deletion_reason + deleted_at + deleted_by +
+// stock_action. Per-line stock_ledger reversal rows are written
+// according to the chosen stock action:
+//   - recall_unused   : credit qty_issued back to free
+//                       and delete the matching scrap_register
+//                       row for any line with disposition='scrap'
+//   - partial_return  : credit qty_returned only (skip if zero)
+//   - already_consumed: write a trail-only ledger row (qty=0)
+
+async function reverseConsumableLineStock(
+  line: any,
+  issueNumber: string,
+  issueId: string,
+  stockAction: ConsumableIssueDeleteStockAction,
+  reason: string | null | undefined,
+  today: string,
+  companyId: string
+): Promise<void> {
+  if (!line.item_id) return;
+
+  const qtyIssued = Number(line.qty_issued ?? 0);
+  const qtyReturned = Number(line.qty_returned ?? 0);
+
+  let qtyToCredit = 0;
+  let notes = "";
+  let transaction_type: "consumable_return" | "manual_adjustment" =
+    "consumable_return";
+  let from_state: string | null = "consumed";
+  let to_state: string | null = "free";
+
+  if (stockAction === "recall_unused") {
+    qtyToCredit = qtyIssued;
+    notes = `Consumable issue deleted — recalled unused${reason ? `: ${reason}` : ""}`;
+  } else if (stockAction === "partial_return") {
+    qtyToCredit = qtyReturned;
+    if (qtyToCredit <= 0) return;
+    notes = `Consumable issue deleted — partial return${reason ? `: ${reason}` : ""}`;
+  } else {
+    qtyToCredit = 0;
+    notes = `Consumable issue deleted — already consumed, no stock reversal${reason ? `: ${reason}` : ""}`;
+    transaction_type = "manual_adjustment";
+    from_state = null;
+    to_state = null;
+  }
+
+  if (qtyToCredit > 0) {
+    await updateStockBucket(line.item_id, "free", qtyToCredit).catch(
+      console.error
+    );
+  }
+
+  try {
+    await addStockLedgerEntry({
+      item_id: line.item_id,
+      item_code: line.item_code ?? null,
+      item_description: line.item_description ?? null,
+      transaction_date: today,
+      transaction_type,
+      qty_in: qtyToCredit,
+      qty_out: 0,
+      balance_qty: 0,
+      unit_cost: 0,
+      total_value: 0,
+      reference_type: "consumable_issue",
+      reference_id: issueId,
+      reference_number: issueNumber,
+      notes,
+      created_by: null,
+      from_state,
+      to_state,
+    });
+  } catch {
+    /* ledger failures are non-fatal */
+  }
+
+  // recall_unused on a scrap-disposition line: also remove the scrap_register
+  // row that was written by createConsumableIssue. Scrap rows are linked only
+  // by the remarks string "From consumable issue {issue_number}" plus item_id,
+  // so this match is best-effort — if two lines in the same issue share an
+  // item, both scrap rows get deleted on the first reversal.
+  if (
+    stockAction === "recall_unused" &&
+    line.disposition === "scrap" &&
+    qtyReturned > 0
+  ) {
+    try {
+      await (supabase as any)
+        .from("scrap_register")
+        .delete()
+        .eq("company_id", companyId)
+        .eq("item_id", line.item_id)
+        .ilike("remarks", `%From consumable issue ${issueNumber}%`);
+    } catch {
+      /* non-fatal */
+    }
+  }
+}
+
+export async function softDeleteConsumableIssue(
+  id: string,
+  options: {
+    deletion_reason?: string;
+    stockAction: ConsumableIssueDeleteStockAction;
+  }
+): Promise<void> {
+  const { deletion_reason, stockAction } = options;
+  const companyId = await getCompanyId();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const today = new Date().toISOString().split("T")[0];
+
+  const { data: issue, error: issueErr } = await (supabase as any)
+    .from("consumable_issues")
+    .select("*, lines:consumable_issue_lines(*)")
+    .eq("id", id)
+    .eq("company_id", companyId)
+    .single();
+  if (issueErr) throw issueErr;
+  if (!issue) throw new Error("Consumable issue not found");
+
+  for (const line of (issue.lines ?? []) as any[]) {
+    await reverseConsumableLineStock(
+      line,
+      issue.issue_number,
+      issue.id,
+      stockAction,
+      deletion_reason,
+      today,
+      companyId
+    );
+  }
+
+  const { error } = await (supabase as any)
+    .from("consumable_issues")
+    .update({
+      status: "deleted",
+      deletion_reason: deletion_reason ?? null,
+      deleted_at: new Date().toISOString(),
+      deleted_by: user?.id ?? null,
+      stock_action: stockAction,
+    })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteConsumableIssueLine(
+  lineId: string,
+  options: {
+    deletion_reason?: string;
+    stockAction: ConsumableIssueDeleteStockAction;
+  }
+): Promise<void> {
+  const { deletion_reason, stockAction } = options;
+  const companyId = await getCompanyId();
+  const today = new Date().toISOString().split("T")[0];
+
+  const { data: line, error: lineErr } = await (supabase as any)
+    .from("consumable_issue_lines")
+    .select("*")
+    .eq("id", lineId)
+    .eq("company_id", companyId)
+    .single();
+  if (lineErr) throw lineErr;
+  if (!line) throw new Error("Consumable issue line not found");
+
+  const { data: issue } = await (supabase as any)
+    .from("consumable_issues")
+    .select("id, issue_number")
+    .eq("id", line.consumable_issue_id)
+    .single();
+
+  await reverseConsumableLineStock(
+    line,
+    issue?.issue_number ?? "",
+    line.consumable_issue_id,
+    stockAction,
+    deletion_reason,
+    today,
+    companyId
+  );
+
+  // Hard delete the line row. Parent issue is intentionally left as a
+  // zero-line shell if this was the last line — matches GRN line-edit
+  // behavior.
+  const { error: delErr } = await (supabase as any)
+    .from("consumable_issue_lines")
+    .delete()
+    .eq("id", lineId)
+    .eq("company_id", companyId);
+  if (delErr) throw delErr;
 }

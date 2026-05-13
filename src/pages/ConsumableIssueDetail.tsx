@@ -27,18 +27,60 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { useRoleAccess } from "@/hooks/useRoleAccess";
 import {
   fetchConsumableIssue,
   fetchConsumableItems,
   createConsumableIssue,
+  softDeleteConsumableIssue,
+  deleteConsumableIssueLine,
   type ConsumableIssueLine,
   type ConsumableIssueLineInput,
+  type ConsumableIssueDeleteStockAction,
   type ConsumableItem,
 } from "@/lib/consumables-api";
+import { logAudit } from "@/lib/audit-api";
 import { formatNumber } from "@/lib/gst-utils";
 import { format, parseISO } from "date-fns";
+
+const DELETION_REASONS = [
+  { value: "data_entry_error",        label: "Data entry error" },
+  { value: "duplicate_entry",         label: "Duplicate entry" },
+  { value: "cancelled_by_management", label: "Cancelled by management" },
+  { value: "wrong_recipient",         label: "Wrong recipient" },
+  { value: "other",                   label: "Other (please specify)" },
+];
+
+const STOCK_ACTIONS: {
+  value: ConsumableIssueDeleteStockAction;
+  label: string;
+  desc: string;
+}[] = [
+  {
+    value: "recall_unused",
+    label: "Recall unused — credit full qty back to free stock",
+    desc: "Use when the issue was a mistake or items came back unused.",
+  },
+  {
+    value: "partial_return",
+    label: "Partial return — credit only qty_returned back to free stock",
+    desc: "Use when the returned portion is being put back; the rest stays consumed.",
+  },
+  {
+    value: "already_consumed",
+    label: "Already consumed — no stock reversal, only remove the record",
+    desc: "Use when items were used as intended; only the document is being removed.",
+  },
+];
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -85,6 +127,9 @@ function issuedStatusBadge(status: string) {
   if (status === "issued") {
     return <Badge className="bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">Issued</Badge>;
   }
+  if (status === "deleted") {
+    return <Badge className="bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">Deleted</Badge>;
+  }
   return <Badge className="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">Draft</Badge>;
 }
 
@@ -97,6 +142,113 @@ export default function ConsumableIssueDetail() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { profile } = useAuth();
+  const { canEdit } = useRoleAccess("consumables");
+
+  // Delete dialog state — covers both the whole-issue delete and a
+  // line-level delete. When `deleteLineTarget` is set we're deleting
+  // a line; otherwise the dialog applies to the issue.
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteLineTarget, setDeleteLineTarget] =
+    useState<ConsumableIssueLine | null>(null);
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deleteCustomReason, setDeleteCustomReason] = useState("");
+  const [deleteStockAction, setDeleteStockAction] =
+    useState<ConsumableIssueDeleteStockAction | "">("");
+
+  const resetDeleteState = () => {
+    setDeleteOpen(false);
+    setDeleteLineTarget(null);
+    setDeleteReason("");
+    setDeleteCustomReason("");
+    setDeleteStockAction("");
+  };
+
+  const openIssueDelete = () => {
+    setDeleteLineTarget(null);
+    setDeleteReason("");
+    setDeleteCustomReason("");
+    setDeleteStockAction("");
+    setDeleteOpen(true);
+  };
+
+  const openLineDelete = (line: ConsumableIssueLine) => {
+    setDeleteLineTarget(line);
+    setDeleteReason("");
+    setDeleteCustomReason("");
+    setDeleteStockAction("");
+    setDeleteOpen(true);
+  };
+
+  const finalReason = () =>
+    deleteReason === "other"
+      ? deleteCustomReason.trim()
+      : DELETION_REASONS.find((r) => r.value === deleteReason)?.label ?? deleteReason;
+
+  const deleteIssueMutation = useMutation({
+    mutationFn: async () => {
+      if (!id) throw new Error("Missing issue id");
+      if (!deleteStockAction) throw new Error("Stock action required");
+      await softDeleteConsumableIssue(id, {
+        deletion_reason: finalReason(),
+        stockAction: deleteStockAction,
+      });
+      await logAudit("consumable_issue", id, "deleted", {
+        reason: finalReason(),
+        stockAction: deleteStockAction,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["consumable-issue", id] });
+      queryClient.invalidateQueries({ queryKey: ["consumable-issues"] });
+      queryClient.invalidateQueries({ queryKey: ["consumable-stats"] });
+      toast({ title: "Consumable issue deleted" });
+      resetDeleteState();
+    },
+    onError: (err: any) =>
+      toast({
+        title: "Delete failed",
+        description: err?.message ?? "Unknown error",
+        variant: "destructive",
+      }),
+  });
+
+  const deleteLineMutation = useMutation({
+    mutationFn: async () => {
+      if (!deleteLineTarget) throw new Error("Missing line");
+      if (!deleteStockAction) throw new Error("Stock action required");
+      await deleteConsumableIssueLine(deleteLineTarget.id, {
+        deletion_reason: finalReason(),
+        stockAction: deleteStockAction,
+      });
+      await logAudit("consumable_issue_line", deleteLineTarget.id, "deleted", {
+        issue_id: id,
+        reason: finalReason(),
+        stockAction: deleteStockAction,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["consumable-issue", id] });
+      queryClient.invalidateQueries({ queryKey: ["consumable-issues"] });
+      queryClient.invalidateQueries({ queryKey: ["consumable-stats"] });
+      toast({ title: "Line deleted" });
+      resetDeleteState();
+    },
+    onError: (err: any) =>
+      toast({
+        title: "Delete failed",
+        description: err?.message ?? "Unknown error",
+        variant: "destructive",
+      }),
+  });
+
+  const deletePending =
+    deleteIssueMutation.isPending || deleteLineMutation.isPending;
+  const handleConfirmDelete = () => {
+    if (!deleteReason || !deleteStockAction) return;
+    if (deleteReason === "other" && !deleteCustomReason.trim()) return;
+    if (deleteLineTarget) deleteLineMutation.mutate();
+    else deleteIssueMutation.mutate();
+  };
 
   // ── VIEW mode ─────────────────────────────────────────────────────────────
   const { data: issue, isLoading } = useQuery({
@@ -226,6 +378,8 @@ export default function ConsumableIssueDetail() {
 
   // ── VIEW mode render ──────────────────────────────────────────────────────
   if (!isNew && issue) {
+    const isDeleted = issue.status === "deleted";
+
     return (
       <div className="p-4 md:p-6 space-y-5 max-w-4xl">
         {/* Back + header */}
@@ -239,7 +393,39 @@ export default function ConsumableIssueDetail() {
             <span className="font-mono font-bold text-lg">{issue.issue_number}</span>
             {issuedStatusBadge(issue.status)}
           </div>
+          {canEdit && !isDeleted && (
+            <Button
+              variant="destructive"
+              size="sm"
+              className="ml-auto"
+              onClick={openIssueDelete}
+            >
+              <Trash2 className="w-4 h-4 mr-1" />
+              Delete Issue
+            </Button>
+          )}
         </div>
+
+        {isDeleted && (
+          <div className="rounded-lg border border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-900/20 p-3 text-sm">
+            <p className="font-medium text-red-800 dark:text-red-300">
+              This consumable issue has been deleted.
+            </p>
+            {issue.deletion_reason && (
+              <p className="mt-0.5 text-red-700 dark:text-red-400">
+                Reason: {issue.deletion_reason}
+              </p>
+            )}
+            {issue.stock_action && (
+              <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">
+                Stock action: {issue.stock_action}
+                {issue.deleted_at && (
+                  <> · Deleted {format(parseISO(issue.deleted_at), "dd MMM yyyy HH:mm")}</>
+                )}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Meta */}
         <div className="flex flex-wrap gap-4 text-sm text-muted-foreground p-4 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-200 dark:border-slate-700">
@@ -261,6 +447,9 @@ export default function ConsumableIssueDetail() {
                   <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700">Return Status</th>
                   <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700">Qty Returned</th>
                   <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700">Reason / Disposition</th>
+                  {canEdit && !isDeleted && (
+                    <th className="px-3 py-2.5 border-b border-slate-200 dark:border-slate-700" />
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -294,12 +483,127 @@ export default function ConsumableIssueDetail() {
                       )}
                       {!line.return_reason && !line.disposition && "—"}
                     </td>
+                    {canEdit && !isDeleted && (
+                      <td className="px-3 py-2.5 text-right">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => openLineDelete(line)}
+                          aria-label="Delete line"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         </div>
+
+        {/* Delete dialog (issue-level OR line-level depending on deleteLineTarget) */}
+        <Dialog
+          open={deleteOpen}
+          onOpenChange={(open) => {
+            if (!open && !deletePending) resetDeleteState();
+          }}
+        >
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="text-destructive">
+                {deleteLineTarget
+                  ? "Delete Line — Stock Action Required"
+                  : "Delete Consumable Issue — Stock Action Required"}
+              </DialogTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                {deleteLineTarget
+                  ? `Reverse stock for ${deleteLineTarget.item_code ?? "this line"} (${deleteLineTarget.qty_issued} ${deleteLineTarget.unit})?`
+                  : `Stock was decremented when ${issue.issue_number} was issued. Choose how to handle it.`}
+              </p>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">
+                  Reason for deletion <span className="text-destructive">*</span>
+                </Label>
+                <Select value={deleteReason} onValueChange={setDeleteReason}>
+                  <SelectTrigger className="h-9 text-sm">
+                    <SelectValue placeholder="Select a reason…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DELETION_REASONS.map((r) => (
+                      <SelectItem key={r.value} value={r.value}>
+                        {r.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {deleteReason === "other" && (
+                  <Input
+                    placeholder="Please specify…"
+                    value={deleteCustomReason}
+                    onChange={(e) => setDeleteCustomReason(e.target.value)}
+                    className="h-9 text-sm mt-1.5"
+                  />
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">
+                  Stock action <span className="text-destructive">*</span>
+                </Label>
+                {STOCK_ACTIONS.map((opt) => (
+                  <label
+                    key={opt.value}
+                    className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${
+                      deleteStockAction === opt.value
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:bg-muted/50"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="consumableDetailStockAction"
+                      value={opt.value}
+                      checked={deleteStockAction === opt.value}
+                      onChange={() => setDeleteStockAction(opt.value)}
+                      className="mt-0.5"
+                    />
+                    <div>
+                      <p className="text-sm font-medium">{opt.label}</p>
+                      <p className="text-xs text-muted-foreground">{opt.desc}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={resetDeleteState}
+                disabled={deletePending}
+              >
+                Go Back
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleConfirmDelete}
+                disabled={
+                  deletePending ||
+                  !deleteReason ||
+                  !deleteStockAction ||
+                  (deleteReason === "other" && !deleteCustomReason.trim())
+                }
+              >
+                {deletePending ? "Deleting…" : "Confirm Deletion"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }
