@@ -488,16 +488,24 @@ export async function fetchGRNStats() {
   if (!companyId) return { totalThisMonth: 0, totalAccepted: 0, totalRejected: 0, pendingVerification: 0 };
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
-  const { data: allGRNs, error } = await supabase.from("grns").select("id, grn_date, status, total_accepted, total_rejected");
+  // Push status filter to the DB so the default 1000-row cap is spent on
+  // ACTIVE rows only. Previously this fetched everything and JS-filtered,
+  // which inflated network bytes and would silently undercount once the
+  // active-row count + soft-deleted count crossed the cap. Same logical
+  // filter as before — both 'deleted' and 'cancelled' are excluded.
+  const { data: allGRNs, error } = await supabase
+    .from("grns")
+    .select("id, grn_date, status, total_accepted, total_rejected")
+    .neq("status", "deleted")
+    .neq("status", "cancelled");
   if (error) throw error;
   const grns = (allGRNs ?? []) as any[];
-  const active = grns.filter((g) => g.status !== "cancelled" && g.status !== "deleted");
-  const thisMonth = active.filter((g) => g.grn_date >= monthStart);
+  const thisMonth = grns.filter((g) => g.grn_date >= monthStart);
   return {
     totalThisMonth: thisMonth.length,
     totalAccepted: thisMonth.reduce((s: number, g: any) => s + (g.total_accepted || 0), 0),
     totalRejected: thisMonth.reduce((s: number, g: any) => s + (g.total_rejected || 0), 0),
-    pendingVerification: active.filter((g) => g.status === "recorded").length,
+    pendingVerification: grns.filter((g) => g.status === "recorded").length,
   };
 }
 

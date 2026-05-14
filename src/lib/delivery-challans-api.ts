@@ -721,14 +721,22 @@ export async function fetchDCStats() {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
   const today = now.toISOString().split("T")[0];
-  const { data: allDCs, error } = await supabase.from("delivery_challans").select("id, dc_date, status, return_due_date, total_items");
+  // Push status filter to the DB. Both 'deleted' (softDeleteDeliveryChallan)
+  // and 'cancelled' (cancelDeliveryChallan) are terminal and excluded from
+  // every stat below. Matches prior JS-side filter exactly. dc_type is not
+  // filtered here — DC stats are aggregate across all DC types (job_work_out,
+  // job_work_143, returnable, etc.); the breakdown lives on the list page.
+  const { data: allDCs, error } = await supabase
+    .from("delivery_challans")
+    .select("id, dc_date, status, return_due_date, total_items")
+    .neq("status", "deleted")
+    .neq("status", "cancelled");
   if (error) throw error;
   const dcs = (allDCs ?? []) as any[];
-  const active = dcs.filter((d) => d.status !== "cancelled" && d.status !== "deleted");
-  const thisMonth = active.filter((d) => d.dc_date >= monthStart);
-  const open = active.filter((d) => ["issued", "partially_returned"].includes(d.status));
-  const overdue = active.filter((d) => d.return_due_date && d.return_due_date < today && !["fully_returned"].includes(d.status));
-  const pendingReturns = active.filter((d) => d.status === "partially_returned");
+  const thisMonth = dcs.filter((d) => d.dc_date >= monthStart);
+  const open = dcs.filter((d) => ["issued", "partially_returned"].includes(d.status));
+  const overdue = dcs.filter((d) => d.return_due_date && d.return_due_date < today && !["fully_returned"].includes(d.status));
+  const pendingReturns = dcs.filter((d) => d.status === "partially_returned");
   return { totalThisMonth: thisMonth.length, openDCs: open.length, overdueDCs: overdue.length, pendingReturns: pendingReturns.length };
 }
 

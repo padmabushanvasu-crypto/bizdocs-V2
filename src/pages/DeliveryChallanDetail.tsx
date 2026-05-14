@@ -258,6 +258,9 @@ export default function DeliveryChallanDetail() {
     mutationFn: () => cancelDeliveryChallan(id!, cancelReason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["delivery-challan", id] });
+      queryClient.invalidateQueries({ queryKey: ["delivery-challans"] });
+      queryClient.invalidateQueries({ queryKey: ["dc-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["dc-pending-approval-count"] });
       setCancelOpen(false);
       toast({ title: "DC Cancelled" });
     },

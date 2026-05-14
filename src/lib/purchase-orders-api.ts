@@ -443,15 +443,21 @@ export async function fetchApprovalHistory(search?: string): Promise<PurchaseOrd
 export async function fetchPOStats() {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
-  const { data: allPOs, error } = await supabase.from("purchase_orders").select("id, po_date, grand_total, status, issued_at");
+  // Push status filter to the DB. Both 'deleted' (softDeletePurchaseOrder)
+  // and 'cancelled' (cancelPurchaseOrder) are terminal and excluded from
+  // every stat below. Matches prior JS-side filter exactly.
+  const { data: allPOs, error } = await supabase
+    .from("purchase_orders")
+    .select("id, po_date, grand_total, status, issued_at")
+    .neq("status", "deleted")
+    .neq("status", "cancelled");
   if (error) throw error;
   const pos = (allPOs ?? []) as any[];
-  const active = pos.filter((p) => p.status !== "cancelled" && p.status !== "deleted");
-  const thisMonth = active.filter((p) => p.po_date >= monthStart);
-  const open = active.filter((p) => ["draft", "approved", "issued", "partially_received"].includes(p.status));
+  const thisMonth = pos.filter((p) => p.po_date >= monthStart);
+  const open = pos.filter((p) => ["draft", "approved", "issued", "partially_received"].includes(p.status));
   const totalValueThisMonth = thisMonth.reduce((s: number, p: any) => s + (Number(p.grand_total) || 0), 0);
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000).toISOString();
-  const overdue = active.filter((p) => p.status === "issued" && p.issued_at && p.issued_at < thirtyDaysAgo);
+  const overdue = pos.filter((p) => p.status === "issued" && p.issued_at && p.issued_at < thirtyDaysAgo);
   return { totalThisMonth: thisMonth.length, openPOs: open.length, totalValueThisMonth, overduePOs: overdue.length };
 }
 

@@ -113,6 +113,9 @@ export default function PurchaseOrderDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["purchase-order", id] });
+      queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["po-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["po-pending-approval-count"] });
       setCancelOpen(false);
       toast({ title: "PO Cancelled" });
     },
