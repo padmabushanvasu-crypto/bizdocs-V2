@@ -401,6 +401,10 @@ export default function PurchaseOrdersList() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
       queryClient.invalidateQueries({ queryKey: ["po-stats"] });
+      // Sidebar badges that read from purchase_orders.
+      queryClient.invalidateQueries({ queryKey: ["overdue-po-count-sidebar"] });
+      queryClient.invalidateQueries({ queryKey: ["po-pending-approval-count"] });
+      queryClient.invalidateQueries({ queryKey: ["po-unread-rejection-count"] });
       toast({ title: "PO deleted" });
     },
   });

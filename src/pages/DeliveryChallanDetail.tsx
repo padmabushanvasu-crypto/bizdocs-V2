@@ -231,6 +231,12 @@ export default function DeliveryChallanDetail() {
       await logAudit("delivery_challan", id!, "deleted", { reason, stockAction });
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["delivery-challans"] });
+      queryClient.invalidateQueries({ queryKey: ["dc-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["dc-pending-approval-count"] });
+      // Other sidebar badges that read from delivery_challans.
+      queryClient.invalidateQueries({ queryKey: ["open-dc-count-sidebar"] });
+      queryClient.invalidateQueries({ queryKey: ["dc-unread-rejection-count"] });
       toast({ title: "DC deleted" });
       navigate("/delivery-challans");
     },
@@ -261,6 +267,9 @@ export default function DeliveryChallanDetail() {
       queryClient.invalidateQueries({ queryKey: ["delivery-challans"] });
       queryClient.invalidateQueries({ queryKey: ["dc-stats"] });
       queryClient.invalidateQueries({ queryKey: ["dc-pending-approval-count"] });
+      // Other sidebar badges that read from delivery_challans.
+      queryClient.invalidateQueries({ queryKey: ["open-dc-count-sidebar"] });
+      queryClient.invalidateQueries({ queryKey: ["dc-unread-rejection-count"] });
       setCancelOpen(false);
       toast({ title: "DC Cancelled" });
     },

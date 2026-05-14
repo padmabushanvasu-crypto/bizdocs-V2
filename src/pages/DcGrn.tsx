@@ -88,6 +88,12 @@ function DcGrnInner() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dc-grns"] });
+      queryClient.invalidateQueries({ queryKey: ["grns"] });
+      queryClient.invalidateQueries({ queryKey: ["grn-stats"] });
+      // Sidebar badges that read from grns / grn_line_items.
+      queryClient.invalidateQueries({ queryKey: ["awaiting-store-count"] });
+      queryClient.invalidateQueries({ queryKey: ["grn-qc-count-sidebar"] });
+      queryClient.invalidateQueries({ queryKey: ["dc-return-qc-count-sidebar"] });
       toast({ title: "DC-GRN deleted" });
     },
     onError: (err: any) => {

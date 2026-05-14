@@ -1679,12 +1679,18 @@ export async function fetchAwaitingStoreCount(): Promise<number> {
   try {
     const companyId = await getCompanyId();
     if (!companyId) return 0;
+    // FK-embed `grns!inner(status)` joins parent GRN and the `.neq('grns.status', ...)`
+    // filters live on the joined row. Without this, lines belonging to a
+    // soft-deleted GRN (which doesn't cascade-delete the line items) would
+    // still show in the "Awaiting Store" badge.
     const { count, error } = await (supabase as any)
       .from('grn_line_items')
-      .select('id', { count: 'exact', head: true })
+      .select('id, grns!inner(status)', { count: 'exact', head: true })
       .eq('company_id', companyId)
       .eq('is_final_grn', true)
-      .neq('store_confirmed', true);
+      .neq('store_confirmed', true)
+      .neq('grns.status', 'deleted')
+      .neq('grns.status', 'cancelled');
     if (error) return 0;
     return count ?? 0;
   } catch {

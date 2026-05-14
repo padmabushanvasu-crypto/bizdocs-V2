@@ -116,6 +116,9 @@ export default function PurchaseOrderDetail() {
       queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
       queryClient.invalidateQueries({ queryKey: ["po-stats"] });
       queryClient.invalidateQueries({ queryKey: ["po-pending-approval-count"] });
+      // Other sidebar badges that read from purchase_orders.
+      queryClient.invalidateQueries({ queryKey: ["overdue-po-count-sidebar"] });
+      queryClient.invalidateQueries({ queryKey: ["po-unread-rejection-count"] });
       setCancelOpen(false);
       toast({ title: "PO Cancelled" });
     },
@@ -146,6 +149,12 @@ export default function PurchaseOrderDetail() {
       await logAudit("purchase_order", id!, "deleted", { reason });
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["po-stats"] });
+      // Sidebar badges that read from purchase_orders.
+      queryClient.invalidateQueries({ queryKey: ["overdue-po-count-sidebar"] });
+      queryClient.invalidateQueries({ queryKey: ["po-pending-approval-count"] });
+      queryClient.invalidateQueries({ queryKey: ["po-unread-rejection-count"] });
       toast({ title: "Purchase order deleted" });
       navigate("/purchase-orders");
     },
