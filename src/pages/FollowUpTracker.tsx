@@ -2,13 +2,20 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "react-router-dom";
 import {
-  Phone, Mail, CheckCircle2, AlertTriangle, Clock, BellRing, RefreshCw
+  Phone, Mail, CheckCircle2, AlertTriangle, Clock, BellRing, RefreshCw,
+  Calendar as CalendarIcon, Search, X, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import {
   fetchFollowUpPOs, fetchFollowUpDCs, fetchPartiallyReturnedDCs,
@@ -294,13 +301,63 @@ const FILTER_LABELS: Record<FilterType, string> = {
   followed: "Followed up",
 };
 
+type TabKey = "po" | "dc" | "partial_po" | "partial_dc";
+type PageSize = 25 | 50 | 100;
+
+// Build a compact page-number sequence with ellipses (max ~7 buttons).
+// Returns an array of numbers (1-indexed) or '…' tokens.
+function buildPageList(totalPages: number, current: number): (number | "…")[] {
+  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+  const pages: (number | "…")[] = [];
+  pages.push(1);
+  if (current <= 3) {
+    pages.push(2, 3, 4, "…", totalPages);
+  } else if (current >= totalPages - 2) {
+    pages.push("…", totalPages - 3, totalPages - 2, totalPages - 1, totalPages);
+  } else {
+    pages.push("…", current - 1, current, current + 1, "…", totalPages);
+  }
+  return pages;
+}
+
+function isoDay(d: Date | undefined | null): string | null {
+  if (!d) return null;
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 export default function FollowUpTracker() {
   const { profile } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const [tab, setTab] = useState<"po" | "dc" | "partial_po" | "partial_dc">("po");
+  const [tab, setTab] = useState<TabKey>("po");
   const [filter, setFilter] = useState<FilterType>("all");
+
+  // New filters (compound with urgency filter above).
+  // Preserved across tab switches.
+  const [dateFilter, setDateFilter] = useState<Date | undefined>(undefined);
+  const [datePopoverOpen, setDatePopoverOpen] = useState(false);
+  const [docNumberFilter, setDocNumberFilter] = useState("");
+
+  // Pagination — page size is global, current page is per-tab.
+  const [pageSize, setPageSize] = useState<PageSize>(25);
+  const [pageByTab, setPageByTab] = useState<Record<TabKey, number>>({
+    po: 0, dc: 0, partial_po: 0, partial_dc: 0,
+  });
+  const setPageForTab = (t: TabKey, page: number) =>
+    setPageByTab((prev) => ({ ...prev, [t]: page }));
+  const resetAllPages = () =>
+    setPageByTab({ po: 0, dc: 0, partial_po: 0, partial_dc: 0 });
+
+  // Reset all tabs' pages whenever a filter / page-size changes — the
+  // current page on each tab may no longer have rows after a filter
+  // narrows the list.
+  useEffect(() => {
+    resetAllPages();
+  }, [filter, dateFilter, docNumberFilter, pageSize]);
 
   // Local log state — optimistic updates
   const [localLogs, setLocalLogs] = useState<Map<string, FollowUpLog>>(new Map());
@@ -420,6 +477,7 @@ export default function FollowUpTracker() {
       toast({ title: "Marked as received" });
       queryClient.invalidateQueries({ queryKey: ["follow-up-pos"] });
       queryClient.invalidateQueries({ queryKey: ["follow-up-dcs"] });
+      queryClient.invalidateQueries({ queryKey: ["follow-up-partial-dcs"] });
       queryClient.invalidateQueries({ queryKey: ["follow-up-completed-today-po"] });
       queryClient.invalidateQueries({ queryKey: ["follow-up-completed-today-dc"] });
     },
@@ -436,19 +494,44 @@ export default function FollowUpTracker() {
   function applyFilter<T extends { id: string; due_date: string | null; log: FollowUpLog | null }>(
     items: T[]
   ): T[] {
-    const visible = items.filter((i) => !hiddenIds.has(i.id));
-    if (filter === "all") return visible;
-    if (filter === "followed") return visible.filter((i) => {
-      const log = localLogs.get(i.id) ?? i.log;
-      return getFollowUpCount(log) > 0;
-    });
-    if (filter === "overdue") return visible.filter((i) => getDueDateInfo(i.due_date).urgency === "overdue");
-    if (filter === "due2") return visible.filter((i) => getDueDateInfo(i.due_date).urgency === "due2");
-    // due7: everything due within the next 7 days (includes due2)
-    return visible.filter((i) => {
-      const u = getDueDateInfo(i.due_date).urgency;
-      return u === "due7" || u === "due2";
-    });
+    let visible = items.filter((i) => !hiddenIds.has(i.id));
+
+    // Urgency filter (existing).
+    if (filter === "followed") {
+      visible = visible.filter((i) => {
+        const log = localLogs.get(i.id) ?? i.log;
+        return getFollowUpCount(log) > 0;
+      });
+    } else if (filter === "overdue") {
+      visible = visible.filter((i) => getDueDateInfo(i.due_date).urgency === "overdue");
+    } else if (filter === "due2") {
+      visible = visible.filter((i) => getDueDateInfo(i.due_date).urgency === "due2");
+    } else if (filter === "due7") {
+      // due7: everything due within the next 7 days (includes due2)
+      visible = visible.filter((i) => {
+        const u = getDueDateInfo(i.due_date).urgency;
+        return u === "due7" || u === "due2";
+      });
+    }
+    // filter === 'all' → no-op
+
+    // Date filter — exact due_date match (YYYY-MM-DD).
+    const dateStr = isoDay(dateFilter ?? null);
+    if (dateStr) {
+      visible = visible.filter((i) => i.due_date === dateStr);
+    }
+
+    // Doc number filter — case-insensitive substring match across
+    // whichever number field the row carries.
+    const needle = docNumberFilter.trim().toLowerCase();
+    if (needle) {
+      visible = visible.filter((i) => {
+        const num = ((i as any).po_number ?? (i as any).dc_number ?? "") as string;
+        return num.toLowerCase().includes(needle);
+      });
+    }
+
+    return visible;
   }
 
   // All items for each tab — no status exclusions, full dataset
@@ -508,7 +591,7 @@ export default function FollowUpTracker() {
         </Button>
       </div>
 
-      <Tabs value={tab} onValueChange={(v) => { setTab(v as "po" | "dc" | "partial_po" | "partial_dc"); setFilter("all"); }}>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
         <TabsList>
           <TabsTrigger value="po">Purchase Orders</TabsTrigger>
           <TabsTrigger value="dc">Delivery Challans</TabsTrigger>
@@ -516,9 +599,22 @@ export default function FollowUpTracker() {
           <TabsTrigger value="partial_dc">Partial DC Returns</TabsTrigger>
         </TabsList>
 
-        {(["po", "dc", "partial_po", "partial_dc"] as const).map((t) => (
+        {(["po", "dc", "partial_po", "partial_dc"] as const).map((t) => {
+          const currentPage = pageByTab[t];
+          const totalItems = activeItems.length;
+          const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+          const safePage = Math.min(currentPage, totalPages - 1);
+          const pageStart = safePage * pageSize;
+          const pageEnd = Math.min(pageStart + pageSize, totalItems);
+          const pageItems = activeItems.slice(pageStart, pageEnd);
+          const pageList = buildPageList(totalPages, safePage + 1);
+
+          return (
           <TabsContent key={t} value={t} className="space-y-4 mt-4">
-            {/* Stats */}
+            {/* Stats — derived from the FULL unfiltered tab dataset
+                (only soft-hides marked-received rows). Date / doc-number
+                / urgency filters narrow the list below but never the
+                cards above; the cards always show the overall picture. */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <StatCard label="Total Open" value={visibleSource.length} color="text-foreground" />
               <StatCard label="Overdue" value={statsOverdue} color="text-red-600" />
@@ -526,7 +622,66 @@ export default function FollowUpTracker() {
               <StatCard label="Completed Today" value={statsCompleted} color="text-green-600" />
             </div>
 
-            {/* Filters */}
+            {/* New filters: date + doc-number search */}
+            <div className="flex flex-wrap items-center gap-2">
+              <Popover open={datePopoverOpen} onOpenChange={setDatePopoverOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="text-xs">
+                    <CalendarIcon className="h-3.5 w-3.5 mr-1" />
+                    {dateFilter
+                      ? dateFilter.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+                      : "Filter by due date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={dateFilter}
+                    onSelect={(d) => { setDateFilter(d ?? undefined); setDatePopoverOpen(false); }}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+              {dateFilter && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setDateFilter(undefined)}
+                  className="text-xs"
+                  aria-label="Clear date filter"
+                >
+                  <X className="h-3.5 w-3.5 mr-1" />
+                  Clear
+                </Button>
+              )}
+              <div className="relative flex-1 min-w-[180px] max-w-xs">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <Input
+                  value={docNumberFilter}
+                  onChange={(e) => setDocNumberFilter(e.target.value)}
+                  placeholder="Search by PO/DC number"
+                  className="pl-8 h-8 text-xs"
+                />
+              </div>
+              <div className="ml-auto flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Rows</span>
+                <Select
+                  value={String(pageSize)}
+                  onValueChange={(v) => setPageSize(Number(v) as PageSize)}
+                >
+                  <SelectTrigger className="h-8 w-[80px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="25">25</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Urgency filter (existing) */}
             <div className="flex flex-wrap gap-2">
               {(Object.keys(FILTER_LABELS) as FilterType[]).map((f) => (
                 <Button
@@ -544,60 +699,114 @@ export default function FollowUpTracker() {
             {/* Rows */}
             {isLoading ? (
               <div className="text-sm text-muted-foreground py-8 text-center">Loading…</div>
-            ) : activeItems.length === 0 ? (
+            ) : totalItems === 0 ? (
               <div className="text-center py-12 border border-dashed border-slate-200 rounded-lg">
                 <CheckCircle2 className="h-10 w-10 text-green-400 mx-auto mb-3" />
                 <p className="text-sm font-semibold text-slate-600">
-                  {filter === "all"
+                  {filter === "all" && !dateFilter && !docNumberFilter.trim()
                     ? t === "po"         ? "No open Purchase Orders — all clear."
                     : t === "dc"         ? "No open Delivery Challans — all clear."
                     : t === "partial_po" ? "No partially received POs — all clear."
                     :                     "No partially returned DCs — all clear."
-                    : "No items match this filter."
+                    : "No items match the current filters."
                   }
                 </p>
-                {filter !== "all" && (
-                  <Button variant="link" size="sm" onClick={() => setFilter("all")} className="mt-1">
-                    Show all
+                {(filter !== "all" || dateFilter || docNumberFilter.trim()) && (
+                  <Button
+                    variant="link"
+                    size="sm"
+                    onClick={() => { setFilter("all"); setDateFilter(undefined); setDocNumberFilter(""); }}
+                    className="mt-1"
+                  >
+                    Clear all filters
                   </Button>
                 )}
               </div>
             ) : (
-              <div className="space-y-3">
-                {activeItems.map((item) => {
-                  const isPO = t === "po" || t === "partial_po";
-                  const docType: "po" | "dc" = isPO ? "po" : "dc";
-                  const log = localLogs.get(item.id) ?? item.log ?? emptyLog(item.id, docType);
-                  const docNumber = isPO ? (item as FollowUpPO).po_number : (item as FollowUpDC).dc_number;
-                  const docPath = isPO
-                    ? `/purchase-orders/${item.id}`
-                    : `/delivery-challans/${item.id}`;
-                  const phone = isPO ? (item as FollowUpPO).vendor_phone : (item as FollowUpDC).party_phone;
-                  const email = isPO ? (item as FollowUpPO).vendor_email : (item as FollowUpDC).party_email;
-                  const vendorName = isPO ? (item as FollowUpPO).vendor_name : (item as FollowUpDC).party_name;
+              <>
+                <div className="space-y-3">
+                  {pageItems.map((item) => {
+                    const isPO = t === "po" || t === "partial_po";
+                    const docType: "po" | "dc" = isPO ? "po" : "dc";
+                    const log = localLogs.get(item.id) ?? item.log ?? emptyLog(item.id, docType);
+                    const docNumber = isPO ? (item as FollowUpPO).po_number : (item as FollowUpDC).dc_number;
+                    const docPath = isPO
+                      ? `/purchase-orders/${item.id}`
+                      : `/delivery-challans/${item.id}`;
+                    const phone = isPO ? (item as FollowUpPO).vendor_phone : (item as FollowUpDC).party_phone;
+                    const email = isPO ? (item as FollowUpPO).vendor_email : (item as FollowUpDC).party_email;
+                    const vendorName = isPO ? (item as FollowUpPO).vendor_name : (item as FollowUpDC).party_name;
 
-                  return (
-                    <FollowUpRow
-                      key={item.id}
-                      id={item.id}
-                      docNumber={docNumber}
-                      docType={docType}
-                      docPath={docPath}
-                      vendorName={vendorName}
-                      phone={phone}
-                      email={email}
-                      dueDate={item.due_date}
-                      log={log}
-                      onLogChange={(id, newLog) => handleLogChangeImmediate(id, newLog)}
-                      onMarkReceived={(id) => markMutation.mutate(id)}
-                      saving={savingIds.has(item.id)}
-                    />
-                  );
-                })}
-              </div>
+                    return (
+                      <FollowUpRow
+                        key={item.id}
+                        id={item.id}
+                        docNumber={docNumber}
+                        docType={docType}
+                        docPath={docPath}
+                        vendorName={vendorName}
+                        phone={phone}
+                        email={email}
+                        dueDate={item.due_date}
+                        log={log}
+                        onLogChange={(id, newLog) => handleLogChangeImmediate(id, newLog)}
+                        onMarkReceived={(id) => markMutation.mutate(id)}
+                        saving={savingIds.has(item.id)}
+                      />
+                    );
+                  })}
+                </div>
+
+                {/* Pagination bar */}
+                <div className="flex items-center justify-between gap-3 flex-wrap pt-2 border-t border-slate-200 dark:border-white/10">
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    Showing {pageStart + 1}–{pageEnd} of {totalItems}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setPageForTab(t, safePage - 1)}
+                      disabled={safePage === 0}
+                      className="text-xs"
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5 mr-1" />
+                      Prev
+                    </Button>
+                    {pageList.map((p, idx) =>
+                      p === "…" ? (
+                        <span key={`ellipsis-${idx}`} className="px-2 text-xs text-muted-foreground">
+                          …
+                        </span>
+                      ) : (
+                        <Button
+                          key={p}
+                          size="sm"
+                          variant={safePage + 1 === p ? "default" : "outline"}
+                          onClick={() => setPageForTab(t, p - 1)}
+                          className="text-xs min-w-[2rem]"
+                        >
+                          {p}
+                        </Button>
+                      )
+                    )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setPageForTab(t, safePage + 1)}
+                      disabled={safePage + 1 >= totalPages}
+                      className="text-xs"
+                    >
+                      Next
+                      <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              </>
             )}
           </TabsContent>
-        ))}
+          );
+        })}
       </Tabs>
     </div>
   );

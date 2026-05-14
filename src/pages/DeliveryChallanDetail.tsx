@@ -327,6 +327,14 @@ export default function DeliveryChallanDetail() {
   const createGrnMutation = useMutation({
     mutationFn: () => createGrnFromDC({ dc_id: id!, date: new Date().toISOString().split("T")[0] }),
     onSuccess: (newGrn) => {
+      queryClient.invalidateQueries({ queryKey: ["grns"] });
+      queryClient.invalidateQueries({ queryKey: ["grn-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["delivery-challans"] });
+      queryClient.invalidateQueries({ queryKey: ["delivery-challan", id] });
+      // Follow-up tracker: a DC-GRN auto-closes the DC-side follow-up.
+      queryClient.invalidateQueries({ queryKey: ["follow-up-dcs"] });
+      queryClient.invalidateQueries({ queryKey: ["follow-up-partial-dcs"] });
+      queryClient.invalidateQueries({ queryKey: ["follow-up-completed-today-dc"] });
       navigate(`/grn/${(newGrn as any).id}`);
     },
     onError: (err: any) => {

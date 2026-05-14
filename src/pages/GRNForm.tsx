@@ -599,6 +599,13 @@ function GRNFormInner({ defaultGrnType }: Props) {
       if (selectedPO) {
         queryClient.invalidateQueries({ queryKey: ["purchase-order", selectedPO.id] });
       }
+      // Follow-up tracker: recording a GRN auto-closes the matching PO/DC
+      // follow-up server-side, so the tracker's stats need to refetch.
+      queryClient.invalidateQueries({ queryKey: ["follow-up-pos"] });
+      queryClient.invalidateQueries({ queryKey: ["follow-up-dcs"] });
+      queryClient.invalidateQueries({ queryKey: ["follow-up-partial-dcs"] });
+      queryClient.invalidateQueries({ queryKey: ["follow-up-completed-today-po"] });
+      queryClient.invalidateQueries({ queryKey: ["follow-up-completed-today-dc"] });
       if (status === "recorded") {
         setSavedGRNId(result.id);
         setSuccessDialogOpen(true);
