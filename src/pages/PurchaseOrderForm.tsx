@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, Search, Info, ChevronDown, ChevronLeft } from "lucide-react";
+import { Plus, Trash2, Search, Info, ChevronDown, ChevronLeft, Lock } from "lucide-react";
 import { ItemSuggest } from "@/components/ItemSuggest";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -886,13 +886,30 @@ export default function PurchaseOrderForm() {
           <div className="space-y-4">
             <div>
               <Label className="text-sm font-medium text-slate-700">PO Number</Label>
-              <Input
-                value={poNumber}
-                onChange={(e) => setPONumber(e.target.value)}
-                className="mt-1 font-mono"
-                readOnly
-                placeholder={isEdit ? undefined : "Auto-generated on save"}
-              />
+              {isEdit ? (
+                <Input
+                  value={poNumber}
+                  onChange={(e) => setPONumber(e.target.value)}
+                  className="mt-1 font-mono"
+                  readOnly
+                />
+              ) : (
+                <>
+                  <div className="relative mt-1">
+                    <Lock className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                    <Input
+                      value={poNumber}
+                      readOnly
+                      disabled
+                      placeholder="(will be assigned on save)"
+                      className="pl-8 font-mono bg-muted text-muted-foreground cursor-not-allowed"
+                    />
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Auto-generated when you save. Cannot be edited.
+                  </p>
+                </>
+              )}
             </div>
 
             <div>

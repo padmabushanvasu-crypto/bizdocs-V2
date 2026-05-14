@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle, PackageCheck, ChevronLeft, ChevronDown,
-  Info, Plus, Truck,
+  Info, Plus, Truck, Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -822,13 +822,30 @@ function GRNFormInner({ defaultGrnType }: Props) {
           <div className="space-y-4">
             <div>
               <Label className="text-sm font-medium text-slate-700">GRN Number</Label>
-              <Input
-                value={grnNumber}
-                onChange={(e) => setGrnNumber(e.target.value)}
-                className="mt-1 font-mono"
-                readOnly
-                placeholder={isExistingGrn ? undefined : "Auto-generated on save"}
-              />
+              {isExistingGrn ? (
+                <Input
+                  value={grnNumber}
+                  onChange={(e) => setGrnNumber(e.target.value)}
+                  className="mt-1 font-mono"
+                  readOnly
+                />
+              ) : (
+                <>
+                  <div className="relative mt-1">
+                    <Lock className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                    <Input
+                      value={grnNumber}
+                      readOnly
+                      disabled
+                      placeholder="(will be assigned on save)"
+                      className="pl-8 font-mono bg-muted text-muted-foreground cursor-not-allowed"
+                    />
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Auto-generated when you save. Cannot be edited.
+                  </p>
+                </>
+              )}
             </div>
 
             <div>
