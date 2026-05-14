@@ -7,7 +7,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { fetchProcessingRouteAll, type ProcessingRoute } from "@/lib/dc-intelligence-api";
-import { createJobWork, createJobWorkStep, getNextJCNumber, fetchCompletedStepsForItem } from "@/lib/job-works-api";
+import { createJobWork, createJobWorkStep, fetchCompletedStepsForItem } from "@/lib/job-works-api";
 import { type DCLineItem } from "@/lib/delivery-challans-api";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -179,9 +179,11 @@ export function JobCardCreationDialog({
           continue;
         }
 
-        const jcNumber = await getNextJCNumber();
+        // jc_number is assigned by trg_job_cards_assign_number on insert.
+        // Pass empty string and read the trigger-assigned value back from
+        // the returned row.
         const newJC = await createJobWork({
-          jc_number: jcNumber,
+          jc_number: "",
           item_id: item.itemId ?? undefined,
           item_code: item.lineItem.item_code || undefined,
           item_description: item.lineItem.description || undefined,
@@ -189,6 +191,7 @@ export function JobCardCreationDialog({
           unit: item.lineItem.unit || "NOS",
           notes: `Created from DC ${dcNumber}. Stage: ${item.selectedStageNumber}`,
         } as any);
+        const jcNumber = (newJC as any)?.jc_number ?? "";
 
         if ((newJC as any)?.id) {
           const selectedRoute = item.routes.find(r => r.stage_number === item.selectedStageNumber);

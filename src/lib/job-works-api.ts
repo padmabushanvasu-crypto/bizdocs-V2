@@ -172,6 +172,13 @@ export interface WipSummary {
 // Auto-numbering
 // ============================================================
 
+/**
+ * @deprecated The DB trigger trg_job_cards_assign_number (migration
+ *   20260514000010) assigns jc_number on insert. Pass `jc_number: ''`
+ *   to createJobWork and read the value back from the returned row.
+ *   This helper is retained for any read-only display needs but should
+ *   not be the source of truth at insert time.
+ */
 export async function getNextJCNumber(): Promise<string> {
   const companyId = await getCompanyId();
   const { getNextDocNumber } = await import("@/lib/doc-number-utils");
@@ -280,7 +287,10 @@ export async function createJobWork(
     .from("job_cards")
     .insert({
       company_id: companyId,
-      jc_number: data.jc_number,
+      // jc_number is assigned by trg_job_cards_assign_number on insert.
+      // Manual override is preserved if a non-empty value is supplied
+      // (e.g. legacy import paths).
+      jc_number: data.jc_number && data.jc_number.trim() !== "" ? data.jc_number : "",
       item_id: data.item_id ?? null,
       item_code: data.item_code ?? null,
       item_description: data.item_description ?? null,
