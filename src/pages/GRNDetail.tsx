@@ -1403,10 +1403,23 @@ export default function GRNDetail() {
     setS1Lines(
       items.map((item) => {
         const a = item as any;
-        // For new GRNs (Stage 1 not yet saved), pre-fill received_qty with pending_quantity
-        const recv = (a.quantitative_verified_at == null && (a.received_qty === 0 || a.received_qty == null))
-          ? (a.pending_quantity ?? a.po_quantity ?? 0)
-          : (a.received_qty ?? 0);
+        // Pre-fill priority for the "Received Now" input:
+        //   1. Stage 1 already saved → persisted received_qty
+        //   2. Mid-edit value already on the row → received_qty
+        //   3. Quantity the operator entered in GRNForm → receiving_now
+        //      (GRNForm writes receiving_now at creation; received_qty is
+        //      only set when Stage 1 is saved, see grn-api.ts:1051)
+        //   4. No input yet → fall back to full pending_quantity
+        let recv: number;
+        if (a.quantitative_verified_at != null) {
+          recv = a.received_qty ?? 0;
+        } else if (a.received_qty != null && a.received_qty !== 0) {
+          recv = a.received_qty;
+        } else if (a.receiving_now != null && a.receiving_now !== 0) {
+          recv = a.receiving_now;
+        } else {
+          recv = a.pending_quantity ?? a.po_quantity ?? 0;
+        }
         return {
           id:                   item.id ?? "",
           item_code:            a.drawing_number ?? "",
