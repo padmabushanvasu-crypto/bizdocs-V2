@@ -120,6 +120,7 @@ export default function JobWorks() {
               <tr>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left whitespace-nowrap">JC #</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left whitespace-nowrap">Linked DCs</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Priority</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left whitespace-nowrap">Location</th>
@@ -130,10 +131,10 @@ export default function JobWorks() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
-                <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-400">Loading…</td></tr>
+                <tr><td colSpan={9} className="px-3 py-8 text-center text-sm text-slate-400">Loading…</td></tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-400">
+                  <td colSpan={9} className="px-3 py-8 text-center text-sm text-slate-400">
                     <div className="flex flex-col items-center gap-3">
                       <Activity className="h-10 w-10 text-slate-300" />
                       <p className="font-medium text-slate-600">No job cards found</p>
@@ -162,6 +163,29 @@ export default function JobWorks() {
                         </p>
                         {row.current_location === "at_vendor" && row.current_vendor_name && (
                           <p className="text-[11px] text-blue-600 mt-0.5">At: {row.current_vendor_name}</p>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left whitespace-nowrap">
+                        {row.linked_dcs.length === 0 ? (
+                          <span className="text-slate-300 text-xs">—</span>
+                        ) : (
+                          <span className="text-xs">
+                            {row.linked_dcs.map((dc, i) => (
+                              <span key={dc.id}>
+                                {i > 0 && <span className="text-slate-300">, </span>}
+                                <button
+                                  type="button"
+                                  className="text-primary hover:underline font-mono"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    navigate(`/delivery-challans/${dc.id}`);
+                                  }}
+                                >
+                                  {dc.dc_number}
+                                </button>
+                              </span>
+                            ))}
+                          </span>
                         )}
                       </td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">

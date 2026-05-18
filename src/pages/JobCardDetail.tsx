@@ -463,6 +463,33 @@ export default function JobCardDetail() {
           </span>
         </div>
 
+        {/* ── Linked DCs ── */}
+        <div className="border-t border-slate-100 pt-3 flex items-baseline gap-3 flex-wrap text-sm">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 shrink-0">Linked DCs</span>
+          {data.linked_dcs.length === 0 ? (
+            <span className="text-slate-400 text-sm">No linked DC</span>
+          ) : (
+            <div className="flex flex-wrap gap-x-3 gap-y-1">
+              {data.linked_dcs.map((dc) => (
+                <span key={dc.id} className="inline-flex items-baseline gap-1.5">
+                  <button
+                    type="button"
+                    className="text-primary hover:underline font-mono text-sm"
+                    onClick={() => navigate(`/delivery-challans/${dc.id}`)}
+                  >
+                    {dc.dc_number}
+                  </button>
+                  {dc.dc_date && (
+                    <span className="text-xs text-slate-400">
+                      ({format(new Date(dc.dc_date), "dd MMM yyyy")})
+                    </span>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* ── Stage progress summary ── */}
         {steps.length > 0 && (
           <div className="border-t border-slate-100 pt-4 space-y-2">

@@ -52,6 +52,12 @@ export interface JobWork {
   updated_at: string;
 }
 
+export interface LinkedDc {
+  id: string;
+  dc_number: string;
+  dc_date: string | null;
+}
+
 export interface JobWorkSummary extends JobWork {
   total_step_cost: number;
   total_cost: number;
@@ -59,6 +65,7 @@ export interface JobWorkSummary extends JobWork {
   variance: number;
   step_count: number;
   completed_steps: number;
+  linked_dcs: LinkedDc[];
 }
 
 export interface JobWorkStep {
@@ -205,9 +212,16 @@ export async function fetchJobWorks(filters: JobWorkFilters = {}) {
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
+  // Switched off the job_card_summary view so we can pull step + linked-DC
+  // data in the same round-trip. step_count / completed_steps are recomputed
+  // client-side; cost aggregates aren't used by the list UI.
   let query = (supabase as any)
-    .from("job_card_summary")
-    .select("*", { count: "exact" })
+    .from("job_cards")
+    .select(
+      `*, steps:job_card_steps(id, step_number, status, outward_dc:delivery_challans!outward_dc_id(id, dc_number, dc_date))`,
+      { count: "exact" }
+    )
+    .neq("status", "deleted")
     .order("due_date", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: false })
     .range(from, to);
@@ -233,15 +247,42 @@ export async function fetchJobWorks(filters: JobWorkFilters = {}) {
 
   const { data, error, count } = await query;
   if (error) throw error;
-  return { data: (data ?? []) as JobWorkSummary[], count: count ?? 0 };
+
+  const rows: JobWorkSummary[] = ((data ?? []) as any[]).map((row) => {
+    const rawSteps: any[] = row.steps ?? [];
+    const stepCount = rawSteps.length;
+    const completedSteps = rawSteps.filter(
+      (s) => s.status === "done" || s.status === "material_returned"
+    ).length;
+    const dcMap = new Map<string, LinkedDc>();
+    for (const s of rawSteps) {
+      const dc = s.outward_dc as { id: string; dc_number: string; dc_date: string | null } | null | undefined;
+      if (dc?.id && !dcMap.has(dc.id)) {
+        dcMap.set(dc.id, { id: dc.id, dc_number: dc.dc_number, dc_date: dc.dc_date ?? null });
+      }
+    }
+    const { steps: _drop, ...rest } = row;
+    return {
+      ...(rest as JobWork),
+      total_step_cost: 0,
+      total_cost: 0,
+      cost_per_unit: null,
+      variance: 0,
+      step_count: stepCount,
+      completed_steps: completedSteps,
+      linked_dcs: Array.from(dcMap.values()),
+    };
+  });
+
+  return { data: rows, count: count ?? 0 };
 }
 
-export async function fetchJobWork(id: string): Promise<JobWork & { steps: JobWorkStep[] }> {
+export async function fetchJobWork(id: string): Promise<JobWork & { steps: JobWorkStep[]; linked_dcs: LinkedDc[] }> {
   const [jcRes, stepsRes] = await Promise.all([
     (supabase as any).from("job_cards").select("*").eq("id", id).single(),
     (supabase as any)
       .from("job_card_steps")
-      .select("*, outward_dc:delivery_challans!outward_dc_id(dc_number)")
+      .select("*, outward_dc:delivery_challans!outward_dc_id(id, dc_number, dc_date)")
       .eq("job_card_id", id)
       .order("step_number", { ascending: true }),
   ]);
@@ -251,7 +292,14 @@ export async function fetchJobWork(id: string): Promise<JobWork & { steps: JobWo
     ...s,
     dc_number: (s.outward_dc as any)?.dc_number ?? null,
   }));
-  return { ...(jcRes.data as JobWork), steps };
+  const dcMap = new Map<string, LinkedDc>();
+  for (const s of stepsRes.data ?? []) {
+    const dc = (s as any).outward_dc as { id: string; dc_number: string; dc_date: string | null } | null | undefined;
+    if (dc?.id && !dcMap.has(dc.id)) {
+      dcMap.set(dc.id, { id: dc.id, dc_number: dc.dc_number, dc_date: dc.dc_date ?? null });
+    }
+  }
+  return { ...(jcRes.data as JobWork), steps, linked_dcs: Array.from(dcMap.values()) };
 }
 
 export async function fetchJobWorkSummary(id: string): Promise<JobWorkSummary> {
