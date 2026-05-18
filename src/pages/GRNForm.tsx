@@ -24,6 +24,7 @@ import {
   fetchGRN,
   type GRNLineItem,
 } from "@/lib/grn-api";
+import { isFinalBatch } from "@/lib/dc-receipt-utils";
 import { supabase } from "@/integrations/supabase/client";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -115,6 +116,10 @@ function GrnLineItemRow({
   const prevReceived = (item as any).previously_received_qty ?? item.previously_received ?? 0;
   const pendingQty = Math.max(0, orderedQty - prevReceived);
   const exceedsPending = item.s1_received_now > 0 && pendingQty > 0 && item.s1_received_now > pendingQty && !item.s1_admin_override;
+  const hasJigs = !!(jigs && jigs.length > 0);
+  // Reactive: recomputes on every s1_received_now change because LineItemState is React state.
+  const isFinal = hasJigs && isFinalBatch(item as any, item.s1_received_now);
+  const isPartial = hasJigs && item.s1_received_now > 0 && !isFinal;
 
   return (
     <>
@@ -168,11 +173,19 @@ function GrnLineItemRow({
           </td>
         </tr>
       )}
-      {jigs && jigs.length > 0 && item.s1_received_now > 0 && (
+      {isPartial && (
+        <tr className="bg-slate-50/80 border-b border-slate-100">
+          <td colSpan={7} className="px-3 py-1.5 text-xs text-slate-600">
+            <Info className="h-3.5 w-3.5 inline-block mr-1.5 -mt-0.5 text-slate-400" />
+            Partial receipt — jig return confirmation will be required on the final batch.
+          </td>
+        </tr>
+      )}
+      {isFinal && (
         <tr className="bg-amber-50/60 border-b border-amber-100">
           <td colSpan={7} className="px-3 py-2">
             <div className="flex flex-col gap-1.5">
-              {jigs.map((jig) => (
+              {jigs!.map((jig) => (
                 <label
                   key={jig.id}
                   className="flex items-center gap-2 cursor-pointer text-sm select-none"
@@ -184,7 +197,7 @@ function GrnLineItemRow({
                     className="h-4 w-4 accent-amber-600"
                   />
                   <span className={item.jig_confirmed ? "text-green-700 font-medium" : "text-amber-800 font-medium"}>
-                    {item.jig_confirmed ? "✓" : "⚠"} Confirm jig/mould returned:{" "}
+                    {item.jig_confirmed ? "✓" : "⚠"} Confirm jig has been returned by vendor (final batch):{" "}
                     <span className="font-mono">{jig.jig_number}</span>
                     {jig.status !== 'ok' && (
                       <span className="ml-1 text-xs text-slate-500">({jig.status})</span>
@@ -627,17 +640,20 @@ function GRNFormInner({ defaultGrnType }: Props) {
       toast({ title: "No items", description: "Enter receiving quantities for at least one item.", variant: "destructive" });
       return;
     }
-    // DC-GRN: block save if any received item has unconfirmed jig/mould
+    // DC-GRN: block save only on the final batch for a line. Partial receipts
+    // skip the jig gate — confirmation is required only when this receipt
+    // closes out the DC line.
     if (grnType === 'dc_grn' && !isExistingGrn) {
       const unconfirmed = lineItems.filter((item) => {
-        if (item.s1_received_now <= 0) return false;
         const jigs = jigsByDrawing[item.drawing_number ?? ''] ?? [];
-        return jigs.length > 0 && !item.jig_confirmed;
+        if (jigs.length === 0) return false;
+        if (!isFinalBatch(item as any, item.s1_received_now)) return false;
+        return !item.jig_confirmed;
       });
       if (unconfirmed.length > 0) {
         toast({
           title: "Jig confirmation required",
-          description: "Please confirm all jigs/moulds have been returned before saving.",
+          description: "Please confirm all jigs/moulds have been returned before saving the final batch.",
           variant: "destructive",
         });
         return;
