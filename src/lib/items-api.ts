@@ -79,6 +79,7 @@ export interface StockStatusRow {
   id: string;
   item_code: string;
   description: string;
+  drawing_number?: string | null;
   unit: string;
   item_type: string;
   hsn_sac_code?: string | null;
@@ -245,7 +246,7 @@ export async function fetchStockStatus() {
   if (!companyId) return [] as StockStatusRow[];
   const { data, error } = await (supabase as any)
     .from("items")
-    .select("id, item_code, description, unit, item_type, hsn_sac_code, current_stock, min_stock, min_stock_override, aimed_stock, standard_cost, parent_item_id, company_id, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, stock_alert_level")
+    .select("id, item_code, description, drawing_number, unit, item_type, hsn_sac_code, current_stock, min_stock, min_stock_override, aimed_stock, standard_cost, parent_item_id, company_id, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, stock_alert_level")
     .eq("company_id", companyId)
     .eq("status", "active")
     .order("item_code", { ascending: true });

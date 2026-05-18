@@ -5,6 +5,7 @@ import { Package, Shield, ArrowDownCircle, ArrowUpCircle, BarChart2, Database, X
 import { format } from "date-fns";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { StockStatusBadge } from "@/components/StockStatusBadge";
 import { fetchStockStatus, fetchStockMovements, type StockStatusRow, type StockMovement } from "@/lib/items-api";
@@ -285,7 +286,8 @@ function StockRegisterInner() {
       result = result.filter(
         (r) =>
           r.item_code.toLowerCase().includes(q) ||
-          r.description.toLowerCase().includes(q)
+          r.description.toLowerCase().includes(q) ||
+          (r.drawing_number?.toLowerCase().includes(q) ?? false)
       );
     }
 
@@ -392,7 +394,7 @@ function StockRegisterInner() {
         />
       </div>
 
-      {/* ── Filters row 1 ──────────────────────────────────────────────────── */}
+      {/* ── Filters ────────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap gap-2 items-center">
         {/* Search */}
         <div className="relative flex-1 min-w-[240px] max-w-sm">
@@ -410,42 +412,65 @@ function StockRegisterInner() {
             />
           </svg>
           <Input
-            placeholder="Search by item name or drawing number..."
+            placeholder="Search by item name, code, or drawing number..."
             className="pl-9 h-9 text-sm"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
 
-        {/* Availability segmented control */}
-        <div className="flex rounded-lg border border-slate-200 bg-white overflow-hidden">
-          {AVAIL_OPTS.map((opt) => (
-            <button
-              key={opt.v}
-              onClick={() => setAvailability(opt.v)}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap border-r border-slate-200 last:border-r-0 ${
-                availability === opt.v
-                  ? "bg-slate-900 text-white"
-                  : "text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
+        {/* Location */}
+        <Select value={availability} onValueChange={(v) => setAvailability(v as AvailabilityFilter)}>
+          <SelectTrigger className="h-9 w-[170px] text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {AVAIL_OPTS.map((opt) => (
+              <SelectItem key={opt.v} value={opt.v}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-        {/* Alert status filter */}
-        <select
-          value={alertFilter}
-          onChange={(e) => setAlertFilter(e.target.value as AlertFilter)}
-          className="h-9 text-sm border border-slate-200 rounded-lg px-3 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
-        >
-          <option value="all">All Statuses</option>
-          <option value="critical">Needs Reorder</option>
-          <option value="warning">Running Low</option>
-          <option value="locked">Engaged</option>
-          <option value="healthy">Healthy</option>
-        </select>
+        {/* Type */}
+        <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as TypeFilter)}>
+          <SelectTrigger className="h-9 w-[160px] text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {TYPE_OPTS.map((opt) => (
+              <SelectItem key={opt.v} value={opt.v}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Status */}
+        <Select value={alertFilter} onValueChange={(v) => setAlertFilter(v as AlertFilter)}>
+          <SelectTrigger className="h-9 w-[160px] text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="critical">Needs Reorder</SelectItem>
+            <SelectItem value="warning">Running Low</SelectItem>
+            <SelectItem value="locked">Engaged</SelectItem>
+            <SelectItem value="healthy">Healthy</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {anyFilterActive && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 text-xs text-slate-500 hover:text-slate-800"
+            onClick={clearFilters}
+          >
+            Clear filters
+          </Button>
+        )}
 
         {/* Export buttons — right-aligned */}
         <div className="ml-auto flex items-center gap-2">
@@ -472,37 +497,6 @@ function StockRegisterInner() {
         </div>
       </div>
 
-      {/* ── Filters row 2 ──────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap gap-2 items-center">
-        {/* Type segmented control */}
-        <div className="flex rounded-lg border border-slate-200 bg-white overflow-hidden">
-          {TYPE_OPTS.map((opt) => (
-            <button
-              key={opt.v}
-              onClick={() => setTypeFilter(opt.v)}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap border-r border-slate-200 last:border-r-0 ${
-                typeFilter === opt.v
-                  ? "bg-slate-900 text-white"
-                  : "text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-
-        {anyFilterActive && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 text-xs text-slate-500 hover:text-slate-800"
-            onClick={clearFilters}
-          >
-            Clear filters
-          </Button>
-        )}
-      </div>
-
       {/* ── Table ──────────────────────────────────────────────────────────── */}
       <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
@@ -511,6 +505,9 @@ function StockRegisterInner() {
               <tr className="border-b border-slate-200">
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   Item
+                </th>
+                <th className="text-left px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                  Drawing Number
                 </th>
                 <th className="text-left px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
                   Type
@@ -574,13 +571,13 @@ function StockRegisterInner() {
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={18} className="text-center py-12 text-slate-400 text-sm">
+                  <td colSpan={19} className="text-center py-12 text-slate-400 text-sm">
                     Loading…
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={18} className="py-16">
+                  <td colSpan={19} className="py-16">
                     <div className="flex flex-col items-center gap-3">
                       <Package className="h-10 w-10 text-slate-300" />
                       <div className="text-center">
@@ -618,6 +615,17 @@ function StockRegisterInner() {
                         <p className="text-sm font-medium text-slate-800 leading-snug">
                           {row.description}
                         </p>
+                      </td>
+
+                      {/* Drawing Number */}
+                      <td className="px-3 py-3 whitespace-nowrap">
+                        {row.drawing_number ? (
+                          <span className="text-sm font-mono tabular-nums text-slate-700">
+                            {row.drawing_number}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 text-sm select-none">—</span>
+                        )}
                       </td>
 
                       {/* Type */}
@@ -852,6 +860,8 @@ function StockRegisterInner() {
                   </p>
                 </td>
 
+                {/* Drawing Number */}
+                <td className="px-3 py-3" />
                 {/* Type */}
                 <td className="px-3 py-3" />
                 {/* In Store qty */}
