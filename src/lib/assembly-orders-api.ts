@@ -419,16 +419,9 @@ export async function confirmAssemblyOrder(
     const lineTotal = line.consumed_qty * unitCost;
     totalCost += lineTotal;
 
-    // Deduct from item stock
-    await (supabase as any)
-      .from("items")
-      .update({ current_stock: newStock })
-      .eq("id", line.item_id);
-    await updateStockBucket(line.item_id, "free", -line.consumed_qty).catch(console.error);
-
-    // Stock ledger: assembly_consumption
-    await (supabase as any).from("stock_ledger").insert({
-      company_id: companyId,
+    // Ledger-first: write the ledger row before mutating stock so a
+    // failure halts the loop iteration without leaving stock drift.
+    await addStockLedgerEntry({
       item_id: line.item_id,
       item_code: line.item_code,
       item_description: line.item_description,
@@ -444,7 +437,16 @@ export async function confirmAssemblyOrder(
       reference_number: ao.ao_number,
       notes: `Consumed in ${ao.ao_number}`,
       created_by: userId,
+      from_state: "free",
+      to_state: "consumed",
     });
+
+    // Deduct from item stock
+    await (supabase as any)
+      .from("items")
+      .update({ current_stock: newStock })
+      .eq("id", line.item_id);
+    await updateStockBucket(line.item_id, "free", -line.consumed_qty);
   }
 
   // 3. Add quantity_built to parent item stock
@@ -465,18 +467,8 @@ export async function confirmAssemblyOrder(
       ? (parentCurrentStock * parentCurrentCost + quantityBuilt * costPerUnit) / newParentStock
       : costPerUnit;
 
-  await (supabase as any)
-    .from("items")
-    .update({
-      current_stock: newParentStock,
-      standard_cost: Math.round(newAvgCost * 100) / 100,
-    })
-    .eq("id", ao.item_id);
-  await updateStockBucket(ao.item_id, "in_fg_ready", +quantityBuilt).catch(console.error);
-
-  // Stock ledger: assembly_output for parent item
-  await (supabase as any).from("stock_ledger").insert({
-    company_id: companyId,
+  // Ledger-first
+  await addStockLedgerEntry({
     item_id: ao.item_id,
     item_code: ao.item_code,
     item_description: ao.item_description,
@@ -492,7 +484,18 @@ export async function confirmAssemblyOrder(
     reference_number: ao.ao_number,
     notes: `Produced by ${ao.ao_number}`,
     created_by: userId,
+    from_state: null,
+    to_state: "in_fg_ready",
   });
+
+  await (supabase as any)
+    .from("items")
+    .update({
+      current_stock: newParentStock,
+      standard_cost: Math.round(newAvgCost * 100) / 100,
+    })
+    .eq("id", ao.item_id);
+  await updateStockBucket(ao.item_id, "in_fg_ready", +quantityBuilt);
 
   // 5. Create serial number records if provided
   if (serialNumbers && serialNumbers.length > 0) {
@@ -676,7 +679,6 @@ export async function startProductionRun(data: {
  * 5. Mark AO completed with backflushed=true
  */
 export async function completeProductionRun(id: string): Promise<void> {
-  const companyId = await getCompanyId();
   const { data: { user } } = await supabase.auth.getUser();
   const userId = user?.id ?? null;
 
@@ -703,11 +705,8 @@ export async function completeProductionRun(id: string): Promise<void> {
     const lineTotal = line.consumed_qty * unitCost;
     totalCost += lineTotal;
 
-    await (supabase as any).from("items").update({ current_stock: newStock }).eq("id", line.item_id);
-    await updateStockBucket(line.item_id, "free", -line.consumed_qty).catch(console.error);
-
-    await (supabase as any).from("stock_ledger").insert({
-      company_id: companyId,
+    // Ledger-first
+    await addStockLedgerEntry({
       item_id: line.item_id,
       item_code: line.item_code,
       item_description: line.item_description,
@@ -723,7 +722,12 @@ export async function completeProductionRun(id: string): Promise<void> {
       reference_number: ao.ao_number,
       notes: `Consumed in ${ao.ao_number}`,
       created_by: userId,
+      from_state: "free",
+      to_state: "consumed",
     });
+
+    await (supabase as any).from("items").update({ current_stock: newStock }).eq("id", line.item_id);
+    await updateStockBucket(line.item_id, "free", -line.consumed_qty);
   }
 
   // 2. Add to parent item stock
@@ -742,14 +746,8 @@ export async function completeProductionRun(id: string): Promise<void> {
       ? (parentCurrentStock * parentCurrentCost + quantityBuilt * costPerUnit) / newParentStock
       : costPerUnit;
 
-  await (supabase as any)
-    .from("items")
-    .update({ current_stock: newParentStock, standard_cost: Math.round(newAvgCost * 100) / 100 })
-    .eq("id", ao.item_id);
-  await updateStockBucket(ao.item_id, "in_fg_ready", +quantityBuilt).catch(console.error);
-
-  await (supabase as any).from("stock_ledger").insert({
-    company_id: companyId,
+  // Ledger-first
+  await addStockLedgerEntry({
     item_id: ao.item_id,
     item_code: ao.item_code,
     item_description: ao.item_description,
@@ -765,7 +763,15 @@ export async function completeProductionRun(id: string): Promise<void> {
     reference_number: ao.ao_number,
     notes: `Produced by ${ao.ao_number}`,
     created_by: userId,
+    from_state: null,
+    to_state: "in_fg_ready",
   });
+
+  await (supabase as any)
+    .from("items")
+    .update({ current_stock: newParentStock, standard_cost: Math.round(newAvgCost * 100) / 100 })
+    .eq("id", ao.item_id);
+  await updateStockBucket(ao.item_id, "in_fg_ready", +quantityBuilt);
 
   // 3. Move serial numbers from 'in_production' → 'in_stock'
   await (supabase as any)
@@ -953,7 +959,10 @@ export async function addStockLedgerEntry(
     company_id: companyId,
     created_by: data.created_by ?? user?.id ?? null,
   });
-  if (error) console.error("Stock ledger insert error:", error);
+  // Errors propagate to callers. The prior silent-swallow caused
+  // bucket-vs-ledger drift: Store Confirm could move items.stock_free
+  // without writing a ledger row. Callers must handle (toast + abort).
+  if (error) throw error;
 }
 
 // ============================================================

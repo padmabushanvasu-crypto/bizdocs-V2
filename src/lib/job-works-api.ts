@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
 import { logAudit } from "@/lib/audit-api";
 import { updateStockBucket } from "@/lib/items-api";
+import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
 
 // ============================================================
 // Interfaces
@@ -427,28 +428,23 @@ export async function completeJobWork(
     .eq("id", id);
   if (error) throw error;
 
-  // If outcome is "stock" and item linked, increase current_stock
+  // If outcome is "stock" and item linked, log the JC return on the ledger.
+  // Phantom column writes (stock_wip/stock_finished_goods) removed — those
+  // columns are not defined in any migration. Phase 13 bucket update is
+  // deliberately not added here pending a follow-up: the legacy code only
+  // wrote phantom columns (no Phase 13 bucket write), so today's behaviour
+  // already doesn't move buckets on this path. Preserves ledger audit trail.
   if (outcome === "stock" && (jc as any)?.item_id && ((jc as any)?.quantity_accepted ?? 0) > 0) {
     const { data: item } = await (supabase as any)
       .from("items")
-      .select("current_stock, stock_wip, stock_finished_goods, item_code, description, standard_cost")
+      .select("current_stock, item_code, description, standard_cost")
       .eq("id", (jc as any).item_id)
       .single();
     if (item) {
       const qtyAccepted = (jc as any).quantity_accepted;
       const currentStock = (item as any).current_stock ?? 0;
-      const newWip = Math.max(0, ((item as any).stock_wip ?? 0) - qtyAccepted);
-      const newFg = ((item as any).stock_finished_goods ?? 0) + qtyAccepted;
-      await (supabase as any)
-        .from("items")
-        .update({ stock_wip: newWip, stock_finished_goods: newFg })
-        .eq("id", (jc as any).item_id);
-
-      const companyId = await getCompanyId();
-      const { data: { user } } = await supabase.auth.getUser();
       const today = new Date().toISOString().slice(0, 10);
-      await (supabase as any).from("stock_ledger").insert({
-        company_id: companyId,
+      await addStockLedgerEntry({
         item_id: (jc as any).item_id,
         item_code: (item as any)?.item_code ?? (jc as any)?.item_code ?? null,
         item_description: (item as any)?.description ?? (jc as any)?.item_description ?? null,
@@ -463,10 +459,10 @@ export async function completeJobWork(
         reference_id: id,
         reference_number: (jc as any)?.jc_number ?? null,
         notes: `Returned to stock from ${(jc as any)?.jc_number ?? "work order"}`,
-        created_by: user?.id ?? null,
+        created_by: null,
         from_state: "wip",
         to_state: "finished_goods",
-      }).catch(console.error);
+      });
     }
   }
 
@@ -582,29 +578,18 @@ export async function issueJobCardMaterial(jobCardId: string): Promise<void> {
   const qty = (jc as any)?.quantity_original ?? 0;
   const today = new Date().toISOString().slice(0, 10);
 
-  // Fetch current stock and cost
+  // Fetch current stock and cost. Phantom column reads (stock_raw_material /
+  // stock_wip) removed — those columns are not defined in any migration.
   const { data: item } = await (supabase as any)
     .from("items")
-    .select("current_stock, stock_raw_material, stock_wip, standard_cost, item_code, description")
+    .select("current_stock, standard_cost, item_code, description")
     .eq("id", itemId)
     .single();
 
   const currentStock = (item as any)?.current_stock ?? 0;
-  const newRawMat = Math.max(0, ((item as any)?.stock_raw_material ?? 0) - qty);
-  const newWip = ((item as any)?.stock_wip ?? 0) + qty;
 
-  // Move stock state: raw_material → wip (current_stock unchanged)
-  await (supabase as any)
-    .from("items")
-    .update({ stock_raw_material: newRawMat, stock_wip: newWip })
-    .eq("id", itemId);
-  // Phase 13: bucket updates — material issued to subassembly WIP
-  await updateStockBucket(itemId, 'free', -qty).catch(console.error);
-  await updateStockBucket(itemId, 'in_subassembly_wip', +qty).catch(console.error);
-
-  // Write stock_ledger entry
-  await (supabase as any).from("stock_ledger").insert({
-    company_id: companyId,
+  // Ledger-first per Scope 1. Bucket moves happen only if ledger succeeds.
+  await addStockLedgerEntry({
     item_id: itemId,
     item_code: (item as any)?.item_code ?? (jc as any)?.item_code ?? null,
     item_description: (item as any)?.description ?? (jc as any)?.item_description ?? null,
@@ -623,12 +608,14 @@ export async function issueJobCardMaterial(jobCardId: string): Promise<void> {
     from_state: "raw_material",
     to_state: "wip",
   });
+  // Phase 13: bucket updates — material issued to subassembly WIP
+  await updateStockBucket(itemId, 'free', -qty);
+  await updateStockBucket(itemId, 'in_subassembly_wip', +qty);
 
   logAudit("job_card", jobCardId, "Material Issued", {
     summary: `${qty} units of ${(jc as any)?.item_code ?? "item"} issued from stock`,
     item_id: itemId,
     qty_issued: qty,
-    new_stock: newStock,
   }).catch(console.error);
 }
 

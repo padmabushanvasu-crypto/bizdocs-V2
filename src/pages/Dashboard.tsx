@@ -78,7 +78,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
       .eq("status", "issued"),
     (supabase as any)
       .from("items")
-      .select("id, item_type, current_stock, stock_finished_goods, min_finished_stock")
+      .select("id, item_type, stock_free, stock_in_fg_ready, min_stock")
       .eq("status", "active"),
     (supabase as any)
       .from("purchase_orders")
@@ -104,16 +104,16 @@ async function fetchDashboardData(): Promise<DashboardData> {
   ).length;
 
   const rawMaterialCount = items.filter(
-    (i) => i.item_type === "raw_material" && (i.current_stock ?? 0) > 0
+    (i) => i.item_type === "raw_material" && (i.stock_free ?? 0) > 0
   ).length;
   const componentCount = items.filter(
-    (i) => (i.item_type === "component" || i.item_type === "sub_assembly") && (i.current_stock ?? 0) > 0
+    (i) => (i.item_type === "component" || i.item_type === "sub_assembly") && (i.stock_free ?? 0) > 0
   ).length;
   const finishedGoodCount = items.filter(
-    (i) => i.item_type === "finished_good" && (i.current_stock ?? 0) > 0
+    (i) => i.item_type === "finished_good" && (i.stock_in_fg_ready ?? 0) > 0
   ).length;
   const needsBuildingCount = items.filter(
-    (i) => i.item_type === "finished_good" && (i.stock_finished_goods ?? 0) < (i.min_finished_stock ?? 0) && (i.min_finished_stock ?? 0) > 0
+    (i) => i.item_type === "finished_good" && (i.stock_in_fg_ready ?? 0) < (i.min_stock ?? 0) && (i.min_stock ?? 0) > 0
   ).length;
 
   const overduePOCount = overduePOsRes.count ?? 0;

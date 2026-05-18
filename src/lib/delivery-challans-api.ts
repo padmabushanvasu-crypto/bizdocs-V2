@@ -508,35 +508,33 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
       const delta = newQty - origQty;
       if (delta === 0) continue;
 
+      // Ledger-first, then bucket moves. Errors propagate to the operator.
+      await addStockLedgerEntry({
+        item_id: itemId,
+        item_code: null,
+        item_description: null,
+        transaction_date: today,
+        transaction_type: 'manual_adjustment',
+        qty_in: delta < 0 ? Math.abs(delta) : 0,
+        qty_out: delta > 0 ? delta : 0,
+        balance_qty: 0,
+        unit_cost: 0,
+        total_value: 0,
+        reference_type: 'delivery_challan',
+        reference_id: id,
+        reference_number: dc.dc_number,
+        notes: 'DC quantity edited after issuance — net delta applied',
+        created_by: null,
+      });
       if (delta > 0) {
         // Quantity increased — deduct more from free, add to in_process
-        await updateStockBucket(itemId, 'free', -delta).catch(console.error);
-        await updateStockBucket(itemId, 'in_process', +delta).catch(console.error);
+        await updateStockBucket(itemId, 'free', -delta);
+        await updateStockBucket(itemId, 'in_process', +delta);
       } else {
         // Quantity decreased or item removed — return from in_process to free
-        await updateStockBucket(itemId, 'in_process', delta).catch(console.error);
-        await updateStockBucket(itemId, 'free', Math.abs(delta)).catch(console.error);
+        await updateStockBucket(itemId, 'in_process', delta);
+        await updateStockBucket(itemId, 'free', Math.abs(delta));
       }
-
-      try {
-        await addStockLedgerEntry({
-          item_id: itemId,
-          item_code: null,
-          item_description: null,
-          transaction_date: today,
-          transaction_type: 'manual_adjustment',
-          qty_in: delta < 0 ? Math.abs(delta) : 0,
-          qty_out: delta > 0 ? delta : 0,
-          balance_qty: 0,
-          unit_cost: 0,
-          total_value: 0,
-          reference_type: 'delivery_challan',
-          reference_id: id,
-          reference_number: dc.dc_number,
-          notes: 'DC quantity edited after issuance — net delta applied',
-          created_by: null,
-        });
-      } catch { /* ignore */ }
     }
   }
 }
@@ -581,13 +579,8 @@ export async function issueDeliveryChallan(id: string) {
     if (!itemRecord) continue;
     const rec = itemRecord as any;
     const newStock = Math.max(0, (rec.current_stock ?? 0) - qty);
-    await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
-    // Bucket updates for returnable DCs: free → in_process
     const isReturnable = RETURNABLE_DC_TYPES.has(dc.dc_type);
-    if (isReturnable) {
-      await updateStockBucket(rec.id, 'free', -qty).catch(console.error);
-      await updateStockBucket(rec.id, 'in_process', +qty).catch(console.error);
-    }
+    // Ledger-first per iteration (Scope 1).
     await addStockLedgerEntry({
       item_id: rec.id,
       item_code: rec.item_code,
@@ -607,6 +600,11 @@ export async function issueDeliveryChallan(id: string) {
       from_state: isReturnable ? 'free' : null,
       to_state: isReturnable ? 'in_process' : null,
     });
+    await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
+    if (isReturnable) {
+      await updateStockBucket(rec.id, 'free', -qty);
+      await updateStockBucket(rec.id, 'in_process', +qty);
+    }
   }
 }
 
@@ -681,12 +679,8 @@ export async function recordDCReturn(dcId: string, returnDate: string, receivedB
           if (itemRecord) {
             const rec = itemRecord as any;
             const newStock = (rec.current_stock ?? 0) + item.returned_nos;
-            await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
-            // Phase 13: bucket updates for returnable DC returns
-            if (RETURNABLE_DC_TYPES.has(dcType)) {
-              await updateStockBucket(rec.id, 'in_process', -item.returned_nos).catch(console.error);
-              await updateStockBucket(rec.id, 'free', +item.returned_nos).catch(console.error);
-            }
+            const isReturnable = RETURNABLE_DC_TYPES.has(dcType);
+            // Ledger-first per iteration.
             await addStockLedgerEntry({
               item_id: rec.id,
               item_code: rec.item_code,
@@ -704,6 +698,11 @@ export async function recordDCReturn(dcId: string, returnDate: string, receivedB
               notes: `DC return: ${dcNumber}`,
               created_by: null,
             });
+            await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
+            if (isReturnable) {
+              await updateStockBucket(rec.id, 'in_process', -item.returned_nos);
+              await updateStockBucket(rec.id, 'free', +item.returned_nos);
+            }
           }
         }
       }
@@ -782,55 +781,53 @@ export async function softDeleteDeliveryChallan(
       if (qty <= 0) continue;
 
       if (stockAction === 'recalled' || stockAction === 'immediate_return') {
-        await updateStockBucket(line.item_id, 'in_process', -qty).catch(console.error);
-        await updateStockBucket(line.item_id, 'free', +qty).catch(console.error);
         const notesLabel = stockAction === 'recalled'
           ? 'DC deleted — recalled before dispatch'
           : 'DC deleted — immediate vendor return';
         const notes = deletion_reason ? `${notesLabel}: ${deletion_reason}` : notesLabel;
-        try {
-          await addStockLedgerEntry({
-            item_id: line.item_id,
-            item_code: line.item_code ?? null,
-            item_description: line.description ?? null,
-            transaction_date: today,
-            transaction_type: 'dc_return',
-            qty_in: qty,
-            qty_out: 0,
-            balance_qty: 0,
-            unit_cost: 0,
-            total_value: 0,
-            reference_type: 'delivery_challan',
-            reference_id: id,
-            reference_number: dcNumber,
-            notes,
-            created_by: null,
-          });
-        } catch { /* ignore */ }
+        // Ledger-first per iteration.
+        await addStockLedgerEntry({
+          item_id: line.item_id,
+          item_code: line.item_code ?? null,
+          item_description: line.description ?? null,
+          transaction_date: today,
+          transaction_type: 'dc_return',
+          qty_in: qty,
+          qty_out: 0,
+          balance_qty: 0,
+          unit_cost: 0,
+          total_value: 0,
+          reference_type: 'delivery_challan',
+          reference_id: id,
+          reference_number: dcNumber,
+          notes,
+          created_by: null,
+        });
+        await updateStockBucket(line.item_id, 'in_process', -qty);
+        await updateStockBucket(line.item_id, 'free', +qty);
       } else if (stockAction === 'write_off') {
-        await updateStockBucket(line.item_id, 'in_process', -qty).catch(console.error);
         const notes = deletion_reason
           ? `DC deleted — stock written off: ${deletion_reason}`
           : 'DC deleted — stock written off';
-        try {
-          await addStockLedgerEntry({
-            item_id: line.item_id,
-            item_code: line.item_code ?? null,
-            item_description: line.description ?? null,
-            transaction_date: today,
-            transaction_type: 'rejection_writeoff',
-            qty_in: 0,
-            qty_out: qty,
-            balance_qty: 0,
-            unit_cost: 0,
-            total_value: 0,
-            reference_type: 'delivery_challan',
-            reference_id: id,
-            reference_number: dcNumber,
-            notes,
-            created_by: null,
-          });
-        } catch { /* ignore */ }
+        // Ledger-first per iteration.
+        await addStockLedgerEntry({
+          item_id: line.item_id,
+          item_code: line.item_code ?? null,
+          item_description: line.description ?? null,
+          transaction_date: today,
+          transaction_type: 'rejection_writeoff',
+          qty_in: 0,
+          qty_out: qty,
+          balance_qty: 0,
+          unit_cost: 0,
+          total_value: 0,
+          reference_type: 'delivery_challan',
+          reference_id: id,
+          reference_number: dcNumber,
+          notes,
+          created_by: null,
+        });
+        await updateStockBucket(line.item_id, 'in_process', -qty);
       }
     }
   }
@@ -931,13 +928,10 @@ export async function recordLineItemReturn(
     if (jc && (jc as any).item_id) {
       const { data: item } = await (supabase as any)
         .from("items")
-        .select("id, item_code, description, current_stock, stock_wip, stock_finished_goods, standard_cost")
+        .select("id, item_code, description, current_stock, standard_cost")
         .eq("id", (jc as any).item_id)
         .single();
       if (item) {
-        const newWip = Math.max(0, ((item as any).stock_wip ?? 0) - data.qty_accepted);
-        const newFg = ((item as any).stock_finished_goods ?? 0) + data.qty_accepted;
-        await (supabase as any).from("items").update({ stock_wip: newWip, stock_finished_goods: newFg }).eq("id", (item as any).id);
         const { data: dcHeader } = await supabase.from("delivery_challans").select("dc_number").eq("id", li.dc_id).single();
         const dcNumber = (dcHeader as any)?.dc_number ?? "";
         await addStockLedgerEntry({
@@ -945,7 +939,10 @@ export async function recordLineItemReturn(
           item_code: (item as any).item_code,
           item_description: (item as any).description ?? (jc as any).item_description ?? "",
           transaction_date: today,
-          transaction_type: "job_work_return",
+          // 'job_work_return' was not in the stock_ledger CHECK constraint
+          // and silently failed under the prior swallow. Mapped to 'dc_return'
+          // (reference is a DC; flow is vendor-return on an outward DC).
+          transaction_type: "dc_return",
           qty_in: data.qty_accepted,
           qty_out: 0,
           balance_qty: (item as any).current_stock ?? 0,
@@ -1071,20 +1068,20 @@ export async function recordEnhancedReturn(
   if (finishedQty > 0 && returnData.item_id) {
     const { data: item } = await (supabase as any)
       .from('items')
-      .select('id, item_code, description, current_stock, stock_wip, stock_finished_goods, standard_cost')
+      .select('id, item_code, description, current_stock, standard_cost')
       .eq('id', returnData.item_id)
       .single();
     if (item) {
       const rec = item as any;
-      const newWip = Math.max(0, (rec.stock_wip ?? 0) - finishedQty);
-      const newFg = (rec.stock_finished_goods ?? 0) + finishedQty;
-      await (supabase as any).from('items').update({ stock_wip: newWip, stock_finished_goods: newFg }).eq('id', rec.id);
       await addStockLedgerEntry({
         item_id: rec.id,
         item_code: rec.item_code,
         item_description: rec.description,
         transaction_date: today,
-        transaction_type: 'processing_return',
+        // 'processing_return' was not in the stock_ledger CHECK constraint;
+        // mapped to 'dc_return' (reference is the DC; trigger is recording
+        // accepted qty on a DC-driven processing return).
+        transaction_type: 'dc_return',
         qty_in: finishedQty,
         qty_out: 0,
         balance_qty: rec.current_stock ?? 0,
@@ -1105,13 +1102,11 @@ export async function recordEnhancedReturn(
   if (returnData.rejected_action === 'scrap' && returnData.qty_rejected > 0 && returnData.item_id) {
     const { data: item } = await (supabase as any)
       .from('items')
-      .select('id, item_code, description, current_stock, stock_wip, standard_cost')
+      .select('id, item_code, description, current_stock, standard_cost')
       .eq('id', returnData.item_id)
       .single();
     if (item) {
       const rec = item as any;
-      const newWip = Math.max(0, (rec.stock_wip ?? 0) - returnData.qty_rejected);
-      await (supabase as any).from('items').update({ stock_wip: newWip }).eq('id', rec.id);
       try {
         await (supabase as any).from('scrap_register').insert({
           company_id: companyId,
@@ -1132,7 +1127,9 @@ export async function recordEnhancedReturn(
         item_code: rec.item_code,
         item_description: rec.description,
         transaction_date: today,
-        transaction_type: 'scrap',
+        // 'scrap' was not in the stock_ledger CHECK constraint; semantically
+        // identical to scrap_write_off.
+        transaction_type: 'scrap_write_off',
         qty_in: 0,
         qty_out: returnData.qty_rejected,
         balance_qty: rec.current_stock ?? 0,

@@ -390,7 +390,7 @@ export async function recordGRNAndUpdatePO(grnData: CreateGRNData) {
     if (item.accepted_quantity > 0 && item.drawing_number) {
       const { data: itemRecord } = await supabase
         .from("items")
-        .select("id, item_code, description, current_stock, stock_raw_material")
+        .select("id, item_code, description, current_stock")
         .eq("drawing_revision", item.drawing_number)
         .eq("company_id", companyId)
         .maybeSingle();
@@ -398,8 +398,7 @@ export async function recordGRNAndUpdatePO(grnData: CreateGRNData) {
       if (itemRecord) {
         const rec = itemRecord as any;
         const newStock = (rec.current_stock ?? 0) + item.accepted_quantity;
-        const newRawMat = (rec.stock_raw_material ?? 0) + item.accepted_quantity;
-        await supabase.from("items").update({ current_stock: newStock, stock_raw_material: newRawMat } as any).eq("id", rec.id);
+        await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
         // stock_free is updated at storeConfirmGRN (after QC), not at creation.
       }
     }
@@ -550,26 +549,25 @@ export async function softDeleteGRN(
       }
       if (!itemId) continue;
 
-      await updateStockBucket(itemId, 'free', -qty).catch(console.error);
-      try {
-        await addStockLedgerEntry({
-          item_id: itemId,
-          item_code: null,
-          item_description: line.description ?? null,
-          transaction_date: today,
-          transaction_type: 'manual_adjustment',
-          qty_in: 0,
-          qty_out: qty,
-          balance_qty: 0,
-          unit_cost: 0,
-          total_value: 0,
-          reference_type: 'grn',
-          reference_id: id,
-          reference_number: null,
-          notes,
-          created_by: null,
-        });
-      } catch { /* ignore ledger failures */ }
+      // Ledger-first per iteration (Scope 1).
+      await addStockLedgerEntry({
+        item_id: itemId,
+        item_code: null,
+        item_description: line.description ?? null,
+        transaction_date: today,
+        transaction_type: 'manual_adjustment',
+        qty_in: 0,
+        qty_out: qty,
+        balance_qty: 0,
+        unit_cost: 0,
+        total_value: 0,
+        reference_type: 'grn',
+        reference_id: id,
+        reference_number: null,
+        notes,
+        created_by: null,
+      });
+      await updateStockBucket(itemId, 'free', -qty);
     }
   }
 
@@ -1639,9 +1637,7 @@ async function creditPartialStock(
   const isDcReturn = opts.grnType === 'dc_grn' || !!opts.linkedDcId;
 
   if (isDcReturn) {
-    // DC return: move from in_process -> free
-    await updateStockBucket(resolvedItemId, 'in_process', -storeQty).catch(console.error);
-    await updateStockBucket(resolvedItemId, 'free', +storeQty).catch(console.error);
+    // DC return: ledger-first so a failed insert aborts before buckets move.
     await addStockLedgerEntry({
       item_id: resolvedItemId,
       item_code: itemCode,
@@ -1660,12 +1656,13 @@ async function creditPartialStock(
       created_by: null,
       from_state: 'in_process',
       to_state: 'free',
-    }).catch(console.error);
+    });
+    await updateStockBucket(resolvedItemId, 'in_process', -storeQty);
+    await updateStockBucket(resolvedItemId, 'free', +storeQty);
     return;
   }
 
-  // PO-GRN: credit stock_free from incoming
-  await updateStockBucket(resolvedItemId, 'free', +storeQty).catch(console.error);
+  // PO-GRN: credit stock_free from incoming. Ledger-first per Scope 1.
   await addStockLedgerEntry({
     item_id: resolvedItemId,
     item_code: itemCode,
@@ -1684,7 +1681,8 @@ async function creditPartialStock(
     created_by: null,
     from_state: 'incoming',
     to_state: 'free',
-  }).catch(console.error);
+  });
+  await updateStockBucket(resolvedItemId, 'free', +storeQty);
 
   // MIR shortage notifications — fire as soon as stock lands, not at full-close.
   // Notification spam risk: each partial that touches an item with an open shortage
@@ -2008,7 +2006,7 @@ export async function storeConfirmGRNItems(
         reference_number: null,
         notes: `Damaged on arrival — ${entry.reason || 'no reason given'}`,
         created_by: null,
-      }).catch(console.error);
+      });
     }
   }
 

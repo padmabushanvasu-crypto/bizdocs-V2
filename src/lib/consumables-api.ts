@@ -395,32 +395,26 @@ export async function createConsumableIssue(
         // where create flow previously never credited stock_free for the
         // returned-to-stock case (qty_returned was just metadata).
         if (eventDisposition === "returned_to_stock") {
-          await updateStockBucket(line.item_id, "free", line.qty_returned).catch(
-            console.error
-          );
-          try {
-            await addStockLedgerEntry({
-              item_id: line.item_id,
-              item_code: line.item_code,
-              item_description: line.item_description,
-              transaction_date: input.issue_date,
-              transaction_type: "consumable_return",
-              qty_in: line.qty_returned,
-              qty_out: 0,
-              balance_qty: 0,
-              unit_cost: 0,
-              total_value: 0,
-              reference_type: "consumable_issue",
-              reference_id: issue.id,
-              reference_number: issue.issue_number,
-              notes: "Consumable return — recorded at issue creation",
-              created_by: null,
-              from_state: "consumed",
-              to_state: "free",
-            });
-          } catch {
-            /* ledger failures non-fatal */
-          }
+          await addStockLedgerEntry({
+            item_id: line.item_id,
+            item_code: line.item_code,
+            item_description: line.item_description,
+            transaction_date: input.issue_date,
+            transaction_type: "consumable_return",
+            qty_in: line.qty_returned,
+            qty_out: 0,
+            balance_qty: 0,
+            unit_cost: 0,
+            total_value: 0,
+            reference_type: "consumable_issue",
+            reference_id: issue.id,
+            reference_number: issue.issue_number,
+            notes: "Consumable return — recorded at issue creation",
+            created_by: null,
+            from_state: "consumed",
+            to_state: "free",
+          });
+          await updateStockBucket(line.item_id, "free", line.qty_returned);
         }
         // 'lost' has no stock effect beyond the event row.
         // 'scrap' has no stock effect here either; the scrap_register row
@@ -525,34 +519,28 @@ async function reverseConsumableLineStock(
     to_state = null;
   }
 
-  if (qtyToCredit > 0) {
-    await updateStockBucket(line.item_id, "free", qtyToCredit).catch(
-      console.error
-    );
-  }
+  await addStockLedgerEntry({
+    item_id: line.item_id,
+    item_code: line.item_code ?? null,
+    item_description: line.item_description ?? null,
+    transaction_date: today,
+    transaction_type,
+    qty_in: qtyToCredit,
+    qty_out: 0,
+    balance_qty: 0,
+    unit_cost: 0,
+    total_value: 0,
+    reference_type: "consumable_issue",
+    reference_id: issueId,
+    reference_number: issueNumber,
+    notes,
+    created_by: null,
+    from_state,
+    to_state,
+  });
 
-  try {
-    await addStockLedgerEntry({
-      item_id: line.item_id,
-      item_code: line.item_code ?? null,
-      item_description: line.item_description ?? null,
-      transaction_date: today,
-      transaction_type,
-      qty_in: qtyToCredit,
-      qty_out: 0,
-      balance_qty: 0,
-      unit_cost: 0,
-      total_value: 0,
-      reference_type: "consumable_issue",
-      reference_id: issueId,
-      reference_number: issueNumber,
-      notes,
-      created_by: null,
-      from_state,
-      to_state,
-    });
-  } catch {
-    /* ledger failures are non-fatal */
+  if (qtyToCredit > 0) {
+    await updateStockBucket(line.item_id, "free", qtyToCredit);
   }
 
   // recall_unused: remove any scrap_register rows that were written by this
@@ -809,32 +797,28 @@ export async function recordConsumableReturn(
   // 2. Stock effects per disposition
   if (line.item_id) {
     if (disposition === "returned_to_stock") {
-      await updateStockBucket(line.item_id, "free", qty).catch(console.error);
-      try {
-        await addStockLedgerEntry({
-          item_id: line.item_id,
-          item_code: line.item_code,
-          item_description: line.item_description,
-          transaction_date: transactionDate,
-          transaction_type: "consumable_return",
-          qty_in: qty,
-          qty_out: 0,
-          balance_qty: 0,
-          unit_cost: 0,
-          total_value: 0,
-          reference_type: "consumable_issue",
-          reference_id: line.consumable_issue_id,
-          reference_number: issueNumber,
-          notes:
-            `Consumable return — returned to stock` +
-            (input.notes ? `: ${input.notes}` : ""),
-          created_by: null,
-          from_state: "consumed",
-          to_state: "free",
-        });
-      } catch {
-        /* ledger failures non-fatal */
-      }
+      await addStockLedgerEntry({
+        item_id: line.item_id,
+        item_code: line.item_code,
+        item_description: line.item_description,
+        transaction_date: transactionDate,
+        transaction_type: "consumable_return",
+        qty_in: qty,
+        qty_out: 0,
+        balance_qty: 0,
+        unit_cost: 0,
+        total_value: 0,
+        reference_type: "consumable_issue",
+        reference_id: line.consumable_issue_id,
+        reference_number: issueNumber,
+        notes:
+          `Consumable return — returned to stock` +
+          (input.notes ? `: ${input.notes}` : ""),
+        created_by: null,
+        from_state: "consumed",
+        to_state: "free",
+      });
+      await updateStockBucket(line.item_id, "free", qty);
     } else if (disposition === "scrap") {
       // Audit-only scrap_register row; stock_free is NOT credited
       // because the issue already decremented it and the qty isn't
@@ -934,34 +918,32 @@ export async function deleteConsumableReturn(
 
   // 1. Reverse stock if the original event credited stock
   if (line.item_id && event.disposition === "returned_to_stock") {
-    await updateStockBucket(line.item_id, "free", -Number(event.qty_returned)).catch(
-      console.error
+    await addStockLedgerEntry({
+      item_id: line.item_id,
+      item_code: line.item_code,
+      item_description: line.item_description,
+      transaction_date: today,
+      transaction_type: "manual_adjustment",
+      qty_in: 0,
+      qty_out: Number(event.qty_returned),
+      balance_qty: 0,
+      unit_cost: 0,
+      total_value: 0,
+      reference_type: "consumable_issue",
+      reference_id: line.consumable_issue_id,
+      reference_number: issueNumber,
+      notes:
+        `Consumable return event deleted` +
+        (options.reason ? `: ${options.reason}` : ""),
+      created_by: null,
+      from_state: "free",
+      to_state: "consumed",
+    });
+    await updateStockBucket(
+      line.item_id,
+      "free",
+      -Number(event.qty_returned)
     );
-    try {
-      await addStockLedgerEntry({
-        item_id: line.item_id,
-        item_code: line.item_code,
-        item_description: line.item_description,
-        transaction_date: today,
-        transaction_type: "manual_adjustment",
-        qty_in: 0,
-        qty_out: Number(event.qty_returned),
-        balance_qty: 0,
-        unit_cost: 0,
-        total_value: 0,
-        reference_type: "consumable_issue",
-        reference_id: line.consumable_issue_id,
-        reference_number: issueNumber,
-        notes:
-          `Consumable return event deleted` +
-          (options.reason ? `: ${options.reason}` : ""),
-        created_by: null,
-        from_state: "free",
-        to_state: "consumed",
-      });
-    } catch {
-      /* non-fatal */
-    }
   }
   // disposition='scrap' or 'lost' leave their scrap_register / no-op
   // trails untouched. Scrap audit rows are linked only by free-text
@@ -1086,29 +1068,88 @@ export async function editConsumableIssue(
     const itemChanged = newItemId !== orig.item_id;
     const qtyChanged = newQtyIssued !== Number(orig.qty_issued);
 
+    const today = new Date().toISOString().slice(0, 10);
+    const issueNumber = (before as any).issue_number ?? null;
+
     if (itemChanged) {
       // Reverse old item by original qty_issued (already had its
       // partial returns credited via events, so the outstanding is
       // qty_issued − returnedSum).
       const outstandingOld = Number(orig.qty_issued) - returnedSum;
       if (orig.item_id && outstandingOld > 0) {
-        await updateStockBucket(orig.item_id, "free", outstandingOld).catch(
-          console.error
-        );
+        await addStockLedgerEntry({
+          item_id: orig.item_id,
+          item_code: orig.item_code ?? null,
+          item_description: orig.item_description ?? null,
+          transaction_date: today,
+          transaction_type: "manual_adjustment",
+          qty_in: outstandingOld,
+          qty_out: 0,
+          balance_qty: 0,
+          unit_cost: 0,
+          total_value: 0,
+          reference_type: "consumable_issue",
+          reference_id: issueId,
+          reference_number: issueNumber,
+          notes: `Consumable issue edit — item swap, reverse old item outstanding (${outstandingOld})`,
+          created_by: null,
+          from_state: "consumed",
+          to_state: "free",
+        });
+        await updateStockBucket(orig.item_id, "free", outstandingOld);
       }
       // Decrement new item by full new qty.
       if (newItemId && newQtyIssued > 0) {
-        await updateStockBucket(newItemId, "free", -newQtyIssued).catch(
-          console.error
-        );
+        await addStockLedgerEntry({
+          item_id: newItemId,
+          item_code: update.item_code ?? null,
+          item_description: update.item_description ?? null,
+          transaction_date: today,
+          transaction_type: "manual_adjustment",
+          qty_in: 0,
+          qty_out: newQtyIssued,
+          balance_qty: 0,
+          unit_cost: 0,
+          total_value: 0,
+          reference_type: "consumable_issue",
+          reference_id: issueId,
+          reference_number: issueNumber,
+          notes: `Consumable issue edit — item swap, issue new item (${newQtyIssued})`,
+          created_by: null,
+          from_state: "free",
+          to_state: "consumed",
+        });
+        await updateStockBucket(newItemId, "free", -newQtyIssued);
       }
     } else if (qtyChanged) {
       // Same item, just qty delta on outstanding portion.
       const delta = newQtyIssued - Number(orig.qty_issued);
       if (orig.item_id && delta !== 0) {
-        await updateStockBucket(orig.item_id, "free", -delta).catch(
-          console.error
-        );
+        const qtyIn = delta < 0 ? -delta : 0;
+        const qtyOut = delta > 0 ? delta : 0;
+        await addStockLedgerEntry({
+          item_id: orig.item_id,
+          item_code: orig.item_code ?? null,
+          item_description: orig.item_description ?? null,
+          transaction_date: today,
+          transaction_type: "manual_adjustment",
+          qty_in: qtyIn,
+          qty_out: qtyOut,
+          balance_qty: 0,
+          unit_cost: 0,
+          total_value: 0,
+          reference_type: "consumable_issue",
+          reference_id: issueId,
+          reference_number: issueNumber,
+          notes:
+            delta > 0
+              ? `Consumable issue edit — qty increased by ${delta}`
+              : `Consumable issue edit — qty decreased by ${-delta}`,
+          created_by: null,
+          from_state: delta > 0 ? "free" : "consumed",
+          to_state: delta > 0 ? "consumed" : "free",
+        });
+        await updateStockBucket(orig.item_id, "free", -delta);
       }
     }
 

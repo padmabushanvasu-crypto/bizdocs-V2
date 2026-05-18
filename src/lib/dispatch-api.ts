@@ -243,23 +243,7 @@ export async function confirmDispatch(id: string): Promise<void> {
   for (const item of dr.items ?? []) {
     if (!item.item_id) continue;
 
-    await updateStockBucket(item.item_id, 'in_fg_ready', -item.quantity);
-
-    // Update serial number status — only if a serial is linked to this line
-    if (item.serial_number_id) {
-      await (supabase as any)
-        .from("serial_numbers")
-        .update({ status: 'dispatched', dispatch_date: today })
-        .eq("id", item.serial_number_id);
-    } else if (item.serial_number) {
-      await (supabase as any)
-        .from("serial_numbers")
-        .update({ status: 'dispatched', dispatch_date: today })
-        .eq("serial_number", item.serial_number)
-        .eq("company_id", companyId);
-    }
-
-    // Stock ledger entry — match StockLedgerEntry shape used elsewhere
+    // Ledger-first per iteration (Scope 1).
     await addStockLedgerEntry({
       item_id: item.item_id,
       item_code: item.item_code ?? null,
@@ -279,6 +263,21 @@ export async function confirmDispatch(id: string): Promise<void> {
       from_state: 'finished_goods',
       to_state: 'dispatched',
     });
+    await updateStockBucket(item.item_id, 'in_fg_ready', -item.quantity);
+
+    // Update serial number status — only if a serial is linked to this line
+    if (item.serial_number_id) {
+      await (supabase as any)
+        .from("serial_numbers")
+        .update({ status: 'dispatched', dispatch_date: today })
+        .eq("id", item.serial_number_id);
+    } else if (item.serial_number) {
+      await (supabase as any)
+        .from("serial_numbers")
+        .update({ status: 'dispatched', dispatch_date: today })
+        .eq("serial_number", item.serial_number)
+        .eq("company_id", companyId);
+    }
   }
 
   const { error } = await (supabase as any)

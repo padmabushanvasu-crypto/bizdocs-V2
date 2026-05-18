@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
+import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
 
 // ============================================================
 // Interfaces
@@ -34,7 +35,6 @@ export interface ReorderAlert {
   item_type: string;
   item_unit: string;
   current_stock: number;
-  raw_stock: number;
   min_stock: number;
   reorder_point: number;
   reorder_qty: number;
@@ -112,7 +112,7 @@ export async function fetchReorderAlerts(): Promise<ReorderAlert[]> {
   // 1. Fetch all critical items from DB (single query, no JS threshold calc)
   const { data: itemsRaw, error: itemsError } = await (supabase as any)
     .from("items")
-    .select("id, item_code, description, item_type, unit, current_stock, stock_raw_material, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, min_stock, stock_alert_level")
+    .select("id, item_code, description, item_type, unit, current_stock, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, min_stock, stock_alert_level")
     .eq("company_id", companyId)
     .eq("status", "active")
     .eq("stock_alert_level", "critical")
@@ -158,7 +158,6 @@ export async function fetchReorderAlerts(): Promise<ReorderAlert[]> {
       item_type: item.item_type,
       item_unit: item.unit || "NOS",
       current_stock: Number(item.current_stock) || 0,
-      raw_stock: Number(item.stock_raw_material) || 0,
       min_stock: minStock,
       reorder_point: reorderPoint,
       reorder_qty: reorderQty,
@@ -430,7 +429,7 @@ export async function createScrapEntry(data: Partial<ScrapEntry>): Promise<Scrap
 
   const created = entry as ScrapEntry;
 
-  // Decrement item stock and write ledger entry
+  // Decrement item stock and write ledger entry (ledger-first)
   if (data.item_id && (data.qty_scrapped || 0) > 0) {
     const { data: itemData } = await (supabase as any)
       .from("items")
@@ -441,20 +440,14 @@ export async function createScrapEntry(data: Partial<ScrapEntry>): Promise<Scrap
     const currentStock: number = (itemData as any)?.current_stock ?? 0;
     const newStock: number = Math.max(0, currentStock - (data.qty_scrapped || 0));
 
-    await (supabase as any)
-      .from("items")
-      .update({ current_stock: newStock })
-      .eq("id", data.item_id);
-
-    await (supabase as any).from("stock_ledger").insert({
-      company_id: companyId,
+    await addStockLedgerEntry({
       item_id: data.item_id,
       item_code: data.item_code ?? null,
       item_description: data.item_description ?? null,
       transaction_date: created.scrap_date,
       transaction_type: "rejection_writeoff",
       qty_in: 0,
-      qty_out: data.qty_scrapped,
+      qty_out: data.qty_scrapped ?? 0,
       balance_qty: newStock,
       unit_cost: data.cost_per_unit ?? 0,
       total_value: totalValue,
@@ -464,6 +457,11 @@ export async function createScrapEntry(data: Partial<ScrapEntry>): Promise<Scrap
       notes: `Scrap: ${data.scrap_reason ?? ""}`,
       created_by: user?.id ?? null,
     });
+
+    await (supabase as any)
+      .from("items")
+      .update({ current_stock: newStock })
+      .eq("id", data.item_id);
   }
 
   return created;
@@ -526,7 +524,7 @@ export async function fetchScrapStats(): Promise<ScrapStats> {
 }
 
 // ============================================================
-// Production Alerts (finished goods below min_finished_stock)
+// Production Alerts (finished goods below min_stock)
 // ============================================================
 
 export interface ProductionAlert {
@@ -535,7 +533,7 @@ export interface ProductionAlert {
   item_description: string | null;
   item_unit: string | null;
   current_stock: number;
-  min_finished_stock: number;
+  min_stock: number;
   production_batch_size: number;
   shortage: number;
 }
@@ -544,25 +542,25 @@ export async function fetchProductionAlerts(): Promise<ProductionAlert[]> {
   const companyId = await getCompanyId();
   const { data, error } = await (supabase as any)
     .from("items")
-    .select("id, item_code, description, unit, current_stock, min_finished_stock, production_batch_size")
+    .select("id, item_code, description, unit, stock_in_fg_ready, min_stock, production_batch_size")
     .eq("company_id", companyId)
     .eq("item_type", "finished_good")
     .eq("status", "active")
-    .gt("min_finished_stock", 0);
+    .gt("min_stock", 0);
 
   if (error) return [];
 
   return ((data ?? []) as any[])
-    .filter((item: any) => (item.current_stock ?? 0) < (item.min_finished_stock ?? 0))
+    .filter((item: any) => (item.stock_in_fg_ready ?? 0) < (item.min_stock ?? 0))
     .map((item: any) => ({
       item_id: item.id,
       item_code: item.item_code ?? null,
       item_description: item.description ?? null,
       item_unit: item.unit ?? null,
-      current_stock: item.current_stock ?? 0,
-      min_finished_stock: item.min_finished_stock ?? 0,
+      current_stock: item.stock_in_fg_ready ?? 0,
+      min_stock: item.min_stock ?? 0,
       production_batch_size: item.production_batch_size ?? 1,
-      shortage: (item.min_finished_stock ?? 0) - (item.current_stock ?? 0),
+      shortage: (item.min_stock ?? 0) - (item.stock_in_fg_ready ?? 0),
     }));
 }
 

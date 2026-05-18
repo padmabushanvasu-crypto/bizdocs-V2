@@ -130,7 +130,7 @@ export async function issueInvoice(id: string) {
 
     const { data: itemRecord } = await supabase
       .from("items")
-      .select("id, item_code, description, current_stock, stock_finished_goods")
+      .select("id, item_code, description, current_stock")
       .eq("drawing_revision", line.drawing_number)
       .eq("company_id", companyId)
       .maybeSingle();
@@ -138,10 +138,9 @@ export async function issueInvoice(id: string) {
     if (!itemRecord) continue;
     const rec = itemRecord as any;
     const newStock = Math.max(0, (rec.current_stock ?? 0) - qty);
-    const newFinishedGoods = Math.max(0, (rec.stock_finished_goods ?? 0) - qty);
-    await supabase.from("items").update({ current_stock: newStock, stock_finished_goods: newFinishedGoods } as any).eq("id", rec.id);
-    // Phase 13: deduct from free bucket on invoice dispatch
-    await updateStockBucket(rec.id, 'free', -qty).catch(console.error);
+    // Ledger-first per iteration (Scope 1). If a downstream line's ledger
+    // insert fails, earlier lines stay committed and the operator sees the
+    // error mid-loop; transactional all-or-nothing is Scope 2.
     await addStockLedgerEntry({
       item_id: rec.id,
       item_code: rec.item_code,
@@ -161,6 +160,8 @@ export async function issueInvoice(id: string) {
       from_state: "finished_goods",
       to_state: "dispatched",
     });
+    await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
+    await updateStockBucket(rec.id, 'free', -qty);
   }
 }
 

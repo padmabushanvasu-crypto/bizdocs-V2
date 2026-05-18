@@ -54,9 +54,6 @@ export interface Item {
   gst_rate: number;
   min_stock: number;
   current_stock: number;
-  stock_raw_material: number;
-  stock_wip: number;
-  stock_finished_goods: number;
   notes: string | null;
   status: string;
   created_at: string;
@@ -65,7 +62,6 @@ export interface Item {
   min_stock_override: number | null;
   aimed_stock: number;
   parent_item_id: string | null;
-  min_finished_stock: number;
   production_batch_size: number;
   // Phase 13: Stock Buckets
   stock_free: number;
@@ -87,9 +83,6 @@ export interface StockStatusRow {
   item_type: string;
   hsn_sac_code?: string | null;
   current_stock: number;
-  stock_raw_material: number;
-  stock_wip: number;
-  stock_finished_goods: number;
   min_stock: number;
   min_stock_override: number | null;
   aimed_stock: number;
@@ -252,7 +245,7 @@ export async function fetchStockStatus() {
   if (!companyId) return [] as StockStatusRow[];
   const { data, error } = await (supabase as any)
     .from("items")
-    .select("id, item_code, description, unit, item_type, hsn_sac_code, current_stock, stock_raw_material, stock_wip, stock_finished_goods, min_stock, min_stock_override, aimed_stock, standard_cost, parent_item_id, company_id, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, stock_alert_level, min_finished_stock")
+    .select("id, item_code, description, unit, item_type, hsn_sac_code, current_stock, min_stock, min_stock_override, aimed_stock, standard_cost, parent_item_id, company_id, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, stock_alert_level")
     .eq("company_id", companyId)
     .eq("status", "active")
     .order("item_code", { ascending: true });

@@ -95,7 +95,7 @@ async function fetchStockAlertBoard(companyId: string): Promise<{ rows: StockAle
     // Fallback: items table direct query filtered by companyId prop (no hardcoded ID)
     const { data: itemsData, error: itemsError } = await (supabase as any)
       .from("items")
-      .select("id, item_code, description, item_type, current_stock, stock_free, min_stock, aimed_stock")
+      .select("id, item_code, description, item_type, stock_free, min_stock, aimed_stock")
       .eq("company_id", companyId)
       .neq("item_type", "service")
       .neq("item_type", "finished_good")
@@ -104,26 +104,23 @@ async function fetchStockAlertBoard(companyId: string): Promise<{ rows: StockAle
     if (itemsError) throw itemsError;
 
     rawRows = (itemsData ?? [])
-      .filter((i: any) => {
-        const stock = i.stock_free ?? i.current_stock ?? 0;
-        return stock < (i.min_stock ?? 0);
-      })
+      .filter((i: any) => (i.stock_free ?? 0) < (i.min_stock ?? 0))
       .map((i: any) => ({
         ...i,
-        effective_stock: i.stock_free ?? i.current_stock ?? 0,
-        shortage: Math.max(0, (i.min_stock ?? 0) - (i.stock_free ?? i.current_stock ?? 0)),
+        effective_stock: i.stock_free ?? 0,
+        shortage: Math.max(0, (i.min_stock ?? 0) - (i.stock_free ?? 0)),
       }));
     (itemsData ?? []).forEach((i: any) => aimMap.set(i.id, i.aimed_stock ?? 0));
   }
 
-  // At-max-stock count: items where aimed_stock > 0 and current_stock >= aimed_stock
+  // At-max-stock count: items where aimed_stock > 0 and stock_free >= aimed_stock
   const { count: atMaxStockCount } = await (supabase as any)
     .from("items")
     .select("id", { count: "exact", head: true })
     .eq("company_id", companyId)
     .eq("status", "active")
     .gt("aimed_stock", 0)
-    .filter("current_stock", "gte", "aimed_stock");
+    .filter("stock_free", "gte", "aimed_stock");
 
   if (rawRows.length === 0) return { rows: [], atMaxStockCount: atMaxStockCount ?? 0 };
 
@@ -197,7 +194,7 @@ async function fetchStockAlertBoard(companyId: string): Promise<{ rows: StockAle
   // Normalise columns (view: description/effective_stock; items: description/stock_free)
   const enriched: StockAlertBoardRow[] = rawRows
     .map((r: any) => {
-      const stock = r.effective_stock ?? r.stock_free ?? r.current_stock ?? 0;
+      const stock = r.effective_stock ?? r.stock_free ?? 0;
       const minStock = r.min_stock ?? 0;
       const shortage = r.shortage ?? Math.max(0, minStock - stock);
       const aimed = aimMap.get(r.id) ?? r.aimed_stock ?? 0;
