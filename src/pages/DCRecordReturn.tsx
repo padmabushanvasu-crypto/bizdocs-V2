@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { RotateCcw } from "lucide-react";
+import { RotateCcw, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,6 +33,10 @@ interface ReturnRow {
   returning_nos: number;
   returning_kg: number;
   returning_sft: number;
+  // Rejected Now — damaged-on-return; persisted as returned_qty_rejected_*.
+  rejecting_nos: number;
+  rejecting_kg: number;
+  rejecting_sft: number;
   remarks: string;
 }
 
@@ -72,6 +76,9 @@ export default function DCRecordReturn() {
           returning_nos: 0,
           returning_kg: 0,
           returning_sft: 0,
+          rejecting_nos: 0,
+          rejecting_kg: 0,
+          rejecting_sft: 0,
           remarks: "",
         }))
       );
@@ -84,11 +91,14 @@ export default function DCRecordReturn() {
       const row = { ...updated[index] };
 
       if (field === "returning_nos") {
-        row.returning_nos = Math.min(Math.max(0, Number(value)), row.pending_nos);
+        // No upper clamp — allow over-return so the warning row can fire.
+        row.returning_nos = Math.max(0, Number(value));
       } else if (field === "returning_kg") {
-        row.returning_kg = Math.min(Math.max(0, Number(value)), row.pending_kg);
+        row.returning_kg = Math.max(0, Number(value));
       } else if (field === "returning_sft") {
-        row.returning_sft = Math.min(Math.max(0, Number(value)), row.pending_sft);
+        row.returning_sft = Math.max(0, Number(value));
+      } else if (field === "rejecting_nos" || field === "rejecting_kg" || field === "rejecting_sft") {
+        (row as any)[field] = Math.max(0, Number(value));
       } else {
         (row as any)[field] = value;
       }
@@ -112,12 +122,18 @@ export default function DCRecordReturn() {
   const saveMutation = useMutation({
     mutationFn: async () => {
       const returnItems: DCReturnItem[] = rows
-        .filter((r) => r.returning_nos > 0 || r.returning_kg > 0 || r.returning_sft > 0)
+        .filter((r) =>
+          r.returning_nos > 0 || r.returning_kg > 0 || r.returning_sft > 0 ||
+          r.rejecting_nos > 0 || r.rejecting_kg > 0 || r.rejecting_sft > 0
+        )
         .map((r) => ({
           dc_line_item_id: r.dc_line_item_id,
           returned_nos: r.returning_nos,
           returned_kg: r.returning_kg,
           returned_sft: r.returning_sft,
+          rejected_nos: r.rejecting_nos,
+          rejected_kg: r.rejecting_kg,
+          rejected_sft: r.rejecting_sft,
           remarks: r.remarks || undefined,
         }));
 
@@ -194,87 +210,146 @@ export default function DCRecordReturn() {
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Drawing</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Sent</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Prev Ret</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Pending</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Returning Now *</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Rejected Now</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Pending</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Remarks</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row, index) => {
                 const hasPending = row.pending_nos > 0 || row.pending_kg > 0 || row.pending_sft > 0;
+                // Reactive Pending = Sent − Prev Ret − Returning Now (per unit type).
+                // Negative => over-receipt; surfaced in the warning sub-row.
+                const liveNos = row.sent_nos - row.prev_returned_nos - row.returning_nos;
+                const liveKg  = row.sent_kg  - row.prev_returned_kg  - row.returning_kg;
+                const liveSft = row.sent_sft - row.prev_returned_sft - row.returning_sft;
+                const overNos = liveNos < 0;
+                const overKg  = liveKg  < 0;
+                const overSft = liveSft < 0;
+                const anyOver = overNos || overKg || overSft;
+                const overParts: string[] = [];
+                if (overNos) overParts.push(`${Math.abs(liveNos)} nos`);
+                if (overKg)  overParts.push(`${Math.abs(liveKg)} kg`);
+                if (overSft) overParts.push(`${Math.abs(liveSft)} sft`);
                 return (
-                  <tr key={row.dc_line_item_id} className={cn("border-t border-border", !hasPending && "opacity-50")}>
-                    <td className="px-3 py-2 text-sm font-medium">{row.description}</td>
-                    <td className="px-3 py-2 text-sm font-mono">{row.drawing_number || "—"}</td>
-                    <td className="px-3 py-2 text-right text-sm font-mono tabular-nums">
-                      {row.sent_nos > 0 && <div>{row.sent_nos} nos</div>}
-                      {row.sent_kg > 0 && <div>{row.sent_kg} kg</div>}
-                      {row.sent_sft > 0 && <div>{row.sent_sft} sft</div>}
-                    </td>
-                    <td className="px-3 py-2 text-right text-sm font-mono tabular-nums">
-                      {row.prev_returned_nos > 0 && <div>{row.prev_returned_nos} nos</div>}
-                      {row.prev_returned_kg > 0 && <div>{row.prev_returned_kg} kg</div>}
-                      {row.prev_returned_sft > 0 && <div>{row.prev_returned_sft} sft</div>}
-                      {row.prev_returned_nos === 0 && row.prev_returned_kg === 0 && row.prev_returned_sft === 0 && "—"}
-                    </td>
-                    <td className="px-3 py-2 text-right text-sm font-mono tabular-nums">
-                      {row.pending_nos > 0 && <div className="text-amber-600 font-medium">{row.pending_nos} nos</div>}
-                      {row.pending_kg > 0 && <div className="text-amber-600 font-medium">{row.pending_kg} kg</div>}
-                      {row.pending_sft > 0 && <div className="text-amber-600 font-medium">{row.pending_sft} sft</div>}
-                      {!hasPending && <span className="text-emerald-600">✓</span>}
-                    </td>
-                    <td className="px-3 py-2">
-                      {hasPending && (
-                        <div className="space-y-1">
-                          {row.pending_nos > 0 && (
-                            <Input
-                              type="number"
-                              min={0}
-                              max={row.pending_nos}
-                              value={row.returning_nos || ""}
-                              onChange={(e) => updateRow(index, "returning_nos", e.target.value)}
-                              className="h-7 text-sm text-right font-mono w-20"
-                              placeholder="nos"
-                            />
-                          )}
-                          {row.pending_kg > 0 && (
-                            <Input
-                              type="number"
-                              min={0}
-                              max={row.pending_kg}
-                              step="0.01"
-                              value={row.returning_kg || ""}
-                              onChange={(e) => updateRow(index, "returning_kg", e.target.value)}
-                              className="h-7 text-sm text-right font-mono w-20"
-                              placeholder="kg"
-                            />
-                          )}
-                          {row.pending_sft > 0 && (
-                            <Input
-                              type="number"
-                              min={0}
-                              max={row.pending_sft}
-                              step="0.01"
-                              value={row.returning_sft || ""}
-                              onChange={(e) => updateRow(index, "returning_sft", e.target.value)}
-                              className="h-7 text-sm text-right font-mono w-20"
-                              placeholder="sft"
-                            />
-                          )}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-3 py-2">
-                      {hasPending && (
-                        <Input
-                          value={row.remarks}
-                          onChange={(e) => updateRow(index, "remarks", e.target.value)}
-                          className="h-7 text-sm"
-                          placeholder="Optional"
-                        />
-                      )}
-                    </td>
-                  </tr>
+                  <React.Fragment key={row.dc_line_item_id}>
+                    <tr className={cn("border-t border-border", !hasPending && "opacity-50")}>
+                      <td className="px-3 py-2 text-sm font-medium">{row.description}</td>
+                      <td className="px-3 py-2 text-sm font-mono">{row.drawing_number || "—"}</td>
+                      <td className="px-3 py-2 text-right text-sm font-mono tabular-nums">
+                        {row.sent_nos > 0 && <div>{row.sent_nos} nos</div>}
+                        {row.sent_kg > 0 && <div>{row.sent_kg} kg</div>}
+                        {row.sent_sft > 0 && <div>{row.sent_sft} sft</div>}
+                      </td>
+                      <td className="px-3 py-2 text-right text-sm font-mono tabular-nums">
+                        {row.prev_returned_nos > 0 && <div>{row.prev_returned_nos} nos</div>}
+                        {row.prev_returned_kg > 0 && <div>{row.prev_returned_kg} kg</div>}
+                        {row.prev_returned_sft > 0 && <div>{row.prev_returned_sft} sft</div>}
+                        {row.prev_returned_nos === 0 && row.prev_returned_kg === 0 && row.prev_returned_sft === 0 && "—"}
+                      </td>
+                      <td className="px-3 py-2">
+                        {hasPending && (
+                          <div className="space-y-1">
+                            {row.sent_nos > 0 && (
+                              <Input
+                                type="number"
+                                min={0}
+                                value={row.returning_nos || ""}
+                                onChange={(e) => updateRow(index, "returning_nos", e.target.value)}
+                                className={cn("h-7 text-sm text-right font-mono w-20", overNos && "border-red-300 bg-red-50")}
+                                placeholder="nos"
+                              />
+                            )}
+                            {row.sent_kg > 0 && (
+                              <Input
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                value={row.returning_kg || ""}
+                                onChange={(e) => updateRow(index, "returning_kg", e.target.value)}
+                                className={cn("h-7 text-sm text-right font-mono w-20", overKg && "border-red-300 bg-red-50")}
+                                placeholder="kg"
+                              />
+                            )}
+                            {row.sent_sft > 0 && (
+                              <Input
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                value={row.returning_sft || ""}
+                                onChange={(e) => updateRow(index, "returning_sft", e.target.value)}
+                                className={cn("h-7 text-sm text-right font-mono w-20", overSft && "border-red-300 bg-red-50")}
+                                placeholder="sft"
+                              />
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        {hasPending && (
+                          <div className="space-y-1">
+                            {row.sent_nos > 0 && (
+                              <Input
+                                type="number"
+                                min={0}
+                                value={row.rejecting_nos || ""}
+                                onChange={(e) => updateRow(index, "rejecting_nos", e.target.value)}
+                                className="h-7 text-sm text-right font-mono w-20"
+                                placeholder="nos"
+                              />
+                            )}
+                            {row.sent_kg > 0 && (
+                              <Input
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                value={row.rejecting_kg || ""}
+                                onChange={(e) => updateRow(index, "rejecting_kg", e.target.value)}
+                                className="h-7 text-sm text-right font-mono w-20"
+                                placeholder="kg"
+                              />
+                            )}
+                            {row.sent_sft > 0 && (
+                              <Input
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                value={row.rejecting_sft || ""}
+                                onChange={(e) => updateRow(index, "rejecting_sft", e.target.value)}
+                                className="h-7 text-sm text-right font-mono w-20"
+                                placeholder="sft"
+                              />
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right text-sm font-mono tabular-nums">
+                        {row.sent_nos > 0 && <div className={overNos ? "text-red-600 font-semibold" : "text-amber-600 font-medium"}>{liveNos} nos</div>}
+                        {row.sent_kg > 0 && <div className={overKg ? "text-red-600 font-semibold" : "text-amber-600 font-medium"}>{liveKg} kg</div>}
+                        {row.sent_sft > 0 && <div className={overSft ? "text-red-600 font-semibold" : "text-amber-600 font-medium"}>{liveSft} sft</div>}
+                        {!hasPending && row.sent_nos === 0 && row.sent_kg === 0 && row.sent_sft === 0 && <span className="text-emerald-600">✓</span>}
+                      </td>
+                      <td className="px-3 py-2">
+                        {hasPending && (
+                          <Input
+                            value={row.remarks}
+                            onChange={(e) => updateRow(index, "remarks", e.target.value)}
+                            className="h-7 text-sm"
+                            placeholder="Optional"
+                          />
+                        )}
+                      </td>
+                    </tr>
+                    {anyOver && (
+                      <tr className="bg-red-50/70">
+                        <td colSpan={8} className="px-3 py-1.5 text-xs text-red-700">
+                          <AlertTriangle className="h-3.5 w-3.5 inline-block mr-1.5 -mt-0.5" />
+                          Over-receipt by {overParts.join(", ")} — please reach out to the purchase team to edit the ordered quantities to match the additional quantities.
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 );
               })}
             </tbody>

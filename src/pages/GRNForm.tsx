@@ -20,6 +20,7 @@ import {
   fetchOpenPOs,
   fetchPOLineItemsForGRN,
   fetchDCReceiptSummary,
+  fetchPOReceiptSummary,
   recordGRNAndUpdatePO,
   fetchGRN,
   type GRNLineItem,
@@ -35,6 +36,7 @@ interface LineItemState extends GRNLineItem {
   expanded?: boolean;
   // Stage 1 local state
   s1_received_now: number;
+  s1_rejected_now: number;
   s1_identity_match: boolean | null;
   s1_mismatch_remarks: string;
   s1_checked_by: string;
@@ -44,6 +46,11 @@ interface LineItemState extends GRNLineItem {
   s1_identity_matched_qty: number;
   s1_identity_not_matched_qty: number;
   s1_admin_override: boolean;
+  // Live aggregates refetched on form mount (excludes this GRN in edit mode).
+  // previously_received_qty (inherited from GRNLineItem) is the snapshot at
+  // creation time; prev_accepted_live is a runtime-only field — Prev Accepted
+  // is not snapshotted on the row.
+  prev_accepted_live: number;
   // Jig / mould return confirmation (DC-GRN only)
   jig_confirmed?: boolean;
   // Stage 2 local state
@@ -84,6 +91,8 @@ function toLineState(item: GRNLineItem, idx: number): LineItemState {
       ? a.identity_not_matched_qty
       : (a.item_identity_match === false ? (a.received_now ?? item.receiving_now ?? 0) : 0),
     s1_admin_override: false,
+    s1_rejected_now: a.stage1_rejected_qty ?? 0,
+    prev_accepted_live: 0,
     jig_confirmed: a.jig_confirmed ?? false,
     s2_accepted_qty: a.accepted_qty ?? item.accepted_quantity ?? 0,
     s2_rejected_qty: a.rejected_qty ?? item.rejected_quantity ?? 0,
@@ -114,11 +123,16 @@ function GrnLineItemRow({
 }) {
   const orderedQty = (item as any).ordered_qty ?? item.po_quantity ?? 0;
   const prevReceived = (item as any).previously_received_qty ?? item.previously_received ?? 0;
-  const pendingQty = Math.max(0, orderedQty - prevReceived);
-  const exceedsPending = item.s1_received_now > 0 && pendingQty > 0 && item.s1_received_now > pendingQty && !item.s1_admin_override;
+  const prevAccepted = item.prev_accepted_live ?? 0;
+  // Reactive Pending = Ordered − Prev Received − Receiving Now. Allowed to go
+  // negative (over-receipt); the warning row below surfaces the magnitude.
+  // Rejected Now does NOT subtract — rejected units were physically received.
+  const pendingQty = orderedQty - prevReceived - item.s1_received_now;
+  const overReceipt = pendingQty < 0 && !item.s1_admin_override;
+  const overReceiptBy = overReceipt ? Math.abs(pendingQty) : 0;
   const hasJigs = !!(jigs && jigs.length > 0);
   // Reactive: recomputes on every s1_received_now change because LineItemState is React state.
-  const isFinal = hasJigs && isFinalBatch(item as any, item.s1_received_now);
+  const isFinal = hasJigs && isFinalBatch(item as any, item.s1_received_now, item.s1_rejected_now ?? 0);
   const isPartial = hasJigs && item.s1_received_now > 0 && !isFinal;
 
   return (
@@ -133,13 +147,12 @@ function GrnLineItemRow({
         </td>
         <td className="px-3 py-2 text-right font-mono text-sm tabular-nums text-slate-500">{orderedQty}</td>
         <td className="px-3 py-2 text-right font-mono text-sm tabular-nums text-slate-400">{prevReceived}</td>
-        <td className="px-3 py-2 text-right font-mono text-sm tabular-nums text-amber-600 font-medium">{pendingQty}</td>
+        <td className="px-3 py-2 text-right font-mono text-sm tabular-nums text-slate-400">{prevAccepted}</td>
         <td className="px-3 py-2">
           <div className="flex items-center gap-1.5 justify-end">
             <input
               type="number"
               min={0}
-              max={item.s1_admin_override ? undefined : (pendingQty > 0 ? pendingQty : undefined)}
               value={item.s1_received_now || ""}
               onChange={(e) => {
                 const v = Math.max(0, Number(e.target.value));
@@ -147,20 +160,37 @@ function GrnLineItemRow({
               }}
               className={cn(
                 "w-24 text-right border rounded px-2 py-1 text-sm font-mono focus:outline-none focus:ring-2",
-                exceedsPending
+                overReceipt
                   ? "border-red-300 bg-red-50 focus:ring-red-300"
                   : "border-slate-200 focus:ring-blue-400"
               )}
             />
-            {exceedsPending && <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />}
+            {overReceipt && <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />}
           </div>
         </td>
+        <td className="px-3 py-2">
+          <input
+            type="number"
+            min={0}
+            value={item.s1_rejected_now || ""}
+            onChange={(e) => {
+              const v = Math.max(0, Number(e.target.value));
+              onChange(index, { s1_rejected_now: v });
+            }}
+            className="w-24 text-right border border-slate-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+        </td>
+        <td className={cn(
+          "px-3 py-2 text-right font-mono text-sm tabular-nums font-medium",
+          overReceipt ? "text-red-600" : "text-amber-600",
+        )}>{pendingQty}</td>
         <td className="px-3 py-2 text-slate-500 text-xs">{item.unit}</td>
       </tr>
-      {exceedsPending && (
+      {overReceipt && (
         <tr className="bg-red-50/60">
-          <td colSpan={7} className="px-3 py-1.5 text-xs text-red-700">
-            Received ({item.s1_received_now}) exceeds pending ({pendingQty}).
+          <td colSpan={9} className="px-3 py-1.5 text-xs text-red-700">
+            <AlertTriangle className="h-3.5 w-3.5 inline-block mr-1.5 -mt-0.5" />
+            Over-receipt by {overReceiptBy} units — please reach out to the purchase team to edit the ordered quantities to match the additional quantities.
             {isAdmin && (
               <button
                 type="button"
@@ -175,7 +205,7 @@ function GrnLineItemRow({
       )}
       {isPartial && (
         <tr className="bg-slate-50/80 border-b border-slate-100">
-          <td colSpan={7} className="px-3 py-1.5 text-xs text-slate-600">
+          <td colSpan={9} className="px-3 py-1.5 text-xs text-slate-600">
             <Info className="h-3.5 w-3.5 inline-block mr-1.5 -mt-0.5 text-slate-400" />
             Partial receipt — jig return confirmation will be required on the final batch.
           </td>
@@ -183,7 +213,7 @@ function GrnLineItemRow({
       )}
       {isFinal && (
         <tr className="bg-amber-50/60 border-b border-amber-100">
-          <td colSpan={7} className="px-3 py-2">
+          <td colSpan={9} className="px-3 py-2">
             <div className="flex flex-col gap-1.5">
               {jigs!.map((jig) => (
                 <label
@@ -377,6 +407,52 @@ function GRNFormInner({ defaultGrnType }: Props) {
     }
   }, [existingGrn]);
 
+  // Edit mode: refetch live prev_received / prev_accepted aggregates and patch
+  // each line in place, excluding this GRN's own contribution so the math
+  // doesn't double-count what we're editing. Runs after line_items are loaded.
+  useEffect(() => {
+    if (!isExistingGrn || !existingGrn) return;
+    const g = existingGrn as any;
+    const grnTypeLoaded = (g.grn_type ?? 'po_grn') as GrnType;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (grnTypeLoaded === 'po_grn' && g.po_id) {
+          const summary = await fetchPOReceiptSummary(g.po_id, editId ?? null);
+          if (cancelled) return;
+          setLineItems(prev => prev.map(li => {
+            const key = li.po_line_item_id;
+            if (!key) return li;
+            const entry = summary[key];
+            if (!entry) return li;
+            return {
+              ...li,
+              previously_received_qty: entry.received,
+              prev_accepted_live: entry.accepted,
+            };
+          }));
+        } else if (grnTypeLoaded === 'dc_grn' && g.linked_dc_id) {
+          const summary = await fetchDCReceiptSummary(g.linked_dc_id, editId ?? null);
+          if (cancelled) return;
+          setLineItems(prev => prev.map(li => {
+            const key = (li as any).dc_line_item_id;
+            if (!key) return li;
+            const entry = summary[key];
+            if (!entry) return li;
+            return {
+              ...li,
+              previously_received_qty: entry.received,
+              prev_accepted_live: entry.accepted,
+            };
+          }));
+        }
+      } catch {
+        // non-fatal — keep snapshot values
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isExistingGrn, existingGrn, editId]);
+
   useEffect(() => {
     if (preselectedPOId && openPOs && !isExistingGrn) {
       const po = openPOs.find((p: any) => p.id === preselectedPOId);
@@ -397,7 +473,14 @@ function GRNFormInner({ defaultGrnType }: Props) {
     setSelectedPO(po);
     setPOOpen(false);
     setVendorName(po.vendor_name ?? '');
-    const poItems = await fetchPOLineItemsForGRN(po.id);
+    // Fetch PO lines + live receipt/accepted aggregates in parallel.
+    // The PO line itself carries `received_quantity` (running total via trigger);
+    // we still call fetchPOReceiptSummary to populate prev_accepted_live and
+    // to use the same exclusion semantics in edit mode.
+    const [poItems, prevSummary] = await Promise.all([
+      fetchPOLineItemsForGRN(po.id),
+      fetchPOReceiptSummary(po.id, editId ?? null),
+    ]);
     const pendingItems = poItems.filter((item: any) => {
       const pending = (item.quantity || 0) - (item.received_quantity || 0);
       return pending > 0;
@@ -410,6 +493,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
     setFullyReceived(false);
     const items: LineItemState[] = pendingItems.map((item: any, idx: number) => {
         const prevReceived = item.received_quantity || 0;
+        const prevAccepted = prevSummary[item.id]?.accepted ?? 0;
         const pending = (item.quantity || 0) - prevReceived;
         const base: GRNLineItem = {
           serial_number: idx + 1,
@@ -430,6 +514,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
         };
         const state = toLineState(base, idx);
         state.s1_received_now = pending;
+        state.prev_accepted_live = prevAccepted;
         return state;
       });
     setLineItems(items);
@@ -447,10 +532,10 @@ function GRNFormInner({ defaultGrnType }: Props) {
           .select("*")
           .eq("dc_id", dc.id)
           .order("serial_number", { ascending: true }),
-        fetchDCReceiptSummary(dc.id),
+        fetchDCReceiptSummary(dc.id, editId ?? null),
       ]);
       const pendingDCItems = (dcItems ?? []).filter((item: any) => {
-          const alreadyReceived = prevReceivedMap[item.id] ?? 0;
+          const alreadyReceived = prevReceivedMap[item.id]?.received ?? 0;
           return (item.quantity || 0) - alreadyReceived > 0;
         });
       if (pendingDCItems.length === 0) {
@@ -460,7 +545,8 @@ function GRNFormInner({ defaultGrnType }: Props) {
       }
       setFullyReceived(false);
       const items: LineItemState[] = pendingDCItems.map((item: any, idx: number) => {
-          const alreadyReceived = prevReceivedMap[item.id] ?? 0;
+          const alreadyReceived = prevReceivedMap[item.id]?.received ?? 0;
+          const prevAccepted = prevReceivedMap[item.id]?.accepted ?? 0;
           const pending = Math.max(0, (item.quantity || 0) - alreadyReceived);
           const base: GRNLineItem = {
             serial_number: idx + 1,
@@ -478,6 +564,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
           };
           const state = toLineState(base, idx);
           state.s1_received_now = pending;
+          state.prev_accepted_live = prevAccepted;
           (state as any).ordered_qty = item.quantity || 0;
           (state as any).previously_received_qty = alreadyReceived;
           (state as any).dc_line_item_id = item.id;
@@ -594,6 +681,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
           rejection_reason: undefined,
           rejection_action: null,
           dc_line_item_id: (i as any).dc_line_item_id || null,
+          stage1_rejected_qty: i.s1_rejected_now > 0 ? i.s1_rejected_now : null,
         }));
 
       return await recordGRNAndUpdatePO({ grn: grnData, lineItems: items });
@@ -647,7 +735,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
       const unconfirmed = lineItems.filter((item) => {
         const jigs = jigsByDrawing[item.drawing_number ?? ''] ?? [];
         if (jigs.length === 0) return false;
-        if (!isFinalBatch(item as any, item.s1_received_now)) return false;
+        if (!isFinalBatch(item as any, item.s1_received_now, item.s1_rejected_now ?? 0)) return false;
         return !item.jig_confirmed;
       });
       if (unconfirmed.length > 0) {
@@ -934,8 +1022,10 @@ function GRNFormInner({ defaultGrnType }: Props) {
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-20">Ordered</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-20">Prev Rcvd</th>
-                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-20">Pending</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-20">Prev Accepted</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-32">Receiving Now *</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-28">Rejected Now</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-20">Pending</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-16">Unit</th>
                 </tr>
               </thead>

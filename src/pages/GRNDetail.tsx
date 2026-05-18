@@ -20,6 +20,8 @@ import {
   fetchGRNQCMeasurements,
   saveGRNQCMeasurements,
   saveGRNScrapItems,
+  fetchDCReceiptSummary,
+  fetchPOReceiptSummary,
   type QuantitativeLineData,
   type QualitativeLineData,
   type InspectionMethod,
@@ -110,8 +112,16 @@ interface S1Line {
   received_now_2?: number | null;
   // Carried through so saveStage1 can stamp returned_qty_2 back onto dc_line_items
   dc_line_item_id?: string | null;
+  po_line_item_id?: string | null;
   // For DC-return GRNs — the job-work stage / process this line was sent out for
   nature_of_process?: string | null;
+  // Stage 1 visual rejection by Inward Team — independent of Stage 2 rejection.
+  stage1_rejected_qty: number;
+  // Live aggregates refetched on mount (excludes this GRN). previously_received
+  // here is the live aggregate across prior GRNs for this DC/PO line; the
+  // snapshot lives in pending_quantity. prev_accepted is Stage-2 sum.
+  prev_received_live: number;
+  prev_accepted_live: number;
 }
 
 // Normalise jigs_sent which may be a string or a JSON array (JSONB column)
@@ -126,7 +136,11 @@ function parseJigsSent(val: string | string[] | null | undefined): string | null
 // is the operator's live input. Reuses the DC-receipt utility — single source
 // of truth shared with GRNForm.
 function isS1LineFinalBatch(l: S1Line): boolean {
-  return isFinalBatch({ po_quantity: l.pending_quantity, previously_received: 0 }, l.received_qty);
+  return isFinalBatch(
+    { po_quantity: l.pending_quantity, previously_received: 0 },
+    l.received_qty,
+    l.stage1_rejected_qty ?? 0,
+  );
 }
 
 // ── QC Measurement row state ───────────────────────────────────────────────────
@@ -249,15 +263,17 @@ function Stage1Table({
             <th className="text-left px-3 py-2.5 font-semibold w-8">#</th>
             <th className="text-left px-3 py-2.5 font-semibold">Item Code</th>
             <th className="text-left px-3 py-2.5 font-semibold">Description</th>
-            <th className="text-right px-3 py-2.5 font-semibold w-24">Ordered</th>
-            <th className="text-right px-3 py-2.5 font-semibold w-32">Received Now *</th>
-            <th className="text-right px-3 py-2.5 font-semibold w-24">Pending</th>
-            <th className="text-right px-3 py-2.5 font-semibold w-32">Matching Units</th>
-            <th className="text-right px-3 py-2.5 font-semibold w-28">Not Matched</th>
-            <th className="text-center px-3 py-2.5 font-semibold w-36">Condition</th>
-            <th className="text-center px-3 py-2.5 font-semibold w-24">Packing OK</th>
+            <th className="text-right px-3 py-2.5 font-semibold w-20">Ordered</th>
+            <th className="text-right px-3 py-2.5 font-semibold w-20">Prev Rcvd</th>
+            <th className="text-right px-3 py-2.5 font-semibold w-20">Prev Accepted</th>
+            <th className="text-right px-3 py-2.5 font-semibold w-28">Received Now *</th>
+            <th className="text-right px-3 py-2.5 font-semibold w-24">Rejected Now</th>
+            <th className="text-right px-3 py-2.5 font-semibold w-20">Pending</th>
+            <th className="text-right px-3 py-2.5 font-semibold w-28" title="Matching / Not matched">Match / Not</th>
+            <th className="text-center px-3 py-2.5 font-semibold w-32">Condition</th>
+            <th className="text-center px-3 py-2.5 font-semibold w-20">Packing</th>
             <th className="text-left px-3 py-2.5 font-semibold">Notes</th>
-            <th className="text-center px-3 py-2.5 font-semibold w-32">Product Identity</th>
+            <th className="text-center px-3 py-2.5 font-semibold w-28">Product Identity</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-blue-50">
@@ -265,7 +281,12 @@ function Stage1Table({
             const isOverQty = overQtyIds.includes(line.id);
             const isWithinTolerance = withinToleranceIds.includes(line.id);
             const unit = line.unit || "NOS";
-            const pending = Math.max(0, line.pending_quantity - line.received_qty);
+            // Reactive Pending = Ordered − Prev Received − Receiving Now.
+            // Allowed to go negative; over-receipt warning row surfaces it.
+            // Rejected Now does NOT subtract — rejected units were physically received.
+            const pending = line.po_quantity - line.prev_received_live - line.received_qty;
+            const overReceipt = pending < 0;
+            const overReceiptBy = overReceipt ? Math.abs(pending) : 0;
             const nonMatching = Math.max(0, line.received_qty - line.matching_units);
             const showSubRow = line.received_qty > 0 && nonMatching > 0;
             const altOrdered = Number(line.ordered_qty_2 ?? 0);
@@ -300,6 +321,16 @@ function Stage1Table({
                   <td className="px-3 py-2 text-right tabular-nums text-slate-500">
                     <span className="font-mono">{line.po_quantity}</span>
                     <span className="text-xs text-muted-foreground ml-1">{unit}</span>
+                  </td>
+
+                  {/* Prev Received — live aggregate, excludes this GRN */}
+                  <td className="px-3 py-2 text-right tabular-nums text-slate-400">
+                    <span className="font-mono">{formatNumber(line.prev_received_live)}</span>
+                  </td>
+
+                  {/* Prev Accepted — live aggregate of Stage 2 accepted_qty */}
+                  <td className="px-3 py-2 text-right tabular-nums text-slate-400">
+                    <span className="font-mono">{formatNumber(line.prev_accepted_live)}</span>
                   </td>
 
                   {/* Received Now — input + muted unit suffix */}
@@ -338,18 +369,34 @@ function Stage1Table({
                     )}
                   </td>
 
-                  {/* Pending — auto, read-only, muted */}
-                  <td className="px-3 py-2 text-right tabular-nums text-slate-400">
-                    <span className="font-mono">{formatNumber(pending)}</span>
-                    <span className="text-xs text-muted-foreground ml-1">{unit}</span>
+                  {/* Rejected Now — Stage 1 visual rejection input */}
+                  <td className="px-3 py-2">
+                    <input
+                      type="number"
+                      className="w-20 text-right border border-slate-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                      value={line.stage1_rejected_qty || ""}
+                      min={0}
+                      disabled={disabled}
+                      onChange={(e) => {
+                        const v = Math.max(0, Number(e.target.value));
+                        onChange(idx, "stage1_rejected_qty", v);
+                      }}
+                    />
                   </td>
 
-                  {/* Matching Units — user input, default = received_qty */}
-                  <td className="px-3 py-2">
-                    <div className="flex items-center justify-end gap-1.5">
+                  {/* Pending — reactive Ordered − Prev Rcvd − Receiving Now */}
+                  <td className={`px-3 py-2 text-right tabular-nums font-mono font-medium ${overReceipt ? "text-red-600" : "text-slate-400"}`}>
+                    <span>{formatNumber(pending)}</span>
+                    <span className="text-xs text-muted-foreground ml-1 font-sans font-normal">{unit}</span>
+                  </td>
+
+                  {/* Match / Not Matched — collapsed cell with inline edit + breakdown */}
+                  <td className="px-3 py-2"
+                      title={`Matching: ${line.matching_units} · Not matched: ${nonMatching}`}>
+                    <div className="flex items-center justify-end gap-1">
                       <input
                         type="number"
-                        className="w-20 text-right border border-slate-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                        className="w-14 text-right border border-slate-200 rounded px-1.5 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
                         value={line.received_qty === 0 ? "" : line.matching_units}
                         min={0}
                         max={line.received_qty}
@@ -369,20 +416,11 @@ function Stage1Table({
                           }
                         }}
                       />
-                      <span className="text-xs text-muted-foreground ml-1 shrink-0">{unit}</span>
+                      <span className="text-xs text-slate-400">/</span>
+                      <span className={`text-sm font-mono tabular-nums ${nonMatching > 0 ? "text-red-500 font-semibold" : "text-slate-300"}`}>
+                        {nonMatching > 0 ? nonMatching : "—"}
+                      </span>
                     </div>
-                  </td>
-
-                  {/* Non-Matching Units — auto, read-only */}
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {nonMatching > 0 ? (
-                      <>
-                        <span className="font-mono text-red-500 font-semibold">{nonMatching}</span>
-                        <span className="text-xs text-muted-foreground ml-1">{unit}</span>
-                      </>
-                    ) : (
-                      <span className="text-slate-300">—</span>
-                    )}
                   </td>
 
                   {/* Condition */}
@@ -445,10 +483,20 @@ function Stage1Table({
                   </td>
                 </tr>
 
+                {/* Over-receipt warning row — Pending < 0 (received exceeds ordered minus prior) */}
+                {overReceipt && (
+                  <tr className="bg-red-50/70">
+                    <td colSpan={14} className="px-4 py-1.5 text-xs text-red-700">
+                      <AlertTriangle className="h-3.5 w-3.5 inline-block mr-1.5 -mt-0.5" />
+                      Over-receipt by {overReceiptBy} units — please reach out to the purchase team to edit the ordered quantities to match the additional quantities.
+                    </td>
+                  </tr>
+                )}
+
                 {/* Alt-qty sub-row — appears only when the linked PO/DC line has Alt. Qty set */}
                 {showAltRow && (
                   <tr className="bg-slate-50/60 dark:bg-[#0a0e1a]/60">
-                    <td colSpan={12} className="px-4 py-2">
+                    <td colSpan={14} className="px-4 py-2">
                       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
                         <div className="text-slate-600 dark:text-slate-300">
                           <span className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 dark:text-slate-400 mr-2">Alt. Qty Ordered</span>
@@ -481,7 +529,7 @@ function Stage1Table({
                 {/* Sub-row — appears only when non-matching units > 0 */}
                 {showSubRow && (
                   <tr className={line.matching_units === 0 ? "bg-red-50/80" : "bg-amber-50/80"}>
-                    <td colSpan={12} className="px-4 py-3">
+                    <td colSpan={14} className="px-4 py-3">
                       <div className="flex flex-wrap gap-4 items-start">
                         {line.matching_units === 0 && (
                           <p className="w-full text-xs font-semibold text-red-700">
@@ -1446,7 +1494,12 @@ export default function GRNDetail() {
           unit_2:               a.unit_2 ?? null,
           received_now_2:       a.received_now_2 ?? null,
           dc_line_item_id:      a.dc_line_item_id ?? null,
+          po_line_item_id:      a.po_line_item_id ?? null,
           nature_of_process:    a.nature_of_process ?? null,
+          stage1_rejected_qty:  a.stage1_rejected_qty ?? 0,
+          // Snapshots; overwritten by the refetch effect below.
+          prev_received_live:   a.previously_received_qty ?? a.previously_received ?? 0,
+          prev_accepted_live:   0,
         };
       })
     );
@@ -1523,6 +1576,43 @@ export default function GRNDetail() {
     setScrapReturned(g.scrap_returned ?? false);
     setScrapNotes(g.scrap_notes ?? "");
   }, [grn]);
+
+  // Refetch live per-line aggregates (excluding this GRN) and patch S1 rows.
+  // Snapshot fields on grn_line_items are frozen at GRN creation; this gives
+  // the operator the up-to-the-second view across all sibling GRNs.
+  useEffect(() => {
+    if (!grn || !id) return;
+    const g = grn as any;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (g.grn_type === 'po_grn' && g.po_id) {
+          const summary = await fetchPOReceiptSummary(g.po_id, id);
+          if (cancelled) return;
+          setS1Lines(prev => prev.map(l => {
+            const key = l.po_line_item_id;
+            if (!key) return l;
+            const e = summary[key];
+            if (!e) return l;
+            return { ...l, prev_received_live: e.received, prev_accepted_live: e.accepted };
+          }));
+        } else if ((g.grn_type === 'dc_grn') && g.linked_dc_id) {
+          const summary = await fetchDCReceiptSummary(g.linked_dc_id, id);
+          if (cancelled) return;
+          setS1Lines(prev => prev.map(l => {
+            const key = l.dc_line_item_id ?? null;
+            if (!key) return l;
+            const e = summary[key];
+            if (!e) return l;
+            return { ...l, prev_received_live: e.received, prev_accepted_live: e.accepted };
+          }));
+        }
+      } catch {
+        // non-fatal — snapshot values remain
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [grn, id]);
 
   // ── Draft persistence — Stage 1 + Stage 2 (per-GRN key) ──────────────────
   // Survives accidental tab close / route nav / token refresh while the
@@ -1723,6 +1813,7 @@ export default function GRNDetail() {
           over_receipt_qty:     tier?.tier === "within_tolerance" ? (tier as any).excess : null,
           received_now_2:       (l.ordered_qty_2 ?? 0) > 0 ? (l.received_now_2 ?? null) : null,
           dc_line_item_id:      l.dc_line_item_id ?? null,
+          stage1_rejected_qty:  l.stage1_rejected_qty > 0 ? l.stage1_rejected_qty : null,
         };
       });
 
@@ -2594,8 +2685,31 @@ export default function GRNDetail() {
                       const item = s1Lines.find((l) => l.id === nc.lineItemId);
                       const unit = (grn.line_items ?? []).find((li) => li.id === nc.lineItemId)?.unit ?? "";
                       if (!item) return null;
+                      const ordered = item.po_quantity;
+                      const prevRcvd = item.prev_received_live;
+                      const prevAcc = item.prev_accepted_live;
+                      const thisReceived = item.received_qty;
+                      const thisRejected = Number(nc.non_conforming_qty ?? 0);
+                      const pendingS2 = ordered - prevRcvd - thisReceived;
+                      const overReceiptS2 = pendingS2 < 0;
                       return (
                         <div key={nc.lineItemId} className="flex flex-col gap-2 border-b border-amber-100 pb-3 last:border-b-0 last:pb-0">
+                          {/* Per-line info badge row — context for the QC inspector */}
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 border-b border-amber-100 pb-2">
+                            <span>Ordered: <strong className="text-slate-700 font-mono">{formatNumber(ordered)} {unit}</strong></span>
+                            <span className="text-slate-300">·</span>
+                            <span>Prev Rcvd: <strong className="text-slate-700 font-mono">{formatNumber(prevRcvd)}</strong></span>
+                            <span className="text-slate-300">·</span>
+                            <span>Prev Accepted: <strong className="text-slate-700 font-mono">{formatNumber(prevAcc)}</strong></span>
+                            <span className="text-slate-300">·</span>
+                            <span>This GRN: <strong className="text-slate-700 font-mono">{formatNumber(thisReceived)}</strong> received, <strong className="text-slate-700 font-mono">{formatNumber(thisRejected)}</strong> rejected</span>
+                          </div>
+                          {overReceiptS2 && (
+                            <div className="flex items-start gap-2 px-2 py-1.5 rounded bg-red-50 border border-red-200 text-xs text-red-700">
+                              <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                              <span>Over-receipt by {Math.abs(pendingS2)} units — please reach out to the purchase team to edit the ordered quantities to match the additional quantities.</span>
+                            </div>
+                          )}
                           <div className="flex flex-wrap items-center gap-3 text-xs">
                             <span className="font-mono text-slate-500">{item.item_code || "—"}</span>
                             <span className="font-medium text-slate-700">{item.description}</span>

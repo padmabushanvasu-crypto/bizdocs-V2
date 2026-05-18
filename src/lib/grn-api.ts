@@ -76,6 +76,9 @@ export interface GRNLineItem {
   qc_notes?: string | null;
   // Jig / mould return confirmation (DC-GRN only)
   jig_confirmed?: boolean;
+  // Stage 1 visual rejection (Inward Team) — independent of Stage 2 rejected_qty
+  // which is derived from QC measurements + disposition. NULL if not recorded.
+  stage1_rejected_qty?: number | null;
 }
 
 export interface GRN {
@@ -350,6 +353,7 @@ export async function createGRN({ grn, lineItems }: CreateGRNData) {
       replacement_cycle: item.replacement_cycle || 1,
       is_replacement: item.is_replacement || false,
       jig_confirmed: item.jig_confirmed ?? false,
+      stage1_rejected_qty: item.stage1_rejected_qty ?? null,
     }));
     const { error: itemsError } = await supabase.from("grn_line_items").insert(itemsToInsert as any);
     if (itemsError) throw itemsError;
@@ -834,7 +838,7 @@ export async function createGrnFromDC(data: CreateGrnFromDCData): Promise<GRN> {
 
   // Build list of items that still have pending quantity — skip fully-received lines
   const pendingItems = (dcItems ?? []).map((item: any) => {
-    const prevReceived = receiptSummary[item.id as string] ?? 0;
+    const prevReceived = receiptSummary[item.id as string]?.received ?? 0;
     const pendingQty = Math.max(0, (item.quantity ?? 0) - prevReceived);
     return { item, prevReceived, pendingQty };
   }).filter(({ pendingQty }) => pendingQty > 0);
@@ -1030,6 +1034,8 @@ export interface QuantitativeLineData {
   mismatch_disposition?: string | null;
   over_receipt_qty?: number | null;
   received_now_2?: number | null;
+  // Stage 1 visual rejection by the Inward Team (independent of Stage 2 QC).
+  stage1_rejected_qty?: number | null;
   // dc_line_item_id is needed when GRN is a DC return so the alt
   // returned quantity can also be written back to dc_line_items.returned_qty_2.
   dc_line_item_id?: string | null;
@@ -1066,6 +1072,7 @@ export async function saveQuantitativeStage(
       over_receipt_qty: line.over_receipt_qty ?? null,
       received_now_2: line.received_now_2 ?? null,
       jig_confirmed: jigReturnConfirmed ? jigReturnConfirmed.has(line.id) : false,
+      stage1_rejected_qty: line.stage1_rejected_qty ?? null,
     };
     const { error } = await (supabase as any)
       .from('grn_line_items')
@@ -1341,30 +1348,117 @@ export async function saveQualityStage(
   }
 }
 
+/** Per-line aggregate across all non-cancelled / non-deleted prior GRNs. */
+export interface ReceiptSummaryEntry {
+  received: number;
+  accepted: number;
+}
+
 /**
- * Returns a map of { dc_line_item_id → total_received_now } across all
- * non-deleted GRNs that were created against the given DC. Used to
- * compute previously_received quantities when creating a new DC-GRN.
+ * Returns a map of { dc_line_item_id → { received, accepted } } across all
+ * non-deleted, non-cancelled GRNs that were created against the given DC.
+ * Pass excludeGrnId to skip the current GRN (edit-mode prevents double-counting).
+ *
+ * `received` sums Stage 1's received_qty (with fallback to received_now /
+ * receiving_now for pre-Stage-1 rows). `accepted` sums Stage 2's accepted_qty.
  */
-export async function fetchDCReceiptSummary(dcId: string): Promise<Record<string, number>> {
-  const { data: grns } = await (supabase as any)
+export async function fetchDCReceiptSummary(
+  dcId: string,
+  excludeGrnId?: string | null,
+): Promise<Record<string, ReceiptSummaryEntry>> {
+  let grnsQuery = (supabase as any)
     .from('grns')
     .select('id')
     .eq('linked_dc_id', dcId)
-    .neq('status', 'deleted');
+    .not('status', 'in', '("deleted","cancelled")');
+  if (excludeGrnId) grnsQuery = grnsQuery.neq('id', excludeGrnId);
+  const { data: grns } = await grnsQuery;
   if (!grns?.length) return {};
   const grnIds = (grns as any[]).map((g: any) => g.id);
   const { data: items } = await (supabase as any)
     .from('grn_line_items')
-    .select('dc_line_item_id, received_now, receiving_now')
+    .select('dc_line_item_id, received_qty, received_now, receiving_now, accepted_qty, accepted_quantity')
     .in('grn_id', grnIds);
-  const summary: Record<string, number> = {};
+  const summary: Record<string, ReceiptSummaryEntry> = {};
   for (const item of (items ?? []) as any[]) {
     const key: string | null = item.dc_line_item_id;
     if (!key) continue;
-    summary[key] = (summary[key] ?? 0) + (item.received_now ?? item.receiving_now ?? 0);
+    const received = Number(item.received_qty ?? item.received_now ?? item.receiving_now ?? 0) || 0;
+    const accepted = Number(item.accepted_qty ?? item.accepted_quantity ?? 0) || 0;
+    if (!summary[key]) summary[key] = { received: 0, accepted: 0 };
+    summary[key].received += received;
+    summary[key].accepted += accepted;
   }
   return summary;
+}
+
+/**
+ * Returns a map of { po_line_item_id → { received, accepted } } across all
+ * non-deleted, non-cancelled GRNs against the given PO. Same exclusion
+ * semantics as fetchDCReceiptSummary.
+ */
+export async function fetchPOReceiptSummary(
+  poId: string,
+  excludeGrnId?: string | null,
+): Promise<Record<string, ReceiptSummaryEntry>> {
+  let grnsQuery = (supabase as any)
+    .from('grns')
+    .select('id')
+    .eq('po_id', poId)
+    .not('status', 'in', '("deleted","cancelled")');
+  if (excludeGrnId) grnsQuery = grnsQuery.neq('id', excludeGrnId);
+  const { data: grns } = await grnsQuery;
+  if (!grns?.length) return {};
+  const grnIds = (grns as any[]).map((g: any) => g.id);
+  const { data: items } = await (supabase as any)
+    .from('grn_line_items')
+    .select('po_line_item_id, received_qty, received_now, receiving_now, accepted_qty, accepted_quantity')
+    .in('grn_id', grnIds);
+  const summary: Record<string, ReceiptSummaryEntry> = {};
+  for (const item of (items ?? []) as any[]) {
+    const key: string | null = item.po_line_item_id;
+    if (!key) continue;
+    const received = Number(item.received_qty ?? item.received_now ?? item.receiving_now ?? 0) || 0;
+    const accepted = Number(item.accepted_qty ?? item.accepted_quantity ?? 0) || 0;
+    if (!summary[key]) summary[key] = { received: 0, accepted: 0 };
+    summary[key].received += received;
+    summary[key].accepted += accepted;
+  }
+  return summary;
+}
+
+/** Per-DC-line totals for the direct DCRecordReturn flow (does NOT go through
+ *  grn_line_items). Reads the snapshot columns on dc_line_items itself.
+ *  Returned in the same `{ received, rejected }` shape used by the return UI. */
+export interface DCReturnSummaryEntry {
+  returned_nos: number;
+  returned_kg: number;
+  returned_sft: number;
+  rejected_nos: number;
+  rejected_kg: number;
+  rejected_sft: number;
+}
+
+export async function fetchDCReturnSummary(
+  dcId: string,
+): Promise<Record<string, DCReturnSummaryEntry>> {
+  const { data, error } = await (supabase as any)
+    .from('dc_line_items')
+    .select('id, returned_qty_nos, returned_qty_kg, returned_qty_sft, returned_qty_rejected_nos, returned_qty_rejected_kg, returned_qty_rejected_sft')
+    .eq('dc_id', dcId);
+  if (error) throw error;
+  const out: Record<string, DCReturnSummaryEntry> = {};
+  for (const li of (data ?? []) as any[]) {
+    out[li.id] = {
+      returned_nos: Number(li.returned_qty_nos ?? 0) || 0,
+      returned_kg:  Number(li.returned_qty_kg  ?? 0) || 0,
+      returned_sft: Number(li.returned_qty_sft ?? 0) || 0,
+      rejected_nos: Number(li.returned_qty_rejected_nos ?? 0) || 0,
+      rejected_kg:  Number(li.returned_qty_rejected_kg  ?? 0) || 0,
+      rejected_sft: Number(li.returned_qty_rejected_sft ?? 0) || 0,
+    };
+  }
+  return out;
 }
 
 export async function fetchGRNWithStages(id: string): Promise<GRN> {

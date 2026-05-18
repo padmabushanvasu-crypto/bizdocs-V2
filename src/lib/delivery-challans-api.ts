@@ -121,6 +121,12 @@ export interface DCReturnItem {
   returned_nos: number;
   returned_kg: number;
   returned_sft: number;
+  /** Damaged-on-return quantities recorded alongside the receipt. Accumulated
+   *  onto dc_line_items.returned_qty_rejected_* (new columns from migration
+   *  20260518000000_partial_receipt_tracking). Optional — defaults to 0. */
+  rejected_nos?: number;
+  rejected_kg?: number;
+  rejected_sft?: number;
   remarks?: string;
 }
 
@@ -630,6 +636,7 @@ export async function recordDCReturn(dcId: string, returnDate: string, receivedB
     const returnItems = items.map((item) => ({
       company_id: companyId, return_id: (newReturn as any).id, dc_line_item_id: item.dc_line_item_id,
       returned_nos: item.returned_nos, returned_kg: item.returned_kg, returned_sft: item.returned_sft,
+      // rejected_* are stored only on the dc_line_items rollup (no per-return-row column today).
       remarks: item.remarks || null,
     }));
     const { error: itemsErr } = await supabase.from("dc_return_items").insert(returnItems as any);
@@ -645,15 +652,21 @@ export async function recordDCReturn(dcId: string, returnDate: string, receivedB
     if (item.returned_nos > 0 || item.returned_kg > 0 || item.returned_sft > 0) {
       const { data: lineItem } = await supabase
         .from("dc_line_items")
-        .select("returned_qty_nos, returned_qty_kg, returned_qty_sft, item_code, description")
+        .select("returned_qty_nos, returned_qty_kg, returned_qty_sft, returned_qty_rejected_nos, returned_qty_rejected_kg, returned_qty_rejected_sft, item_code, description")
         .eq("id", item.dc_line_item_id)
         .single();
       if (lineItem) {
         const li = lineItem as any;
+        const rejNos = item.rejected_nos ?? 0;
+        const rejKg  = item.rejected_kg  ?? 0;
+        const rejSft = item.rejected_sft ?? 0;
         await supabase.from("dc_line_items").update({
           returned_qty_nos: (li.returned_qty_nos || 0) + item.returned_nos,
           returned_qty_kg: (li.returned_qty_kg || 0) + item.returned_kg,
           returned_qty_sft: (li.returned_qty_sft || 0) + item.returned_sft,
+          returned_qty_rejected_nos: (li.returned_qty_rejected_nos || 0) + rejNos,
+          returned_qty_rejected_kg:  (li.returned_qty_rejected_kg  || 0) + rejKg,
+          returned_qty_rejected_sft: (li.returned_qty_rejected_sft || 0) + rejSft,
         } as any).eq("id", item.dc_line_item_id);
 
         // Stock return: add returned NOS qty back to item stock

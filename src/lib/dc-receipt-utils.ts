@@ -39,20 +39,33 @@ export function computeDcLineRemainingQty(line: DcReceiptLineLike): number {
 /**
  * True when the current batch being recorded would close out the
  * remaining qty on the line — i.e. this receipt empties the pending
- * column. Returns false when nothing is being received (currentBatchQty
- * <= 0), so callers can use the result directly to gate "final batch
- * only" controls without their own guard.
+ * column. Returns false when nothing net is being received
+ * (currentBatchQty − rejectedThisBatchQty <= 0), so callers can use
+ * the result directly to gate "final batch only" controls without
+ * their own guard.
+ *
+ * `rejectedThisBatchQty` (default 0) subtracts visually-rejected units
+ * recorded at Stage 1. When a vendor sends a batch with heavy
+ * rejections, they still owe replacements — the order is not final by
+ * net math, so jig confirmation should NOT fire. Reject is treated as
+ * "not yet received" for closing-out purposes, even though the units
+ * physically arrived (Pending stays gross — that's a different concern).
  *
  * Uses >= rather than === to handle admin-override scenarios where the
  * operator records more than the official remaining (e.g. surplus
  * delivered). Still treated as final.
  */
-export function isFinalBatch(line: DcReceiptLineLike, currentBatchQty: number): boolean {
-  if (!(currentBatchQty > 0)) return false;
+export function isFinalBatch(
+  line: DcReceiptLineLike,
+  currentBatchQty: number,
+  rejectedThisBatchQty: number = 0,
+): boolean {
+  const net = currentBatchQty - rejectedThisBatchQty;
+  if (!(net > 0)) return false;
   const remaining = computeDcLineRemainingQty(line);
   // A line with remaining === 0 shouldn't normally appear in the GRN
-  // form (it's filtered out), but if it does, any positive receipt is
-  // by definition final.
+  // form (it's filtered out), but if it does, any positive net receipt
+  // is by definition final.
   if (remaining === 0) return true;
-  return currentBatchQty >= remaining;
+  return net >= remaining;
 }
