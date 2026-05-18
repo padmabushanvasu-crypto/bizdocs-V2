@@ -1107,11 +1107,13 @@ export async function fetchWipSummary(): Promise<WipSummary> {
 // ── Completed steps for item (used by DC form + JC creation dialog) ──────────
 
 /**
- * Returns the set of step_numbers that are 'done' or 'material_returned'
- * on the most recent job card for the given item (any status).
- * Using the most recent card regardless of status ensures that a card
- * incorrectly marked 'completed' still has its steps visible in the UI.
- * Returns an empty Set if no job card exists for this item.
+ * @deprecated The DC form now uses fetchJobCardsForItem() with an explicit
+ *   per-JC picker. The "most recent JC for item" approximation here gives
+ *   wrong answers whenever parallel JCs exist for the same item (e.g.
+ *   JC-A's completed Stage 5 leaks into JC-B's selector). One caller
+ *   remains — JobCardCreationDialog uses it for an informational display
+ *   on the JC-creation surface, where item-level scoping is defensible.
+ *   Do not introduce new callers.
  */
 export async function fetchCompletedStepsForItem(itemId: string): Promise<Set<number>> {
   const { data: jc } = await (supabase as any)
@@ -1133,6 +1135,78 @@ export async function fetchCompletedStepsForItem(itemId: string): Promise<Set<nu
     if (s.step_number != null) result.add(s.step_number);
   }
   return result;
+}
+
+// ── JC picker for DC creation form ──────────────────────────────────────────
+
+export interface JobCardForLink {
+  id: string;
+  jc_number: string;
+  status: string;
+  quantity_original: number;
+  created_at: string;
+  /** Per-stage processed totals for this JC: sum of actual_qty across all
+   *  step rows for that step_number where status ∈ ('done','material_returned').
+   *  Stages with zero progress are omitted (keeps the picker UI uncluttered).
+   *  Used by the DC form to render the per-stage breakdown text and to
+   *  decide whether to fire the rework warning (quantity_processed >=
+   *  jc.quantity_original on the selected stage). */
+  step_progress: Array<{ step_number: number; quantity_processed: number }>;
+}
+
+/**
+ * Returns every non-cancelled job card for an item, with its steps embedded.
+ * Open / in_progress / on_hold JCs come first, then completed, both groups
+ * sorted by created_at desc. Used by the DC form's per-line JC picker.
+ */
+export async function fetchJobCardsForItem(itemId: string): Promise<JobCardForLink[]> {
+  const { data, error } = await (supabase as any)
+    .from("job_cards")
+    .select(`
+      id, jc_number, status, quantity_original, created_at,
+      steps:job_card_steps(step_number, status, actual_qty)
+    `)
+    .eq("item_id", itemId)
+    .neq("status", "cancelled")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+
+  const openStatuses = new Set(["in_progress", "on_hold", "draft"]);
+  const completedStepStatuses = new Set(["done", "material_returned"]);
+  return ((data ?? []) as any[])
+    .map((jc): JobCardForLink => {
+      // Aggregate processed qty by step_number across all rows for the JC.
+      // Multi-batch case: more than one row may share a step_number when the
+      // stage was sent on multiple DCs; sum across them.
+      const processedByStep = new Map<number, number>();
+      for (const s of (jc.steps ?? []) as any[]) {
+        if (s.step_number == null) continue;
+        if (!completedStepStatuses.has(s.status)) continue;
+        const qty = Number(s.actual_qty ?? 0);
+        if (!Number.isFinite(qty) || qty <= 0) continue;
+        processedByStep.set(
+          s.step_number,
+          (processedByStep.get(s.step_number) ?? 0) + qty,
+        );
+      }
+      const step_progress = Array.from(processedByStep.entries())
+        .map(([step_number, quantity_processed]) => ({ step_number, quantity_processed }))
+        .sort((a, b) => a.step_number - b.step_number);
+      return {
+        id: jc.id,
+        jc_number: jc.jc_number,
+        status: jc.status,
+        quantity_original: jc.quantity_original ?? 0,
+        created_at: jc.created_at,
+        step_progress,
+      };
+    })
+    .sort((a, b) => {
+      const aOpen = openStatuses.has(a.status) ? 0 : 1;
+      const bOpen = openStatuses.has(b.status) ? 0 : 1;
+      if (aOpen !== bOpen) return aOpen - bOpen;
+      return b.created_at.localeCompare(a.created_at);
+    });
 }
 
 // ── Aliases for renamed exports ──────────────────────────────────────────────

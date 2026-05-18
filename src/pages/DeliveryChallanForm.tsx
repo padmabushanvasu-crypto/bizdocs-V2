@@ -28,7 +28,7 @@ import {
   fetchBomStagesForItemDC,
   type DCLineItem,
 } from "@/lib/delivery-challans-api";
-import { fetchCompletedStepsForItem } from "@/lib/job-works-api";
+import { fetchJobCardsForItem, type JobCardForLink } from "@/lib/job-works-api";
 import { getCompanyId } from "@/lib/auth-helpers";
 import { UNITS } from "@/lib/constants";
 import { JobCardCreationDialog } from "@/components/JobCardCreationDialog";
@@ -216,14 +216,38 @@ export default function DeliveryChallanForm() {
   const [lineRouteExpanded, setLineRouteExpanded] = useState<Map<number, boolean>>(new Map());
   // Stock warning: track current_stock per line index
   const [lineItemStock, setLineItemStock] = useState<Map<number, number>>(new Map());
+  // Per-line non-cancelled JCs for the picker (steps embedded for soft warning + step_id resolution)
+  const [lineJobCards, setLineJobCards] = useState<Map<number, JobCardForLink[]>>(new Map());
 
   const selectStage = (lineIndex: number, stage: ProcessingRoute) => {
     setLineSelectedStageId(prev => { const m = new Map(prev); m.set(lineIndex, stage.id); return m; });
     setLineStageSelection(prev => { const m = new Map(prev); m.set(lineIndex, stage.stage_number); return m; });
+    // Auto-select JC if exactly one non-cancelled candidate exists; carry stage info onto the line.
+    // Note: job_work_step_id is intentionally NOT written here — the column is
+    // null across all 314 existing dc_line_items rows in production and nothing
+    // downstream reads it from new DCs. GRN matching uses outward_dc_id.
+    const jcs = lineJobCards.get(lineIndex) ?? [];
+    const autoJc = jcs.length === 1 ? jcs[0] : null;
     setLineItems(items => {
       const updated = [...items];
       (updated[lineIndex] as any).selectedStageId = stage.id;
       (updated[lineIndex] as any).selectedStage = stage;
+      updated[lineIndex] = {
+        ...updated[lineIndex],
+        stage_number: stage.stage_number,
+        stage_name: stage.process_name,
+      };
+      const currentJcId = updated[lineIndex].job_work_id;
+      const linkedJc = currentJcId
+        ? jcs.find(j => j.id === currentJcId)
+        : autoJc;
+      if (linkedJc) {
+        updated[lineIndex] = {
+          ...updated[lineIndex],
+          job_work_id: linkedJc.id,
+          job_work_number: linkedJc.jc_number,
+        };
+      }
       return updated;
     });
     // Auto-fill rate from preferred vendor's unit_cost
@@ -244,6 +268,28 @@ export default function DeliveryChallanForm() {
         setLineAutoFilledRate(prev => { const m = new Map(prev); m.set(lineIndex, true); return m; });
       }
     }).catch(() => {/* ignore */});
+  };
+
+  /** Persist a JC choice onto the line. Pass null to clear. job_work_step_id
+   *  is intentionally not written — see comment in selectStage. */
+  const pickJobCard = (lineIndex: number, jc: JobCardForLink | null) => {
+    setLineItems(items => {
+      const updated = [...items];
+      if (!jc) {
+        updated[lineIndex] = {
+          ...updated[lineIndex],
+          job_work_id: null,
+          job_work_number: null,
+        };
+        return updated;
+      }
+      updated[lineIndex] = {
+        ...updated[lineIndex],
+        job_work_id: jc.id,
+        job_work_number: jc.jc_number,
+      };
+      return updated;
+    });
   };
 
   const toggleJigCheck = (lineIndex: number, jigId: string, checked: boolean) => {
@@ -329,8 +375,8 @@ export default function DeliveryChallanForm() {
         existingDC.line_items.forEach((li: any, idx: number) => {
           const itemId = li.item_id;
           if (itemId) {
-            fetchCompletedStepsForItem(itemId).then(completed => {
-              setLineCompletedStages(prev => { const m = new Map(prev); m.set(idx, completed); return m; });
+            fetchJobCardsForItem(itemId).then(jcs => {
+              setLineJobCards(prev => { const m = new Map(prev); m.set(idx, jcs); return m; });
             }).catch(() => {/* non-fatal */});
           }
         });
@@ -1160,9 +1206,24 @@ export default function DeliveryChallanForm() {
                           setLineBomStages(prev => { const m = new Map(prev); m.set(index, stages); return m; });
                           setLineStageSelection(prev => { const m = new Map(prev); m.delete(index); return m; });
                         });
-                        // Load completed stages from open job card's steps
-                        fetchCompletedStepsForItem(selectedItem.id).then(completed => {
-                          setLineCompletedStages(prev => { const m = new Map(prev); m.set(index, completed); return m; });
+                        // Item changed → drop any prior stage / JC selection on this line
+                        setLineSelectedStageId(prev => { const m = new Map(prev); m.delete(index); return m; });
+                        setLineStageSelection(prev => { const m = new Map(prev); m.delete(index); return m; });
+                        setLineItems(items => {
+                          const updated = [...items];
+                          updated[index] = {
+                            ...updated[index],
+                            job_work_id: null,
+                            job_work_number: null,
+                            job_work_step_id: null,
+                            stage_number: null,
+                            stage_name: null,
+                          };
+                          return updated;
+                        });
+                        // Load non-cancelled JCs for the picker
+                        fetchJobCardsForItem(selectedItem.id).then(jcs => {
+                          setLineJobCards(prev => { const m = new Map(prev); m.set(index, jcs); return m; });
                         });
                         // Phase 15: Load processing routes for this item
                         fetchProcessingRoute(selectedItem.id).then(routes => {
@@ -1234,9 +1295,9 @@ export default function DeliveryChallanForm() {
                               setLineAllRoutes(prev => { const m = new Map(prev); m.set(index, allRoutes); return m; });
                             });
                           }
-                          // Always refresh completed stages
-                          fetchCompletedStepsForItem(itemId).then(completed => {
-                            setLineCompletedStages(prev => { const m = new Map(prev); m.set(index, completed); return m; });
+                          // Always refresh JC list for the picker
+                          fetchJobCardsForItem(itemId).then(jcs => {
+                            setLineJobCards(prev => { const m = new Map(prev); m.set(index, jcs); return m; });
                           });
                         }).catch(() => {/* non-fatal */});
                       }}
@@ -1385,22 +1446,14 @@ export default function DeliveryChallanForm() {
                             }}
                           >
                             <option value="">Select processing stage…</option>
-                            {(lineBomStages.get(index) ?? []).map((stage: any) => {
-                              const isCompleted = lineCompletedStages.get(index)?.has(stage.stage_number) ?? false;
-                              return (
-                                <option key={stage.stage_number} value={stage.stage_number} disabled={isCompleted}>
-                                  {isCompleted ? '✓ ' : ''}Stage {stage.stage_number} — {stage.process_name}{stage.vendor_name ? ` (${stage.vendor_name})` : ''}{isCompleted ? ' (completed)' : ''}
-                                </option>
-                              );
-                            })}
+                            {(lineBomStages.get(index) ?? []).map((stage: any) => (
+                              <option key={stage.stage_number} value={stage.stage_number}>
+                                Stage {stage.stage_number} — {stage.process_name}{stage.vendor_name ? ` (${stage.vendor_name})` : ''}
+                              </option>
+                            ))}
                             <option value="manual">Manual entry (no BOM stage)</option>
                           </select>
                         </div>
-                        {(lineCompletedStages.get(index)?.size ?? 0) > 0 && (
-                          <div className="text-xs text-slate-500 self-end pb-1">
-                            {lineCompletedStages.get(index)!.size} stage{lineCompletedStages.get(index)!.size !== 1 ? 's' : ''} already completed on open job card
-                          </div>
-                        )}
                         {(location.state as any)?.prefill?.line_items?.[index]?.is_rework && (
                           <span className="self-end pb-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200">
                             Rework — Cycle {(location.state as any)?.prefill?.line_items?.[index]?.rework_cycle ?? 2}
@@ -1410,7 +1463,7 @@ export default function DeliveryChallanForm() {
                     </td>
                   </tr>
                 )}
-                {/* Phase 15: Processing Route Stage Selector */}
+                {/* Phase 15: Processing Route Stage Selector — all stages selectable; per-JC scoping handled by the JC picker below */}
                 {(lineRoutes.get(index)?.length ?? 0) > 0 && (
                   <tr key={`route-${index}`} className="bg-blue-50/30 border-b border-blue-100">
                     <td />
@@ -1419,29 +1472,23 @@ export default function DeliveryChallanForm() {
                         <p className="text-xs font-semibold text-blue-700 mb-2">Processing Route</p>
                         <div className="flex flex-wrap gap-1 mb-2">
                           {(lineRoutes.get(index) ?? []).map((stage) => {
-                            const isDone = lineCompletedStages.get(index)?.has(stage.stage_number) ?? false;
                             const isSelected = lineSelectedStageId.get(index) === stage.id;
                             return (
                               <button
                                 key={stage.id}
                                 type="button"
-                                disabled={isDone}
-                                onClick={() => { if (!isDone) selectStage(index, stage); }}
+                                onClick={() => selectStage(index, stage)}
                                 className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
                                   stage.stage_type === "external"
-                                    ? isDone
-                                      ? 'bg-blue-50 text-blue-400 border-blue-200 line-through opacity-60 cursor-not-allowed'
-                                      : isSelected
+                                    ? isSelected
                                       ? 'bg-blue-600 text-white border-blue-600'
                                       : 'bg-blue-50 text-blue-700 border-blue-400 hover:bg-blue-100'
-                                    : isDone
-                                    ? 'bg-slate-50 text-slate-400 border-slate-200 line-through opacity-60 cursor-not-allowed'
                                     : isSelected
                                     ? 'bg-slate-600 text-white border-slate-600'
                                     : 'bg-slate-50 text-slate-600 border-slate-300 hover:bg-slate-100'
                                 }`}
                               >
-                                {isDone ? '✓ ' : ''}{stage.stage_number}. {stage.process_name}
+                                {stage.stage_number}. {stage.process_name}
                               </button>
                             );
                           })}
@@ -1455,6 +1502,99 @@ export default function DeliveryChallanForm() {
                     </td>
                   </tr>
                 )}
+                {/* JC picker — appears once a stage is selected. Auto-selects when only one JC; per-stage breakdown + rework warning derived from quantity processed (not just status). */}
+                {lineSelectedStageId.get(index) && (() => {
+                  const jcs = lineJobCards.get(index) ?? [];
+                  const line = lineItems[index];
+                  const selectedJcId = line.job_work_id ?? null;
+                  const selectedJc = selectedJcId ? jcs.find(j => j.id === selectedJcId) : null;
+                  const stageNum = line.stage_number ?? null;
+                  const processedForStage = selectedJc && stageNum != null
+                    ? (selectedJc.step_progress.find(s => s.step_number === stageNum)?.quantity_processed ?? 0)
+                    : 0;
+                  const isFullyDone = !!selectedJc && stageNum != null
+                    && selectedJc.quantity_original > 0
+                    && processedForStage >= selectedJc.quantity_original;
+                  const multipleButNoneSelected = jcs.length > 1 && !selectedJcId;
+                  // Persisted job_work_id without a matching JC in the (non-cancelled) list — show greyed but selectable.
+                  const showUnavailable = !!selectedJcId && !selectedJc;
+                  const containerCls = `mt-1 p-3 rounded-lg border ${
+                    multipleButNoneSelected
+                      ? 'bg-amber-50 border-amber-300'
+                      : 'bg-blue-50 border-blue-200'
+                  }`;
+                  return (
+                    <tr key={`jc-${index}`} className="bg-blue-50/30 border-b border-blue-100">
+                      <td />
+                      <td colSpan={12} className="px-3 py-2">
+                        <div className={containerCls}>
+                          <div className="flex items-baseline justify-between gap-3 mb-2">
+                            <p className="text-xs font-semibold text-blue-700">Linked Job Card</p>
+                            {multipleButNoneSelected && (
+                              <span className="text-[11px] text-amber-700 font-medium">No JC selected</span>
+                            )}
+                          </div>
+                          {jcs.length === 0 ? (
+                            <p className="text-xs text-slate-500">
+                              No Job Cards exist for this item — line will save without a JC link.
+                            </p>
+                          ) : (
+                            <div className="flex flex-wrap gap-1">
+                              {jcs.map((jc) => {
+                                const isSelected = jc.id === selectedJcId;
+                                const isCompleted = jc.status === "completed";
+                                const baseCls = "text-xs px-2.5 py-1 rounded-full border font-medium transition-colors";
+                                const cls = isSelected
+                                  ? `${baseCls} bg-blue-600 text-white border-blue-600`
+                                  : isCompleted
+                                  ? `${baseCls} bg-slate-50 text-slate-500 border-slate-200 opacity-60 hover:opacity-100`
+                                  : `${baseCls} bg-slate-50 text-slate-700 border-slate-300 hover:bg-slate-100`;
+                                return (
+                                  <button
+                                    key={jc.id}
+                                    type="button"
+                                    onClick={() => pickJobCard(index, jc)}
+                                    className={cls}
+                                    title={`Created ${new Date(jc.created_at).toLocaleDateString('en-IN')}`}
+                                  >
+                                    <span className="font-mono">{jc.jc_number}</span>
+                                    <span className="ml-1 text-[10px] opacity-80">· {jc.status.replace(/_/g, ' ')}</span>
+                                    <span className="ml-1 text-[10px] opacity-80">· {jc.quantity_original}</span>
+                                  </button>
+                                );
+                              })}
+                              {showUnavailable && (
+                                <button
+                                  type="button"
+                                  onClick={() => pickJobCard(index, null)}
+                                  className="text-xs px-2.5 py-1 rounded-full border font-medium bg-slate-50 text-slate-400 border-slate-200 opacity-60"
+                                  title="The previously linked JC is no longer available (deleted or cancelled)"
+                                >
+                                  <span className="font-mono">{line.job_work_number || '—'}</span>
+                                  <span className="ml-1 text-[10px]">(unavailable)</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
+                          {selectedJc && selectedJc.step_progress.length > 0 && (
+                            <div className="mt-2 space-y-0.5">
+                              {selectedJc.step_progress.map(sp => (
+                                <p key={sp.step_number} className="text-xs text-slate-500">
+                                  Stage {sp.step_number}: {sp.quantity_processed} of {selectedJc.quantity_original} processed, {Math.max(0, selectedJc.quantity_original - sp.quantity_processed)} pending
+                                </p>
+                              ))}
+                            </div>
+                          )}
+                          {isFullyDone && (
+                            <p className="mt-2 text-xs text-amber-700 font-medium">
+                              ⚠️ Stage {stageNum} is fully processed (all {selectedJc!.quantity_original} units done). Raising another DC implies rework — please confirm.
+                            </p>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })()}
                 {/* Stage-aware jig alerts: only show for machining stages */}
                 {(() => {
                   const allJigs = lineJigs.get(index) ?? [];
