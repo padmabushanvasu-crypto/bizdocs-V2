@@ -48,6 +48,7 @@ import { UNITS } from "@/lib/constants";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchCompanySettings } from "@/lib/settings-api";
+import { isFinalBatch } from "@/lib/dc-receipt-utils";
 import { GRNFinanceApproval } from "@/components/GRNFinanceApproval";
 
 // ── Lookup tables ──────────────────────────────────────────────────────────────
@@ -118,6 +119,14 @@ function parseJigsSent(val: string | string[] | null | undefined): string | null
   if (!val) return null;
   if (Array.isArray(val)) return val.join(', ');
   return val;
+}
+
+// Is the current receipt closing out this line? pending_quantity is the
+// remaining qty on the DC line at the moment this GRN was created; received_qty
+// is the operator's live input. Reuses the DC-receipt utility — single source
+// of truth shared with GRNForm.
+function isS1LineFinalBatch(l: S1Line): boolean {
+  return isFinalBatch({ po_quantity: l.pending_quantity, previously_received: 0 }, l.received_qty);
 }
 
 // ── QC Measurement row state ───────────────────────────────────────────────────
@@ -1877,11 +1886,17 @@ export default function GRNDetail() {
       toast({ title: "Verification Date is required", variant: "destructive" });
       return;
     }
-    const unconfirmedJigLines = s1Lines.filter(l => !!parseJigsSent(l.jigs_sent) && !jigReturnConfirmed.has(l.id));
+    // Jig confirmation is only required on the final batch — partial receipts
+    // bypass the gate (jig return is logged when the receipt closes out the line).
+    const unconfirmedJigLines = s1Lines.filter(l =>
+      !!parseJigsSent(l.jigs_sent) &&
+      isS1LineFinalBatch(l) &&
+      !jigReturnConfirmed.has(l.id)
+    );
     if (unconfirmedJigLines.length > 0) {
       toast({
         title: "Jig return confirmation required",
-        description: "Please confirm return of all jigs before completing Stage 1.",
+        description: "Please confirm return of all jigs before completing the final batch.",
         variant: "destructive",
       });
       return;
@@ -2181,20 +2196,47 @@ export default function GRNDetail() {
         </div>
 
         <div className="px-5 py-4 space-y-4">
-          {/* Jig/Mould return alert — shown when DC included tooling */}
+          {/* Jig/Mould return alert — shown when DC included tooling.
+              Confirmation is only required on the final batch (the receipt
+              that closes out the line). Partial batches show an info note. */}
           {(() => {
             const jigLines = s1Lines.filter(l => !!parseJigsSent(l.jigs_sent));
             if (jigLines.length === 0) return null;
-            const allConfirmed = jigLines.every(l => jigReturnConfirmed.has(l.id));
+            const finalJigLines = jigLines.filter(isS1LineFinalBatch);
+            const allFinalConfirmed = finalJigLines.length > 0 &&
+              finalJigLines.every(l => jigReturnConfirmed.has(l.id));
+            const headerTone = finalJigLines.length === 0
+              ? "bg-slate-50 border-slate-200"
+              : allFinalConfirmed
+                ? "bg-emerald-50 border-emerald-300"
+                : "bg-amber-50 border-amber-300";
+            const headerIcon = finalJigLines.length === 0
+              ? "ℹ️"
+              : allFinalConfirmed ? "✅" : "⚠️";
+            const headerTextCls = finalJigLines.length === 0
+              ? "text-slate-700"
+              : allFinalConfirmed ? "text-emerald-800" : "text-amber-800";
             return (
-              <div className={`border rounded-lg p-3 ${allConfirmed ? "bg-emerald-50 border-emerald-300" : "bg-amber-50 border-amber-300"}`}>
+              <div className={`border rounded-lg p-3 ${headerTone}`}>
                 <div className="flex items-start gap-2">
-                  <span className="text-base">{allConfirmed ? "✅" : "⚠️"}</span>
+                  <span className="text-base">{headerIcon}</span>
                   <div className="flex-1 space-y-2">
-                    <p className={`font-medium text-sm ${allConfirmed ? "text-emerald-800" : "text-amber-800"}`}>
-                      Jig/Mould sent with this DC — confirm return before saving
+                    <p className={`font-medium text-sm ${headerTextCls}`}>
+                      Jig/Mould sent with this DC — confirm return on final batch
                     </p>
                     {jigLines.map((line) => {
+                      const isFinal = isS1LineFinalBatch(line);
+                      if (!isFinal) {
+                        return (
+                          <p key={line.id} className="flex items-start gap-2 text-xs text-slate-600">
+                            <Info className="h-3.5 w-3.5 mt-0.5 shrink-0 text-slate-400" />
+                            <span>
+                              <span className="font-mono text-slate-700">{parseJigsSent(line.jigs_sent)}</span>
+                              {" "}— Partial receipt — jig return confirmation will be required on the final batch.
+                            </span>
+                          </p>
+                        );
+                      }
                       const confirmed = jigReturnConfirmed.has(line.id);
                       return (
                         <label key={line.id} className="flex items-start gap-2 cursor-pointer">
@@ -2212,12 +2254,12 @@ export default function GRNDetail() {
                             className="h-4 w-4 mt-0.5 accent-amber-600 cursor-pointer shrink-0"
                           />
                           <span className={`text-sm ${confirmed ? "line-through text-slate-400" : "text-amber-700"}`}>
-                            Confirmed — {parseJigsSent(line.jigs_sent)} has been returned by vendor
+                            Confirm jig has been returned by vendor (final batch) — {parseJigsSent(line.jigs_sent)}
                           </span>
                         </label>
                       );
                     })}
-                    {!allConfirmed && (
+                    {finalJigLines.length > 0 && !allFinalConfirmed && (
                       <p className="text-xs text-amber-600 font-medium">
                         All jig/mould returns must be confirmed before Stage 1 can be saved.
                       </p>
@@ -2442,7 +2484,8 @@ export default function GRNDetail() {
                   s1Mutation.isPending ||
                   isDeletedOrCancelled ||
                   overQtyLines.length > 0 ||
-                  s1Lines.filter(l => !!parseJigsSent(l.jigs_sent)).some(l => !jigReturnConfirmed.has(l.id))
+                  s1Lines.filter(l => !!parseJigsSent(l.jigs_sent) && isS1LineFinalBatch(l))
+                         .some(l => !jigReturnConfirmed.has(l.id))
                 }
                 className={`w-full text-white ${needsFinanceApproval ? "bg-amber-600 hover:bg-amber-700" : "bg-primary hover:bg-primary/90 text-primary-foreground"}`}
               >
