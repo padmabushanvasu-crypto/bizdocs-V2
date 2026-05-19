@@ -167,6 +167,9 @@ function GrnLineItemRow({
             />
             {overReceipt && <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />}
           </div>
+          {item.s1_received_now === 0 && (orderedQty - prevReceived) > 0 && (
+            <p className="text-[10px] text-slate-400 mt-0.5 text-right italic leading-none">— not filled</p>
+          )}
         </td>
         <td className="px-3 py-2">
           <input
@@ -495,6 +498,11 @@ function GRNFormInner({ defaultGrnType }: Props) {
         const prevReceived = item.received_quantity || 0;
         const prevAccepted = prevSummary[item.id]?.accepted ?? 0;
         const pending = (item.quantity || 0) - prevReceived;
+        // Default receiving qty to 0 — operator must explicitly enter what
+        // actually arrived. Prior default of `pending` silently recorded
+        // phantom receipts for short-shipped lines the operator didn't touch.
+        // The "Fill remaining" header button is the one-click escape hatch
+        // for the common-case all-arrived flow.
         const base: GRNLineItem = {
           serial_number: idx + 1,
           po_line_item_id: item.id,
@@ -505,7 +513,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
           po_quantity: item.quantity || 0,
           previously_received: prevReceived,
           pending_quantity: pending,
-          receiving_now: pending,
+          receiving_now: 0,
           accepted_quantity: 0,
           rejected_quantity: 0,
           rejection_reason: "",
@@ -513,7 +521,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
           rejection_action: null,
         };
         const state = toLineState(base, idx);
-        state.s1_received_now = pending;
+        state.s1_received_now = 0;
         state.prev_accepted_live = prevAccepted;
         return state;
       });
@@ -548,6 +556,9 @@ function GRNFormInner({ defaultGrnType }: Props) {
           const alreadyReceived = prevReceivedMap[item.id]?.received ?? 0;
           const prevAccepted = prevReceivedMap[item.id]?.accepted ?? 0;
           const pending = Math.max(0, (item.quantity || 0) - alreadyReceived);
+          // Default receiving qty to 0 (same reasoning as handlePOSelect):
+          // operator must explicitly enter what came back from the job worker.
+          // "Fill remaining" header button is the one-click escape hatch.
           const base: GRNLineItem = {
             serial_number: idx + 1,
             description: item.description,
@@ -556,14 +567,14 @@ function GRNFormInner({ defaultGrnType }: Props) {
             po_quantity: item.quantity || 0,
             previously_received: alreadyReceived,
             pending_quantity: pending,
-            receiving_now: pending,
+            receiving_now: 0,
             accepted_quantity: 0,
             rejected_quantity: 0,
             dc_line_item_id: item.id,
             item_id: item.item_id ?? null,
           };
           const state = toLineState(base, idx);
-          state.s1_received_now = pending;
+          state.s1_received_now = 0;
           state.prev_accepted_live = prevAccepted;
           (state as any).ordered_qty = item.quantity || 0;
           (state as any).previously_received_qty = alreadyReceived;
@@ -625,6 +636,22 @@ function GRNFormInner({ defaultGrnType }: Props) {
       updated[index] = { ...updated[index], ...update };
       return updated;
     });
+  };
+
+  // Bulk-fill receiving qty for any line the operator hasn't touched.
+  // "Untouched" = both s1_received_now and s1_rejected_now are 0. If either
+  // is non-zero the operator has explicitly engaged with the line — leave it.
+  const fillRemaining = () => {
+    setLineItems((items) =>
+      items.map((line) => {
+        if (line.s1_received_now > 0 || (line.s1_rejected_now ?? 0) > 0) return line;
+        const orderedQty = (line as any).ordered_qty ?? line.po_quantity ?? 0;
+        const prevReceived = (line as any).previously_received_qty ?? line.previously_received ?? 0;
+        const pending = Math.max(0, orderedQty - prevReceived);
+        if (pending <= 0) return line;
+        return { ...line, s1_received_now: pending };
+      })
+    );
   };
 
   // ── Totals ─────────────────────────────────────────────────────────────────
@@ -1007,11 +1034,24 @@ function GRNFormInner({ defaultGrnType }: Props) {
                grnType === 'dc_grn' && selectedDC ? `Items from DC ${selectedDC.dc_number}` :
                'Items Received'}
             </h2>
-            {!selectedPO && !selectedDC && (
-              <Button variant="outline" size="sm" onClick={addManualItem}>
-                <Plus className="h-3.5 w-3.5 mr-1" /> Add Row
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              {lineItems.length > 0 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={fillRemaining}
+                  title="Sets receiving qty to the pending amount for lines you haven't filled in yet"
+                >
+                  Fill remaining
+                </Button>
+              )}
+              {!selectedPO && !selectedDC && (
+                <Button variant="outline" size="sm" onClick={addManualItem}>
+                  <Plus className="h-3.5 w-3.5 mr-1" /> Add Row
+                </Button>
+              )}
+            </div>
           </div>
 
           <div className="overflow-x-auto rounded-lg border border-slate-200">
