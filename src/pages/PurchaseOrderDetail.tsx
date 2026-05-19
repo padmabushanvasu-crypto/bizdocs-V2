@@ -661,6 +661,11 @@ export default function PurchaseOrderDetail() {
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-muted-foreground">{item.serial_number}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">
                       {item.description}
+                      {!item.item_id && (
+                        <span className="ml-2 inline-flex items-center text-amber-600 text-xs font-medium print:hidden align-middle" title="This line has no linked item — Store Confirm will be blocked until the PO line is re-linked.">
+                          <AlertTriangle className="w-3 h-3 mr-1" /> No item
+                        </span>
+                      )}
                       {/* Drawing No. shown inline below description only in print */}
                       {item.drawing_number && (
                         <div className="hidden print:block" style={{ fontSize: '7pt', color: '#64748b', marginTop: '1px' }}>

@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, Search, Info, ChevronDown, ChevronLeft, Lock } from "lucide-react";
+import { Plus, Trash2, Search, Info, ChevronDown, ChevronLeft, Lock, CheckCircle2, AlertTriangle } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { ItemSuggest } from "@/components/ItemSuggest";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,6 +57,7 @@ const CURRENCIES = [
 
 function emptyLineItem(serial: number): POLineItem {
   return {
+    item_id: null,
     serial_number: serial,
     description: "",
     drawing_number: "",
@@ -112,6 +114,10 @@ export default function PurchaseOrderForm() {
   const [additionalCharges, setAdditionalCharges] = useState<{ label: string; amount: number }[]>([]);
   const [successDialogOpen, setSuccessDialogOpen] = useState(false);
   const [savedPOId, setSavedPOId] = useState<string | null>(null);
+  // Soft warning before save if any PO lines have no linked item.
+  const [unlinkedConfirmOpen, setUnlinkedConfirmOpen] = useState(false);
+  const [pendingSaveStatus, setPendingSaveStatus] = useState<string | null>(null);
+  const [pendingUnlinkedCount, setPendingUnlinkedCount] = useState(0);
 
   // Foreign currency state
   const [currency, setCurrency] = useState("INR");
@@ -620,6 +626,14 @@ export default function PurchaseOrderForm() {
       queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
       queryClient.invalidateQueries({ queryKey: ["po-stats"] });
       queryClient.invalidateQueries({ queryKey: ["po-pending-approval-count"] });
+      const unlinkedSaved = lineItems.filter((i) => i.description.trim() && !i.item_id).length;
+      if (unlinkedSaved > 0) {
+        toast({
+          title: `PO saved with ${unlinkedSaved} unlinked line${unlinkedSaved !== 1 ? "s" : ""}`,
+          description: "These lines won't update stock when goods arrive. Edit the PO to link each line to an item before the GRN is store-confirmed.",
+          variant: "destructive",
+        });
+      }
       if (isEdit) {
         const prevStatus = existingPO?.status;
         const wasResubmitted = prevStatus && ['approved', 'issued', 'partially_received'].includes(prevStatus);
@@ -656,7 +670,23 @@ export default function PurchaseOrderForm() {
       toast({ title: "Items required", description: "Add at least one line item.", variant: "destructive" });
       return;
     }
+    // Soft warning: any line with a description but no linked item_id
+    // saves a row that won't update stock when received.
+    const unlinked = lineItems.filter((i) => i.description.trim() && !i.item_id).length;
+    if (unlinked > 0) {
+      setPendingUnlinkedCount(unlinked);
+      setPendingSaveStatus(status);
+      setUnlinkedConfirmOpen(true);
+      return;
+    }
     saveMutation.mutate(status);
+  };
+
+  const proceedWithUnlinkedSave = () => {
+    const status = pendingSaveStatus;
+    setUnlinkedConfirmOpen(false);
+    setPendingSaveStatus(null);
+    if (status !== null) saveMutation.mutate(status);
   };
 
   if (accessBlocked) {
@@ -1121,7 +1151,12 @@ export default function PurchaseOrderForm() {
                   <td className="px-1 py-1">
                     <ItemSuggest
                       value={item.description}
-                      onChange={(v) => updateLineItem(index, "description", v)}
+                      onChange={(v) => {
+                        updateLineItem(index, "description", v);
+                        // Manual typing invalidates any previous link — operator
+                        // must re-select a suggestion to re-link.
+                        if (item.item_id) updateLineItem(index, "item_id", null);
+                      }}
                       onSelect={(selectedItem) => {
                         updateLineItem(index, "item_id", selectedItem.id);
                         updateLineItem(index, "description", selectedItem.description);
@@ -1134,6 +1169,23 @@ export default function PurchaseOrderForm() {
                       placeholder="Type to search items..."
                       className="h-8 text-sm w-full"
                     />
+                    {item.description?.trim() && (
+                      item.item_id ? (
+                        <p
+                          className="text-[10px] text-green-600 mt-0.5 inline-flex items-center gap-1 leading-none"
+                          title="Linked to item master"
+                        >
+                          <CheckCircle2 className="w-2.5 h-2.5" /> Linked
+                        </p>
+                      ) : (
+                        <p
+                          className="text-[10px] text-amber-600 mt-0.5 inline-flex items-center gap-1 leading-none"
+                          title="This line won't update stock when received. Click a suggestion as you type to link it."
+                        >
+                          <AlertTriangle className="w-2.5 h-2.5" /> No item
+                        </p>
+                      )
+                    )}
                   </td>
                   <td className="p-0 w-24">
                     <input
@@ -1434,6 +1486,26 @@ export default function PurchaseOrderForm() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Soft warning when any line lacks an item_id link */}
+      <AlertDialog open={unlinkedConfirmOpen} onOpenChange={(open) => {
+        if (!open) { setUnlinkedConfirmOpen(false); setPendingSaveStatus(null); }
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingUnlinkedCount} line{pendingUnlinkedCount !== 1 ? "s" : ""} have no linked item
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              These lines won't update stock when goods are received. You can fix this by typing the item name and clicking a suggestion. Save anyway?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={proceedWithUnlinkedSave}>Save anyway</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
