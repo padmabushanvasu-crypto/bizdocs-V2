@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, ChevronDown, Info, ChevronLeft, AlertTriangle, Lock } from "lucide-react";
+import { Plus, Trash2, ChevronDown, Info, ChevronLeft, AlertTriangle, Lock, CheckCircle2 } from "lucide-react";
 import { ItemSuggest } from "@/components/ItemSuggest";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -766,6 +766,23 @@ export default function DeliveryChallanForm() {
       toast({ title: "Items required", description: "Add at least one line item.", variant: "destructive" });
       return;
     }
+    // Hard block: any line with a description must have an item_id linked.
+    // Free-text typing without selecting from ItemSuggest is the root cause
+    // of orphan downstream GRNs and broken stock movement.
+    const unlinkedRows = lineItems
+      .map((line, idx) => ({ line, rowNum: idx + 1 }))
+      .filter(({ line }) => line.description.trim() && !(line as any).item_id);
+    if (unlinkedRows.length > 0) {
+      const rowNumbers = unlinkedRows.map(({ rowNum }) => rowNum).join(", ");
+      toast({
+        title: `Cannot save: ${unlinkedRows.length} line${unlinkedRows.length > 1 ? "s" : ""} need an item selected`,
+        description:
+          `Row${unlinkedRows.length > 1 ? "s" : ""} ${rowNumbers}: type to search, then click the matching item from the dropdown. ` +
+          `If the item doesn't exist, create it in Items Master first.`,
+        variant: "destructive",
+      });
+      return;
+    }
     // Check mould acknowledgements
     const unacknowledgedMouldLines = lineItems
       .map((_, idx) => idx)
@@ -1185,7 +1202,15 @@ export default function DeliveryChallanForm() {
                   <td className="px-1 py-1">
                     <ItemSuggest
                       value={item.description}
-                      onChange={(v) => updateLineItem(index, "description", v)}
+                      onChange={(v) => {
+                        updateLineItem(index, "description", v);
+                        // Manual typing invalidates any previous link — operator
+                        // must re-select from the ItemSuggest dropdown to re-link.
+                        if (item.item_id) {
+                          updateLineItem(index, "item_id", null);
+                          setItemIdByIndex(prev => { const m = new Map(prev); m.delete(index); return m; });
+                        }
+                      }}
                       onSelect={(selectedItem) => {
                         updateLineItem(index, "item_id", selectedItem.id);
                         updateLineItem(index, "item_code", selectedItem.item_code);
@@ -1250,6 +1275,23 @@ export default function DeliveryChallanForm() {
                       placeholder="Item description"
                       className="h-8 text-sm w-full"
                     />
+                    {item.description?.trim() && (
+                      item.item_id ? (
+                        <p
+                          className="text-[10px] text-green-600 mt-0.5 inline-flex items-center gap-1 leading-none"
+                          title="Linked to item master"
+                        >
+                          <CheckCircle2 className="w-2.5 h-2.5" /> Linked
+                        </p>
+                      ) : (
+                        <p
+                          className="text-[10px] text-amber-600 mt-0.5 inline-flex items-center gap-1 leading-none"
+                          title="This line won't update stock when goods move. Click a suggestion as you type to link it."
+                        >
+                          <AlertTriangle className="w-2.5 h-2.5" /> No item
+                        </p>
+                      )
+                    )}
                   </td>
                   <td className="p-0 w-32">
                     <input

@@ -755,6 +755,30 @@ function GRNFormInner({ defaultGrnType }: Props) {
       toast({ title: "No items", description: "Enter receiving quantities for at least one item.", variant: "destructive" });
       return;
     }
+    // Hard block: any line with a receiving quantity must have an item_id
+    // linked. Free-text typing in the description without selecting from
+    // ItemSuggest is the root cause of orphan grn_line_items that fail to
+    // credit stock at Store Confirm. Lines with zero receiving qty are
+    // filtered out at save (see filter below) so they don't need the check.
+    if (!isExistingGrn) {
+      const unlinkedRows = lineItems
+        .map((line, idx) => ({ line, rowNum: idx + 1 }))
+        .filter(({ line }) =>
+          (line.s1_received_now > 0 || line.receiving_now > 0) &&
+          !(line as any).item_id
+        );
+      if (unlinkedRows.length > 0) {
+        const rowNumbers = unlinkedRows.map(({ rowNum }) => rowNum).join(", ");
+        toast({
+          title: `Cannot save: ${unlinkedRows.length} line${unlinkedRows.length > 1 ? "s" : ""} need an item selected`,
+          description:
+            `Row${unlinkedRows.length > 1 ? "s" : ""} ${rowNumbers}: type to search, then click the matching item from the dropdown. ` +
+            `If the item doesn't exist, create it in Items Master first.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
     // DC-GRN: block save only on the final batch for a line. Partial receipts
     // skip the jig gate — confirmation is required only when this receipt
     // closes out the DC line.
