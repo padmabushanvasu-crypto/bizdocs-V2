@@ -12,7 +12,7 @@ import { useAuth } from "@/hooks/useAuth";
 import {
   resolveColumns, extractRow, buildMappingSummary,
   normaliseHeader, fieldDisplayName,
-  parseExcelSmart, findItemByCode,
+  parseExcelSmart, findItemByCode, findItemByCodeWithDiagnostics, fetchAllActiveItems,
   PARTY_FIELD_MAP, ITEM_FIELD_MAP, BOM_FIELD_MAP, STOCK_FIELD_MAP, VENDOR_SHEET_FIELD_MAP, REORDER_FIELD_MAP,
   JIG_FIELD_MAP, MOULD_FIELD_MAP, PROCESSING_ROUTES_FIELD_MAP,
   type ColumnMappingSummary, type SkipReason,
@@ -683,12 +683,16 @@ function BOMImportTab() {
       // Pre-fetch ALL items for reliable 3-level lookup.
       // PostgREST .in() breaks when item codes contain "(" or ")" — the inner
       // paren closes the in.(...) URL syntax and those items silently vanish.
-      const { data: allItemsForBOM } = await supabase
-        .from("items").select("id, item_code, drawing_revision, drawing_number");
+      // Paginated fetch — default PostgREST cap (~1000 rows) silently truncates
+      // larger masters and breaks lookups for any item beyond the cap.
+      const bomDryRunCompanyId = await getCompanyId();
+      const allItemsForBOM = bomDryRunCompanyId
+        ? await fetchAllActiveItems(supabase, bomDryRunCompanyId)
+        : [];
 
       const resolvedCodes = new Set<string>();
       for (const code of allCodes) {
-        if (findItemByCode(allItemsForBOM ?? [], code)) {
+        if (findItemByCode(allItemsForBOM, code)) {
           resolvedCodes.add(code.toLowerCase());
         }
       }
@@ -754,10 +758,14 @@ function BOMImportTab() {
   const bomImportFn: BatchImportFn = async (rows, rowNums) => {
     const companyId = await getCompanyId();
 
-    // Pre-fetch ALL items in one query — used by findItemByCode (3-level lookup)
-    const { data: allItems, error: itemsError } = await supabase
-      .from("items").select("id, item_code, drawing_revision, drawing_number").eq("company_id", companyId);
-    if (itemsError) console.error("[BOM import / DataImport] Failed to fetch items:", itemsError);
+    // Pre-fetch ALL active items — used by findItemByCode (3-level lookup).
+    // Paginated past PostgREST's default ~1000 row cap.
+    let allItems: Awaited<ReturnType<typeof fetchAllActiveItems>> = [];
+    try {
+      allItems = await fetchAllActiveItems(supabase, companyId);
+    } catch (itemsError) {
+      console.error("[BOM import / DataImport] Failed to fetch items:", itemsError);
+    }
 
     // Pre-fetch parties (vendors) for vendor lookup
     const { data: allParties } = await (supabase as any)
@@ -1906,7 +1914,7 @@ function ProcessingRoutesImportTab({ companyId }: { companyId: string | null }) 
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
-  const [result, setResult] = useState<{ imported: number; skipped: number; errors: string[] } | null>(null);
+  const [result, setResult] = useState<{ imported: number; skipped: number; errors: string[]; collisions: number; ambiguities: number } | null>(null);
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState(0);
 
@@ -1943,9 +1951,11 @@ function ProcessingRoutesImportTab({ companyId }: { companyId: string | null }) 
     setImporting(true);
     setProgress(0);
     try {
-      // Fetch items + parties once upfront
-      const [{ data: itemsRaw }, { data: partiesRaw }] = await Promise.all([
-        supabase.from("items").select("id, item_code, drawing_revision, drawing_number").eq("company_id", companyId),
+      // Fetch items + parties once upfront. Items filtered to active so
+      // inactive duplicates don't shadow the intended item during lookup,
+      // and paginated past PostgREST's default ~1000 row cap.
+      const [itemsRaw, { data: partiesRaw }] = await Promise.all([
+        fetchAllActiveItems(supabase, companyId),
         (supabase as any).from("parties").select("id, name").eq("company_id", companyId),
       ]);
       const vendorByName = new Map<string, string>();
@@ -1953,10 +1963,13 @@ function ProcessingRoutesImportTab({ companyId }: { companyId: string | null }) 
 
       // Parse all rows into payloads in memory
       type RowVendor = { name: string; isPreferred: boolean };
-      type ParsedRoute = { payload: any; vendors: RowVendor[]; excelRow: number };
-      const parsedMap = new Map<string, ParsedRoute>(); // key: "item_id:stage_number" — last row wins (dedup)
+      type ParsedRoute = { payload: any; vendors: RowVendor[]; excelRow: number; drawingNumber: string };
+      const parsedMap = new Map<string, ParsedRoute>(); // key: "item_id:stage_number" — first row wins
       let skipped = 0;
       const skipErrors: string[] = [];
+      const collisionMessages: string[] = [];
+      const ambiguityMessages: string[] = [];
+      const ambiguousDrawingsSeen = new Set<string>(); // dedupe per-drawing ambiguity warnings
 
       rows.forEach((row, idx) => {
         const excelRow = idx + 2;
@@ -1968,8 +1981,16 @@ function ProcessingRoutesImportTab({ companyId }: { companyId: string | null }) 
         if (!drawingNum) { skipped++; skipErrors.push(`Row ${excelRow}: Drawing Number is required`); return; }
         if (!stageNum) { skipped++; skipErrors.push(`Row ${excelRow} (${drawingNum}): Stage No is required or invalid`); return; }
         if (!processName) { skipped++; skipErrors.push(`Row ${excelRow} (${drawingNum}): Process Name is required`); return; }
-        const itemId = findItemByCode(itemsRaw ?? [], drawingNum);
-        if (!itemId) { skipped++; skipErrors.push(`Row ${excelRow}: Drawing/Item "${drawingNum}" not found in items master`); return; }
+
+        const lookup = findItemByCodeWithDiagnostics(itemsRaw ?? [], drawingNum);
+        if (!lookup.id) { skipped++; skipErrors.push(`Row ${excelRow}: Drawing/Item "${drawingNum}" not found in items master`); return; }
+        const itemId = lookup.id;
+        if (lookup.matchCount > 1 && !ambiguousDrawingsSeen.has(drawingNum)) {
+          ambiguousDrawingsSeen.add(drawingNum);
+          ambiguityMessages.push(
+            `Row ${excelRow}: Drawing '${drawingNum}' matched ${lookup.matchCount} items in the master — using item ${itemId}, ignored ${lookup.ambiguousIds.length} other match(es): ${lookup.ambiguousIds.join(", ")}`
+          );
+        }
 
         const vendors: RowVendor[] = [];
         const v1 = (row["vendor_1"] || "").toString().trim();
@@ -1978,6 +1999,13 @@ function ProcessingRoutesImportTab({ companyId }: { companyId: string | null }) 
         if (v2) vendors.push({ name: v2, isPreferred: false });
 
         const dedupeKey = `${itemId}:${stageNum}`;
+        const existing = parsedMap.get(dedupeKey);
+        if (existing) {
+          collisionMessages.push(
+            `Row ${excelRow}: Drawing '${drawingNum}' stage ${stageNum} conflicts with earlier Row ${existing.excelRow} ('${existing.drawingNumber}' resolved to same item) — keeping first occurrence`
+          );
+          return;
+        }
         parsedMap.set(dedupeKey, {
           payload: {
             company_id: companyId,
@@ -1993,6 +2021,7 @@ function ProcessingRoutesImportTab({ companyId }: { companyId: string | null }) 
           },
           vendors,
           excelRow,
+          drawingNumber: drawingNum,
         });
       });
 
@@ -2032,7 +2061,7 @@ function ProcessingRoutesImportTab({ companyId }: { companyId: string | null }) 
               imported++;
             } catch (err: any) {
               skipped++;
-              dbErrors.push(`Row ${entry.excelRow} (item ${entry.payload.item_id}, stage ${entry.payload.stage_number}): ${err?.message ?? "DB error"}`);
+              dbErrors.push(`Row ${entry.excelRow} (drawing ${entry.drawingNumber}, stage ${entry.payload.stage_number}): ${err?.message ?? "DB error"}`);
             }
           }
         }
@@ -2065,7 +2094,13 @@ function ProcessingRoutesImportTab({ companyId }: { companyId: string | null }) 
         await new Promise<void>((r) => setTimeout(r, 10));
       }
 
-      setResult({ imported, skipped, errors: [...skipErrors, ...dbErrors] });
+      setResult({
+        imported,
+        skipped,
+        errors: [...skipErrors, ...dbErrors, ...collisionMessages, ...ambiguityMessages],
+        collisions: collisionMessages.length,
+        ambiguities: ambiguityMessages.length,
+      });
       setRows([]);
     } catch (err: any) {
       toast({ title: "Import failed", description: err.message, variant: "destructive" });
@@ -2081,7 +2116,11 @@ function ProcessingRoutesImportTab({ companyId }: { companyId: string | null }) 
         <div className="space-y-2">
           <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg p-3">
             <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
-            <span className="text-sm text-green-800 font-medium">{result.imported} stages imported · {result.skipped} skipped</span>
+            <span className="text-sm text-green-800 font-medium">
+              {result.imported} stages imported · {result.skipped} skipped
+              {result.collisions > 0 && ` · ${result.collisions} collision${result.collisions !== 1 ? "s" : ""}`}
+              {result.ambiguities > 0 && ` · ${result.ambiguities} ambiguous lookup${result.ambiguities !== 1 ? "s" : ""}`}
+            </span>
           </div>
           {result.errors.length > 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1">
@@ -2707,9 +2746,14 @@ export default function DataImport() {
   const handleStockImport: BatchImportFn = async (rows, rowNums) => {
     const companyId = await getCompanyId();
 
-    // Pre-fetch all items — used by findItemByCode (3-level lookup)
-    const { data: itemsData } = await supabase
-      .from("items").select("id, item_code, drawing_revision, drawing_number").eq("company_id", companyId);
+    // Pre-fetch all active items — used by findItemByCode (3-level lookup).
+    // Paginated past PostgREST's default ~1000 row cap.
+    let itemsData: Awaited<ReturnType<typeof fetchAllActiveItems>> = [];
+    try {
+      itemsData = await fetchAllActiveItems(supabase, companyId);
+    } catch (itemsError) {
+      console.error("[Stock import] Failed to fetch items:", itemsError);
+    }
 
     const VALID_BUCKETS: Record<string, string> = {
       free: "stock_free", stock_free: "stock_free",

@@ -1,7 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId } from "@/lib/auth-helpers";
 import type { SkipReason } from "@/lib/import-utils";
-import { findItemByCode } from "@/lib/import-utils";
+import { findItemByCode, fetchAllActiveItems } from "@/lib/import-utils";
 
 // ============================================================
 // Interfaces
@@ -1195,9 +1195,12 @@ export async function importBomBatch(
 ): Promise<{ imported: number; skipped: number; errors: string[]; skipReasons: SkipReason[] }> {
   const companyId = await getCompanyId();
 
-  const { data: allItems, error: itemsError } = await supabase
-    .from("items").select("id, item_code, drawing_revision, drawing_number").eq("company_id", companyId);
-  if (itemsError) console.error("[BOM import] Failed to fetch items:", itemsError);
+  let allItems: Awaited<ReturnType<typeof fetchAllActiveItems>> = [];
+  try {
+    allItems = await fetchAllActiveItems(supabase, companyId);
+  } catch (itemsError) {
+    console.error("[BOM import] Failed to fetch items:", itemsError);
+  }
 
   let skipped = 0;
   const errors: string[] = [];

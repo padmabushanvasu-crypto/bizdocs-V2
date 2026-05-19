@@ -541,6 +541,37 @@ export function buildMappingSummary(
   };
 }
 
+// Fetch ALL active items for an import lookup, paginated past PostgREST's
+// default ~1000 row response cap. Without explicit .range() the cap silently
+// truncates large item masters — items beyond the cap are invisible to
+// downstream findItemByCode calls and their referencing import rows get
+// dropped as "not found". Use this helper anywhere an importer needs the
+// full items master to resolve lookups.
+export async function fetchAllActiveItems(
+  client: { from: (table: string) => any },
+  companyId: string
+): Promise<Array<{ id: string; item_code: string | null; drawing_revision: string | null; drawing_number: string | null }>> {
+  const pageSize = 1000;
+  const all: Array<{ id: string; item_code: string | null; drawing_revision: string | null; drawing_number: string | null }> = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await client
+      .from("items")
+      .select("id, item_code, drawing_revision, drawing_number")
+      .eq("company_id", companyId)
+      .eq("status", "active")
+      .order("id", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    const page = (data ?? []) as Array<{ id: string; item_code: string | null; drawing_revision: string | null; drawing_number: string | null }>;
+    if (page.length === 0) break;
+    all.push(...page);
+    if (page.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
+
 // ── Three-level item lookup (shared by BOM, Stock, Routes importers) ─────────
 //
 // Level 1: exact case-insensitive match on item_code
@@ -582,6 +613,63 @@ export function findItemByCode(
   }
 
   return undefined;
+}
+
+// Variant that reports ambiguity. Scans every item, buckets by match tier,
+// and picks from the highest non-empty tier. matchCount reflects how many
+// items qualified at the chosen tier; ambiguousIds are the other ids in
+// that same tier (the ones we skipped over).
+//
+// Tier precedence (highest first):
+//   0: case-sensitive item_code exact match
+//   1: case-insensitive item_code match
+//   2: normalised item_code (strip spaces + periods, uppercase)
+//   3: drawing_revision or drawing_number (case-insensitive)
+//
+// Use this in importers where collision warnings matter. The simpler
+// findItemByCode above stays in place for callers that just need an id.
+export function findItemByCodeWithDiagnostics(
+  items: Array<{ id: string; item_code: string | null; drawing_revision?: string | null; drawing_number?: string | null }>,
+  code: string
+): { id: string | undefined; matchCount: number; ambiguousIds: string[] } {
+  const codeTrimmed = code.trim();
+  if (!codeTrimmed) return { id: undefined, matchCount: 0, ambiguousIds: [] };
+  const codeLower = codeTrimmed.toLowerCase();
+  const normCode = codeTrimmed.toUpperCase().replace(/[\s.]/g, "");
+
+  const tiers: string[][] = [[], [], [], []];
+
+  for (const item of items) {
+    if (item.item_code === codeTrimmed) {
+      tiers[0].push(item.id);
+      continue;
+    }
+    if (item.item_code && item.item_code.toLowerCase() === codeLower) {
+      tiers[1].push(item.id);
+      continue;
+    }
+    if (item.item_code && normCode) {
+      const normItem = item.item_code.toUpperCase().replace(/[\s.]/g, "");
+      if (normItem === normCode) {
+        tiers[2].push(item.id);
+        continue;
+      }
+    }
+    if (
+      (item.drawing_revision && item.drawing_revision.toLowerCase() === codeLower) ||
+      (item.drawing_number && item.drawing_number.toLowerCase() === codeLower)
+    ) {
+      tiers[3].push(item.id);
+    }
+  }
+
+  for (const tier of tiers) {
+    if (tier.length > 0) {
+      const [chosen, ...rest] = tier;
+      return { id: chosen, matchCount: tier.length, ambiguousIds: rest };
+    }
+  }
+  return { id: undefined, matchCount: 0, ambiguousIds: [] };
 }
 
 export function normalizePartyType(raw: string): string {
