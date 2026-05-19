@@ -353,6 +353,11 @@ function mapTransactionType(type: string): StockMovement['document_type'] {
 export async function fetchStockMovements(itemId: string): Promise<StockMovement[]> {
   const companyId = await getCompanyId();
   if (!companyId) return [];
+  // running_balance is computed at read time, not from the stored balance_qty
+  // column. Historical callers pass 0 or inconsistent values for the stored
+  // column, so we recompute the running balance from qty_in / qty_out across
+  // this item's ledger rows in chronological order. Stored balance_qty column
+  // is effectively legacy — see B-side tech-debt for eventual removal.
   const { data, error } = await (supabase as any)
     .from('stock_ledger')
     .select('id, transaction_date, transaction_type, qty_in, qty_out, balance_qty, reference_id, reference_number, notes, created_by')
@@ -361,8 +366,10 @@ export async function fetchStockMovements(itemId: string): Promise<StockMovement
     .order('transaction_date', { ascending: true })
     .order('created_at', { ascending: true });
   if (error) throw error;
+  let running = 0;
   return ((data ?? []) as any[]).map((row) => {
     const isIn = (row.qty_in ?? 0) > 0;
+    running += Number(row.qty_in ?? 0) - Number(row.qty_out ?? 0);
     return {
       id: row.id,
       movement_date: row.transaction_date,
@@ -371,7 +378,7 @@ export async function fetchStockMovements(itemId: string): Promise<StockMovement
       document_number: row.reference_number ?? '—',
       document_id: row.reference_id ?? null,
       quantity: isIn ? (row.qty_in ?? 0) : (row.qty_out ?? 0),
-      running_balance: row.balance_qty ?? 0,
+      running_balance: running,
       party_name: null,
       performed_by: row.created_by ?? null,
       notes: row.notes ?? null,

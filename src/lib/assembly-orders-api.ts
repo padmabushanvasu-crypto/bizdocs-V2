@@ -923,30 +923,82 @@ export async function deleteBomLine(id: string): Promise<void> {
 
 export async function fetchStockLedger(filters: StockLedgerFilters = {}) {
   const { item_id, transaction_type, date_from, date_to, stock_state, page = 1, pageSize = 50 } = filters;
-  const from = (page - 1) * pageSize;
-  const to = from + pageSize - 1;
 
-  let query = (supabase as any)
-    .from("stock_ledger")
-    .select("*", { count: "exact" })
-    .order("transaction_date", { ascending: false })
-    .order("created_at", { ascending: false })
-    .range(from, to);
+  // balance_qty is computed at read time, not from the stored column.
+  // Historical callers pass 0 or inconsistent values for the stored column,
+  // so we recompute the running balance from qty_in / qty_out across all
+  // of an item's ledger rows. Stored balance_qty column is effectively
+  // legacy — see B-side tech-debt for eventual removal.
+  //
+  // Only item_id is applied at the DB level. Date, transaction_type, and
+  // stock_state filters narrow the *rows shown* not the *items*, so we apply
+  // them in JS AFTER computing the running balance — otherwise a filtered-out
+  // intermediate movement would be missing from its item's running total.
 
-  if (item_id) query = query.eq("item_id", item_id);
-  if (transaction_type && transaction_type !== "all")
-    query = query.eq("transaction_type", transaction_type);
-  if (date_from) query = query.gte("transaction_date", date_from);
-  if (date_to) query = query.lte("transaction_date", date_to);
-  if (stock_state && stock_state !== "all") {
-    if (stock_state === "in") query = query.not("to_state", "is", null);
-    else if (stock_state === "out") query = query.not("from_state", "is", null);
-    else query = query.or(`from_state.eq.${stock_state},to_state.eq.${stock_state}`);
+  // Fetch all rows for the universe (company via RLS, optionally item_id).
+  // Paginated past PostgREST's default ~1000 row cap.
+  const PAGE = 1000;
+  const allRows: any[] = [];
+  let offset = 0;
+  while (true) {
+    let q = (supabase as any)
+      .from("stock_ledger")
+      .select("*")
+      .order("transaction_date", { ascending: true })
+      .order("created_at", { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (item_id) q = q.eq("item_id", item_id);
+    const { data: chunk, error } = await q;
+    if (error) throw error;
+    const rows = (chunk ?? []) as any[];
+    if (rows.length === 0) break;
+    allRows.push(...rows);
+    if (rows.length < PAGE) break;
+    offset += PAGE;
   }
 
-  const { data, error, count } = await query;
-  if (error) throw error;
-  return { data: (data ?? []) as StockLedgerEntry[], count: count ?? 0 };
+  // Compute per-item running balance over the chronologically sorted set.
+  // Already sorted by (transaction_date ASC, created_at ASC); we just need
+  // to bucket per item_id while walking.
+  const balanceByItem = new Map<string, number>();
+  for (const row of allRows) {
+    const key = row.item_id ?? "__unkeyed__";
+    const prev = balanceByItem.get(key) ?? 0;
+    const next = prev + Number(row.qty_in ?? 0) - Number(row.qty_out ?? 0);
+    balanceByItem.set(key, next);
+    row.balance_qty = next;
+  }
+
+  // Apply display filters in JS, after balance is set.
+  let filtered = allRows;
+  if (transaction_type && transaction_type !== "all") {
+    filtered = filtered.filter((r) => r.transaction_type === transaction_type);
+  }
+  if (date_from) filtered = filtered.filter((r) => r.transaction_date >= date_from);
+  if (date_to) filtered = filtered.filter((r) => r.transaction_date <= date_to);
+  if (stock_state && stock_state !== "all") {
+    if (stock_state === "in") {
+      filtered = filtered.filter((r) => r.to_state != null);
+    } else if (stock_state === "out") {
+      filtered = filtered.filter((r) => r.from_state != null);
+    } else {
+      filtered = filtered.filter((r) => r.from_state === stock_state || r.to_state === stock_state);
+    }
+  }
+
+  // Resort to display order (newest first) and paginate in JS.
+  filtered.sort((a, b) => {
+    if (a.transaction_date !== b.transaction_date) {
+      return a.transaction_date < b.transaction_date ? 1 : -1;
+    }
+    const ac = a.created_at ?? "";
+    const bc = b.created_at ?? "";
+    return ac < bc ? 1 : ac > bc ? -1 : 0;
+  });
+  const count = filtered.length;
+  const start = (page - 1) * pageSize;
+  const pageRows = filtered.slice(start, start + pageSize);
+  return { data: pageRows as StockLedgerEntry[], count };
 }
 
 export async function addStockLedgerEntry(
