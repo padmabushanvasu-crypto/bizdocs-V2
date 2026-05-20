@@ -66,16 +66,57 @@ export async function fetchProcessingRouteAll(itemId: string): Promise<Processin
   return data ?? [];
 }
 
+// Match jig_master rows for a given drawing number, handling the messy reality
+// of how operators wrote the master:
+//   * Plain drawings (e.g. "230207") — match the column directly.
+//   * Composite slash/comma drawings (e.g. "230162E/162F", "230242/243") —
+//     match if the search drawing equals any of the slash/comma-delimited
+//     tokens.
+//   * Parenthesized alternates (e.g. "230483 (230162E)") — the value inside
+//     parens is treated as a sibling token.
+//   * Internal whitespace differences (e.g. jig "230019B" vs item "230019 B")
+//     — both sides are normalized to uppercase with all whitespace removed
+//     before comparison.
+//
+// Matching is strictly per-token equality after normalization. We never
+// substring-match a long token against a search ("23016" inside "230162"
+// would be a false positive and is rejected). Tokens like "162F" inside
+// "230162E/162F" are kept verbatim — they match a search for "162F" but
+// NOT a search for "230162F", which is the desired honest behaviour.
+const normalizeDrawing = (s: string | null | undefined): string =>
+  (s ?? "").toUpperCase().replace(/\s+/g, "");
+
+const tokenizeJigDrawing = (raw: string | null | undefined): string[] => {
+  if (!raw) return [];
+  // Treat parens as additional delimiters so "230483 (230162E)" yields both
+  // "230483" and "230162E" as candidates.
+  const flattened = raw.replace(/[()]/g, ",");
+  return flattened
+    .split(/[/,]/)
+    .map((t) => normalizeDrawing(t))
+    .filter((t) => t.length > 0);
+};
+
 export async function fetchJigsForDrawing(drawingNumber: string): Promise<JigMasterRecord[]> {
   const companyId = await getCompanyId();
-  if (!companyId || !drawingNumber.trim()) return [];
+  if (!companyId) return [];
+  const target = normalizeDrawing(drawingNumber);
+  if (!target) return [];
+
+  // Pull all jigs for the company in one shot; the master is small (≤100 rows
+  // typical) so client-side tokenize+match is cheaper than trying to express
+  // the rules in SQL, and it lets us handle parens/slashes uniformly.
   const { data, error } = await (supabase as any)
     .from("jig_master")
     .select("*")
-    .eq("company_id", companyId)
-    .ilike("drawing_number", drawingNumber.trim());
+    .eq("company_id", companyId);
   if (error) throw error;
-  return data ?? [];
+  const candidates = (data ?? []) as JigMasterRecord[];
+
+  return candidates.filter((jig) => {
+    const tokens = tokenizeJigDrawing(jig.drawing_number);
+    return tokens.includes(target);
+  });
 }
 
 export async function fetchStageVendors(routeId: string): Promise<BprVendor[]> {

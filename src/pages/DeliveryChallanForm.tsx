@@ -1637,42 +1637,25 @@ export default function DeliveryChallanForm() {
                     </tr>
                   );
                 })()}
-                {/* Stage-aware jig alerts: only show for machining stages */}
+                {/* Jig alerts — fire whenever the line's drawing matches a jig.
+                  *
+                  * The earlier `MACHINING_PROCESS_CODES` gate that suppressed alerts
+                  * unless a machining-type processing stage was selected has been
+                  * removed: jig_master.associated_process is unpopulated for every
+                  * jig in the live data, so we have no reliable way to narrow
+                  * "which jigs apply to which stage". A jig existing for a drawing
+                  * is itself the operator-relevant signal — show it.
+                  *
+                  * Save-time enforcement (lines 813-828) still requires every
+                  * amber checkbox to be ticked before status==='issued', so the
+                  * gate against accidental no-jig dispatch remains in place.
+                  */}
                 {(() => {
                   const allJigs = lineJigs.get(index) ?? [];
                   if (allJigs.length === 0) return null;
-                  const selectedStageId = lineSelectedStageId.get(index);
-                  const stage =
-                    selectedStageId && selectedStageId !== "manual"
-                      ? lineRoutes.get(index)?.find(s => s.id === selectedStageId)
-                      : null;
 
-                  const MACHINING_PROCESS_CODES = [
-                    '65', '64', '33', '75', '33b', '73', '65b', '65a', '33a',
-                  ];
-                  const isMachiningStage = (s: any): boolean => {
-                    if (!s) return false;
-                    const code = (s.process_code ?? '').toLowerCase().trim();
-                    const name = (s.process_name ?? '').toLowerCase().trim();
-                    return (
-                      MACHINING_PROCESS_CODES.includes(code) ||
-                      name.includes('turning') ||
-                      name.includes('milling') ||
-                      name.includes('cnc') ||
-                      name.includes('traub') ||
-                      name.includes('vmc')
-                    );
-                  };
-
-                  // Show all jigs for machining stages; hide for all others
-                  const relevantJigs = allJigs.filter(() => {
-                    if (!stage) return false;
-                    return isMachiningStage(stage);
-                  });
-                  if (relevantJigs.length === 0) return null;
-
-                  const notReadyJigs = relevantJigs.filter(j => j.status === "to_be_made");
-                  const okJigs = relevantJigs.filter(j => j.status === "ok" || j.status === "in_progress");
+                  const notReadyJigs = allJigs.filter(j => j.status === "to_be_made");
+                  const okJigs = allJigs.filter(j => j.status === "ok" || j.status === "in_progress");
                   const checked = lineJigsChecked.get(index) ?? [];
 
                   return (
