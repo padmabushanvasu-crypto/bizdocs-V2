@@ -1116,11 +1116,11 @@ export default function PurchaseOrderForm() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1000px]">
+          <table className="w-full min-w-[1100px]">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-8">#</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left min-w-[260px]">Description</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-24">HSN</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-32">Drawing No</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-20">Qty</th>
@@ -1128,7 +1128,7 @@ export default function PurchaseOrderForm() {
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-20">Alt. Qty</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-24">Alt. Unit</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-28">Unit Price {currencySymbol}</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-36">Delivery Date</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left w-32">Delivery Date</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right w-28">Amount {currencySymbol}</th>
                 <th className="w-10"></th>
               </tr>
@@ -1137,7 +1137,7 @@ export default function PurchaseOrderForm() {
               {lineItems.map((item, index) => (
                 <tr key={index} className="group border-b border-slate-100 hover:bg-slate-50/50">
                   <td className="px-3 py-2 text-sm text-muted-foreground font-mono w-8">{item.serial_number}</td>
-                  <td className="px-1 py-1">
+                  <td className="px-1 py-1 min-w-[260px]">
                     <ItemSuggest
                       value={item.description}
                       onChange={(v) => {
@@ -1161,10 +1161,11 @@ export default function PurchaseOrderForm() {
                     {item.description?.trim() && (
                       item.item_id ? (
                         <p
-                          className="text-[10px] text-green-600 mt-0.5 inline-flex items-center gap-1 leading-none"
+                          className="text-[11px] text-green-700 mt-0.5 flex items-start gap-1 leading-tight break-words"
                           title="Linked to item master"
                         >
-                          <CheckCircle2 className="w-2.5 h-2.5" /> Linked
+                          <CheckCircle2 className="w-3 h-3 mt-0.5 shrink-0" />
+                          <span className="break-words">{item.description}</span>
                         </p>
                       ) : (
                         <p
@@ -1257,7 +1258,7 @@ export default function PurchaseOrderForm() {
                       className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm text-right font-mono tabular-nums"
                     />
                   </td>
-                  <td className="p-0 w-36">
+                  <td className="p-0 w-32">
                     <input
                       type="date"
                       value={item.delivery_date || ""}

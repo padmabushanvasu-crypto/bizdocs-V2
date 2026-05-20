@@ -1178,13 +1178,13 @@ export default function DeliveryChallanForm() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px]">
+          <table className="w-full min-w-[1000px]">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
                 <th className="px-3 py-2 text-left w-8 text-xs font-medium text-slate-400 uppercase tracking-wider">#</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Item / Description</th>
+                <th className="px-3 py-2 text-left min-w-[260px] text-xs font-medium text-slate-400 uppercase tracking-wider">Item / Description</th>
                 <th className="px-3 py-2 text-left w-32 text-xs font-medium text-slate-400 uppercase tracking-wider">Drawing No</th>
-                <th className="px-3 py-2 text-left w-48 text-xs font-medium text-slate-400 uppercase tracking-wider">Nature of Process</th>
+                <th className="px-3 py-2 text-left w-40 text-xs font-medium text-slate-400 uppercase tracking-wider">Nature of Process</th>
                 <th className="px-3 py-2 text-right w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Qty</th>
                 <th className="px-3 py-2 text-left w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Unit</th>
                 <th className="px-3 py-2 text-right w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Alt. Qty</th>
@@ -1199,7 +1199,7 @@ export default function DeliveryChallanForm() {
                 <React.Fragment key={index}>
                 <tr data-line-index={index} className="group border-b border-slate-100 hover:bg-slate-50/50">
                   <td className="px-3 py-2 text-muted-foreground font-mono text-sm w-8">{item.serial_number}</td>
-                  <td className="px-1 py-1">
+                  <td className="px-1 py-1 min-w-[260px]">
                     <ItemSuggest
                       value={item.description}
                       onChange={(v) => {
@@ -1278,10 +1278,11 @@ export default function DeliveryChallanForm() {
                     {item.description?.trim() && (
                       item.item_id ? (
                         <p
-                          className="text-[10px] text-green-600 mt-0.5 inline-flex items-center gap-1 leading-none"
+                          className="text-[11px] text-green-700 mt-0.5 flex items-start gap-1 leading-tight break-words"
                           title="Linked to item master"
                         >
-                          <CheckCircle2 className="w-2.5 h-2.5" /> Linked
+                          <CheckCircle2 className="w-3 h-3 mt-0.5 shrink-0" />
+                          <span className="break-words">{item.description}</span>
                         </p>
                       ) : (
                         <p
@@ -1347,7 +1348,7 @@ export default function DeliveryChallanForm() {
                       className="w-full min-h-[44px] px-3 py-2 bg-transparent border-none outline-none focus:bg-blue-50 text-sm font-mono"
                     />
                   </td>
-                  <td className="p-0 w-48">
+                  <td className="p-0 w-40">
                     <input
                       type="text"
                       value={item.nature_of_process || ""}
