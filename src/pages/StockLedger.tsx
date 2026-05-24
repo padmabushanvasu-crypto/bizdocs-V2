@@ -289,7 +289,12 @@ export default function StockLedger() {
                         {format(new Date(entry.transaction_date), "dd MMM yyyy")}
                       </td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-xs text-slate-600">
-                        {entry.item_code ?? "—"}
+                        <div>{entry.item_code ?? "—"}</div>
+                        {((entry as any).items?.drawing_number || (entry as any).items?.drawing_revision) && (
+                          <div className="text-xs text-slate-400 font-mono">
+                            {(entry as any).items?.drawing_number || (entry as any).items?.drawing_revision}
+                          </div>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left max-w-[200px] truncate">
                         {entry.item_description ?? "—"}
