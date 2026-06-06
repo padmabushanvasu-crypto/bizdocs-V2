@@ -172,6 +172,8 @@ interface NCSummary {
   non_conforming_qty: number;
   disposition: Disposition | '';
   qc_notes?: string;
+  // Alt. Qty accepted (optional secondary measurement, e.g. KG alongside NOS).
+  accepted_qty_2?: number | null;
 }
 
 // ── Stage Progress Bar ─────────────────────────────────────────────────────────
@@ -726,8 +728,10 @@ function QCMeasurementEditor({
   setShowUntickDialog,
   setFinalGrnPerLine,
   isSavedFinalGrn = false,
+  accepted2ByLine = {},
+  onChangeAccepted2,
 }: {
-  lineItems: Array<{ id: string; item_code: string; description: string; received_qty: number; qty_matched: number; matching_units?: number; unit: string }>;
+  lineItems: Array<{ id: string; item_code: string; description: string; received_qty: number; qty_matched: number; matching_units?: number; unit: string; unit_2?: string | null; ordered_qty_2?: number | null; accepted_qty_2?: number | null }>;
   qcRows: QCRow[];
   onAddRow: (lineItemId: string) => void;
   onChangeRow: (idx: number, field: keyof QCRow, value: string) => void;
@@ -740,6 +744,8 @@ function QCMeasurementEditor({
   setShowUntickDialog?: (open: boolean) => void;
   setFinalGrnPerLine?: (map: Record<string, boolean>) => void;
   isSavedFinalGrn?: boolean;
+  accepted2ByLine?: Record<string, number | null>;
+  onChangeAccepted2?: (lineItemId: string, value: number | null) => void;
 }) {
   return (
     <div className="space-y-4">
@@ -767,6 +773,35 @@ function QCMeasurementEditor({
                 <Plus className="h-3 w-3" /> Add Row
               </button>
             </div>
+
+            {/* Alt. Qty accepted — only for lines that carry a secondary unit */}
+            {item.unit_2 && (
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-1 px-4 py-2 border-t border-slate-100 bg-slate-50/60 text-xs">
+                {Number(item.ordered_qty_2 ?? 0) > 0 && (
+                  <span className="text-slate-600">
+                    <span className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 mr-1.5">Alt. Qty Ordered</span>
+                    <span className="font-mono text-slate-800">{item.ordered_qty_2}</span>
+                    <span className="text-muted-foreground ml-1">{item.unit_2}</span>
+                  </span>
+                )}
+                <label className="flex items-center gap-2 text-slate-600">
+                  <span className="font-semibold uppercase tracking-wide text-[10px] text-slate-500">Alt. Qty Accepted</span>
+                  <input
+                    type="number"
+                    className="w-24 text-right border border-slate-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                    value={accepted2ByLine[item.id] ?? ""}
+                    min={0}
+                    disabled={disabled}
+                    placeholder="—"
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      onChangeAccepted2?.(item.id, raw === "" ? null : Math.max(0, Number(raw)));
+                    }}
+                  />
+                  <span className="text-muted-foreground">{item.unit_2}</span>
+                </label>
+              </div>
+            )}
 
             {/* Per-item Final GRN checkbox */}
             {!disabled && setFinalGrnPerLine && (() => {
@@ -946,14 +981,16 @@ function QCMeasurementReadOnly({
   lineItems,
   qcRows,
 }: {
-  lineItems: Array<{ id: string; item_code: string; description: string; received_qty: number; unit: string; matching_units?: number }>;
+  lineItems: Array<{ id: string; item_code: string; description: string; received_qty: number; unit: string; matching_units?: number; unit_2?: string | null; ordered_qty_2?: number | null; accepted_qty_2?: number | null }>;
   qcRows: GRNQCMeasurement[];
 }) {
   return (
     <div className="space-y-4">
       {lineItems.map((item) => {
         const itemRows = qcRows.filter((r) => r.grn_line_item_id === item.id);
-        if (itemRows.length === 0) return null;
+        const hasAlt = !!item.unit_2;
+        // Render nothing for a line with neither measurements nor alt-qty data.
+        if (itemRows.length === 0 && !hasAlt) return null;
         const hasNC = itemRows.some((r) => r.result === "non_conforming");
         return (
           <div key={item.id} className="rounded-lg border border-slate-200 overflow-hidden">
@@ -964,6 +1001,23 @@ function QCMeasurementReadOnly({
                 <span className="font-normal ml-2">· Inspecting: {formatNumber((item.matching_units ?? item.received_qty) ?? 0)} {item.unit}</span>
               </span>
             </div>
+            {hasAlt && (
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-1 px-4 py-2 border-t border-slate-100 bg-slate-50/60 text-xs text-slate-600">
+                {Number(item.ordered_qty_2 ?? 0) > 0 && (
+                  <span>
+                    <span className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 mr-1.5">Alt. Qty Ordered</span>
+                    <span className="font-mono">{item.ordered_qty_2}</span>
+                    <span className="text-muted-foreground ml-1">{item.unit_2}</span>
+                  </span>
+                )}
+                <span>
+                  <span className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 mr-1.5">Alt. Qty Accepted</span>
+                  <span className="font-mono">{item.accepted_qty_2 ?? "—"}</span>
+                  {item.accepted_qty_2 != null && <span className="text-muted-foreground ml-1">{item.unit_2}</span>}
+                </span>
+              </div>
+            )}
+            {itemRows.length > 0 && (
             <div className="overflow-x-auto rounded-lg border border-slate-200">
               <table className="w-full border-collapse text-sm">
                 <thead>
@@ -1011,6 +1065,7 @@ function QCMeasurementReadOnly({
                 </tbody>
               </table>
             </div>
+            )}
           </div>
         );
       })}
@@ -1119,7 +1174,8 @@ function GRNPrintView({
           </thead>
           <tbody>
             {s1Lines.map((l, idx) => (
-              <tr key={idx} style={{ background: l.received_qty !== l.po_quantity ? "#FEF3C7" : idx % 2 === 0 ? "#F8FAFC" : "white" }}>
+              <React.Fragment key={idx}>
+              <tr style={{ background: l.received_qty !== l.po_quantity ? "#FEF3C7" : idx % 2 === 0 ? "#F8FAFC" : "white" }}>
                 <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0" }}>{idx + 1}</td>
                 <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", fontFamily: "Courier New, monospace" }}>{l.item_code || "—"}</td>
                 <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0" }}>{l.description}</td>
@@ -1130,6 +1186,15 @@ function GRNPrintView({
                 <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textTransform: "capitalize" }}>{(l.condition_on_arrival || "good").replace(/_/g, " ")}</td>
                 <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "center" }}>{l.packing_intact ? "Yes" : "No"}</td>
               </tr>
+              {Number(l.ordered_qty_2 ?? 0) > 0 && (
+                <tr style={{ background: "#F8FAFC" }}>
+                  <td colSpan={9} style={{ padding: "2pt 4pt 2pt 16pt", borderBottom: "0.5pt solid #E2E8F0", fontSize: "7.5pt", color: "#475569" }}>
+                    Alt. Qty — Ordered: <strong>{formatNumber(l.ordered_qty_2 ?? 0)} {l.unit_2 ?? ""}</strong>
+                    {l.received_now_2 != null && <> · Received: <strong>{formatNumber(l.received_now_2)} {l.unit_2 ?? ""}</strong></>}
+                  </td>
+                </tr>
+              )}
+              </React.Fragment>
             ))}
           </tbody>
         </table>
@@ -1557,6 +1622,7 @@ export default function GRNDetail() {
           non_conforming_qty: a.non_conforming_qty ?? 0,
           disposition:        (a.disposition as Disposition) ?? "",
           qc_notes:           a.qc_notes ?? "",
+          accepted_qty_2:     a.accepted_qty_2 ?? null,
         };
       })
     );
@@ -1900,6 +1966,7 @@ export default function GRNDetail() {
         disposition:          (nc.disposition || null) as Disposition | null,
         reference_drawing:    null,
         qc_notes:             nc.qc_notes || null,
+        accepted_qty_2:       nc.accepted_qty_2 ?? null,
       }));
       // PO-GRNs: all lines are final (goods always go to store after QC).
       // DC-GRNs: only bought_out/consumable/service auto-mark (others may go back to job work).
@@ -2135,15 +2202,26 @@ export default function GRNDetail() {
   const ncItemsWithData = ncSummaries.filter((s) => s.non_conforming_qty > 0);
 
   // For QCMeasurementEditor lineItems
-  const editorLineItems = s1Lines.map((l) => ({
-    id: l.id,
-    item_code: l.item_code,
-    description: l.description,
-    received_qty: l.received_qty,
-    qty_matched: l.qty_matched,
-    matching_units: l.matching_units,
-    unit: (grn.line_items ?? []).find((li) => li.id === l.id)?.unit ?? "",
-  }));
+  const editorLineItems = s1Lines.map((l) => {
+    const gl = (grn.line_items ?? []).find((li) => li.id === l.id) as any;
+    return {
+      id: l.id,
+      item_code: l.item_code,
+      description: l.description,
+      received_qty: l.received_qty,
+      qty_matched: l.qty_matched,
+      matching_units: l.matching_units,
+      unit: gl?.unit ?? "",
+      // Alt. Qty (secondary UOM) — static info for label + read-only display.
+      unit_2: gl?.unit_2 ?? l.unit_2 ?? null,
+      ordered_qty_2: gl?.ordered_qty_2 ?? l.ordered_qty_2 ?? null,
+      accepted_qty_2: gl?.accepted_qty_2 ?? null,
+    };
+  });
+
+  // Live editable alt-accepted values keyed by line id (drives the QC editor input).
+  const accepted2ByLine: Record<string, number | null> = {};
+  for (const nc of ncSummaries) accepted2ByLine[nc.lineItemId] = nc.accepted_qty_2 ?? null;
 
   // For print view - QC measurements from grn (after save) or from qcRows (before save)
   const printMeasurements: GRNQCMeasurement[] = s2Done
@@ -2675,6 +2753,8 @@ export default function GRNDetail() {
                   setShowUntickDialog={setShowUntickDialog}
                   setFinalGrnPerLine={setFinalGrnPerLine}
                   isSavedFinalGrn={g.is_final_grn ?? false}
+                  accepted2ByLine={accepted2ByLine}
+                  onChangeAccepted2={(lineId, value) => updateNCSummary(lineId, "accepted_qty_2", value)}
                 />
 
                 {/* NC Summary — only for items with non_conforming rows */}

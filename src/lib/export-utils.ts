@@ -552,6 +552,10 @@ const GRN_REPORT_LINE_COLS: ExportColumn[] = [
   { key: "rejected_qty", label: "Rejected", type: "number" },
   { key: "store_confirmed_qty", label: "Store Confirmed", type: "number" },
   { key: "unit", label: "Unit" },
+  { key: "ordered_qty_2", label: "Alt Ordered", type: "number" },
+  { key: "received_now_2", label: "Alt Received", type: "number" },
+  { key: "accepted_qty_2", label: "Alt Accepted", type: "number" },
+  { key: "unit_2", label: "Alt Unit" },
 ];
 
 export function exportGRNReport(
@@ -577,6 +581,10 @@ export function exportGRNReport(
       rejected_qty: li.rejected_qty ?? li.rejected_quantity,
       store_confirmed_qty: li.store_confirmed_qty,
       unit: li.unit,
+      ordered_qty_2: li.ordered_qty_2,
+      received_now_2: li.received_now_2,
+      accepted_qty_2: li.accepted_qty_2,
+      unit_2: li.unit_2,
     }))
   );
   exportMultiSheet(

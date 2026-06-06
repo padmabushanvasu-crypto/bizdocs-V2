@@ -251,7 +251,7 @@ export async function fetchAllGRNsForExport(
   const { data, error } = await (supabase as any)
     .from("grns")
     .select(
-      `*, line_items:grn_line_items(serial_number, description, drawing_number, ordered_qty, po_quantity, received_now, receiving_now, accepted_qty, accepted_quantity, rejected_qty, rejected_quantity, unit, store_confirmed_qty)`
+      `*, line_items:grn_line_items(serial_number, description, drawing_number, ordered_qty, po_quantity, received_now, receiving_now, accepted_qty, accepted_quantity, rejected_qty, rejected_quantity, unit, store_confirmed_qty, ordered_qty_2, unit_2, received_now_2, accepted_qty_2)`
     )
     .eq("company_id", companyId)
     .not("status", "in", "(deleted,cancelled)")
@@ -1159,6 +1159,8 @@ export interface QualitativeLineData {
   disposition?: Disposition | null;
   reference_drawing?: string | null;
   qc_notes?: string | null;
+  // Alt. Qty accepted (optional secondary measurement, e.g. KG alongside NOS).
+  accepted_qty_2?: number | null;
 }
 
 export async function saveQualityStage(
@@ -1191,6 +1193,8 @@ export async function saveQualityStage(
         qc_inspected_at: now,
         accepted_qty: line.conforming_qty + (line.non_conforming_qty > 0 && ['accept_as_is','conditional_accept'].includes(line.disposition ?? '') ? line.non_conforming_qty : 0),
         rejected_qty: line.non_conforming_qty > 0 && ['return_to_vendor','scrap'].includes(line.disposition ?? '') ? line.non_conforming_qty : 0,
+        // Alt. Qty accepted — only written when provided; never clobbers with null otherwise.
+        ...(line.accepted_qty_2 != null ? { accepted_qty_2: line.accepted_qty_2 } : {}),
         is_final_grn: lineIsFinal,
       })
       .eq('id', line.id);
