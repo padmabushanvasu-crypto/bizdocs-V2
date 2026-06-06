@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { Bell, Package, Truck, ShoppingCart, CheckCircle2, Receipt } from "lucide-react";
+import { Bell, Package, Truck, Receipt } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -28,8 +28,6 @@ function NotifIcon({ type }: { type: string }) {
   const cls = "h-4 w-4 shrink-0";
   if (type === "stock_alert")         return <Package className={cn(cls, "text-amber-600")} />;
   if (type === "overdue_dc")          return <Truck className={cn(cls, "text-red-500")} />;
-  if (type === "po_pending_grn")      return <ShoppingCart className={cn(cls, "text-blue-500")} />;
-  if (type === "fat_pending")         return <CheckCircle2 className={cn(cls, "text-purple-500")} />;
   if (type === "over_receipt_approval") return <Receipt className={cn(cls, "text-amber-600")} />;
   return <Bell className={cn(cls, "text-slate-400")} />;
 }
@@ -37,8 +35,6 @@ function NotifIcon({ type }: { type: string }) {
 function NotifIconBg(type: string): string {
   if (type === "stock_alert")           return "bg-amber-50";
   if (type === "overdue_dc")            return "bg-red-50";
-  if (type === "po_pending_grn")        return "bg-blue-50";
-  if (type === "fat_pending")           return "bg-purple-50";
   if (type === "over_receipt_approval") return "bg-amber-50";
   return "bg-slate-50";
 }

@@ -11,7 +11,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { LogOut, Settings, User, LayoutDashboard, KeyRound, Sun, Moon } from "lucide-react";
 import { useTheme } from "@/hooks/useTheme";
 import { ChangePasswordDialog } from "@/components/ChangePasswordDialog";
-import { generateStockAlerts, generateOverdueDCAlerts } from "@/lib/notifications-api";
 import { FOCUSED_ROLES, FOCUSED_ROLE_REDIRECT, ROLE_LABELS } from "@/lib/roles";
 import type { AppRole } from "@/lib/roles";
 
@@ -45,11 +44,10 @@ export function AppLayout() {
     navigate("/login");
   };
 
-  // Generate fresh in-app notifications on every app load
-  useEffect(() => {
-    generateStockAlerts();
-    generateOverdueDCAlerts();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Low-stock and overdue-DC are standing conditions, not events — they live on
+  // their own pages (Stock Register "Needs Attention" / Follow-Up Tracker
+  // "Overdue"), not the bell. The on-load generateStockAlerts/generateOverdueDCAlerts
+  // regeneration was removed to stop the notification flood (Notifications Stage 1).
 
   // Redirect focused roles to their queue on root path
   useEffect(() => {
