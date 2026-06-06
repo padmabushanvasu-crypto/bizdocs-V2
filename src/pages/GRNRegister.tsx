@@ -112,6 +112,8 @@ function GRNRegisterInner() {
 
   const [showDeleted, setShowDeleted] = useState(false);
   const [stageFilter, setStageFilter] = useState(searchParams.get('stage') ?? 'all');
+  // Inward Sl. No column sort — 'none' keeps the default (created_at desc) order.
+  const [inwardSort, setInwardSort] = useState<'none' | 'asc' | 'desc'>('none');
   const [filters, setFilters] = useState<GRNFilters>({
     drawingNumber: "",
     search: "",
@@ -209,8 +211,18 @@ function GRNRegisterInner() {
     } else if (stageFilter === 'closed_nonconforming') {
       list = list.filter(g => ['conditionally_accepted','partially_returned','returned'].includes((g as any).overall_quality_verdict ?? ''));
     }
+    if (inwardSort !== 'none') {
+      // Lines without an inward serial sort last regardless of direction.
+      list = [...list].sort((a: any, b: any) => {
+        const av = a.inward_sl_no, bv = b.inward_sl_no;
+        if (av == null && bv == null) return 0;
+        if (av == null) return 1;
+        if (bv == null) return -1;
+        return inwardSort === 'asc' ? av - bv : bv - av;
+      });
+    }
     return list;
-  }, [data, stageFilter, showDeleted]);
+  }, [data, stageFilter, showDeleted, inwardSort]);
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -282,6 +294,17 @@ function GRNRegisterInner() {
             className="pl-9 w-40 dark:bg-[#0a0e1a] dark:border-white/20"
           />
         </div>
+        <Input
+          type="number"
+          min={1}
+          placeholder="Inward Sl. No"
+          value={filters.inwardSlNo ?? ""}
+          onChange={(e) => {
+            const v = e.target.value.trim();
+            setFilters((f) => ({ ...f, inwardSlNo: v === "" ? undefined : Number(v), page: 1 }));
+          }}
+          className="w-32 dark:bg-[#0a0e1a] dark:border-white/20"
+        />
         <Select value={filters.month ?? "__all_months__"} onValueChange={(v) => setFilters((f) => ({ ...f, month: v === "__all_months__" ? undefined : v, page: 1 }))}>
           <SelectTrigger className="w-[150px]"><SelectValue placeholder="All months" /></SelectTrigger>
           <SelectContent>
@@ -297,6 +320,17 @@ function GRNRegisterInner() {
           <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10">
               <tr>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">
+                  <button
+                    type="button"
+                    onClick={() => setInwardSort((s) => (s === "asc" ? "desc" : "asc"))}
+                    className="inline-flex items-center gap-1 uppercase tracking-wide hover:text-slate-700"
+                    title="Sort by Inward Sl. No"
+                  >
+                    Inward Sl. No
+                    <span className="text-[9px]">{inwardSort === "asc" ? "▲" : inwardSort === "desc" ? "▼" : "↕"}</span>
+                  </button>
+                </th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">GRN #</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Date</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Vendor</th>
@@ -309,10 +343,10 @@ function GRNRegisterInner() {
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-400">Loading...</td></tr>
+                <tr><td colSpan={9} className="px-3 py-8 text-center text-sm text-slate-400">Loading...</td></tr>
               ) : grns.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-400">
+                  <td colSpan={9} className="px-3 py-8 text-center text-sm text-slate-400">
                     <PackageCheck className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
                     <p className="text-muted-foreground font-medium">No GRNs found</p>
                   </td>
@@ -322,6 +356,7 @@ function GRNRegisterInner() {
                   const isDeleted = (grn as any).status === 'deleted';
                   return (
                     <tr key={grn.id} className={`hover:bg-muted/50 transition-colors ${isDeleted ? 'opacity-50' : 'cursor-pointer'}`} onClick={() => !isDeleted && navigate(`/grn/${grn.id}`)}>
+                      <td className="px-3 py-2 text-sm border-b border-slate-100 text-left font-mono tabular-nums font-semibold text-slate-800">{(grn as any).inward_sl_no ?? "—"}</td>
                       <td className={`px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium ${isDeleted ? 'line-through text-muted-foreground' : 'text-foreground'}`}>{grn.grn_number}</td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{new Date(grn.grn_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">{grn.vendor_name || "—"}</td>

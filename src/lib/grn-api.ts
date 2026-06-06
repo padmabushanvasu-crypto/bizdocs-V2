@@ -129,6 +129,9 @@ export interface GRN {
   qc_prepared_by?: string | null;
   qc_inspected_by?: string | null;
   qc_approved_by?: string | null;
+  // Inward serial (per-company, per-FY) — assigned on receipt via RPC.
+  inward_sl_no?: number | null;
+  inward_fy?: string | null;
 }
 
 export interface GrnInspectionLine {
@@ -173,6 +176,7 @@ export interface GRNFilters {
   grn_stage?: string;
   month?: string;
   drawingNumber?: string;
+  inwardSlNo?: number;
   page?: number;
   pageSize?: number;
   showDeleted?: boolean;
@@ -195,7 +199,7 @@ export async function fetchGRNs(filters: GRNFilters = {}) {
   if (!companyId) {
     return { data: [], count: 0 };
   }
-  const { search, status = "all", grn_type, month, drawingNumber, page = 1, pageSize = 20 } = filters;
+  const { search, status = "all", grn_type, month, drawingNumber, inwardSlNo, page = 1, pageSize = 20 } = filters;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
@@ -218,6 +222,7 @@ export async function fetchGRNs(filters: GRNFilters = {}) {
   if (status && status !== "all") query = query.eq("status", status);
   if (grn_type && grn_type !== "all") query = query.eq("grn_type", grn_type);
   if (filters.grn_stage && filters.grn_stage !== 'all') query = query.eq('grn_stage', filters.grn_stage);
+  if (inwardSlNo != null && Number.isFinite(inwardSlNo)) query = query.eq('inward_sl_no', inwardSlNo);
   if (month) {
     const start = `${month}-01`;
     const end = new Date(new Date(start).getFullYear(), new Date(start).getMonth() + 1, 0).toISOString().split('T')[0];
@@ -227,7 +232,11 @@ export async function fetchGRNs(filters: GRNFilters = {}) {
     const sanitized = sanitizeSearchTerm(search);
     if (sanitized) {
       const term = `%${sanitized}%`;
-      query = query.or(`grn_number.ilike.${term},vendor_name.ilike.${term},po_number.ilike.${term}`);
+      const orParts = [`grn_number.ilike.${term}`, `vendor_name.ilike.${term}`, `po_number.ilike.${term}`];
+      // Fold a purely-numeric search into an exact inward_sl_no match (numeric
+      // column — ilike won't apply), so typing the serial finds the GRN.
+      if (/^\d+$/.test(search.trim())) orParts.push(`inward_sl_no.eq.${Number(search.trim())}`);
+      query = query.or(orParts.join(","));
     }
   }
   if (drawingGrnIds) query = query.in("id", drawingGrnIds);
@@ -807,6 +816,15 @@ export async function createGrnFromPO(data: CreateGrnFromPOData): Promise<GRN> {
   const { error: liInsertErr } = await (supabase as any).from("grn_line_items").insert(lineItemsToInsert);
   if (liInsertErr) throw liInsertErr;
 
+  // Assign the per-company, per-FY Inward Sl. No. Idempotent RPC — a no-op if
+  // already set. Non-fatal: never block GRN creation on it (the unique index +
+  // backfill protect integrity), just log.
+  try {
+    await (supabase as any).rpc('assign_inward_sl_no', { p_grn_id: grnId });
+  } catch (e) {
+    console.error('[grn] assign_inward_sl_no failed (non-fatal):', e);
+  }
+
   return newGRN as unknown as GRN;
 }
 
@@ -906,6 +924,15 @@ export async function createGrnFromDC(data: CreateGrnFromDCData): Promise<GRN> {
   if (lineItemsToInsert.length > 0) {
     const { error: liInsertErr } = await (supabase as any).from("grn_line_items").insert(lineItemsToInsert);
     if (liInsertErr) throw liInsertErr;
+  }
+
+  // Assign the per-company, per-FY Inward Sl. No. Idempotent RPC — a no-op if
+  // already set. Non-fatal: never block GRN creation on it (the unique index +
+  // backfill protect integrity), just log.
+  try {
+    await (supabase as any).rpc('assign_inward_sl_no', { p_grn_id: grnId });
+  } catch (e) {
+    console.error('[grn] assign_inward_sl_no failed (non-fatal):', e);
   }
 
   return newGRN as unknown as GRN;

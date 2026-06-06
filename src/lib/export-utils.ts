@@ -530,6 +530,7 @@ export function exportDCReturnsReport(
 }
 
 const GRN_REPORT_SUMMARY_COLS: ExportColumn[] = [
+  { key: "inward_sl_no", label: "Inward Sl. No", type: "number" },
   { key: "grn_number", label: "GRN Number" },
   { key: "grn_date", label: "GRN Date", type: "date" },
   { key: "vendor_name", label: "Vendor", width: 24 },
@@ -542,6 +543,7 @@ const GRN_REPORT_SUMMARY_COLS: ExportColumn[] = [
 ];
 
 const GRN_REPORT_LINE_COLS: ExportColumn[] = [
+  { key: "inward_sl_no", label: "Inward Sl. No", type: "number" },
   { key: "grn_number", label: "GRN Number" },
   { key: "vendor_name", label: "Vendor", width: 24 },
   { key: "drawing_number", label: "Drawing No." },
@@ -571,6 +573,7 @@ export function exportGRNReport(
   }
   const lineRows = grns.flatMap((g) =>
     (g.line_items ?? []).map((li: any) => ({
+      inward_sl_no: g.inward_sl_no,
       grn_number: g.grn_number,
       vendor_name: g.vendor_name,
       drawing_number: li.drawing_number,
