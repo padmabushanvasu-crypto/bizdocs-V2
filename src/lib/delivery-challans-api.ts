@@ -3,6 +3,7 @@ import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
 import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
 import { getNextDocNumber } from "@/lib/doc-number-utils";
 import { updateStockBucket } from "@/lib/items-api";
+import { logAudit } from "@/lib/audit-api";
 
 const RETURNABLE_DC_TYPES = new Set([
   'job_work_143', 'job_work_out', 'job_work', 'sample', 'loan_borrow', 'returnable',
@@ -608,9 +609,156 @@ export async function issueDeliveryChallan(id: string) {
   }
 }
 
-export async function cancelDeliveryChallan(id: string, reason: string) {
-  const { error } = await supabase.from("delivery_challans").update({ status: "cancelled", cancelled_at: new Date().toISOString(), cancellation_reason: reason } as any).eq("id", id);
+// Cancel resolution options.
+//  - stockAction: how to handle stock still out against an *issued* DC. Skipped
+//    entirely for a draft / not-yet-issued DC (no dc_issue was ever posted).
+//  - jobCardStepHandling: what to do with linked job_card_steps (outward_dc_id)
+//    that have NOT yet returned material.
+export type DcCancelStockAction = 'return_to_free' | 'write_off';
+export type DcCancelStepHandling = 'reset' | 'leave';
+
+export interface DcCancelOptions {
+  reason: string;
+  stockAction?: DcCancelStockAction;       // default 'return_to_free'
+  jobCardStepHandling?: DcCancelStepHandling; // default 'reset'
+}
+
+/**
+ * Cancel a Delivery Challan with full resolution of stock + linked job cards.
+ *
+ * Mirrors softDeleteDeliveryChallan's reversal pattern: it NEVER deletes the
+ * original dc_issue — it posts OFFSETTING ledger entries. This is the cancel
+ * path only; the separate soft-delete path is untouched.
+ *
+ * Order (matches the soft-delete's ledger-first discipline):
+ *   guard (abort if any linked step already returned material)
+ *     → stock reversals → job-card step updates → status flip last → audit.
+ */
+export async function cancelDeliveryChallan(id: string, options: DcCancelOptions): Promise<void> {
+  const { reason } = options;
+  const stockAction: DcCancelStockAction = options.stockAction ?? 'return_to_free';
+  const stepHandling: DcCancelStepHandling = options.jobCardStepHandling ?? 'reset';
+  const today = new Date().toISOString().split('T')[0];
+
+  // ── Header: was this DC ever issued? (issued_at survives partial returns) ──
+  const { data: dcHeader, error: hdrErr } = await supabase
+    .from('delivery_challans')
+    .select('id, dc_number, dc_type, status, issued_at')
+    .eq('id', id)
+    .single();
+  if (hdrErr || !dcHeader) throw hdrErr ?? new Error('DC not found');
+  const dc = dcHeader as any;
+  const dcNumber: string = dc.dc_number ?? '';
+  const wasIssued = !!dc.issued_at;
+
+  // ── Guard FIRST (before any mutation): linked job-card steps ──────────────
+  const { data: stepRows, error: stepsErr } = await (supabase as any)
+    .from('job_card_steps')
+    .select('id, status, step_number, name, job_card_id, job_cards:job_card_id(jc_number)')
+    .eq('outward_dc_id', id);
+  if (stepsErr) throw stepsErr;
+  const linkedSteps = (stepRows ?? []) as any[];
+  const blockers = linkedSteps.filter(
+    (s) => s.status === 'done' || s.status === 'material_returned'
+  );
+  if (blockers.length > 0) {
+    const jc = blockers[0]?.job_cards?.jc_number ?? 'a linked job card';
+    throw new Error(
+      `Job card ${jc} already has returned material against this DC; resolve that before cancelling.`
+    );
+  }
+
+  // ── 1. Stock reversal — only for an issued DC. Ledger-first per iteration. ──
+  if (wasIssued) {
+    const { data: lines } = await supabase
+      .from('dc_line_items')
+      .select('item_id, item_code, description, qty_nos, quantity, returned_qty_nos')
+      .eq('dc_id', id);
+
+    for (const line of (lines ?? []) as any[]) {
+      if (!line.item_id) continue;
+      // Outstanding = issued − already-returned, in the line's tracked UOM (NOS).
+      const issued = Number(line.qty_nos ?? line.quantity ?? 0);
+      const returned = Number(line.returned_qty_nos ?? 0);
+      const outstanding = Math.max(0, issued - returned);
+      if (outstanding <= 0) continue;
+
+      if (stockAction === 'return_to_free') {
+        const notes = reason
+          ? `DC cancelled — stock returned to free: ${reason}`
+          : 'DC cancelled — stock returned to free';
+        await addStockLedgerEntry({
+          item_id: line.item_id,
+          item_code: line.item_code ?? null,
+          item_description: line.description ?? null,
+          transaction_date: today,
+          transaction_type: 'dc_return',
+          qty_in: outstanding,
+          qty_out: 0,
+          balance_qty: 0,
+          unit_cost: 0,
+          total_value: 0,
+          reference_type: 'delivery_challan',
+          reference_id: id,
+          reference_number: dcNumber,
+          notes,
+          created_by: null,
+          from_state: 'in_process',
+          to_state: 'free',
+        });
+        await updateStockBucket(line.item_id, 'in_process', -outstanding);
+        await updateStockBucket(line.item_id, 'free', +outstanding);
+      } else if (stockAction === 'write_off') {
+        const notes = reason
+          ? `DC cancelled — stock written off: ${reason}`
+          : 'DC cancelled — stock written off';
+        await addStockLedgerEntry({
+          item_id: line.item_id,
+          item_code: line.item_code ?? null,
+          item_description: line.description ?? null,
+          transaction_date: today,
+          transaction_type: 'rejection_writeoff',
+          qty_in: 0,
+          qty_out: outstanding,
+          balance_qty: 0,
+          unit_cost: 0,
+          total_value: 0,
+          reference_type: 'delivery_challan',
+          reference_id: id,
+          reference_number: dcNumber,
+          notes,
+          created_by: null,
+          from_state: 'in_process',
+          to_state: null,
+        });
+        await updateStockBucket(line.item_id, 'in_process', -outstanding);
+      }
+    }
+  }
+
+  // ── 2. Job-card steps: reset the non-blocking steps (material recalled). ───
+  if (linkedSteps.length > 0 && stepHandling === 'reset') {
+    const { error: resetErr } = await (supabase as any)
+      .from('job_card_steps')
+      .update({ status: 'pending' })
+      .in('id', linkedSteps.map((s) => s.id));
+    if (resetErr) throw resetErr;
+  }
+
+  // ── 3. Status flip LAST. ──────────────────────────────────────────────────
+  const { error } = await supabase
+    .from('delivery_challans')
+    .update({ status: 'cancelled', cancelled_at: new Date().toISOString(), cancellation_reason: reason } as any)
+    .eq('id', id);
   if (error) throw error;
+
+  // ── 4. Audit. ─────────────────────────────────────────────────────────────
+  await logAudit('delivery_challan', id, 'cancelled', {
+    reason,
+    stockAction: wasIssued ? stockAction : 'none (not issued)',
+    jobCardStepHandling: linkedSteps.length > 0 ? stepHandling : 'no linked steps',
+    linked_steps: linkedSteps.length,
+  });
 }
 
 export async function fetchDCReturns(dcId: string): Promise<DCReturn[]> {

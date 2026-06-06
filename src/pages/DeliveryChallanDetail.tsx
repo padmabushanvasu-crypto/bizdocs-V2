@@ -25,6 +25,8 @@ import {
   issueDeliveryChallan,
   type EnhancedReturnData,
   type DcDeleteStockAction,
+  type DcCancelStockAction,
+  type DcCancelStepHandling,
 } from "@/lib/delivery-challans-api";
 import { logAudit } from "@/lib/audit-api";
 import { useAuth } from "@/hooks/useAuth";
@@ -97,6 +99,8 @@ export default function DeliveryChallanDetail() {
 
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  const [cancelStockAction, setCancelStockAction] = useState<DcCancelStockAction>("return_to_free");
+  const [cancelStepHandling, setCancelStepHandling] = useState<DcCancelStepHandling>("reset");
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [copyLabel, setCopyLabel] = useState("ORIGINAL");
@@ -261,18 +265,43 @@ export default function DeliveryChallanDetail() {
   };
 
   const cancelMutation = useMutation({
-    mutationFn: () => cancelDeliveryChallan(id!, cancelReason),
+    mutationFn: () =>
+      cancelDeliveryChallan(id!, {
+        reason: cancelReason.trim(),
+        stockAction: cancelStockAction,
+        jobCardStepHandling: cancelStepHandling,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["delivery-challan", id] });
       queryClient.invalidateQueries({ queryKey: ["delivery-challans"] });
       queryClient.invalidateQueries({ queryKey: ["dc-stats"] });
       queryClient.invalidateQueries({ queryKey: ["dc-pending-approval-count"] });
+      queryClient.invalidateQueries({ queryKey: ["job-cards-for-dc", id] });
+      queryClient.invalidateQueries({ queryKey: ["dc-cancel-steps", id] });
       // Other sidebar badges that read from delivery_challans.
       queryClient.invalidateQueries({ queryKey: ["open-dc-count-sidebar"] });
       queryClient.invalidateQueries({ queryKey: ["dc-unread-rejection-count"] });
       setCancelOpen(false);
       toast({ title: "DC Cancelled" });
     },
+    onError: (err: any) =>
+      toast({ title: "Cancel failed", description: err.message, variant: "destructive" }),
+  });
+
+  // Linked job-card steps for this DC — drives the cancel resolution dialog.
+  const { data: cancelSteps = [] } = useQuery({
+    queryKey: ["dc-cancel-steps", id],
+    queryFn: async () => {
+      const companyId = await getCompanyId();
+      if (!companyId) return [];
+      const { data } = await (supabase as any)
+        .from("job_card_steps")
+        .select("id, status, step_number, name, job_card_id, job_cards:job_card_id(jc_number)")
+        .eq("company_id", companyId)
+        .eq("outward_dc_id", id);
+      return (data ?? []) as any[];
+    },
+    enabled: !!id && cancelOpen,
   });
 
   const approveMutation = useMutation({
@@ -782,7 +811,7 @@ export default function DeliveryChallanDetail() {
             </Button>
           )}
           {!["cancelled", "fully_returned", "deleted", "pending_approval", "rejected"].includes(dc.status) && isApprover && (
-            <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => setCancelOpen(true)}>
+            <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => { setCancelReason(""); setCancelStockAction("return_to_free"); setCancelStepHandling("reset"); setCancelOpen(true); }}>
               <X className="h-3.5 w-3.5 mr-1" /> Cancel
             </Button>
           )}
@@ -1493,16 +1522,152 @@ export default function DeliveryChallanDetail() {
 
       {/* Cancel Dialog */}
       <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Cancel Delivery Challan</DialogTitle>
-            <DialogDescription>This will cancel DC {dc.dc_number}. This action cannot be undone.</DialogDescription>
-          </DialogHeader>
-          <Textarea value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} placeholder="Reason for cancellation..." rows={3} />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCancelOpen(false)}>Go Back</Button>
-            <Button variant="destructive" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>Cancel DC</Button>
-          </DialogFooter>
+        <DialogContent className="max-w-lg">
+          {(() => {
+            const cancelIsIssued = !!(dc as any)?.issued_at;
+            const stepBlockers = (cancelSteps ?? []).filter(
+              (s: any) => s.status === "done" || s.status === "material_returned"
+            );
+            const hasBlockers = stepBlockers.length > 0;
+            const isConfirmEnabled = !!cancelReason.trim() && !hasBlockers;
+
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle>Cancel Delivery Challan</DialogTitle>
+                  <DialogDescription>
+                    This will cancel DC {dc.dc_number}. This action cannot be undone.
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-4">
+                  {/* Reason */}
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">
+                      Reason for cancellation <span className="text-destructive">*</span>
+                    </label>
+                    <Textarea
+                      value={cancelReason}
+                      onChange={(e) => setCancelReason(e.target.value)}
+                      placeholder="Reason for cancellation..."
+                      rows={3}
+                    />
+                  </div>
+
+                  {/* Stock outcome — only when stock actually went out */}
+                  {cancelIsIssued && (
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">
+                        Stock outcome <span className="text-destructive">*</span>
+                      </label>
+                      <p className="text-xs text-muted-foreground -mt-1">
+                        Stock was moved out when this DC was issued. The outstanding
+                        quantity (issued − already returned) will be reversed.
+                      </p>
+                      {([
+                        { value: "return_to_free", label: "Return to free stock", desc: "Posts a DC return and moves stock from in-process back to free stock" },
+                        { value: "write_off",      label: "Write off",            desc: "Posts a write-off and removes from in-process — not returned to free stock" },
+                      ] as { value: DcCancelStockAction; label: string; desc: string }[]).map((opt) => (
+                        <label
+                          key={opt.value}
+                          className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${cancelStockAction === opt.value ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"}`}
+                        >
+                          <input
+                            type="radio"
+                            name="dcCancelStockAction"
+                            value={opt.value}
+                            checked={cancelStockAction === opt.value}
+                            onChange={() => setCancelStockAction(opt.value)}
+                            className="mt-0.5"
+                          />
+                          <div>
+                            <p className="text-sm font-medium">{opt.label}</p>
+                            <p className="text-xs text-muted-foreground">{opt.desc}</p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Linked job-card steps */}
+                  {(cancelSteps ?? []).length > 0 && (
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Linked job cards</label>
+                      <div className="rounded-lg border divide-y">
+                        {(cancelSteps ?? []).map((s: any) => {
+                          const isBlocker = s.status === "done" || s.status === "material_returned";
+                          return (
+                            <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2">
+                              <div className="min-w-0">
+                                <button
+                                  className="font-mono text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                                  onClick={() => navigate(`/job-works/${s.job_card_id}`)}
+                                >
+                                  {s.job_cards?.jc_number ?? "Job card"}
+                                </button>
+                                <span className="text-xs text-muted-foreground ml-2">
+                                  Stage {s.step_number}{s.name ? ` · ${s.name}` : ""}
+                                </span>
+                              </div>
+                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${isBlocker ? "bg-red-100 text-red-800" : "bg-slate-100 text-slate-600"}`}>
+                                {s.status}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {hasBlockers ? (
+                        <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                          <AlertTriangle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
+                          <p className="text-xs text-red-700">
+                            A linked job card already has returned material against this DC.
+                            Resolve that return before cancelling — cancel is blocked.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2 pt-1">
+                          {([
+                            { value: "reset", label: "Reset these steps to pending (material recalled)", desc: "Marks the linked job-card stages back to pending" },
+                            { value: "leave", label: "Leave job cards unchanged", desc: "Job-card stages keep their current status" },
+                          ] as { value: DcCancelStepHandling; label: string; desc: string }[]).map((opt) => (
+                            <label
+                              key={opt.value}
+                              className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${cancelStepHandling === opt.value ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"}`}
+                            >
+                              <input
+                                type="radio"
+                                name="dcCancelStepHandling"
+                                value={opt.value}
+                                checked={cancelStepHandling === opt.value}
+                                onChange={() => setCancelStepHandling(opt.value)}
+                                className="mt-0.5"
+                              />
+                              <div>
+                                <p className="text-sm font-medium">{opt.label}</p>
+                                <p className="text-xs text-muted-foreground">{opt.desc}</p>
+                              </div>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setCancelOpen(false)} disabled={cancelMutation.isPending}>Go Back</Button>
+                  <Button
+                    variant="destructive"
+                    onClick={() => cancelMutation.mutate()}
+                    disabled={!isConfirmEnabled || cancelMutation.isPending}
+                  >
+                    {cancelMutation.isPending ? "Cancelling…" : "Cancel DC"}
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
