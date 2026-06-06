@@ -1694,10 +1694,11 @@ async function creditPartialStock(
     }
   }
   if (!resolvedItemId) {
-    console.warn(
-      `[grn] creditPartialStock — unable to resolve item_id for grn=${grnId} line=${lineId}; skipping stock credit.`
+    throw new Error(
+      `creditPartialStock: cannot resolve item_id for grn=${grnId} line=${lineId}. ` +
+      `This indicates a Store Confirm bypass — storeConfirmGRNItems should have blocked this. ` +
+      `Investigate the calling path.`
     );
-    return;
   }
 
   const today = new Date().toISOString().split('T')[0];
@@ -1958,6 +1959,9 @@ export async function storeConfirmGRNItems(
   if (headerErr) throw headerErr;
 
   // Validate ownership and quantities up front, before any UPDATE.
+  // Lines missing item_id are collected and reported as one error so the
+  // operator sees every blocked description in a single shot.
+  const blockedLines: Array<{ id: string; description: string | null }> = [];
   for (const input of items) {
     const line = lineMap.get(input.id);
     if (!line) throw new Error(`Line item ${input.id} not found.`);
@@ -1978,6 +1982,16 @@ export async function storeConfirmGRNItems(
         `Confirmed (${inStore}) + damaged (${inDmg}) exceeds remaining (${remaining.toFixed(3)}) for line ${line.description ?? input.id}.`
       );
     }
+    if (!line.item_id) {
+      blockedLines.push({ id: line.id, description: line.description ?? null });
+    }
+  }
+  if (blockedLines.length > 0) {
+    const bullets = blockedLines.map((b) => `  • ${b.description ?? `(line ${b.id})`}`).join("\n");
+    throw new Error(
+      `Cannot Store Confirm. The following line(s) have no item linked to the master:\n${bullets}\n\n` +
+      `Fix: open the original Purchase Order, type the item name on each blocked line, and select the matching suggestion. Then re-generate the GRN and try again.`
+    );
   }
 
   const fullyConfirmed: string[] = [];
