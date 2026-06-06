@@ -731,7 +731,7 @@ function QCMeasurementEditor({
   accepted2ByLine = {},
   onChangeAccepted2,
 }: {
-  lineItems: Array<{ id: string; item_code: string; description: string; received_qty: number; qty_matched: number; matching_units?: number; unit: string; unit_2?: string | null; ordered_qty_2?: number | null; accepted_qty_2?: number | null }>;
+  lineItems: Array<{ id: string; item_code: string; description: string; received_qty: number; qty_matched: number; matching_units?: number; unit: string; unit_2?: string | null; ordered_qty_2?: number | null; accepted_qty_2?: number | null; po_line_item_id?: string | null; is_final_grn?: boolean; final_grn_auto_detected?: boolean; final_grn_reason?: string | null }>;
   qcRows: QCRow[];
   onAddRow: (lineItemId: string) => void;
   onChangeRow: (idx: number, field: keyof QCRow, value: string) => void;
@@ -803,18 +803,21 @@ function QCMeasurementEditor({
               </div>
             )}
 
-            {/* Per-item Final GRN checkbox */}
-            {!disabled && setFinalGrnPerLine && (() => {
+            {/* Per-line Final GRN checkbox — every PO line gets an editable box.
+                DC-GRN lines (no PO line) don't show it. Auto-detect is a
+                SUGGESTION (pre-tick + hint); the QC user can override. */}
+            {!disabled && setFinalGrnPerLine && item.po_line_item_id && (() => {
               const lineId = item.id;
-              const isAuto = autoFinalLines.has(lineId);
-              const checked = isAuto || (finalGrnPerLine[lineId] ?? false);
+              const isAuto = autoFinalLines.has(lineId) || !!item.final_grn_auto_detected;
+              // Explicit user choice wins; otherwise fall back to the auto suggestion.
+              const checked = finalGrnPerLine[lineId] ?? isAuto;
               return (
                 <div className="flex items-center gap-2 px-4 py-2 border-t border-slate-100 bg-slate-50/50">
                   <input
                     type="checkbox"
                     id={`final-grn-qc-${lineId}`}
                     checked={checked}
-                    disabled={isAuto || isDeletedOrCancelled}
+                    disabled={isDeletedOrCancelled}
                     onChange={(e) => {
                       const newMap = { ...finalGrnPerLine, [lineId]: e.target.checked };
                       const newAnyFinal = Object.values(newMap).some(v => v) || autoFinalLines.size > 0;
@@ -829,7 +832,11 @@ function QCMeasurementEditor({
                   />
                   <label htmlFor={`final-grn-qc-${lineId}`} className="text-xs text-slate-600 cursor-pointer flex items-center gap-1.5">
                     Final GRN — no further delivery expected
-                    {isAuto && <span className="text-[10px] text-purple-500 font-medium">(Bought-Out — auto)</span>}
+                    {isAuto && (
+                      <span className="text-[10px] text-purple-500 font-medium">
+                        (suggested{item.final_grn_reason ? ` — ${item.final_grn_reason}` : ""})
+                      </span>
+                    )}
                   </label>
                 </div>
               );
@@ -981,7 +988,7 @@ function QCMeasurementReadOnly({
   lineItems,
   qcRows,
 }: {
-  lineItems: Array<{ id: string; item_code: string; description: string; received_qty: number; unit: string; matching_units?: number; unit_2?: string | null; ordered_qty_2?: number | null; accepted_qty_2?: number | null }>;
+  lineItems: Array<{ id: string; item_code: string; description: string; received_qty: number; unit: string; matching_units?: number; unit_2?: string | null; ordered_qty_2?: number | null; accepted_qty_2?: number | null; po_line_item_id?: string | null; is_final_grn?: boolean; final_grn_reason?: string | null }>;
   qcRows: GRNQCMeasurement[];
 }) {
   return (
@@ -989,17 +996,33 @@ function QCMeasurementReadOnly({
       {lineItems.map((item) => {
         const itemRows = qcRows.filter((r) => r.grn_line_item_id === item.id);
         const hasAlt = !!item.unit_2;
-        // Render nothing for a line with neither measurements nor alt-qty data.
-        if (itemRows.length === 0 && !hasAlt) return null;
+        const isPoLine = !!item.po_line_item_id;
+        // Render nothing for a DC line with neither measurements nor alt-qty data.
+        // PO lines always render so their Final GRN status is visible.
+        if (itemRows.length === 0 && !hasAlt && !isPoLine) return null;
         const hasNC = itemRows.some((r) => r.result === "non_conforming");
         return (
           <div key={item.id} className="rounded-lg border border-slate-200 overflow-hidden">
-            <div className={`px-4 py-2 ${hasNC ? "bg-amber-100" : "bg-blue-50"}`}>
+            <div className={`px-4 py-2 flex items-center justify-between gap-2 ${hasNC ? "bg-amber-100" : "bg-blue-50"}`}>
               <span className={`text-xs font-semibold ${hasNC ? "text-amber-800" : "text-blue-800"}`}>
                 <span className="font-mono">{item.item_code || "—"}</span>
                 {" — "}{item.description}
                 <span className="font-normal ml-2">· Inspecting: {formatNumber((item.matching_units ?? item.received_qty) ?? 0)} {item.unit}</span>
               </span>
+              {isPoLine && (
+                item.is_final_grn ? (
+                  <span
+                    className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 whitespace-nowrap"
+                    title={item.final_grn_reason ?? undefined}
+                  >
+                    ✓ Final GRN
+                  </span>
+                ) : (
+                  <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 whitespace-nowrap">
+                    Not final
+                  </span>
+                )
+              )}
             </div>
             {hasAlt && (
               <div className="flex flex-wrap items-center gap-x-6 gap-y-1 px-4 py-2 border-t border-slate-100 bg-slate-50/60 text-xs text-slate-600">
@@ -1633,10 +1656,12 @@ export default function GRNDetail() {
     setS2InspectedBy(g.quality_completed_by ?? "");
     setS2ApprovedBy(g.qc_approved_by ?? "");
     setS2Remarks(g.quality_remarks ?? "");
-    // Initialize per-line Final GRN from line items (fall back to GRN-level flag)
+    // Initialize per-line Final GRN from saved line items. Seed only lines that
+    // were explicitly saved as final (true); leave others unset so the editor's
+    // checked-state falls back to the auto-detect suggestion (?? isAuto).
     const perLine: Record<string, boolean> = {};
     items.forEach((item) => {
-      perLine[item.id ?? ""] = (item as any).is_final_grn ?? g.is_final_grn ?? false;
+      if ((item as any).is_final_grn === true) perLine[item.id ?? ""] = true;
     });
     setFinalGrnPerLine(perLine);
     setScrapReturned(g.scrap_returned ?? false);
@@ -1977,13 +2002,26 @@ export default function GRNDetail() {
               .filter((item) => ["bought_out", "consumable", "service"].includes(lineItemTypes?.[(item as any).drawing_number ?? ""] ?? ""))
               .map((item) => item.id ?? "")
       );
-      const anyFinalGrn = Object.values(finalGrnPerLine).some(v => v) || autoFinal.size > 0;
-      // Build the per-line map including auto-final lines
+      // Build the per-line final map. Auto-detected lines default to final ONLY
+      // when the user hasn't explicitly set them — an explicit untick wins.
       const perLineForSave: Record<string, boolean> = { ...finalGrnPerLine };
-      autoFinal.forEach(lid => { perLineForSave[lid] = true; });
+      autoFinal.forEach(lid => { if (!(lid in finalGrnPerLine)) perLineForSave[lid] = true; });
+      const anyFinalGrn = Object.values(perLineForSave).some(v => v);
+      // Per-line reason: auto lines keep/explain the suggestion, manual ticks are tagged.
+      const lineById = new Map((grn?.line_items ?? []).map((li: any) => [li.id, li]));
+      const finalReasonPerLine: Record<string, string | null> = {};
+      for (const [lid, isFinal] of Object.entries(perLineForSave)) {
+        if (!isFinal) { finalReasonPerLine[lid] = null; continue; }
+        if (autoFinal.has(lid)) {
+          finalReasonPerLine[lid] = (lineById.get(lid) as any)?.final_grn_reason ?? "Auto-detected — final receipt";
+        } else {
+          finalReasonPerLine[lid] = "marked final by user";
+        }
+      }
       await saveQualityStage(
         id!, lines, s2InspectedBy, s2Remarks || null, s2Date,
-        s2ApprovedBy || null, anyFinalGrn, finalGrnReason || null, perLineForSave
+        s2ApprovedBy || null, anyFinalGrn, finalGrnReason || null, perLineForSave,
+        finalReasonPerLine
       );
       await logAudit("grn", id!, anyFinalGrn ? "GRN Stage 2 Complete — Final GRN" : "GRN Stage 2 Complete");
     },
@@ -2216,6 +2254,11 @@ export default function GRNDetail() {
       unit_2: gl?.unit_2 ?? l.unit_2 ?? null,
       ordered_qty_2: gl?.ordered_qty_2 ?? l.ordered_qty_2 ?? null,
       accepted_qty_2: gl?.accepted_qty_2 ?? null,
+      // Final GRN — PO lines get an editable box; DC lines (no PO line) don't.
+      po_line_item_id: gl?.po_line_item_id ?? l.po_line_item_id ?? null,
+      is_final_grn: gl?.is_final_grn ?? false,
+      final_grn_auto_detected: gl?.final_grn_auto_detected ?? false,
+      final_grn_reason: gl?.final_grn_reason ?? null,
     };
   });
 

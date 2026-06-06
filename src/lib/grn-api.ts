@@ -1200,6 +1200,7 @@ export async function saveQualityStage(
   isFinalGrn?: boolean,
   finalGrnReason?: string | null,
   finalGrnPerLine?: Record<string, boolean>,
+  finalGrnReasonPerLine?: Record<string, string | null>,
 ): Promise<void> {
   const now = inspectionDate ? new Date(inspectionDate).toISOString() : new Date().toISOString();
   for (const line of lines) {
@@ -1223,6 +1224,8 @@ export async function saveQualityStage(
         // Alt. Qty accepted — only written when provided; never clobbers with null otherwise.
         ...(line.accepted_qty_2 != null ? { accepted_qty_2: line.accepted_qty_2 } : {}),
         is_final_grn: lineIsFinal,
+        // Per-line Final GRN reason — only written when a reason map is supplied.
+        ...(finalGrnReasonPerLine ? { final_grn_reason: finalGrnReasonPerLine[line.id] ?? null } : {}),
       })
       .eq('id', line.id);
     if (error) throw error;
