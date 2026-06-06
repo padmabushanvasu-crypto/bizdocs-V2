@@ -35,6 +35,8 @@ const DEFAULTS: NotificationSettings = {
   dc_email_day: "Monday",
   dc_email_time: "08:00",
   dc_email_recipients: [],
+  grn_qc_email_enabled: false,
+  grn_qc_email_recipients: [],
   stock_editor_names: [],
 };
 
@@ -619,7 +621,39 @@ export default function NotificationsSettings() {
         </div>
       </div>
 
-      {/* Section 5 — Stock Editors */}
+      {/* Section 5 — GRN → QC Inspection Alert (event-triggered) */}
+      <div className="paper-card space-y-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-slate-900 text-sm">GRN → QC Inspection Alert</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Emails the QC team the moment a GRN passes Stage-1 receipt and is ready for inspection. Sent once per GRN, when it enters QC.
+            </p>
+          </div>
+          <Switch
+            checked={settings.grn_qc_email_enabled}
+            onCheckedChange={(v) => set({ grn_qc_email_enabled: v })}
+          />
+        </div>
+
+        <div className={`space-y-4 ${!settings.grn_qc_email_enabled ? "opacity-50 pointer-events-none" : ""}`}>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-slate-700">QC Team Recipients</Label>
+            <EmailTagInput
+              value={settings.grn_qc_email_recipients}
+              onChange={(v) => set({ grn_qc_email_recipients: v })}
+              placeholder="QC team emails — press Enter"
+            />
+          </div>
+          <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2.5 text-xs text-blue-700 space-y-0.5">
+            <p className="font-semibold">Event-triggered (no schedule):</p>
+            <p>Fires automatically when a GRN moves into the QC stage.</p>
+            <p>One email per GRN, with the line items to inspect and a link to open it.</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Section 6 — Stock Editors */}
       <StockEditorsSection
         names={settings.stock_editor_names ?? []}
         onChange={(names) => set({ stock_editor_names: names })}

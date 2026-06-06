@@ -1119,6 +1119,15 @@ export async function saveQuantitativeStage(
   // Determine next stage based on product identity check outcomes
   const allRejected = lines.length > 0 && lines.every(l => (l.product_match ?? 'yes') === 'no');
 
+  // Capture the pre-update stage + dedup flag to decide on the QC-email alert.
+  const { data: prevHdr } = await (supabase as any)
+    .from('grns')
+    .select('grn_stage, qc_email_sent_at')
+    .eq('id', grnId)
+    .single();
+  const prevStage = (prevHdr as any)?.grn_stage;
+  const prevQcSentAt = (prevHdr as any)?.qc_email_sent_at;
+
   // Update GRN header
   const updateData: any = {
     quantitative_completed_at: now,
@@ -1139,11 +1148,35 @@ export async function saveQuantitativeStage(
     updateData.grn_stage = 'quality_pending';
   }
 
+  // QC-email decision (event-triggered, fired after a successful header update):
+  //  - Genuine ENTRY into quality_pending (prev stage was something else) and no
+  //    prior send → notify the QC team.
+  //  - Moving back OUT of quality_pending (e.g. Stage-1 reopened/re-saved to a
+  //    different stage) → reset qc_email_sent_at so the next entry re-notifies.
+  const newStage = updateData.grn_stage;
+  let fireQcEmail = false;
+  if (newStage === 'quality_pending' && prevStage !== 'quality_pending') {
+    if (!prevQcSentAt) fireQcEmail = true;
+  } else if (newStage !== 'quality_pending' && prevStage === 'quality_pending') {
+    updateData.qc_email_sent_at = null;
+  }
+
   const { error: grnErr } = await (supabase as any)
     .from('grns')
     .update(updateData)
     .eq('id', grnId);
   if (grnErr) throw grnErr;
+
+  // Fire-and-forget the QC alert. Never block or fail the stage save on email.
+  if (fireQcEmail) {
+    try {
+      void (supabase as any).functions
+        .invoke('grn-qc-email', { body: { grn_id: grnId } })
+        .catch((e: any) => console.error('[GRN] grn-qc-email invoke failed (non-fatal):', e));
+    } catch (e) {
+      console.error('[GRN] grn-qc-email invoke threw (non-fatal):', e);
+    }
+  }
 
   // CHANGE 1+2: For DC return GRNs — update GRN status and parent DC status
   try {

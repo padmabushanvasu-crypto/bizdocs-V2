@@ -194,6 +194,9 @@ export interface NotificationSettings {
   dc_email_day: string;
   dc_email_time: string;
   dc_email_recipients: string[];
+  // Event-triggered GRN → QC inspection alert (no schedule — fired on stage entry)
+  grn_qc_email_enabled: boolean;
+  grn_qc_email_recipients: string[];
   // Stock editor names for opening stock audit trail
   stock_editor_names: string[];
 }
@@ -218,6 +221,8 @@ const NS_DEFAULTS: NotificationSettings = {
   dc_email_day: "Monday",
   dc_email_time: "08:00",
   dc_email_recipients: [],
+  grn_qc_email_enabled: false,
+  grn_qc_email_recipients: [],
   stock_editor_names: [],
 };
 
@@ -249,6 +254,8 @@ export async function fetchNotificationSettings(): Promise<NotificationSettings>
         dc_email_day:        c.dc_email_day     ?? merged.dc_email_day,
         dc_email_time:       c.dc_email_time    ?? merged.dc_email_time,
         dc_email_recipients: toStringArray(c.dc_email_recipients),
+        grn_qc_email_enabled:    c.grn_qc_email_enabled ?? merged.grn_qc_email_enabled,
+        grn_qc_email_recipients: toStringArray(c.grn_qc_email_recipients),
       };
     }
   } catch { /* ignore — DB may be unavailable, fall back to localStorage/defaults */ }
@@ -270,6 +277,8 @@ export async function saveNotificationSettings(settings: NotificationSettings): 
     dc_email_day:        settings.dc_email_day,
     dc_email_time:       settings.dc_email_time,
     dc_email_recipients: settings.dc_email_recipients,
+    grn_qc_email_enabled:    settings.grn_qc_email_enabled,
+    grn_qc_email_recipients: settings.grn_qc_email_recipients,
   });
 }
 
@@ -282,6 +291,8 @@ export async function saveEmailScheduleSettingsToDB(fields: {
   dc_email_day: string;
   dc_email_time: string;
   dc_email_recipients: string[];
+  grn_qc_email_enabled: boolean;
+  grn_qc_email_recipients: string[];
 }): Promise<void> {
   const existing = await fetchCompanySettings();
   if (!existing) return;
