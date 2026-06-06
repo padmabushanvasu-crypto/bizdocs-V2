@@ -41,7 +41,6 @@ const MORE_GROUPS = [
   {
     label: "DAILY WORK",
     items: [
-      { label: "Assembly Orders", to: "/assembly-orders", icon: ClipboardList },
       { label: "WIP Register", to: "/wip-register", icon: Activity },
       { label: "Stock Register", to: "/stock-register", icon: BarChart3 },
     ],

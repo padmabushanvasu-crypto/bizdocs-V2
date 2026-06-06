@@ -46,8 +46,6 @@ import VendorScorecardDetail from "@/pages/VendorScorecardDetail";
 import GstReports from "@/pages/GstReports";
 import NotificationsSettings from "@/pages/NotificationsSettings";
 import BillOfMaterials from "@/pages/BillOfMaterials";
-import AssemblyOrders from "@/pages/AssemblyOrders";
-import AssemblyOrderDetail from "@/pages/AssemblyOrderDetail";
 import StockLedger from "@/pages/StockLedger";
 import InventoryLedger from "@/pages/InventoryLedger";
 import DataImport from "@/pages/DataImport";
@@ -135,8 +133,6 @@ const App = () => (
               <Route path="/items" element={<Items />} />
               <Route path="/stock-register" element={<StockRegister />} />
               <Route path="/receipts" element={<PageGuard page="receipts"><PaymentReceipts /></PageGuard>} />
-              <Route path="/assembly-orders" element={<AssemblyOrders />} />
-              <Route path="/assembly-orders/:id" element={<AssemblyOrderDetail />} />
               <Route path="/warranty-tracker" element={<WarrantyTracker />} />
               <Route path="/sales-orders" element={<PageGuard page="sales-orders"><SalesOrders /></PageGuard>} />
               <Route path="/sales-orders/new" element={<PageGuard page="sales-orders"><SalesOrderForm /></PageGuard>} />
