@@ -646,6 +646,30 @@ export async function fetchMaterialIssueRequest(id: string): Promise<MaterialIss
 
 // ── confirmMaterialIssue ──────────────────────────────────────────────────────
 
+/**
+ * Confirm a material issue against a MIR.
+ *
+ * CONTRACT (made explicit): `lineIssues[].issued_qty` is the NEW CUMULATIVE
+ * issued total for that MIR line (the target), NOT a per-call delta. The server
+ * re-reads the authoritative current issued_qty and derives `delta = target −
+ * current`, then moves only `delta`. This makes a retry / double-click that
+ * carries the same target a no-op (idempotent) — see point 2 below.
+ *
+ * Discipline (matches the GRN hardening):
+ *  1. Ledger-FIRST: post the assembly_issue stock_ledger row first; buckets
+ *     (free −, wip +) move only if the ledger insert succeeds. A ledger failure
+ *     aborts THAT line with no bucket change (the line stays issuable/retryable).
+ *  2. Idempotency: delta is computed from a fresh DB read of issued_qty, so once
+ *     a target is reached a re-submit yields delta 0 → no ledger, no bucket, no
+ *     accrual. (Residual caveat: two *simultaneous* calls that both read the old
+ *     value before either commits can still both post — same concurrency window
+ *     acknowledged for addStockLedgerEntry; covers double-click/retry, the real
+ *     case here.)
+ *  3. Item identity: item_code/description are carried onto the ledger row.
+ *
+ * Partial-issue behaviour (accumulate toward required, shortage_qty), the WIP
+ * bucket choice by awo_type, and MIR/AWO status transitions are unchanged.
+ */
 export async function confirmMaterialIssue(
   mir_id: string,
   lineIssues: Array<{ mir_line_item_id: string; issued_qty: number; shortage_notes?: string }>,
@@ -664,6 +688,7 @@ export async function confirmMaterialIssue(
   // FIX 3A: determine correct WIP bucket from AWO type
   const awoType = mir.awo?.awo_type;
   const wip_bucket = awoType === 'finished_good' ? 'in_fg_wip' : 'in_subassembly_wip';
+  const awoNumber = mir.awo?.awo_number ?? '';
 
   let hasShortages = false;
 
@@ -672,55 +697,33 @@ export async function confirmMaterialIssue(
     const mirLine = mir.line_items?.find((li) => li.id === issue.mir_line_item_id);
     if (!mirLine) return;
 
-    // FIX 3B: accumulate issued_qty instead of overwriting
-    const existingMirIssued = mirLine.issued_qty ?? 0;
-    const totalMirIssued = existingMirIssued + issue.issued_qty;
-    const shortage_qty = Math.max(0, mirLine.requested_qty - totalMirIssued);
-    if (shortage_qty > 0) hasShortages = true;
-
-    // Update mir_line_items — accumulated total
-    await (supabase as any)
+    // Idempotency: re-read the authoritative current issued_qty, then derive the
+    // delta to actually move. A re-submit carrying the same cumulative target
+    // resolves to delta 0 once the first call has committed.
+    const { data: freshLine } = await (supabase as any)
       .from("mir_line_items")
-      .update({
-        issued_qty: totalMirIssued,
-        shortage_qty,
-        shortage_notes: issue.shortage_notes ?? null,
-      })
+      .select("issued_qty")
       .eq("id", issue.mir_line_item_id)
-      .eq("company_id", companyId);
+      .eq("company_id", companyId)
+      .maybeSingle();
+    const currentIssued = Number((freshLine as any)?.issued_qty ?? mirLine.issued_qty ?? 0);
 
-    // Update awo_line_items issued_qty
-    if (mirLine.awo_line_item_id) {
-      const { data: awoLine } = await (supabase as any)
-        .from("awo_line_items")
-        .select("issued_qty")
-        .eq("id", mirLine.awo_line_item_id)
-        .single();
+    const targetIssued = Math.max(0, Number(issue.issued_qty ?? 0));
+    const delta = Math.max(0, targetIssued - currentIssued);
 
-      const currentIssuedQty = (awoLine as any)?.issued_qty ?? 0;
-
-      await (supabase as any)
-        .from("awo_line_items")
-        .update({ issued_qty: currentIssuedQty + issue.issued_qty })
-        .eq("id", mirLine.awo_line_item_id)
-        .eq("company_id", companyId);
-    }
-
-    // Update stock buckets if item exists and issued_qty > 0
-    if (mirLine.item_id && issue.issued_qty > 0) {
-      await updateStockBucket(mirLine.item_id, 'free', -issue.issued_qty);
-      await updateStockBucket(mirLine.item_id, wip_bucket, +issue.issued_qty);
-
+    // Ledger-FIRST: post the issue ledger, and only then move buckets. If the
+    // ledger insert fails, abort this line — no bucket change, issued/shortage
+    // left untouched so it can be retried.
+    if (delta > 0 && mirLine.item_id) {
       try {
-        const awoNumber = mir.awo?.awo_number ?? '';
         await addStockLedgerEntry({
-          item_id: mirLine.item_id!,
+          item_id: mirLine.item_id,
           item_code: mirLine.item_code ?? null,
           item_description: mirLine.item_description ?? null,
           transaction_date: new Date().toISOString().split('T')[0],
           transaction_type: 'assembly_issue',
           qty_in: 0,
-          qty_out: issue.issued_qty,
+          qty_out: delta,
           balance_qty: 0,
           unit_cost: 0,
           total_value: 0,
@@ -733,8 +736,44 @@ export async function confirmMaterialIssue(
           to_state: 'wip',
         });
       } catch (e) {
-        console.error('[production] ledger write failed for MIR issue:', e);
+        console.error('[production] assembly_issue ledger failed — line not issued, no bucket change:', e);
+        // Ledger failed: leave issued/shortage as-is; surface the still-open shortage.
+        if (Math.max(0, mirLine.requested_qty - currentIssued) > 0) hasShortages = true;
+        return;
       }
+      // Ledger committed — now apply the bucket moves.
+      await updateStockBucket(mirLine.item_id, 'free', -delta);
+      await updateStockBucket(mirLine.item_id, wip_bucket, +delta);
+    }
+
+    // Persist the cumulative issued total (no-op write when delta === 0).
+    const newIssued = currentIssued + delta;
+    const shortage_qty = Math.max(0, mirLine.requested_qty - newIssued);
+    if (shortage_qty > 0) hasShortages = true;
+
+    await (supabase as any)
+      .from("mir_line_items")
+      .update({
+        issued_qty: newIssued,
+        shortage_qty,
+        shortage_notes: issue.shortage_notes ?? null,
+      })
+      .eq("id", issue.mir_line_item_id)
+      .eq("company_id", companyId);
+
+    // Accrue the AWO line by the actual delta (skip on a no-op re-submit).
+    if (mirLine.awo_line_item_id && delta > 0) {
+      const { data: awoLine } = await (supabase as any)
+        .from("awo_line_items")
+        .select("issued_qty")
+        .eq("id", mirLine.awo_line_item_id)
+        .single();
+      const currentAwoIssued = Number((awoLine as any)?.issued_qty ?? 0);
+      await (supabase as any)
+        .from("awo_line_items")
+        .update({ issued_qty: currentAwoIssued + delta })
+        .eq("id", mirLine.awo_line_item_id)
+        .eq("company_id", companyId);
     }
   }));
 

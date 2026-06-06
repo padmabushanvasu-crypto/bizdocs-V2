@@ -86,11 +86,18 @@ export default function StorekeeperQueue() {
   const confirmMutation = useMutation({
     mutationFn: () => {
       if (!selectedMirId || !mirDetail?.line_items) throw new Error("No MIR selected");
-      const lineIssues = mirDetail.line_items.map((li: MirLineItem) => ({
-        mir_line_item_id: li.id,
-        issued_qty: lineEdits[li.id]?.issued_qty ?? li.requested_qty,
-        shortage_notes: lineEdits[li.id]?.shortage_notes || undefined,
-      }));
+      const lineIssues = mirDetail.line_items.map((li: MirLineItem) => {
+        const alreadyIssued = li.issued_qty ?? 0;
+        // The UI field is "amount to issue now"; the API contract is the new
+        // cumulative issued total, so send already-issued + amount-now.
+        const amountNow = lineEdits[li.id]?.issued_qty
+          ?? Math.max(0, li.requested_qty - alreadyIssued);
+        return {
+          mir_line_item_id: li.id,
+          issued_qty: alreadyIssued + amountNow, // cumulative target (idempotent)
+          shortage_notes: lineEdits[li.id]?.shortage_notes || undefined,
+        };
+      });
       return confirmMaterialIssue(selectedMirId, lineIssues, issuedBy);
     },
     onSuccess: () => {
