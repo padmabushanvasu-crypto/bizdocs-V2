@@ -1234,7 +1234,7 @@ export async function saveQualityStage(
   finalGrnReason?: string | null,
   finalGrnPerLine?: Record<string, boolean>,
   finalGrnReasonPerLine?: Record<string, string | null>,
-): Promise<void> {
+): Promise<{ stockWarnings: string[] }> {
   const now = inspectionDate ? new Date(inspectionDate).toISOString() : new Date().toISOString();
   for (const line of lines) {
     const lineIsFinal = finalGrnPerLine ? (finalGrnPerLine[line.id] ?? false) : (isFinalGrn ?? false);
@@ -1318,6 +1318,63 @@ export async function saveQualityStage(
       .update({ grn_stage: 'quality_done' })
       .eq('id', grnId);
     if (qualDoneErr) throw qualDoneErr;
+  }
+
+  // ── Ledger-post non-final lines at QC completion (stock fix, step 2) ───────
+  // Non-final lines historically had their stock added by the legacy DB trigger.
+  // Post them through the real ledger path here instead — exactly once, guarded
+  // by stock_posted_at — so once the trigger is retired every receipt is
+  // ledgered. Final lines still credit at store-confirm (unchanged). This pass
+  // NEVER blocks QC completion: each line is wrapped so one failure doesn't abort
+  // the save; unlinked / failed lines are collected into stockWarnings.
+  const stockWarnings: string[] = [];
+  try {
+    const lineIds = lines.map((l) => l.id);
+    const { data: postHdr } = await (supabase as any)
+      .from('grns')
+      .select('grn_type, grn_number, linked_dc_id, company_id')
+      .eq('id', grnId)
+      .single();
+    const { data: postLines } = await (supabase as any)
+      .from('grn_line_items')
+      .select('id, item_id, drawing_number, description, accepted_qty, is_final_grn, stock_posted_at')
+      .eq('grn_id', grnId)
+      .in('id', lineIds);
+
+    const postNow = new Date().toISOString();
+    for (const pl of (postLines ?? []) as any[]) {
+      if (pl.is_final_grn === true) continue;       // final lines credit at store-confirm
+      if (pl.stock_posted_at) continue;             // already credited — idempotent guard
+      const acceptedQty = Number(pl.accepted_qty ?? 0);
+      if (!(acceptedQty > 0)) continue;             // nothing accepted → nothing to credit
+      if (!pl.item_id) {
+        // creditPartialStock would throw on a missing item_id. Do NOT post and do
+        // NOT mark stock_posted_at — surface a non-blocking warning instead.
+        stockWarnings.push(`${pl.description ?? pl.id} — stock not credited; link the item first`);
+        continue;
+      }
+      try {
+        await creditPartialStock(grnId, pl.id, pl.item_id, acceptedQty, {
+          grnType: postHdr?.grn_type ?? 'po_grn',
+          grnNumber: postHdr?.grn_number ?? null,
+          drawingNumber: pl.drawing_number ?? null,
+          companyId: postHdr?.company_id,
+          confirmedBy: inspectedBy,
+          linkedDcId: postHdr?.linked_dc_id ?? null,
+          itemCode: null,
+          itemDescription: pl.description ?? null,
+        });
+        await (supabase as any)
+          .from('grn_line_items')
+          .update({ stock_posted_at: postNow })
+          .eq('id', pl.id);
+      } catch (postErr) {
+        console.error(`[GRN] QC stock post failed for line ${pl.id} (non-fatal):`, postErr);
+        stockWarnings.push(`${pl.description ?? pl.id} — stock posting failed`);
+      }
+    }
+  } catch (passErr) {
+    console.error('[GRN] QC stock posting pass failed (non-fatal):', passErr);
   }
 
   // CHANGE 2: For DC return GRNs — update parent DC status after QC stage
@@ -1411,6 +1468,8 @@ export async function saveQualityStage(
   } catch (jcErr) {
     console.error("Job Card step update failed (GRN save succeeded):", jcErr);
   }
+
+  return { stockWarnings };
 }
 
 /** Per-line aggregate across all non-cancelled / non-deleted prior GRNs. */
@@ -2029,6 +2088,9 @@ export async function storeConfirmGRNItems(
       updatePayload.store_confirmed = true;
       updatePayload.store_confirmed_by = data.confirmedBy;
       updatePayload.store_confirmed_at = confirmedAt;
+      // Marker completeness only — final lines are credited here as before; this
+      // just tags the line so the QC posting pass treats it as already posted.
+      updatePayload.stock_posted_at = confirmedAt;
     }
 
     const { error: updErr } = await (supabase as any)

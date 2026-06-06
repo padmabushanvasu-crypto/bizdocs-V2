@@ -2018,14 +2018,15 @@ export default function GRNDetail() {
           finalReasonPerLine[lid] = "marked final by user";
         }
       }
-      await saveQualityStage(
+      const qcResult = await saveQualityStage(
         id!, lines, s2InspectedBy, s2Remarks || null, s2Date,
         s2ApprovedBy || null, anyFinalGrn, finalGrnReason || null, perLineForSave,
         finalReasonPerLine
       );
       await logAudit("grn", id!, anyFinalGrn ? "GRN Stage 2 Complete — Final GRN" : "GRN Stage 2 Complete");
+      return qcResult;
     },
-    onSuccess: () => {
+    onSuccess: (qcResult) => {
       queryClient.invalidateQueries({ queryKey: ["grn-stages", id] });
       queryClient.invalidateQueries({ queryKey: ["grns"] });
       queryClient.invalidateQueries({ queryKey: ["pending-qc-grns"] });
@@ -2034,6 +2035,14 @@ export default function GRNDetail() {
         title: "Quality inspection complete",
         description: (Object.values(finalGrnPerLine).some(v => v) || (grn?.line_items ?? []).some((item) => ["bought_out","consumable","service"].includes(lineItemTypes?.[(item as any).drawing_number ?? ""] ?? ""))) ? "GRN is awaiting store confirmation." : "GRN is now closed.",
       });
+      const warnings = qcResult?.stockWarnings ?? [];
+      if (warnings.length > 0) {
+        toast({
+          title: "Some lines were not stock-credited",
+          description: warnings.join("; "),
+          variant: "destructive",
+        });
+      }
     },
     onError: (err: any) =>
       toast({ title: "Error saving Stage 2", description: err.message, variant: "destructive" }),
