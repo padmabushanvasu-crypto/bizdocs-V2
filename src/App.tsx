@@ -49,6 +49,7 @@ import BillOfMaterials from "@/pages/BillOfMaterials";
 import AssemblyOrders from "@/pages/AssemblyOrders";
 import AssemblyOrderDetail from "@/pages/AssemblyOrderDetail";
 import StockLedger from "@/pages/StockLedger";
+import InventoryLedger from "@/pages/InventoryLedger";
 import DataImport from "@/pages/DataImport";
 import CostMasterImport from "@/pages/CostMasterImport";
 import DocumentSettings from "@/pages/DocumentSettings";
@@ -201,6 +202,7 @@ const App = () => (
               <Route path="/bill-of-materials" element={<PageGuard page="bill-of-materials"><BillOfMaterials /></PageGuard>} />
 
               <Route path="/stock-ledger" element={<PageGuard page="stock-ledger"><StockLedger /></PageGuard>} />
+              <Route path="/inventory-ledger" element={<PageGuard page="stock-ledger"><InventoryLedger /></PageGuard>} />
 
               <Route path="/serial-numbers" element={<PageGuard page="serial-numbers"><SerialNumbers /></PageGuard>} />
 

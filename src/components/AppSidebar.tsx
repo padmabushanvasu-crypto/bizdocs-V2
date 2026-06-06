@@ -107,6 +107,8 @@ const TOOLTIP_TEXT: Record<string, string> = {
     "See current stock of every item — raw materials, components and finished goods. Red means below minimum, green means healthy.",
   "Stock Ledger":
     "The permanent record of every stock movement ever made — receipts, issues, returns, assembly. Full audit trail.",
+  "Inventory Ledger":
+    "Per-item subsidiary ledger with running balance (bin card), plus closing stock across all items. Reads the corrected stock views.",
   "Reorder Alerts":
     "Items that need to be purchased or produced now. The starting point of the pull cycle — check this every morning.",
   "Scrap Register":
@@ -157,6 +159,7 @@ const ALL_SEARCH_ITEMS: { title: string; url: string }[] = [
   { title: "Dispatch Notes", url: "/dispatch-notes" },
   { title: "Stock Register", url: "/stock-register" },
   { title: "Stock Ledger", url: "/stock-ledger" },
+  { title: "Inventory Ledger", url: "/inventory-ledger" },
   { title: "Opening Stock", url: "/opening-stock" },
   { title: "Reorder Alerts", url: "/reorder-intelligence" },
   { title: "Scrap Register", url: "/scrap-register" },
@@ -183,7 +186,7 @@ const GROUP_PATHS: Record<string, string[]> = {
   "PROCUREMENT":        ["/purchase-orders", "/grn", "/follow-up-tracker", "/vendor-scorecards"],
   "INWARD & RECEIVING": ["/storekeeper-queue", "/ready-to-move", "/dc-grn"],
   "PRODUCTION":         ["/job-works", "/delivery-challans", "/wip-register", "/sub-assembly-work-orders", "/finished-good-work-orders"],
-  "STORE":              ["/storekeeper", "/stock-register", "/stock-ledger", "/consumables", "/scrap-register"],
+  "STORE":              ["/storekeeper", "/stock-register", "/stock-ledger", "/inventory-ledger", "/consumables", "/scrap-register"],
   "DISPATCH & QUALITY": ["/ready-to-dispatch", "/dispatch-records", "/serial-numbers", "/fat-certificates"],
   "REPORTS":            ["/reorder-intelligence", "/gst-reports"],
   "MASTER DATA":        ["/parties", "/items", "/bill-of-materials", "/jig-master", "/opening-stock", "/assets-register", "/settings"],
@@ -856,6 +859,12 @@ export function AppSidebar() {
     {
       title: "Stock Ledger",
       url: "/stock-ledger",
+      icon: BookOpen,
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'storekeeper'],
+    },
+    {
+      title: "Inventory Ledger",
+      url: "/inventory-ledger",
       icon: BookOpen,
       allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'storekeeper'],
     },
