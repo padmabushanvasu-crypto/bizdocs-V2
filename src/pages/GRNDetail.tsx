@@ -43,6 +43,9 @@ const DELETION_REASONS_GRN = [
   { value: 'other',                   label: 'Other (please specify)' },
 ];
 const COMPLETED_GRN_STAGES_SET = new Set(['quality_done', 'awaiting_store', 'closed']);
+
+// Hide native number-input spinner arrows (CSS only — type/parsing unchanged).
+const NO_SPINNER = "[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -345,7 +348,7 @@ function Stage1Table({
                     <div className="flex items-center justify-end gap-1.5">
                       <input
                         type="number"
-                        className="w-20 text-right border border-slate-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                        className={`w-20 text-right border border-slate-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent ${NO_SPINNER}`}
                         value={line.received_qty || ""}
                         min={0}
                         disabled={disabled}
@@ -380,7 +383,7 @@ function Stage1Table({
                   <td className="px-3 py-2">
                     <input
                       type="number"
-                      className="w-20 text-right border border-slate-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                      className={`w-20 text-right border border-slate-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent ${NO_SPINNER}`}
                       value={line.stage1_rejected_qty || ""}
                       min={0}
                       disabled={disabled}
@@ -403,7 +406,7 @@ function Stage1Table({
                     <div className="flex items-center justify-end gap-1">
                       <input
                         type="number"
-                        className="w-14 text-right border border-slate-200 rounded px-1.5 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                        className={`w-14 text-right border border-slate-200 rounded px-1.5 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent ${NO_SPINNER}`}
                         value={line.received_qty === 0 ? "" : line.matching_units}
                         min={0}
                         max={line.received_qty}
@@ -514,7 +517,7 @@ function Stage1Table({
                           <span className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 dark:text-slate-400">Alt. Qty Receiving Now</span>
                           <input
                             type="number"
-                            className="w-24 text-right border border-slate-200 dark:border-white/20 dark:bg-[#0a0e1a] dark:text-slate-100 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                            className={`w-24 text-right border border-slate-200 dark:border-white/20 dark:bg-[#0a0e1a] dark:text-slate-100 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent ${NO_SPINNER}`}
                             value={line.received_now_2 ?? ""}
                             min={0}
                             max={altOrdered}
@@ -807,7 +810,7 @@ function QCMeasurementEditor({
                   <span className="text-[11px] text-muted-foreground">Alt. qty accepted</span>
                   <Input
                     type="number"
-                    className="w-24 h-8 text-right font-mono"
+                    className={`w-24 h-8 text-right font-mono ${NO_SPINNER}`}
                     value={accepted2ByLine[item.id] ?? ""}
                     min={0}
                     disabled={disabled}
@@ -869,16 +872,16 @@ function QCMeasurementEditor({
                     <th rowSpan={2} className="px-2 py-2 text-right font-medium align-bottom" style={{width: 36}}>#</th>
                     <th rowSpan={2} className="px-2 py-2 text-left font-medium align-bottom" style={{minWidth: 160}}>Characteristic</th>
                     <th rowSpan={2} className="px-2 py-2 text-left font-medium align-bottom" style={{minWidth: 150}}>Specification</th>
-                    <th rowSpan={2} className="px-2 py-2 text-right font-medium align-bottom" style={{width: 56}}>Qty</th>
+                    <th rowSpan={2} className="px-2 py-2 text-right font-medium align-bottom" style={{width: 76}}>Qty</th>
                     <th colSpan={5} className="px-2 pt-2 pb-1 text-center font-medium text-[11px] text-slate-400 border-b border-slate-200">Sample readings</th>
-                    <th rowSpan={2} className="px-2 py-2 text-right font-medium align-bottom" style={{width: 64}}>Conf.</th>
-                    <th rowSpan={2} className="px-2 py-2 text-right font-medium align-bottom" style={{width: 64}}>NC</th>
+                    <th rowSpan={2} className="px-2 py-2 text-right font-medium align-bottom" style={{width: 84}}>Conf.</th>
+                    <th rowSpan={2} className="px-2 py-2 text-right font-medium align-bottom" style={{width: 84}}>NC</th>
                     <th rowSpan={2} className="px-2 py-2 text-left font-medium align-bottom" style={{minWidth: 150}}>Measuring instrument</th>
                     <th rowSpan={2} className="px-2 py-2 text-center font-medium align-bottom" style={{width: 32}}></th>
                   </tr>
                   <tr className="bg-slate-50/70 text-slate-400 border-b border-slate-200">
                     {["S1","S2","S3","S4","S5"].map((s) => (
-                      <th key={s} className="px-1 py-1 text-right font-medium" style={{width: 44}}>{s}</th>
+                      <th key={s} className="px-1 py-1 text-right font-medium" style={{width: 52}}>{s}</th>
                     ))}
                   </tr>
                 </thead>
@@ -920,7 +923,7 @@ function QCMeasurementEditor({
                           <td className="px-2 py-1.5">
                             <Input
                               type="number"
-                              className="h-8 text-right tabular-nums"
+                              className={`h-8 text-right tabular-nums ${NO_SPINNER}`}
                               value={row.qty_checked}
                               placeholder="5"
                               min={0}
@@ -943,7 +946,7 @@ function QCMeasurementEditor({
                           <td className="px-2 py-1.5">
                             <Input
                               type="number"
-                              className="h-8 text-right tabular-nums border-green-300 bg-green-50/60 text-green-800 focus-visible:ring-green-400"
+                              className={`h-8 text-right tabular-nums border-green-300 bg-green-50/60 text-green-800 focus-visible:ring-green-400 ${NO_SPINNER}`}
                               value={row.conforming_qty}
                               placeholder="0"
                               min={0}
@@ -956,7 +959,7 @@ function QCMeasurementEditor({
                               type="number"
                               readOnly
                               tabIndex={-1}
-                              className={`h-8 text-right tabular-nums cursor-default ${
+                              className={`h-8 text-right tabular-nums cursor-default ${NO_SPINNER} ${
                                 isNC
                                   ? "border-red-300 bg-red-50/60 text-red-700"
                                   : "border-slate-200 bg-slate-50 text-slate-400"
