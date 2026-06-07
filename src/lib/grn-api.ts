@@ -1738,11 +1738,129 @@ export async function saveGRNScrapItems(
 }
 
 /**
+ * Is there already an OPEN (unread + undismissed) mir_restock notification for
+ * this MIR aimed at the given audience? Per-audience dedup so a re-confirm or a
+ * multi-line GRN doesn't fire the same alert twice before it's acted on.
+ */
+async function openMirRestockExists(
+  companyId: string,
+  mirId: string,
+  audience: { target_role?: string; target_user?: string }
+): Promise<boolean> {
+  let q = (supabase as any)
+    .from('notifications')
+    .select('id')
+    .eq('company_id', companyId)
+    .eq('type', 'mir_restock')
+    .eq('reference_type', 'material_issue_request')
+    .eq('reference_id', mirId)
+    .is('dismissed_at', null)
+    .eq('is_read', false);
+  if (audience.target_user) q = q.eq('target_user', audience.target_user);
+  else if (audience.target_role) q = q.eq('target_role', audience.target_role);
+  const { data } = await q.limit(1);
+  return ((data ?? []) as any[]).length > 0;
+}
+
+/**
+ * After stock lands FREE, alert if it satisfies open assembly demand: an MIR
+ * line short on this item whose MIR is still pending/partially_issued.
+ * Consolidated per MIR (not per line), with two audiences — storekeeper
+ * (action: issue it) and the assembly requester/team (FYI: it landed). Both are
+ * per-audience deduped against open mir_restock rows. Non-fatal: never blocks
+ * the stock credit. Reuses the mir_restock type + createNotification.
+ */
+async function notifyAssemblyDemandRestock(args: {
+  companyId: string;
+  itemId: string;
+  itemCode: string | null;
+  itemDescription: string | null;
+  grnNumber: string | null;
+  confirmedBy: string;
+}): Promise<void> {
+  const { companyId, itemId, itemCode, itemDescription, grnNumber, confirmedBy } = args;
+  try {
+    const { data: shortageLines } = await (supabase as any)
+      .from('mir_line_items')
+      .select(
+        'id, item_id, item_code, item_description, shortage_qty, mir_id, ' +
+        'material_issue_requests(mir_number, status, requested_by, requested_by_user_id, awo_id)'
+      )
+      .eq('company_id', companyId)
+      .eq('item_id', itemId)
+      .gt('shortage_qty', 0);
+
+    // Group by MIR (collapse same-item multiple lines); keep only OPEN MIRs.
+    const byMir = new Map<string, {
+      mir_number: string | null;
+      requested_by_user_id: string | null;
+      awo_id: string | null;
+      shortage: number;
+    }>();
+    for (const sl of (shortageLines ?? []) as any[]) {
+      const mir = sl.material_issue_requests;
+      if (!sl.mir_id || !mir || !['pending', 'partially_issued'].includes(mir.status)) continue;
+      const shortage = Number(sl.shortage_qty ?? 0);
+      const cur = byMir.get(sl.mir_id);
+      if (cur) cur.shortage += shortage;
+      else byMir.set(sl.mir_id, {
+        mir_number: mir.mir_number ?? null,
+        requested_by_user_id: mir.requested_by_user_id ?? null,
+        awo_id: mir.awo_id ?? null,
+        shortage,
+      });
+    }
+
+    const label = itemDescription ?? itemCode ?? 'Item';
+
+    for (const [mirId, g] of byMir) {
+      // 1) Storekeeper — action required: issue it.
+      if (!(await openMirRestockExists(companyId, mirId, { target_role: 'storekeeper' }))) {
+        await createNotification({
+          company_id: companyId,
+          type: 'mir_restock',
+          title: 'Stock arrived for a waiting MIR',
+          message: `${label} arrived via GRN ${grnNumber ?? ''}. MIR ${g.mir_number ?? ''} is short ${g.shortage} — issue it from the Assembly Issue Queue.`.replace(/\s+/g, ' ').trim(),
+          category: 'action_required',
+          link: '/storekeeper',
+          target_role: 'storekeeper',
+          reference_type: 'material_issue_request',
+          reference_id: mirId,
+          created_by: confirmedBy,
+        }).catch(console.error);
+      }
+
+      // 2) Assembly — informational: target the exact requester if known, else the team.
+      const audience = g.requested_by_user_id
+        ? { target_user: g.requested_by_user_id }
+        : { target_role: 'assembly_team' };
+      if (!(await openMirRestockExists(companyId, mirId, audience))) {
+        await createNotification({
+          company_id: companyId,
+          type: 'mir_restock',
+          title: 'Your assembly material is in stock',
+          message: `${label} for MIR ${g.mir_number ?? ''} has been received and is ready to be issued.`.replace(/\s+/g, ' ').trim(),
+          category: 'activity',
+          link: g.awo_id ? `/assembly-work-orders/${g.awo_id}` : '/storekeeper',
+          target_role: g.requested_by_user_id ? null : 'assembly_team',
+          target_user: g.requested_by_user_id ?? null,
+          reference_type: 'material_issue_request',
+          reference_id: mirId,
+          created_by: confirmedBy,
+        }).catch(console.error);
+      }
+    }
+  } catch (e) {
+    console.error('[grn] assembly-demand restock notify failed:', e);
+  }
+}
+
+/**
  * Credit stock_free for a single partial store confirmation increment.
  * Handles both PO-GRN (incoming -> free) and DC-return (in_process -> free) paths.
  * Writes the corresponding stock_ledger entry per increment.
- * For PO-GRN paths only, also fires MIR shortage notifications if newly-credited
- * stock matches open MIR shortage lines.
+ * After either free-credit leg, fires the assembly-demand restock alert if the
+ * newly-credited stock matches open MIR shortage lines.
  *
  * Pre-conditions:
  *  - storeQty > 0 (caller must guard)
@@ -1818,6 +1936,15 @@ async function creditPartialStock(
     });
     await updateStockBucket(resolvedItemId, 'in_process', -storeQty);
     await updateStockBucket(resolvedItemId, 'free', +storeQty);
+    // Gap A: returned/job-work components can satisfy assembly demand too.
+    await notifyAssemblyDemandRestock({
+      companyId: opts.companyId,
+      itemId: resolvedItemId,
+      itemCode,
+      itemDescription: itemDesc,
+      grnNumber: opts.grnNumber,
+      confirmedBy: opts.confirmedBy,
+    });
     return;
   }
 
@@ -1843,36 +1970,15 @@ async function creditPartialStock(
   });
   await updateStockBucket(resolvedItemId, 'free', +storeQty);
 
-  // MIR shortage notifications — fire as soon as stock lands, not at full-close.
-  // Notification spam risk: each partial that touches an item with an open shortage
-  // emits one notification per matching mir_line_item. Acceptable given storekeepers
-  // need to know stock just landed; consider dedup later if it becomes noisy.
-  try {
-    const { data: shortageLines } = await (supabase as any)
-      .from('mir_line_items')
-      .select('id, item_id, item_code, item_description, shortage_qty, mir_id, material_issue_requests(mir_number, status)')
-      .eq('item_id', resolvedItemId)
-      .gt('shortage_qty', 0);
-
-    for (const sl of (shortageLines ?? []) as any[]) {
-      const mirStatus = sl.material_issue_requests?.status;
-      if (!['pending', 'partially_issued'].includes(mirStatus)) continue;
-      await createNotification({
-        company_id: opts.companyId,
-        type: 'mir_restock',
-        title: 'Stock available for MIR',
-        message: `${sl.item_description ?? sl.item_code ?? 'Item'} restocked via GRN ${opts.grnNumber ?? ''}. MIR ${sl.material_issue_requests?.mir_number} has a shortage of ${sl.shortage_qty} — reissue from the storekeeper queue.`,
-        category: 'action_required',
-        link: '/storekeeper',
-        target_role: 'storekeeper',
-        reference_type: 'material_issue_request',
-        reference_id: sl.mir_id,
-        created_by: opts.confirmedBy,
-      }).catch(console.error);
-    }
-  } catch (e) {
-    console.error('[grn] MIR restock notification failed:', e);
-  }
+  // Stock just landed FREE → alert if it satisfies open assembly demand.
+  await notifyAssemblyDemandRestock({
+    companyId: opts.companyId,
+    itemId: resolvedItemId,
+    itemCode,
+    itemDescription: itemDesc,
+    grnNumber: opts.grnNumber,
+    confirmedBy: opts.confirmedBy,
+  });
 }
 
 /**
