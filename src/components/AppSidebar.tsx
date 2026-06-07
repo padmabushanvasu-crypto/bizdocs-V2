@@ -37,6 +37,7 @@ import {
   Activity,
   Archive,
   Phone,
+  MapPin,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -186,7 +187,7 @@ const GROUP_PATHS: Record<string, string[]> = {
   "PROCUREMENT":        ["/purchase-orders", "/grn", "/follow-up-tracker", "/vendor-scorecards"],
   "INWARD & RECEIVING": ["/storekeeper-queue", "/ready-to-move", "/dc-grn"],
   "PRODUCTION":         ["/job-works", "/delivery-challans", "/wip-register", "/sub-assembly-work-orders", "/finished-good-work-orders"],
-  "STORE":              ["/storekeeper", "/stock-register", "/stock-ledger", "/inventory-ledger", "/consumables", "/scrap-register"],
+  "STORE":              ["/storekeeper", "/stock-register", "/stock-ledger", "/inventory-ledger", "/store-locator", "/physical-count", "/consumables", "/scrap-register"],
   "DISPATCH & QUALITY": ["/ready-to-dispatch", "/dispatch-records", "/serial-numbers", "/fat-certificates"],
   "REPORTS":            ["/reorder-intelligence", "/gst-reports"],
   "MASTER DATA":        ["/parties", "/items", "/bill-of-materials", "/jig-master", "/opening-stock", "/assets-register", "/settings"],
@@ -867,6 +868,18 @@ export function AppSidebar() {
       url: "/inventory-ledger",
       icon: BookOpen,
       allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'storekeeper'],
+    },
+    {
+      title: "Store Locator",
+      url: "/store-locator",
+      icon: MapPin,
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'storekeeper'],
+    },
+    {
+      title: "Physical Count",
+      url: "/physical-count",
+      icon: ClipboardCheck,
+      allowedRoles: ['admin', 'finance', 'storekeeper'],
     },
     {
       title: "Consumables Issue",

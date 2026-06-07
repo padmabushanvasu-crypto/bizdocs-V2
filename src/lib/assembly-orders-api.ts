@@ -115,6 +115,7 @@ export interface StockLedgerEntry {
     | "dc_issue"
     | "dc_return"
     | "opening_stock"
+    | "physical_count"
     | "manual_adjustment"
     | "rejection_writeoff";
   qty_in: number;

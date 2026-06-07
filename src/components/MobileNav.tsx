@@ -29,6 +29,7 @@ import {
   Layers,
   X,
   CheckCircle,
+  MapPin,
 } from "lucide-react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -43,6 +44,8 @@ const MORE_GROUPS = [
     items: [
       { label: "WIP Register", to: "/wip-register", icon: Activity },
       { label: "Stock Register", to: "/stock-register", icon: BarChart3 },
+      { label: "Store Locator", to: "/store-locator", icon: MapPin },
+      { label: "Physical Count", to: "/physical-count", icon: ClipboardCheck },
     ],
   },
   {
