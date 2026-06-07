@@ -38,6 +38,7 @@ import {
   completeAssemblyWorkOrder,
   cancelAssemblyWorkOrder,
   reportComponentIssue,
+  returnAssemblyComponents,
   type AwoLineItem,
   type MaterialIssueRequest,
 } from "@/lib/production-api";
@@ -91,6 +92,10 @@ export default function AssemblyWorkOrderDetail() {
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelOption, setCancelOption] = useState<StockAction>('none');
   const [partialLines, setPartialLines] = useState<Record<string, { return_qty: number; scrap_qty: number }>>({});
+
+  // Return Components dialog state — per awo_line_item id → "return now" qty
+  const [returnDialogOpen, setReturnDialogOpen] = useState(false);
+  const [returnEdits, setReturnEdits] = useState<Record<string, number>>({});
 
   // FIX 5B: Report Issue dialog state
   const [reportIssueOpen, setReportIssueOpen] = useState(false);
@@ -196,6 +201,42 @@ export default function AssemblyWorkOrderDetail() {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });
+
+  // Return Components mutation — converts each line's "return now" qty into the
+  // cumulative-target contract (current returned + return now) and posts via the
+  // shared, ledger-first, capped returnAssemblyComponents.
+  const returnMutation = useMutation({
+    mutationFn: async () => {
+      const lines = (awo?.line_items ?? [])
+        .map((li) => {
+          const now = returnEdits[li.id] ?? 0;
+          if (!(now > 0)) return null;
+          return { awo_line_item_id: li.id, returned_qty: (li.returned_qty ?? 0) + now };
+        })
+        .filter((x): x is { awo_line_item_id: string; returned_qty: number } => x !== null);
+      if (lines.length === 0) throw new Error("Enter a return quantity for at least one component.");
+      return returnAssemblyComponents(id!, lines);
+    },
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ["awo-detail", id] });
+      queryClient.invalidateQueries({ queryKey: ["sa-work-orders-wip"] });
+      queryClient.invalidateQueries({ queryKey: ["fg-work-orders-wip"] });
+      setReturnDialogOpen(false);
+      setReturnEdits({});
+      toast({ title: "Components returned to store" });
+      const warnings = res?.returnWarnings ?? [];
+      if (warnings.length > 0) {
+        toast({ title: "Some lines were not returned", description: warnings.join("; "), variant: "destructive" });
+      }
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  // Available-in-WIP cap for a component: issued − returned − damage.
+  const availableInWip = (li: AwoLineItem): number =>
+    Math.max(0, (li.issued_qty ?? 0) - (li.returned_qty ?? 0) - (li.damage_qty ?? 0));
 
   const latestMir: MaterialIssueRequest | undefined = mirs[0];
 
@@ -367,6 +408,21 @@ export default function AssemblyWorkOrderDetail() {
                   )}
                 </Tooltip>
               </TooltipProvider>
+            )}
+            {awo.status === 'in_progress' && (awo.line_items ?? []).some((li) => availableInWip(li) > 0) && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const init: Record<string, number> = {};
+                  for (const li of awo.line_items ?? []) init[li.id] = 0;
+                  setReturnEdits(init);
+                  setReturnDialogOpen(true);
+                }}
+              >
+                <Package className="w-4 h-4 mr-2" />
+                Return Components
+              </Button>
             )}
             {(awo.status === 'draft' || awo.status === 'pending_materials' || awo.status === 'in_progress') && (
               <Button
@@ -542,6 +598,70 @@ export default function AssemblyWorkOrderDetail() {
           </div>
         </div>
       )}
+
+      {/* Return Components dialog — return unused WIP back to free store stock */}
+      <Dialog open={returnDialogOpen} onOpenChange={setReturnDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Return Components to Store</DialogTitle>
+            <DialogDescription>
+              Return unused components from WIP back to free stock. You can return up to the available (in-WIP) quantity per line.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[55vh] overflow-y-auto rounded-lg border border-slate-200">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Component</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Issued</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Returned</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Available</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Return Now</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(awo.line_items ?? []).filter((li) => availableInWip(li) > 0).map((li) => {
+                  const avail = availableInWip(li);
+                  const val = returnEdits[li.id] ?? 0;
+                  return (
+                    <tr key={li.id}>
+                      <td className="px-3 py-2 border-b border-slate-100 text-left">
+                        <p className="text-sm font-medium">{li.item_description}</p>
+                        <p className="font-mono text-xs text-blue-700">{li.drawing_number}</p>
+                      </td>
+                      <td className="px-3 py-2 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(li.issued_qty ?? 0)}</td>
+                      <td className="px-3 py-2 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(li.returned_qty ?? 0)}</td>
+                      <td className="px-3 py-2 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(avail)} {li.unit}</td>
+                      <td className="px-3 py-2 border-b border-slate-100 text-right">
+                        <Input
+                          type="number"
+                          min={0}
+                          max={avail}
+                          value={val || ""}
+                          onChange={(e) => {
+                            const n = Math.max(0, Math.min(avail, Number(e.target.value)));
+                            setReturnEdits((prev) => ({ ...prev, [li.id]: n }));
+                          }}
+                          className="w-24 text-right ml-auto"
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReturnDialogOpen(false)} disabled={returnMutation.isPending}>Cancel</Button>
+            <Button
+              onClick={() => returnMutation.mutate()}
+              disabled={returnMutation.isPending || !Object.values(returnEdits).some((v) => v > 0)}
+            >
+              {returnMutation.isPending ? "Returning…" : "Return to Store"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* FIX 5B: Report Issue / Damage dialog — adapts to two scenarios:
           (1) Short line — assembler explains why MIR fell short

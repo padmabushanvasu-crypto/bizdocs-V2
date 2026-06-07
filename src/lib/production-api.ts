@@ -54,6 +54,7 @@ export interface AwoLineItem {
   drawing_number: string | null;
   required_qty: number;
   issued_qty: number;
+  returned_qty?: number;
   unit: string;
   is_critical: boolean;
   shortage_qty: number;
@@ -321,6 +322,119 @@ export async function updateAssemblyWorkOrder(
 
 // ── cancelAssemblyWorkOrder ───────────────────────────────────────────────────
 
+export interface ReturnComponentLine {
+  awo_line_item_id: string;
+  // CONTRACT: the NEW CUMULATIVE returned total for the line (target), NOT a
+  // per-call delta. The server derives delta = target − current returned.
+  returned_qty: number;
+}
+
+/**
+ * Standalone Material Return for an AWO — return unused components from WIP back
+ * to free store stock. Same ledger-first, idempotent discipline as
+ * confirmMaterialIssue (A1).
+ *
+ * Per line:
+ *  - CAP: available-in-WIP = issued_qty − returned_qty − damage_qty (consumed is
+ *    0 until completion). The cumulative target is clamped to
+ *    [current_returned, issued − damage] so a line can never be over-returned.
+ *  - IDEMPOTENT: re-read current returned_qty fresh, delta = max(0, target −
+ *    current); a re-submit (same target) yields delta 0 → no-op.
+ *  - LEDGER-FIRST: post assembly_return (qty_in = delta, wip → free) with item
+ *    identity; only on ledger success move buckets (wip_bucket −delta,
+ *    free +delta). A ledger failure aborts that line — no bucket change, returned
+ *    left untouched (retryable).
+ *  - WIP bucket chosen by awo_type (in_fg_wip vs in_subassembly_wip) — fixes the
+ *    legacy hardcoded in_subassembly_wip drift.
+ *
+ * Returns any per-line warnings (ledger failures, item-less lines) for surfacing.
+ */
+export async function returnAssemblyComponents(
+  awoId: string,
+  lines: ReturnComponentLine[]
+): Promise<{ returnWarnings: string[] }> {
+  const companyId = await getCompanyId();
+  if (!companyId) throw new Error("Not authenticated");
+
+  const awo = await fetchAssemblyWorkOrder(awoId);
+  if (!awo) throw new Error("Work order not found");
+
+  const wip_bucket = awo.awo_type === 'finished_good' ? 'in_fg_wip' : 'in_subassembly_wip';
+  const awoNumber = awo.awo_number ?? '';
+  const today = new Date().toISOString().split('T')[0];
+  const returnWarnings: string[] = [];
+
+  await Promise.all(lines.map(async (input) => {
+    const snapshot = (awo.line_items ?? []).find((l) => l.id === input.awo_line_item_id);
+    if (!snapshot) return;
+
+    // Fresh authoritative read for idempotency + an accurate cap.
+    const { data: fresh } = await (supabase as any)
+      .from("awo_line_items")
+      .select("issued_qty, returned_qty, damage_qty, item_id, item_code, item_description")
+      .eq("id", input.awo_line_item_id)
+      .eq("company_id", companyId)
+      .maybeSingle();
+    const issued = Number((fresh as any)?.issued_qty ?? snapshot.issued_qty ?? 0);
+    const currentReturned = Number((fresh as any)?.returned_qty ?? snapshot.returned_qty ?? 0);
+    const damage = Number((fresh as any)?.damage_qty ?? snapshot.damage_qty ?? 0);
+    const itemId = (fresh as any)?.item_id ?? snapshot.item_id ?? null;
+    const itemCode = (fresh as any)?.item_code ?? snapshot.item_code ?? null;
+    const itemDesc = (fresh as any)?.item_description ?? snapshot.item_description ?? null;
+
+    // CAP: never return beyond what's still in WIP for this line.
+    const availableInWip = Math.max(0, issued - currentReturned - damage);
+    const maxTarget = currentReturned + availableInWip; // == issued − damage
+    // Cumulative target clamped so we never go below current or beyond the cap.
+    const target = Math.min(Math.max(Number(input.returned_qty ?? 0), currentReturned), maxTarget);
+    const delta = Math.max(0, target - currentReturned);
+
+    if (delta <= 0) return; // no-op: idempotent re-submit, or nothing available
+
+    if (itemId) {
+      // LEDGER-FIRST: post the return, move buckets only on success.
+      try {
+        await addStockLedgerEntry({
+          item_id: itemId,
+          item_code: itemCode,
+          item_description: itemDesc,
+          transaction_date: today,
+          transaction_type: 'assembly_return',
+          qty_in: delta,
+          qty_out: 0,
+          balance_qty: 0,
+          unit_cost: 0,
+          total_value: 0,
+          reference_type: 'assembly_work_order',
+          reference_id: awoId,
+          reference_number: awoNumber,
+          notes: `Components returned to store — AWO #${awoNumber}`,
+          created_by: null,
+          from_state: 'wip',
+          to_state: 'free',
+        });
+      } catch (e) {
+        console.error('[production] assembly_return ledger failed — line not returned, no bucket change:', e);
+        returnWarnings.push(`${itemCode ?? itemDesc ?? input.awo_line_item_id} — return not posted (ledger error)`);
+        return;
+      }
+      await updateStockBucket(itemId, wip_bucket, -delta);
+      await updateStockBucket(itemId, 'free', +delta);
+    } else {
+      // No linked item to move stock for — record the returned qty for tracking only.
+      returnWarnings.push(`${itemDesc ?? input.awo_line_item_id} — no item linked; recorded return without stock move`);
+    }
+
+    await (supabase as any)
+      .from("awo_line_items")
+      .update({ returned_qty: currentReturned + delta })
+      .eq("id", input.awo_line_item_id)
+      .eq("company_id", companyId);
+  }));
+
+  return { returnWarnings };
+}
+
 export async function cancelAssemblyWorkOrder(
   id: string,
   stockAction: 'none' | 'return_all' | 'partial' | 'scrap_all' = 'none',
@@ -339,31 +453,14 @@ export async function cancelAssemblyWorkOrder(
     const cancelDate = new Date().toISOString().split('T')[0];
 
     if (stockAction === 'return_all') {
-      for (const li of issuedLines) {
-        await updateStockBucket(li.item_id!, 'in_subassembly_wip', -li.issued_qty);
-        await updateStockBucket(li.item_id!, 'free', +li.issued_qty);
-        try {
-          await addStockLedgerEntry({
-            item_id: li.item_id!,
-            item_code: li.item_code ?? null,
-            item_description: li.item_description ?? null,
-            transaction_date: cancelDate,
-            transaction_type: 'assembly_return',
-            qty_in: li.issued_qty,
-            qty_out: 0,
-            balance_qty: 0,
-            unit_cost: 0,
-            total_value: 0,
-            reference_type: 'assembly_work_order',
-            reference_id: id,
-            reference_number: awoNumber,
-            notes: 'Materials returned — AWO cancelled',
-            created_by: null,
-            from_state: 'wip',
-            to_state: 'free',
-          });
-        } catch (e) { console.error('[production] return ledger failed:', e); }
-      }
+      // Route through the shared return logic: correct bucket-by-type, capped,
+      // item identity on the ledger, ledger-first. Target = full available
+      // (issued − damage) as the cumulative returned total per line.
+      const returnLines = issuedLines.map((li) => ({
+        awo_line_item_id: li.id,
+        returned_qty: Math.max(0, li.issued_qty - (li.damage_qty ?? 0)),
+      }));
+      await returnAssemblyComponents(id, returnLines);
     } else if (stockAction === 'scrap_all') {
       for (const li of issuedLines) {
         await updateStockBucket(li.item_id!, 'in_subassembly_wip', -li.issued_qty);
@@ -388,32 +485,21 @@ export async function cancelAssemblyWorkOrder(
         } catch (e) { console.error('[production] scrap ledger failed:', e); }
       }
     } else if (stockAction === 'partial' && partialLines) {
+      // Returns → shared, capped, ledger-first logic (bucket-by-type + identity).
+      // Cumulative target = this line's current returned + the requested return_qty.
+      const returnLines = partialLines
+        .filter((pl) => pl.return_qty > 0)
+        .map((pl) => {
+          const line = (awo?.line_items ?? []).find((l) => l.item_id === pl.item_id);
+          if (!line) return null;
+          const currentReturned = Number(line.returned_qty ?? 0);
+          return { awo_line_item_id: line.id, returned_qty: currentReturned + pl.return_qty };
+        })
+        .filter((x): x is ReturnComponentLine => x !== null);
+      if (returnLines.length > 0) await returnAssemblyComponents(id, returnLines);
+
+      // Scrap portion left as-is — A3 redesigns damage/scrap.
       for (const pl of partialLines) {
-        if (pl.return_qty > 0) {
-          await updateStockBucket(pl.item_id, 'in_subassembly_wip', -pl.return_qty);
-          await updateStockBucket(pl.item_id, 'free', +pl.return_qty);
-          try {
-            await addStockLedgerEntry({
-              item_id: pl.item_id,
-              item_code: null,
-              item_description: null,
-              transaction_date: cancelDate,
-              transaction_type: 'assembly_return',
-              qty_in: pl.return_qty,
-              qty_out: 0,
-              balance_qty: 0,
-              unit_cost: 0,
-              total_value: 0,
-              reference_type: 'assembly_work_order',
-              reference_id: id,
-              reference_number: awoNumber,
-              notes: 'Materials returned — AWO cancelled',
-              created_by: null,
-              from_state: 'wip',
-              to_state: 'free',
-            });
-          } catch (e) { console.error('[production] return ledger failed:', e); }
-        }
         if (pl.scrap_qty > 0) {
           await updateStockBucket(pl.item_id, 'in_subassembly_wip', -pl.scrap_qty);
           try {
