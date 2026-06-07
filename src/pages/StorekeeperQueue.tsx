@@ -258,10 +258,7 @@ export default function StorekeeperQueue() {
                   <tr key={li.id} className={fullyIssued ? "opacity-60" : undefined}>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-blue-700">{li.drawing_number ?? "—"}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
-                      <p className="text-sm font-medium">{li.item_code ?? "—"}</p>
-                      {li.item_description && (
-                        <p className="text-xs text-muted-foreground">{li.item_description}</p>
-                      )}
+                      <p className="text-sm font-medium">{li.item_description ?? li.item_code ?? "—"}</p>
                       {(li.issued_qty ?? 0) > 0 && (
                         <p className="text-xs text-green-600 mt-0.5">
                           Issued: {formatNumber(li.issued_qty ?? 0)} of {formatNumber(li.requested_qty)}
@@ -300,7 +297,10 @@ export default function StorekeeperQueue() {
                     </td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                       {mirDetail.status === "issued" || fullyIssued ? (
-                        <span className="text-muted-foreground text-sm">{edit.shortage_notes || "—"}</span>
+                        // Read-only: show a recorded shortage note only if one exists.
+                        edit.shortage_notes ? (
+                          <span className="text-muted-foreground text-sm">{edit.shortage_notes}</span>
+                        ) : null
                       ) : hasShortage ? (
                         <Input
                           placeholder="Reason for shortage"
@@ -313,9 +313,7 @@ export default function StorekeeperQueue() {
                           }}
                           className="text-sm"
                         />
-                      ) : (
-                        <span className="text-muted-foreground text-sm">—</span>
-                      )}
+                      ) : null}
                     </td>
                   </tr>
                 );
