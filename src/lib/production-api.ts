@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { updateStockBucket } from "@/lib/items-api";
 import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
 import { STOCK_STATE } from "@/lib/stock-states";
+import { fetchFreeStockMap } from "@/lib/stock-free-api";
 
 async function getCompanyId(): Promise<string | null> {
   const { data: { user } } = await supabase.auth.getUser();
@@ -186,7 +187,8 @@ export async function fetchAssemblyWorkOrder(id: string): Promise<AssemblyWorkOr
 
   const lineItems = (lineData ?? []) as AwoLineItem[];
 
-  // Enrich with stock_free from items table
+  // Enrich item identity from items; AVAILABILITY (stock_free) comes from
+  // v_stock_free (ledger-truth for counted items, bucket fallback otherwise).
   const itemIds = lineItems
     .map((li) => li.item_id)
     .filter((id): id is string => id !== null);
@@ -211,10 +213,11 @@ export async function fetchAssemblyWorkOrder(id: string): Promise<AssemblyWorkOr
       }
     }
   }
+  const freeMap = await fetchFreeStockMap(itemIds);
 
   awo.line_items = lineItems.map((li) => ({
     ...li,
-    stock_free: li.item_id ? (stockMap[li.item_id] ?? 0) : 0,
+    stock_free: li.item_id ? (freeMap.get(li.item_id) ?? stockMap[li.item_id] ?? 0) : 0,
     drawing_number: li.item_id ? (itemsInfoMap[li.item_id]?.item_code ?? li.drawing_number ?? null) : li.drawing_number,
     item_description: li.item_description ?? (li.item_id ? (itemsInfoMap[li.item_id]?.description ?? null) : null),
     unit: li.unit || (li.item_id ? (itemsInfoMap[li.item_id]?.unit ?? 'NOS') : 'NOS'),
@@ -861,7 +864,8 @@ export async function fetchMaterialIssueRequest(id: string): Promise<MaterialIss
 
   const lineItems = (lineData ?? []) as MirLineItem[];
 
-  // Enrich with stock_free
+  // Enrich AVAILABILITY (stock_free) from v_stock_free (ledger-truth for counted
+  // items, bucket fallback otherwise).
   const itemIds = lineItems
     .map((li) => li.item_id)
     .filter((iid): iid is string => iid !== null);
@@ -879,10 +883,11 @@ export async function fetchMaterialIssueRequest(id: string): Promise<MaterialIss
       }
     }
   }
+  const freeMap = await fetchFreeStockMap(itemIds);
 
   mir.line_items = lineItems.map((li) => ({
     ...li,
-    stock_free: li.item_id ? (stockMap[li.item_id] ?? 0) : 0,
+    stock_free: li.item_id ? (freeMap.get(li.item_id) ?? stockMap[li.item_id] ?? 0) : 0,
   }));
 
   // Fetch AWO

@@ -30,6 +30,7 @@ import {
 } from "@/lib/delivery-challans-api";
 import { fetchJobCardsForItem, type JobCardForLink } from "@/lib/job-works-api";
 import { getCompanyId } from "@/lib/auth-helpers";
+import { fetchFreeStock } from "@/lib/stock-free-api";
 import { UNITS } from "@/lib/constants";
 import { JobCardCreationDialog } from "@/components/JobCardCreationDialog";
 import { fetchProcessingRoute, fetchProcessingRouteAll, fetchJigsForDrawing, fetchStageVendors, fetchMouldItemsForDrawing, fetchItemIdByDrawingNumber, type ProcessingRoute, type JigMasterRecord, type MouldItem } from "@/lib/dc-intelligence-api";
@@ -1223,9 +1224,13 @@ export default function DeliveryChallanForm() {
                           updated[index].amount = Math.round((updated[index].quantity || 0) * (selectedItem.sale_price || 0) * 100) / 100;
                           return updated;
                         });
-                        // Track item_id and current_stock for over-stock warning
+                        // Track item_id; availability for the over-issue warning comes
+                        // from v_stock_free (free/on-shelf), not the legacy bucket.
                         setItemIdByIndex(prev => { const m = new Map(prev); m.set(index, selectedItem.id); return m; });
                         setLineItemStock(prev => { const m = new Map(prev); m.set(index, selectedItem.current_stock ?? 0); return m; });
+                        fetchFreeStock(selectedItem.id).then(free => {
+                          setLineItemStock(prev => { const m = new Map(prev); m.set(index, free); return m; });
+                        }).catch(() => {});
                         // Load BOM stages for this item
                         fetchBomStagesForItemDC(selectedItem.id).then(stages => {
                           setLineBomStages(prev => { const m = new Map(prev); m.set(index, stages); return m; });
@@ -1818,7 +1823,7 @@ export default function DeliveryChallanForm() {
                       <td colSpan={12} className="px-3 pb-2">
                         <p className="text-xs text-amber-700 flex items-center gap-1.5">
                           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                          Current stock: {stock} {item.unit || "NOS"}. You are issuing {qty} {item.unit || "NOS"}. Stock will go negative after this DC is issued. Please verify before proceeding.
+                          Available stock: {stock} {item.unit || "NOS"}. You are issuing {qty} {item.unit || "NOS"}. Stock will go negative after this DC is issued. Please verify before proceeding.
                         </p>
                       </td>
                     </tr>

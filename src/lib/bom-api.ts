@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId } from "@/lib/auth-helpers";
 import type { SkipReason } from "@/lib/import-utils";
 import { findItemByCode, fetchAllActiveItems } from "@/lib/import-utils";
+import { fetchFreeStockMap } from "@/lib/stock-free-api";
 
 // ============================================================
 // Interfaces
@@ -322,6 +323,8 @@ export async function fetchBomLines(
     .in("id", childIds);
 
   const itemMap = new Map(((childItems ?? []) as any[]).map((i: any) => [i.id, i]));
+  // AVAILABILITY from v_stock_free (ledger-truth for counted items); bucket fallback.
+  const freeMap = await fetchFreeStockMap((childIds as any[]).filter(Boolean));
 
   return (data as any[]).map((bl: any) => {
     const child = itemMap.get(bl.child_item_id) as any;
@@ -330,7 +333,7 @@ export async function fetchBomLines(
       child_item_code: child?.item_code ?? null,
       child_item_description: child?.description ?? null,
       child_item_type: child?.item_type ?? null,
-      child_current_stock: child?.current_stock ?? 0,
+      child_current_stock: freeMap.get(bl.child_item_id) ?? child?.current_stock ?? 0,
       child_standard_cost: child?.standard_cost ?? 0,
       child_unit: child?.unit ?? bl.unit ?? null,
       child_drawing_revision: child?.drawing_revision ?? null,
