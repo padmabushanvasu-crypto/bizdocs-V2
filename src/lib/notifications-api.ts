@@ -1,167 +1,137 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId } from "@/lib/auth-helpers";
 
+export type NotificationCategory = "action_required" | "activity";
+export type NotificationPriority = "high" | "normal" | "low";
+
 export interface Notification {
   id: string;
   company_id: string;
   type: string;
   title: string;
   message: string;
+  category: string | null;
+  priority: string | null;
   is_read: boolean;
+  read_at: string | null;
+  dismissed_at: string | null;
   link: string | null;
+  target_role: string | null;
+  target_user: string | null;
+  reference_type: string | null;
+  reference_id: string | null;
+  created_by: string | null;
   created_at: string;
 }
 
-export async function fetchNotifications(): Promise<{ notifications: Notification[]; unreadCount: number }> {
+export interface CreateNotificationInput {
+  type: string;
+  title: string;
+  message: string;
+  category?: NotificationCategory;   // default 'activity'
+  priority?: NotificationPriority;   // default 'normal'
+  link?: string | null;
+  target_role?: string | null;       // null + null target_user → everyone
+  target_user?: string | null;
+  reference_type?: string | null;
+  reference_id?: string | null;
+  created_by?: string | null;
+  company_id?: string | null;        // override when the caller already has it
+}
+
+/**
+ * Single insert path for ALL notifications, so category/priority/targeting are
+ * consistent. Non-throwing on a missing company; throws on a real insert error
+ * (callers wrap in try/catch where the notification is non-critical).
+ */
+export async function createNotification(input: CreateNotificationInput): Promise<void> {
+  const companyId = input.company_id ?? (await getCompanyId());
+  if (!companyId) return;
+  const { error } = await (supabase as any).from("notifications").insert({
+    company_id: companyId,
+    type: input.type,
+    title: input.title,
+    message: input.message,
+    category: input.category ?? "activity",
+    priority: input.priority ?? "normal",
+    is_read: false,
+    link: input.link ?? null,
+    target_role: input.target_role ?? null,
+    target_user: input.target_user ?? null,
+    reference_type: input.reference_type ?? null,
+    reference_id: input.reference_id ?? null,
+    created_by: input.created_by ?? null,
+  });
+  if (error) throw error;
+}
+
+/**
+ * Company-scoped fetch. Excludes dismissed by default; `category` narrows;
+ * `limit` caps the bell (omit for the full page). Visibility (role/user) is
+ * applied client-side via isVisibleTo.
+ */
+export async function fetchNotifications(
+  opts: { includeDismissed?: boolean; category?: string; limit?: number } = {}
+): Promise<{ notifications: Notification[] }> {
   const companyId = await getCompanyId();
-  const { data, error } = await (supabase as any)
+  if (!companyId) return { notifications: [] };
+
+  let query = (supabase as any)
     .from("notifications")
     .select("*")
     .eq("company_id", companyId)
-    .order("created_at", { ascending: false })
-    .limit(20);
+    .order("created_at", { ascending: false });
+
+  if (!opts.includeDismissed) query = query.is("dismissed_at", null);
+  if (opts.category) query = query.eq("category", opts.category);
+  if (opts.limit) query = query.limit(opts.limit);
+
+  const { data, error } = await query;
   if (error) {
     // Table may not exist yet — return empty gracefully
-    return { notifications: [], unreadCount: 0 };
+    return { notifications: [] };
   }
-  const notifications = (data ?? []) as Notification[];
-  const unreadCount = notifications.filter((n) => !n.is_read).length;
-  return { notifications, unreadCount };
+  return { notifications: (data ?? []) as Notification[] };
+}
+
+/**
+ * Client-side visibility: a user sees a notification if it's addressed to them
+ * personally, to their role (admin/finance see all role-targeted), or to nobody
+ * in particular (both targets null).
+ */
+export function isVisibleTo(
+  n: Pick<Notification, "target_role" | "target_user">,
+  role: string | null,
+  userId: string | null
+): boolean {
+  if (n.target_user) return n.target_user === userId;
+  if (n.target_role) return role === "admin" || role === "finance" || role === n.target_role;
+  return true; // both null → everyone
 }
 
 export async function markAsRead(id: string): Promise<void> {
-  await (supabase as any).from("notifications").update({ is_read: true }).eq("id", id);
-}
-
-export async function markAllAsRead(): Promise<void> {
-  const companyId = await getCompanyId();
   await (supabase as any)
     .from("notifications")
-    .update({ is_read: true })
-    .eq("company_id", companyId)
-    .eq("is_read", false);
+    .update({ is_read: true, read_at: new Date().toISOString() })
+    .eq("id", id);
 }
 
-export async function generateStockAlerts(): Promise<void> {
-  try {
-    const companyId = await getCompanyId();
-
-    // Remove stale unread stock alerts — will be replaced with fresh ones
-    await (supabase as any)
-      .from("notifications")
-      .delete()
-      .eq("company_id", companyId)
-      .eq("type", "stock_alert")
-      .eq("is_read", false);
-
-    const { data: items } = await (supabase as any)
-      .from("items")
-      .select("id, item_code, description, current_stock, min_stock")
-      .eq("company_id", companyId)
-      .gt("min_stock", 0);
-
-    const below = ((items ?? []) as any[]).filter(
-      (item) => (item.current_stock ?? 0) <= item.min_stock
-    );
-
-    if (below.length === 0) return;
-
-    const inserts = below.map((item) => ({
-      company_id: companyId,
-      type: "stock_alert",
-      title: `Stock Alert: ${item.item_code ?? "Item"}`,
-      message: `${item.description} is at or below minimum stock (current: ${item.current_stock ?? 0}, min: ${item.min_stock})`,
-      is_read: false,
-      link: "/stock-register",
-    }));
-
-    await (supabase as any).from("notifications").insert(inserts);
-  } catch {
-    // Silently ignore — table may not exist yet
-  }
+/**
+ * Mark read scoped to the CURRENT USER's visible set — callers pass the ids
+ * currently shown to them (undismissed + visible), so this never touches other
+ * users' / other roles' notifications.
+ */
+export async function markAllAsRead(ids: string[]): Promise<void> {
+  if (!ids.length) return;
+  await (supabase as any)
+    .from("notifications")
+    .update({ is_read: true, read_at: new Date().toISOString() })
+    .in("id", ids);
 }
 
-export async function generateOverdueDCAlerts(): Promise<void> {
-  try {
-    const companyId = await getCompanyId();
-    const today = new Date().toISOString().split("T")[0];
-
-    await (supabase as any)
-      .from("notifications")
-      .delete()
-      .eq("company_id", companyId)
-      .eq("type", "overdue_dc")
-      .eq("is_read", false);
-
-    const { data: dcs } = await (supabase as any)
-      .from("delivery_challans")
-      .select("id, dc_number, party_name, return_due_date, status")
-      .eq("company_id", companyId)
-      .not("return_due_date", "is", null)
-      .lt("return_due_date", today)
-      .not("status", "in", "(fully_returned,cancelled,deleted)");
-
-    if (!dcs || dcs.length === 0) return;
-
-    const inserts = (dcs as any[]).map((dc) => ({
-      company_id: companyId,
-      type: "overdue_dc",
-      title: `Overdue Return: ${dc.dc_number}`,
-      message: `DC ${dc.dc_number}${dc.party_name ? ` to ${dc.party_name}` : ""} was due for return on ${new Date(dc.return_due_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}`,
-      is_read: false,
-      link: `/delivery-challans/${dc.id}`,
-    }));
-
-    await (supabase as any).from("notifications").insert(inserts);
-  } catch {
-    // Silently ignore
-  }
-}
-
-export async function generatePOPendingGRNAlerts(): Promise<void> {
-  try {
-    const companyId = await getCompanyId();
-    const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0];
-
-    await (supabase as any)
-      .from("notifications")
-      .delete()
-      .eq("company_id", companyId)
-      .eq("type", "po_pending_grn")
-      .eq("is_read", false);
-
-    const { data: pos } = await (supabase as any)
-      .from("purchase_orders")
-      .select("id, po_number, vendor_name, po_date, status")
-      .eq("company_id", companyId)
-      .in("status", ["issued", "partially_received"])
-      .lt("po_date", sevenDaysAgo);
-
-    if (!pos || pos.length === 0) return;
-
-    // Check which POs have no GRN
-    const inserts: any[] = [];
-    for (const po of pos as any[]) {
-      const { count } = await (supabase as any)
-        .from("grns")
-        .select("id", { count: "exact", head: true })
-        .eq("po_id", po.id);
-      if ((count ?? 0) === 0) {
-        inserts.push({
-          company_id: companyId,
-          type: "po_pending_grn",
-          title: `No GRN for ${po.po_number}`,
-          message: `${po.po_number}${po.vendor_name ? ` to ${po.vendor_name}` : ""} has been open for more than 7 days with no receipt recorded`,
-          is_read: false,
-          link: `/purchase-orders/${po.id}`,
-        });
-      }
-    }
-
-    if (inserts.length > 0) {
-      await (supabase as any).from("notifications").insert(inserts);
-    }
-  } catch {
-    // Silently ignore
-  }
+export async function dismissNotification(id: string): Promise<void> {
+  await (supabase as any)
+    .from("notifications")
+    .update({ dismissed_at: new Date().toISOString() })
+    .eq("id", id);
 }

@@ -5,6 +5,7 @@ import { getNextDocNumber } from "@/lib/doc-number-utils";
 import { updateStockBucket } from "@/lib/items-api";
 import { logAudit } from "@/lib/audit-api";
 import { STOCK_STATE } from "@/lib/stock-states";
+import { createNotification } from "@/lib/notifications-api";
 
 export type GRNStage = 'draft' | 'quantitative_pending' | 'quantitative_done' | 'quality_pending' | 'quality_done' | 'closed' | 'awaiting_store';
 export type QualityVerdict = 'fully_accepted' | 'conditionally_accepted' | 'partially_returned' | 'returned';
@@ -1326,14 +1327,16 @@ export async function saveQualityStage(
         .eq('id', grnId)
         .single();
       if (grnHeader) {
-        await (supabase as any).from('notifications').insert({
+        await createNotification({
           company_id: grnHeader.company_id,
           type: 'grn_ready_to_move',
           title: 'GRN Ready to Move to Store',
           message: `GRN ${grnHeader.grn_number}${grnHeader.vendor_name ? ` (${grnHeader.vendor_name})` : ''} has passed QC. Items are ready to be physically moved to store.`,
-          is_read: false,
+          category: 'action_required',
           link: `/ready-to-move`,
           target_role: 'inward_team',
+          reference_type: 'grn',
+          reference_id: grnId,
         });
       }
     } catch {
@@ -1854,11 +1857,14 @@ async function creditPartialStock(
     for (const sl of (shortageLines ?? []) as any[]) {
       const mirStatus = sl.material_issue_requests?.status;
       if (!['pending', 'partially_issued'].includes(mirStatus)) continue;
-      await (supabase as any).from('notifications').insert({
+      await createNotification({
         company_id: opts.companyId,
         type: 'mir_restock',
         title: 'Stock available for MIR',
         message: `${sl.item_description ?? sl.item_code ?? 'Item'} restocked via GRN ${opts.grnNumber ?? ''}. MIR ${sl.material_issue_requests?.mir_number} has a shortage of ${sl.shortage_qty} — reissue from the storekeeper queue.`,
+        category: 'action_required',
+        link: '/storekeeper',
+        target_role: 'storekeeper',
         reference_type: 'material_issue_request',
         reference_id: sl.mir_id,
         created_by: opts.confirmedBy,

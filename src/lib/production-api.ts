@@ -3,6 +3,7 @@ import { updateStockBucket } from "@/lib/items-api";
 import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
 import { STOCK_STATE } from "@/lib/stock-states";
 import { fetchFreeStockMap } from "@/lib/stock-free-api";
+import { createNotification } from "@/lib/notifications-api";
 
 async function getCompanyId(): Promise<string | null> {
   const { data: { user } } = await supabase.auth.getUser();
@@ -623,12 +624,12 @@ export async function scrapAssemblyComponents(
       // One notification per replacement MIR (not per line) → store/assembly issue role.
       try {
         const totalQty = replacements.reduce((s, r) => s + r.qty, 0);
-        await (supabase as any).from("notifications").insert({
+        await createNotification({
           company_id: companyId,
           type: 'assembly_replacement_mir',
           title: 'Replacement materials requested',
           message: `${mirNumber}: ${replacements.length} component(s) (${totalQty} unit(s)) scrapped on AWO #${awoNumber} — issue replacements from the Assembly Issue Queue.`,
-          is_read: false,
+          category: 'action_required',
           link: '/storekeeper',
           target_role: 'storekeeper',
           reference_type: 'material_issue_request',

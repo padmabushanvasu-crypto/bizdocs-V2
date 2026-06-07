@@ -46,6 +46,7 @@ import {
 } from "@/components/ui/dialog";
 import { AuditTimeline } from "@/components/AuditTimeline";
 import { logAudit } from "@/lib/audit-api";
+import { createNotification } from "@/lib/notifications-api";
 import { UNITS } from "@/lib/constants";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -1925,14 +1926,17 @@ export default function GRNDetail() {
       if (needsFinanceApproval) {
         try {
           const totalExcess = withinToleranceItems.reduce((sum, t) => sum + ((t as any).excess ?? 0), 0);
-          await (supabase as any).from("notifications").insert({
+          await createNotification({
             company_id: g.company_id,
             type: "over_receipt_approval",
             title: "Over-Receipt GRN Requires Approval",
             message: `GRN ${g.grn_number} has ${totalExcess} over-received unit(s). Finance approval needed before QC can proceed.`,
-            is_read: false,
+            category: "action_required",
+            priority: "high",
             link: `/grns/${id}`,
             target_role: "finance",
+            reference_type: "grn",
+            reference_id: id,
           });
         } catch {
           // Notifications table may not exist yet — non-fatal
