@@ -9,6 +9,7 @@ import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ITEM_HEADER_PALETTE, ITEM_ROW_ACCENT } from "@/lib/item-accent";
+import { QC_INSTRUMENTS } from "@/lib/qc-instruments";
 import { formatNumber } from "@/lib/gst-utils";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -753,6 +754,12 @@ function QCMeasurementEditor({
 }) {
   return (
     <div className="space-y-4">
+      {/* Shared suggestion list for the Measuring Instrument fields (free text + picklist) */}
+      <datalist id="qc-instruments">
+        {QC_INSTRUMENTS.map((opt) => (
+          <option key={opt} value={opt} />
+        ))}
+      </datalist>
       {lineItems.map((item, idx) => {
         const itemRows = qcRows
           .map((r, globalIdx) => ({ ...r, globalIdx }))
@@ -961,6 +968,7 @@ function QCMeasurementEditor({
                             <div>
                               <Input
                                 className="h-8"
+                                list="qc-instruments"
                                 value={row.measuring_instrument}
                                 placeholder="e.g. Vernier Caliper"
                                 disabled={disabled}
