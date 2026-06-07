@@ -1,10 +1,18 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Download } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatNumber } from "@/lib/gst-utils";
+import { exportToExcel, type ExportColumn } from "@/lib/export-utils";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,6 +48,7 @@ interface StockAlertBoardRow {
   aimed_stock: number;
   shortage: number;
   actionedWith: "PO" | "WO" | null;
+  po_numbers: string;   // distinct matched open-PO numbers, comma-joined ("" if none)
 }
 
 interface WoFormState {
@@ -131,12 +140,23 @@ async function fetchStockAlertBoard(companyId: string): Promise<{ rows: StockAle
   // ── PO detection (two-pass) ───────────────────────────────────────────────
   const { data: openPOs } = await (supabase as any)
     .from("purchase_orders")
-    .select("id")
+    .select("id, po_number")
     .eq("company_id", companyId)
     .in("status", ["draft", "approved", "issued", "partially_received"]);
 
   const openPOIds = (openPOs ?? []).map((p: any) => p.id);
+  const poNumberById = new Map<string, string>();
+  (openPOs ?? []).forEach((p: any) => { if (p.id) poNumberById.set(p.id, p.po_number ?? ""); });
+
   let itemsWithPO = new Set<string>();
+  // item_id → distinct matched open-PO numbers (an item can sit on several POs)
+  const poNumbersByItem = new Map<string, Set<string>>();
+  const addPoNumber = (itemId: string, poId: string | null) => {
+    const num = poId ? (poNumberById.get(poId) ?? "") : "";
+    if (!num) return;
+    if (!poNumbersByItem.has(itemId)) poNumbersByItem.set(itemId, new Set<string>());
+    poNumbersByItem.get(itemId)!.add(num);
+  };
 
   if (openPOIds.length > 0) {
     // Pass 1: match by item_id FK (populated for newer POs)
@@ -150,11 +170,10 @@ async function fetchStockAlertBoard(companyId: string): Promise<{ rows: StockAle
     // Items matched by item_id
     validLines
       .filter((l: any) => l.item_id && itemIds.includes(l.item_id))
-      .forEach((l: any) => itemsWithPO.add(l.item_id));
+      .forEach((l: any) => { itemsWithPO.add(l.item_id); addPoNumber(l.item_id, l.po_id); });
 
-    // Pass 2: description ILIKE fallback for items not yet matched
+    // Pass 2: description ILIKE fallback for items not yet matched by item_id
     const unmatchedIds = itemIds.filter((id) => !itemsWithPO.has(id));
-    const descriptionMatches: string[] = [];
     if (unmatchedIds.length > 0) {
       validLines
         .filter((l: any) => l.description)
@@ -164,12 +183,11 @@ async function fetchStockAlertBoard(companyId: string): Promise<{ rows: StockAle
             const code = (itemCodeMap[id] ?? "").toLowerCase();
             if (code && desc.includes(code)) {
               itemsWithPO.add(id);
-              descriptionMatches.push(`${itemCodeMap[id]} matched via "${l.description}"`);
+              addPoNumber(id, l.po_id);
             }
           });
         });
     }
-
   }
 
   // ── Work-order detection for sub-assemblies ───────────────────────────────
@@ -208,6 +226,7 @@ async function fetchStockAlertBoard(companyId: string): Promise<{ rows: StockAle
         aimed_stock: aimed,
         shortage,
         actionedWith: itemsWithPO.has(r.id) ? "PO" : itemsWithWO.has(r.id) ? "WO" : null,
+        po_numbers: Array.from(poNumbersByItem.get(r.id) ?? []).sort().join(", "),
       };
     })
     // Suppress items already at or above aimed stock
@@ -382,6 +401,53 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
     return true; // "all"
   });
 
+  // ── Export (reuses exportToExcel — no new dependency) ──────────────────────
+  const suggestedOrder = (r: StockAlertBoardRow) =>
+    r.aimed_stock > 0 ? Math.max(0, (r.aimed_stock ?? 0) - (r.current_stock ?? 0)) : (r.shortage ?? 0);
+  const statusLabel = (r: StockAlertBoardRow) =>
+    r.actionedWith === "PO" ? "PO Raised" : r.actionedWith === "WO" ? "Production Started" : "Needs Action";
+
+  const EXPORT_VIEWS: Record<string, { label: string; slug: string; rows: () => StockAlertBoardRow[] }> = {
+    all:                { label: "All (below min)",     slug: "All",                rows: () => rows },
+    needs_action:       { label: "Needs Action",        slug: "Needs_Action",       rows: () => rows.filter((r) => !r.actionedWith) },
+    po_raised:          { label: "PO Raised",           slug: "PO_Raised",          rows: () => rows.filter((r) => r.actionedWith === "PO") },
+    production_started: { label: "Production Started",   slug: "Production_Started", rows: () => rows.filter((r) => r.actionedWith === "WO") },
+    current:            { label: "Current view",        slug: "Current_View",       rows: () => filteredRows },
+  };
+
+  const handleExport = (key: keyof typeof EXPORT_VIEWS) => {
+    const view = EXPORT_VIEWS[key];
+    const viewRows = view.rows();
+    // "PO No." is a persistent column in every view (mirrors the on-screen table):
+    // populated for PO-raised rows, blank otherwise. Column order matches the table.
+    const data = viewRows.map((r) => ({
+      item_code: r.item_code,
+      item_name: r.item_name,
+      type: ITEM_TYPE_LABELS[r.item_type] ?? r.item_type,
+      current_stock: r.current_stock ?? 0,
+      min_stock: r.min_stock ?? 0,
+      aimed_qty: r.aimed_stock ?? 0,
+      shortage: r.shortage ?? 0,
+      suggested_order: suggestedOrder(r),
+      status: statusLabel(r),
+      po_no: r.po_numbers || "",
+    }));
+    const columns: ExportColumn[] = [
+      { key: "item_code", label: "Item Code", width: 16 },
+      { key: "item_name", label: "Item Name", width: 36 },
+      { key: "type", label: "Type", width: 16 },
+      { key: "current_stock", label: "Current Stock", type: "number", width: 14 },
+      { key: "min_stock", label: "Min Stock", type: "number", width: 12 },
+      { key: "aimed_qty", label: "Aimed Qty", type: "number", width: 12 },
+      { key: "shortage", label: "Shortage", type: "number", width: 12 },
+      { key: "suggested_order", label: "Suggested Order", type: "number", width: 16 },
+      { key: "status", label: "Status", width: 20 },
+      { key: "po_no", label: "PO No.", width: 24 },
+    ];
+    const date = new Date().toISOString().split("T")[0];
+    exportToExcel(data, columns, `Reorder_${view.slug}_${date}.xlsx`, "Reorder Alerts");
+  };
+
   return (
     <>
       <div className={`bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col${fullHeight ? " flex-1 min-h-0" : ""}`}>
@@ -397,14 +463,35 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
               </span>
             )}
           </div>
-          <button
-            onClick={() => refetch()}
-            disabled={isFetching}
-            className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
-            Refresh
-          </button>
+          <div className="flex items-center gap-3">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  disabled={isLoading || rows.length === 0}
+                  className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 transition-colors disabled:opacity-50"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Export
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleExport("all")}>All (below min)</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport("needs_action")}>Needs Action</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport("po_raised")}>PO Raised</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport("production_started")}>Production Started</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => handleExport("current")}>Current view</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <button
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
+              Refresh
+            </button>
+          </div>
         </div>
 
         {/* ── Summary stat cards — always visible ─────────────────────────── */}
@@ -499,12 +586,13 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
                   <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide w-24 border-b border-slate-200">Shortage</th>
                   <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide w-28 border-b border-slate-200">Suggested Order</th>
                   <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide w-36 border-b border-slate-200">Action</th>
+                  <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide w-32 border-b border-slate-200">PO No.</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredRows.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-sm text-slate-400">
+                    <td colSpan={10} className="px-4 py-8 text-center text-sm text-slate-400">
                       No items match this filter.
                     </td>
                   </tr>
@@ -581,6 +669,13 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
                           </Button>
                         ) : (
                           <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2 font-mono text-xs text-slate-600">
+                        {row.po_numbers ? (
+                          <span title={row.po_numbers}>{row.po_numbers}</span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
                         )}
                       </td>
                     </tr>
