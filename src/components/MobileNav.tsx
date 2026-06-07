@@ -14,7 +14,6 @@ import {
   Receipt,
   Settings,
   ShoppingBag,
-  BookOpen,
   Hash,
   ClipboardCheck,
   FileSpreadsheet,
@@ -101,7 +100,6 @@ const MORE_GROUPS = [
     items: [
       { label: "Vendor Scorecards", to: "/vendor-scorecards", icon: Star },
       { label: "GST Reports", to: "/gst-reports", icon: FileSpreadsheet },
-      { label: "Stock Ledger", to: "/stock-ledger", icon: BookOpen },
       { label: "Open Items", to: "/open-items", icon: FileText },
       { label: "Reorder Alerts", to: "/reorder-intelligence", icon: TrendingDown },
       { label: "Reorder Rules", to: "/reorder-rules", icon: RotateCcw },

@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   BookOpen,
   ChevronLeft,
@@ -86,7 +86,7 @@ function StateFlow({ row }: { row: InventoryLedgerRow }) {
 
 // ── Item Ledger tab ────────────────────────────────────────────────────────────
 
-function ItemLedgerTab() {
+function ItemLedgerTab({ initialItemId }: { initialItemId?: string | null }) {
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -100,6 +100,13 @@ function ItemLedgerTab() {
     queryFn: () => fetchItems({ status: "all" }),
   });
   const items = itemsData?.data ?? [];
+
+  // Deep-link pre-select: once items load, select the URL-provided item once.
+  useEffect(() => {
+    if (!initialItemId || selectedItem) return;
+    const match = items.find((i) => i.id === initialItemId);
+    if (match) setSelectedItem(match);
+  }, [initialItemId, items, selectedItem]);
 
   const { data: ledgerRows = [], isLoading } = useQuery({
     queryKey: ["inventory-item-ledger", selectedItem?.id],
@@ -601,6 +608,12 @@ export default function InventoryLedger() {
   // Reuse the existing stock-ledger access key (same audience).
   useRoleAccess("stock-ledger");
 
+  // Deep-link support: /inventory-ledger?item_id=<id> opens the Item Ledger tab
+  // pre-selected to that item (used by the Stock Register drill-down).
+  const [searchParams] = useSearchParams();
+  const urlItemId = searchParams.get("item_id");
+  const [tab, setTab] = useState(urlItemId ? "item-ledger" : "closing-stock");
+
   return (
     <div className="p-4 md:p-6 space-y-4">
       <button
@@ -620,7 +633,7 @@ export default function InventoryLedger() {
         </p>
       </div>
 
-      <Tabs defaultValue="closing-stock" className="space-y-4">
+      <Tabs value={tab} onValueChange={setTab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="closing-stock">Closing Stock</TabsTrigger>
           <TabsTrigger value="item-ledger">Item Ledger</TabsTrigger>
@@ -629,7 +642,7 @@ export default function InventoryLedger() {
           <ClosingStockTab />
         </TabsContent>
         <TabsContent value="item-ledger">
-          <ItemLedgerTab />
+          <ItemLedgerTab initialItemId={urlItemId} />
         </TabsContent>
       </Tabs>
     </div>

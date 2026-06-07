@@ -986,7 +986,7 @@ function StockRegisterInner() {
               )}
               <button
                 className="text-xs text-blue-600 hover:underline mt-1.5"
-                onClick={() => { setLedgerOpen(false); navigate(`/stock-ledger?item_id=${selectedItem.id}`); }}
+                onClick={() => { setLedgerOpen(false); navigate(`/inventory-ledger?item_id=${selectedItem.id}`); }}
               >
                 View full ledger →
               </button>

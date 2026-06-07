@@ -46,7 +46,6 @@ import VendorScorecardDetail from "@/pages/VendorScorecardDetail";
 import GstReports from "@/pages/GstReports";
 import NotificationsSettings from "@/pages/NotificationsSettings";
 import BillOfMaterials from "@/pages/BillOfMaterials";
-import StockLedger from "@/pages/StockLedger";
 import InventoryLedger from "@/pages/InventoryLedger";
 import StoreLocator from "@/pages/StoreLocator";
 import PhysicalCount from "@/pages/PhysicalCount";
@@ -199,7 +198,6 @@ const App = () => (
 
               <Route path="/bill-of-materials" element={<PageGuard page="bill-of-materials"><BillOfMaterials /></PageGuard>} />
 
-              <Route path="/stock-ledger" element={<PageGuard page="stock-ledger"><StockLedger /></PageGuard>} />
               <Route path="/inventory-ledger" element={<PageGuard page="stock-ledger"><InventoryLedger /></PageGuard>} />
               <Route path="/store-locator" element={<PageGuard page="stock-ledger"><StoreLocator /></PageGuard>} />
               <Route path="/physical-count" element={<PageGuard page="stock-ledger"><PhysicalCount /></PageGuard>} />
