@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bell, Save, X, ChevronLeft, UserCheck, Plus, Download } from "lucide-react";
+import { Save, X, ChevronLeft, UserCheck, Plus, Download, Mail, Truck, ClipboardCheck, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -18,22 +19,11 @@ import {
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 const DEFAULTS: NotificationSettings = {
-  stock_alert_enabled: false,
-  stock_alert_time: "09:00",
-  global_min_stock_default: 10,
-  warning_threshold_pct: 10,
-  stock_alert_recipients: [],
-  weekly_summary_enabled: false,
-  weekly_summary_day: "Monday",
-  weekly_summary_time: "08:00",
-  weekly_summary_recipients: [],
   po_email_enabled: true,
   po_email_day: "Monday",
-  po_email_time: "08:00",
   po_email_recipients: [],
   dc_email_enabled: false,
   dc_email_day: "Monday",
-  dc_email_time: "08:00",
   dc_email_recipients: [],
   grn_qc_email_enabled: false,
   grn_qc_email_recipients: [],
@@ -130,9 +120,9 @@ function StockEditorsSection({
   const remove = (name: string) => onChange(names.filter(n => n !== name));
 
   return (
-    <div className="paper-card space-y-4">
-      <div className="flex items-center gap-2">
-        <UserCheck className="h-4 w-4 text-slate-600" />
+    <Card className="p-5 space-y-3.5">
+      <div className="flex items-start gap-2.5">
+        <UserCheck className="h-4 w-4 text-slate-600 mt-0.5 shrink-0" />
         <div>
           <h3 className="font-semibold text-slate-900 text-sm">Stock Editor Names</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -177,7 +167,7 @@ function StockEditorsSection({
         </div>
         {error && <p className="text-xs text-red-500">{error}</p>}
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -334,7 +324,7 @@ export default function NotificationsSettings() {
 
   if (loading) {
     return (
-      <div className="space-y-4">
+      <div className="max-w-xl mx-auto px-4 py-6 space-y-3.5">
         {[...Array(4)].map((_, i) => (
           <div key={i} className="h-12 bg-muted animate-pulse rounded-lg" />
         ))}
@@ -343,156 +333,30 @@ export default function NotificationsSettings() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-xl mx-auto px-4 py-6 space-y-3.5">
       <button
         onClick={() => navigate(-1)}
-        className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 transition-colors mb-3"
+        className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 transition-colors"
       >
         <ChevronLeft className="h-4 w-4" />
         Back
       </button>
-      <div className="flex items-center gap-2">
-        <Bell className="h-5 w-5 text-blue-600" />
-        <h2 className="text-lg font-semibold text-slate-900">Notification Settings</h2>
+      <div>
+        <h1 className="text-xl font-bold text-slate-900 tracking-tight">Notification settings</h1>
+        <p className="text-sm text-muted-foreground mt-0.5">Choose which alerts are emailed, to whom, and on which day.</p>
       </div>
 
-      {/* Section 1 — Daily Stock Alert */}
-      <div className="paper-card space-y-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold text-slate-900 text-sm">Daily Stock Alert Email</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Send an email when items fall below their minimum stock levels
-            </p>
-          </div>
-          <Switch
-            checked={settings.stock_alert_enabled}
-            onCheckedChange={(v) => set({ stock_alert_enabled: v })}
-          />
-        </div>
-
-        <div className={`space-y-4 ${!settings.stock_alert_enabled ? "opacity-50 pointer-events-none" : ""}`}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-slate-700">Alert Time (HH:MM)</Label>
-              <Input
-                type="time"
-                value={settings.stock_alert_time}
-                onChange={(e) => set({ stock_alert_time: e.target.value })}
-                className="h-9 text-sm w-32"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-slate-700">
-                Global Minimum Stock Default
-              </Label>
-              <p className="text-[11px] text-muted-foreground">
-                Used for items without a specific minimum set
+      {/* Weekly PO Summary Email */}
+      <Card className="p-5 space-y-3.5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2.5">
+            <Mail className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+            <div>
+              <h3 className="font-semibold text-slate-900 text-sm">Weekly PO Summary Email</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Weekly 4-sheet report: last week's POs, open POs, partials, and long-open POs.
               </p>
-              <Input
-                type="number"
-                min={0}
-                value={settings.global_min_stock_default}
-                onChange={(e) => set({ global_min_stock_default: parseInt(e.target.value) || 0 })}
-                className="h-9 text-sm w-32"
-              />
             </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium text-slate-700">Warning Threshold %</Label>
-            <p className="text-[11px] text-muted-foreground">
-              Alert when stock is within this % of the minimum level
-            </p>
-            <div className="flex items-center gap-2">
-              <Input
-                type="number"
-                min={0}
-                max={100}
-                value={settings.warning_threshold_pct}
-                onChange={(e) => set({ warning_threshold_pct: parseInt(e.target.value) || 0 })}
-                className="h-9 text-sm w-24"
-              />
-              <span className="text-sm text-muted-foreground">%</span>
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium text-slate-700">Recipients</Label>
-            <EmailTagInput
-              value={settings.stock_alert_recipients}
-              onChange={(v) => set({ stock_alert_recipients: v })}
-              placeholder="Add recipient email — press Enter"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Section 2 — Weekly Business Summary */}
-      <div className="paper-card space-y-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold text-slate-900 text-sm">Weekly Business Summary Email</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Send a weekly summary of key metrics to owners and managers
-            </p>
-          </div>
-          <Switch
-            checked={settings.weekly_summary_enabled}
-            onCheckedChange={(v) => set({ weekly_summary_enabled: v })}
-          />
-        </div>
-
-        <div className={`space-y-4 ${!settings.weekly_summary_enabled ? "opacity-50 pointer-events-none" : ""}`}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-slate-700">Day of Week</Label>
-              <Select
-                value={settings.weekly_summary_day}
-                onValueChange={(v) => set({ weekly_summary_day: v })}
-              >
-                <SelectTrigger className="h-9 text-sm w-40">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {DAYS.map((d) => (
-                    <SelectItem key={d} value={d}>
-                      {d}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-slate-700">Send Time (HH:MM)</Label>
-              <Input
-                type="time"
-                value={settings.weekly_summary_time}
-                onChange={(e) => set({ weekly_summary_time: e.target.value })}
-                className="h-9 text-sm w-32"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium text-slate-700">Recipients</Label>
-            <EmailTagInput
-              value={settings.weekly_summary_recipients}
-              onChange={(v) => set({ weekly_summary_recipients: v })}
-              placeholder="Owner/manager emails — press Enter"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Section 3 — Weekly PO Summary Email */}
-      <div className="paper-card space-y-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold text-slate-900 text-sm">Weekly PO Summary Email</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Every Monday at 8:00 AM — 3-sheet report: last week's POs, open POs, overdue POs
-            </p>
           </div>
           <Switch
             checked={settings.po_email_enabled}
@@ -500,15 +364,15 @@ export default function NotificationsSettings() {
           />
         </div>
 
-        <div className={`space-y-4 ${!settings.po_email_enabled ? "opacity-50 pointer-events-none" : ""}`}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-slate-700">Day of Week</Label>
+        <div className={`space-y-3.5 sm:pl-6 ${!settings.po_email_enabled ? "opacity-50 pointer-events-none" : ""}`}>
+          <div className="space-y-1.5">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 sm:gap-3">
+              <Label className="text-xs font-medium text-slate-700">Day of week</Label>
               <Select
                 value={settings.po_email_day}
                 onValueChange={(v) => set({ po_email_day: v })}
               >
-                <SelectTrigger className="h-9 text-sm w-40">
+                <SelectTrigger className="h-9 text-sm w-full sm:w-44">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -518,23 +382,19 @@ export default function NotificationsSettings() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-slate-700">Send Time (HH:MM IST)</Label>
-              <Input
-                type="time"
-                value={settings.po_email_time}
-                onChange={(e) => set({ po_email_time: e.target.value })}
-                className="h-9 text-sm w-32"
-              />
-            </div>
+            <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <Clock className="h-3 w-3 shrink-0" /> Send time follows the system schedule (IST).
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs font-medium text-slate-700">Purchase Team Recipients</Label>
-            <EmailTagInput
-              value={settings.po_email_recipients}
-              onChange={(v) => set({ po_email_recipients: v })}
-              placeholder="Purchase team emails — press Enter"
-            />
+            <div className="sm:max-w-sm">
+              <EmailTagInput
+                value={settings.po_email_recipients}
+                onChange={(v) => set({ po_email_recipients: v })}
+                placeholder="Purchase team emails — press Enter"
+              />
+            </div>
           </div>
           <DownloadReportCard
             title="Download PO Report"
@@ -551,16 +411,19 @@ export default function NotificationsSettings() {
             <p>Sheet 4 — POs issued more than 30 days ago and still open</p>
           </div>
         </div>
-      </div>
+      </Card>
 
-      {/* Section 4 — Weekly DC Summary Email */}
-      <div className="paper-card space-y-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold text-slate-900 text-sm">Weekly DC Summary Email</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Returnable Delivery Challans — track outstanding job-work and overdue returns
-            </p>
+      {/* Weekly DC Summary Email */}
+      <Card className="p-5 space-y-3.5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2.5">
+            <Truck className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+            <div>
+              <h3 className="font-semibold text-slate-900 text-sm">Weekly DC Summary Email</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Returnable Delivery Challans — track outstanding job-work and overdue returns.
+              </p>
+            </div>
           </div>
           <Switch
             checked={settings.dc_email_enabled}
@@ -568,15 +431,15 @@ export default function NotificationsSettings() {
           />
         </div>
 
-        <div className={`space-y-4 ${!settings.dc_email_enabled ? "opacity-50 pointer-events-none" : ""}`}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-slate-700">Day of Week</Label>
+        <div className={`space-y-3.5 sm:pl-6 ${!settings.dc_email_enabled ? "opacity-50 pointer-events-none" : ""}`}>
+          <div className="space-y-1.5">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 sm:gap-3">
+              <Label className="text-xs font-medium text-slate-700">Day of week</Label>
               <Select
                 value={settings.dc_email_day}
                 onValueChange={(v) => set({ dc_email_day: v })}
               >
-                <SelectTrigger className="h-9 text-sm w-40">
+                <SelectTrigger className="h-9 text-sm w-full sm:w-44">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -586,23 +449,19 @@ export default function NotificationsSettings() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-slate-700">Send Time (HH:MM IST)</Label>
-              <Input
-                type="time"
-                value={settings.dc_email_time}
-                onChange={(e) => set({ dc_email_time: e.target.value })}
-                className="h-9 text-sm w-32"
-              />
-            </div>
+            <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <Clock className="h-3 w-3 shrink-0" /> Send time follows the system schedule (IST).
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs font-medium text-slate-700">Recipients</Label>
-            <EmailTagInput
-              value={settings.dc_email_recipients}
-              onChange={(v) => set({ dc_email_recipients: v })}
-              placeholder="DC follow-up emails — press Enter"
-            />
+            <div className="sm:max-w-sm">
+              <EmailTagInput
+                value={settings.dc_email_recipients}
+                onChange={(v) => set({ dc_email_recipients: v })}
+                placeholder="DC follow-up emails — press Enter"
+              />
+            </div>
           </div>
           <DownloadReportCard
             title="Download DC Report"
@@ -619,16 +478,19 @@ export default function NotificationsSettings() {
             <p>Sheet 4 — Partially returned DCs with qty pending</p>
           </div>
         </div>
-      </div>
+      </Card>
 
-      {/* Section 5 — GRN → QC Inspection Alert (event-triggered) */}
-      <div className="paper-card space-y-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold text-slate-900 text-sm">GRN → QC Inspection Alert</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Emails the QC team the moment a GRN passes Stage-1 receipt and is ready for inspection. Sent once per GRN, when it enters QC.
-            </p>
+      {/* GRN → QC Inspection Alert (event-triggered) */}
+      <Card className="p-5 space-y-3.5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2.5">
+            <ClipboardCheck className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+            <div>
+              <h3 className="font-semibold text-slate-900 text-sm">GRN → QC Inspection Alert</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Emails the QC team the moment a GRN passes Stage-1 receipt and is ready for inspection. Sent once per GRN.
+              </p>
+            </div>
           </div>
           <Switch
             checked={settings.grn_qc_email_enabled}
@@ -636,14 +498,16 @@ export default function NotificationsSettings() {
           />
         </div>
 
-        <div className={`space-y-4 ${!settings.grn_qc_email_enabled ? "opacity-50 pointer-events-none" : ""}`}>
+        <div className={`space-y-3.5 sm:pl-6 ${!settings.grn_qc_email_enabled ? "opacity-50 pointer-events-none" : ""}`}>
           <div className="space-y-1.5">
             <Label className="text-xs font-medium text-slate-700">QC Team Recipients</Label>
-            <EmailTagInput
-              value={settings.grn_qc_email_recipients}
-              onChange={(v) => set({ grn_qc_email_recipients: v })}
-              placeholder="QC team emails — press Enter"
-            />
+            <div className="sm:max-w-sm">
+              <EmailTagInput
+                value={settings.grn_qc_email_recipients}
+                onChange={(v) => set({ grn_qc_email_recipients: v })}
+                placeholder="QC team emails — press Enter"
+              />
+            </div>
           </div>
           <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2.5 text-xs text-blue-700 space-y-0.5">
             <p className="font-semibold">Event-triggered (no schedule):</p>
@@ -651,9 +515,9 @@ export default function NotificationsSettings() {
             <p>One email per GRN, with the line items to inspect and a link to open it.</p>
           </div>
         </div>
-      </div>
+      </Card>
 
-      {/* Section 6 — Stock Editors */}
+      {/* Stock Editors */}
       <StockEditorsSection
         names={settings.stock_editor_names ?? []}
         onChange={(names) => set({ stock_editor_names: names })}

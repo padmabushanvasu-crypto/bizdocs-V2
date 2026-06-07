@@ -169,57 +169,34 @@ export async function deleteCustomField(id: string) {
 
 // Notification Settings
 //
-// Email-schedule fields (po_email_*, dc_email_*) live on company_settings and
-// are read by the weekly Edge Functions. The remaining fields (stock alert,
-// business summary, stock editor names) are still localStorage-only — those
-// features have no Edge Function yet, so persisting them server-side would
-// have no effect.
+// ALL fields live on company_settings (company-wide, source of truth) and are
+// read by the weekly/event Edge Functions. The legacy localStorage path
+// (bizdocs_notification_settings) and the orphaned fields (stock_alert_*,
+// weekly_summary_*, global_min_stock_default, warning_threshold_pct, and the
+// disconnected po/dc *_time) were removed — the weekly functions only honour
+// enabled/day/recipients; send time follows the system schedule.
 export interface NotificationSettings {
-  stock_alert_enabled: boolean;
-  stock_alert_time: string;
-  global_min_stock_default: number;
-  warning_threshold_pct: number;
-  stock_alert_recipients: string[];
-  weekly_summary_enabled: boolean;
-  weekly_summary_day: string;
-  weekly_summary_time: string;
-  weekly_summary_recipients: string[];
-  // Phase 19+: Weekly PO email (server-side schedule)
+  // Weekly PO email (server-side schedule)
   po_email_enabled: boolean;
   po_email_day: string;
-  po_email_time: string;
   po_email_recipients: string[];
   // Weekly DC email (server-side schedule)
   dc_email_enabled: boolean;
   dc_email_day: string;
-  dc_email_time: string;
   dc_email_recipients: string[];
   // Event-triggered GRN → QC inspection alert (no schedule — fired on stage entry)
   grn_qc_email_enabled: boolean;
   grn_qc_email_recipients: string[];
-  // Stock editor names for opening stock audit trail
+  // Shared list of names for the opening-stock audit "edited by" dropdown
   stock_editor_names: string[];
 }
 
-const NS_KEY = "bizdocs_notification_settings";
-
 const NS_DEFAULTS: NotificationSettings = {
-  stock_alert_enabled: false,
-  stock_alert_time: "09:00",
-  global_min_stock_default: 10,
-  warning_threshold_pct: 10,
-  stock_alert_recipients: [],
-  weekly_summary_enabled: false,
-  weekly_summary_day: "Monday",
-  weekly_summary_time: "08:00",
-  weekly_summary_recipients: [],
   po_email_enabled: true,
   po_email_day: "Monday",
-  po_email_time: "08:00",
   po_email_recipients: [],
   dc_email_enabled: false,
   dc_email_day: "Monday",
-  dc_email_time: "08:00",
   dc_email_recipients: [],
   grn_qc_email_enabled: false,
   grn_qc_email_recipients: [],
@@ -232,73 +209,44 @@ const toStringArray = (raw: unknown): string[] => {
 };
 
 export async function fetchNotificationSettings(): Promise<NotificationSettings> {
-  // Start with localStorage values for fields without server backing
-  let merged: NotificationSettings = { ...NS_DEFAULTS };
-  try {
-    const stored = localStorage.getItem(NS_KEY);
-    if (stored) merged = { ...merged, ...JSON.parse(stored) };
-  } catch { /* ignore */ }
-
-  // Overlay server-backed schedule fields from company_settings (source of truth)
   try {
     const cs = await fetchCompanySettings();
     if (cs) {
       const c = cs as any;
-      merged = {
-        ...merged,
-        po_email_enabled:    c.po_email_enabled ?? merged.po_email_enabled,
-        po_email_day:        c.po_email_day     ?? merged.po_email_day,
-        po_email_time:       c.po_email_time    ?? merged.po_email_time,
+      return {
+        po_email_enabled:    c.po_email_enabled ?? NS_DEFAULTS.po_email_enabled,
+        po_email_day:        c.po_email_day     ?? NS_DEFAULTS.po_email_day,
         po_email_recipients: toStringArray(c.po_email_recipients),
-        dc_email_enabled:    c.dc_email_enabled ?? merged.dc_email_enabled,
-        dc_email_day:        c.dc_email_day     ?? merged.dc_email_day,
-        dc_email_time:       c.dc_email_time    ?? merged.dc_email_time,
+        dc_email_enabled:    c.dc_email_enabled ?? NS_DEFAULTS.dc_email_enabled,
+        dc_email_day:        c.dc_email_day     ?? NS_DEFAULTS.dc_email_day,
         dc_email_recipients: toStringArray(c.dc_email_recipients),
-        grn_qc_email_enabled:    c.grn_qc_email_enabled ?? merged.grn_qc_email_enabled,
+        grn_qc_email_enabled:    c.grn_qc_email_enabled ?? NS_DEFAULTS.grn_qc_email_enabled,
         grn_qc_email_recipients: toStringArray(c.grn_qc_email_recipients),
+        stock_editor_names:      toStringArray(c.stock_editor_names),
       };
     }
-  } catch { /* ignore — DB may be unavailable, fall back to localStorage/defaults */ }
-
-  return merged;
+  } catch { /* DB unavailable → defaults */ }
+  return { ...NS_DEFAULTS };
 }
 
 export async function saveNotificationSettings(settings: NotificationSettings): Promise<void> {
-  // Persist non-schedule fields (still localStorage-only — no server feature yet)
-  localStorage.setItem(NS_KEY, JSON.stringify(settings));
-
-  // Persist schedule fields to company_settings (read by Edge Functions)
-  await saveEmailScheduleSettingsToDB({
-    po_email_enabled:    settings.po_email_enabled,
-    po_email_day:        settings.po_email_day,
-    po_email_time:       settings.po_email_time,
-    po_email_recipients: settings.po_email_recipients,
-    dc_email_enabled:    settings.dc_email_enabled,
-    dc_email_day:        settings.dc_email_day,
-    dc_email_time:       settings.dc_email_time,
-    dc_email_recipients: settings.dc_email_recipients,
-    grn_qc_email_enabled:    settings.grn_qc_email_enabled,
-    grn_qc_email_recipients: settings.grn_qc_email_recipients,
-  });
-}
-
-export async function saveEmailScheduleSettingsToDB(fields: {
-  po_email_enabled: boolean;
-  po_email_day: string;
-  po_email_time: string;
-  po_email_recipients: string[];
-  dc_email_enabled: boolean;
-  dc_email_day: string;
-  dc_email_time: string;
-  dc_email_recipients: string[];
-  grn_qc_email_enabled: boolean;
-  grn_qc_email_recipients: string[];
-}): Promise<void> {
   const existing = await fetchCompanySettings();
   if (!existing) return;
+  // All fields persist to company_settings (read by the Edge Functions /
+  // Opening Stock). Weekly functions read enabled/day/recipients only.
   await supabase
     .from("company_settings")
-    .update(fields as any)
+    .update({
+      po_email_enabled:    settings.po_email_enabled,
+      po_email_day:        settings.po_email_day,
+      po_email_recipients: settings.po_email_recipients,
+      dc_email_enabled:    settings.dc_email_enabled,
+      dc_email_day:        settings.dc_email_day,
+      dc_email_recipients: settings.dc_email_recipients,
+      grn_qc_email_enabled:    settings.grn_qc_email_enabled,
+      grn_qc_email_recipients: settings.grn_qc_email_recipients,
+      stock_editor_names:      settings.stock_editor_names,
+    } as any)
     .eq("id", existing.id);
 }
 
