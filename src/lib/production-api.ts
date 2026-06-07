@@ -472,7 +472,8 @@ export interface ScrapComponentLine {
 export async function scrapAssemblyComponents(
   awoId: string,
   lines: ScrapComponentLine[],
-  reason?: string | null
+  reason?: string | null,
+  opts?: { autoReissue?: boolean }
 ): Promise<{ scrapWarnings: string[] }> {
   const companyId = await getCompanyId();
   if (!companyId) throw new Error("Not authenticated");
@@ -484,6 +485,18 @@ export async function scrapAssemblyComponents(
   const awoNumber = awo.awo_number ?? '';
   const today = new Date().toISOString().split('T')[0];
   const scrapWarnings: string[] = [];
+  // Mid-build scrap (autoReissue) collects the actually-scrapped lines so ONE
+  // replacement MIR can be raised after the loop. Cancel-path scrap leaves this
+  // empty (no reissue — the AWO is being cancelled).
+  const replacements: Array<{
+    awo_line_item_id: string;
+    item_id: string;
+    item_code: string | null;
+    item_description: string | null;
+    drawing_number: string | null;
+    unit: string;
+    qty: number;
+  }> = [];
 
   await Promise.all(lines.map(async (input) => {
     const snapshot = (awo.line_items ?? []).find((l) => l.id === input.awo_line_item_id);
@@ -539,6 +552,16 @@ export async function scrapAssemblyComponents(
         return;
       }
       await updateStockBucket(itemId, wip_bucket, -delta);
+      // Queue a replacement for this scrapped quantity (mid-build scrap only).
+      replacements.push({
+        awo_line_item_id: input.awo_line_item_id,
+        item_id: itemId,
+        item_code: itemCode,
+        item_description: itemDesc,
+        drawing_number: snapshot.drawing_number ?? null,
+        unit: snapshot.unit ?? 'NOS',
+        qty: delta,
+      });
     } else {
       // No linked item to move stock for — record the scrapped qty for tracking only.
       scrapWarnings.push(`${itemDesc ?? input.awo_line_item_id} — no item linked; recorded scrap without stock move`);
@@ -550,6 +573,69 @@ export async function scrapAssemblyComponents(
       .eq("id", input.awo_line_item_id)
       .eq("company_id", companyId);
   }));
+
+  // ── Auto-reissue: one replacement MIR for everything scrapped this call ──
+  // Reuses the same material_issue_requests + mir_line_items shapes as
+  // createMaterialIssueRequest, but scoped to the scrapped lines (requested_qty =
+  // scrapped delta) and WITHOUT flipping the AWO status (it stays in_progress).
+  if (opts?.autoReissue && replacements.length > 0) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const userName = await getCurrentUserName();
+      const mirNumber = 'MIR-' + Date.now().toString().slice(-6);
+      const { data: mirData, error: mirErr } = await (supabase as any)
+        .from("material_issue_requests")
+        .insert({
+          company_id: companyId,
+          mir_number: mirNumber,
+          awo_id: awoId,
+          requested_by: userName,
+          requested_by_user_id: user?.id ?? null,
+          status: 'pending',
+          request_date: today,
+          notes: `Replacement for scrapped components — AWO #${awoNumber}`,
+        })
+        .select()
+        .single();
+      if (mirErr) throw mirErr;
+      const mirId = (mirData as MaterialIssueRequest).id;
+
+      const mirLines = replacements.map((r) => ({
+        company_id: companyId,
+        mir_id: mirId,
+        awo_line_item_id: r.awo_line_item_id,
+        item_id: r.item_id,
+        item_code: r.item_code,
+        item_description: r.item_description,
+        drawing_number: r.drawing_number,
+        requested_qty: r.qty,
+        issued_qty: 0,
+        shortage_qty: 0,
+        unit: r.unit,
+      }));
+      const { error: mirLineErr } = await (supabase as any).from("mir_line_items").insert(mirLines);
+      if (mirLineErr) throw mirLineErr;
+
+      // One notification per replacement MIR (not per line) → store/assembly issue role.
+      try {
+        const totalQty = replacements.reduce((s, r) => s + r.qty, 0);
+        await (supabase as any).from("notifications").insert({
+          company_id: companyId,
+          type: 'assembly_replacement_mir',
+          title: 'Replacement materials requested',
+          message: `${mirNumber}: ${replacements.length} component(s) (${totalQty} unit(s)) scrapped on AWO #${awoNumber} — issue replacements from the Assembly Issue Queue.`,
+          is_read: false,
+          link: '/storekeeper',
+          target_role: 'storekeeper',
+          reference_type: 'material_issue_request',
+          reference_id: mirId,
+        });
+      } catch (e) { console.error('[production] replacement MIR notification failed (non-fatal):', e); }
+    } catch (e) {
+      console.error('[production] auto-reissue MIR creation failed (non-fatal):', e);
+      scrapWarnings.push('Replacement material request could not be created — raise it manually from the work order.');
+    }
+  }
 
   return { scrapWarnings };
 }
@@ -999,19 +1085,18 @@ export async function completeAssemblyWorkOrder(id: string): Promise<void> {
   // Idempotent: only a build in progress can be marked done.
   if (awo.status !== 'in_progress') return;
 
-  // Fulfilment guard — reject if any line is short and not covered.
+  // Fulfilment guard — block while any line's available-in-WIP is below required.
+  // available-in-WIP = issued − returned − scrapped (concession/use-as-is units
+  // stay in WIP and count; only scrapped/returned reduce it). Scrapped material
+  // must be re-issued (auto-reissue MIR) before the build can complete.
   const unfulfilledLines = (awo.line_items ?? []).filter((li) => {
-    if ((li.issued_qty ?? 0) >= li.required_qty) return false;
-    if (li.disposition === 'use_as_is') return false;
-    const damageCovered =
-      (li.damage_qty ?? 0) > 0 &&
-      ((li.issued_qty ?? 0) + (li.damage_qty ?? 0)) >= li.required_qty;
-    return !damageCovered;
+    const availableInWip = (li.issued_qty ?? 0) - (li.returned_qty ?? 0) - (li.scrapped_qty ?? 0);
+    return availableInWip < li.required_qty;
   });
   if (unfulfilledLines.length > 0) {
     throw new Error(
-      `Cannot complete: ${unfulfilledLines.length} component(s) are still short. ` +
-      `Issue remaining stock or record a disposition for each short item.`
+      `Cannot complete: ${unfulfilledLines.length} component(s) are short in WIP. ` +
+      `Issue the replacement stock (incl. any scrapped components) before marking the build complete.`
     );
   }
 
@@ -1202,10 +1287,13 @@ export async function reportComponentIssue(
 
   if (disposition === 'scrap') {
     // Capped, idempotent, ledger-first scrap (updates scrapped_qty + wip bucket).
+    // autoReissue → raise a replacement MIR for the scrapped qty so the store
+    // re-issues it and the build can reach required again.
     await scrapAssemblyComponents(
       (awoLine as any).awo_id,
       [{ awo_line_item_id, scrapped_qty: Math.max(0, target_qty) }],
       reason,
+      { autoReissue: true },
     );
     // Mirror disposition + reason, and keep the legacy damage_qty input in sync
     // with the now-authoritative cumulative scrapped_qty for the completion guard.

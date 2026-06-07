@@ -251,19 +251,12 @@ export default function AssemblyWorkOrderDetail() {
 
   const latestMir: MaterialIssueRequest | undefined = mirs[0];
 
-  // FIX 5D: Derived unfulfilled lines for warning banner + button guard.
-  // damage_qty only counts toward fulfilment when the disposition is
-  // use_as_is — i.e. the team accepts the gap and proceeds with short qty.
-  // For scrap the line is genuinely short by damage_qty and needs replacement
-  // before the WO can complete.
-  const effectivelyIssued = (li: AwoLineItem): number => {
-    const issued = li.issued_qty ?? 0;
-    const damage = li.damage_qty ?? 0;
-    const useAsIs = li.disposition === 'use_as_is';
-    return issued + (useAsIs ? damage : 0);
-  };
+  // Derived unfulfilled lines for warning banner + Mark-Build-Complete guard.
+  // Mirrors the server guard: available-in-WIP (issued − returned − scrapped)
+  // must reach required. Concession/use-as-is units stay in WIP and count;
+  // scrapped material must be re-issued (replacement MIR) before completing.
   const unfulfilledLines = (awo?.line_items ?? []).filter(
-    (li) => effectivelyIssued(li) < li.required_qty,
+    (li) => availableInWip(li) < li.required_qty,
   );
   const hasUnfulfilled = unfulfilledLines.length > 0;
 
