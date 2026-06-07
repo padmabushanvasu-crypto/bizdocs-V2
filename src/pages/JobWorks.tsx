@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchJobWorks, type JobWorkSummary } from "@/lib/job-works-api";
+import { TablePageSize } from "@/components/TablePageSize";
 
 const STATUS_PILLS = [
   { label: "All",         value: "all" },
@@ -110,6 +111,11 @@ export default function JobWorks() {
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1); }}
         />
+      </div>
+
+      {/* Per-page selector — slim row directly above the table */}
+      <div className="flex justify-end">
+        <TablePageSize value={pageSize} onChange={(v) => { setPageSize(v); setPage(1); }} />
       </div>
 
       {/* Table */}
@@ -231,27 +237,8 @@ export default function JobWorks() {
         </div>
       </div>
 
-      {/* Pagination footer — "Per page" always visible; prev/next only when count exceeds pageSize */}
-      <div className="flex flex-wrap justify-between items-center gap-3">
-        <div className="flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground">Per page</span>
-          <Select
-            value={String(pageSize)}
-            onValueChange={(v) => {
-              setPageSize(Number(v));
-              setPage(1);
-            }}
-          >
-            <SelectTrigger className="w-[80px] h-8">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="25">25</SelectItem>
-              <SelectItem value="50">50</SelectItem>
-              <SelectItem value="100">100</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+      {/* Pagination footer — prev/next only when count exceeds pageSize (page-size selector lives in the header) */}
+      <div className="flex flex-wrap justify-end items-center gap-3">
         {total > pageSize && (
           <div className="flex gap-2 items-center">
             <Button

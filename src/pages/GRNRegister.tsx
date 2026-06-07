@@ -11,6 +11,7 @@ import { fetchGRNs, fetchGRNStats, softDeleteGRN, fetchPendingQCGRNs, fetchAllGR
 import { logAudit } from "@/lib/audit-api";
 import { exportGRNReport } from "@/lib/export-utils";
 import { ExportModal } from "@/components/ExportModal";
+import { TablePageSize } from "@/components/TablePageSize";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
@@ -314,6 +315,14 @@ function GRNRegisterInner() {
         </Select>
       </div>
 
+      {/* Per-page selector — slim row directly above the table */}
+      <div className="flex justify-end">
+        <TablePageSize
+          value={filters.pageSize ?? 25}
+          onChange={(v) => setFilters((f) => ({ ...f, pageSize: v, page: 1 }))}
+        />
+      </div>
+
       {/* Table */}
       <div className="paper-card !p-0">
         <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
@@ -391,26 +400,8 @@ function GRNRegisterInner() {
         </div>
       </div>
 
-      {/* Pagination footer — "Per page" always visible; prev/next only when count exceeds pageSize */}
-      <div className="flex flex-wrap justify-between items-center gap-3">
-        <div className="flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground">Per page</span>
-          <Select
-            value={String(filters.pageSize ?? 25)}
-            onValueChange={(v) =>
-              setFilters((f) => ({ ...f, pageSize: Number(v), page: 1 }))
-            }
-          >
-            <SelectTrigger className="w-[80px] h-8">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="25">25</SelectItem>
-              <SelectItem value="50">50</SelectItem>
-              <SelectItem value="100">100</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+      {/* Pagination footer — prev/next only when count exceeds pageSize (page-size selector lives in the header) */}
+      <div className="flex flex-wrap justify-end items-center gap-3">
         {(data?.count ?? 0) > (filters.pageSize ?? 25) && (
           <div className="flex gap-2 items-center">
             <Button

@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import { TablePageSize } from "@/components/TablePageSize";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "react-router-dom";
@@ -663,22 +664,6 @@ export default function FollowUpTracker() {
                   className="pl-8 h-8 text-xs"
                 />
               </div>
-              <div className="ml-auto flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Rows</span>
-                <Select
-                  value={String(pageSize)}
-                  onValueChange={(v) => setPageSize(Number(v) as PageSize)}
-                >
-                  <SelectTrigger className="h-8 w-[80px] text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="25">25</SelectItem>
-                    <SelectItem value="50">50</SelectItem>
-                    <SelectItem value="100">100</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
             </div>
 
             {/* Urgency filter (existing) */}
@@ -694,6 +679,11 @@ export default function FollowUpTracker() {
                   {FILTER_LABELS[f]}
                 </Button>
               ))}
+            </div>
+
+            {/* Per-page selector — slim row directly above the list */}
+            <div className="flex justify-end">
+              <TablePageSize value={pageSize} onChange={(v) => setPageSize(v as PageSize)} />
             </div>
 
             {/* Rows */}
