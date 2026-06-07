@@ -1506,6 +1506,7 @@ export default function GRNDetail() {
   const [s1InvoiceDate,   setS1InvoiceDate]   = useState("");
   const [s1Notes,         setS1Notes]         = useState("");
   const [s1Editing,       setS1Editing]       = useState(false);
+  const [s2Editing,       setS2Editing]       = useState(false);
 
   // ── Stage 2 state ─────────────────────────────────────────────────────────
 
@@ -2025,19 +2026,23 @@ export default function GRNDetail() {
       const qcResult = await saveQualityStage(
         id!, lines, s2InspectedBy, s2Remarks || null, s2Date,
         s2ApprovedBy || null, anyFinalGrn, finalGrnReason || null, perLineForSave,
-        finalReasonPerLine
+        finalReasonPerLine, { isEdit: s2Editing }
       );
-      await logAudit("grn", id!, anyFinalGrn ? "GRN Stage 2 Complete — Final GRN" : "GRN Stage 2 Complete");
+      await logAudit("grn", id!, s2Editing ? "GRN Stage 2 QC edited" : (anyFinalGrn ? "GRN Stage 2 Complete — Final GRN" : "GRN Stage 2 Complete"));
       return qcResult;
     },
     onSuccess: (qcResult) => {
+      const wasEdit = s2Editing;
+      setS2Editing(false);
       queryClient.invalidateQueries({ queryKey: ["grn-stages", id] });
       queryClient.invalidateQueries({ queryKey: ["grns"] });
       queryClient.invalidateQueries({ queryKey: ["pending-qc-grns"] });
       clearGrnDraft(id);
       toast({
-        title: "Quality inspection complete",
-        description: (Object.values(finalGrnPerLine).some(v => v) || (grn?.line_items ?? []).some((item) => ["bought_out","consumable","service"].includes(lineItemTypes?.[(item as any).drawing_number ?? ""] ?? ""))) ? "GRN is awaiting store confirmation." : "GRN is now closed.",
+        title: wasEdit ? "QC inspection updated" : "Quality inspection complete",
+        description: wasEdit
+          ? "Changes saved. Stock adjusted for any accepted-qty change."
+          : ((Object.values(finalGrnPerLine).some(v => v) || (grn?.line_items ?? []).some((item) => ["bought_out","consumable","service"].includes(lineItemTypes?.[(item as any).drawing_number ?? ""] ?? ""))) ? "GRN is awaiting store confirmation." : "GRN is now closed."),
       });
       const warnings = qcResult?.stockWarnings ?? [];
       if (warnings.length > 0) {
@@ -2247,6 +2252,12 @@ export default function GRNDetail() {
   const s1RoleAllowed = role === 'admin' || role === 'finance' || role === 'inward_team';
   const s2RoleAllowed = role === 'admin' || role === 'finance' || role === 'qc_team';
   const s1Editable = s1RoleAllowed && (!s1Done || s1Editing) && !isDeletedOrCancelled;
+
+  // Phase 1 QC edit gate — pre-store-confirm only: QC done, stage quality_done /
+  // awaiting_store, and NO line store-confirmed yet. Once any line is store-confirmed
+  // this is locked (Phase 2). Deleted/cancelled GRNs never editable.
+  const anyLineStoreConfirmed = (g.store_confirmed === true) || s1Lines.some((l) => (l as any).store_confirmed === true);
+  const s2Editable = s2RoleAllowed && s2Done && (stage === "quality_done" || stage === "awaiting_store") && !anyLineStoreConfirmed && !isDeletedOrCancelled;
 
   // Legacy alias — any line that blocks the save button at all
   const overQtyLines = beyondToleranceItems.map((t) => t.line);
@@ -2784,15 +2795,25 @@ export default function GRNDetail() {
               <h2 className="text-base font-bold text-purple-900">Stage 2 — Quality Inspection</h2>
               <p className="text-xs text-purple-600 mt-0.5">QC Team</p>
             </div>
-            {s2Done && (
-              <span className="inline-flex items-center gap-1 text-xs text-purple-700 font-semibold">
-                <CheckCircle2 className="h-3.5 w-3.5" /> Complete
-              </span>
-            )}
+            <div className="flex items-center gap-3">
+              {s2Editable && !s2Editing && (
+                <Button variant="outline" size="sm" className="text-purple-700 border-purple-300 bg-white" onClick={() => setS2Editing(true)}>
+                  Reopen / Edit QC
+                </Button>
+              )}
+              {s2Editing && (
+                <span className="inline-flex items-center gap-1 text-xs text-amber-700 font-semibold">Editing…</span>
+              )}
+              {s2Done && !s2Editing && (
+                <span className="inline-flex items-center gap-1 text-xs text-purple-700 font-semibold">
+                  <CheckCircle2 className="h-3.5 w-3.5" /> Complete
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="px-5 py-4 space-y-5">
-            {(s2RoleAllowed && !s2Done && !isDeletedOrCancelled) ? (
+            {(s2RoleAllowed && !isDeletedOrCancelled && (!s2Done || s2Editing)) ? (
               <>
                 {/* QC measurement tables per item */}
                 <QCMeasurementEditor
@@ -2965,13 +2986,25 @@ export default function GRNDetail() {
                   </div>
                 )}
 
-                <Button
-                  onClick={handleS2Save}
-                  disabled={s2Mutation.isPending || isDeletedOrCancelled}
-                  className="w-full bg-purple-600 hover:bg-purple-700 text-white"
-                >
-                  {s2Mutation.isPending ? "Saving…" : "Save — Stage 2 Complete"}
-                </Button>
+                <div className="flex gap-2">
+                  {s2Editing && (
+                    <Button
+                      variant="outline"
+                      onClick={() => { setS2Editing(false); queryClient.invalidateQueries({ queryKey: ["grn-stages", id] }); }}
+                      disabled={s2Mutation.isPending}
+                      className="flex-1"
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                  <Button
+                    onClick={handleS2Save}
+                    disabled={s2Mutation.isPending || isDeletedOrCancelled}
+                    className="flex-1 bg-purple-600 hover:bg-purple-700 text-white"
+                  >
+                    {s2Mutation.isPending ? "Saving…" : s2Editing ? "Save Changes" : "Save — Stage 2 Complete"}
+                  </Button>
+                </div>
 
                 {/* Untick protection dialog */}
                 <Dialog open={showUntickDialog} onOpenChange={setShowUntickDialog}>

@@ -1264,8 +1264,29 @@ export async function saveQualityStage(
   finalGrnReason?: string | null,
   finalGrnPerLine?: Record<string, boolean>,
   finalGrnReasonPerLine?: Record<string, string | null>,
+  opts?: { isEdit?: boolean },
 ): Promise<{ stockWarnings: string[] }> {
   const now = inspectionDate ? new Date(inspectionDate).toISOString() : new Date().toISOString();
+
+  // EDIT MODE (resave of completed QC): snapshot prior per-line accepted_qty/flags
+  // BEFORE the update overwrites them, so we can post corrective stock deltas later.
+  const editPrior = new Map<string, { old_accepted: number; is_final: boolean; stock_posted_at: string | null; item_id: string | null; description: string | null }>();
+  if (opts?.isEdit) {
+    const { data: prior } = await (supabase as any)
+      .from('grn_line_items')
+      .select('id, accepted_qty, is_final_grn, stock_posted_at, item_id, description')
+      .in('id', lines.map((l) => l.id));
+    for (const p of (prior ?? []) as any[]) {
+      editPrior.set(p.id, {
+        old_accepted: Number(p.accepted_qty ?? 0),
+        is_final: p.is_final_grn === true,
+        stock_posted_at: p.stock_posted_at ?? null,
+        item_id: p.item_id ?? null,
+        description: p.description ?? null,
+      });
+    }
+  }
+
   for (const line of lines) {
     const lineIsFinal = finalGrnPerLine ? (finalGrnPerLine[line.id] ?? false) : (isFinalGrn ?? false);
     const { error } = await (supabase as any)
@@ -1291,7 +1312,15 @@ export async function saveQualityStage(
         ...(finalGrnReasonPerLine ? { final_grn_reason: finalGrnReasonPerLine[line.id] ?? null } : {}),
       })
       .eq('id', line.id);
-    if (error) throw error;
+    if (error) {
+      // The QC line UPDATE cascades to the DB-owned received_quantity recompute,
+      // which can trip the PO/DC over-receipt guards. Surface a friendly message.
+      const blob = `${error.message ?? ''} ${error.details ?? ''} ${error.hint ?? ''}`;
+      if (error.code === '23514' || /over.?receipt/i.test(blob)) {
+        throw new Error('This change exceeds the ordered quantity for one or more lines. Reduce the accepted / conforming quantity, or ask Purchasing to increase the PO/DC.');
+      }
+      throw error;
+    }
   }
   const anyFinalGrn = finalGrnPerLine
     ? Object.values(finalGrnPerLine).some(v => v)
@@ -1407,6 +1436,64 @@ export async function saveQualityStage(
     }
   } catch (passErr) {
     console.error('[GRN] QC stock posting pass failed (non-fatal):', passErr);
+  }
+
+  // ── EDIT MODE: corrective stock deltas for already-credited non-final lines ──
+  // Phase 1 (pre-store-confirm). Each previously-credited NON-final line gets ONE
+  // corrective leg for Δ = new_accepted − old_accepted (mirrors the original credit
+  // direction; manual_adjustment, no new movement_type). Final lines and not-yet-
+  // credited lines are left to the first-save pass above. Non-fatal: collected into
+  // stockWarnings, never aborts the resave.
+  if (opts?.isEdit) {
+    try {
+      const { data: hdr } = await (supabase as any)
+        .from('grns')
+        .select('grn_type, grn_number, linked_dc_id')
+        .eq('id', grnId)
+        .single();
+      const isDc = (hdr?.grn_type === 'dc_grn') || !!hdr?.linked_dc_id;
+      const today = new Date().toISOString().split('T')[0];
+      for (const line of lines) {
+        const prior = editPrior.get(line.id);
+        if (!prior || prior.is_final) continue;       // final lines are never QC-credited
+        if (!prior.stock_posted_at) continue;         // uncredited → first-save pass owns it
+        const newAccepted = line.conforming_qty + (line.non_conforming_qty > 0 && ['accept_as_is','conditional_accept'].includes(line.disposition ?? '') ? line.non_conforming_qty : 0);
+        const delta = newAccepted - prior.old_accepted;
+        if (delta === 0) continue;
+        if (!prior.item_id) {
+          stockWarnings.push(`${prior.description ?? line.id} — stock not corrected; link the item first`);
+          continue;
+        }
+        try {
+          await addStockLedgerEntry({
+            item_id: prior.item_id,
+            item_code: null,
+            item_description: prior.description,
+            transaction_date: today,
+            transaction_type: 'manual_adjustment',
+            qty_in: delta > 0 ? delta : 0,
+            qty_out: delta < 0 ? -delta : 0,
+            balance_qty: 0,
+            unit_cost: 0,
+            total_value: 0,
+            reference_type: 'grn',
+            reference_id: grnId,
+            reference_number: hdr?.grn_number ?? null,
+            notes: `QC edit correction: accepted ${prior.old_accepted} → ${newAccepted}`,
+            created_by: inspectedBy,
+            from_state: delta > 0 ? (isDc ? STOCK_STATE.IN_PROCESS : STOCK_STATE.INCOMING) : STOCK_STATE.FREE,
+            to_state:   delta > 0 ? STOCK_STATE.FREE : (isDc ? STOCK_STATE.IN_PROCESS : STOCK_STATE.INCOMING),
+          });
+          if (isDc) await updateStockBucket(prior.item_id, 'in_process', -delta);
+          await updateStockBucket(prior.item_id, 'free', delta);
+        } catch (corrErr) {
+          console.error(`[GRN] QC edit stock correction failed for line ${line.id} (non-fatal):`, corrErr);
+          stockWarnings.push(`${prior.description ?? line.id} — stock correction failed`);
+        }
+      }
+    } catch (editErr) {
+      console.error('[GRN] QC edit delta pass failed (non-fatal):', editErr);
+    }
   }
 
   // CHANGE 2: For DC return GRNs — update parent DC status after QC stage
