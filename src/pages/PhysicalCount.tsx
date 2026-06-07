@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { ClipboardCheck, Search, ChevronLeft, ArrowDownUp } from "lucide-react";
+import { ClipboardCheck, Search, ChevronLeft, ArrowDownUp, Upload } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { formatNumber } from "@/lib/gst-utils";
+import { PhysicalCountImportDialog } from "@/components/PhysicalCountImportDialog";
 import {
   fetchCountWorklist,
   recordPhysicalCount,
@@ -27,6 +28,7 @@ export default function PhysicalCount() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   // Variance shown after save (system_free becomes counted on refetch, so keep it).
   const [justSaved, setJustSaved] = useState<Record<string, RecordedCount>>({});
 
@@ -99,11 +101,26 @@ export default function PhysicalCount() {
             resets the stock ledger base for that item.
           </p>
         </div>
-        <div className="text-right">
-          <p className="text-xs uppercase tracking-wide text-slate-500">Progress</p>
-          <p className="text-xl font-bold text-slate-900 tabular-nums">{countedCount} <span className="text-sm font-normal text-slate-400">of {totalCount} counted</span></p>
+        <div className="flex items-center gap-4">
+          <Button variant="outline" size="sm" onClick={() => setImportOpen(true)} className="gap-1.5">
+            <Upload className="h-4 w-4" /> Import CSV
+          </Button>
+          <div className="text-right">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Progress</p>
+            <p className="text-xl font-bold text-slate-900 tabular-nums">{countedCount} <span className="text-sm font-normal text-slate-400">of {totalCount} counted</span></p>
+          </div>
         </div>
       </div>
+
+      <PhysicalCountImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        worklist={rows}
+        onApplied={() => {
+          queryClient.invalidateQueries({ queryKey: ["count-worklist"] });
+          queryClient.invalidateQueries({ queryKey: ["item-locations"] });
+        }}
+      />
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
