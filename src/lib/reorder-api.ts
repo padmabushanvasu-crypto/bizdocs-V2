@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
 import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
+import { STOCK_STATE } from "@/lib/stock-states";
 
 // ============================================================
 // Interfaces
@@ -456,6 +457,8 @@ export async function createScrapEntry(data: Partial<ScrapEntry>): Promise<Scrap
       reference_number: created.scrap_number,
       notes: `Scrap: ${data.scrap_reason ?? ""}`,
       created_by: user?.id ?? null,
+      from_state: STOCK_STATE.FREE,
+      to_state: STOCK_STATE.SCRAPPED,
     });
 
     await (supabase as any)

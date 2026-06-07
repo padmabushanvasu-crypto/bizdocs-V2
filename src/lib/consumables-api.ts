@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId } from "@/lib/auth-helpers";
 import { updateStockBucket } from "@/lib/items-api";
 import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
+import { STOCK_STATE } from "@/lib/stock-states";
 
 // ============================================================
 // Interfaces
@@ -351,8 +352,8 @@ export async function createConsumableIssue(
       reference_number: issue.issue_number,
       notes: `Consumable issue to: ${input.issued_to}`,
       created_by: null,
-      from_state: "free",
-      to_state: "consumed",
+      from_state: STOCK_STATE.FREE,
+      to_state: STOCK_STATE.CONSUMED,
     });
 
     // At-create-time return: route through the event table so
@@ -411,8 +412,8 @@ export async function createConsumableIssue(
             reference_number: issue.issue_number,
             notes: "Consumable return — recorded at issue creation",
             created_by: null,
-            from_state: "consumed",
-            to_state: "free",
+            from_state: STOCK_STATE.CONSUMED,
+            to_state: STOCK_STATE.FREE,
           });
           await updateStockBucket(line.item_id, "free", line.qty_returned);
         }
@@ -492,8 +493,8 @@ async function reverseConsumableLineStock(
   let notes = "";
   let transaction_type: "consumable_return" | "manual_adjustment" =
     "consumable_return";
-  let from_state: string | null = "consumed";
-  let to_state: string | null = "free";
+  let from_state: string | null = STOCK_STATE.CONSUMED;
+  let to_state: string | null = STOCK_STATE.FREE;
 
   if (stockAction === "recall_unused") {
     qtyToCredit = outstanding;
@@ -815,8 +816,8 @@ export async function recordConsumableReturn(
           `Consumable return — returned to stock` +
           (input.notes ? `: ${input.notes}` : ""),
         created_by: null,
-        from_state: "consumed",
-        to_state: "free",
+        from_state: STOCK_STATE.CONSUMED,
+        to_state: STOCK_STATE.FREE,
       });
       await updateStockBucket(line.item_id, "free", qty);
     } else if (disposition === "scrap") {
@@ -936,8 +937,8 @@ export async function deleteConsumableReturn(
         `Consumable return event deleted` +
         (options.reason ? `: ${options.reason}` : ""),
       created_by: null,
-      from_state: "free",
-      to_state: "consumed",
+      from_state: STOCK_STATE.FREE,
+      to_state: STOCK_STATE.CONSUMED,
     });
     await updateStockBucket(
       line.item_id,
@@ -1093,8 +1094,8 @@ export async function editConsumableIssue(
           reference_number: issueNumber,
           notes: `Consumable issue edit — item swap, reverse old item outstanding (${outstandingOld})`,
           created_by: null,
-          from_state: "consumed",
-          to_state: "free",
+          from_state: STOCK_STATE.CONSUMED,
+          to_state: STOCK_STATE.FREE,
         });
         await updateStockBucket(orig.item_id, "free", outstandingOld);
       }
@@ -1116,8 +1117,8 @@ export async function editConsumableIssue(
           reference_number: issueNumber,
           notes: `Consumable issue edit — item swap, issue new item (${newQtyIssued})`,
           created_by: null,
-          from_state: "free",
-          to_state: "consumed",
+          from_state: STOCK_STATE.FREE,
+          to_state: STOCK_STATE.CONSUMED,
         });
         await updateStockBucket(newItemId, "free", -newQtyIssued);
       }
@@ -1146,8 +1147,8 @@ export async function editConsumableIssue(
               ? `Consumable issue edit — qty increased by ${delta}`
               : `Consumable issue edit — qty decreased by ${-delta}`,
           created_by: null,
-          from_state: delta > 0 ? "free" : "consumed",
-          to_state: delta > 0 ? "consumed" : "free",
+          from_state: delta > 0 ? STOCK_STATE.FREE : STOCK_STATE.CONSUMED,
+          to_state: delta > 0 ? STOCK_STATE.CONSUMED : STOCK_STATE.FREE,
         });
         await updateStockBucket(orig.item_id, "free", -delta);
       }

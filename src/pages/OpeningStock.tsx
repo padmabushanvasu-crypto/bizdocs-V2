@@ -10,6 +10,8 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId } from "@/lib/auth-helpers";
 import { fetchItems, updateStockBucket, type Item } from "@/lib/items-api";
+import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
+import { STOCK_STATE } from "@/lib/stock-states";
 import {
   fetchNotificationSettings,
   saveNotificationSettings,
@@ -152,22 +154,27 @@ export default function OpeningStock() {
       const reasonText = state.reason === "Other" ? state.otherReason.trim() || "Other" : state.reason;
       const notesText = `Reason: ${reasonText} | Edited by: ${state.editedBy}`;
 
-      // Insert stock_ledger entry (created_by is uuid — do not write name string to it)
-      const { error: ledgerError } = await (supabase as any)
-        .from("stock_ledger")
-        .insert({
-          company_id: companyId,
-          item_id: state.item.id,
-          transaction_type: "opening_stock",
-          qty_in: newQty,
-          qty_out: 0,
-          balance_qty: newQty,
-          unit_cost: costPerUnit,
-          reference_type: "manual",
-          transaction_date: format(new Date(), "yyyy-MM-dd"),
-          notes: notesText,
-        });
-      if (ledgerError) throw ledgerError;
+      // Route through the ledger primitive (canonical states; computes running
+      // balance + stamps created_by). Opening stock enters from nowhere → FREE.
+      await addStockLedgerEntry({
+        item_id: state.item.id,
+        item_code: state.item.item_code ?? null,
+        item_description: state.item.description ?? null,
+        transaction_date: format(new Date(), "yyyy-MM-dd"),
+        transaction_type: "opening_stock",
+        qty_in: newQty,
+        qty_out: 0,
+        balance_qty: newQty,
+        unit_cost: costPerUnit,
+        total_value: newQty * costPerUnit,
+        reference_type: "manual",
+        reference_id: null,
+        reference_number: null,
+        notes: notesText,
+        created_by: null,
+        from_state: null,
+        to_state: STOCK_STATE.FREE,
+      });
 
       // Update stock bucket (delta from current free stock)
       const diff = newQty - currentFree;

@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
 import { logAudit } from "@/lib/audit-api";
 import { getNextDocNumber } from "@/lib/doc-number-utils";
+import { STOCK_STATE } from "@/lib/stock-states";
 import { updateStockBucket } from "@/lib/items-api";
 
 // ============================================================
@@ -437,8 +438,8 @@ export async function confirmAssemblyOrder(
       reference_number: ao.ao_number,
       notes: `Consumed in ${ao.ao_number}`,
       created_by: userId,
-      from_state: "free",
-      to_state: "consumed",
+      from_state: STOCK_STATE.FREE,
+      to_state: STOCK_STATE.CONSUMED,
     });
 
     // Deduct from item stock
@@ -485,7 +486,7 @@ export async function confirmAssemblyOrder(
     notes: `Produced by ${ao.ao_number}`,
     created_by: userId,
     from_state: null,
-    to_state: "in_fg_ready",
+    to_state: STOCK_STATE.FG_READY,
   });
 
   await (supabase as any)
@@ -722,8 +723,8 @@ export async function completeProductionRun(id: string): Promise<void> {
       reference_number: ao.ao_number,
       notes: `Consumed in ${ao.ao_number}`,
       created_by: userId,
-      from_state: "free",
-      to_state: "consumed",
+      from_state: STOCK_STATE.FREE,
+      to_state: STOCK_STATE.CONSUMED,
     });
 
     await (supabase as any).from("items").update({ current_stock: newStock }).eq("id", line.item_id);
@@ -764,7 +765,7 @@ export async function completeProductionRun(id: string): Promise<void> {
     notes: `Produced by ${ao.ao_number}`,
     created_by: userId,
     from_state: null,
-    to_state: "in_fg_ready",
+    to_state: STOCK_STATE.FG_READY,
   });
 
   await (supabase as any)

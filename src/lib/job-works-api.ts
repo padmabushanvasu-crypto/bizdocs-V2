@@ -3,6 +3,7 @@ import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
 import { logAudit } from "@/lib/audit-api";
 import { updateStockBucket } from "@/lib/items-api";
 import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
+import { STOCK_STATE } from "@/lib/stock-states";
 
 // ============================================================
 // Interfaces
@@ -605,8 +606,8 @@ export async function issueJobCardMaterial(jobCardId: string): Promise<void> {
     reference_number: (jc as any)?.jc_number ?? null,
     notes: `Issued for ${(jc as any)?.jc_number ?? "work order"}`,
     created_by: userId,
-    from_state: "raw_material",
-    to_state: "wip",
+    from_state: STOCK_STATE.FREE,
+    to_state: STOCK_STATE.SUBASSEMBLY_WIP,
   });
   // Phase 13: bucket updates — material issued to subassembly WIP
   await updateStockBucket(itemId, 'free', -qty);

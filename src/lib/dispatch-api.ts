@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { updateStockBucket } from "@/lib/items-api";
 import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
+import { STOCK_STATE } from "@/lib/stock-states";
 
 async function getCompanyId(): Promise<string | null> {
   const { data: { user } } = await supabase.auth.getUser();
@@ -260,8 +261,8 @@ export async function confirmDispatch(id: string): Promise<void> {
       reference_number: dr.dr_number,
       notes: `Dispatched to ${dr.customer_name ?? 'Customer'} — DR ${dr.dr_number}`,
       created_by: null,
-      from_state: 'finished_goods',
-      to_state: 'dispatched',
+      from_state: STOCK_STATE.FG_READY,
+      to_state: STOCK_STATE.DISPATCHED,
     });
     await updateStockBucket(item.item_id, 'in_fg_ready', -item.quantity);
 

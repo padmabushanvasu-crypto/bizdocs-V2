@@ -4,6 +4,7 @@ import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
 import { getNextDocNumber } from "@/lib/doc-number-utils";
 import { updateStockBucket } from "@/lib/items-api";
 import { logAudit } from "@/lib/audit-api";
+import { STOCK_STATE } from "@/lib/stock-states";
 
 const RETURNABLE_DC_TYPES = new Set([
   'job_work_143', 'job_work_out', 'job_work', 'sample', 'loan_borrow', 'returnable',
@@ -526,6 +527,9 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
         reference_number: dc.dc_number,
         notes: 'DC quantity edited after issuance — net delta applied',
         created_by: null,
+        // delta>0 = more issued (free→in_process); delta<0 = returned (in_process→free)
+        from_state: delta > 0 ? STOCK_STATE.FREE : STOCK_STATE.IN_PROCESS,
+        to_state: delta > 0 ? STOCK_STATE.IN_PROCESS : STOCK_STATE.FREE,
       });
       if (delta > 0) {
         // Quantity increased — deduct more from free, add to in_process
@@ -598,8 +602,8 @@ export async function issueDeliveryChallan(id: string) {
       reference_number: dc.dc_number,
       notes: `DC issued: ${dc.dc_number}`,
       created_by: null,
-      from_state: isReturnable ? 'free' : null,
-      to_state: isReturnable ? 'in_process' : null,
+      from_state: STOCK_STATE.FREE,
+      to_state: isReturnable ? STOCK_STATE.IN_PROCESS : STOCK_STATE.DISPATCHED,
     });
     await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
     if (isReturnable) {
@@ -703,8 +707,8 @@ export async function cancelDeliveryChallan(id: string, options: DcCancelOptions
           reference_number: dcNumber,
           notes,
           created_by: null,
-          from_state: 'in_process',
-          to_state: 'free',
+          from_state: STOCK_STATE.IN_PROCESS,
+          to_state: STOCK_STATE.FREE,
         });
         await updateStockBucket(line.item_id, 'in_process', -outstanding);
         await updateStockBucket(line.item_id, 'free', +outstanding);
@@ -728,8 +732,8 @@ export async function cancelDeliveryChallan(id: string, options: DcCancelOptions
           reference_number: dcNumber,
           notes,
           created_by: null,
-          from_state: 'in_process',
-          to_state: null,
+          from_state: STOCK_STATE.IN_PROCESS,
+          to_state: STOCK_STATE.SCRAPPED,
         });
         await updateStockBucket(line.item_id, 'in_process', -outstanding);
       }
@@ -845,6 +849,8 @@ export async function recordDCReturn(dcId: string, returnDate: string, receivedB
               reference_number: dcNumber,
               notes: `DC return: ${dcNumber}`,
               created_by: null,
+              from_state: STOCK_STATE.IN_PROCESS,
+              to_state: STOCK_STATE.FREE,
             });
             await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
             if (isReturnable) {
@@ -950,6 +956,8 @@ export async function softDeleteDeliveryChallan(
           reference_number: dcNumber,
           notes,
           created_by: null,
+          from_state: STOCK_STATE.IN_PROCESS,
+          to_state: STOCK_STATE.FREE,
         });
         await updateStockBucket(line.item_id, 'in_process', -qty);
         await updateStockBucket(line.item_id, 'free', +qty);
@@ -974,6 +982,8 @@ export async function softDeleteDeliveryChallan(
           reference_number: dcNumber,
           notes,
           created_by: null,
+          from_state: STOCK_STATE.IN_PROCESS,
+          to_state: STOCK_STATE.SCRAPPED,
         });
         await updateStockBucket(line.item_id, 'in_process', -qty);
       }
@@ -1288,8 +1298,8 @@ export async function recordEnhancedReturn(
         reference_number: returnData.dc_number,
         notes: `Scrap from processing rejection: ${returnData.dc_number}`,
         created_by: user?.id ?? null,
-        from_state: 'wip',
-        to_state: 'scrapped',
+        from_state: STOCK_STATE.IN_PROCESS,
+        to_state: STOCK_STATE.SCRAPPED,
       });
     }
   }

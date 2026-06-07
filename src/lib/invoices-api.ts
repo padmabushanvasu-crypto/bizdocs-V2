@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
 import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
 import { updateStockBucket } from "@/lib/items-api";
+import { STOCK_STATE } from "@/lib/stock-states";
 
 export interface InvoiceLineItem {
   id?: string;
@@ -157,8 +158,8 @@ export async function issueInvoice(id: string) {
       reference_number: (invoice as any).invoice_number,
       notes: `Invoice dispatch: ${(invoice as any).invoice_number}`,
       created_by: null,
-      from_state: "finished_goods",
-      to_state: "dispatched",
+      from_state: STOCK_STATE.FREE,
+      to_state: STOCK_STATE.DISPATCHED,
     });
     await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
     await updateStockBucket(rec.id, 'free', -qty);

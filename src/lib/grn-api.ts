@@ -4,6 +4,7 @@ import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
 import { getNextDocNumber } from "@/lib/doc-number-utils";
 import { updateStockBucket } from "@/lib/items-api";
 import { logAudit } from "@/lib/audit-api";
+import { STOCK_STATE } from "@/lib/stock-states";
 
 export type GRNStage = 'draft' | 'quantitative_pending' | 'quantitative_done' | 'quality_pending' | 'quality_done' | 'closed' | 'awaiting_store';
 export type QualityVerdict = 'fully_accepted' | 'conditionally_accepted' | 'partially_returned' | 'returned';
@@ -406,6 +407,32 @@ export async function recordGRNAndUpdatePO(grnData: CreateGRNData) {
 
       if (itemRecord) {
         const rec = itemRecord as any;
+        // Ledger the receipt so this (legacy single-stage) credit is visible to
+        // the stock engine — previously it only touched items.current_stock.
+        // qty math unchanged; INCOMING -> FREE. Non-fatal: never block creation.
+        try {
+          await addStockLedgerEntry({
+            item_id: rec.id,
+            item_code: rec.item_code ?? null,
+            item_description: rec.description ?? null,
+            transaction_date: today,
+            transaction_type: 'grn_receipt',
+            qty_in: item.accepted_quantity,
+            qty_out: 0,
+            balance_qty: 0,
+            unit_cost: 0,
+            total_value: 0,
+            reference_type: 'grn',
+            reference_id: grn.id,
+            reference_number: grn.grn_number,
+            notes: `GRN ${grn.grn_number ?? ''} received (single-stage)`.trim(),
+            created_by: null,
+            from_state: STOCK_STATE.INCOMING,
+            to_state: STOCK_STATE.FREE,
+          });
+        } catch (e) {
+          console.error('[grn] recordGRNAndUpdatePO ledger write failed (non-fatal):', e);
+        }
         const newStock = (rec.current_stock ?? 0) + item.accepted_quantity;
         await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
         // stock_free is updated at storeConfirmGRN (after QC), not at creation.
@@ -575,6 +602,8 @@ export async function softDeleteGRN(
         reference_number: null,
         notes,
         created_by: null,
+        from_state: STOCK_STATE.FREE,
+        to_state: null,
       });
       await updateStockBucket(itemId, 'free', -qty);
     }
@@ -1781,8 +1810,8 @@ async function creditPartialStock(
       reference_number: opts.grnNumber,
       notes: 'DC return — storekeeper confirmed (partial)',
       created_by: null,
-      from_state: 'in_process',
-      to_state: 'free',
+      from_state: STOCK_STATE.IN_PROCESS,
+      to_state: STOCK_STATE.FREE,
     });
     await updateStockBucket(resolvedItemId, 'in_process', -storeQty);
     await updateStockBucket(resolvedItemId, 'free', +storeQty);
@@ -1806,8 +1835,8 @@ async function creditPartialStock(
     reference_number: opts.grnNumber,
     notes: `GRN ${opts.grnNumber ?? ''} store confirmed (partial)`.trim(),
     created_by: null,
-    from_state: 'incoming',
-    to_state: 'free',
+    from_state: STOCK_STATE.INCOMING,
+    to_state: STOCK_STATE.FREE,
   });
   await updateStockBucket(resolvedItemId, 'free', +storeQty);
 
@@ -2149,6 +2178,8 @@ export async function storeConfirmGRNItems(
         reference_number: null,
         notes: `Damaged on arrival — ${entry.reason || 'no reason given'}`,
         created_by: null,
+        from_state: STOCK_STATE.INCOMING,
+        to_state: STOCK_STATE.SCRAPPED,
       });
     }
   }

@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { updateStockBucket } from "@/lib/items-api";
 import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
+import { STOCK_STATE } from "@/lib/stock-states";
 
 async function getCompanyId(): Promise<string | null> {
   const { data: { user } } = await supabase.auth.getUser();
@@ -420,8 +421,8 @@ export async function returnAssemblyComponents(
           reference_number: awoNumber,
           notes: `Components returned to store — AWO #${awoNumber}`,
           created_by: null,
-          from_state: 'wip',
-          to_state: 'free',
+          from_state: wip_bucket,
+          to_state: STOCK_STATE.FREE,
         });
       } catch (e) {
         console.error('[production] assembly_return ledger failed — line not returned, no bucket change:', e);
@@ -544,7 +545,7 @@ export async function scrapAssemblyComponents(
           notes: reason ? `Component scrapped — AWO #${awoNumber}: ${reason}` : `Component scrapped — AWO #${awoNumber}`,
           created_by: null,
           from_state: wip_bucket,
-          to_state: 'scrap',
+          to_state: STOCK_STATE.SCRAPPED,
         });
       } catch (e) {
         console.error('[production] scrap_write_off ledger failed — line not scrapped, no bucket change:', e);
@@ -987,8 +988,8 @@ export async function confirmMaterialIssue(
           reference_number: awoNumber,
           notes: `Material issued for AWO #${awoNumber}`,
           created_by: null,
-          from_state: 'free',
-          to_state: 'wip',
+          from_state: STOCK_STATE.FREE,
+          to_state: wip_bucket,
         });
       } catch (e) {
         console.error('[production] assembly_issue ledger failed — line not issued, no bucket change:', e);
@@ -1168,7 +1169,7 @@ export async function acceptAssemblyWorkOrder(
         notes: `Component consumed — AWO #${awo.awo_number} accepted to store`,
         created_by: null,
         from_state: wip_bucket,
-        to_state: 'consumed',
+        to_state: STOCK_STATE.CONSUMED,
       });
     } catch (e) {
       console.error('[production] assembly_consumption ledger failed — line not consumed, no bucket change:', e);
