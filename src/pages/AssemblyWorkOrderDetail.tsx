@@ -51,6 +51,7 @@ function statusBadge(status: string) {
     draft: { label: "Draft", className: "bg-slate-100 text-slate-700" },
     pending_materials: { label: "Pending Materials", className: "bg-amber-100 text-amber-800" },
     in_progress: { label: "In Progress", className: "bg-blue-100 text-blue-800" },
+    awaiting_store: { label: "Awaiting Store Acceptance", className: "bg-amber-100 text-amber-800" },
     complete: { label: "Complete", className: "bg-green-100 text-green-800" },
     cancelled: { label: "Cancelled", className: "bg-slate-100 text-slate-500" },
   };
@@ -138,7 +139,10 @@ export default function AssemblyWorkOrderDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["awo-detail", id] });
       setConfirmCompleteOpen(false);
-      toast({ title: "Work Order complete", description: "Stock updated." });
+      toast({
+        title: "Build marked complete",
+        description: "Now awaiting store acceptance — stock posts when the storekeeper accepts it.",
+      });
       navigate(-1);
     },
     onError: (err: Error) => {
@@ -404,7 +408,7 @@ export default function AssemblyWorkOrderDetail() {
                         disabled={hasUnfulfilled}
                       >
                         <CheckCircle className="w-4 h-4 mr-2" />
-                        Complete Work Order
+                        Mark Build Complete
                       </Button>
                     </span>
                   </TooltipTrigger>
@@ -452,6 +456,18 @@ export default function AssemblyWorkOrderDetail() {
           <p className="text-sm text-amber-800 dark:text-amber-300">
             <b>{unfulfilledLines.length} component{unfulfilledLines.length !== 1 ? 's' : ''}</b> still short.
             Issue remaining stock or record a disposition for each short item before completing the work order.
+          </p>
+        </div>
+      )}
+
+      {/* Awaiting store acceptance banner — build done, stock posts on acceptance */}
+      {awo.status === 'awaiting_store' && (
+        <div className="no-print flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-900/20 px-4 py-3">
+          <Package className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+          <p className="text-sm text-amber-800 dark:text-amber-300">
+            Build marked complete — <b>awaiting store acceptance</b>. The storekeeper accepts this output
+            (with a rack/location) from the Store Receipt Queue; components are consumed and finished stock is
+            posted at that point.
           </p>
         </div>
       )}
@@ -776,21 +792,22 @@ export default function AssemblyWorkOrderDetail() {
         </DialogContent>
       </Dialog>
 
-      {/* Complete confirmation dialog */}
+      {/* Mark-build-complete confirmation dialog */}
       <Dialog open={confirmCompleteOpen} onOpenChange={setConfirmCompleteOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Complete Work Order?</DialogTitle>
+            <DialogTitle>Mark Build Complete?</DialogTitle>
             <DialogDescription>
-              This will backflush all issued components and update stock.
+              This signals production is done and sends the work order to the store for acceptance.
+              No stock moves yet — the storekeeper posts consumption and finished stock when they accept it.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 py-2 text-sm">
             <p className="text-muted-foreground">
-              Components consumed: <b>{(awo.line_items ?? []).filter((li) => li.issued_qty > 0).length} items</b>
+              Components built with: <b>{(awo.line_items ?? []).filter((li) => li.issued_qty > 0).length} items</b>
             </p>
             <p className="text-muted-foreground">
-              <b>{awo.item_description}</b> stock will increase by <b>{formatNumber(awo.quantity_to_build)}</b>.
+              <b>{awo.item_description}</b> ({formatNumber(awo.quantity_to_build)}) will be posted to stock on store acceptance.
             </p>
           </div>
           <DialogFooter>
@@ -800,7 +817,7 @@ export default function AssemblyWorkOrderDetail() {
               onClick={() => completeMutation.mutate()}
               disabled={completeMutation.isPending}
             >
-              {completeMutation.isPending ? "Completing…" : "Confirm Complete"}
+              {completeMutation.isPending ? "Marking…" : "Mark Build Complete"}
             </Button>
           </DialogFooter>
         </DialogContent>

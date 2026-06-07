@@ -22,6 +22,7 @@ import {
 } from "@/lib/grn-api";
 import { logAudit } from "@/lib/audit-api";
 import { formatNumber } from "@/lib/gst-utils";
+import { AssemblyOutputAcceptance } from "@/components/AssemblyOutputAcceptance";
 
 type StatusFilter = "pending" | "confirmed" | "partial" | "all";
 
@@ -300,6 +301,9 @@ export default function GrnStoreQueue() {
           </p>
         </div>
       </div>
+
+      {/* Assembly output awaiting store acceptance (A4) — same accept-into-rack action */}
+      <AssemblyOutputAcceptance />
 
       {/* Filters */}
       <div className="flex flex-wrap gap-2">

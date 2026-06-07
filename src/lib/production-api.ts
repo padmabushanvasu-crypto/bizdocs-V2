@@ -29,7 +29,7 @@ export interface AssemblyWorkOrder {
   item_description: string | null;
   quantity_to_build: number;
   bom_variant_id: string | null;
-  status: 'draft' | 'pending_materials' | 'in_progress' | 'complete' | 'cancelled';
+  status: 'draft' | 'pending_materials' | 'in_progress' | 'awaiting_store' | 'complete' | 'cancelled';
   serial_number: string | null;
   raised_by: string | null;
   raised_by_user_id: string | null;
@@ -39,6 +39,10 @@ export interface AssemblyWorkOrder {
   work_order_ref: string | null;
   notes: string | null;
   completed_at: string | null;
+  // Store acceptance (A4) — set when the storekeeper accepts the output into stock.
+  store_location: string | null;
+  accepted_at: string | null;
+  accepted_by: string | null;
   created_at: string;
   updated_at: string;
   line_items?: AwoLineItem[];
@@ -976,6 +980,15 @@ export async function confirmMaterialIssue(
 
 // ── completeAssemblyWorkOrder ─────────────────────────────────────────────────
 
+/**
+ * Mark the build done (production side). NO stock posting happens here anymore —
+ * stock is posted when the storekeeper accepts the output (acceptAssemblyWorkOrder),
+ * mirroring the GRN store-confirm gate.
+ *
+ * Keeps the fulfilment guard (reject if a line is short and not covered by
+ * use_as_is / scrap). Idempotent: only acts on an in_progress build; on success
+ * moves the AWO to 'awaiting_store'.
+ */
 export async function completeAssemblyWorkOrder(id: string): Promise<void> {
   const companyId = await getCompanyId();
   if (!companyId) throw new Error("Not authenticated");
@@ -983,7 +996,10 @@ export async function completeAssemblyWorkOrder(id: string): Promise<void> {
   const awo = await fetchAssemblyWorkOrder(id);
   if (!awo) throw new Error("Work order not found");
 
-  // FIX 4: Completion guard — reject if any line is unfulfilled
+  // Idempotent: only a build in progress can be marked done.
+  if (awo.status !== 'in_progress') return;
+
+  // Fulfilment guard — reject if any line is short and not covered.
   const unfulfilledLines = (awo.line_items ?? []).filter((li) => {
     if ((li.issued_qty ?? 0) >= li.required_qty) return false;
     if (li.disposition === 'use_as_is') return false;
@@ -999,114 +1015,115 @@ export async function completeAssemblyWorkOrder(id: string): Promise<void> {
     );
   }
 
+  // Build is done — hand off to store. No stock movement here.
+  await (supabase as any)
+    .from("assembly_work_orders")
+    .update({ status: 'awaiting_store', updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("company_id", companyId);
+}
+
+/**
+ * Store acceptance of a finished build — the gate that actually posts stock.
+ * Mirrors GRN store-confirm: consume the real WIP, post the built item to stock,
+ * record the rack/location, mark complete.
+ *
+ * Idempotent: proceeds only when status = 'awaiting_store'; an already-'complete'
+ * AWO is a no-op (the status flip is the commit point — re-calls can't double-post).
+ *
+ * Per line CONSUME = issued_qty − returned_qty − scrapped_qty (the real WIP on
+ * hand; concession units are consumed, returned/scrapped already left WIP). This
+ * fixes the old full-issued_qty over-consume. Ledger-first throughout; failures
+ * are collected as warnings for manual recovery.
+ */
+export async function acceptAssemblyWorkOrder(
+  awoId: string,
+  storeLocation: string | null,
+  acceptedBy: string,
+): Promise<{ warnings: string[] }> {
+  const companyId = await getCompanyId();
+  if (!companyId) throw new Error("Not authenticated");
+
+  const awo = await fetchAssemblyWorkOrder(awoId);
+  if (!awo) throw new Error("Work order not found");
+
+  // Idempotency guard: only an awaiting_store build can be accepted.
+  if (awo.status === 'complete') return { warnings: [] };
+  if (awo.status !== 'awaiting_store') {
+    throw new Error(`Cannot accept: work order is '${awo.status}', expected 'awaiting_store'.`);
+  }
+
   const today = new Date().toISOString().split('T')[0];
+  const wip_bucket = awo.awo_type === 'finished_good' ? 'in_fg_wip' : 'in_subassembly_wip';
+  const warnings: string[] = [];
 
-  if (awo.awo_type === 'sub_assembly') {
-    // Consume components from in_subassembly_wip + write consumption ledger entries
-    for (const li of awo.line_items ?? []) {
-      if (li.item_id && li.issued_qty > 0) {
-        const err = await updateStockBucket(li.item_id, 'in_subassembly_wip', -li.issued_qty).catch((e: Error) => e);
-        if (err instanceof Error) throw new Error(`Stock update failed for ${li.item_code ?? li.item_id}: ${err.message}`);
-        try {
-          await addStockLedgerEntry({
-            item_id: li.item_id,
-            item_code: li.item_code ?? null,
-            item_description: li.item_description ?? null,
-            transaction_date: today,
-            transaction_type: 'assembly_consumption',
-            qty_in: 0,
-            qty_out: li.issued_qty,
-            balance_qty: 0,
-            unit_cost: 0,
-            total_value: 0,
-            reference_type: 'assembly_work_order',
-            reference_id: id,
-            reference_number: awo.awo_number,
-            notes: `Component consumed — AWO #${awo.awo_number} complete`,
-            created_by: null,
-          });
-        } catch (e) { console.error('[production] consumption ledger failed:', e); }
-      }
+  // ── CONSUME the real WIP per line (issued − returned − scrapped). Ledger-first. ──
+  for (const li of awo.line_items ?? []) {
+    if (!li.item_id) continue;
+    const consumeQty = Math.max(
+      0,
+      (li.issued_qty ?? 0) - (li.returned_qty ?? 0) - (li.scrapped_qty ?? 0)
+    );
+    if (consumeQty <= 0) continue;
+    try {
+      await addStockLedgerEntry({
+        item_id: li.item_id,
+        item_code: li.item_code ?? null,
+        item_description: li.item_description ?? null,
+        transaction_date: today,
+        transaction_type: 'assembly_consumption',
+        qty_in: 0,
+        qty_out: consumeQty,
+        balance_qty: 0,
+        unit_cost: 0,
+        total_value: 0,
+        reference_type: 'assembly_work_order',
+        reference_id: awoId,
+        reference_number: awo.awo_number,
+        notes: `Component consumed — AWO #${awo.awo_number} accepted to store`,
+        created_by: null,
+        from_state: wip_bucket,
+        to_state: 'consumed',
+      });
+    } catch (e) {
+      console.error('[production] assembly_consumption ledger failed — line not consumed, no bucket change:', e);
+      warnings.push(`${li.item_code ?? li.item_description ?? li.id} — consumption not posted (ledger error)`);
+      continue;
+    }
+    await updateStockBucket(li.item_id, wip_bucket, -consumeQty);
+  }
+
+  // ── OUTPUT the built item: ledger-first, then credit by awo_type. ──
+  if (awo.item_id) {
+    const outBucket = awo.awo_type === 'finished_good' ? 'in_fg_ready' : 'free';
+    try {
+      await addStockLedgerEntry({
+        item_id: awo.item_id,
+        item_code: awo.item_code ?? null,
+        item_description: awo.item_description ?? null,
+        transaction_date: today,
+        transaction_type: 'assembly_output',
+        qty_in: awo.quantity_to_build,
+        qty_out: 0,
+        balance_qty: 0,
+        unit_cost: 0,
+        total_value: 0,
+        reference_type: 'assembly_work_order',
+        reference_id: awoId,
+        reference_number: awo.awo_number,
+        notes: `Assembly accepted to store — AWO #${awo.awo_number}`,
+        created_by: null,
+        from_state: null,
+        to_state: outBucket,
+      });
+      await updateStockBucket(awo.item_id, outBucket, +awo.quantity_to_build);
+    } catch (e) {
+      console.error('[production] assembly_output ledger failed:', e);
+      warnings.push(`${awo.item_code ?? awo.item_description ?? awoId} — output not posted (ledger error)`);
     }
 
-    // Add finished item to free stock + write output ledger entry
-    if (awo.item_id) {
-      await updateStockBucket(awo.item_id, 'free', +awo.quantity_to_build);
-      try {
-        await addStockLedgerEntry({
-          item_id: awo.item_id,
-          item_code: awo.item_code ?? null,
-          item_description: awo.item_description ?? null,
-          transaction_date: today,
-          transaction_type: 'assembly_output',
-          qty_in: awo.quantity_to_build,
-          qty_out: 0,
-          balance_qty: 0,
-          unit_cost: 0,
-          total_value: 0,
-          reference_type: 'assembly_work_order',
-          reference_id: id,
-          reference_number: awo.awo_number,
-          notes: `Assembly complete — AWO #${awo.awo_number}`,
-          created_by: null,
-        });
-      } catch (e) { console.error('[production] output ledger failed:', e); }
-    }
-  } else if (awo.awo_type === 'finished_good') {
-    // Consume components from in_fg_wip + write consumption ledger entries
-    for (const li of awo.line_items ?? []) {
-      if (li.item_id && li.issued_qty > 0) {
-        const err = await updateStockBucket(li.item_id, 'in_fg_wip', -li.issued_qty).catch((e: Error) => e);
-        if (err instanceof Error) throw new Error(`Stock update failed for ${li.item_code ?? li.item_id}: ${err.message}`);
-        try {
-          await addStockLedgerEntry({
-            item_id: li.item_id,
-            item_code: li.item_code ?? null,
-            item_description: li.item_description ?? null,
-            transaction_date: today,
-            transaction_type: 'assembly_consumption',
-            qty_in: 0,
-            qty_out: li.issued_qty,
-            balance_qty: 0,
-            unit_cost: 0,
-            total_value: 0,
-            reference_type: 'assembly_work_order',
-            reference_id: id,
-            reference_number: awo.awo_number,
-            notes: `Component consumed — AWO #${awo.awo_number} complete`,
-            created_by: null,
-          });
-        } catch (e) { console.error('[production] consumption ledger failed:', e); }
-      }
-    }
-
-    // Add to in_fg_ready + write output ledger entry
-    if (awo.item_id) {
-      await updateStockBucket(awo.item_id, 'in_fg_ready', +awo.quantity_to_build);
-      try {
-        await addStockLedgerEntry({
-          item_id: awo.item_id,
-          item_code: awo.item_code ?? null,
-          item_description: awo.item_description ?? null,
-          transaction_date: today,
-          transaction_type: 'assembly_output',
-          qty_in: awo.quantity_to_build,
-          qty_out: 0,
-          balance_qty: 0,
-          unit_cost: 0,
-          total_value: 0,
-          reference_type: 'assembly_work_order',
-          reference_id: id,
-          reference_number: awo.awo_number,
-          notes: `Assembly complete — AWO #${awo.awo_number}`,
-          created_by: null,
-        });
-      } catch (e) { console.error('[production] output ledger failed:', e); }
-    }
-
-    // Create or update serial_numbers row
-    // awo.item_code and awo.item_description come from the SELECT * on assembly_work_orders
-    if (awo.serial_number) {
+    // Finished good: create/upsert the serial_numbers row (as the old completion did).
+    if (awo.awo_type === 'finished_good' && awo.serial_number) {
       try {
         const { data: existingSn } = await (supabase as any)
           .from("serial_numbers")
@@ -1114,43 +1131,38 @@ export async function completeAssemblyWorkOrder(id: string): Promise<void> {
           .eq("serial_number", awo.serial_number)
           .eq("company_id", companyId)
           .maybeSingle();
-
         if (existingSn?.id) {
-          // Row exists — update its status
-          await (supabase as any)
-            .from("serial_numbers")
-            .update({ status: 'in_stock' })
-            .eq("id", existingSn.id);
+          await (supabase as any).from("serial_numbers").update({ status: 'in_stock' }).eq("id", existingSn.id);
         } else {
-          // Row missing — insert it now
-          const { error: snErr } = await (supabase as any)
-            .from("serial_numbers")
-            .insert({
-              serial_number: awo.serial_number,
-              company_id: companyId,
-              item_id: awo.item_id ?? null,
-              item_code: awo.item_code ?? null,
-              item_description: awo.item_description ?? null,
-              status: 'in_stock',
-            });
+          const { error: snErr } = await (supabase as any).from("serial_numbers").insert({
+            serial_number: awo.serial_number,
+            company_id: companyId,
+            item_id: awo.item_id ?? null,
+            item_code: awo.item_code ?? null,
+            item_description: awo.item_description ?? null,
+            status: 'in_stock',
+          });
           if (snErr) console.error('[production] serial_numbers insert failed:', snErr);
         }
-      } catch (e) {
-        console.error('[production] serial_numbers upsert failed:', e);
-      }
+      } catch (e) { console.error('[production] serial_numbers upsert failed:', e); }
     }
   }
 
-  // Mark AWO complete
+  // Record acceptance + mark complete. Status guard at the top prevents double-post.
   await (supabase as any)
     .from("assembly_work_orders")
     .update({
       status: 'complete',
+      store_location: storeLocation ?? null,
+      accepted_at: new Date().toISOString(),
+      accepted_by: acceptedBy,
       completed_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
-    .eq("id", id)
+    .eq("id", awoId)
     .eq("company_id", companyId);
+
+  return { warnings };
 }
 
 // ── reportComponentIssue ─────────────────────────────────────────────────────
