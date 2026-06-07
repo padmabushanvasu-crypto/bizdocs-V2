@@ -59,9 +59,14 @@ export interface AwoLineItem {
   is_critical: boolean;
   shortage_qty: number;
   notes: string | null;
+  // Damage handling (A3): SCRAP leaves WIP (scrapped_qty); USE-AS-IS stays in WIP
+  // and is consumed normally (concession_qty). damage_qty is kept in sync as the
+  // legacy total-damaged input still read by the completion guard.
   damage_qty?: number;
   damage_reason?: string | null;
-  disposition?: 'scrap' | 'use_as_is' | 'return_to_vendor' | null;
+  disposition?: 'scrap' | 'use_as_is' | null;
+  scrapped_qty?: number;
+  concession_qty?: number;
   concession_note?: string | null;
   concession_by?: string | null;
   concession_at?: string | null;
@@ -335,9 +340,10 @@ export interface ReturnComponentLine {
  * confirmMaterialIssue (A1).
  *
  * Per line:
- *  - CAP: available-in-WIP = issued_qty − returned_qty − damage_qty (consumed is
- *    0 until completion). The cumulative target is clamped to
- *    [current_returned, issued − damage] so a line can never be over-returned.
+ *  - CAP: available-in-WIP = issued_qty − returned_qty − scrapped_qty (consumed
+ *    is 0 until completion; concession units stay in WIP and don't reduce it).
+ *    The cumulative target is clamped to [current_returned, issued − scrapped] so
+ *    a line can never be over-returned.
  *  - IDEMPOTENT: re-read current returned_qty fresh, delta = max(0, target −
  *    current); a re-submit (same target) yields delta 0 → no-op.
  *  - LEDGER-FIRST: post assembly_return (qty_in = delta, wip → free) with item
@@ -371,20 +377,20 @@ export async function returnAssemblyComponents(
     // Fresh authoritative read for idempotency + an accurate cap.
     const { data: fresh } = await (supabase as any)
       .from("awo_line_items")
-      .select("issued_qty, returned_qty, damage_qty, item_id, item_code, item_description")
+      .select("issued_qty, returned_qty, scrapped_qty, item_id, item_code, item_description")
       .eq("id", input.awo_line_item_id)
       .eq("company_id", companyId)
       .maybeSingle();
     const issued = Number((fresh as any)?.issued_qty ?? snapshot.issued_qty ?? 0);
     const currentReturned = Number((fresh as any)?.returned_qty ?? snapshot.returned_qty ?? 0);
-    const damage = Number((fresh as any)?.damage_qty ?? snapshot.damage_qty ?? 0);
+    const scrapped = Number((fresh as any)?.scrapped_qty ?? snapshot.scrapped_qty ?? 0);
     const itemId = (fresh as any)?.item_id ?? snapshot.item_id ?? null;
     const itemCode = (fresh as any)?.item_code ?? snapshot.item_code ?? null;
     const itemDesc = (fresh as any)?.item_description ?? snapshot.item_description ?? null;
 
     // CAP: never return beyond what's still in WIP for this line.
-    const availableInWip = Math.max(0, issued - currentReturned - damage);
-    const maxTarget = currentReturned + availableInWip; // == issued − damage
+    const availableInWip = Math.max(0, issued - currentReturned - scrapped);
+    const maxTarget = currentReturned + availableInWip; // == issued − scrapped
     // Cumulative target clamped so we never go below current or beyond the cap.
     const target = Math.min(Math.max(Number(input.returned_qty ?? 0), currentReturned), maxTarget);
     const delta = Math.max(0, target - currentReturned);
@@ -435,6 +441,115 @@ export async function returnAssemblyComponents(
   return { returnWarnings };
 }
 
+export interface ScrapComponentLine {
+  awo_line_item_id: string;
+  // CONTRACT: the NEW CUMULATIVE scrapped total for the line (target), NOT a
+  // per-call delta. The server derives delta = target − current scrapped.
+  scrapped_qty: number;
+}
+
+/**
+ * Scrap (write-off) damaged components from an AWO's WIP. Same ledger-first,
+ * idempotent discipline as the return path (A2). Scrap leaves WIP entirely.
+ *
+ * Per line:
+ *  - CAP: available-in-WIP = issued_qty − returned_qty − scrapped_qty (concession
+ *    units stay in WIP and don't reduce it). Cumulative target clamped to
+ *    [current_scrapped, issued − returned]; never over-scrap.
+ *  - IDEMPOTENT: re-read current scrapped_qty fresh, delta = max(0, target −
+ *    current); a re-submit is a no-op.
+ *  - LEDGER-FIRST: post scrap_write_off (qty_out = delta, from_state = wip bucket
+ *    by awo_type, to_state = 'scrap', item identity, reason in notes); only on
+ *    ledger success reduce the wip bucket by delta. Ledger failure aborts the
+ *    line — no bucket change, scrapped_qty untouched (retryable).
+ *
+ * Returns per-line warnings (ledger failures, item-less lines) for surfacing.
+ */
+export async function scrapAssemblyComponents(
+  awoId: string,
+  lines: ScrapComponentLine[],
+  reason?: string | null
+): Promise<{ scrapWarnings: string[] }> {
+  const companyId = await getCompanyId();
+  if (!companyId) throw new Error("Not authenticated");
+
+  const awo = await fetchAssemblyWorkOrder(awoId);
+  if (!awo) throw new Error("Work order not found");
+
+  const wip_bucket = awo.awo_type === 'finished_good' ? 'in_fg_wip' : 'in_subassembly_wip';
+  const awoNumber = awo.awo_number ?? '';
+  const today = new Date().toISOString().split('T')[0];
+  const scrapWarnings: string[] = [];
+
+  await Promise.all(lines.map(async (input) => {
+    const snapshot = (awo.line_items ?? []).find((l) => l.id === input.awo_line_item_id);
+    if (!snapshot) return;
+
+    // Fresh authoritative read for idempotency + an accurate cap.
+    const { data: fresh } = await (supabase as any)
+      .from("awo_line_items")
+      .select("issued_qty, returned_qty, scrapped_qty, item_id, item_code, item_description")
+      .eq("id", input.awo_line_item_id)
+      .eq("company_id", companyId)
+      .maybeSingle();
+    const issued = Number((fresh as any)?.issued_qty ?? snapshot.issued_qty ?? 0);
+    const currentReturned = Number((fresh as any)?.returned_qty ?? snapshot.returned_qty ?? 0);
+    const currentScrapped = Number((fresh as any)?.scrapped_qty ?? snapshot.scrapped_qty ?? 0);
+    const itemId = (fresh as any)?.item_id ?? snapshot.item_id ?? null;
+    const itemCode = (fresh as any)?.item_code ?? snapshot.item_code ?? null;
+    const itemDesc = (fresh as any)?.item_description ?? snapshot.item_description ?? null;
+
+    // CAP: never scrap beyond what's still in WIP for this line.
+    const availableInWip = Math.max(0, issued - currentReturned - currentScrapped);
+    const maxTarget = currentScrapped + availableInWip; // == issued − returned
+    const target = Math.min(Math.max(Number(input.scrapped_qty ?? 0), currentScrapped), maxTarget);
+    const delta = Math.max(0, target - currentScrapped);
+
+    if (delta <= 0) return; // no-op: idempotent re-submit, or nothing available
+
+    if (itemId) {
+      // LEDGER-FIRST: post the write-off, reduce the wip bucket only on success.
+      try {
+        await addStockLedgerEntry({
+          item_id: itemId,
+          item_code: itemCode,
+          item_description: itemDesc,
+          transaction_date: today,
+          transaction_type: 'scrap_write_off',
+          qty_in: 0,
+          qty_out: delta,
+          balance_qty: 0,
+          unit_cost: 0,
+          total_value: 0,
+          reference_type: 'assembly_work_order',
+          reference_id: awoId,
+          reference_number: awoNumber,
+          notes: reason ? `Component scrapped — AWO #${awoNumber}: ${reason}` : `Component scrapped — AWO #${awoNumber}`,
+          created_by: null,
+          from_state: wip_bucket,
+          to_state: 'scrap',
+        });
+      } catch (e) {
+        console.error('[production] scrap_write_off ledger failed — line not scrapped, no bucket change:', e);
+        scrapWarnings.push(`${itemCode ?? itemDesc ?? input.awo_line_item_id} — scrap not posted (ledger error)`);
+        return;
+      }
+      await updateStockBucket(itemId, wip_bucket, -delta);
+    } else {
+      // No linked item to move stock for — record the scrapped qty for tracking only.
+      scrapWarnings.push(`${itemDesc ?? input.awo_line_item_id} — no item linked; recorded scrap without stock move`);
+    }
+
+    await (supabase as any)
+      .from("awo_line_items")
+      .update({ scrapped_qty: currentScrapped + delta })
+      .eq("id", input.awo_line_item_id)
+      .eq("company_id", companyId);
+  }));
+
+  return { scrapWarnings };
+}
+
 export async function cancelAssemblyWorkOrder(
   id: string,
   stockAction: 'none' | 'return_all' | 'partial' | 'scrap_all' = 'none',
@@ -445,84 +560,48 @@ export async function cancelAssemblyWorkOrder(
 
   if (stockAction !== 'none') {
     const awo = await fetchAssemblyWorkOrder(id);
-    const awoNumber = awo?.awo_number ?? '';
     const issuedLines = (awo?.line_items ?? []).filter(
       (li) => li.item_id && li.issued_qty > 0
     );
 
-    const cancelDate = new Date().toISOString().split('T')[0];
-
     if (stockAction === 'return_all') {
-      // Route through the shared return logic: correct bucket-by-type, capped,
-      // item identity on the ledger, ledger-first. Target = full available
-      // (issued − damage) as the cumulative returned total per line.
+      // Return everything still in WIP → shared return logic (capped, ledger-first,
+      // bucket-by-type). Cumulative target = issued − scrapped per line.
       const returnLines = issuedLines.map((li) => ({
         awo_line_item_id: li.id,
-        returned_qty: Math.max(0, li.issued_qty - (li.damage_qty ?? 0)),
+        returned_qty: Math.max(0, li.issued_qty - (li.scrapped_qty ?? 0)),
       }));
       await returnAssemblyComponents(id, returnLines);
     } else if (stockAction === 'scrap_all') {
-      for (const li of issuedLines) {
-        await updateStockBucket(li.item_id!, 'in_subassembly_wip', -li.issued_qty);
-        try {
-          await addStockLedgerEntry({
-            item_id: li.item_id!,
-            item_code: li.item_code ?? null,
-            item_description: li.item_description ?? null,
-            transaction_date: cancelDate,
-            transaction_type: 'scrap_write_off',
-            qty_in: 0,
-            qty_out: li.issued_qty,
-            balance_qty: 0,
-            unit_cost: 0,
-            total_value: 0,
-            reference_type: 'assembly_work_order',
-            reference_id: id,
-            reference_number: awoNumber,
-            notes: 'Materials scrapped — AWO cancelled',
-            created_by: null,
-          });
-        } catch (e) { console.error('[production] scrap ledger failed:', e); }
-      }
+      // Scrap everything still in WIP → shared scrap logic (capped, ledger-first,
+      // bucket-by-type). Cumulative target = issued − returned per line.
+      const scrapLines = issuedLines.map((li) => ({
+        awo_line_item_id: li.id,
+        scrapped_qty: Math.max(0, li.issued_qty - (li.returned_qty ?? 0)),
+      }));
+      await scrapAssemblyComponents(id, scrapLines, 'AWO cancelled');
     } else if (stockAction === 'partial' && partialLines) {
-      // Returns → shared, capped, ledger-first logic (bucket-by-type + identity).
-      // Cumulative target = this line's current returned + the requested return_qty.
+      // Returns → shared return logic; scrap → shared scrap logic. Cumulative
+      // target = this line's current returned/scrapped + the requested qty.
       const returnLines = partialLines
         .filter((pl) => pl.return_qty > 0)
         .map((pl) => {
           const line = (awo?.line_items ?? []).find((l) => l.item_id === pl.item_id);
           if (!line) return null;
-          const currentReturned = Number(line.returned_qty ?? 0);
-          return { awo_line_item_id: line.id, returned_qty: currentReturned + pl.return_qty };
+          return { awo_line_item_id: line.id, returned_qty: Number(line.returned_qty ?? 0) + pl.return_qty };
         })
         .filter((x): x is ReturnComponentLine => x !== null);
       if (returnLines.length > 0) await returnAssemblyComponents(id, returnLines);
 
-      // Scrap portion left as-is — A3 redesigns damage/scrap.
-      for (const pl of partialLines) {
-        if (pl.scrap_qty > 0) {
-          await updateStockBucket(pl.item_id, 'in_subassembly_wip', -pl.scrap_qty);
-          try {
-            await addStockLedgerEntry({
-              item_id: pl.item_id,
-              item_code: null,
-              item_description: null,
-              transaction_date: cancelDate,
-              transaction_type: 'scrap_write_off',
-              qty_in: 0,
-              qty_out: pl.scrap_qty,
-              balance_qty: 0,
-              unit_cost: 0,
-              total_value: 0,
-              reference_type: 'assembly_work_order',
-              reference_id: id,
-              reference_number: awoNumber,
-              notes: 'Materials scrapped — AWO cancelled',
-              created_by: null,
-            });
-          } catch (e) { console.error('[production] scrap ledger failed:', e); }
-        }
-      }
+      const scrapLines = partialLines
+        .filter((pl) => pl.scrap_qty > 0)
+        .map((pl) => {
+          const line = (awo?.line_items ?? []).find((l) => l.item_id === pl.item_id);
+          if (!line) return null;
+          return { awo_line_item_id: line.id, scrapped_qty: Number(line.scrapped_qty ?? 0) + pl.scrap_qty };
+        })
+        .filter((x): x is ScrapComponentLine => x !== null);
+      if (scrapLines.length > 0) await scrapAssemblyComponents(id, scrapLines, 'AWO cancelled');
     }
   }
 
@@ -1076,120 +1155,84 @@ export async function completeAssemblyWorkOrder(id: string): Promise<void> {
 
 // ── reportComponentIssue ─────────────────────────────────────────────────────
 
+/**
+ * Report damaged components on an AWO line. Two dispositions only:
+ *  - 'scrap'     → write-off, leaves WIP (tracked cumulatively in scrapped_qty).
+ *  - 'use_as_is' → concession: damaged but kept, stays in WIP and is consumed
+ *                  normally (tracked in concession_qty). NO stock movement.
+ *
+ * CONTRACT: `target_qty` is the NEW CUMULATIVE total for the chosen disposition
+ * (total scrapped, or total concession) for this line — NOT a per-call delta.
+ *
+ * SCRAP routes through scrapAssemblyComponents (capped, idempotent, ledger-first,
+ * bucket-by-type). USE-AS-IS just records the cumulative concession + reason.
+ *
+ * damage_qty / disposition are kept in sync as the legacy inputs still read by
+ * the completion guard (completeAssemblyWorkOrder), which is out of A3's scope.
+ */
 export async function reportComponentIssue(
   awo_line_item_id: string,
-  damage_qty: number,
-  disposition: 'scrap' | 'use_as_is' | 'return_to_vendor',
+  target_qty: number,
+  disposition: 'scrap' | 'use_as_is',
   reason: string,
   reported_by_user_id: string
 ): Promise<void> {
   const companyId = await getCompanyId();
   if (!companyId) throw new Error("Not authenticated");
 
-  const today = new Date().toISOString().split('T')[0];
-
-  // Fetch line item with AWO info
   const { data: awoLine, error: lineError } = await (supabase as any)
     .from("awo_line_items")
-    .select("*, assembly_work_orders(awo_number, awo_type)")
+    .select("awo_id, issued_qty, returned_qty, scrapped_qty, concession_qty")
     .eq("id", awo_line_item_id)
+    .eq("company_id", companyId)
     .single();
-
   if (lineError || !awoLine) throw new Error("AWO line item not found");
 
-  const awoType = (awoLine as any).assembly_work_orders?.awo_type;
-  const wip_bucket: string = awoType === 'finished_good' ? 'in_fg_wip' : 'in_subassembly_wip';
-  const awoNumber: string = (awoLine as any).assembly_work_orders?.awo_number ?? '';
-
-  // Build update payload for awo_line_items
-  const updatePayload: Record<string, unknown> = {
-    damage_qty,
-    damage_reason: reason,
-    disposition,
-  };
-  if (disposition === 'use_as_is') {
-    updatePayload.concession_note = reason;
-    updatePayload.concession_by = reported_by_user_id;
-    updatePayload.concession_at = new Date().toISOString();
-  }
-
-  const { error: updateError } = await (supabase as any)
-    .from("awo_line_items")
-    .update(updatePayload)
-    .eq("id", awo_line_item_id)
-    .eq("company_id", companyId);
-
-  if (updateError) throw updateError;
-
-  if (disposition === 'scrap' && awoLine.item_id && damage_qty > 0) {
-    await updateStockBucket(awoLine.item_id, wip_bucket, -damage_qty);
-    try {
-      await addStockLedgerEntry({
-        item_id: awoLine.item_id,
-        item_code: awoLine.item_code ?? null,
-        item_description: awoLine.item_description ?? null,
-        transaction_date: today,
-        transaction_type: 'scrap_write_off',
-        qty_in: 0,
-        qty_out: damage_qty,
-        balance_qty: 0,
-        unit_cost: 0,
-        total_value: 0,
-        reference_type: 'assembly_work_order',
-        reference_id: awoLine.awo_id,
-        reference_number: awoNumber,
-        notes: `Component scrapped — AWO #${awoNumber}: ${reason}`,
-        created_by: null,
-      });
-    } catch (e) { console.error('[production] scrap ledger failed:', e); }
-    try {
-      await (supabase as any).from("notifications").insert({
-        company_id: companyId,
-        type: 'scrap_component',
-        title: 'Component Scrapped',
-        message: `${awoLine.item_description ?? awoLine.item_code ?? 'Item'} (${damage_qty} ${awoLine.unit ?? ''}) scrapped on AWO #${awoNumber}. Reason: ${reason}`,
-        reference_type: 'assembly_work_order',
-        reference_id: awoLine.awo_id,
-        created_by: reported_by_user_id,
-      });
-    } catch (e) { console.error('[production] scrap notification failed:', e); }
-  }
-
-  if (disposition === 'return_to_vendor' && awoLine.item_id && damage_qty > 0) {
-    await updateStockBucket(awoLine.item_id, wip_bucket, -damage_qty);
-    await updateStockBucket(awoLine.item_id, 'free', +damage_qty);
-    try {
-      await addStockLedgerEntry({
-        item_id: awoLine.item_id,
-        item_code: awoLine.item_code ?? null,
-        item_description: awoLine.item_description ?? null,
-        transaction_date: today,
-        transaction_type: 'assembly_return',
-        qty_in: damage_qty,
-        qty_out: 0,
-        balance_qty: 0,
-        unit_cost: 0,
-        total_value: 0,
-        reference_type: 'assembly_work_order',
-        reference_id: awoLine.awo_id,
-        reference_number: awoNumber,
-        notes: `Component returned to vendor — AWO #${awoNumber}: ${reason}`,
-        created_by: null,
-        from_state: 'wip',
-        to_state: 'free',
-      });
-    } catch (e) { console.error('[production] return ledger failed:', e); }
-    try {
-      await (supabase as any).from("notifications").insert({
-        company_id: companyId,
-        type: 'return_to_vendor',
-        title: 'Component Returned to Vendor',
-        message: `${awoLine.item_description ?? awoLine.item_code ?? 'Item'} (${damage_qty} ${awoLine.unit ?? ''}) returned to vendor from AWO #${awoNumber}. Reason: ${reason}`,
-        reference_type: 'assembly_work_order',
-        reference_id: awoLine.awo_id,
-        created_by: reported_by_user_id,
-      });
-    } catch (e) { console.error('[production] return notification failed:', e); }
+  if (disposition === 'scrap') {
+    // Capped, idempotent, ledger-first scrap (updates scrapped_qty + wip bucket).
+    await scrapAssemblyComponents(
+      (awoLine as any).awo_id,
+      [{ awo_line_item_id, scrapped_qty: Math.max(0, target_qty) }],
+      reason,
+    );
+    // Mirror disposition + reason, and keep the legacy damage_qty input in sync
+    // with the now-authoritative cumulative scrapped_qty for the completion guard.
+    const { data: after } = await (supabase as any)
+      .from("awo_line_items")
+      .select("scrapped_qty")
+      .eq("id", awo_line_item_id)
+      .eq("company_id", companyId)
+      .maybeSingle();
+    const newScrapped = Number((after as any)?.scrapped_qty ?? 0);
+    const { error: updErr } = await (supabase as any)
+      .from("awo_line_items")
+      .update({ disposition: 'scrap', damage_reason: reason, damage_qty: newScrapped })
+      .eq("id", awo_line_item_id)
+      .eq("company_id", companyId);
+    if (updErr) throw updErr;
+  } else {
+    // USE-AS-IS (concession): no ledger, no bucket move. Units stay in WIP and are
+    // consumed at completion. Cap the cumulative concession to WIP on hand.
+    const issued = Number((awoLine as any).issued_qty ?? 0);
+    const returned = Number((awoLine as any).returned_qty ?? 0);
+    const scrapped = Number((awoLine as any).scrapped_qty ?? 0);
+    const currentConcession = Number((awoLine as any).concession_qty ?? 0);
+    const availableInWip = Math.max(0, issued - returned - scrapped);
+    const target = Math.min(Math.max(Number(target_qty), currentConcession), currentConcession + availableInWip);
+    const { error: updErr } = await (supabase as any)
+      .from("awo_line_items")
+      .update({
+        disposition: 'use_as_is',
+        concession_qty: target,
+        concession_note: reason,
+        concession_by: reported_by_user_id,
+        concession_at: new Date().toISOString(),
+        damage_reason: reason,
+        damage_qty: target, // keep legacy completion-guard input in sync
+      })
+      .eq("id", awo_line_item_id)
+      .eq("company_id", companyId);
+    if (updErr) throw updErr;
   }
 }
 

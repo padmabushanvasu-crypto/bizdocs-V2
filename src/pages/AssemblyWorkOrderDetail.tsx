@@ -102,7 +102,7 @@ export default function AssemblyWorkOrderDetail() {
   const [reportIssueLine, setReportIssueLine] = useState<AwoLineItem | null>(null);
   const [reportIssueForm, setReportIssueForm] = useState<{
     damage_qty: number;
-    disposition: 'scrap' | 'use_as_is' | 'return_to_vendor';
+    disposition: 'scrap' | 'use_as_is';
     reason: string;
   }>({ damage_qty: 0, disposition: 'scrap', reason: '' });
 
@@ -184,9 +184,15 @@ export default function AssemblyWorkOrderDetail() {
       // not a display name. Bail before the API call if no UUID is available
       // so we surface a clean toast rather than a Postgres FK error.
       if (!user?.id) throw new Error("Not authenticated");
+      // The form field is "amount now"; the API contract is the new cumulative
+      // total for the chosen disposition (scrapped or concession).
+      const current =
+        reportIssueForm.disposition === 'scrap'
+          ? (reportIssueLine.scrapped_qty ?? 0)
+          : (reportIssueLine.concession_qty ?? 0);
       return reportComponentIssue(
         reportIssueLine.id,
-        reportIssueForm.damage_qty,
+        current + reportIssueForm.damage_qty, // cumulative target
         reportIssueForm.disposition,
         reportIssueForm.reason,
         user.id,
@@ -234,17 +240,18 @@ export default function AssemblyWorkOrderDetail() {
     },
   });
 
-  // Available-in-WIP cap for a component: issued − returned − damage.
+  // Available-in-WIP cap for a component: issued − returned − scrapped
+  // (concession units stay in WIP and are consumed, so they don't reduce it).
   const availableInWip = (li: AwoLineItem): number =>
-    Math.max(0, (li.issued_qty ?? 0) - (li.returned_qty ?? 0) - (li.damage_qty ?? 0));
+    Math.max(0, (li.issued_qty ?? 0) - (li.returned_qty ?? 0) - (li.scrapped_qty ?? 0));
 
   const latestMir: MaterialIssueRequest | undefined = mirs[0];
 
   // FIX 5D: Derived unfulfilled lines for warning banner + button guard.
   // damage_qty only counts toward fulfilment when the disposition is
   // use_as_is — i.e. the team accepts the gap and proceeds with short qty.
-  // For scrap or return_to_vendor the line is genuinely short by damage_qty
-  // and needs replacement before the WO can complete.
+  // For scrap the line is genuinely short by damage_qty and needs replacement
+  // before the WO can complete.
   const effectivelyIssued = (li: AwoLineItem): number => {
     const issued = li.issued_qty ?? 0;
     const damage = li.damage_qty ?? 0;
@@ -670,41 +677,37 @@ export default function AssemblyWorkOrderDetail() {
         <DialogContent>
           {(() => {
             const issued = reportIssueLine?.issued_qty ?? 0;
-            const required = reportIssueLine?.required_qty ?? 0;
-            const isFullyIssued = issued >= required;
-            const gap = Math.max(0, required - issued);
-            // Cap the qty input: for fully-issued lines, can't damage more
-            // than what was actually issued; for short lines, can't claim
-            // more units damaged than the open gap. Math.max with 1 keeps
-            // the boundary edge cases from disabling the form entirely.
-            const maxAllowed = Math.max(issued, isFullyIssued ? 1 : gap);
+            const returned = reportIssueLine?.returned_qty ?? 0;
+            const scrapped = reportIssueLine?.scrapped_qty ?? 0;
+            const concession = reportIssueLine?.concession_qty ?? 0;
+            const unit = reportIssueLine?.unit ?? '';
+            // WIP on hand = issued − returned − scrapped (concession stays in WIP).
+            const available = Math.max(0, issued - returned - scrapped);
+            const isScrap = reportIssueForm.disposition === 'scrap';
+            // Can never scrap / concession more than what's physically in WIP.
+            const maxAllowed = available;
             const qtyValid =
               reportIssueForm.damage_qty > 0 &&
               reportIssueForm.damage_qty <= maxAllowed;
             const reasonValid = reportIssueForm.reason.trim().length > 0;
             const isValid = qtyValid && reasonValid;
-            const unit = reportIssueLine?.unit ?? '';
-            const consequence =
-              reportIssueForm.disposition === 'scrap'
-                ? ' and write a scrap_write_off ledger entry'
-                : reportIssueForm.disposition === 'return_to_vendor'
-                ? ', return them to free stock, and write an assembly_return ledger entry'
-                : ' (use-as-is — no stock movement, just records concession)';
             return (
               <>
                 <DialogHeader>
-                  <DialogTitle>
-                    {isFullyIssued ? 'Report Component Damage' : 'Report Component Issue'}
-                  </DialogTitle>
+                  <DialogTitle>Report Component Damage</DialogTitle>
                   <DialogDescription>
                     {reportIssueLine?.item_description ?? reportIssueLine?.item_code ?? 'Component'}
-                    {' — '}
-                    {isFullyIssued
-                      ? 'report units damaged during assembly'
-                      : `short by ${formatNumber(gap)} ${unit}`}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-2">
+                  {/* Per-component breakdown */}
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground rounded-md bg-slate-50 dark:bg-slate-800/40 px-3 py-2">
+                    <span>Issued: <b className="text-foreground font-mono">{formatNumber(issued)}</b></span>
+                    <span>Returned: <b className="text-foreground font-mono">{formatNumber(returned)}</b></span>
+                    <span>Scrapped: <b className="text-foreground font-mono">{formatNumber(scrapped)}</b></span>
+                    <span>Concession: <b className="text-foreground font-mono">{formatNumber(concession)}</b></span>
+                    <span>Available in WIP: <b className="text-foreground font-mono">{formatNumber(available)} {unit}</b></span>
+                  </div>
                   <div className="space-y-1.5">
                     <Label>Disposition</Label>
                     <Select
@@ -717,28 +720,27 @@ export default function AssemblyWorkOrderDetail() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="scrap">Scrap — write off damaged stock</SelectItem>
-                        <SelectItem value="use_as_is">Accept as-is — proceed with short qty</SelectItem>
-                        <SelectItem value="return_to_vendor">Return to vendor</SelectItem>
+                        <SelectItem value="scrap">Scrap — write off (leaves WIP)</SelectItem>
+                        <SelectItem value="use_as_is">Use as-is — keep & consume (concession)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Quantity affected</Label>
+                    <Label>Quantity affected (now)</Label>
                     <Input
                       type="number"
                       min={0}
                       max={maxAllowed}
                       value={reportIssueForm.damage_qty}
                       onChange={(e) =>
-                        setReportIssueForm((f) => ({ ...f, damage_qty: Number(e.target.value) }))
+                        setReportIssueForm((f) => ({ ...f, damage_qty: Math.max(0, Math.min(maxAllowed, Number(e.target.value))) }))
                       }
                     />
                     {!qtyValid && (
                       <p className="text-xs text-red-600">
                         {reportIssueForm.damage_qty <= 0
                           ? 'Quantity must be greater than 0.'
-                          : `Quantity must be between 1 and ${formatNumber(maxAllowed)} ${unit}.`}
+                          : `Quantity must be between 1 and ${formatNumber(maxAllowed)} ${unit} (available in WIP).`}
                       </p>
                     )}
                   </div>
@@ -754,7 +756,9 @@ export default function AssemblyWorkOrderDetail() {
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    This will deduct {formatNumber(reportIssueForm.damage_qty || 0)} {unit} from WIP{consequence}, then notify the storekeeper.
+                    {isScrap
+                      ? `This will scrap ${formatNumber(reportIssueForm.damage_qty || 0)} ${unit} from WIP and write a scrap_write_off ledger entry.`
+                      : `This will record ${formatNumber(reportIssueForm.damage_qty || 0)} ${unit} as use-as-is concession — no stock movement; the units stay in WIP and are consumed at completion.`}
                   </p>
                 </div>
                 <DialogFooter>
