@@ -117,7 +117,8 @@ export interface StockLedgerEntry {
     | "opening_stock"
     | "physical_count"
     | "manual_adjustment"
-    | "rejection_writeoff";
+    | "rejection_writeoff"
+    | "vendor_return";
   qty_in: number;
   qty_out: number;
   balance_qty: number;

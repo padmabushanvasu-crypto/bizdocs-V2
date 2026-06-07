@@ -560,7 +560,7 @@ export async function fetchVendorGrnMetrics(vendorId: string): Promise<VendorGrn
         identityTotalCount++;
         if (li.item_identity_match === true) identityMatchCount++;
       }
-      if (li.disposal_method === 'return_to_vendor' || li.rejection_action === 'return_to_supplier') {
+      if (li.disposal_method === 'return_to_vendor') {
         returnCount++;
       }
     }

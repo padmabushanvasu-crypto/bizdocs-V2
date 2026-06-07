@@ -1023,54 +1023,9 @@ export async function updateGrnQcFields(
   if (error) throw error;
 }
 
-// Valid values per grn_line_items_rejection_action_check constraint
-const VALID_REJECTION_ACTIONS = ['return_to_supplier', 'replacement_requested', 'scrap', 'hold'] as const;
-
-export async function recordGrnRejectionAction(
-  lineItemId: string,
-  action: string,
-  data: {
-    qty: number;
-    reason: string | null;
-    supplier_ref?: string | null;
-    item_id: string | null;
-    drawing_number: string | null;
-    grn_number: string;
-  }
-): Promise<void> {
-  if (!VALID_REJECTION_ACTIONS.includes(action as any)) {
-    throw new Error(
-      `Invalid rejection_action "${action}". Must be one of: ${VALID_REJECTION_ACTIONS.join(', ')}`
-    );
-  }
-
-  const companyId = await getCompanyId();
-  const today = new Date().toISOString().split('T')[0];
-  const { data: { user } } = await supabase.auth.getUser();
-
-  await (supabase as any).from('grn_line_items').update({
-    rejection_action: action,
-    supplier_ref: data.supplier_ref ?? null,
-  }).eq('id', lineItemId);
-
-  if (action === 'scrap' && data.item_id) {
-    try {
-      await (supabase as any).from('scrap_register').insert({
-        company_id: companyId,
-        item_id: data.item_id,
-        drawing_number: data.drawing_number,
-        quantity: data.qty,
-        reason: data.reason ?? 'GRN rejection — scrap',
-        source: 'grn_rejection',
-        source_ref: data.grn_number,
-        scrapped_at: today,
-        created_by: user?.id ?? null,
-      });
-    } catch (_e) {
-      // scrap_register may not exist; ignore
-    }
-  }
-}
+// NOTE: the dormant recordGrnRejectionAction (old vocab return_to_supplier/
+// replacement_requested/hold, no idempotency) was retired — QC reject handling
+// now lives solely in saveQualityStage's reject-reconciliation pass.
 
 // ── New Two-Stage API ─────────────────────────────────────────────────────────
 
@@ -1287,6 +1242,43 @@ export async function saveQualityStage(
     }
   }
 
+  // GRN header + per-line meta (PRE-update values) — used by the reject pass below:
+  // supplier_ref, source state (PO=incoming / DC=in_process), scrap_register insert,
+  // reverse-then-repost (old disposition/rejected qty), and the vendor-return notice.
+  const rejectCompanyId = await getCompanyId();
+  const { data: rejectHdr } = await (supabase as any)
+    .from('grns')
+    .select('grn_type, grn_number, vendor_name, linked_dc_id')
+    .eq('id', grnId)
+    .single();
+  const rejectIsDc = (rejectHdr?.grn_type === 'dc_grn') || !!rejectHdr?.linked_dc_id;
+  const lineMetaMap = new Map<string, { item_id: string | null; drawing_number: string | null; description: string | null; old_rejected: number; old_disposition: string | null }>();
+  {
+    const { data: meta } = await (supabase as any)
+      .from('grn_line_items')
+      .select('id, item_id, drawing_number, description, rejected_qty, disposition')
+      .in('id', lines.map((l) => l.id));
+    for (const m of (meta ?? []) as any[]) {
+      lineMetaMap.set(m.id, {
+        item_id: m.item_id ?? null,
+        drawing_number: m.drawing_number ?? null,
+        description: m.description ?? null,
+        old_rejected: Number(m.rejected_qty ?? 0),
+        old_disposition: m.disposition ?? null,
+      });
+    }
+  }
+  // disposition → disposal_method (the canonical, scorecard-read field; CHECK
+  // allows return_to_vendor/rework/scrap/use_as_is — no ALTER). Mirrors the legacy
+  // updateGrnLineStage2 vocab so live + legacy paths agree. Stored `disposition`
+  // values are unchanged; this is only the derived disposal column.
+  const toDisposalMethod = (d: string | null | undefined): string | null =>
+    d === 'return_to_vendor' ? 'return_to_vendor'
+    : d === 'scrap' ? 'scrap'
+    : d === 'rework_our_scope' ? 'rework'
+    : (d === 'accept_as_is' || d === 'conditional_accept') ? 'use_as_is'
+    : null;
+
   for (const line of lines) {
     const lineIsFinal = finalGrnPerLine ? (finalGrnPerLine[line.id] ?? false) : (isFinalGrn ?? false);
     const { error } = await (supabase as any)
@@ -1305,6 +1297,10 @@ export async function saveQualityStage(
         qc_inspected_at: now,
         accepted_qty: line.conforming_qty + (line.non_conforming_qty > 0 && ['accept_as_is','conditional_accept'].includes(line.disposition ?? '') ? line.non_conforming_qty : 0),
         rejected_qty: line.non_conforming_qty > 0 && ['return_to_vendor','scrap'].includes(line.disposition ?? '') ? line.non_conforming_qty : 0,
+        // Derived disposal method (the field the vendor scorecard reads). supplier_ref
+        // only stamped for return-to-vendor (GRN's vendor); never clobbered otherwise.
+        disposal_method: toDisposalMethod(line.disposition),
+        ...(line.disposition === 'return_to_vendor' ? { supplier_ref: rejectHdr?.vendor_name ?? null } : {}),
         // Alt. Qty accepted — only written when provided; never clobbers with null otherwise.
         ...(line.accepted_qty_2 != null ? { accepted_qty_2: line.accepted_qty_2 } : {}),
         is_final_grn: lineIsFinal,
@@ -1494,6 +1490,108 @@ export async function saveQualityStage(
     } catch (editErr) {
       console.error('[GRN] QC edit delta pass failed (non-fatal):', editErr);
     }
+  }
+
+  // ── REJECT reconciliation (QC return_to_vendor / scrap / rework) ───────────
+  // Tracks rejected units that are never credited to a bucket. LEDGER-ONLY +
+  // scrap_register; independent of the accepted/FREE delta above. Reverse-then-
+  // repost so a disposition flip retargets cleanly. scrap_register is replaced
+  // (delete-by-source_ref then insert) for idempotency. Non-fatal throughout.
+  try {
+    const rejectSource = rejectIsDc ? STOCK_STATE.IN_PROCESS : STOCK_STATE.INCOMING;
+    const today = new Date().toISOString().split('T')[0];
+    for (const line of lines) {
+      const meta = lineMetaMap.get(line.id);
+      const itemId = meta?.item_id ?? null;
+      const desc = meta?.description ?? null;
+      const newDisp = line.disposition ?? null;
+      const newRejected = (line.non_conforming_qty > 0 && ['return_to_vendor','scrap'].includes(newDisp ?? '')) ? line.non_conforming_qty : 0;
+      const oldDisp = opts?.isEdit ? (meta?.old_disposition ?? null) : null;
+      const oldRejected = opts?.isEdit ? Number(meta?.old_rejected ?? 0) : 0;
+
+      // (a) scrap_register — always replace this line's GRN-rejection rows.
+      try {
+        await (supabase as any).from('scrap_register')
+          .delete().eq('source', 'grn_rejection').eq('source_ref', line.id);
+        if (newDisp === 'scrap' && newRejected > 0 && itemId) {
+          await (supabase as any).from('scrap_register').insert({
+            company_id: rejectCompanyId,
+            item_id: itemId,
+            drawing_number: meta?.drawing_number ?? null,
+            quantity: newRejected,
+            reason: line.deviation_description || line.non_conformance_type || 'QC reject — scrap',
+            source: 'grn_rejection',
+            source_ref: line.id,
+            scrapped_at: today,
+            created_by: null,
+          });
+        }
+      } catch (srErr) {
+        console.error('[GRN] scrap_register sync failed (non-fatal):', srErr);
+        stockWarnings.push(`${desc ?? line.id} — scrap register not updated`);
+      }
+
+      if (!itemId) continue; // ledger legs need an item
+
+      // (b) ledger — reverse the prior reject leg (edit only), then post the new one.
+      // Skip entirely on a no-op resave (disposition AND rejected qty unchanged) —
+      // mirrors the accepted side's "no leg when Δ=0". scrap_register replace above
+      // stays unconditional (harmless).
+      const rejectChanged = !opts?.isEdit || oldDisp !== newDisp || oldRejected !== newRejected;
+      try {
+        if (rejectChanged && opts?.isEdit && oldRejected > 0 && (oldDisp === 'scrap' || oldDisp === 'return_to_vendor')) {
+          await addStockLedgerEntry({
+            item_id: itemId, item_code: null, item_description: desc,
+            transaction_date: today,
+            transaction_type: oldDisp === 'scrap' ? 'rejection_writeoff' : 'vendor_return',
+            qty_in: oldRejected, qty_out: 0, balance_qty: 0, unit_cost: 0, total_value: 0,
+            reference_type: 'grn', reference_id: grnId, reference_number: rejectHdr?.grn_number ?? null,
+            notes: `QC edit — reverse prior ${oldDisp === 'scrap' ? 'scrap' : 'vendor return'} (${oldRejected})`,
+            created_by: inspectedBy,
+            from_state: oldDisp === 'scrap' ? STOCK_STATE.SCRAPPED : STOCK_STATE.RETURNED_TO_VENDOR,
+            to_state: rejectSource,
+          });
+        }
+        if (rejectChanged && newRejected > 0 && (newDisp === 'scrap' || newDisp === 'return_to_vendor')) {
+          await addStockLedgerEntry({
+            item_id: itemId, item_code: null, item_description: desc,
+            transaction_date: today,
+            transaction_type: newDisp === 'scrap' ? 'rejection_writeoff' : 'vendor_return',
+            qty_in: 0, qty_out: newRejected, balance_qty: 0, unit_cost: 0, total_value: 0,
+            reference_type: 'grn', reference_id: grnId, reference_number: rejectHdr?.grn_number ?? null,
+            notes: newDisp === 'scrap' ? `QC reject — scrap (${newRejected})` : `QC reject — return to vendor (${newRejected})`,
+            created_by: inspectedBy,
+            from_state: rejectSource,
+            to_state: newDisp === 'scrap' ? STOCK_STATE.SCRAPPED : STOCK_STATE.RETURNED_TO_VENDOR,
+          });
+        }
+        // rework_our_scope → tracked via rejection_action only; no ledger leg (A1 stub).
+      } catch (legErr) {
+        console.error(`[GRN] reject ledger leg failed for line ${line.id} (non-fatal):`, legErr);
+        stockWarnings.push(`${desc ?? line.id} — reject not ledgered`);
+      }
+
+      // (c) notify purchase_team when a return-to-vendor is newly raised or its qty changed.
+      if (newDisp === 'return_to_vendor' && newRejected > 0) {
+        const changed = !opts?.isEdit || oldDisp !== 'return_to_vendor' || oldRejected !== newRejected;
+        if (changed) {
+          await createNotification({
+            company_id: rejectCompanyId ?? undefined,
+            type: 'vendor_return',
+            title: 'Goods to return to vendor',
+            message: `${rejectHdr?.grn_number ?? ''} · ${desc ?? itemId}: ${newRejected} to return to ${rejectHdr?.vendor_name ?? 'vendor'}`.replace(/\s+/g, ' ').trim(),
+            category: 'action_required',
+            link: `/grn/${grnId}`,
+            target_role: 'purchase_team',
+            reference_type: 'grn',
+            reference_id: grnId,
+            created_by: inspectedBy,
+          }).catch(console.error);
+        }
+      }
+    }
+  } catch (rejErr) {
+    console.error('[GRN] reject reconciliation pass failed (non-fatal):', rejErr);
   }
 
   // CHANGE 2: For DC return GRNs — update parent DC status after QC stage

@@ -19,6 +19,7 @@ export const STOCK_STATE = {
   CONSUMED: 'consumed',                 // terminal — no bucket
   SCRAPPED: 'scrapped',                 // terminal — no bucket
   DISPATCHED: 'dispatched',             // terminal — no bucket
+  RETURNED_TO_VENDOR: 'returned_to_vendor', // terminal — no bucket (QC return-to-vendor)
 } as const;
 
 export type StockState = typeof STOCK_STATE[keyof typeof STOCK_STATE];
@@ -34,4 +35,5 @@ export const STATE_BUCKET: Record<StockState, string | null> = {
   consumed: null,
   scrapped: null,
   dispatched: null,
+  returned_to_vendor: null,
 };
