@@ -187,6 +187,9 @@ export interface NotificationSettings {
   // Event-triggered GRN → QC inspection alert (no schedule — fired on stage entry)
   grn_qc_email_enabled: boolean;
   grn_qc_email_recipients: string[];
+  // Daily partial-issue reminder (server-side schedule)
+  partial_issue_enabled: boolean;
+  partial_issue_recipients: string[];
   // Shared list of names for the opening-stock audit "edited by" dropdown
   stock_editor_names: string[];
 }
@@ -200,6 +203,8 @@ const NS_DEFAULTS: NotificationSettings = {
   dc_email_recipients: [],
   grn_qc_email_enabled: false,
   grn_qc_email_recipients: [],
+  partial_issue_enabled: false,
+  partial_issue_recipients: [],
   stock_editor_names: [],
 };
 
@@ -222,6 +227,8 @@ export async function fetchNotificationSettings(): Promise<NotificationSettings>
         dc_email_recipients: toStringArray(c.dc_email_recipients),
         grn_qc_email_enabled:    c.grn_qc_email_enabled ?? NS_DEFAULTS.grn_qc_email_enabled,
         grn_qc_email_recipients: toStringArray(c.grn_qc_email_recipients),
+        partial_issue_enabled:    c.partial_issue_enabled ?? NS_DEFAULTS.partial_issue_enabled,
+        partial_issue_recipients: toStringArray(c.partial_issue_recipients),
         stock_editor_names:      toStringArray(c.stock_editor_names),
       };
     }
@@ -245,6 +252,8 @@ export async function saveNotificationSettings(settings: NotificationSettings): 
       dc_email_recipients: settings.dc_email_recipients,
       grn_qc_email_enabled:    settings.grn_qc_email_enabled,
       grn_qc_email_recipients: settings.grn_qc_email_recipients,
+      partial_issue_enabled:    settings.partial_issue_enabled,
+      partial_issue_recipients: settings.partial_issue_recipients,
       stock_editor_names:      settings.stock_editor_names,
     } as any)
     .eq("id", existing.id);

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Save, X, ChevronLeft, UserCheck, Plus, Download, Mail, Truck, ClipboardCheck, Clock } from "lucide-react";
+import { Save, X, ChevronLeft, UserCheck, Plus, Download, Mail, Truck, ClipboardCheck, Clock, AlarmClock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,8 @@ const DEFAULTS: NotificationSettings = {
   dc_email_recipients: [],
   grn_qc_email_enabled: false,
   grn_qc_email_recipients: [],
+  partial_issue_enabled: false,
+  partial_issue_recipients: [],
   stock_editor_names: [],
 };
 
@@ -514,6 +516,41 @@ export default function NotificationsSettings() {
             <p>Fires automatically when a GRN moves into the QC stage.</p>
             <p>One email per GRN, with the line items to inspect and a link to open it.</p>
           </div>
+        </div>
+      </Card>
+
+      {/* Partial-issue reminder */}
+      <Card className="p-5 space-y-3.5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2.5">
+            <AlarmClock className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+            <div>
+              <h3 className="font-semibold text-slate-900 text-sm">Partial-issue reminder</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Daily email when materials are partially issued and remain outstanding for over a week.
+              </p>
+            </div>
+          </div>
+          <Switch
+            checked={settings.partial_issue_enabled}
+            onCheckedChange={(v) => set({ partial_issue_enabled: v })}
+          />
+        </div>
+
+        <div className={`space-y-3.5 sm:pl-6 ${!settings.partial_issue_enabled ? "opacity-50 pointer-events-none" : ""}`}>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-slate-700">Recipients</Label>
+            <div className="sm:max-w-sm">
+              <EmailTagInput
+                value={settings.partial_issue_recipients}
+                onChange={(v) => set({ partial_issue_recipients: v })}
+                placeholder="Concerned dept emails — press Enter"
+              />
+            </div>
+          </div>
+          <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+            <Clock className="h-3 w-3 shrink-0" /> Sent daily ~9:00 AM IST when items are outstanding.
+          </p>
         </div>
       </Card>
 
