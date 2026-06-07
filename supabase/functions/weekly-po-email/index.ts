@@ -437,7 +437,9 @@ serve(async (req) => {
     const now = new Date();
     const todayMs = now.getTime();
     const todayStr = now.toISOString().split("T")[0];
-    const todayName = DAY_NAMES[now.getUTCDay()];
+    // Weekday in IST (Asia/Kolkata) — not UTC — so the configured day matches the
+    // user's local date even near midnight. en-US 'long' → "Monday" … matches *_email_day.
+    const todayName = new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: "Asia/Kolkata" }).format(now);
     const sevenDaysAgo = new Date(todayMs - 7 * 86400000).toISOString().split("T")[0];
 
     const results: Array<Record<string, unknown>> = [];
