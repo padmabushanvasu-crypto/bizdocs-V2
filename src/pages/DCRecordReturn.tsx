@@ -11,6 +11,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import { ITEM_ROW_ACCENT } from "@/lib/item-accent";
 import {
   fetchDeliveryChallan,
   recordDCReturn,
@@ -199,21 +200,21 @@ export default function DCRecordReturn() {
       {/* Line Items */}
       <div className="paper-card !p-0">
         <div className="px-4 md:px-6 py-3 border-b border-border">
-          <h2 className="text-sm uppercase text-muted-foreground font-bold tracking-wider">Items</h2>
+          <h2 className="text-sm text-slate-900 font-semibold">Items</h2>
         </div>
 
         <div className="overflow-x-auto rounded-lg border border-slate-200">
           <table className="w-full border-collapse text-sm">
             <thead>
-              <tr>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Drawing</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Sent</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Prev Ret</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Returning Now *</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Rejected Now</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Pending</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Remarks</th>
+              <tr className="bg-slate-50/70 border-b border-slate-200">
+                <th className="px-3 py-2.5 text-xs font-medium text-slate-500 text-left">Description</th>
+                <th className="px-3 py-2.5 text-xs font-medium text-slate-500 text-left">Drawing</th>
+                <th className="px-3 py-2.5 text-xs font-medium text-slate-500 text-right">Sent</th>
+                <th className="px-3 py-2.5 text-xs font-medium text-slate-500 text-right">Prev returned</th>
+                <th className="px-3 py-2.5 text-xs font-medium text-slate-500 text-right">Returning now *</th>
+                <th className="px-3 py-2.5 text-xs font-medium text-slate-500 text-right">Rejected now</th>
+                <th className="px-3 py-2.5 text-xs font-medium text-slate-500 text-right">Pending</th>
+                <th className="px-3 py-2.5 text-xs font-medium text-slate-500 text-left">Remarks</th>
               </tr>
             </thead>
             <tbody>
@@ -234,7 +235,7 @@ export default function DCRecordReturn() {
                 if (overSft) overParts.push(`${Math.abs(liveSft)} sft`);
                 return (
                   <React.Fragment key={row.dc_line_item_id}>
-                    <tr className={cn("border-t border-border", !hasPending && "opacity-50")}>
+                    <tr className={cn("border-t border-border border-l-4", ITEM_ROW_ACCENT[index % ITEM_ROW_ACCENT.length], !hasPending && "opacity-50")}>
                       <td className="px-3 py-2 text-sm font-medium">{row.description}</td>
                       <td className="px-3 py-2 text-sm font-mono">{row.drawing_number || "—"}</td>
                       <td className="px-3 py-2 text-right text-sm font-mono tabular-nums">
