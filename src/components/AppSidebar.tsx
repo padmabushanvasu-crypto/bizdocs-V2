@@ -11,7 +11,6 @@ import {
   Package2,
   Receipt,
   Settings,
-  BarChart2,
   BarChart3,
   AlertTriangle,
   Star,
@@ -178,43 +177,43 @@ const ALL_SEARCH_ITEMS: { title: string; url: string }[] = [
 
 // ── Group definitions ─────────────────────────────────────────────────────────
 
-const STORAGE_KEY = "bizdocs_sidebar_state_v2";
+const STORAGE_KEY = "bizdocs_sidebar_state_v3";
 const RAIL_MODE_KEY = "bizdocs_sidebar_mode";
 
 const GROUP_PATHS: Record<string, string[]> = {
-  "START HERE":         ["/"],
-  "PROCUREMENT":        ["/purchase-orders", "/grn", "/follow-up-tracker", "/vendor-scorecards"],
-  "INWARD & RECEIVING": ["/storekeeper-queue", "/ready-to-move", "/dc-grn"],
-  "PRODUCTION":         ["/job-works", "/delivery-challans", "/wip-register", "/sub-assembly-work-orders", "/finished-good-work-orders"],
-  "STORE":              ["/storekeeper", "/stock-register", "/inventory-ledger", "/store-locator", "/physical-count", "/consumables", "/scrap-register"],
-  "DISPATCH & QUALITY": ["/ready-to-dispatch", "/dispatch-records", "/serial-numbers", "/fat-certificates"],
-  "REPORTS":            ["/reorder-intelligence", "/gst-reports"],
-  "MASTER DATA":        ["/parties", "/items", "/bill-of-materials", "/jig-master", "/opening-stock", "/assets-register", "/settings"],
+  "DASHBOARD":             ["/"],
+  "PROCUREMENT":           ["/purchase-orders", "/delivery-challans", "/follow-up-tracker", "/vendor-scorecards", "/parties", "/reorder-intelligence"],
+  "INWARD & QC":           ["/grn", "/storekeeper-queue", "/ready-to-move", "/dc-grn"],
+  "PRODUCTION & JOB WORK": ["/job-works", "/wip-register", "/sub-assembly-work-orders", "/finished-good-work-orders"],
+  "INVENTORY & STORES":    ["/stock-register", "/inventory-ledger", "/opening-stock", "/storekeeper", "/store-locator", "/physical-count", "/consumables", "/scrap-register"],
+  "DISPATCH":              ["/ready-to-dispatch", "/dispatch-records", "/serial-numbers", "/fat-certificates"],
+  "FINANCE & COMPLIANCE":  ["/gst-reports"],
+  "MASTERS & SETUP":       ["/items", "/bill-of-materials", "/jig-master", "/assets-register", "/settings"],
 };
 
 const DEFAULTS: Record<string, boolean> = {
-  "START HERE":         true,
-  "PROCUREMENT":        false,
-  "INWARD & RECEIVING": false,
-  "PRODUCTION":         false,
-  "STORE":              false,
-  "DISPATCH & QUALITY": false,
-  "REPORTS":            false,
-  "MASTER DATA":        false,
+  "DASHBOARD":             true,
+  "PROCUREMENT":           false,
+  "INWARD & QC":           false,
+  "PRODUCTION & JOB WORK": false,
+  "INVENTORY & STORES":    false,
+  "DISPATCH":              false,
+  "FINANCE & COMPLIANCE":  false,
+  "MASTERS & SETUP":       false,
 };
 
 const GROUP_ICONS: Record<string, React.ComponentType<any>> = {
-  "START HERE":         LayoutDashboard,
-  "PROCUREMENT":        ShoppingCart,
-  "INWARD & RECEIVING": PackageCheck,
-  "PRODUCTION":         Layers,
-  "STORE":              Package,
-  "DISPATCH & QUALITY": Truck,
-  "REPORTS":            BarChart2,
-  "MASTER DATA":        GitFork,
+  "DASHBOARD":             LayoutDashboard,
+  "PROCUREMENT":           ShoppingCart,
+  "INWARD & QC":           PackageCheck,
+  "PRODUCTION & JOB WORK": Layers,
+  "INVENTORY & STORES":    Package,
+  "DISPATCH":              Truck,
+  "FINANCE & COMPLIANCE":  Receipt,
+  "MASTERS & SETUP":       Settings,
 };
 
-const ALL_GROUP_NAMES = ["START HERE", "PROCUREMENT", "INWARD & RECEIVING", "PRODUCTION", "STORE", "DISPATCH & QUALITY", "REPORTS", "MASTER DATA"];
+const ALL_GROUP_NAMES = ["DASHBOARD", "PROCUREMENT", "INWARD & QC", "PRODUCTION & JOB WORK", "INVENTORY & STORES", "DISPATCH", "FINANCE & COMPLIANCE", "MASTERS & SETUP"];
 
 function loadGroupState(): Record<string, boolean> {
   try {
@@ -351,14 +350,14 @@ export function AppSidebar() {
   // Derived from the per-item allowedRoles arrays defined on each nav item below.
   // admin and finance see everything; other roles are checked explicitly.
   const GROUP_ROLE_MAP: Record<string, AppRole[]> = {
-    'START HERE':         ['purchase_team', 'inward_team', 'qc_team', 'storekeeper', 'assembly_team'],
-    'PROCUREMENT':        ['purchase_team', 'inward_team', 'qc_team'],
-    'INWARD & RECEIVING': ['purchase_team', 'inward_team', 'qc_team', 'storekeeper'],
-    'PRODUCTION':         ['purchase_team', 'inward_team', 'qc_team', 'assembly_team'],
-    'STORE':              ['purchase_team', 'inward_team', 'qc_team', 'storekeeper', 'assembly_team'],
-    'DISPATCH & QUALITY': ['purchase_team', 'qc_team', 'assembly_team'],
-    'REPORTS':            ['purchase_team', 'qc_team', 'assembly_team'],
-    'MASTER DATA':        ['purchase_team', 'inward_team', 'qc_team', 'storekeeper', 'assembly_team'],
+    'DASHBOARD':             ['purchase_team', 'inward_team', 'qc_team', 'storekeeper', 'assembly_team'],
+    'PROCUREMENT':           ['purchase_team', 'inward_team', 'assembly_team'],
+    'INWARD & QC':           ['purchase_team', 'inward_team', 'qc_team', 'storekeeper'],
+    'PRODUCTION & JOB WORK': ['inward_team', 'qc_team', 'assembly_team'],
+    'INVENTORY & STORES':    ['purchase_team', 'inward_team', 'qc_team', 'storekeeper', 'assembly_team'],
+    'DISPATCH':              ['purchase_team', 'qc_team', 'assembly_team'],
+    'FINANCE & COMPLIANCE':  [],
+    'MASTERS & SETUP':       ['purchase_team', 'inward_team', 'qc_team', 'storekeeper', 'assembly_team'],
   };
 
   const canSeeGroup = (groupName: string): boolean => {
@@ -730,11 +729,13 @@ export function AppSidebar() {
     companySettingsData.company_name === "My Company";
 
   // Nav arrays
-  const startHereNav: NavItem[] = [
+  // ── Group 1: Dashboard ──
+  const dashboardNav: NavItem[] = [
     { title: "Dashboard", url: "/", icon: LayoutDashboard },
     // Dashboard is visible to all roles — no allowedRoles restriction
   ];
 
+  // ── Group 2: Procurement — POs, Vendors/Parties, reorder triggers ──
   const procurementNav: NavItem[] = [
     {
       title: "Purchase Orders",
@@ -749,12 +750,20 @@ export function AppSidebar() {
       allowedRoles: ['admin', 'finance', 'purchase_team'],
     },
     {
-      title: "GRN",
-      url: "/grn",
-      icon: PackageCheck,
-      badge: grnQCCount > 0 ? grnQCCount : undefined,
-      badgeColor: "red" as const,
-      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'qc_team'],
+      title: "DC / Job Work Order",
+      url: "/delivery-challans",
+      icon: Truck,
+      badge: (currentRole === 'admin' || currentRole === 'finance' || currentRole === 'purchase_team')
+        ? (pendingDCApprovalCount > 0 ? pendingDCApprovalCount : undefined)
+        : currentRole === 'inward_team'
+        ? (unreadDCRejectionCount > 0 ? unreadDCRejectionCount : openDCCount > 0 ? openDCCount : undefined)
+        : (openDCCount > 0 ? openDCCount : undefined),
+      badgeColor: (currentRole === 'admin' || currentRole === 'finance' || currentRole === 'purchase_team')
+        ? ("amber" as const)
+        : currentRole === 'inward_team' && unreadDCRejectionCount > 0
+        ? ("red" as const)
+        : ("amber" as const),
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'assembly_team'],
     },
     {
       title: "Follow-Up Tracker",
@@ -768,9 +777,31 @@ export function AppSidebar() {
       icon: Star,
       allowedRoles: ['admin', 'finance', 'purchase_team'],
     },
+    {
+      title: "Parties",
+      url: "/parties",
+      icon: Users,
+      allowedRoles: ['admin', 'finance', 'purchase_team'],
+    },
+    {
+      title: "Reorder Alerts",
+      url: "/reorder-intelligence",
+      icon: TrendingDown,
+      badge: reorderCritical > 0 ? reorderCritical : undefined,
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'assembly_team'],
+    },
   ];
 
-  const inwardReceivingNav: NavItem[] = [
+  // ── Group 3: Inward & QC ──
+  const inwardQCNav: NavItem[] = [
+    {
+      title: "GRN",
+      url: "/grn",
+      icon: PackageCheck,
+      badge: grnQCCount > 0 ? grnQCCount : undefined,
+      badgeColor: "red" as const,
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'qc_team'],
+    },
     {
       title: "Inward Receipt Queue",
       url: "/storekeeper-queue",
@@ -797,6 +828,7 @@ export function AppSidebar() {
     },
   ];
 
+  // ── Group 4: Production & Job Work — Job Cards, Assembly Orders, Job-work DCs ──
   const productionNav: NavItem[] = [
     {
       title: "Job Cards",
@@ -805,22 +837,6 @@ export function AppSidebar() {
       badge: jobCardCount > 0 ? jobCardCount : undefined,
       badgeColor: "amber" as const,
       allowedRoles: ['admin', 'finance', 'inward_team', 'qc_team', 'assembly_team'],
-    },
-    {
-      title: "DC / Job Work Order",
-      url: "/delivery-challans",
-      icon: Truck,
-      badge: (currentRole === 'admin' || currentRole === 'finance' || currentRole === 'purchase_team')
-        ? (pendingDCApprovalCount > 0 ? pendingDCApprovalCount : undefined)
-        : currentRole === 'inward_team'
-        ? (unreadDCRejectionCount > 0 ? unreadDCRejectionCount : openDCCount > 0 ? openDCCount : undefined)
-        : (openDCCount > 0 ? openDCCount : undefined),
-      badgeColor: (currentRole === 'admin' || currentRole === 'finance' || currentRole === 'purchase_team')
-        ? ("amber" as const)
-        : currentRole === 'inward_team' && unreadDCRejectionCount > 0
-        ? ("red" as const)
-        : ("amber" as const),
-      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'assembly_team'],
     },
     {
       title: "WIP Register",
@@ -846,7 +862,21 @@ export function AppSidebar() {
     },
   ];
 
-  const storeNav: NavItem[] = [
+  // ── Group 5: Inventory & Stores ──
+  const inventoryNav: NavItem[] = [
+    { title: "Stock Register", url: "/stock-register", icon: BarChart3 },
+    {
+      title: "Inventory Ledger",
+      url: "/inventory-ledger",
+      icon: BookOpen,
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'storekeeper'],
+    },
+    {
+      title: "Opening Stock",
+      url: "/opening-stock",
+      icon: Archive,
+      allowedRoles: ['admin', 'finance'],
+    },
     {
       title: "Assembly Issue Queue",
       url: "/storekeeper",
@@ -854,13 +884,6 @@ export function AppSidebar() {
       badge: pendingMIRCount > 0 ? pendingMIRCount : undefined,
       badgeColor: "amber" as const,
       allowedRoles: ['admin', 'finance', 'storekeeper'],
-    },
-    { title: "Stock Register", url: "/stock-register", icon: BarChart3 },
-    {
-      title: "Inventory Ledger",
-      url: "/inventory-ledger",
-      icon: BookOpen,
-      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'storekeeper'],
     },
     {
       title: "Store Locator",
@@ -888,7 +911,8 @@ export function AppSidebar() {
     },
   ];
 
-  const dispatchQualityNav: NavItem[] = [
+  // ── Group 6: Dispatch — Outward DCs, Invoices ──
+  const dispatchNav: NavItem[] = [
     {
       title: "Ready to Dispatch",
       url: "/ready-to-dispatch",
@@ -919,14 +943,8 @@ export function AppSidebar() {
     },
   ];
 
-  const reportsNav: NavItem[] = [
-    {
-      title: "Reorder Alerts",
-      url: "/reorder-intelligence",
-      icon: TrendingDown,
-      badge: reorderCritical > 0 ? reorderCritical : undefined,
-      allowedRoles: ['admin', 'finance', 'purchase_team', 'assembly_team'],
-    },
+  // ── Group 7: Finance & Compliance — Receipts, GST ──
+  const financeNav: NavItem[] = [
     {
       title: "GST Reports",
       url: "/gst-reports",
@@ -935,14 +953,9 @@ export function AppSidebar() {
     },
   ];
 
-  const masterDataNav: NavItem[] = [
+  // ── Group 8: Masters & Setup — Items, BOM, Settings/Danger Zone ──
+  const mastersNav: NavItem[] = [
     { title: "Items", url: "/items", icon: Package },
-    {
-      title: "Parties",
-      url: "/parties",
-      icon: Users,
-      allowedRoles: ['admin', 'finance', 'purchase_team'],
-    },
     {
       title: "Bill of Materials",
       url: "/bill-of-materials",
@@ -954,12 +967,6 @@ export function AppSidebar() {
       url: "/jig-master",
       icon: Wrench,
       allowedRoles: ['admin', 'finance', 'assembly_team'],
-    },
-    {
-      title: "Opening Stock",
-      url: "/opening-stock",
-      icon: Archive,
-      allowedRoles: ['admin', 'finance'],
     },
     {
       title: "Assets Register",
@@ -979,27 +986,27 @@ export function AppSidebar() {
 
   // Group items map for rail flyout
   const GROUP_ITEMS_MAP: Record<string, NavItem[]> = {
-    "START HERE":         startHereNav,
-    "PROCUREMENT":        procurementNav,
-    "INWARD & RECEIVING": inwardReceivingNav,
-    "PRODUCTION":         productionNav,
-    "STORE":              storeNav,
-    "DISPATCH & QUALITY": dispatchQualityNav,
-    "REPORTS":            reportsNav,
-    "MASTER DATA":        masterDataNav,
+    "DASHBOARD":             dashboardNav,
+    "PROCUREMENT":           procurementNav,
+    "INWARD & QC":           inwardQCNav,
+    "PRODUCTION & JOB WORK": productionNav,
+    "INVENTORY & STORES":    inventoryNav,
+    "DISPATCH":              dispatchNav,
+    "FINANCE & COMPLIANCE":  financeNav,
+    "MASTERS & SETUP":       mastersNav,
   };
 
   // URLs the current role is allowed to navigate to (derived from filtered nav arrays)
   const allowedUrls = new Set<string>(
     [
-      ...filterByRole(startHereNav),
+      ...filterByRole(dashboardNav),
       ...filterByRole(procurementNav),
-      ...filterByRole(inwardReceivingNav),
+      ...filterByRole(inwardQCNav),
       ...filterByRole(productionNav),
-      ...filterByRole(storeNav),
-      ...filterByRole(dispatchQualityNav),
-      ...filterByRole(reportsNav),
-      ...filterByRole(masterDataNav),
+      ...filterByRole(inventoryNav),
+      ...filterByRole(dispatchNav),
+      ...filterByRole(financeNav),
+      ...filterByRole(mastersNav),
     ].map((item) => item.url)
   );
 
@@ -1192,13 +1199,13 @@ export function AppSidebar() {
           ) : (
             /* Full mode: collapsible nav groups */
             <div>
-              {canSeeGroup("START HERE") && (
+              {canSeeGroup("DASHBOARD") && (
                 <NavGroup
-                  label="START HERE"
-                  items={filterByRole(startHereNav)}
+                  label="DASHBOARD"
+                  items={filterByRole(dashboardNav)}
                   isActiveFn={isActive}
-                  open={groupOpen["START HERE"]}
-                  onToggle={() => toggleGroup("START HERE")}
+                  open={groupOpen["DASHBOARD"]}
+                  onToggle={() => toggleGroup("DASHBOARD")}
                 />
               )}
               {canSeeGroup("PROCUREMENT") && (
@@ -1210,58 +1217,58 @@ export function AppSidebar() {
                   onToggle={() => toggleGroup("PROCUREMENT")}
                 />
               )}
-              {canSeeGroup("INWARD & RECEIVING") && (
+              {canSeeGroup("INWARD & QC") && (
                 <NavGroup
-                  label="INWARD & RECEIVING"
-                  items={filterByRole(inwardReceivingNav)}
+                  label="INWARD & QC"
+                  items={filterByRole(inwardQCNav)}
                   isActiveFn={isActive}
-                  open={groupOpen["INWARD & RECEIVING"]}
-                  onToggle={() => toggleGroup("INWARD & RECEIVING")}
+                  open={groupOpen["INWARD & QC"]}
+                  onToggle={() => toggleGroup("INWARD & QC")}
                 />
               )}
-              {canSeeGroup("PRODUCTION") && (
+              {canSeeGroup("PRODUCTION & JOB WORK") && (
                 <NavGroup
-                  label="PRODUCTION"
+                  label="PRODUCTION & JOB WORK"
                   items={filterByRole(productionNav)}
                   isActiveFn={isActive}
-                  open={groupOpen["PRODUCTION"]}
-                  onToggle={() => toggleGroup("PRODUCTION")}
+                  open={groupOpen["PRODUCTION & JOB WORK"]}
+                  onToggle={() => toggleGroup("PRODUCTION & JOB WORK")}
                 />
               )}
-              {canSeeGroup("STORE") && (
+              {canSeeGroup("INVENTORY & STORES") && (
                 <NavGroup
-                  label="STORE"
-                  items={filterByRole(storeNav)}
+                  label="INVENTORY & STORES"
+                  items={filterByRole(inventoryNav)}
                   isActiveFn={isActive}
-                  open={groupOpen["STORE"]}
-                  onToggle={() => toggleGroup("STORE")}
+                  open={groupOpen["INVENTORY & STORES"]}
+                  onToggle={() => toggleGroup("INVENTORY & STORES")}
                 />
               )}
-              {canSeeGroup("DISPATCH & QUALITY") && (
+              {canSeeGroup("DISPATCH") && (
                 <NavGroup
-                  label="DISPATCH & QUALITY"
-                  items={filterByRole(dispatchQualityNav)}
+                  label="DISPATCH"
+                  items={filterByRole(dispatchNav)}
                   isActiveFn={isActive}
-                  open={groupOpen["DISPATCH & QUALITY"]}
-                  onToggle={() => toggleGroup("DISPATCH & QUALITY")}
+                  open={groupOpen["DISPATCH"]}
+                  onToggle={() => toggleGroup("DISPATCH")}
                 />
               )}
-              {canSeeGroup("REPORTS") && (
+              {canSeeGroup("FINANCE & COMPLIANCE") && (
                 <NavGroup
-                  label="REPORTS"
-                  items={filterByRole(reportsNav)}
+                  label="FINANCE & COMPLIANCE"
+                  items={filterByRole(financeNav)}
                   isActiveFn={isActive}
-                  open={groupOpen["REPORTS"]}
-                  onToggle={() => toggleGroup("REPORTS")}
+                  open={groupOpen["FINANCE & COMPLIANCE"]}
+                  onToggle={() => toggleGroup("FINANCE & COMPLIANCE")}
                 />
               )}
-              {canSeeGroup("MASTER DATA") && (
+              {canSeeGroup("MASTERS & SETUP") && (
                 <NavGroup
-                  label="MASTER DATA"
-                  items={filterByRole(masterDataNav)}
+                  label="MASTERS & SETUP"
+                  items={filterByRole(mastersNav)}
                   isActiveFn={isActive}
-                  open={groupOpen["MASTER DATA"]}
-                  onToggle={() => toggleGroup("MASTER DATA")}
+                  open={groupOpen["MASTERS & SETUP"]}
+                  onToggle={() => toggleGroup("MASTERS & SETUP")}
                 />
               )}
             </div>
