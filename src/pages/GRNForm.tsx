@@ -322,6 +322,9 @@ function GRNFormInner({ defaultGrnType }: Props) {
   const [driverContact, setDriverContact] = useState("");
   const [notes, setNotes] = useState("");
 
+  // Inward serial — manual entry; the DB trigger derives inward_fy from grn_date.
+  const [inwardSlNo, setInwardSlNo] = useState("");
+
   // Legacy fields (kept for backward compat)
   const [lrReference, setLrReference] = useState("");
   const [receivedBy, setReceivedBy] = useState("");
@@ -666,6 +669,12 @@ function GRNFormInner({ defaultGrnType }: Props) {
 
   const saveMutation = useMutation({
     mutationFn: async (status: string) => {
+      // Optional manual inward serial. Send null when blank/invalid; the DB
+      // trigger derives inward_fy from grn_date — never send inward_fy here.
+      const inwardSlNoParsed =
+        inwardSlNo.trim() !== "" && Number.isFinite(Number(inwardSlNo)) && Number(inwardSlNo) > 0
+          ? Math.trunc(Number(inwardSlNo))
+          : null;
       const grnData = {
         grn_number: grnNumber,
         grn_date: format(grnDate, "yyyy-MM-dd"),
@@ -685,6 +694,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
         driver_contact: driverContact || null,
         received_by: receivedBy || null,
         notes: notes || null,
+        inward_sl_no: inwardSlNoParsed,
         total_received: totals.totalReceiving,
         total_accepted: totals.totalReceiving,
         total_rejected: 0,
@@ -744,6 +754,20 @@ function GRNFormInner({ defaultGrnType }: Props) {
     },
     onError: (err: any) => {
       console.error("[GRNForm] save error:", err);
+      // Duplicate inward serial — unique violation on ux_grns_inward_serial.
+      const hitsInwardUnique =
+        err?.code === '23505' &&
+        (String(err?.message ?? '').includes('ux_grns_inward_serial') ||
+          String(err?.details ?? '').includes('ux_grns_inward_serial'));
+      if (hitsInwardUnique) {
+        const fy = grnDate.getFullYear() - (grnDate.getMonth() + 1 < 4 ? 1 : 0);
+        toast({
+          title: "Duplicate Inward Sl. No",
+          description: `Inward Sl. No ${inwardSlNo.trim()} already used in FY ${fy}`,
+          variant: "destructive",
+        });
+        return;
+      }
       toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });
@@ -1022,6 +1046,19 @@ function GRNFormInner({ defaultGrnType }: Props) {
                   <Calendar mode="single" selected={grnDate} onSelect={(d) => d && setGrnDate(d)} className="p-3 pointer-events-auto" />
                 </PopoverContent>
               </Popover>
+            </div>
+
+            <div>
+              <Label className="text-sm font-medium text-slate-700">Inward Sl. No</Label>
+              <Input
+                type="number"
+                min={1}
+                step={1}
+                value={inwardSlNo}
+                onChange={(e) => setInwardSlNo(e.target.value)}
+                className="mt-1 animate-inward-cue motion-reduce:animate-none"
+                placeholder="Optional — enter manually"
+              />
             </div>
 
             <div className="pt-2 border-t border-border">
