@@ -133,7 +133,7 @@ export interface GRN {
   qc_approved_by?: string | null;
   // Inward serial (per-company, per-FY) — assigned on receipt via RPC.
   inward_sl_no?: number | null;
-  inward_fy?: string | null;
+  inward_fy?: number | null;
 }
 
 export interface GrnInspectionLine {
@@ -340,6 +340,9 @@ export async function createGRN({ grn, lineItems }: CreateGRNData) {
     qc_prepared_by: grn.qc_prepared_by ?? null,
     qc_inspected_by: grn.qc_inspected_by ?? null,
     qc_approved_by: grn.qc_approved_by ?? null,
+    // Manual inward serial (optional). inward_fy is derived by the DB trigger —
+    // never sent from the client.
+    inward_sl_no: grn.inward_sl_no ?? null,
   } as any).select().single();
   if (error) {
     console.error("[GRN] create error:", error);
