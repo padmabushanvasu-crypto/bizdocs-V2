@@ -90,11 +90,29 @@ export default {
           from: { opacity: "0" },
           to: { opacity: "1" },
         },
+        // One-time attention cue: soft amber pulse that fades in then back to
+        // transparent, leaving the input at its normal resting style.
+        "inward-cue": {
+          "0%, 100%": {
+            backgroundColor: "rgba(251, 191, 36, 0)",
+            boxShadow: "0 0 0 0 rgba(251, 191, 36, 0)",
+          },
+          "20%": {
+            backgroundColor: "rgba(251, 191, 36, 0.16)",
+            boxShadow: "0 0 0 3px rgba(251, 191, 36, 0.22)",
+          },
+          "55%": {
+            backgroundColor: "rgba(251, 191, 36, 0.12)",
+            boxShadow: "0 0 0 3px rgba(251, 191, 36, 0.16)",
+          },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "fade-in": "fade-in 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+        // Plays once on mount (~3s), then reverts (no fill-mode).
+        "inward-cue": "inward-cue 3s ease-in-out 1",
       },
     },
   },

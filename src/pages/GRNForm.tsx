@@ -1056,7 +1056,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
                 step={1}
                 value={inwardSlNo}
                 onChange={(e) => setInwardSlNo(e.target.value)}
-                className="mt-1"
+                className="mt-1 animate-inward-cue motion-reduce:animate-none"
                 placeholder="Optional — enter manually"
               />
             </div>
