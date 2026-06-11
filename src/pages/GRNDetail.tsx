@@ -1529,6 +1529,7 @@ export default function GRNDetail() {
   const [s1InvoiceNumber, setS1InvoiceNumber] = useState("");
   const [s1InvoiceDate,   setS1InvoiceDate]   = useState("");
   const [inwardSlNo,      setInwardSlNo]      = useState("");
+  const [s1AcceptanceBasis, setS1AcceptanceBasis] = useState<'original' | 'alt'>('original');
   const [s1Notes,         setS1Notes]         = useState("");
   const [s1Editing,       setS1Editing]       = useState(false);
   const [s2Editing,       setS2Editing]       = useState(false);
@@ -1681,6 +1682,7 @@ export default function GRNDetail() {
     setS1InvoiceNumber(g.vendor_invoice_number ?? "");
     setS1InvoiceDate(g.vendor_invoice_date ?? "");
     setInwardSlNo(g.inward_sl_no != null ? String(g.inward_sl_no) : "");
+    setS1AcceptanceBasis((g.acceptance_basis ?? 'original') as 'original' | 'alt');
     setS2InspectedBy(g.quality_completed_by ?? "");
     setS2ApprovedBy(g.qc_approved_by ?? "");
     setS2Remarks(g.quality_remarks ?? "");
@@ -1773,6 +1775,7 @@ export default function GRNDetail() {
           s1InvoiceNumber?: string;
           s1InvoiceDate?: string;
           inwardSlNo?: string;
+          s1AcceptanceBasis?: 'original' | 'alt';
           s1Notes?: string;
           jigReturnConfirmed?: string[];
         };
@@ -1796,6 +1799,7 @@ export default function GRNDetail() {
         if (typeof s1.s1InvoiceNumber === "string") setS1InvoiceNumber(s1.s1InvoiceNumber);
         if (typeof s1.s1InvoiceDate === "string") setS1InvoiceDate(s1.s1InvoiceDate);
         if (typeof s1.inwardSlNo === "string") setInwardSlNo(s1.inwardSlNo);
+        if (s1.s1AcceptanceBasis === 'original' || s1.s1AcceptanceBasis === 'alt') setS1AcceptanceBasis(s1.s1AcceptanceBasis);
         if (typeof s1.s1Notes === "string") setS1Notes(s1.s1Notes);
         if (Array.isArray(s1.jigReturnConfirmed)) {
           setJigReturnConfirmed(new Set(s1.jigReturnConfirmed));
@@ -1836,6 +1840,7 @@ export default function GRNDetail() {
               s1InvoiceNumber,
               s1InvoiceDate,
               inwardSlNo,
+              s1AcceptanceBasis,
               s1Notes,
               jigReturnConfirmed: [...jigReturnConfirmed],
             },
@@ -1857,7 +1862,7 @@ export default function GRNDetail() {
     return () => clearTimeout(t);
   }, [
     id, grn,
-    s1Lines, s1VerifiedBy, s1Date, s1InvoiceNumber, s1InvoiceDate, inwardSlNo, s1Notes,
+    s1Lines, s1VerifiedBy, s1Date, s1InvoiceNumber, s1InvoiceDate, inwardSlNo, s1AcceptanceBasis, s1Notes,
     jigReturnConfirmed,
     qcRows, ncSummaries, s2InspectedBy, s2ApprovedBy, s2Date, s2Remarks,
     scrapReturned, scrapNotes, finalGrnPerLine,
@@ -1946,7 +1951,7 @@ export default function GRNDetail() {
         inwardSlNo.trim() !== "" && Number.isFinite(Number(inwardSlNo)) && Number(inwardSlNo) > 0
           ? Math.trunc(Number(inwardSlNo))
           : null;
-      await saveQuantitativeStage(id!, lines, s1VerifiedBy, s1InvoiceNumber || null, s1InvoiceDate || null, overrideStage, jigReturnConfirmed, inwardSlNoParsed);
+      await saveQuantitativeStage(id!, lines, s1VerifiedBy, s1InvoiceNumber || null, s1InvoiceDate || null, overrideStage, jigReturnConfirmed, inwardSlNoParsed, s1AcceptanceBasis);
 
       // Save scrap data for DC-GRNs
       await saveGRNScrapItems(id!, scrapReturned, scrapNotes || null,
@@ -2763,6 +2768,25 @@ export default function GRNDetail() {
                     className="mt-1 text-sm"
                     placeholder="Optional"
                   />
+                </div>
+                <div>
+                  <Label className="text-xs font-medium text-slate-600">Acceptance Basis</Label>
+                  <div className="flex gap-2 mt-1">
+                    {(['original', 'alt'] as const).map((b) => (
+                      <button
+                        key={b}
+                        type="button"
+                        onClick={() => setS1AcceptanceBasis(b)}
+                        className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+                          s1AcceptanceBasis === b
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-background text-foreground border-border hover:bg-muted"
+                        }`}
+                      >
+                        {b === 'original' ? 'Original' : 'Alternate'}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
               <div>

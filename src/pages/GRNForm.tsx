@@ -305,6 +305,8 @@ function GRNFormInner({ defaultGrnType }: Props) {
   const [grnNumber, setGrnNumber] = useState("");
   const [grnDate, setGrnDate] = useState<Date>(new Date());
   const [grnType, setGrnType] = useState<GrnType>(defaultGrnType ?? (preselectedDCId ? 'dc_grn' : 'po_grn'));
+  // Per-GRN acceptance basis — drives order reconciliation (pending/match).
+  const [acceptanceBasis, setAcceptanceBasis] = useState<'original' | 'alt'>('original');
 
   // PO-GRN
   const [selectedPO, setSelectedPO] = useState<any>(null);
@@ -399,6 +401,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
       setGrnNumber(existingGrn.grn_number);
       setGrnDate(new Date(existingGrn.grn_date));
       setGrnType((g.grn_type ?? 'po_grn') as GrnType);
+      setAcceptanceBasis((g.acceptance_basis ?? 'original') as 'original' | 'alt');
       setVehicleNumber(existingGrn.vehicle_number ?? '');
       setDriverName(g.driver_name ?? '');
       setDriverContact(g.driver_contact ?? '');
@@ -679,6 +682,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
         grn_number: grnNumber,
         grn_date: format(grnDate, "yyyy-MM-dd"),
         grn_type: grnType,
+        acceptance_basis: acceptanceBasis,
         po_id: selectedPO?.id || null,
         po_number: selectedPO?.po_number || null,
         linked_dc_id: selectedDC?.id || null,
@@ -891,6 +895,30 @@ function GRNFormInner({ defaultGrnType }: Props) {
                   )}
                 >
                   {t === 'po_grn' ? 'PO-GRN' : 'DC-GRN'}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Acceptance Basis — which measure drives order reconciliation */}
+        {!isExistingGrn && (
+          <div className="space-y-2">
+            <Label className="text-sm font-medium text-slate-700">Acceptance Basis</Label>
+            <div className="flex gap-2">
+              {(['original', 'alt'] as const).map((b) => (
+                <button
+                  key={b}
+                  type="button"
+                  onClick={() => setAcceptanceBasis(b)}
+                  className={cn(
+                    "px-4 py-2 rounded-lg text-sm font-medium border transition-colors",
+                    acceptanceBasis === b
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-background text-foreground border-border hover:bg-muted"
+                  )}
+                >
+                  {b === 'original' ? 'Original' : 'Alternate'}
                 </button>
               ))}
             </div>

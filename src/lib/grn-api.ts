@@ -110,6 +110,8 @@ export interface GRN {
   qc_measurements?: GRNQCMeasurement[];
   // Phase 14 new fields
   grn_type?: 'po_grn' | 'dc_grn';
+  // Per-GRN acceptance basis: which measure drives order reconciliation.
+  acceptance_basis?: 'original' | 'alt';
   driver_name?: string | null;
   driver_contact?: string | null;
   linked_dc_id?: string | null;
@@ -343,6 +345,8 @@ export async function createGRN({ grn, lineItems }: CreateGRNData) {
     // Manual inward serial (optional). inward_fy is derived by the DB trigger —
     // never sent from the client.
     inward_sl_no: grn.inward_sl_no ?? null,
+    // Per-GRN acceptance basis (defaults to 'original' if unset).
+    acceptance_basis: grn.acceptance_basis ?? 'original',
   } as any).select().single();
   if (error) {
     console.error("[GRN] create error:", error);
@@ -1063,6 +1067,7 @@ export async function saveQuantitativeStage(
   overrideStage?: string | null,
   jigReturnConfirmed?: Set<string>,
   inwardSlNo?: number | null,
+  acceptanceBasis?: string | null,
 ): Promise<void> {
   const now = new Date().toISOString();
   // Update each line
@@ -1127,6 +1132,8 @@ export async function saveQuantitativeStage(
   // Manual inward serial (optional). inward_fy is derived by the DB trigger on
   // this UPDATE — never set it from the client.
   if (inwardSlNo !== undefined) updateData.inward_sl_no = inwardSlNo;
+  // Per-GRN acceptance basis (editable at Stage 1).
+  if (acceptanceBasis !== undefined && acceptanceBasis !== null) updateData.acceptance_basis = acceptanceBasis;
 
   if (overrideStage) {
     // Caller explicitly controls next stage (e.g. pending_finance_approval)
