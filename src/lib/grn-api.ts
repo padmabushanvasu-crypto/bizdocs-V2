@@ -1077,7 +1077,6 @@ export async function saveQuantitativeStage(
   overrideStage?: string | null,
   jigReturnConfirmed?: Set<string>,
   inwardSlNo?: number | null,
-  acceptanceBasis?: string | null,
 ): Promise<void> {
   const now = new Date().toISOString();
   // Update each line
@@ -1142,8 +1141,6 @@ export async function saveQuantitativeStage(
   // Manual inward serial (optional). inward_fy is derived by the DB trigger on
   // this UPDATE — never set it from the client.
   if (inwardSlNo !== undefined) updateData.inward_sl_no = inwardSlNo;
-  // Per-GRN acceptance basis (editable at Stage 1).
-  if (acceptanceBasis !== undefined && acceptanceBasis !== null) updateData.acceptance_basis = acceptanceBasis;
 
   if (overrideStage) {
     // Caller explicitly controls next stage (e.g. pending_finance_approval)
