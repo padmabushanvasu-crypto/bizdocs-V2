@@ -36,6 +36,11 @@ export interface GRNLineItem {
   supplier_ref?: string | null;
   // Phase 14 new fields
   ordered_qty?: number;
+  // Second-measure ordered qty/unit (alt basis), carried from PO/DC line.
+  ordered_qty_2?: number | null;
+  unit_2?: string | null;
+  // Alt-basis receiving (routed here when basis='alt'); primary stays 0.
+  received_now_2?: number | null;
   previously_received_qty?: number;
   received_now?: number;
   item_identity_match?: boolean;
@@ -110,6 +115,8 @@ export interface GRN {
   qc_measurements?: GRNQCMeasurement[];
   // Phase 14 new fields
   grn_type?: 'po_grn' | 'dc_grn';
+  // Per-GRN acceptance basis: which measure drives order reconciliation.
+  acceptance_basis?: 'original' | 'alt';
   driver_name?: string | null;
   driver_contact?: string | null;
   linked_dc_id?: string | null;
@@ -343,6 +350,8 @@ export async function createGRN({ grn, lineItems }: CreateGRNData) {
     // Manual inward serial (optional). inward_fy is derived by the DB trigger —
     // never sent from the client.
     inward_sl_no: grn.inward_sl_no ?? null,
+    // Per-GRN acceptance basis (defaults to 'original' if unset).
+    acceptance_basis: grn.acceptance_basis ?? 'original',
   } as any).select().single();
   if (error) {
     console.error("[GRN] create error:", error);
@@ -360,6 +369,11 @@ export async function createGRN({ grn, lineItems }: CreateGRNData) {
       po_quantity: item.po_quantity, previously_received: item.previously_received,
       previously_received_qty: item.previously_received || 0,
       ordered_qty: item.po_quantity || 0,
+      // Alt-basis ordered qty/unit — mirror quick-create (createGrnFromPO/DC).
+      ordered_qty_2: item.ordered_qty_2 ?? null,
+      unit_2: item.unit_2 ?? null,
+      // Alt-basis receiving routes here; primary receiving_now/accepted stay 0.
+      received_now_2: item.received_now_2 ?? null,
       pending_quantity: item.pending_quantity, receiving_now: item.receiving_now,
       accepted_quantity: item.accepted_quantity, rejected_quantity: item.rejected_quantity,
       rejection_reason: item.rejection_reason || null, remarks: item.remarks || null,
@@ -1700,6 +1714,11 @@ export async function saveQualityStage(
 export interface ReceiptSummaryEntry {
   received: number;
   accepted: number;
+  // Alt-measure prior received (sum of prior GRNs' received_now_2), for
+  // basis='alt' multi-GRN reconciliation. Additive — primary fields unchanged.
+  received_2: number;
+  // Alt-measure prior accepted (sum of prior GRNs' accepted_qty_2). Additive.
+  accepted_2: number;
 }
 
 /**
@@ -1725,7 +1744,7 @@ export async function fetchDCReceiptSummary(
   const grnIds = (grns as any[]).map((g: any) => g.id);
   const { data: items } = await (supabase as any)
     .from('grn_line_items')
-    .select('dc_line_item_id, received_qty, received_now, receiving_now, accepted_qty, accepted_quantity')
+    .select('dc_line_item_id, received_qty, received_now, receiving_now, accepted_qty, accepted_quantity, received_now_2, accepted_qty_2')
     .in('grn_id', grnIds);
   const summary: Record<string, ReceiptSummaryEntry> = {};
   for (const item of (items ?? []) as any[]) {
@@ -1733,9 +1752,13 @@ export async function fetchDCReceiptSummary(
     if (!key) continue;
     const received = Number(item.received_qty ?? item.received_now ?? item.receiving_now ?? 0) || 0;
     const accepted = Number(item.accepted_qty ?? item.accepted_quantity ?? 0) || 0;
-    if (!summary[key]) summary[key] = { received: 0, accepted: 0 };
+    const received_2 = Number(item.received_now_2 ?? 0) || 0;
+    const accepted_2 = Number(item.accepted_qty_2 ?? 0) || 0;
+    if (!summary[key]) summary[key] = { received: 0, accepted: 0, received_2: 0, accepted_2: 0 };
     summary[key].received += received;
     summary[key].accepted += accepted;
+    summary[key].received_2 += received_2;
+    summary[key].accepted_2 += accepted_2;
   }
   return summary;
 }
@@ -1760,7 +1783,7 @@ export async function fetchPOReceiptSummary(
   const grnIds = (grns as any[]).map((g: any) => g.id);
   const { data: items } = await (supabase as any)
     .from('grn_line_items')
-    .select('po_line_item_id, received_qty, received_now, receiving_now, accepted_qty, accepted_quantity')
+    .select('po_line_item_id, received_qty, received_now, receiving_now, accepted_qty, accepted_quantity, received_now_2, accepted_qty_2')
     .in('grn_id', grnIds);
   const summary: Record<string, ReceiptSummaryEntry> = {};
   for (const item of (items ?? []) as any[]) {
@@ -1768,9 +1791,13 @@ export async function fetchPOReceiptSummary(
     if (!key) continue;
     const received = Number(item.received_qty ?? item.received_now ?? item.receiving_now ?? 0) || 0;
     const accepted = Number(item.accepted_qty ?? item.accepted_quantity ?? 0) || 0;
-    if (!summary[key]) summary[key] = { received: 0, accepted: 0 };
+    const received_2 = Number(item.received_now_2 ?? 0) || 0;
+    const accepted_2 = Number(item.accepted_qty_2 ?? 0) || 0;
+    if (!summary[key]) summary[key] = { received: 0, accepted: 0, received_2: 0, accepted_2: 0 };
     summary[key].received += received;
     summary[key].accepted += accepted;
+    summary[key].received_2 += received_2;
+    summary[key].accepted_2 += accepted_2;
   }
   return summary;
 }

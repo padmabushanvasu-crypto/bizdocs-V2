@@ -128,6 +128,8 @@ interface S1Line {
   // snapshot lives in pending_quantity. prev_accepted is Stage-2 sum.
   prev_received_live: number;
   prev_accepted_live: number;
+  // Alt-measure prior received (summary.received_2), for basis='alt' pending.
+  prev_received_2: number;
 }
 
 // Normalise jigs_sent which may be a string or a JSON array (JSONB column)
@@ -531,6 +533,11 @@ function Stage1Table({
                           />
                           {altUnit && <span className="text-muted-foreground">{altUnit}</span>}
                         </label>
+                        <div className="text-slate-600 dark:text-slate-300">
+                          <span className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 dark:text-slate-400 mr-2">Alt. Qty Pending</span>
+                          <span className="font-mono text-slate-800 dark:text-slate-100">{altOrdered - (line.prev_received_2 ?? 0) - (line.received_now_2 ?? 0)}</span>
+                          {altUnit && <span className="text-muted-foreground ml-1">{altUnit}</span>}
+                        </div>
                       </div>
                     </td>
                   </tr>
@@ -1615,6 +1622,7 @@ export default function GRNDetail() {
           // Snapshots; overwritten by the refetch effect below.
           prev_received_live:   a.previously_received_qty ?? a.previously_received ?? 0,
           prev_accepted_live:   0,
+          prev_received_2:      0,
         };
       })
     );
@@ -1713,7 +1721,7 @@ export default function GRNDetail() {
             if (!key) return l;
             const e = summary[key];
             if (!e) return l;
-            return { ...l, prev_received_live: e.received, prev_accepted_live: e.accepted };
+            return { ...l, prev_received_live: e.received, prev_accepted_live: e.accepted, prev_received_2: e.received_2 };
           }));
         } else if ((g.grn_type === 'dc_grn') && g.linked_dc_id) {
           const summary = await fetchDCReceiptSummary(g.linked_dc_id, id);
@@ -1723,7 +1731,7 @@ export default function GRNDetail() {
             if (!key) return l;
             const e = summary[key];
             if (!e) return l;
-            return { ...l, prev_received_live: e.received, prev_accepted_live: e.accepted };
+            return { ...l, prev_received_live: e.received, prev_accepted_live: e.accepted, prev_received_2: e.received_2 };
           }));
         }
       } catch {
