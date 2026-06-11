@@ -672,8 +672,16 @@ function GRNFormInner({ defaultGrnType }: Props) {
     setLineItems((items) =>
       items.map((line) => {
         if (line.s1_received_now > 0 || (line.s1_rejected_now ?? 0) > 0) return line;
-        const orderedQty = (line as any).ordered_qty ?? line.po_quantity ?? 0;
-        const prevReceived = (line as any).previously_received_qty ?? line.previously_received ?? 0;
+        // Match the displayed measure: Alternate lines (with an alt ordered qty)
+        // fill the ALT pending in unit_2; the single Receiving Now input is then
+        // routed to received_now_2 on save. Original / null-alt → primary.
+        const useAlt = acceptanceBasis === 'alt' && (line.ordered_qty_2 ?? null) != null;
+        const orderedQty = useAlt
+          ? Number(line.ordered_qty_2 ?? 0)
+          : ((line as any).ordered_qty ?? line.po_quantity ?? 0);
+        const prevReceived = useAlt
+          ? (line.prev_received_2 ?? 0)
+          : ((line as any).previously_received_qty ?? line.previously_received ?? 0);
         const pending = Math.max(0, orderedQty - prevReceived);
         if (pending <= 0) return line;
         return { ...line, s1_received_now: pending };
