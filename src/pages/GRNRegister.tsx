@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { MetricCard } from "@/components/MetricCard";
+import { formatQty } from "@/lib/utils";
 import { fetchGRNs, fetchGRNStats, softDeleteGRN, fetchPendingQCGRNs, fetchAllGRNsForExport, type GRNFilters, type GrnDeleteStockAction } from "@/lib/grn-api";
 import { logAudit } from "@/lib/audit-api";
 import { exportGRNReport } from "@/lib/export-utils";
@@ -250,8 +251,8 @@ function GRNRegisterInner() {
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <MetricCard title="GRNs This Month" value={String(stats?.totalThisMonth ?? 0)} icon={PackageCheck} />
-        <MetricCard title="Items Accepted" value={String(stats?.totalAccepted ?? 0)} icon={Package} />
-        <MetricCard title="Non-Conforming Items" value={String(stats?.totalRejected ?? 0)} icon={AlertTriangle} className={stats?.totalRejected ? "border-destructive/30" : ""} />
+        <MetricCard title="Items Accepted" value={formatQty(stats?.totalAccepted ?? 0)} icon={Package} />
+        <MetricCard title="Non-Conforming Items" value={formatQty(stats?.totalRejected ?? 0)} icon={AlertTriangle} className={stats?.totalRejected ? "border-destructive/30" : ""} />
         <MetricCard title="Awaiting QC" value={String(pendingQC.length)} icon={ClipboardCheck} className={pendingQC.length > 0 ? "border-amber-300 bg-amber-50/30" : ""} />
       </div>
 
