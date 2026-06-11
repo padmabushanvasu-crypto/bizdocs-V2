@@ -128,6 +128,8 @@ interface S1Line {
   // snapshot lives in pending_quantity. prev_accepted is Stage-2 sum.
   prev_received_live: number;
   prev_accepted_live: number;
+  // Alt-measure prior received (summary.received_2), for basis='alt' pending.
+  prev_received_2: number;
 }
 
 // Normalise jigs_sent which may be a string or a JSON array (JSONB column)
@@ -255,6 +257,7 @@ function Stage1Table({
   overQtyIds = [],
   withinToleranceIds = [],
   tolerancePct = 0,
+  acceptanceBasis = 'original',
 }: {
   lines: S1Line[];
   onChange: (idx: number, field: keyof S1Line, value: unknown) => void;
@@ -262,6 +265,7 @@ function Stage1Table({
   overQtyIds?: string[];
   withinToleranceIds?: string[];
   tolerancePct?: number;
+  acceptanceBasis?: 'original' | 'alt';
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200">
@@ -292,7 +296,13 @@ function Stage1Table({
             // Reactive Pending = Ordered − Prev Received − Receiving Now.
             // Allowed to go negative; over-receipt warning row surfaces it.
             // Rejected Now does NOT subtract — rejected units were physically received.
-            const pending = line.po_quantity - line.prev_received_live - line.received_qty;
+            // Basis-aware pending. 'alt' (only when this line has an alt ordered
+            // qty) reconciles the second measure; otherwise the existing primary
+            // math runs unchanged (decision B fallback for null alt-ordered lines).
+            const useAlt = acceptanceBasis === 'alt' && line.ordered_qty_2 != null;
+            const pending = useAlt
+              ? Number(line.ordered_qty_2 ?? 0) - (line.prev_received_2 ?? 0) - (line.received_now_2 ?? 0)
+              : line.po_quantity - line.prev_received_live - line.received_qty;
             const overReceipt = pending < 0;
             const overReceiptBy = overReceipt ? Math.abs(pending) : 0;
             const nonMatching = Math.max(0, line.received_qty - line.matching_units);
@@ -1616,6 +1626,7 @@ export default function GRNDetail() {
           // Snapshots; overwritten by the refetch effect below.
           prev_received_live:   a.previously_received_qty ?? a.previously_received ?? 0,
           prev_accepted_live:   0,
+          prev_received_2:      0,
         };
       })
     );
@@ -1715,7 +1726,7 @@ export default function GRNDetail() {
             if (!key) return l;
             const e = summary[key];
             if (!e) return l;
-            return { ...l, prev_received_live: e.received, prev_accepted_live: e.accepted };
+            return { ...l, prev_received_live: e.received, prev_accepted_live: e.accepted, prev_received_2: e.received_2 };
           }));
         } else if ((g.grn_type === 'dc_grn') && g.linked_dc_id) {
           const summary = await fetchDCReceiptSummary(g.linked_dc_id, id);
@@ -1725,7 +1736,7 @@ export default function GRNDetail() {
             if (!key) return l;
             const e = summary[key];
             if (!e) return l;
-            return { ...l, prev_received_live: e.received, prev_accepted_live: e.accepted };
+            return { ...l, prev_received_live: e.received, prev_accepted_live: e.accepted, prev_received_2: e.received_2 };
           }));
         }
       } catch {
@@ -2642,6 +2653,7 @@ export default function GRNDetail() {
               overQtyIds={overQtyLines.map(l => l.id)}
               withinToleranceIds={withinToleranceItems.map(t => t.line.id)}
               tolerancePct={tolerancePct}
+              acceptanceBasis={s1AcceptanceBasis}
             />
           ) : (
             <Stage1ReadOnly lines={s1Lines} isDcGrn={!!g.linked_dc_id} />
