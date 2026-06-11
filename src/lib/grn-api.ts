@@ -36,6 +36,9 @@ export interface GRNLineItem {
   supplier_ref?: string | null;
   // Phase 14 new fields
   ordered_qty?: number;
+  // Second-measure ordered qty/unit (alt basis), carried from PO/DC line.
+  ordered_qty_2?: number | null;
+  unit_2?: string | null;
   previously_received_qty?: number;
   received_now?: number;
   item_identity_match?: boolean;
@@ -364,6 +367,9 @@ export async function createGRN({ grn, lineItems }: CreateGRNData) {
       po_quantity: item.po_quantity, previously_received: item.previously_received,
       previously_received_qty: item.previously_received || 0,
       ordered_qty: item.po_quantity || 0,
+      // Alt-basis ordered qty/unit — mirror quick-create (createGrnFromPO/DC).
+      ordered_qty_2: item.ordered_qty_2 ?? null,
+      unit_2: item.unit_2 ?? null,
       pending_quantity: item.pending_quantity, receiving_now: item.receiving_now,
       accepted_quantity: item.accepted_quantity, rejected_quantity: item.rejected_quantity,
       rejection_reason: item.rejection_reason || null, remarks: item.remarks || null,
