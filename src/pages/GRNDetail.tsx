@@ -1192,6 +1192,7 @@ function GRNPrintView({
           <div>
             {grn.po_number && <div><strong>PO No.:</strong> {grn.po_number.replace("/-", "-")}</div>}
             {grn.vendor_invoice_number && <div><strong>Invoice No.:</strong> {grn.vendor_invoice_number}</div>}
+            {grn.inward_sl_no != null && <div><strong>Inward Sl. No.:</strong> {grn.inward_sl_no}</div>}
             {grn.vehicle_number && <div><strong>Vehicle No.:</strong> {grn.vehicle_number}</div>}
           </div>
         </div>
@@ -1527,6 +1528,7 @@ export default function GRNDetail() {
   const [s1Date,          setS1Date]          = useState(format(new Date(), "yyyy-MM-dd"));
   const [s1InvoiceNumber, setS1InvoiceNumber] = useState("");
   const [s1InvoiceDate,   setS1InvoiceDate]   = useState("");
+  const [inwardSlNo,      setInwardSlNo]      = useState("");
   const [s1Notes,         setS1Notes]         = useState("");
   const [s1Editing,       setS1Editing]       = useState(false);
   const [s2Editing,       setS2Editing]       = useState(false);
@@ -1678,6 +1680,7 @@ export default function GRNDetail() {
     setS1VerifiedBy(g.quantitative_completed_by ?? "");
     setS1InvoiceNumber(g.vendor_invoice_number ?? "");
     setS1InvoiceDate(g.vendor_invoice_date ?? "");
+    setInwardSlNo(g.inward_sl_no != null ? String(g.inward_sl_no) : "");
     setS2InspectedBy(g.quality_completed_by ?? "");
     setS2ApprovedBy(g.qc_approved_by ?? "");
     setS2Remarks(g.quality_remarks ?? "");
@@ -1769,6 +1772,7 @@ export default function GRNDetail() {
           s1Date?: string;
           s1InvoiceNumber?: string;
           s1InvoiceDate?: string;
+          inwardSlNo?: string;
           s1Notes?: string;
           jigReturnConfirmed?: string[];
         };
@@ -1791,6 +1795,7 @@ export default function GRNDetail() {
         if (typeof s1.s1Date === "string") setS1Date(s1.s1Date);
         if (typeof s1.s1InvoiceNumber === "string") setS1InvoiceNumber(s1.s1InvoiceNumber);
         if (typeof s1.s1InvoiceDate === "string") setS1InvoiceDate(s1.s1InvoiceDate);
+        if (typeof s1.inwardSlNo === "string") setInwardSlNo(s1.inwardSlNo);
         if (typeof s1.s1Notes === "string") setS1Notes(s1.s1Notes);
         if (Array.isArray(s1.jigReturnConfirmed)) {
           setJigReturnConfirmed(new Set(s1.jigReturnConfirmed));
@@ -1830,6 +1835,7 @@ export default function GRNDetail() {
               s1Date,
               s1InvoiceNumber,
               s1InvoiceDate,
+              inwardSlNo,
               s1Notes,
               jigReturnConfirmed: [...jigReturnConfirmed],
             },
@@ -1851,7 +1857,7 @@ export default function GRNDetail() {
     return () => clearTimeout(t);
   }, [
     id, grn,
-    s1Lines, s1VerifiedBy, s1Date, s1InvoiceNumber, s1InvoiceDate, s1Notes,
+    s1Lines, s1VerifiedBy, s1Date, s1InvoiceNumber, s1InvoiceDate, inwardSlNo, s1Notes,
     jigReturnConfirmed,
     qcRows, ncSummaries, s2InspectedBy, s2ApprovedBy, s2Date, s2Remarks,
     scrapReturned, scrapNotes, finalGrnPerLine,
@@ -1934,7 +1940,13 @@ export default function GRNDetail() {
       });
 
       const overrideStage = needsFinanceApproval ? "pending_finance_approval" : null;
-      await saveQuantitativeStage(id!, lines, s1VerifiedBy, s1InvoiceNumber || null, s1InvoiceDate || null, overrideStage, jigReturnConfirmed);
+      // Optional manual inward serial. Send null when blank/invalid; the DB
+      // trigger derives inward_fy from grn_date — never send inward_fy here.
+      const inwardSlNoParsed =
+        inwardSlNo.trim() !== "" && Number.isFinite(Number(inwardSlNo)) && Number(inwardSlNo) > 0
+          ? Math.trunc(Number(inwardSlNo))
+          : null;
+      await saveQuantitativeStage(id!, lines, s1VerifiedBy, s1InvoiceNumber || null, s1InvoiceDate || null, overrideStage, jigReturnConfirmed, inwardSlNoParsed);
 
       // Save scrap data for DC-GRNs
       await saveGRNScrapItems(id!, scrapReturned, scrapNotes || null,
@@ -1982,8 +1994,24 @@ export default function GRNDetail() {
         toast({ title: "Goods receipt recorded", description: "Ready for QC inspection." });
       }
     },
-    onError: (err: any) =>
-      toast({ title: "Error saving Stage 1", description: err.message, variant: "destructive" }),
+    onError: (err: any) => {
+      // Duplicate inward serial — unique violation on ux_grns_inward_serial.
+      const hitsInwardUnique =
+        err?.code === '23505' &&
+        (String(err?.message ?? '').includes('ux_grns_inward_serial') ||
+          String(err?.details ?? '').includes('ux_grns_inward_serial'));
+      if (hitsInwardUnique) {
+        const d = new Date(grn.grn_date);
+        const fy = d.getFullYear() - (d.getMonth() + 1 < 4 ? 1 : 0);
+        toast({
+          title: "Duplicate Inward Sl. No",
+          description: `Inward Sl. No ${inwardSlNo.trim()} already used in FY ${fy}`,
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({ title: "Error saving Stage 1", description: err.message, variant: "destructive" });
+    },
   });
 
   const s2Mutation = useMutation({
@@ -2382,6 +2410,9 @@ export default function GRNDetail() {
                   day: "2-digit", month: "short", year: "numeric",
                 })}
               </span>
+              {grn.inward_sl_no != null && (
+                <span>Inward Sl. No: {grn.inward_sl_no}</span>
+              )}
               {grn.po_number && (
                 <span>
                   PO:{" "}
@@ -2720,6 +2751,18 @@ export default function GRNDetail() {
                 <div>
                   <Label className="text-xs font-medium text-slate-600">Verification Date <span className="text-red-400">*</span></Label>
                   <Input type="date" value={s1Date} onChange={(e) => setS1Date(e.target.value)} className="mt-1 text-sm" />
+                </div>
+                <div>
+                  <Label className="text-xs font-medium text-slate-600">Inward Sl. No</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={inwardSlNo}
+                    onChange={(e) => setInwardSlNo(e.target.value)}
+                    className="mt-1 text-sm"
+                    placeholder="Optional"
+                  />
                 </div>
               </div>
               <div>

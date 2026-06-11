@@ -1062,6 +1062,7 @@ export async function saveQuantitativeStage(
   vendorInvoiceDate?: string | null,
   overrideStage?: string | null,
   jigReturnConfirmed?: Set<string>,
+  inwardSlNo?: number | null,
 ): Promise<void> {
   const now = new Date().toISOString();
   // Update each line
@@ -1123,6 +1124,9 @@ export async function saveQuantitativeStage(
   };
   if (vendorInvoiceNumber !== undefined) updateData.vendor_invoice_number = vendorInvoiceNumber;
   if (vendorInvoiceDate !== undefined) updateData.vendor_invoice_date = vendorInvoiceDate || null;
+  // Manual inward serial (optional). inward_fy is derived by the DB trigger on
+  // this UPDATE — never set it from the client.
+  if (inwardSlNo !== undefined) updateData.inward_sl_no = inwardSlNo;
 
   if (overrideStage) {
     // Caller explicitly controls next stage (e.g. pending_finance_approval)
