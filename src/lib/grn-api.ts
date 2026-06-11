@@ -1720,6 +1720,8 @@ export interface ReceiptSummaryEntry {
   // Alt-measure prior received (sum of prior GRNs' received_now_2), for
   // basis='alt' multi-GRN reconciliation. Additive — primary fields unchanged.
   received_2: number;
+  // Alt-measure prior accepted (sum of prior GRNs' accepted_qty_2). Additive.
+  accepted_2: number;
 }
 
 /**
@@ -1745,7 +1747,7 @@ export async function fetchDCReceiptSummary(
   const grnIds = (grns as any[]).map((g: any) => g.id);
   const { data: items } = await (supabase as any)
     .from('grn_line_items')
-    .select('dc_line_item_id, received_qty, received_now, receiving_now, accepted_qty, accepted_quantity, received_now_2')
+    .select('dc_line_item_id, received_qty, received_now, receiving_now, accepted_qty, accepted_quantity, received_now_2, accepted_qty_2')
     .in('grn_id', grnIds);
   const summary: Record<string, ReceiptSummaryEntry> = {};
   for (const item of (items ?? []) as any[]) {
@@ -1754,10 +1756,12 @@ export async function fetchDCReceiptSummary(
     const received = Number(item.received_qty ?? item.received_now ?? item.receiving_now ?? 0) || 0;
     const accepted = Number(item.accepted_qty ?? item.accepted_quantity ?? 0) || 0;
     const received_2 = Number(item.received_now_2 ?? 0) || 0;
-    if (!summary[key]) summary[key] = { received: 0, accepted: 0, received_2: 0 };
+    const accepted_2 = Number(item.accepted_qty_2 ?? 0) || 0;
+    if (!summary[key]) summary[key] = { received: 0, accepted: 0, received_2: 0, accepted_2: 0 };
     summary[key].received += received;
     summary[key].accepted += accepted;
     summary[key].received_2 += received_2;
+    summary[key].accepted_2 += accepted_2;
   }
   return summary;
 }
@@ -1782,7 +1786,7 @@ export async function fetchPOReceiptSummary(
   const grnIds = (grns as any[]).map((g: any) => g.id);
   const { data: items } = await (supabase as any)
     .from('grn_line_items')
-    .select('po_line_item_id, received_qty, received_now, receiving_now, accepted_qty, accepted_quantity, received_now_2')
+    .select('po_line_item_id, received_qty, received_now, receiving_now, accepted_qty, accepted_quantity, received_now_2, accepted_qty_2')
     .in('grn_id', grnIds);
   const summary: Record<string, ReceiptSummaryEntry> = {};
   for (const item of (items ?? []) as any[]) {
@@ -1791,10 +1795,12 @@ export async function fetchPOReceiptSummary(
     const received = Number(item.received_qty ?? item.received_now ?? item.receiving_now ?? 0) || 0;
     const accepted = Number(item.accepted_qty ?? item.accepted_quantity ?? 0) || 0;
     const received_2 = Number(item.received_now_2 ?? 0) || 0;
-    if (!summary[key]) summary[key] = { received: 0, accepted: 0, received_2: 0 };
+    const accepted_2 = Number(item.accepted_qty_2 ?? 0) || 0;
+    if (!summary[key]) summary[key] = { received: 0, accepted: 0, received_2: 0, accepted_2: 0 };
     summary[key].received += received;
     summary[key].accepted += accepted;
     summary[key].received_2 += received_2;
+    summary[key].accepted_2 += accepted_2;
   }
   return summary;
 }

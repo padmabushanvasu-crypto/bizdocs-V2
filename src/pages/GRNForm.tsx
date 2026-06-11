@@ -53,6 +53,8 @@ interface LineItemState extends GRNLineItem {
   prev_accepted_live: number;
   // Alt-measure prior received (summary.received_2) for basis='alt' pending.
   prev_received_2: number;
+  // Alt-measure prior accepted (summary.accepted_2) for basis='alt' PREV ACCEPTED.
+  prev_accepted_2: number;
   // Jig / mould return confirmation (DC-GRN only)
   jig_confirmed?: boolean;
   // Stage 2 local state
@@ -96,6 +98,7 @@ function toLineState(item: GRNLineItem, idx: number): LineItemState {
     s1_rejected_now: a.stage1_rejected_qty ?? 0,
     prev_accepted_live: 0,
     prev_received_2: 0,
+    prev_accepted_2: 0,
     jig_confirmed: a.jig_confirmed ?? false,
     s2_accepted_qty: a.accepted_qty ?? item.accepted_quantity ?? 0,
     s2_rejected_qty: a.rejected_qty ?? item.rejected_quantity ?? 0,
@@ -137,7 +140,7 @@ function GrnLineItemRow({
   const prevReceived = useAlt
     ? (item.prev_received_2 ?? 0)
     : ((item as any).previously_received_qty ?? item.previously_received ?? 0);
-  const prevAccepted = item.prev_accepted_live ?? 0;
+  const prevAccepted = useAlt ? (item.prev_accepted_2 ?? 0) : (item.prev_accepted_live ?? 0);
   const rowUnit = useAlt ? (item.unit_2 || "") : item.unit;
   // Reactive Pending = Ordered − Prev Received − Receiving Now. Allowed to go
   // negative (over-receipt); the warning row below surfaces the magnitude.
@@ -454,6 +457,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
               previously_received_qty: entry.received,
               prev_accepted_live: entry.accepted,
               prev_received_2: entry.received_2,
+              prev_accepted_2: entry.accepted_2,
             };
           }));
         } else if (grnTypeLoaded === 'dc_grn' && g.linked_dc_id) {
@@ -469,6 +473,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
               previously_received_qty: entry.received,
               prev_accepted_live: entry.accepted,
               prev_received_2: entry.received_2,
+              prev_accepted_2: entry.accepted_2,
             };
           }));
         }
