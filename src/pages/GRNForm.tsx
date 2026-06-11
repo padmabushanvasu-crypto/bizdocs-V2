@@ -51,6 +51,8 @@ interface LineItemState extends GRNLineItem {
   // creation time; prev_accepted_live is a runtime-only field — Prev Accepted
   // is not snapshotted on the row.
   prev_accepted_live: number;
+  // Alt-measure prior received (summary.received_2) for basis='alt' pending.
+  prev_received_2: number;
   // Jig / mould return confirmation (DC-GRN only)
   jig_confirmed?: boolean;
   // Stage 2 local state
@@ -93,6 +95,7 @@ function toLineState(item: GRNLineItem, idx: number): LineItemState {
     s1_admin_override: false,
     s1_rejected_now: a.stage1_rejected_qty ?? 0,
     prev_accepted_live: 0,
+    prev_received_2: 0,
     jig_confirmed: a.jig_confirmed ?? false,
     s2_accepted_qty: a.accepted_qty ?? item.accepted_quantity ?? 0,
     s2_rejected_qty: a.rejected_qty ?? item.rejected_quantity ?? 0,
@@ -114,16 +117,28 @@ function GrnLineItemRow({
   isAdmin,
   onChange,
   jigs,
+  basis = 'original',
 }: {
   item: LineItemState;
   index: number;
   isAdmin: boolean;
   onChange: (index: number, update: Partial<LineItemState>) => void;
   jigs?: Array<{ id: string; jig_number: string; drawing_number: string; status: string }>;
+  basis?: 'original' | 'alt';
 }) {
-  const orderedQty = (item as any).ordered_qty ?? item.po_quantity ?? 0;
-  const prevReceived = (item as any).previously_received_qty ?? item.previously_received ?? 0;
+  // Per-line acceptance basis: 'alt' (only when this line has an alt ordered
+  // qty) shows the second measure for Ordered/Prev Rcvd/Pending/Unit; the single
+  // Receiving Now input is then in unit_2 and routed to received_now_2 on save.
+  // Lines with no alt measure stay primary even under Alternate (fallback).
+  const useAlt = basis === 'alt' && (item.ordered_qty_2 ?? null) != null;
+  const orderedQty = useAlt
+    ? Number(item.ordered_qty_2 ?? 0)
+    : ((item as any).ordered_qty ?? item.po_quantity ?? 0);
+  const prevReceived = useAlt
+    ? (item.prev_received_2 ?? 0)
+    : ((item as any).previously_received_qty ?? item.previously_received ?? 0);
   const prevAccepted = item.prev_accepted_live ?? 0;
+  const rowUnit = useAlt ? (item.unit_2 || "") : item.unit;
   // Reactive Pending = Ordered − Prev Received − Receiving Now. Allowed to go
   // negative (over-receipt); the warning row below surfaces the magnitude.
   // Rejected Now does NOT subtract — rejected units were physically received.
@@ -187,7 +202,7 @@ function GrnLineItemRow({
           "px-3 py-2 text-right font-mono text-sm tabular-nums font-medium",
           overReceipt ? "text-red-600" : "text-amber-600",
         )}>{pendingQty}</td>
-        <td className="px-3 py-2 text-slate-500 text-xs">{item.unit}</td>
+        <td className="px-3 py-2 text-slate-500 text-xs">{rowUnit}</td>
       </tr>
       {overReceipt && (
         <tr className="bg-red-50/60">
@@ -438,6 +453,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
               ...li,
               previously_received_qty: entry.received,
               prev_accepted_live: entry.accepted,
+              prev_received_2: entry.received_2,
             };
           }));
         } else if (grnTypeLoaded === 'dc_grn' && g.linked_dc_id) {
@@ -452,6 +468,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
               ...li,
               previously_received_qty: entry.received,
               prev_accepted_live: entry.accepted,
+              prev_received_2: entry.received_2,
             };
           }));
         }
@@ -717,17 +734,24 @@ function GRNFormInner({ defaultGrnType }: Props) {
 
       const items = lineItems
         .filter((i) => i.s1_received_now > 0 || i.receiving_now > 0)
-        .map((i, idx) => ({
-          ...i,
-          serial_number: idx + 1,
-          receiving_now: i.s1_received_now,
-          accepted_quantity: i.s1_received_now,
-          rejected_quantity: 0,
-          rejection_reason: undefined,
-          rejection_action: null,
-          dc_line_item_id: (i as any).dc_line_item_id || null,
-          stage1_rejected_qty: i.s1_rejected_now > 0 ? i.s1_rejected_now : null,
-        }));
+        .map((i, idx) => {
+          // Alternate basis: the single Receiving Now value is the alt qty —
+          // route it to received_now_2 and leave primary receiving/accepted at 0
+          // (never post an alt number into primary stock). Original: primary.
+          const isAlt = acceptanceBasis === 'alt' && (i.ordered_qty_2 ?? null) != null;
+          return {
+            ...i,
+            serial_number: idx + 1,
+            receiving_now: isAlt ? 0 : i.s1_received_now,
+            accepted_quantity: isAlt ? 0 : i.s1_received_now,
+            received_now_2: isAlt ? i.s1_received_now : null,
+            rejected_quantity: 0,
+            rejection_reason: undefined,
+            rejection_action: null,
+            dc_line_item_id: (i as any).dc_line_item_id || null,
+            stage1_rejected_qty: i.s1_rejected_now > 0 ? i.s1_rejected_now : null,
+          };
+        });
 
       return await recordGRNAndUpdatePO({ grn: grnData, lineItems: items });
     },
@@ -899,30 +923,6 @@ function GRNFormInner({ defaultGrnType }: Props) {
                   )}
                 >
                   {t === 'po_grn' ? 'PO-GRN' : 'DC-GRN'}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Acceptance Basis — which measure drives order reconciliation */}
-        {!isExistingGrn && (
-          <div className="space-y-2">
-            <Label className="text-sm font-medium text-slate-700">Acceptance Basis</Label>
-            <div className="flex gap-2">
-              {(['original', 'alt'] as const).map((b) => (
-                <button
-                  key={b}
-                  type="button"
-                  onClick={() => setAcceptanceBasis(b)}
-                  className={cn(
-                    "px-4 py-2 rounded-lg text-sm font-medium border transition-colors",
-                    acceptanceBasis === b
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-background text-foreground border-border hover:bg-muted"
-                  )}
-                >
-                  {b === 'original' ? 'Original' : 'Alternate'}
                 </button>
               ))}
             </div>
@@ -1128,6 +1128,26 @@ function GRNFormInner({ defaultGrnType }: Props) {
                'Items Received'}
             </h2>
             <div className="flex items-center gap-2">
+              {!isExistingGrn && (
+                <div className="flex items-center gap-1.5 mr-1">
+                  <span className="text-xs font-medium text-slate-500">Basis:</span>
+                  {(['original', 'alt'] as const).map((b) => (
+                    <button
+                      key={b}
+                      type="button"
+                      onClick={() => setAcceptanceBasis(b)}
+                      className={cn(
+                        "px-2.5 py-1 rounded-md text-xs font-medium border transition-colors",
+                        acceptanceBasis === b
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-background text-foreground border-border hover:bg-muted"
+                      )}
+                    >
+                      {b === 'original' ? 'Original' : 'Alternate'}
+                    </button>
+                  ))}
+                </div>
+              )}
               {lineItems.length > 0 && (
                 <Button
                   type="button"
@@ -1171,6 +1191,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
                     isAdmin={isAdmin}
                     onChange={updateLineItem}
                     jigs={grnType === 'dc_grn' ? (jigsByDrawing[item.drawing_number ?? ''] ?? []) : undefined}
+                    basis={acceptanceBasis}
                   />
                 ))}
               </tbody>
