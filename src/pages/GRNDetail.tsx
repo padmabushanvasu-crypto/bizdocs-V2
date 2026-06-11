@@ -257,7 +257,6 @@ function Stage1Table({
   overQtyIds = [],
   withinToleranceIds = [],
   tolerancePct = 0,
-  acceptanceBasis = 'original',
 }: {
   lines: S1Line[];
   onChange: (idx: number, field: keyof S1Line, value: unknown) => void;
@@ -265,7 +264,6 @@ function Stage1Table({
   overQtyIds?: string[];
   withinToleranceIds?: string[];
   tolerancePct?: number;
-  acceptanceBasis?: 'original' | 'alt';
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200">
@@ -296,13 +294,7 @@ function Stage1Table({
             // Reactive Pending = Ordered − Prev Received − Receiving Now.
             // Allowed to go negative; over-receipt warning row surfaces it.
             // Rejected Now does NOT subtract — rejected units were physically received.
-            // Basis-aware pending. 'alt' (only when this line has an alt ordered
-            // qty) reconciles the second measure; otherwise the existing primary
-            // math runs unchanged (decision B fallback for null alt-ordered lines).
-            const useAlt = acceptanceBasis === 'alt' && line.ordered_qty_2 != null;
-            const pending = useAlt
-              ? Number(line.ordered_qty_2 ?? 0) - (line.prev_received_2 ?? 0) - (line.received_now_2 ?? 0)
-              : line.po_quantity - line.prev_received_live - line.received_qty;
+            const pending = line.po_quantity - line.prev_received_live - line.received_qty;
             const overReceipt = pending < 0;
             const overReceiptBy = overReceipt ? Math.abs(pending) : 0;
             const nonMatching = Math.max(0, line.received_qty - line.matching_units);
@@ -541,6 +533,11 @@ function Stage1Table({
                           />
                           {altUnit && <span className="text-muted-foreground">{altUnit}</span>}
                         </label>
+                        <div className="text-slate-600 dark:text-slate-300">
+                          <span className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 dark:text-slate-400 mr-2">Alt. Qty Pending</span>
+                          <span className="font-mono text-slate-800 dark:text-slate-100">{altOrdered - (line.prev_received_2 ?? 0) - (line.received_now_2 ?? 0)}</span>
+                          {altUnit && <span className="text-muted-foreground ml-1">{altUnit}</span>}
+                        </div>
                       </div>
                     </td>
                   </tr>
@@ -1539,7 +1536,6 @@ export default function GRNDetail() {
   const [s1InvoiceNumber, setS1InvoiceNumber] = useState("");
   const [s1InvoiceDate,   setS1InvoiceDate]   = useState("");
   const [inwardSlNo,      setInwardSlNo]      = useState("");
-  const [s1AcceptanceBasis, setS1AcceptanceBasis] = useState<'original' | 'alt'>('original');
   const [s1Notes,         setS1Notes]         = useState("");
   const [s1Editing,       setS1Editing]       = useState(false);
   const [s2Editing,       setS2Editing]       = useState(false);
@@ -1693,7 +1689,6 @@ export default function GRNDetail() {
     setS1InvoiceNumber(g.vendor_invoice_number ?? "");
     setS1InvoiceDate(g.vendor_invoice_date ?? "");
     setInwardSlNo(g.inward_sl_no != null ? String(g.inward_sl_no) : "");
-    setS1AcceptanceBasis((g.acceptance_basis ?? 'original') as 'original' | 'alt');
     setS2InspectedBy(g.quality_completed_by ?? "");
     setS2ApprovedBy(g.qc_approved_by ?? "");
     setS2Remarks(g.quality_remarks ?? "");
@@ -1786,7 +1781,6 @@ export default function GRNDetail() {
           s1InvoiceNumber?: string;
           s1InvoiceDate?: string;
           inwardSlNo?: string;
-          s1AcceptanceBasis?: 'original' | 'alt';
           s1Notes?: string;
           jigReturnConfirmed?: string[];
         };
@@ -1810,7 +1804,6 @@ export default function GRNDetail() {
         if (typeof s1.s1InvoiceNumber === "string") setS1InvoiceNumber(s1.s1InvoiceNumber);
         if (typeof s1.s1InvoiceDate === "string") setS1InvoiceDate(s1.s1InvoiceDate);
         if (typeof s1.inwardSlNo === "string") setInwardSlNo(s1.inwardSlNo);
-        if (s1.s1AcceptanceBasis === 'original' || s1.s1AcceptanceBasis === 'alt') setS1AcceptanceBasis(s1.s1AcceptanceBasis);
         if (typeof s1.s1Notes === "string") setS1Notes(s1.s1Notes);
         if (Array.isArray(s1.jigReturnConfirmed)) {
           setJigReturnConfirmed(new Set(s1.jigReturnConfirmed));
@@ -1851,7 +1844,6 @@ export default function GRNDetail() {
               s1InvoiceNumber,
               s1InvoiceDate,
               inwardSlNo,
-              s1AcceptanceBasis,
               s1Notes,
               jigReturnConfirmed: [...jigReturnConfirmed],
             },
@@ -1873,7 +1865,7 @@ export default function GRNDetail() {
     return () => clearTimeout(t);
   }, [
     id, grn,
-    s1Lines, s1VerifiedBy, s1Date, s1InvoiceNumber, s1InvoiceDate, inwardSlNo, s1AcceptanceBasis, s1Notes,
+    s1Lines, s1VerifiedBy, s1Date, s1InvoiceNumber, s1InvoiceDate, inwardSlNo, s1Notes,
     jigReturnConfirmed,
     qcRows, ncSummaries, s2InspectedBy, s2ApprovedBy, s2Date, s2Remarks,
     scrapReturned, scrapNotes, finalGrnPerLine,
@@ -1962,7 +1954,7 @@ export default function GRNDetail() {
         inwardSlNo.trim() !== "" && Number.isFinite(Number(inwardSlNo)) && Number(inwardSlNo) > 0
           ? Math.trunc(Number(inwardSlNo))
           : null;
-      await saveQuantitativeStage(id!, lines, s1VerifiedBy, s1InvoiceNumber || null, s1InvoiceDate || null, overrideStage, jigReturnConfirmed, inwardSlNoParsed, s1AcceptanceBasis);
+      await saveQuantitativeStage(id!, lines, s1VerifiedBy, s1InvoiceNumber || null, s1InvoiceDate || null, overrideStage, jigReturnConfirmed, inwardSlNoParsed);
 
       // Save scrap data for DC-GRNs
       await saveGRNScrapItems(id!, scrapReturned, scrapNotes || null,
@@ -2653,7 +2645,6 @@ export default function GRNDetail() {
               overQtyIds={overQtyLines.map(l => l.id)}
               withinToleranceIds={withinToleranceItems.map(t => t.line.id)}
               tolerancePct={tolerancePct}
-              acceptanceBasis={s1AcceptanceBasis}
             />
           ) : (
             <Stage1ReadOnly lines={s1Lines} isDcGrn={!!g.linked_dc_id} />
@@ -2780,25 +2771,6 @@ export default function GRNDetail() {
                     className="mt-1 text-sm"
                     placeholder="Optional"
                   />
-                </div>
-                <div>
-                  <Label className="text-xs font-medium text-slate-600">Acceptance Basis</Label>
-                  <div className="flex gap-2 mt-1">
-                    {(['original', 'alt'] as const).map((b) => (
-                      <button
-                        key={b}
-                        type="button"
-                        onClick={() => setS1AcceptanceBasis(b)}
-                        className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
-                          s1AcceptanceBasis === b
-                            ? "bg-primary text-primary-foreground border-primary"
-                            : "bg-background text-foreground border-border hover:bg-muted"
-                        }`}
-                      >
-                        {b === 'original' ? 'Original' : 'Alternate'}
-                      </button>
-                    ))}
-                  </div>
                 </div>
               </div>
               <div>
