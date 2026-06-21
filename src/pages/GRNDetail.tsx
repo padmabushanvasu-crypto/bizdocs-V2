@@ -832,10 +832,10 @@ function QCMeasurementEditor({
               </div>
             )}
 
-            {/* Per-line Final GRN checkbox — every PO line gets an editable box.
-                DC-GRN lines (no PO line) don't show it. Auto-detect is a
-                SUGGESTION (pre-tick + hint); the QC user can override. */}
-            {!disabled && setFinalGrnPerLine && item.po_line_item_id && (() => {
+            {/* Per-line Final GRN checkbox — every PO line AND DC-return line gets
+                an editable box (default unticked unless auto-detect suggests it).
+                Auto-detect is a SUGGESTION (pre-tick + hint); the QC user can override. */}
+            {!disabled && setFinalGrnPerLine && (() => {
               const lineId = item.id;
               const isAuto = autoFinalLines.has(lineId) || !!item.final_grn_auto_detected;
               // Explicit user choice wins; otherwise fall back to the auto suggestion.
@@ -1030,7 +1030,9 @@ function QCMeasurementReadOnly({
         const isPoLine = !!item.po_line_item_id;
         // Render nothing for a DC line with neither measurements nor alt-qty data.
         // PO lines always render so their Final GRN status is visible.
-        if (itemRows.length === 0 && !hasAlt && !isPoLine) return null;
+        // Keep PO lines (always), any line with QC/alt data, and any final line —
+        // so a DC-return line's Final GRN status is visible too.
+        if (itemRows.length === 0 && !hasAlt && !isPoLine && !item.is_final_grn) return null;
         const hasNC = itemRows.some((r) => r.result === "non_conforming");
         return (
           <div key={item.id} className="rounded-lg border border-slate-200 overflow-hidden">
@@ -1040,19 +1042,18 @@ function QCMeasurementReadOnly({
                 {" — "}{item.description}
                 <span className="font-normal ml-2">· Inspecting: {formatNumber((item.matching_units ?? item.received_qty) ?? 0)} {item.unit}</span>
               </span>
-              {isPoLine && (
-                item.is_final_grn ? (
-                  <span
-                    className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 whitespace-nowrap"
-                    title={item.final_grn_reason ?? undefined}
-                  >
-                    ✓ Final GRN
-                  </span>
-                ) : (
-                  <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 whitespace-nowrap">
-                    Not final
-                  </span>
-                )
+              {/* Final GRN status — shown for PO lines AND DC-return lines. */}
+              {item.is_final_grn ? (
+                <span
+                  className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 whitespace-nowrap"
+                  title={item.final_grn_reason ?? undefined}
+                >
+                  ✓ Final GRN
+                </span>
+              ) : (
+                <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 whitespace-nowrap">
+                  Not final
+                </span>
               )}
             </div>
             {hasAlt && (
