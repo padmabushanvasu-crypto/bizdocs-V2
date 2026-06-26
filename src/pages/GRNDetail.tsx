@@ -300,8 +300,12 @@ function Stage1Table({
             const nonMatching = Math.max(0, line.received_qty - line.matching_units);
             const showSubRow = line.received_qty > 0 && nonMatching > 0;
             const altOrdered = Number(line.ordered_qty_2 ?? 0);
-            const showAltRow = altOrdered > 0;
             const altUnit = line.unit_2 || "";
+            // Only surface the alt-qty row when it carries a unit. ordered_qty_2
+            // is often set with a NULL unit_2 (PO alt-unit not captured), which
+            // would otherwise render a bare, unit-less count. Unit-presence gate
+            // only — independent of acceptance_basis.
+            const showAltRow = altOrdered > 0 && altUnit.trim() !== "";
 
             const rowBg = line.received_qty > 0 && line.matching_units === 0
               ? "bg-red-50"
@@ -676,7 +680,7 @@ function Stage1ReadOnly({ lines, isDcGrn }: { lines: S1Line[]; isDcGrn?: boolean
                     </td>
                   )}
                 </tr>
-                {Number(l.ordered_qty_2 ?? 0) > 0 && (
+                {Number(l.ordered_qty_2 ?? 0) > 0 && (l.unit_2 ?? "").trim() !== "" && (
                   <tr className="bg-slate-50/60 dark:bg-[#0a0e1a]/60">
                     <td colSpan={10 + (hasStoreTracking ? 1 : 0) + (hasJigData ? 1 : 0)} className="px-4 py-2 text-xs">
                       <div className="flex flex-wrap gap-x-6 gap-y-1 items-baseline text-slate-600 dark:text-slate-300">
@@ -1242,7 +1246,7 @@ function GRNPrintView({
                 <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textTransform: "capitalize" }}>{(l.condition_on_arrival || "good").replace(/_/g, " ")}</td>
                 <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "center" }}>{l.packing_intact ? "Yes" : "No"}</td>
               </tr>
-              {Number(l.ordered_qty_2 ?? 0) > 0 && (
+              {Number(l.ordered_qty_2 ?? 0) > 0 && (l.unit_2 ?? "").trim() !== "" && (
                 <tr style={{ background: "#F8FAFC" }}>
                   <td colSpan={9} style={{ padding: "2pt 4pt 2pt 16pt", borderBottom: "0.5pt solid #E2E8F0", fontSize: "7.5pt", color: "#475569" }}>
                     Alt. Qty — Ordered: <strong>{formatNumber(l.ordered_qty_2 ?? 0)} {l.unit_2 ?? ""}</strong>
