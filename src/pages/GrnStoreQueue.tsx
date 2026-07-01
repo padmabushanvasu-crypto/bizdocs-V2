@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { PackageCheck, ArrowRight, CheckCircle2 } from "lucide-react";
+import { PackageCheck, ArrowRight, CheckCircle2, Search } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -119,6 +119,7 @@ export default function GrnStoreQueue() {
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
   const [month, setMonth] = useState<string>(CURRENT_MONTH);
+  const [search, setSearch] = useState("");
 
   // When the user flips status away from "pending", auto-broaden to All months
   // so the history floor stays visible without forcing them to also pick a month.
@@ -134,11 +135,12 @@ export default function GrnStoreQueue() {
   };
 
   const { data: cardsData, isLoading } = useQuery({
-    queryKey: ["grn-store-queue", statusFilter, month],
+    queryKey: ["grn-store-queue", statusFilter, month, search],
     queryFn: () =>
       fetchGrnStoreReceiptQueue({
         status: statusFilter !== "all" ? statusFilter : undefined,
         month: month && month !== ALL_MONTHS ? month : undefined,
+        search: search.trim() || undefined,
       }),
     staleTime: 30_000,
   });
@@ -307,6 +309,15 @@ export default function GrnStoreQueue() {
 
       {/* Filters */}
       <div className="flex flex-wrap gap-2">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search GRN#, PO#, vendor…"
+            className="pl-9"
+          />
+        </div>
         <Select value={statusFilter} onValueChange={(v) => onStatusChange(v as StatusFilter)}>
           <SelectTrigger className="w-[200px]">
             <SelectValue placeholder="Status" />

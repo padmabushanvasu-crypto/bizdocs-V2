@@ -2629,6 +2629,7 @@ export async function fetchStoreConfirmedHistory(): Promise<StoreConfirmedItem[]
 export interface GrnStoreReceiptQueueFilters {
   status?: 'pending' | 'confirmed' | 'partial' | 'all';
   month?: string; // 'YYYY-MM' format, scoped to grns.grn_date
+  search?: string; // matches grn_number / po_number / vendor_name; all-digit terms also match inward_sl_no
 }
 
 export interface GrnStoreReceiptCardLine {
@@ -2655,6 +2656,7 @@ export interface GrnStoreReceiptCard {
   grn_number: string;
   grn_date: string;
   vendor_name: string;
+  po_number: string | null;
   grn_type: string; // po_grn | dc_grn
   line_items: GrnStoreReceiptCardLine[];
   total_lines: number;
@@ -2673,7 +2675,7 @@ export async function fetchGrnStoreReceiptQueue(
   // Step 1 — pull GRNs in the selected month window (or all if no month).
   let grnQuery = (supabase as any)
     .from('grns')
-    .select('id, grn_number, grn_date, vendor_name, grn_type')
+    .select('id, grn_number, grn_date, vendor_name, po_number, grn_type')
     .eq('company_id', companyId)
     .not('status', 'in', '(deleted,cancelled)');
 
@@ -2686,6 +2688,23 @@ export async function fetchGrnStoreReceiptQueue(
           ? `${y + 1}-01-01`
           : `${y}-${String(m + 1).padStart(2, '0')}-01`;
       grnQuery = grnQuery.gte('grn_date', start).lt('grn_date', nextMonth);
+    }
+  }
+
+  // Text search — mirrors fetchGRNs (grn_number primary, po_number + vendor_name
+  // secondary; all-digit terms also match the numeric inward_sl_no). Narrows
+  // WITHIN the status/month filters; empty search is a no-op (same list as today).
+  if (filters.search?.trim()) {
+    const sanitized = sanitizeSearchTerm(filters.search);
+    if (sanitized) {
+      const term = `%${sanitized}%`;
+      const orParts = [
+        `grn_number.ilike.${term}`,
+        `po_number.ilike.${term}`,
+        `vendor_name.ilike.${term}`,
+      ];
+      if (/^\d+$/.test(filters.search.trim())) orParts.push(`inward_sl_no.eq.${Number(filters.search.trim())}`);
+      grnQuery = grnQuery.or(orParts.join(','));
     }
   }
 
@@ -2769,6 +2788,7 @@ export async function fetchGrnStoreReceiptQueue(
       grn_number: grn?.grn_number ?? '—',
       grn_date: grn?.grn_date ?? '',
       vendor_name: grn?.vendor_name ?? '',
+      po_number: grn?.po_number ?? null,
       grn_type: grn?.grn_type ?? 'po_grn',
       line_items: mappedLines,
       total_lines: mappedLines.length,
