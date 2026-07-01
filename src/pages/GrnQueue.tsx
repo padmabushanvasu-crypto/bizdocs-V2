@@ -13,6 +13,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { format, parseISO } from "date-fns";
 import {
   fetchPendingStoreGRNs,
@@ -300,23 +302,41 @@ export default function GrnQueue() {
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <Label className="text-[10px] text-muted-foreground">From</Label>
-                <Input
-                  type="date"
-                  value={dateFrom}
-                  max={dateTo || undefined}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  className="h-9 text-sm dark:bg-[#0a0e1a] dark:border-white/20 dark:text-slate-100"
-                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full h-9 justify-start text-left font-normal text-sm">
+                      {dateFrom ? format(parseISO(dateFrom), "dd MMM yyyy") : <span className="text-muted-foreground">From date</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={dateFrom ? parseISO(dateFrom) : undefined}
+                      onSelect={(d) => setDateFrom(d ? format(d, "yyyy-MM-dd") : "")}
+                      disabled={dateTo ? { after: parseISO(dateTo) } : undefined}
+                      className="p-3 pointer-events-auto"
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
               <div className="space-y-1">
                 <Label className="text-[10px] text-muted-foreground">To</Label>
-                <Input
-                  type="date"
-                  value={dateTo}
-                  min={dateFrom || undefined}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  className="h-9 text-sm dark:bg-[#0a0e1a] dark:border-white/20 dark:text-slate-100"
-                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full h-9 justify-start text-left font-normal text-sm">
+                      {dateTo ? format(parseISO(dateTo), "dd MMM yyyy") : <span className="text-muted-foreground">To date</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={dateTo ? parseISO(dateTo) : undefined}
+                      onSelect={(d) => setDateTo(d ? format(d, "yyyy-MM-dd") : "")}
+                      disabled={dateFrom ? { before: parseISO(dateFrom) } : undefined}
+                      className="p-3 pointer-events-auto"
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
           </div>
