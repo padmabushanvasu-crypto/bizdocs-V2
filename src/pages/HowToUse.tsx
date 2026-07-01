@@ -259,9 +259,9 @@ function DailyOpsTab() {
         </p>
         <p className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-blue-800">
           <strong>Note:</strong> If material is going back out for more
-          processing (not marked as Final GRN), the GRN moves to quality_done
-          status and can be sent out again via a new DC without entering the
-          Storekeeper Queue.
+          processing (not marked as Final GRN), the GRN moves to a
+          "Pending Final Receipt" state and can be sent out again via a new DC
+          without entering the Storekeeper Queue.
         </p>
       </AccordionItem>
 

@@ -64,13 +64,17 @@ function GrnCard({
             <span className="font-semibold text-sm font-mono text-slate-900 dark:text-slate-100">
               {grn.grn_number}
             </span>
-            {variant === "pending" ? (
-              <Badge className="text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 border-amber-200 dark:border-amber-800/50">
-                Awaiting Store
-              </Badge>
-            ) : (
+            {variant === "confirmed" ? (
               <Badge className="text-[10px] bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200 border-green-200 dark:border-green-800/50">
                 Confirmed
+              </Badge>
+            ) : grn.grn_stage === "quality_done" ? (
+              <Badge className="text-[10px] bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200 border-teal-200 dark:border-teal-800/50">
+                Pending Final Receipt
+              </Badge>
+            ) : (
+              <Badge className="text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 border-amber-200 dark:border-amber-800/50">
+                Awaiting Store
               </Badge>
             )}
             {grn.grn_type === "dc_grn" && (
@@ -207,8 +211,24 @@ export default function GrnQueue() {
     () => applyClientSearch(pendingGRNs, search),
     [pendingGRNs, search]
   );
+  const filteredConfirmed = useMemo(
+    () => applyClientSearch(confirmedGRNs, search),
+    [confirmedGRNs, search]
+  );
 
-  const list = tab === "pending" ? filteredPending : confirmedGRNs;
+  // Split the pending queue: awaiting_store etc. are storekeeper-actionable;
+  // non-final quality_done GRNs are intentionally open ("Pending Final Receipt")
+  // and must not read as store work. Presentation only — same underlying list.
+  const pendingAwaitingStore = useMemo(
+    () => filteredPending.filter((g) => g.grn_stage !== "quality_done"),
+    [filteredPending]
+  );
+  const pendingFinalReceipt = useMemo(
+    () => filteredPending.filter((g) => g.grn_stage === "quality_done"),
+    [filteredPending]
+  );
+
+  const list = tab === "pending" ? filteredPending : filteredConfirmed;
   const loading = tab === "pending" ? pendingLoading : confirmedLoading;
 
   const clearDateRange = () => {
@@ -233,7 +253,7 @@ export default function GrnQueue() {
           active={tab === "pending"}
           variant="amber"
           count={pendingGRNs.length}
-          label="GRNs awaiting store receipt"
+          label="GRNs in receiving queue"
           Icon={PackageCheck}
           onClick={() => setTab("pending")}
         />
@@ -323,16 +343,40 @@ export default function GrnQueue() {
         </div>
       )}
 
-      <div className="space-y-3">
-        {list.map((grn) => (
-          <GrnCard
-            key={grn.id}
-            grn={grn}
-            variant={tab === "pending" ? "pending" : "confirmed"}
-            onClick={() => navigate(`/grn/${grn.id}`)}
-          />
-        ))}
-      </div>
+      {!loading && tab === "pending" && (
+        <div className="space-y-6">
+          {pendingAwaitingStore.length > 0 && (
+            <section className="space-y-3">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                Awaiting Store Confirmation
+              </h2>
+              {pendingAwaitingStore.map((grn) => (
+                <GrnCard key={grn.id} grn={grn} variant="pending" onClick={() => navigate(`/grn/${grn.id}`)} />
+              ))}
+            </section>
+          )}
+          {pendingFinalReceipt.length > 0 && (
+            <section className="space-y-3">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-300">
+                Pending Final Receipt
+              </h2>
+              <p className="-mt-1 text-xs text-muted-foreground">
+                Received &amp; stocked; no Final GRN line — not awaiting a storekeeper action.
+              </p>
+              {pendingFinalReceipt.map((grn) => (
+                <GrnCard key={grn.id} grn={grn} variant="pending" onClick={() => navigate(`/grn/${grn.id}`)} />
+              ))}
+            </section>
+          )}
+        </div>
+      )}
+      {!loading && tab === "confirmed" && (
+        <div className="space-y-3">
+          {filteredConfirmed.map((grn) => (
+            <GrnCard key={grn.id} grn={grn} variant="confirmed" onClick={() => navigate(`/grn/${grn.id}`)} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
