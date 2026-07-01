@@ -239,6 +239,9 @@ function GRNRegisterInner() {
           <Button variant={showDeleted ? "secondary" : "outline"} size="sm" onClick={() => setShowDeleted(d => !d)}>
             <Trash2 className="h-3.5 w-3.5 mr-1" /> {showDeleted ? "Hide Deleted" : "Show Deleted"}
           </Button>
+          <Button variant="outline" onClick={() => navigate("/grn-queue")}>
+            <PackageCheck className="h-4 w-4 mr-1" /> Receiving Queue
+          </Button>
           {canExport && (
             <Button variant="outline" onClick={() => setExportModalOpen(true)}>
               <Download className="h-4 w-4 mr-1" /> Export
