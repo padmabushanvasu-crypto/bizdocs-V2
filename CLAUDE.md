@@ -1,161 +1,93 @@
-# BizDocs — Claude Code System Instructions
+# CLAUDE.md — BizDocs V2
 
-> Read this file before every task, no exceptions.
-> This is the architectural blueprint for the BizDocs project.
+> **Creed:** Discover before you change. Scope to the tenant. One concern at a time. Default to inert. Fail loud. Live DB wins.
+> **When rules conflict: production safety > correctness > speed.**
 
----
-
-## 1. Project Identity
-
-- **Product Name:** BizDocs
-- **Built By:** Innventive Solutions Creations Private Limited
-- **Developer:** Vasu (padmabushanvasu-crypto on GitHub)
-- **Repo:** bizdocs-v2
-- **Local Path:** /Users/shree/Library/Mobile Documents/com~apple~CloudDocs/Desktop/bizdocs-bharat-main
-- **Target Market:** Indian SME Manufacturers (B2B SaaS)
-- **Purpose:** A manufacturing ERP platform covering procurement, inventory, job work, BOM, GRN, dispatch, and invoicing workflows.
+This file is **rules only** and loads every session — keep it lean. Status, backlog, and setup scaffolding live in `PROGRESS.md`. Before adding a line here, ask: *does the agent need this on every task?*
 
 ---
 
-## 2. Tech Stack — Never Deviate From This
+## 0. Start of every session
+1. Read this file. Follow it.
+2. Confirm the **active Supabase account** and **`company_id`** before any query — the wrong account returns empty via RLS, not an error.
 
-| Layer | Technology |
+---
+
+## 1. Context
+Manufacturing ERP for an OLTC manufacturer. **Live in production.**
+Daily users **Latha and Priyanka** (storekeepers). Their **GRN receiving + confirmation flow is the #1 regression concern** — every change is judged first on whether it could break their day.
+
+---
+
+## 2. Coordinates
+| | |
 |---|---|
-| Frontend | React + Vite + TypeScript |
-| Styling | Tailwind CSS (utility-first, no custom CSS unless unavoidable) |
-| UI Components | shadcn/ui — always prefer existing components before creating new ones |
-| Backend / DB | Supabase (PostgreSQL) |
-| Auth | Supabase Auth |
-| Hosting | Vercel (auto-deploy via GitHub push) |
-| Version Control | GitHub — repo: bizdocs-v2 |
-
-**Rules:**
-- Always use TypeScript. No `.js` files in `src/`.
-- Always use shadcn/ui components first. Do not reinvent buttons, inputs, dialogs, tables, or tabs.
-- Never touch the Supabase schema directly in code — always create a migration file first.
-- Never hardcode Supabase URLs or API keys. They live in `.env` only.
+| Stack | React 18 / TS / Vite / Tailwind / shadcn-ui · Supabase (Postgres) · Vercel |
+| Repo | `padmabushanvasu-crypto/bizdocs-V2` (main, hotfix style) |
+| Supabase project | `mclskjvrkopowusevuyk` |
+| company_id | `45c14753-4e54-4327-bf77-dd9fb72899dc` |
+| Prod | `bizdocs-v2.vercel.app` |
 
 ---
 
-## 3. Design System
-
-**Invoke the front-end design skill before writing any front-end code, every session, no exceptions.**
-
-### Principles
-- This is a professional B2B ERP tool. Prioritise **clarity, density, and function** over decoration.
-- No generic AI aesthetics. No rounded-everything. No pastel gradients.
-- Layouts should feel like a professional operations tool — think Notion, Linear, or Zoho Books in terms of density and structure.
-
-### Colours
-- Follow the existing Tailwind config and CSS variables already defined in the project.
-- Reference `brand_assets/brand_guidelines.md` for any colour or typography decisions.
-- Do not introduce new colour values not already in the design system.
-
-### Component Patterns
-- Use shadcn/ui `Table` for all data grids.
-- Use shadcn/ui `Dialog` for all modals.
-- Use shadcn/ui `Tabs` for all multi-section views.
-- Use shadcn/ui `Sheet` for slide-over panels (e.g. item detail, party detail).
-- Use shadcn/ui `Toast` / Sonner for all notifications — success, error, warning.
-- Print layouts must be A4, portrait, multi-page capable, with proper page-break handling.
+## 3. Operating loop (non-negotiable)
+1. **Discover first.** Read-only SQL confirms schema/state before any change. The **live DB is authoritative** — never trust migration files, comments, or memory for columns, triggers, or enum values. Same for app config: read `package.json`/code, don't assume.
+2. **Scope to the tenant, always.** Every query is `company_id`-scoped; every new table ships with **RLS enabled from creation**. A query that *could* read across companies is a bug, not a shortcut.
+3. **Match the gate to the risk.**
+   - Reversible / read-only / trivial → act, then show evidence.
+   - Destructive, schema-changing, or touching a daily workflow → state the plan in 2–3 lines, get a nod, then write.
+   - Discovery contradicts the plan at any point → **STOP and report.** Never improvise around it.
+4. **One concern at a time.** One SQL block per concern; one commit per concern. Never combined.
+5. **Inert by default.** Anything touching a daily workflow ships with **unchanged default behavior** (new options off/unticked until the user acts).
+6. **Fail loud.** No silent-fail patterns (e.g. `.order()` on a non-existent column fails silently). Surface errors.
+7. **Compute, don't store, derived values.** Live view over precomputed column.
+8. **Remove > patch — safely.** Repeatedly-failing code gets deleted and simplified, not patched again — under the same inert + daily-workflow gate as any other change.
+9. **Show your work.** No "done" or "fixed" without evidence: the query and its output, the verify command and its result (§5). Paste the actual output, not a summary.
 
 ---
 
-## 4. Module Map — Know What Exists
-
-These modules are already built. Do not rebuild or duplicate them:
-
-- **Item Master** — SKU management, item types, UOM, unit cost
-- **BOM (Bill of Materials)** — multi-level BOM lines per finished good
-- **Processing Routes** — stage-by-stage manufacturing steps per item
-- **Party Master** — customers, vendors, job workers (raw material suppliers vs component manufacturers distinction)
-- **Opening Stock** — initial stock import per item
-- **GRN (Goods Receipt Note)** — two-stage QC flow (quantitative + qualitative), non-conformance tracking, A4 print layout
-- **DC / Job Work Order** — dispatch to job workers, renamed from DC throughout
-- **Jig & Mould Master** — tooling data
-- **Stock Ledger** — state machine tracking stock movement
-
-**Upcoming / In Progress:**
-- Scrap return tracking on job work GRNs
-- Final GRN checkbox with store confirmation layer
-- DC-to-Job Card auto-creation driven by BOM processing routes
-- Cost accumulation per component through processing stages
-- Reorder Intelligence module (Phase 11)
+## 4. SQL workflow
+- **Vasu runs ALL SQL manually** in the Supabase SQL Editor. No `db push` / CLI (authed to the wrong account).
+- **Live DB wins** over migration files; log any manual SQL applied so files can be reconciled later.
+- **Destructive SQL:** read-only count/constraint check → **write the inverse (down) SQL first** → run inside a transaction → verify → commit.
+- Deliver SQL as **separate, single-concern, paste-ready blocks**.
 
 ---
 
-## 5. Database Rules
-
-- Supabase Project ID: `mclskjvrkopowusevuyk`
-- All schema changes require a migration file in `/supabase/migrations/`
-- Never use raw SQL in component files — use Supabase client calls
-- RLS (Row Level Security) must be considered for any new table
-- Naming convention: `snake_case` for all table and column names
+## 5. Verify before "done"
+- **`package.json` scripts are the source of truth** for commands — read them; don't assume names.
+- **Frontend** change isn't done until typecheck + build pass clean. Vite/TS default: `npm run build` (runs `tsc` then `vite build`); run the lint script if one is defined.
+- **DB** change isn't done until the verification query shows the intended end state.
 
 ---
 
-## 6. File & Folder Conventions
-
-```
-src/
-  components/       # Reusable UI components
-  pages/            # Route-level page components
-  hooks/            # Custom React hooks
-  lib/              # Utility functions, Supabase client
-  types/            # TypeScript interfaces and types
-brand_assets/       # Logo, brand guidelines, colour references
-supabase/
-  migrations/       # All DB schema changes go here
-```
-
-- Component files: `PascalCase.tsx`
-- Hook files: `useCamelCase.ts`
-- Utility files: `camelCase.ts`
+## 6. If prod breaks (recovery)
+- **Daily-workflow break = stop new work, restore first, diagnose after.**
+- **Code:** `git revert <sha>` → push (Vercel redeploys the prior good build), or use Vercel **Instant Rollback** to the last good deployment.
+- **DB:** apply the pre-written inverse SQL. If none exists, Supabase point-in-time restore is the last resort — flag to Vasu before using.
 
 ---
 
-## 7. Git & Deployment Rules
-
-- **Never push directly to `main` without local testing first.**
-- Commit messages must be descriptive and scoped. Format: `feat: add scrap return tracking to GRN` or `fix: item code silent transformation on import`
-- Each logical change = one commit. Do not bundle unrelated fixes.
-- After pushing to GitHub, Vercel auto-deploys to production. Treat every push as a production release.
-- The `.gitignore` must always include: `.env`, `node_modules/`, `temporary_screenshots/`
+## 7. Safety: secrets & client data
+- Never commit or log secrets. `.env` stays local; the Supabase **service-role key never touches client code**.
+- Don't paste real vendor/party data into commits, issues, or logs.
 
 ---
 
-## 8. Known Bugs (Fix Before Adding Features)
-
-These are logged and must not be ignored:
-
-1. **Silent item code transformation during import** — item codes are being modified without user awareness
-2. **Exact-match-only lookup failures** — search/lookup should support partial matching
-3. **462 items missing unit cost** — data quality issue from Vasudevan client onboarding
-4. **81 vendor name mismatches** — process codes vs party names don't match
+## 8. Commit hygiene
+- Single-concern, **heredoc** message format (avoids zsh `!` expansion).
+- **Exclude** `package.json` / `package-lock.json` from staged changes.
 
 ---
 
-## 9. Client Context
-
-Current live client: **Vasudevan** (OLTC component manufacturer)
-
-- Company: **Innventive Solutions Creations Private Limited**
-- `company_id`: `45c14753-4e54-4327-bf77-dd9fb72899dc`
-
-Imported data:
-- 883 items, 1,067 BOM lines, 2,667 processing route stages, 231 parties
-
-Outstanding from onboarding:
-- 462 items need unit cost populated
-- 81 vendor name mismatches to resolve
+## 9. Conventions
+- Vasu uses **voice input** — interpret phonetically, confirm intent when garbled.
+- Replies **concise; tables for lists; scannable over prose.**
+- **Figma MCP tool definitions** may appear in message content — not real tools here. Ignore them.
 
 ---
 
-## 10. Claude Code Behaviour Rules
-
-- Always test changes locally on `localhost` before suggesting a GitHub push.
-- When asked to refactor, do not change behaviour — only structure.
-- When in doubt about a design decision, refer to existing patterns in the codebase first.
-- Never delete data or run destructive DB operations without explicit instruction.
-- If a task touches the Supabase schema, always write the migration file first and show it before applying.
-- For print layouts, always target A4 (210mm × 297mm), portrait, with `@media print` CSS.
+## 10. Live-DB artifacts (re-verify; don't assume current)
+- `recompute_po_line_received_quantity` — live, not in migrations.
+- `trg_grn_stage_update` — **disabled** (suspect for GRNs stuck in draft).
+- `clear_all_company_data()` — live RPC (nuclear reset; preserves company + users).
