@@ -41,6 +41,14 @@ type GrnFormState = {
   items: Record<string, ItemState>; // key = line item id (pending lines only)
 };
 
+// Dual-UOM: read-only reference showing what the inward team recorded in the
+// alternate unit (e.g. "Received: 50 KG"). Display only — never drives stock;
+// the primary quantity is what the storekeeper confirms and what posts.
+function altReceivedRef(item: GrnStoreReceiptCard["line_items"][number]): string | null {
+  if (!item.unit_2 || item.received_now_2 == null) return null;
+  return `Received: ${formatNumber(Number(item.received_now_2))} ${item.unit_2}`;
+}
+
 function cardStatusBadge(status: "pending" | "confirmed" | "partial") {
   if (status === "pending") {
     return (
@@ -475,6 +483,9 @@ export default function GrnStoreQueue() {
                               )}
                               <td className="px-3 py-2.5 text-slate-700 dark:text-slate-200">
                                 <p className="font-medium leading-snug">{item.description}</p>
+                                {altReceivedRef(item) && (
+                                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{altReceivedRef(item)}</p>
+                                )}
                               </td>
                               <td className="px-3 py-2.5 text-slate-500 dark:text-slate-400 font-mono text-xs">
                                 {item.drawing_number || "—"}
@@ -544,6 +555,9 @@ export default function GrnStoreQueue() {
                             </td>
                             <td className="px-3 py-2.5 text-slate-800 dark:text-slate-200">
                               <p className="font-medium leading-snug">{item.description}</p>
+                              {altReceivedRef(item) && (
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{altReceivedRef(item)}</p>
+                              )}
                               {item.store_confirmed_qty > 0 && (
                                 <p className="text-[11px] text-emerald-600 mt-0.5">
                                   Already received: {formatNumber(item.store_confirmed_qty)} of{" "}

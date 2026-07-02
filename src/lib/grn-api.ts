@@ -2649,6 +2649,11 @@ export interface GrnStoreReceiptCardLine {
   damaged_reason: string | null;
   store_confirmation_notes: string | null;
   store_location: string | null;
+  // Dual-UOM (alt measure) — display/reference only on the store screen.
+  ordered_qty_2: number | null;
+  received_now_2: number | null;
+  accepted_qty_2: number | null;
+  unit_2: string | null;
 }
 
 export interface GrnStoreReceiptCard {
@@ -2658,6 +2663,7 @@ export interface GrnStoreReceiptCard {
   vendor_name: string;
   po_number: string | null;
   grn_type: string; // po_grn | dc_grn
+  acceptance_basis: 'original' | 'alt';
   line_items: GrnStoreReceiptCardLine[];
   total_lines: number;
   pending_lines: number;          // store_confirmed = false
@@ -2675,7 +2681,7 @@ export async function fetchGrnStoreReceiptQueue(
   // Step 1 — pull GRNs in the selected month window (or all if no month).
   let grnQuery = (supabase as any)
     .from('grns')
-    .select('id, grn_number, grn_date, vendor_name, po_number, grn_type')
+    .select('id, grn_number, grn_date, vendor_name, po_number, grn_type, acceptance_basis')
     .eq('company_id', companyId)
     .not('status', 'in', '(deleted,cancelled)');
 
@@ -2723,7 +2729,7 @@ export async function fetchGrnStoreReceiptQueue(
   const { data: lineItems, error: lineErr } = await (supabase as any)
     .from('grn_line_items')
     .select(
-      'id, grn_id, item_id, description, drawing_number, unit, conforming_qty, store_confirmed_qty, damaged_qty, store_confirmed, store_confirmed_at, store_confirmed_by, damaged_reason, store_confirmation_notes, store_location'
+      'id, grn_id, item_id, description, drawing_number, unit, conforming_qty, store_confirmed_qty, damaged_qty, store_confirmed, store_confirmed_at, store_confirmed_by, damaged_reason, store_confirmation_notes, store_location, ordered_qty_2, received_now_2, accepted_qty_2, unit_2'
     )
     .eq('company_id', companyId)
     .eq('is_final_grn', true);
@@ -2764,6 +2770,10 @@ export async function fetchGrnStoreReceiptQueue(
         damaged_reason: l.damaged_reason ?? null,
         store_confirmation_notes: l.store_confirmation_notes ?? null,
         store_location: l.store_location ?? null,
+        ordered_qty_2: l.ordered_qty_2 ?? null,
+        received_now_2: l.received_now_2 ?? null,
+        accepted_qty_2: l.accepted_qty_2 ?? null,
+        unit_2: l.unit_2 ?? null,
       };
     });
 
@@ -2790,6 +2800,7 @@ export async function fetchGrnStoreReceiptQueue(
       vendor_name: grn?.vendor_name ?? '',
       po_number: grn?.po_number ?? null,
       grn_type: grn?.grn_type ?? 'po_grn',
+      acceptance_basis: (grn?.acceptance_basis === 'alt' ? 'alt' : 'original') as 'original' | 'alt',
       line_items: mappedLines,
       total_lines: mappedLines.length,
       pending_lines: pendingLines,
