@@ -36,6 +36,9 @@ interface LineItemState extends GRNLineItem {
   expanded?: boolean;
   // Stage 1 local state
   s1_received_now: number;
+  // Dual-UOM: measured alternate qty (e.g. KG), captured independently alongside
+  // the counted primary (s1_received_now). Saved to received_now_2; never derived.
+  s1_alt_received: number;
   s1_rejected_now: number;
   s1_identity_match: boolean | null;
   s1_mismatch_remarks: string;
@@ -82,6 +85,7 @@ function toLineState(item: GRNLineItem, idx: number): LineItemState {
     serial_number: idx + 1,
     expanded: false,
     s1_received_now: a.received_now ?? item.receiving_now ?? 0,
+    s1_alt_received: a.received_now_2 ?? 0,
     s1_identity_match: a.item_identity_match ?? null,
     s1_mismatch_remarks: a.identity_mismatch_remarks ?? '',
     s1_checked_by: a.stage1_checked_by ?? '',
@@ -120,34 +124,33 @@ function GrnLineItemRow({
   isAdmin,
   onChange,
   jigs,
-  basis = 'original',
 }: {
   item: LineItemState;
   index: number;
   isAdmin: boolean;
   onChange: (index: number, update: Partial<LineItemState>) => void;
   jigs?: Array<{ id: string; jig_number: string; drawing_number: string; status: string }>;
-  basis?: 'original' | 'alt';
 }) {
-  // Per-line acceptance basis: 'alt' (only when this line has an alt ordered
-  // qty) shows the second measure for Ordered/Prev Rcvd/Pending/Unit; the single
-  // Receiving Now input is then in unit_2 and routed to received_now_2 on save.
-  // Lines with no alt measure stay primary even under Alternate (fallback).
-  const useAlt = basis === 'alt' && (item.ordered_qty_2 ?? null) != null;
-  const orderedQty = useAlt
-    ? Number(item.ordered_qty_2 ?? 0)
-    : ((item as any).ordered_qty ?? item.po_quantity ?? 0);
-  const prevReceived = useAlt
-    ? (item.prev_received_2 ?? 0)
-    : ((item as any).previously_received_qty ?? item.previously_received ?? 0);
-  const prevAccepted = useAlt ? (item.prev_accepted_2 ?? 0) : (item.prev_accepted_live ?? 0);
-  const rowUnit = useAlt ? (item.unit_2 || "") : item.unit;
+  // Dual-UOM: the main row is ALWAYS the primary measure; the alt measure gets
+  // its own input + pending in a sub-row below. Capture is independent of
+  // acceptanceBasis (now only a persisted order-reconciliation flag).
+  const orderedQty = (item as any).ordered_qty ?? item.po_quantity ?? 0;
+  const prevReceived = (item as any).previously_received_qty ?? item.previously_received ?? 0;
+  const prevAccepted = item.prev_accepted_live ?? 0;
+  const rowUnit = item.unit;
   // Reactive Pending = Ordered − Prev Received − Receiving Now. Allowed to go
   // negative (over-receipt); the warning row below surfaces the magnitude.
   // Rejected Now does NOT subtract — rejected units were physically received.
   const pendingQty = orderedQty - prevReceived - item.s1_received_now;
   const overReceipt = pendingQty < 0 && !item.s1_admin_override;
   const overReceiptBy = overReceipt ? Math.abs(pendingQty) : 0;
+  // Alt measure — only when the line carries an alt ordered qty. Independent
+  // input + pending; no derivation to/from the primary.
+  const hasAlt = (item.ordered_qty_2 ?? null) != null;
+  const altOrdered = Number(item.ordered_qty_2 ?? 0);
+  const altPrevReceived = item.prev_received_2 ?? 0;
+  const altPending = altOrdered - altPrevReceived - (item.s1_alt_received ?? 0);
+  const altUnit = item.unit_2 || "";
   const hasJigs = !!(jigs && jigs.length > 0);
   // Reactive: recomputes on every s1_received_now change because LineItemState is React state.
   const isFinal = hasJigs && isFinalBatch(item as any, item.s1_received_now, item.s1_rejected_now ?? 0);
@@ -207,6 +210,37 @@ function GrnLineItemRow({
         )}>{pendingQty}</td>
         <td className="px-3 py-2 text-slate-500 text-xs">{rowUnit}</td>
       </tr>
+      {hasAlt && (
+        <tr className="bg-slate-50/60">
+          <td colSpan={9} className="px-4 py-2">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
+              <div className="text-slate-600">
+                <span className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 mr-2">Alt. Qty Ordered</span>
+                <span className="font-mono text-slate-800">{altOrdered}</span>
+                {altUnit && <span className="text-muted-foreground ml-1">{altUnit}</span>}
+              </div>
+              <label className="flex items-center gap-2 text-slate-600">
+                <span className="font-semibold uppercase tracking-wide text-[10px] text-slate-500">Alt. Qty Receiving Now</span>
+                <input
+                  type="number"
+                  step="any"
+                  min={0}
+                  value={item.s1_alt_received || ""}
+                  onChange={(e) => onChange(index, { s1_alt_received: Math.max(0, Number(e.target.value)) })}
+                  placeholder="—"
+                  className="w-24 text-right border border-slate-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-400"
+                />
+                {altUnit && <span className="text-muted-foreground">{altUnit}</span>}
+              </label>
+              <div className="text-slate-600">
+                <span className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 mr-2">Alt. Qty Pending</span>
+                <span className="font-mono text-slate-800">{altPending}</span>
+                {altUnit && <span className="text-muted-foreground ml-1">{altUnit}</span>}
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
       {overReceipt && (
         <tr className="bg-red-50/60">
           <td colSpan={9} className="px-3 py-1.5 text-xs text-red-700">
@@ -676,20 +710,19 @@ function GRNFormInner({ defaultGrnType }: Props) {
   const fillRemaining = () => {
     setLineItems((items) =>
       items.map((line) => {
-        if (line.s1_received_now > 0 || (line.s1_rejected_now ?? 0) > 0) return line;
-        // Match the displayed measure: Alternate lines (with an alt ordered qty)
-        // fill the ALT pending in unit_2; the single Receiving Now input is then
-        // routed to received_now_2 on save. Original / null-alt → primary.
-        const useAlt = acceptanceBasis === 'alt' && (line.ordered_qty_2 ?? null) != null;
-        const orderedQty = useAlt
-          ? Number(line.ordered_qty_2 ?? 0)
-          : ((line as any).ordered_qty ?? line.po_quantity ?? 0);
-        const prevReceived = useAlt
-          ? (line.prev_received_2 ?? 0)
-          : ((line as any).previously_received_qty ?? line.previously_received ?? 0);
-        const pending = Math.max(0, orderedQty - prevReceived);
-        if (pending <= 0) return line;
-        return { ...line, s1_received_now: pending };
+        if (line.s1_received_now > 0 || (line.s1_alt_received ?? 0) > 0 || (line.s1_rejected_now ?? 0) > 0) return line;
+        // Dual-UOM: fill the primary pending into the primary input and, for lines
+        // with an alt ordered qty, the alt pending into the alt input — each
+        // measure independently. No derivation between them.
+        const orderedQty = (line as any).ordered_qty ?? line.po_quantity ?? 0;
+        const prevReceived = (line as any).previously_received_qty ?? line.previously_received ?? 0;
+        const primaryPending = Math.max(0, orderedQty - prevReceived);
+        const hasAlt = (line.ordered_qty_2 ?? null) != null;
+        const altPending = hasAlt
+          ? Math.max(0, Number(line.ordered_qty_2 ?? 0) - (line.prev_received_2 ?? 0))
+          : 0;
+        if (primaryPending <= 0 && altPending <= 0) return line;
+        return { ...line, s1_received_now: primaryPending, s1_alt_received: altPending };
       })
     );
   };
@@ -746,18 +779,17 @@ function GRNFormInner({ defaultGrnType }: Props) {
       };
 
       const items = lineItems
-        .filter((i) => i.s1_received_now > 0 || i.receiving_now > 0)
+        .filter((i) => i.s1_received_now > 0 || i.receiving_now > 0 || (i.s1_alt_received ?? 0) > 0)
         .map((i, idx) => {
-          // Alternate basis: the single Receiving Now value is the alt qty —
-          // route it to received_now_2 and leave primary receiving/accepted at 0
-          // (never post an alt number into primary stock). Original: primary.
-          const isAlt = acceptanceBasis === 'alt' && (i.ordered_qty_2 ?? null) != null;
+          // Dual-UOM: capture both measures independently. The primary always
+          // posts to stock via the existing path (never zeroed); the measured alt
+          // is saved to received_now_2 for audit. No derivation between them.
           return {
             ...i,
             serial_number: idx + 1,
-            receiving_now: isAlt ? 0 : i.s1_received_now,
-            accepted_quantity: isAlt ? 0 : i.s1_received_now,
-            received_now_2: isAlt ? i.s1_received_now : null,
+            receiving_now: i.s1_received_now,
+            accepted_quantity: i.s1_received_now,
+            received_now_2: (i.s1_alt_received ?? 0) > 0 ? i.s1_alt_received : null,
             rejected_quantity: 0,
             rejection_reason: undefined,
             rejection_action: null,
@@ -1204,7 +1236,6 @@ function GRNFormInner({ defaultGrnType }: Props) {
                     isAdmin={isAdmin}
                     onChange={updateLineItem}
                     jigs={grnType === 'dc_grn' ? (jigsByDrawing[item.drawing_number ?? ''] ?? []) : undefined}
-                    basis={acceptanceBasis}
                   />
                 ))}
               </tbody>
