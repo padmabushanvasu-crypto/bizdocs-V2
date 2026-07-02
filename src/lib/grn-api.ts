@@ -1227,6 +1227,11 @@ export interface QualitativeLineData {
   qc_notes?: string | null;
   // Alt. Qty accepted (optional secondary measurement, e.g. KG alongside NOS).
   accepted_qty_2?: number | null;
+  // Dual-UOM: the counted primary (e.g. NOS) for an alt-basis line whose inward
+  // recorded primary as 0. When provided, QC also sets the primary received
+  // measure (receiving_now) so records are consistent and stock can post the
+  // primary through the existing unchanged path. Null for normal lines.
+  primary_received?: number | null;
 }
 
 export async function saveQualityStage(
@@ -1300,6 +1305,16 @@ export async function saveQualityStage(
     : (d === 'accept_as_is' || d === 'conditional_accept') ? 'use_as_is'
     : null;
 
+  // Null-guard for accepted_qty_2: only write when the current DB value is null,
+  // so a re-save (or any downstream capture) never overwrites an existing alt.
+  const { data: existingAcc2 } = await (supabase as any)
+    .from('grn_line_items')
+    .select('id, accepted_qty_2')
+    .in('id', lines.map((l) => l.id));
+  const acc2ByLine = new Map<string, number | null>(
+    ((existingAcc2 ?? []) as any[]).map((r: any) => [r.id, r.accepted_qty_2 ?? null])
+  );
+
   for (const line of lines) {
     const lineIsFinal = finalGrnPerLine ? (finalGrnPerLine[line.id] ?? false) : (isFinalGrn ?? false);
     const { error } = await (supabase as any)
@@ -1322,8 +1337,13 @@ export async function saveQualityStage(
         // only stamped for return-to-vendor (GRN's vendor); never clobbered otherwise.
         disposal_method: toDisposalMethod(line.disposition),
         ...(line.disposition === 'return_to_vendor' ? { supplier_ref: rejectHdr?.vendor_name ?? null } : {}),
-        // Alt. Qty accepted — only written when provided; never clobbers with null otherwise.
-        ...(line.accepted_qty_2 != null ? { accepted_qty_2: line.accepted_qty_2 } : {}),
+        // Alt. Qty accepted — write only when provided AND the current DB value is
+        // null (never overwrite an existing alt; never clobber with null).
+        ...(line.accepted_qty_2 != null && acc2ByLine.get(line.id) == null ? { accepted_qty_2: line.accepted_qty_2 } : {}),
+        // Dual-UOM: establish the primary received measure from the counted qty so
+        // received_quantity/conforming stay consistent and stock posts the primary
+        // via the existing unchanged path. Only for alt lines that supply it.
+        ...(line.primary_received != null ? { receiving_now: line.primary_received } : {}),
         is_final_grn: lineIsFinal,
         // Per-line Final GRN reason — only written when a reason map is supplied.
         ...(finalGrnReasonPerLine ? { final_grn_reason: finalGrnReasonPerLine[line.id] ?? null } : {}),

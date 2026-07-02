@@ -749,8 +749,10 @@ function QCMeasurementEditor({
   isSavedFinalGrn = false,
   accepted2ByLine = {},
   onChangeAccepted2,
+  altCountedByLine = {},
+  onChangeAltCounted,
 }: {
-  lineItems: Array<{ id: string; item_code: string; description: string; received_qty: number; qty_matched: number; matching_units?: number; unit: string; unit_2?: string | null; ordered_qty_2?: number | null; accepted_qty_2?: number | null; po_line_item_id?: string | null; is_final_grn?: boolean; final_grn_auto_detected?: boolean; final_grn_reason?: string | null }>;
+  lineItems: Array<{ id: string; item_code: string; description: string; received_qty: number; qty_matched: number; matching_units?: number; unit: string; unit_2?: string | null; ordered_qty_2?: number | null; received_now_2?: number | null; accepted_qty_2?: number | null; po_line_item_id?: string | null; is_final_grn?: boolean; final_grn_auto_detected?: boolean; final_grn_reason?: string | null }>;
   qcRows: QCRow[];
   onAddRow: (lineItemId: string) => void;
   onChangeRow: (idx: number, field: keyof QCRow, value: string) => void;
@@ -765,6 +767,8 @@ function QCMeasurementEditor({
   isSavedFinalGrn?: boolean;
   accepted2ByLine?: Record<string, number | null>;
   onChangeAccepted2?: (lineItemId: string, value: number | null) => void;
+  altCountedByLine?: Record<string, string>;
+  onChangeAltCounted?: (lineItemId: string, value: string) => void;
 }) {
   return (
     <div className="space-y-4">
@@ -817,6 +821,13 @@ function QCMeasurementEditor({
                     <span className="text-muted-foreground">{item.unit_2}</span>
                   </span>
                 )}
+                {item.received_now_2 != null && (
+                  <span className="flex items-center gap-1.5 text-slate-600">
+                    <span className="text-[11px] text-muted-foreground">Alt. qty received</span>
+                    <span className="font-mono text-slate-800">{item.received_now_2}</span>
+                    <span className="text-muted-foreground">{item.unit_2}</span>
+                  </span>
+                )}
                 <label className="flex items-center gap-2 text-slate-600">
                   <span className="text-[11px] text-muted-foreground">Alt. qty accepted</span>
                   <Input
@@ -832,6 +843,24 @@ function QCMeasurementEditor({
                     }}
                   />
                   <span className="text-muted-foreground">{item.unit_2}</span>
+                </label>
+                {/* Dual-UOM: counted primary (e.g. NOS). When entered, drives
+                    conforming_qty + the primary received measure at save so stock
+                    posts the primary via the existing path. Leave blank to keep the
+                    normal derivation (for lines that already captured a primary). */}
+                <label className="flex items-center gap-2 text-slate-600">
+                  <span className="text-[11px] text-muted-foreground">Counted ({item.unit || "NOS"})</span>
+                  <Input
+                    type="number"
+                    step="any"
+                    className={`w-24 h-8 text-right font-mono ${NO_SPINNER}`}
+                    value={altCountedByLine[item.id] ?? ""}
+                    min={0}
+                    disabled={disabled}
+                    placeholder="—"
+                    onChange={(e) => onChangeAltCounted?.(item.id, e.target.value)}
+                  />
+                  <span className="text-muted-foreground">{item.unit || "NOS"}</span>
                 </label>
               </div>
             )}
@@ -1549,6 +1578,10 @@ export default function GRNDetail() {
 
   const [qcRows,        setQcRows]        = useState<QCRow[]>([]);
   const [ncSummaries,   setNcSummaries]   = useState<NCSummary[]>([]);
+  // Dual-UOM: counted primary (e.g. NOS) per line for alt-basis lines whose
+  // inward recorded primary as 0. Isolated from ncSummaries (blank until typed);
+  // mapped into conforming_qty + primary_received at QC save only when entered.
+  const [altCounted,    setAltCounted]    = useState<Record<string, string>>({});
   const [s2InspectedBy, setS2InspectedBy] = useState("");
   const [s2ApprovedBy,  setS2ApprovedBy]  = useState("");
   const [s2Date,        setS2Date]        = useState(format(new Date(), "yyyy-MM-dd"));
@@ -2048,20 +2081,46 @@ export default function GRNDetail() {
       }));
       await saveGRNQCMeasurements(id!, measurements);
 
-      // Save qualitative stage with nc summaries
-      const lines: QualitativeLineData[] = ncSummaries.map((nc) => ({
-        id:                   nc.lineItemId,
-        qty_inspected:        nc.qty_inspected ?? (nc.conforming_qty + nc.non_conforming_qty),
-        inspection_method:    "100_percent" as InspectionMethod,
-        conforming_qty:       nc.conforming_qty,
-        non_conforming_qty:   nc.non_conforming_qty,
-        non_conformance_type: null,
-        deviation_description: null,
-        disposition:          (nc.disposition || null) as Disposition | null,
-        reference_drawing:    null,
-        qc_notes:             nc.qc_notes || null,
-        accepted_qty_2:       nc.accepted_qty_2 ?? null,
-      }));
+      // Dual-UOM over-receipt pre-check — friendly, specific message before the
+      // DB guard. Only for alt lines where a primary count was entered.
+      for (const nc of ncSummaries) {
+        const gl = (grn?.line_items ?? []).find((li) => li.id === nc.lineItemId) as any;
+        const raw = altCounted[nc.lineItemId];
+        if (gl?.unit_2 && raw != null && raw !== "") {
+          const counted = Number(raw);
+          const ordered = Number(gl.po_quantity ?? gl.ordered_qty ?? 0);
+          if (ordered > 0 && counted > ordered) {
+            throw new Error(
+              `Counted ${counted} ${gl.unit ?? "NOS"} exceeds ${ordered} ordered on this PO line (${gl.description ?? gl.item_code ?? ""}). Reduce the count, or ask Purchasing to increase the PO.`
+            );
+          }
+        }
+      }
+
+      // Save qualitative stage with nc summaries. For alt lines where a primary
+      // count was entered, override conforming from the count and carry
+      // primary_received so QC sets the primary received measure (stock posts via
+      // the existing unchanged path). Blank count -> normal derivation.
+      const lines: QualitativeLineData[] = ncSummaries.map((nc) => {
+        const gl = (grn?.line_items ?? []).find((li) => li.id === nc.lineItemId) as any;
+        const raw = altCounted[nc.lineItemId];
+        const hasCounted = !!gl?.unit_2 && raw != null && raw !== "";
+        const counted = hasCounted ? Number(raw) : null;
+        return {
+          id:                   nc.lineItemId,
+          qty_inspected:        hasCounted ? (counted as number) : (nc.qty_inspected ?? (nc.conforming_qty + nc.non_conforming_qty)),
+          inspection_method:    "100_percent" as InspectionMethod,
+          conforming_qty:       hasCounted ? (counted as number) : nc.conforming_qty,
+          non_conforming_qty:   nc.non_conforming_qty,
+          non_conformance_type: null,
+          deviation_description: null,
+          disposition:          (nc.disposition || null) as Disposition | null,
+          reference_drawing:    null,
+          qc_notes:             nc.qc_notes || null,
+          accepted_qty_2:       nc.accepted_qty_2 ?? null,
+          primary_received:     hasCounted ? (counted as number) : null,
+        };
+      });
       // PO-GRNs: all lines are final (goods always go to store after QC).
       // DC-GRNs: only bought_out/consumable/service auto-mark (others may go back to job work).
       const autoFinal = new Set<string>(
@@ -2341,6 +2400,7 @@ export default function GRNDetail() {
       // Alt. Qty (secondary UOM) — static info for label + read-only display.
       unit_2: gl?.unit_2 ?? l.unit_2 ?? null,
       ordered_qty_2: gl?.ordered_qty_2 ?? l.ordered_qty_2 ?? null,
+      received_now_2: gl?.received_now_2 ?? null,
       accepted_qty_2: gl?.accepted_qty_2 ?? null,
       // Final GRN — PO lines get an editable box; DC lines (no PO line) don't.
       po_line_item_id: gl?.po_line_item_id ?? l.po_line_item_id ?? null,
@@ -2911,6 +2971,8 @@ export default function GRNDetail() {
                   isSavedFinalGrn={g.is_final_grn ?? false}
                   accepted2ByLine={accepted2ByLine}
                   onChangeAccepted2={(lineId, value) => updateNCSummary(lineId, "accepted_qty_2", value)}
+                  altCountedByLine={altCounted}
+                  onChangeAltCounted={(lineId, value) => setAltCounted((prev) => ({ ...prev, [lineId]: value }))}
                 />
 
                 {/* NC Summary — only for items with non_conforming rows */}
