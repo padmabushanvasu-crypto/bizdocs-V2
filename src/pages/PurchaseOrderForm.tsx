@@ -593,7 +593,19 @@ export default function PurchaseOrderForm() {
 
       const items = lineItems
         .filter((i) => i.description.trim())
-        .map((i, idx) => ({ ...i, serial_number: idx + 1, gst_rate: effectiveGstRate }));
+        .map((i, idx) => {
+          // Dual-UOM: persist the shown alt unit when an alt qty is entered
+          // (the Select displays `unit_2 || "NOS"` but only commits on manual
+          // change, so the default was silently dropped). No alt qty -> null,
+          // to avoid orphan units.
+          const hasAltQty = i.quantity_2 != null && Number(i.quantity_2) > 0;
+          return {
+            ...i,
+            serial_number: idx + 1,
+            gst_rate: effectiveGstRate,
+            unit_2: hasAltQty ? (i.unit_2 || "NOS") : null,
+          };
+        });
 
       if (isEdit) {
         await updatePurchaseOrder(id!, { po: poData, lineItems: items });
