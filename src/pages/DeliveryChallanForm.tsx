@@ -695,6 +695,11 @@ export default function DeliveryChallanForm() {
               if (selected.length === 0) return null;
               return selected.map(j => j.jig_number || j.id).join(', ');
             })(),
+            // Dual-UOM: persist the shown alt unit when an alt qty is entered
+            // (the Select displays `unit_2 || "NOS"` but only commits on manual
+            // change, so the default was silently dropped). No alt qty -> null,
+            // to avoid orphan units. Mirrors the PO fix (Slice 1, dcc68a0).
+            unit_2: (i.quantity_2 != null && Number(i.quantity_2) > 0) ? (i.unit_2 || "NOS") : null,
           };
         });
 
