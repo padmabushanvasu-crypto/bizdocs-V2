@@ -900,15 +900,28 @@ function BillOfMaterialsInner() {
     queryKey: ["items-all-bom", "finished_good", "sub_assembly", "component"],
     queryFn: async () => {
       const companyId = await getCompanyId();
-      const { data, error } = await (supabase as any)
-        .from("items")
-        .select("id, item_code, description, item_type, unit, current_stock, min_stock, aimed_stock, stock_alert_level, drawing_number, hsn_sac_code, drawing_revision, status, standard_cost")
-        .eq("company_id", companyId)
-        .eq("status", "active")
-        .in("item_type", ["finished_good", "sub_assembly", "component"])
-        .order("item_code", { ascending: true });
-      if (error) throw error;
-      return { data: (data ?? []) as Item[], count: (data ?? []).length };
+      // PostgREST caps a single response at ~1000 rows; page via .range() so all
+      // active items load. Hard ceiling of 20 pages (20k rows). Column subset +
+      // item_type filter unchanged (do NOT reroute via fetchItems).
+      const PAGE = 1000;
+      const MAX_PAGES = 20;
+      const all: Item[] = [];
+      for (let page = 0; page < MAX_PAGES; page++) {
+        const from = page * PAGE;
+        const { data, error } = await (supabase as any)
+          .from("items")
+          .select("id, item_code, description, item_type, unit, current_stock, min_stock, aimed_stock, stock_alert_level, drawing_number, hsn_sac_code, drawing_revision, status, standard_cost")
+          .eq("company_id", companyId)
+          .eq("status", "active")
+          .in("item_type", ["finished_good", "sub_assembly", "component"])
+          .order("item_code", { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        const rows = (data ?? []) as Item[];
+        all.push(...rows);
+        if (rows.length < PAGE) break;
+      }
+      return { data: all, count: all.length };
     },
   });
   const allItems = allItemsData?.data ?? [];

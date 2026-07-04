@@ -126,29 +126,47 @@ export async function fetchItems(filters: ItemFilters = {}) {
   if (!companyId) return { data: [], count: 0 };
   const { search, type = "all", types, status = "active" } = filters;
 
-  let query = supabase
-    .from("items")
-    .select("*")
-    .order("item_code", { ascending: true });
+  // Build a fresh, identically-filtered query per page — Supabase query builders
+  // are single-use, so filters must be re-applied every iteration.
+  const buildQuery = () => {
+    let query = supabase
+      .from("items")
+      .select("*")
+      .order("item_code", { ascending: true });
 
-  if (status !== "all") query = query.eq("status", status);
-  if (types && types.length > 0) {
-    query = query.in("item_type", types);
-  } else if (type && type !== "all") {
-    query = query.eq("item_type", type);
-  }
-
-  if (search?.trim()) {
-    const sanitized = sanitizeSearchTerm(search);
-    if (sanitized) {
-      const term = `%${sanitized}%`;
-      query = query.or(`item_code.ilike.${term},description.ilike.${term},drawing_number.ilike.${term},drawing_revision.ilike.${term},hsn_sac_code.ilike.${term}`);
+    if (status !== "all") query = query.eq("status", status);
+    if (types && types.length > 0) {
+      query = query.in("item_type", types);
+    } else if (type && type !== "all") {
+      query = query.eq("item_type", type);
     }
+
+    if (search?.trim()) {
+      const sanitized = sanitizeSearchTerm(search);
+      if (sanitized) {
+        const term = `%${sanitized}%`;
+        query = query.or(`item_code.ilike.${term},description.ilike.${term},drawing_number.ilike.${term},drawing_revision.ilike.${term},hsn_sac_code.ilike.${term}`);
+      }
+    }
+    return query;
+  };
+
+  // PostgREST caps a single response at ~1000 rows. Page via .range() and
+  // concatenate so callers always receive the FULL list. Hard ceiling of
+  // 20 pages (20k rows) guards against an infinite loop.
+  const PAGE = 1000;
+  const MAX_PAGES = 20;
+  const all: Item[] = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const from = page * PAGE;
+    const { data, error } = await buildQuery().range(from, from + PAGE - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as Item[];
+    all.push(...rows);
+    if (rows.length < PAGE) break;
   }
 
-  const { data, error } = await query;
-  if (error) throw error;
-  return { data: (data ?? []) as Item[], count: (data ?? []).length };
+  return { data: all, count: all.length };
 }
 
 export async function fetchItem(id: string) {
@@ -244,13 +262,28 @@ export async function fetchStockStatus() {
   // The stock_status view may not expose this column.
   const companyId = await getCompanyId();
   if (!companyId) return [] as StockStatusRow[];
-  const { data, error } = await (supabase as any)
-    .from("items")
-    .select("id, item_code, description, drawing_number, unit, item_type, hsn_sac_code, current_stock, min_stock, min_stock_override, aimed_stock, standard_cost, parent_item_id, company_id, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, stock_alert_level")
-    .eq("company_id", companyId)
-    .eq("status", "active")
-    .order("item_code", { ascending: true });
-  if (error) throw error;
+  // PostgREST caps a single response at ~1000 rows; page via .range() so all
+  // active items are included. Hard ceiling of 20 pages (20k rows). Column
+  // subset unchanged.
+  const ITEM_COLS =
+    "id, item_code, description, drawing_number, unit, item_type, hsn_sac_code, current_stock, min_stock, min_stock_override, aimed_stock, standard_cost, parent_item_id, company_id, stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, stock_alert_level";
+  const PAGE = 1000;
+  const MAX_PAGES = 20;
+  const itemRows: any[] = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const from = page * PAGE;
+    const { data: pageData, error } = await (supabase as any)
+      .from("items")
+      .select(ITEM_COLS)
+      .eq("company_id", companyId)
+      .eq("status", "active")
+      .order("item_code", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    const rowsPage = (pageData ?? []) as any[];
+    itemRows.push(...rowsPage);
+    if (rowsPage.length < PAGE) break;
+  }
 
   // ── Active AWO overlay ────────────────────────────────────────────────────
   // Two separate queries because assembly_work_orders → bom_lines have no
@@ -295,7 +328,7 @@ export async function fetchStockStatus() {
     }
   }
   // Compute stock_status and effective_min_stock client-side (same logic as the view)
-  const rows = (data ?? []).map((item: any) => {
+  const rows = itemRows.map((item: any) => {
     // Use || not ?? so that a stored value of 0 is treated as "not set"
     // and falls through to min_stock (??  would short-circuit on 0)
     const effectiveMin = item.min_stock_override || item.min_stock || 0;
