@@ -121,7 +121,11 @@ function GRNRegisterInner() {
     drawingNumber: "",
     search: "",
     status: "all",
-    month: monthOptions[0].value,
+    // Default to "All months" (no date constraint) so stage pills and the list
+    // show all data. Scoping to the current month silently hid older GRNs and
+    // made correctly-filtered stage pills look empty. monthOptions still feeds
+    // the dropdown; the user can pick a specific month to narrow.
+    month: undefined,
     page: 1,
     pageSize: 25,
   });
