@@ -71,7 +71,9 @@ function DcGrnInner() {
   const [filters, setFilters] = useState<GRNFilters>({
     search: "",
     status: "all",
-    month: monthOptions[0].value,
+    // Default to "All months" (no date constraint) — see GRNRegister. Scoping
+    // to the current month silently hid older records.
+    month: undefined,
     page: 1,
     pageSize: 25,
   });

@@ -187,7 +187,9 @@ export default function Consumables() {
     return opts;
   })();
 
-  const [month, setMonth] = useState(monthOptions[0].value);
+  // Default to "All months" (no date constraint); scoping to the current month
+  // silently hid older consumable issues.
+  const [month, setMonth] = useState<string | undefined>(undefined);
   const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
 
@@ -261,11 +263,12 @@ export default function Consumables() {
             className="pl-8"
           />
         </div>
-        <Select value={month} onValueChange={setMonth}>
+        <Select value={month ?? "all"} onValueChange={(v) => setMonth(v === "all" ? undefined : v)}>
           <SelectTrigger className="w-[150px]">
             <SelectValue placeholder="Month" />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="all">All months</SelectItem>
             {monthOptions.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
             ))}
