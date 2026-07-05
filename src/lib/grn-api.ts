@@ -190,6 +190,11 @@ export interface GRNFilters {
   // with non_conforming_qty > 0. Resolved server-side via a line-item pre-query
   // (like drawingNumber), so it composes with date/search and keeps counts right.
   hasNonConforming?: boolean;
+  // QC-inspection split of the quality_done bucket, keyed off the header field
+  // quality_completed_by (set only at QC completion). true → inspected
+  // (IS NOT NULL); false → received-but-not-inspected (IS NULL). Read-only
+  // filter — does not touch grn_stage or stock posting.
+  qcInspected?: boolean;
   page?: number;
   pageSize?: number;
   showDeleted?: boolean;
@@ -248,6 +253,11 @@ export async function fetchGRNs(filters: GRNFilters = {}) {
   if (status && status !== "all") query = query.eq("status", status);
   if (grn_type && grn_type !== "all") query = query.eq("grn_type", grn_type);
   if (filters.grn_stage && filters.grn_stage !== 'all') query = query.eq('grn_stage', filters.grn_stage);
+  // QC-inspection split (quality_completed_by, set only at QC completion). Splits
+  // the quality_done bucket into inspected vs received-but-not-inspected. Filter
+  // only — no grn_stage or stock change.
+  if (filters.qcInspected === true) query = query.not('quality_completed_by', 'is', null);
+  else if (filters.qcInspected === false) query = query.is('quality_completed_by', null);
   if (inwardSlNo != null && Number.isFinite(inwardSlNo)) query = query.eq('inward_sl_no', inwardSlNo);
   if (month) {
     const start = `${month}-01`;

@@ -74,10 +74,14 @@ class GrnRegisterErrorBoundary extends Component<{ children: ReactNode }, { erro
   }
 }
 
+// "Awaiting Receipt" (quantitative_pending) removed: that stage has no live GRNs
+// (single-stage receipt bypasses it; two-stage GRNs pass through transiently), so
+// a permanently-empty pill was misleading. "Awaiting QC" and "Pending Final
+// Receipt" both live in grn_stage='quality_done' and are split by whether QC has
+// actually inspected the GRN (quality_completed_by) — see effectiveFilters.
 const STAGE_PILLS = [
   { label: 'All',              value: 'all' },
-  { label: 'Awaiting Receipt', value: 'quantitative_pending' },
-  { label: 'Awaiting QC',      value: 'quality_pending' },
+  { label: 'Awaiting QC',      value: 'awaiting_qc' },
   { label: 'Awaiting Store',   value: 'awaiting_store' },
   { label: 'Pending Final Receipt', value: 'quality_done' },
   { label: 'Accepted',         value: 'closed_accepted' },
@@ -194,9 +198,12 @@ function GRNRegisterInner() {
   // Build effective filters including stage filter
   const effectiveFilters = useMemo(() => {
     const f = { ...filters };
-    if (stageFilter === 'quantitative_pending') (f as any).grn_stage = 'quantitative_pending';
-    else if (stageFilter === 'quality_pending') (f as any).grn_stage = 'quality_pending';
-    else if (stageFilter === 'quality_done') (f as any).grn_stage = 'quality_done';
+    // Awaiting QC vs Pending Final Receipt: both are grn_stage='quality_done',
+    // split by quality_completed_by (the QC-inspection signal). Not inspected →
+    // Awaiting QC (the previously-invisible QC queue); inspected → Pending Final
+    // Receipt. Read-only — never changes grn_stage or stock.
+    if (stageFilter === 'awaiting_qc') { (f as any).grn_stage = 'quality_done'; (f as any).qcInspected = false; }
+    else if (stageFilter === 'quality_done') { (f as any).grn_stage = 'quality_done'; (f as any).qcInspected = true; }
     else if (stageFilter === 'awaiting_store') (f as any).grn_stage = 'awaiting_store';
     else if (stageFilter === 'closed_accepted') (f as any).grn_stage = 'closed';
     // Non-Conforming isn't a stage — it's any GRN with a non_conforming line item.
@@ -275,9 +282,6 @@ function GRNRegisterInner() {
             }`}
           >
             {pill.label}
-            {pill.value === 'quality_pending' && pendingQC.length > 0 && (
-              <span className="ml-1.5 bg-amber-500 text-white text-[10px] px-1 py-0.5 rounded-full">{pendingQC.length}</span>
-            )}
           </button>
         ))}
       </div>
