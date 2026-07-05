@@ -871,7 +871,7 @@ export default function DeliveryChallanForm() {
   }
 
   return (
-    <div className="p-4 md:p-6 pb-32 space-y-6 max-w-5xl mx-auto">
+    <div className="p-4 md:p-6 pb-32 space-y-6 w-full">
       <button
         onClick={() => navigate(-1)}
         className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 transition-colors mb-3"
