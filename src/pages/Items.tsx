@@ -309,12 +309,13 @@ export default function Items() {
         </div>
       </div>
 
-      <div className="flex gap-2 flex-wrap">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
+      <div className="flex flex-col gap-2">
+        <div className="relative w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Search code, description, drawing..." className="pl-9"
             value={filters.search} onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))} />
         </div>
+        <div className="flex gap-2 flex-wrap items-center">
         <Select value={filters.type || "all"} onValueChange={(v) => setFilters((f) => ({ ...f, type: v }))}>
           <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -328,6 +329,7 @@ export default function Items() {
             <X className="h-3.5 w-3.5 mr-1" /> Clear filters
           </Button>
         )}
+        </div>
       </div>
 
       {/* Bulk action toolbar */}

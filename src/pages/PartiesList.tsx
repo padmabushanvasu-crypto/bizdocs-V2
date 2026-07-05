@@ -236,9 +236,10 @@ export default function PartiesList() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1 max-w-sm">
+      {/* Search + Filters */}
+      <div className="flex flex-col gap-3">
+        {/* Search — own full-width row */}
+        <div className="relative w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search name, GSTIN, phone, city..."
@@ -247,6 +248,8 @@ export default function PartiesList() {
             onChange={(e) => updateFilter("search", e.target.value)}
           />
         </div>
+        {/* Filters — row below */}
+        <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex gap-1 rounded-md border border-border p-0.5 bg-secondary">
           {typeFilters.map((f) => (
             <button
@@ -294,6 +297,7 @@ export default function PartiesList() {
             ))}
           </div>
         )}
+        </div>
       </div>
 
       {/* Bulk action toolbar */}
