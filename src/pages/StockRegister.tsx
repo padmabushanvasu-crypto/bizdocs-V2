@@ -554,10 +554,10 @@ function StockRegisterInner() {
                   Cost: TOTAL
                 </th>
                 <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                  Min Required
+                  Reorder Level
                 </th>
                 <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                  Aimed
+                  Aimed Qty
                 </th>
                 <ColHeader
                   label="Pending QC"
@@ -709,7 +709,7 @@ function StockRegisterInner() {
                         </span>
                       </td>
 
-                      {/* Min Required */}
+                      {/* Reorder Level */}
                       <td className="px-3 py-3 text-right">
                         {minReq > 0 ? (
                           <span className="text-sm font-mono tabular-nums text-slate-500">
@@ -720,7 +720,7 @@ function StockRegisterInner() {
                         )}
                       </td>
 
-                      {/* Aimed */}
+                      {/* Aimed Qty */}
                       <td className="px-3 py-3 text-right">
                         {(row as any).aimed_stock > 0 ? (
                           <span className="text-sm font-mono tabular-nums text-slate-500">
@@ -915,9 +915,9 @@ function StockRegisterInner() {
                   </span>
                 </td>
 
-                {/* Min Required */}
+                {/* Reorder Level */}
                 <td className="px-3 py-3" />
-                {/* Aimed */}
+                {/* Aimed Qty */}
                 <td className="px-3 py-3" />
                 {/* Pending QC */}
                 <td className="px-3 py-3" />

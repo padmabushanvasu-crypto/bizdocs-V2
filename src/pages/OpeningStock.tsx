@@ -293,6 +293,7 @@ export default function OpeningStock() {
               <th className="text-left px-4 py-3 font-medium text-slate-600">Unit</th>
               <th className="text-right px-4 py-3 font-medium text-slate-600">Free Stock</th>
               <th className="text-right px-4 py-3 font-medium text-slate-600">Aimed Qty</th>
+              <th className="text-right px-4 py-3 font-medium text-slate-600">Reorder Level</th>
               <th className="text-right px-4 py-3 font-medium text-slate-600">Last Opening Entry</th>
               {!hideCosts && <th className="text-right px-4 py-3 font-medium text-slate-600">Cost/Unit</th>}
               <th className="px-4 py-3"></th>
@@ -301,11 +302,11 @@ export default function OpeningStock() {
           <tbody className="divide-y">
             {isLoading ? (
               <tr>
-                <td colSpan={hideCosts ? 8 : 9} className="px-4 py-8 text-center text-slate-400">Loading…</td>
+                <td colSpan={hideCosts ? 9 : 10} className="px-4 py-8 text-center text-slate-400">Loading…</td>
               </tr>
             ) : filteredItems.length === 0 ? (
               <tr>
-                <td colSpan={hideCosts ? 8 : 9} className="px-4 py-8 text-center text-slate-400">No items found</td>
+                <td colSpan={hideCosts ? 9 : 10} className="px-4 py-8 text-center text-slate-400">No items found</td>
               </tr>
             ) : (
               filteredItems.map(item => {
@@ -329,6 +330,11 @@ export default function OpeningStock() {
                     <td className="px-4 py-3 text-right font-mono text-sm text-blue-700">
                       {(item as any).aimed_stock > 0
                         ? formatNumber((item as any).aimed_stock ?? 0)
+                        : <span className="text-slate-300">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-sm text-slate-500">
+                      {item.min_stock != null && item.min_stock > 0
+                        ? formatNumber(item.min_stock)
                         : <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-4 py-3 text-right text-slate-500">
