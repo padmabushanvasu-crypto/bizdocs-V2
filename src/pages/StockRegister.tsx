@@ -113,7 +113,8 @@ type TypeFilter =
   | "bought_out"
   | "sub_assembly"
   | "finished_good"
-  | "raw_material";
+  | "raw_material"
+  | "consumable";
 
 // ── Column header with tooltip ─────────────────────────────────────────────────
 
@@ -189,7 +190,8 @@ function StockRegisterInner() {
       urlType === "bought_out" ||
       urlType === "sub_assembly" ||
       urlType === "finished_good" ||
-      urlType === "raw_material"
+      urlType === "raw_material" ||
+      urlType === "consumable"
     )
       return urlType;
     return "all";
@@ -366,6 +368,7 @@ function StockRegisterInner() {
     { v: "bought_out",    label: "Bought Out" },
     { v: "sub_assembly",  label: "Sub Assembly" },
     { v: "finished_good", label: "Finished Good" },
+    { v: "consumable",    label: "Consumable" },
   ];
 
   return (
