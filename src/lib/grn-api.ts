@@ -186,6 +186,10 @@ export interface GRNFilters {
   month?: string;
   drawingNumber?: string;
   inwardSlNo?: number;
+  // Derived "Non-Conforming" pill: restrict to GRNs that have at least one line
+  // with non_conforming_qty > 0. Resolved server-side via a line-item pre-query
+  // (like drawingNumber), so it composes with date/search and keeps counts right.
+  hasNonConforming?: boolean;
   page?: number;
   pageSize?: number;
   showDeleted?: boolean;
@@ -226,6 +230,19 @@ export async function fetchGRNs(filters: GRNFilters = {}) {
     }
   }
 
+  // "Non-Conforming" pill: GRNs having any line with non_conforming_qty > 0. Not
+  // a grn_stage — resolved to a grn_id set here so pagination/count stay correct.
+  let nonConformingGrnIds: string[] | null = null;
+  if (filters.hasNonConforming) {
+    const { data: ncMatches } = await (supabase as any)
+      .from("grn_line_items")
+      .select("grn_id")
+      .eq("company_id", companyId)
+      .gt("non_conforming_qty", 0);
+    nonConformingGrnIds = [...new Set(((ncMatches ?? []) as any[]).map((r) => r.grn_id).filter(Boolean))] as string[];
+    if (nonConformingGrnIds.length === 0) return { data: [], count: 0 };
+  }
+
   let query = (supabase as any).from("grns").select("*", { count: "exact" }).order("created_at", { ascending: false });
   if (!filters.showDeleted) query = query.neq("status", "deleted");
   if (status && status !== "all") query = query.eq("status", status);
@@ -249,6 +266,9 @@ export async function fetchGRNs(filters: GRNFilters = {}) {
     }
   }
   if (drawingGrnIds) query = query.in("id", drawingGrnIds);
+  // Multiple .in on the same column AND together, so this intersects with any
+  // drawing-number restriction above.
+  if (nonConformingGrnIds) query = query.in("id", nonConformingGrnIds);
   query = query.range(from, to);
   const { data, error, count } = await query;
   if (error) throw error;

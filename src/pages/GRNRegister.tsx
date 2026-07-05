@@ -195,7 +195,9 @@ function GRNRegisterInner() {
     else if (stageFilter === 'quality_done') (f as any).grn_stage = 'quality_done';
     else if (stageFilter === 'awaiting_store') (f as any).grn_stage = 'awaiting_store';
     else if (stageFilter === 'closed_accepted') (f as any).grn_stage = 'closed';
-    else if (stageFilter === 'closed_nonconforming') (f as any).grn_stage = 'closed';
+    // Non-Conforming isn't a stage — it's any GRN with a non_conforming line item.
+    // Resolved server-side in fetchGRNs; leave grn_stage unset so it spans stages.
+    else if (stageFilter === 'closed_nonconforming') (f as any).hasNonConforming = true;
     else delete (f as any).grn_stage;
     return f;
   }, [filters, stageFilter]);
@@ -210,11 +212,6 @@ function GRNRegisterInner() {
     let list = showDeleted
       ? allGrns
       : allGrns.filter((g: any) => g.status !== "deleted" && g.grn_stage !== "cancelled");
-    if (stageFilter === 'closed_accepted') {
-      list = list.filter(g => (g as any).overall_quality_verdict === 'fully_accepted');
-    } else if (stageFilter === 'closed_nonconforming') {
-      list = list.filter(g => ['conditionally_accepted','partially_returned','returned'].includes((g as any).overall_quality_verdict ?? ''));
-    }
     if (inwardSort !== 'none') {
       // Lines without an inward serial sort last regardless of direction.
       list = [...list].sort((a: any, b: any) => {
