@@ -114,12 +114,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         if (session?.user) {
-          // Real sign-in / user update / first hydrate — re-fetch profile and
-          // hold the loading flag until that finishes. TOKEN_REFRESHED arrives
-          // every ~50 minutes and would otherwise flash the loading screen and
-          // wipe in-page state (open dialogs, half-typed forms). For those we
-          // just swap the session quietly.
-          if (event === "SIGNED_IN" || event === "USER_UPDATED" || event === "INITIAL_SESSION") {
+          // Only a genuine identity transition — no user → user, or a switch to a
+          // different user id — should flip the loading gate and re-fetch the
+          // profile. Setting loading=true unmounts the whole app subtree via
+          // ProtectedRoute, wiping half-typed forms. supabase-js re-emits
+          // SIGNED_IN on every tab refocus and TOKEN_REFRESHED every ~50 min; for
+          // those (same already-loaded user) we swap the session quietly, keep
+          // loading false, and never re-fetch the in-memory profile.
+          const knownUserId = prevSessionRef.current?.user?.id;
+          const sameUser = knownUserId === session.user.id;
+          if (
+            (event === "SIGNED_IN" || event === "USER_UPDATED" || event === "INITIAL_SESSION") &&
+            !sameUser
+          ) {
             setSession(session);
             setLoading(true);
             // Defer to avoid Supabase auth deadlock, but keep loading=true until profile resolves
