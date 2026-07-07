@@ -880,6 +880,29 @@ function GRNFormInner({ defaultGrnType }: Props) {
         return;
       }
     }
+    // Alternate basis: any line with an alt quantity must also carry a non-zero
+    // primary — the primary is what posts to stock, so an alt-only line would be
+    // a receipt that never tracks stock. Lines with neither entered are fine
+    // (partial receipts). Original basis is unaffected. Validation only — does
+    // not change capture, save shape, or the stock path.
+    if (acceptanceBasis === 'alt' && !isExistingGrn) {
+      const altWithoutPrimary = lineItems
+        .map((line, idx) => ({ line, lineNum: idx + 1 }))
+        .filter(({ line }) =>
+          (line.s1_alt_received ?? 0) > 0 &&
+          !(line.s1_received_now > 0 || line.receiving_now > 0)
+        );
+      if (altWithoutPrimary.length > 0) {
+        const nums = altWithoutPrimary.map(({ lineNum }) => lineNum).join(", ");
+        const plural = altWithoutPrimary.length > 1;
+        toast({
+          title: `Line${plural ? "s" : ""} ${nums}: enter a primary quantity`,
+          description: "Alternate qty requires a primary for stock tracking.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
     // DC-GRN: block save only on the final batch for a line. Partial receipts
     // skip the jig gate — confirmation is required only when this receipt
     // closes out the DC line.
