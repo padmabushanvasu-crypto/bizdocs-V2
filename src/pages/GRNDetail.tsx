@@ -511,16 +511,16 @@ function Stage1Table({
 
                 {/* Alt-qty sub-row — appears only when the linked PO/DC line has Alt. Qty set */}
                 {showAltRow && (
-                  <tr className="bg-slate-50/60 dark:bg-[#0a0e1a]/60">
+                  <tr className="bg-indigo-50/40 dark:bg-indigo-950/20">
                     <td colSpan={14} className="px-4 py-2">
                       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
                         <div className="text-slate-600 dark:text-slate-300">
-                          <span className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 dark:text-slate-400 mr-2">Alt. Qty Ordered</span>
-                          <span className="font-mono text-slate-800 dark:text-slate-100">{altOrdered}</span>
+                          <span className="font-semibold uppercase tracking-wide text-[11px] text-indigo-600 dark:text-indigo-400 mr-2">Alt. Qty Ordered</span>
+                          <span className="font-mono text-sm font-semibold text-slate-800 dark:text-slate-100">{altOrdered}</span>
                           {altUnit && <span className="text-muted-foreground ml-1">{altUnit}</span>}
                         </div>
                         <label className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
-                          <span className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 dark:text-slate-400">Alt. Qty Receiving Now</span>
+                          <span className="font-semibold uppercase tracking-wide text-[11px] text-indigo-600 dark:text-indigo-400">Alt. Qty Receiving Now</span>
                           <input
                             type="number"
                             className={`w-24 text-right border border-slate-200 dark:border-white/20 dark:bg-[#0a0e1a] dark:text-slate-100 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent ${NO_SPINNER}`}
@@ -538,8 +538,8 @@ function Stage1Table({
                           {altUnit && <span className="text-muted-foreground">{altUnit}</span>}
                         </label>
                         <div className="text-slate-600 dark:text-slate-300">
-                          <span className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 dark:text-slate-400 mr-2">Alt. Qty Pending</span>
-                          <span className="font-mono text-slate-800 dark:text-slate-100">{altOrdered - (line.prev_received_2 ?? 0) - (line.received_now_2 ?? 0)}</span>
+                          <span className="font-semibold uppercase tracking-wide text-[11px] text-indigo-600 dark:text-indigo-400 mr-2">Alt. Qty Pending</span>
+                          <span className="font-mono text-sm font-semibold text-slate-800 dark:text-slate-100">{altOrdered - (line.prev_received_2 ?? 0) - (line.received_now_2 ?? 0)}</span>
                           {altUnit && <span className="text-muted-foreground ml-1">{altUnit}</span>}
                         </div>
                       </div>
@@ -681,17 +681,17 @@ function Stage1ReadOnly({ lines, isDcGrn }: { lines: S1Line[]; isDcGrn?: boolean
                   )}
                 </tr>
                 {Number(l.ordered_qty_2 ?? 0) > 0 && (l.unit_2 ?? "").trim() !== "" && (
-                  <tr className="bg-slate-50/60 dark:bg-[#0a0e1a]/60">
+                  <tr className="bg-indigo-50/40 dark:bg-indigo-950/20">
                     <td colSpan={10 + (hasStoreTracking ? 1 : 0) + (hasJigData ? 1 : 0)} className="px-4 py-2 text-xs">
                       <div className="flex flex-wrap gap-x-6 gap-y-1 items-baseline text-slate-600 dark:text-slate-300">
                         <div>
-                          <span className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 dark:text-slate-400 mr-2">Alt. Qty Ordered</span>
-                          <span className="font-mono">{l.ordered_qty_2}</span>
+                          <span className="font-semibold uppercase tracking-wide text-[11px] text-indigo-600 dark:text-indigo-400 mr-2">Alt. Qty Ordered</span>
+                          <span className="font-mono text-sm font-semibold">{l.ordered_qty_2}</span>
                           {l.unit_2 && <span className="text-muted-foreground ml-1">{l.unit_2}</span>}
                         </div>
                         <div>
-                          <span className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 dark:text-slate-400 mr-2">Alt. Qty Received</span>
-                          <span className="font-mono">{l.received_now_2 ?? "—"}</span>
+                          <span className="font-semibold uppercase tracking-wide text-[11px] text-indigo-600 dark:text-indigo-400 mr-2">Alt. Qty Received</span>
+                          <span className="font-mono text-sm font-semibold">{l.received_now_2 ?? "—"}</span>
                           {l.unit_2 && (l.received_now_2 != null) && <span className="text-muted-foreground ml-1">{l.unit_2}</span>}
                         </div>
                       </div>
@@ -813,23 +813,23 @@ function QCMeasurementEditor({
 
             {/* Alt. Qty accepted — only for lines that carry a secondary unit */}
             {item.unit_2 && (
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-2.5 border-b border-slate-100 bg-slate-50/40 text-xs">
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-2.5 border-b border-slate-100 bg-indigo-50/40 dark:bg-indigo-950/20 text-xs">
                 {Number(item.ordered_qty_2 ?? 0) > 0 && (
                   <span className="flex items-center gap-1.5 text-slate-600">
-                    <span className="text-[11px] text-muted-foreground">Alt. qty ordered</span>
-                    <span className="font-mono text-slate-800">{item.ordered_qty_2}</span>
+                    <span className="text-xs text-indigo-600 dark:text-indigo-400">Alt. qty ordered</span>
+                    <span className="font-mono text-sm font-semibold text-slate-800">{item.ordered_qty_2}</span>
                     <span className="text-muted-foreground">{item.unit_2}</span>
                   </span>
                 )}
                 {item.received_now_2 != null && (
                   <span className="flex items-center gap-1.5 text-slate-600">
-                    <span className="text-[11px] text-muted-foreground">Alt. qty received</span>
-                    <span className="font-mono text-slate-800">{item.received_now_2}</span>
+                    <span className="text-xs text-indigo-600 dark:text-indigo-400">Alt. qty received</span>
+                    <span className="font-mono text-sm font-semibold text-slate-800">{item.received_now_2}</span>
                     <span className="text-muted-foreground">{item.unit_2}</span>
                   </span>
                 )}
                 <label className="flex items-center gap-2 text-slate-600">
-                  <span className="text-[11px] text-muted-foreground">Alt. qty accepted</span>
+                  <span className="text-xs text-indigo-600 dark:text-indigo-400">Alt. qty accepted</span>
                   <Input
                     type="number"
                     className={`w-24 h-8 text-right font-mono ${NO_SPINNER}`}
@@ -1090,17 +1090,17 @@ function QCMeasurementReadOnly({
               )}
             </div>
             {hasAlt && (
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-1 px-4 py-2 border-t border-slate-100 bg-slate-50/60 text-xs text-slate-600">
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-1 px-4 py-2 border-t border-slate-100 bg-indigo-50/40 dark:bg-indigo-950/20 text-xs text-slate-600">
                 {Number(item.ordered_qty_2 ?? 0) > 0 && (
                   <span>
-                    <span className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 mr-1.5">Alt. Qty Ordered</span>
-                    <span className="font-mono">{item.ordered_qty_2}</span>
+                    <span className="font-semibold uppercase tracking-wide text-[11px] text-indigo-600 dark:text-indigo-400 mr-1.5">Alt. Qty Ordered</span>
+                    <span className="font-mono text-sm font-semibold">{item.ordered_qty_2}</span>
                     <span className="text-muted-foreground ml-1">{item.unit_2}</span>
                   </span>
                 )}
                 <span>
-                  <span className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 mr-1.5">Alt. Qty Accepted</span>
-                  <span className="font-mono">{item.accepted_qty_2 ?? "—"}</span>
+                  <span className="font-semibold uppercase tracking-wide text-[11px] text-indigo-600 dark:text-indigo-400 mr-1.5">Alt. Qty Accepted</span>
+                  <span className="font-mono text-sm font-semibold">{item.accepted_qty_2 ?? "—"}</span>
                   {item.accepted_qty_2 != null && <span className="text-muted-foreground ml-1">{item.unit_2}</span>}
                 </span>
               </div>

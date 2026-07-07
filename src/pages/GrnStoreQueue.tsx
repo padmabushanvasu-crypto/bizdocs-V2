@@ -478,7 +478,7 @@ export default function GrnStoreQueue() {
                               <td className="px-3 py-2.5 text-slate-700 dark:text-slate-200">
                                 <p className="font-medium leading-snug">{item.description}</p>
                                 {altReceivedRef(item) && (
-                                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{altReceivedRef(item)}</p>
+                                  <p className="text-xs font-medium text-indigo-700 dark:text-indigo-400 mt-1 flex items-center gap-1.5"><span className="text-[9px] font-bold uppercase tracking-wider bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 px-1 py-0.5 rounded">ALT</span>{altReceivedRef(item)}</p>
                                 )}
                               </td>
                               <td className="px-3 py-2.5 text-slate-500 dark:text-slate-400 font-mono text-xs">
@@ -550,7 +550,7 @@ export default function GrnStoreQueue() {
                             <td className="px-3 py-2.5 text-slate-800 dark:text-slate-200">
                               <p className="font-medium leading-snug">{item.description}</p>
                               {altReceivedRef(item) && (
-                                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{altReceivedRef(item)}</p>
+                                <p className="text-xs font-medium text-indigo-700 dark:text-indigo-400 mt-1 flex items-center gap-1.5"><span className="text-[9px] font-bold uppercase tracking-wider bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 px-1 py-0.5 rounded">ALT</span>{altReceivedRef(item)}</p>
                               )}
                               {item.store_confirmed_qty > 0 && (
                                 <p className="text-[11px] text-emerald-600 mt-0.5">
