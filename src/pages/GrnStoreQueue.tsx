@@ -126,20 +126,14 @@ export default function GrnStoreQueue() {
   const navigate = useNavigate();
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
-  const [month, setMonth] = useState<string>(CURRENT_MONTH);
+  const [month, setMonth] = useState<string>(ALL_MONTHS);
   const [search, setSearch] = useState("");
 
-  // When the user flips status away from "pending", auto-broaden to All months
-  // so the history floor stays visible without forcing them to also pick a month.
-  // When they flip back to "pending" from All months, restore the current-month
-  // operational default. (Manual month picks after the auto-switch are honored.)
+  // Status-tab changes never touch the month filter — it only changes when the
+  // user explicitly picks a month from the dropdown, so the "All months" default
+  // persists across status-tab changes.
   const onStatusChange = (newStatus: StatusFilter) => {
     setStatusFilter(newStatus);
-    if (newStatus !== "pending") {
-      setMonth(ALL_MONTHS);
-    } else if (month === ALL_MONTHS) {
-      setMonth(CURRENT_MONTH);
-    }
   };
 
   const { data: cardsData, isLoading } = useQuery({

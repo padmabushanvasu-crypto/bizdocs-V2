@@ -2771,20 +2771,38 @@ export async function fetchGrnStoreReceiptQueue(
   const grnMap: Record<string, any> = {};
   for (const g of grns as any[]) grnMap[g.id] = g;
 
-  // Step 2 — pull all is_final_grn lines for this company. We deliberately
-  // don't use .in('grn_id', grnIds) here: when the month filter is broad
-  // (or "All months"), grnIds can hit hundreds of UUIDs and blow past
-  // PostgREST's URL length limit (returns 400 Bad Request). Filtering by
-  // grnMap in JS at Step 3 is cheaper and bound to company size.
-  const { data: lineItems, error: lineErr } = await (supabase as any)
-    .from('grn_line_items')
-    .select(
-      'id, grn_id, item_id, description, drawing_number, unit, conforming_qty, store_confirmed_qty, damaged_qty, store_confirmed, store_confirmed_at, store_confirmed_by, damaged_reason, store_confirmation_notes, store_location, ordered_qty_2, received_now_2, accepted_qty_2, unit_2'
+  // Step 2 — pull is_final_grn lines, SCOPED to Query A's GRN set and batched in
+  // chunks of 100 grn_ids. A single unscoped fetch hit PostgREST's ~1000-row
+  // default cap and silently truncated the tail — dropping valid awaiting_store
+  // GRNs (same silent-truncation class as 779b92f) — while one .in() over every
+  // id blows the URL-length limit. Chunking the id list avoids both. Empty id
+  // set → no line items.
+  const grnIds = (grns as any[]).map((g) => g.id);
+  const LINE_ID_CHUNK = 100;
+  const chunks: string[][] = [];
+  for (let i = 0; i < grnIds.length; i += LINE_ID_CHUNK) {
+    chunks.push(grnIds.slice(i, i + LINE_ID_CHUNK));
+  }
+  // Chunks are independent (results stitched by grn_id downstream), so fetch them
+  // concurrently rather than one after another.
+  const chunkResults = await Promise.all(
+    chunks.map((chunk) =>
+      (supabase as any)
+        .from('grn_line_items')
+        .select(
+          'id, grn_id, item_id, description, drawing_number, unit, conforming_qty, store_confirmed_qty, damaged_qty, store_confirmed, store_confirmed_at, store_confirmed_by, damaged_reason, store_confirmation_notes, store_location, ordered_qty_2, received_now_2, accepted_qty_2, unit_2'
+        )
+        .eq('company_id', companyId)
+        .eq('is_final_grn', true)
+        .in('grn_id', chunk)
     )
-    .eq('company_id', companyId)
-    .eq('is_final_grn', true);
-  if (lineErr) throw lineErr;
-  if (!lineItems?.length) return [];
+  );
+  const lineItems: any[] = [];
+  for (const { data: chunkLines, error: lineErr } of chunkResults) {
+    if (lineErr) throw lineErr;
+    if (chunkLines?.length) lineItems.push(...chunkLines);
+  }
+  if (!lineItems.length) return [];
 
   // Step 3 — group lines by grn_id, dropping any whose parent GRN isn't in
   // our month/status-filtered set.
