@@ -2210,6 +2210,14 @@ export default function GRNDetail() {
           variant: "destructive",
         });
       }
+      const billingWarnings = qcResult?.billingWarnings ?? [];
+      if (billingWarnings.length > 0) {
+        toast({
+          title: "Some lines billed on primary qty",
+          description: billingWarnings.join("; "),
+          variant: "destructive",
+        });
+      }
     },
     onError: (err: any) =>
       toast({ title: "Error saving Stage 2", description: err.message, variant: "destructive" }),

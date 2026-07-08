@@ -1287,7 +1287,7 @@ export async function saveQualityStage(
   finalGrnPerLine?: Record<string, boolean>,
   finalGrnReasonPerLine?: Record<string, string | null>,
   opts?: { isEdit?: boolean },
-): Promise<{ stockWarnings: string[] }> {
+): Promise<{ stockWarnings: string[]; billingWarnings: string[] }> {
   const now = inspectionDate ? new Date(inspectionDate).toISOString() : new Date().toISOString();
 
   // EDIT MODE (resave of completed QC): snapshot prior per-line accepted_qty/flags
@@ -1462,6 +1462,10 @@ export async function saveQualityStage(
   // NEVER blocks QC completion: each line is wrapped so one failure doesn't abort
   // the save; unlinked / failed lines are collected into stockWarnings.
   const stockWarnings: string[] = [];
+  // Billing warnings are a SEPARATE channel from stockWarnings (billing != stock).
+  // Populated when an alt-basis line is billed on primary qty due to a missing
+  // alt-conforming capture (see the refined job-work charge block below).
+  const billingWarnings: string[] = [];
   try {
     const lineIds = lines.map((l) => l.id);
     const { data: postHdr } = await (supabase as any)
@@ -1700,13 +1704,50 @@ export async function saveQualityStage(
         .maybeSingle();
 
       if (linkedStep) {
-        // Fetch DC line items to compute job_work_charges = rate × qty_accepted
+        // Job-work charge = Σ over GRN lines of (paired DC-line rate × basis qty).
+        //  - Rate: LIVE per-line from dc_line_items (correctable if mis-typed).
+        //  - Basis: SNAPSHOT per-line from grn_line_items.rate_basis (drift-proof).
+        //  - Qty:  conforming_qty_2 when basis='alternate' (else conforming_qty).
+        // Fixes the prior single-rate multi-line bug (was dcLines2[0].rate ×
+        // totalConforming — one line's rate applied to every line's qty).
         const { data: dcLines2 } = await (supabase as any)
           .from("dc_line_items")
-          .select("rate")
+          .select("id, rate")
           .eq("dc_id", grnHeader.linked_dc_id);
-        const dcRate = Number((dcLines2 as any[])?.[0]?.rate ?? 0);
-        const refinedCharge = dcRate > 0 ? dcRate * totalConforming : 0;
+        // dc_line_item_id → rate (mirrors receivedByDCLine's flat-fetch → Record).
+        const rateByDCLine: Record<string, number> = {};
+        for (const dl of (dcLines2 ?? []) as any[]) {
+          if (dl.id) rateByDCLine[dl.id as string] = Number(dl.rate ?? 0) || 0;
+        }
+
+        const { data: billingLines } = await (supabase as any)
+          .from("grn_line_items")
+          .select("id, dc_line_item_id, rate_basis, conforming_qty, conforming_qty_2, description")
+          .eq("grn_id", grnId);
+
+        let refinedCharge = 0;
+        for (const row of (billingLines ?? []) as any[]) {
+          const dcLineId = row.dc_line_item_id as string | null;
+          if (!dcLineId) continue;                          // unpaired line — nothing to bill on
+          const pairedRate = rateByDCLine[dcLineId] ?? 0;
+          if (!(pairedRate > 0)) continue;                  // no/zero rate — contributes 0
+          let basisQty: number;
+          if (row.rate_basis === "alternate") {
+            const alt = Number(row.conforming_qty_2 ?? 0) || 0;
+            if (alt > 0) {
+              basisQty = alt;
+            } else {
+              // Null-fallback: alt-basis line with no alt conforming captured —
+              // bill on primary qty rather than silently zeroing the charge; warn.
+              basisQty = Number(row.conforming_qty ?? 0) || 0;
+              billingWarnings.push(`${row.description ?? row.id} — alt-basis line billed on primary qty (no alt conforming captured)`);
+            }
+          } else {
+            basisQty = Number(row.conforming_qty ?? 0) || 0;
+          }
+          refinedCharge += pairedRate * basisQty;
+        }
+        refinedCharge = Math.round(refinedCharge * 100) / 100;
 
         // Mark this step as done (QC cleared) and record final confirmed qty + job work charge
         const doneUpdate: Record<string, unknown> = {
@@ -1763,7 +1804,7 @@ export async function saveQualityStage(
     console.error("Job Card step update failed (GRN save succeeded):", jcErr);
   }
 
-  return { stockWarnings };
+  return { stockWarnings, billingWarnings };
 }
 
 /** Per-line aggregate across all non-cancelled / non-deleted prior GRNs. */
