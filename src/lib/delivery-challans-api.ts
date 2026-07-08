@@ -22,6 +22,7 @@ export interface DCLineItem {
   quantity: number;
   quantity_2?: number | null;
   unit_2?: string | null;
+  rate_basis?: 'primary' | 'alternate' | null;
   returned_qty_2?: number | null;
   rate: number;
   amount: number;
@@ -393,6 +394,7 @@ export async function createDeliveryChallan({ dc, lineItems }: CreateDCData) {
       item_code: item.item_code || null, hsn_sac_code: item.hsn_sac_code || null,
       unit: item.unit || "NOS", quantity: item.quantity || 0, rate: item.rate || 0, amount: item.amount || 0,
       quantity_2: item.quantity_2 ?? null, unit_2: item.unit_2 ?? null,
+      rate_basis: item.rate_basis ?? 'primary',
       drawing_number: item.drawing_number || null, remarks: item.remarks || null,
       qty_nos: item.qty_nos || item.quantity || 0, qty_kg: item.qty_kg || 0,
       qty_kgs: item.qty_kgs || null, qty_sft: item.qty_sft || null,
@@ -464,6 +466,7 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
       item_code: item.item_code || null, hsn_sac_code: item.hsn_sac_code || null,
       unit: item.unit || "NOS", quantity: item.quantity || 0, rate: item.rate || 0, amount: item.amount || 0,
       quantity_2: item.quantity_2 ?? null, unit_2: item.unit_2 ?? null,
+      rate_basis: item.rate_basis ?? 'primary',
       drawing_number: item.drawing_number || null, remarks: item.remarks || null,
       qty_nos: item.qty_nos || item.quantity || 0, qty_kg: item.qty_kg || 0,
       qty_kgs: item.qty_kgs || null, qty_sft: item.qty_sft || null,

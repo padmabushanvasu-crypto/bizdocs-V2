@@ -130,6 +130,7 @@ function emptyLineItem(serial: number): DCLineItem {
     quantity: 0,
     quantity_2: null,
     unit_2: null,
+    rate_basis: 'primary',
     rate: 0,
     amount: 0,
     remarks: "",
@@ -258,7 +259,7 @@ export default function DeliveryChallanForm() {
       if (preferred.unit_cost) {
         setLineItems(items => {
           const updated = [...items];
-          const qty = Number(updated[lineIndex].quantity) || 0;
+          const qty = Number(updated[lineIndex].rate_basis === 'alternate' ? updated[lineIndex].quantity_2 : updated[lineIndex].quantity) || 0;
           updated[lineIndex] = {
             ...updated[lineIndex],
             rate: preferred.unit_cost,
@@ -414,7 +415,8 @@ export default function DeliveryChallanForm() {
         unit: li.unit || "NOS",
         quantity: li.quantity || 0,
         rate: li.rate || 0,
-        amount: Math.round((li.quantity || 0) * (li.rate || 0) * 100) / 100,
+        rate_basis: 'primary',
+        amount: Math.round(((li.rate_basis === 'alternate' ? li.quantity_2 : li.quantity) || 0) * (li.rate || 0) * 100) / 100,
         nature_of_process: li.nature_of_process || "",
         qty_kgs: undefined,
         qty_sft: undefined,
@@ -576,9 +578,14 @@ export default function DeliveryChallanForm() {
     setLineItems((items) => {
       const updated = [...items];
       (updated[index] as any)[field] = value;
-      // Auto-calculate amount
-      if (field === "quantity" || field === "rate") {
-        const qty = field === "quantity" ? Number(value) : Number(updated[index].quantity);
+      // Auto-calculate amount (basis-aware: alternate uses quantity_2). Recompute
+      // also on quantity_2 / rate_basis so toggling the pill or editing the alt
+      // qty updates the amount live.
+      if (field === "quantity" || field === "rate" || field === "quantity_2" || field === "rate_basis") {
+        const basisAlt = (field === "rate_basis" ? value : updated[index].rate_basis) === "alternate";
+        const primaryQty = field === "quantity" ? Number(value) : Number(updated[index].quantity);
+        const altQty = field === "quantity_2" ? Number(value) : Number(updated[index].quantity_2);
+        const qty = (basisAlt ? altQty : primaryQty) || 0;
         const rate = field === "rate" ? Number(value) : Number(updated[index].rate);
         updated[index].amount = Math.round(qty * rate * 100) / 100;
       }
@@ -785,6 +792,21 @@ export default function DeliveryChallanForm() {
         description:
           `Row${unlinkedRows.length > 1 ? "s" : ""} ${rowNumbers}: type to search, then click the matching item from the dropdown. ` +
           `If the item doesn't exist, create it in Items Master first.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    // Alternate-basis lines must carry an alt qty (amount = rate × alt qty).
+    const altBasisMissing = lineItems
+      .map((line, idx) => ({ line, rowNum: idx + 1 }))
+      .filter(({ line }) => (line.rate_basis ?? "primary") === "alternate" && !(Number(line.quantity_2) > 0));
+    if (altBasisMissing.length > 0) {
+      const named = altBasisMissing
+        .map(({ line, rowNum }) => `Row ${rowNum}${line.description.trim() ? ` (${line.description.trim()})` : ""}`)
+        .join(", ");
+      toast({
+        title: "Alternate-basis line(s) need alt qty",
+        description: `Enter an alternate quantity before saving: ${named}.`,
         variant: "destructive",
       });
       return;
@@ -1195,6 +1217,7 @@ export default function DeliveryChallanForm() {
                 <th className="px-3 py-2 text-left w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Unit</th>
                 <th className="px-3 py-2 text-right w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Alt. Qty</th>
                 <th className="px-3 py-2 text-left w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Alt. Unit</th>
+                <th className="px-3 py-2 text-center w-24 text-xs font-medium text-slate-400 uppercase tracking-wider">Basis</th>
                 <th className="px-3 py-2 text-right w-28 text-xs font-medium text-slate-400 uppercase tracking-wider">Rate {currencySymbol}</th>
                 <th className="px-3 py-2 text-right w-28 text-xs font-medium text-slate-400 uppercase tracking-wider">Amount {currencySymbol}</th>
                 <th className="w-10"></th>
@@ -1226,7 +1249,7 @@ export default function DeliveryChallanForm() {
                         updateLineItem(index, "drawing_number", selectedItem.drawing_revision || selectedItem.drawing_number || "");
                         setLineItems((items) => {
                           const updated = [...items];
-                          updated[index].amount = Math.round((updated[index].quantity || 0) * (selectedItem.sale_price || 0) * 100) / 100;
+                          updated[index].amount = Math.round(((updated[index].rate_basis === 'alternate' ? updated[index].quantity_2 : updated[index].quantity) || 0) * (selectedItem.sale_price || 0) * 100) / 100;
                           return updated;
                         });
                         // Track item_id; availability for the over-issue warning comes
@@ -1420,6 +1443,37 @@ export default function DeliveryChallanForm() {
                           ))}
                         </SelectContent>
                       </Select>
+                    ) : (
+                      <span className="text-xs text-muted-foreground px-3">—</span>
+                    )}
+                  </td>
+                  {/* Rate basis pill — Primary | Alternate (alternate computes amount from the alt qty). Shown only when an alt qty is present; mirrors the Alt-Unit cell's guard. */}
+                  <td className="px-1 py-1 w-24">
+                    {Number(item.quantity_2) > 0 ? (
+                      <div className="inline-flex rounded-md border border-slate-200 dark:border-white/20 overflow-hidden text-[10px] font-medium">
+                        <button
+                          type="button"
+                          onClick={() => updateLineItem(index, "rate_basis", "primary")}
+                          className={`px-2 py-1 transition-colors ${
+                            (item.rate_basis ?? "primary") !== "alternate"
+                              ? "bg-slate-800 text-white"
+                              : "text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10"
+                          }`}
+                        >
+                          Primary
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateLineItem(index, "rate_basis", "alternate")}
+                          className={`px-2 py-1 transition-colors ${
+                            (item.rate_basis ?? "primary") === "alternate"
+                              ? "bg-indigo-600 text-white"
+                              : "text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30"
+                          }`}
+                        >
+                          Alternate
+                        </button>
+                      </div>
                     ) : (
                       <span className="text-xs text-muted-foreground px-3">—</span>
                     )}
