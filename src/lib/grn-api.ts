@@ -74,6 +74,9 @@ export interface GRNLineItem {
   inspection_method?: InspectionMethod | null;
   conforming_qty?: number | null;
   non_conforming_qty?: number | null;
+  // PART B/D: alt (secondary-UOM) conforming total + snapshotted rate basis.
+  conforming_qty_2?: number | null;
+  rate_basis?: string | null;
   non_conformance_type?: NonConformanceType | null;
   deviation_description?: string | null;
   disposition?: Disposition | null;
@@ -175,6 +178,7 @@ export interface GRNQCMeasurement {
   measuring_instrument?: string;
   remarks?: string;
   conforming_qty?: number;
+  conforming_qty_2?: number;
   non_conforming_qty?: number;
 }
 
@@ -996,6 +1000,10 @@ export async function createGrnFromDC(data: CreateGrnFromDCData): Promise<GRN> {
     jig_confirmed: false,
     nature_of_process: item.nature_of_process ?? null,
     unit_rate: item.rate ?? null,
+    // PART A: snapshot the DC line's rate_basis onto the GRN line once at
+    // creation (default 'primary' if absent). Never re-synced. DC-GRN only —
+    // NOT added to createGrnFromPO.
+    rate_basis: (item as any).rate_basis ?? 'primary',
   }));
 
   if (lineItemsToInsert.length > 0) {
@@ -1262,6 +1270,9 @@ export interface QualitativeLineData {
   // measure (receiving_now) so records are consistent and stock can post the
   // primary through the existing unchanged path. Null for normal lines.
   primary_received?: number | null;
+  // PART D: alt (secondary-UOM) conforming total, summed from QC rows. Nullable;
+  // written only when a value was entered (opt-in, inert for non-alt lines).
+  conforming_qty_2?: number | null;
 }
 
 export async function saveQualityStage(
@@ -1335,16 +1346,6 @@ export async function saveQualityStage(
     : (d === 'accept_as_is' || d === 'conditional_accept') ? 'use_as_is'
     : null;
 
-  // Null-guard for accepted_qty_2: only write when the current DB value is null,
-  // so a re-save (or any downstream capture) never overwrites an existing alt.
-  const { data: existingAcc2 } = await (supabase as any)
-    .from('grn_line_items')
-    .select('id, accepted_qty_2')
-    .in('id', lines.map((l) => l.id));
-  const acc2ByLine = new Map<string, number | null>(
-    ((existingAcc2 ?? []) as any[]).map((r: any) => [r.id, r.accepted_qty_2 ?? null])
-  );
-
   for (const line of lines) {
     const lineIsFinal = finalGrnPerLine ? (finalGrnPerLine[line.id] ?? false) : (isFinalGrn ?? false);
     const { error } = await (supabase as any)
@@ -1367,9 +1368,14 @@ export async function saveQualityStage(
         // only stamped for return-to-vendor (GRN's vendor); never clobbered otherwise.
         disposal_method: toDisposalMethod(line.disposition),
         ...(line.disposition === 'return_to_vendor' ? { supplier_ref: rejectHdr?.vendor_name ?? null } : {}),
-        // Alt. Qty accepted — write only when provided AND the current DB value is
-        // null (never overwrite an existing alt; never clobber with null).
-        ...(line.accepted_qty_2 != null && acc2ByLine.get(line.id) == null ? { accepted_qty_2: line.accepted_qty_2 } : {}),
+        // Alt. Qty accepted — a manually-editable header value, now routinely
+        // edited via the Stage-1 alt-conforming interlink. Write whenever
+        // provided (same unguarded pattern as conforming_qty_2 below); still
+        // never clobber with null.
+        ...(line.accepted_qty_2 != null ? { accepted_qty_2: line.accepted_qty_2 } : {}),
+        // PART D: alt conforming total — write only when provided (opt-in). Lines
+        // without a secondary unit never supply it, so this stays inert for them.
+        ...(line.conforming_qty_2 != null ? { conforming_qty_2: line.conforming_qty_2 } : {}),
         // Dual-UOM: establish the primary received measure from the counted qty so
         // received_quantity/conforming stay consistent and stock posts the primary
         // via the existing unchanged path. Only for alt lines that supply it.
@@ -1956,6 +1962,7 @@ export async function saveGRNQCMeasurements(
     measuring_instrument: m.measuring_instrument ?? null,
     remarks: m.remarks ?? null,
     conforming_qty: m.conforming_qty ?? null,
+    conforming_qty_2: m.conforming_qty_2 ?? null,
     non_conforming_qty: m.non_conforming_qty ?? null,
   }));
   const { error } = await (supabase as any)

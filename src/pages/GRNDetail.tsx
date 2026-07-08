@@ -167,6 +167,8 @@ interface QCRow {
   sample_4: string;
   sample_5: string;
   conforming_qty: string;
+  // PART C: alt (secondary-UOM) conforming qty per row. Opt-in; "" by default.
+  conforming_qty_2: string;
   non_conforming_qty: string;
   measuring_instrument: string;
 }
@@ -752,7 +754,7 @@ function QCMeasurementEditor({
   altCountedByLine = {},
   onChangeAltCounted,
 }: {
-  lineItems: Array<{ id: string; item_code: string; description: string; received_qty: number; qty_matched: number; matching_units?: number; unit: string; unit_2?: string | null; ordered_qty_2?: number | null; received_now_2?: number | null; accepted_qty_2?: number | null; po_line_item_id?: string | null; is_final_grn?: boolean; final_grn_auto_detected?: boolean; final_grn_reason?: string | null }>;
+  lineItems: Array<{ id: string; item_code: string; description: string; received_qty: number; qty_matched: number; matching_units?: number; unit: string; unit_2?: string | null; ordered_qty_2?: number | null; received_now_2?: number | null; accepted_qty_2?: number | null; po_line_item_id?: string | null; is_final_grn?: boolean; final_grn_auto_detected?: boolean; final_grn_reason?: string | null; rate_basis?: string | null }>;
   qcRows: QCRow[];
   onAddRow: (lineItemId: string) => void;
   onChangeRow: (idx: number, field: keyof QCRow, value: string) => void;
@@ -915,6 +917,10 @@ function QCMeasurementEditor({
                     <th rowSpan={2} className="px-2 py-2 text-right font-medium align-bottom" style={{width: 76}}>Qty</th>
                     <th colSpan={5} className="px-2 pt-2 pb-1 text-center font-medium text-[11px] text-slate-400 border-b border-slate-200">Sample readings</th>
                     <th rowSpan={2} className="px-2 py-2 text-right font-medium align-bottom" style={{width: 84}}>Conf.</th>
+                    {/* PART C: alt-conforming column — only for lines with a secondary unit */}
+                    {item.unit_2 && (
+                      <th rowSpan={2} className="px-2 py-2 text-right font-medium align-bottom text-indigo-600 dark:text-indigo-400" style={{width: 92}}>Conf. ({item.unit_2})</th>
+                    )}
                     <th rowSpan={2} className="px-2 py-2 text-right font-medium align-bottom" style={{width: 84}}>NC</th>
                     <th rowSpan={2} className="px-2 py-2 text-left font-medium align-bottom" style={{minWidth: 150}}>Measuring instrument</th>
                     <th rowSpan={2} className="px-2 py-2 text-center font-medium align-bottom" style={{width: 32}}></th>
@@ -928,7 +934,7 @@ function QCMeasurementEditor({
                 <tbody className="divide-y divide-slate-100">
                   {itemRows.length === 0 ? (
                     <tr>
-                      <td colSpan={13} className="px-4 py-4 text-center text-slate-400 text-xs">
+                      <td colSpan={item.unit_2 ? 14 : 13} className="px-4 py-4 text-center text-slate-400 text-xs">
                         No measurements yet — click "Add row".
                       </td>
                     </tr>
@@ -994,6 +1000,20 @@ function QCMeasurementEditor({
                               onChange={(e) => onChangeRow(globalIdx, "conforming_qty", e.target.value)}
                             />
                           </td>
+                          {/* PART C: alt-conforming input (indigo accent) — only for alt-unit lines */}
+                          {item.unit_2 && (
+                            <td className="px-2 py-1.5">
+                              <Input
+                                type="number"
+                                className={`h-8 text-right tabular-nums border-indigo-300 bg-indigo-50/60 text-indigo-800 focus-visible:ring-indigo-400 ${NO_SPINNER}`}
+                                value={row.conforming_qty_2}
+                                placeholder="0"
+                                min={0}
+                                disabled={disabled}
+                                onChange={(e) => onChangeRow(globalIdx, "conforming_qty_2", e.target.value)}
+                              />
+                            </td>
+                          )}
                           <td className="px-2 py-1.5">
                             <Input
                               type="number"
@@ -1699,6 +1719,7 @@ export default function GRNDetail() {
             sample_4:             m.sample_4 ?? "",
             sample_5:             m.sample_5 ?? "",
             conforming_qty:       confQty,
+            conforming_qty_2:     am.conforming_qty_2 != null ? String(am.conforming_qty_2) : "",
             non_conforming_qty:   ncQty,
             measuring_instrument: m.measuring_instrument ?? "",
           };
@@ -1928,6 +1949,10 @@ export default function GRNDetail() {
             non_conforming_qty: 0,
             disposition:        "",
             qc_notes:           existing?.qc_notes ?? "",
+            // FIX 1: preserve the interlinked header value — omitting it wiped
+            // accepted_qty_2 to undefined on every qcRows change (broke the
+            // header input for fully-conforming alt lines).
+            accepted_qty_2:     existing?.accepted_qty_2 ?? null,
           };
         }
         // Derive nc qty from the max across rows for this item
@@ -1940,6 +1965,9 @@ export default function GRNDetail() {
               conforming_qty:     Math.max(0, recv - totalNC),
               non_conforming_qty: totalNC,
               disposition:        "",
+              // FIX 1: keep accepted_qty_2 defined for consistency (null when no
+              // prior summary exists).
+              accepted_qty_2:     existing?.accepted_qty_2 ?? null,
             };
       })
     );
@@ -2076,6 +2104,7 @@ export default function GRNDetail() {
         sample_4:            r.sample_4 || undefined,
         sample_5:            r.sample_5 || undefined,
         conforming_qty:      r.conforming_qty ? Number(r.conforming_qty) : undefined,
+        conforming_qty_2:    r.conforming_qty_2 ? Number(r.conforming_qty_2) : undefined,
         non_conforming_qty:  r.non_conforming_qty ? Number(r.non_conforming_qty) : undefined,
         measuring_instrument: r.measuring_instrument || undefined,
       }));
@@ -2106,6 +2135,11 @@ export default function GRNDetail() {
         const raw = altCounted[nc.lineItemId];
         const hasCounted = !!gl?.unit_2 && raw != null && raw !== "";
         const counted = hasCounted ? Number(raw) : null;
+        // PART D: roll up alt-conforming across this line's QC rows (opt-in; null
+        // when nothing entered). Just the sum — no alt-NC / alt-received.
+        const conf2Total = qcRows
+          .filter((r) => r.lineItemId === nc.lineItemId)
+          .reduce((sum, r) => sum + (Number(r.conforming_qty_2) || 0), 0);
         return {
           id:                   nc.lineItemId,
           qty_inspected:        hasCounted ? (counted as number) : (nc.qty_inspected ?? (nc.conforming_qty + nc.non_conforming_qty)),
@@ -2119,6 +2153,7 @@ export default function GRNDetail() {
           qc_notes:             nc.qc_notes || null,
           accepted_qty_2:       nc.accepted_qty_2 ?? null,
           primary_received:     hasCounted ? (counted as number) : null,
+          conforming_qty_2:     conf2Total > 0 ? conf2Total : null,
         };
       });
       // PO-GRNs: all lines are final (goods always go to store after QC).
@@ -2279,6 +2314,27 @@ export default function GRNDetail() {
       });
       return;
     }
+    // PART E: alternate-basis lines MUST carry an alt-conforming quantity. Read
+    // rate_basis from editorLineItems — Part B threaded it in from the raw DB
+    // line, so this object actually holds the value (not undefined). Roll up
+    // conforming_qty_2 from the line's QC rows; block if an alt line has none.
+    // Lines on 'primary' basis are unaffected.
+    const altBasisMissing = editorLineItems.filter((li) => {
+      if ((li.rate_basis ?? 'primary') !== 'alternate') return false;
+      const total2 = qcRows
+        .filter((r) => r.lineItemId === li.id)
+        .reduce((sum, r) => sum + (Number(r.conforming_qty_2) || 0), 0);
+      return !(total2 > 0);
+    });
+    if (altBasisMissing.length > 0) {
+      const names = altBasisMissing.map((li) => li.item_code || li.description || li.id).join(", ");
+      toast({
+        title: "Alt-conforming quantity required",
+        description: `Alternate-basis line(s) need an alt-conforming qty before saving: ${names}.`,
+        variant: "destructive",
+      });
+      return;
+    }
     s2Mutation.mutate();
   };
 
@@ -2302,6 +2358,7 @@ export default function GRNDetail() {
       qty_checked: inspectQty > 0 ? String(inspectQty) : "",
       sample_1: "", sample_2: "", sample_3: "", sample_4: "", sample_5: "",
       conforming_qty: inspectQty > 0 ? String(inspectQty) : "",
+      conforming_qty_2: "",
       non_conforming_qty: "0",
       measuring_instrument: "",
     };
@@ -2321,6 +2378,21 @@ export default function GRNDetail() {
       next[globalIdx] = row;
       return next;
     });
+    // Row → header sync: whenever a per-row alt-conforming changes, reflect this
+    // line's rolled-up SUM in the header "Alt qty accepted" display. Uses the
+    // closure rows with `value` substituted for the edited row, and writes
+    // ncSummaries directly (NOT via onChangeAccepted2) — so no header↔row loop.
+    if (field === "conforming_qty_2") {
+      const lineId = qcRows[globalIdx]?.lineItemId;
+      if (lineId) {
+        const sum = qcRows.reduce((s, r, i) => {
+          if (r.lineItemId !== lineId) return s;
+          const v = i === globalIdx ? value : (r.conforming_qty_2 ?? "");
+          return s + (Number(v) || 0);
+        }, 0);
+        updateNCSummary(lineId, "accepted_qty_2", sum > 0 ? sum : null);
+      }
+    }
   };
 
   const deleteQCRow = (globalIdx: number) => {
@@ -2339,6 +2411,30 @@ export default function GRNDetail() {
     setNcSummaries((prev) =>
       prev.map((s) => s.lineItemId === lineItemId ? { ...s, [field]: value } : s)
     );
+  };
+
+  // Header "Alt qty accepted" → per-row conforming_qty_2 seed. Convenience only
+  // (a default, never a lock): both fields stay independently editable, and the
+  // header remains its own measure (accepted_qty_2 — may legitimately differ for
+  // the accepted-NC case). Writes qcRows directly (NOT via changeQCRow), so no
+  // header↔row loop. Part E still reads the per-row conforming_qty_2 sum.
+  const handleAccepted2Change = (lineId: string, value: number | null) => {
+    // Header is its own field — always update its display value.
+    updateNCSummary(lineId, "accepted_qty_2", value);
+    const seed = value == null ? "" : String(value);
+    setQcRows((prev) => {
+      const idxs = prev.reduce<number[]>((acc, r, i) => (r.lineItemId === lineId ? [...acc, i] : acc), []);
+      if (idxs.length === 0) return prev;
+      const allEmpty = idxs.every((i) => (prev[i].conforming_qty_2 ?? "") === "");
+      // Exactly one row → seed it; multiple rows but ALL empty → seed row 1;
+      // otherwise leave rows unchanged (don't guess a split; preserve any
+      // per-row values the user already entered).
+      if (idxs.length === 1 || allEmpty) {
+        const target = idxs[0];
+        return prev.map((r, i) => (i === target ? { ...r, conforming_qty_2: seed } : r));
+      }
+      return prev;
+    });
   };
 
   // ── Derived state ─────────────────────────────────────────────────────────
@@ -2402,6 +2498,9 @@ export default function GRNDetail() {
       ordered_qty_2: gl?.ordered_qty_2 ?? l.ordered_qty_2 ?? null,
       received_now_2: gl?.received_now_2 ?? null,
       accepted_qty_2: gl?.accepted_qty_2 ?? null,
+      // PART B: snapshotted rate basis from the raw DB line (carries the real
+      // value). Drives the Part E hard-require guard — read from THIS object.
+      rate_basis: (gl?.rate_basis ?? 'primary') as string,
       // Final GRN — PO lines get an editable box; DC lines (no PO line) don't.
       po_line_item_id: gl?.po_line_item_id ?? l.po_line_item_id ?? null,
       is_final_grn: gl?.is_final_grn ?? false,
@@ -2970,7 +3069,7 @@ export default function GRNDetail() {
                   setFinalGrnPerLine={setFinalGrnPerLine}
                   isSavedFinalGrn={g.is_final_grn ?? false}
                   accepted2ByLine={accepted2ByLine}
-                  onChangeAccepted2={(lineId, value) => updateNCSummary(lineId, "accepted_qty_2", value)}
+                  onChangeAccepted2={handleAccepted2Change}
                   altCountedByLine={altCounted}
                   onChangeAltCounted={(lineId, value) => setAltCounted((prev) => ({ ...prev, [lineId]: value }))}
                 />
