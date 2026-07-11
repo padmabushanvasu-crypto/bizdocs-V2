@@ -34,6 +34,7 @@ const stageConfig: Record<string, { label: string; cls: string; pulse?: boolean 
   quality_pending:                { label: 'Awaiting QC',       cls: 'bg-amber-50 text-amber-700 border border-amber-200', pulse: true },
   quality_done:                   { label: 'Pending Final Receipt', cls: 'bg-teal-50 text-teal-700 border border-teal-200' },
   awaiting_store:                 { label: '📦 Awaiting Store', cls: 'bg-orange-50 text-orange-700 border border-orange-200', pulse: true },
+  closed:                         { label: '✓ Received',        cls: 'bg-green-50 text-green-700 border border-green-200' },
   closed_fully_accepted:          { label: '✓ Fully Accepted',  cls: 'bg-green-50 text-green-700 border border-green-200' },
   closed_conditionally_accepted:  { label: '⚠ Conditional',    cls: 'bg-amber-50 text-amber-700 border border-amber-200' },
   closed_partially_returned:      { label: '↩ Partial Return',  cls: 'bg-amber-50 text-amber-700 border border-amber-200' },
