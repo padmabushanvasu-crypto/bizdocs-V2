@@ -377,70 +377,47 @@ export async function returnAssemblyComponents(
   const awo = await fetchAssemblyWorkOrder(awoId);
   if (!awo) throw new Error("Work order not found");
 
-  const wip_bucket = awo.awo_type === 'finished_good' ? 'in_fg_wip' : 'in_subassembly_wip';
   const awoNumber = awo.awo_number ?? '';
-  const today = new Date().toISOString().split('T')[0];
   const returnWarnings: string[] = [];
 
   await Promise.all(lines.map(async (input) => {
     const snapshot = (awo.line_items ?? []).find((l) => l.id === input.awo_line_item_id);
     if (!snapshot) return;
 
-    // Fresh authoritative read for idempotency + an accurate cap.
+    // Fresh read of current returned total (for the idempotent delta) + item
+    // identity (for warnings). The WIP cap itself is enforced server-side.
     const { data: fresh } = await (supabase as any)
       .from("awo_line_items")
-      .select("issued_qty, returned_qty, scrapped_qty, consumed_qty, item_id, item_code, item_description")
+      .select("returned_qty, item_id, item_code, item_description")
       .eq("id", input.awo_line_item_id)
       .eq("company_id", companyId)
       .maybeSingle();
-    const issued = Number((fresh as any)?.issued_qty ?? snapshot.issued_qty ?? 0);
     const currentReturned = Number((fresh as any)?.returned_qty ?? snapshot.returned_qty ?? 0);
-    const scrapped = Number((fresh as any)?.scrapped_qty ?? snapshot.scrapped_qty ?? 0);
-    const consumed = Number((fresh as any)?.consumed_qty ?? snapshot.consumed_qty ?? 0);
     const itemId = (fresh as any)?.item_id ?? snapshot.item_id ?? null;
     const itemCode = (fresh as any)?.item_code ?? snapshot.item_code ?? null;
     const itemDesc = (fresh as any)?.item_description ?? snapshot.item_description ?? null;
 
-    // CAP: never return beyond what's still in WIP for this line. Consumed units
-    // (posted at accept) have already left WIP — excluding them prevents
-    // over-return that would double-credit stock_free.
-    const availableInWip = Math.max(0, issued - currentReturned - scrapped - consumed);
-    const maxTarget = currentReturned + availableInWip; // == issued − scrapped − consumed
-    // Cumulative target clamped so we never go below current or beyond the cap.
-    const target = Math.min(Math.max(Number(input.returned_qty ?? 0), currentReturned), maxTarget);
+    // Delta to move now (target − current). No client cap: rpc_return_or_scrap_wip
+    // enforces issued − returned − scrapped − consumed and throws naming the
+    // shortfall if exceeded.
+    const target = Math.max(Number(input.returned_qty ?? 0), currentReturned);
     const delta = Math.max(0, target - currentReturned);
 
-    if (delta <= 0) return; // no-op: idempotent re-submit, or nothing available
+    if (delta <= 0) return; // no-op: idempotent re-submit, or nothing requested
 
     if (itemId) {
-      // LEDGER-FIRST: post the return, move buckets only on success.
-      try {
-        await addStockLedgerEntry({
-          item_id: itemId,
-          item_code: itemCode,
-          item_description: itemDesc,
-          transaction_date: today,
-          transaction_type: 'assembly_return',
-          qty_in: delta,
-          qty_out: 0,
-          balance_qty: 0,
-          unit_cost: 0,
-          total_value: 0,
-          reference_type: 'assembly_work_order',
-          reference_id: awoId,
-          reference_number: awoNumber,
-          notes: `Components returned to store — AWO #${awoNumber}`,
-          created_by: null,
-          from_state: wip_bucket,
-          to_state: STOCK_STATE.FREE,
-        });
-      } catch (e) {
-        console.error('[production] assembly_return ledger failed — line not returned, no bucket change:', e);
-        returnWarnings.push(`${itemCode ?? itemDesc ?? input.awo_line_item_id} — return not posted (ledger error)`);
-        return;
+      // Atomic WIP -> free move + assembly_return ledger, one server-side txn.
+      const { error: rpcErr } = await (supabase as any).rpc('rpc_return_or_scrap_wip', {
+        p_company_id: companyId,
+        p_awo_line_id: input.awo_line_item_id,
+        p_qty: delta,
+        p_direction: 'return',
+        p_notes: `Components returned to store — AWO #${awoNumber}`,
+      });
+      if (rpcErr) {
+        returnWarnings.push(`${itemCode ?? itemDesc ?? input.awo_line_item_id} — ${rpcErr.message}`);
+        return; // no bucket/line change — retryable
       }
-      await updateStockBucket(itemId, wip_bucket, -delta);
-      await updateStockBucket(itemId, 'free', +delta);
     } else {
       // No linked item to move stock for — record the returned qty for tracking only.
       returnWarnings.push(`${itemDesc ?? input.awo_line_item_id} — no item linked; recorded return without stock move`);
@@ -492,9 +469,7 @@ export async function scrapAssemblyComponents(
   const awo = await fetchAssemblyWorkOrder(awoId);
   if (!awo) throw new Error("Work order not found");
 
-  const wip_bucket = awo.awo_type === 'finished_good' ? 'in_fg_wip' : 'in_subassembly_wip';
   const awoNumber = awo.awo_number ?? '';
-  const today = new Date().toISOString().split('T')[0];
   const scrapWarnings: string[] = [];
   // Mid-build scrap (autoReissue) collects the actually-scrapped lines so ONE
   // replacement MIR can be raised after the loop. Cancel-path scrap leaves this
@@ -513,58 +488,39 @@ export async function scrapAssemblyComponents(
     const snapshot = (awo.line_items ?? []).find((l) => l.id === input.awo_line_item_id);
     if (!snapshot) return;
 
-    // Fresh authoritative read for idempotency + an accurate cap.
+    // Fresh read of current scrapped total (for the idempotent delta) + item
+    // identity. The WIP cap is enforced server-side.
     const { data: fresh } = await (supabase as any)
       .from("awo_line_items")
-      .select("issued_qty, returned_qty, scrapped_qty, consumed_qty, item_id, item_code, item_description")
+      .select("scrapped_qty, item_id, item_code, item_description")
       .eq("id", input.awo_line_item_id)
       .eq("company_id", companyId)
       .maybeSingle();
-    const issued = Number((fresh as any)?.issued_qty ?? snapshot.issued_qty ?? 0);
-    const currentReturned = Number((fresh as any)?.returned_qty ?? snapshot.returned_qty ?? 0);
     const currentScrapped = Number((fresh as any)?.scrapped_qty ?? snapshot.scrapped_qty ?? 0);
-    const consumed = Number((fresh as any)?.consumed_qty ?? snapshot.consumed_qty ?? 0);
     const itemId = (fresh as any)?.item_id ?? snapshot.item_id ?? null;
     const itemCode = (fresh as any)?.item_code ?? snapshot.item_code ?? null;
     const itemDesc = (fresh as any)?.item_description ?? snapshot.item_description ?? null;
 
-    // CAP: never scrap beyond what's still in WIP for this line. Consumed units
-    // (posted at accept) have already left WIP.
-    const availableInWip = Math.max(0, issued - currentReturned - currentScrapped - consumed);
-    const maxTarget = currentScrapped + availableInWip; // == issued − returned − consumed
-    const target = Math.min(Math.max(Number(input.scrapped_qty ?? 0), currentScrapped), maxTarget);
+    // Delta to write off now (target − current). No client cap:
+    // rpc_return_or_scrap_wip enforces the WIP cap and throws the shortfall.
+    const target = Math.max(Number(input.scrapped_qty ?? 0), currentScrapped);
     const delta = Math.max(0, target - currentScrapped);
 
-    if (delta <= 0) return; // no-op: idempotent re-submit, or nothing available
+    if (delta <= 0) return; // no-op: idempotent re-submit, or nothing requested
 
     if (itemId) {
-      // LEDGER-FIRST: post the write-off, reduce the wip bucket only on success.
-      try {
-        await addStockLedgerEntry({
-          item_id: itemId,
-          item_code: itemCode,
-          item_description: itemDesc,
-          transaction_date: today,
-          transaction_type: 'scrap_write_off',
-          qty_in: 0,
-          qty_out: delta,
-          balance_qty: 0,
-          unit_cost: 0,
-          total_value: 0,
-          reference_type: 'assembly_work_order',
-          reference_id: awoId,
-          reference_number: awoNumber,
-          notes: reason ? `Component scrapped — AWO #${awoNumber}: ${reason}` : `Component scrapped — AWO #${awoNumber}`,
-          created_by: null,
-          from_state: wip_bucket,
-          to_state: STOCK_STATE.SCRAPPED,
-        });
-      } catch (e) {
-        console.error('[production] scrap_write_off ledger failed — line not scrapped, no bucket change:', e);
-        scrapWarnings.push(`${itemCode ?? itemDesc ?? input.awo_line_item_id} — scrap not posted (ledger error)`);
-        return;
+      // Atomic WIP -> scrap write-off + scrap_write_off ledger, one server-side txn.
+      const { error: rpcErr } = await (supabase as any).rpc('rpc_return_or_scrap_wip', {
+        p_company_id: companyId,
+        p_awo_line_id: input.awo_line_item_id,
+        p_qty: delta,
+        p_direction: 'scrap',
+        p_notes: reason ? `Component scrapped — AWO #${awoNumber}: ${reason}` : `Component scrapped — AWO #${awoNumber}`,
+      });
+      if (rpcErr) {
+        scrapWarnings.push(`${itemCode ?? itemDesc ?? input.awo_line_item_id} — ${rpcErr.message}`);
+        return; // no bucket/line change — retryable
       }
-      await updateStockBucket(itemId, wip_bucket, -delta);
       // Queue a replacement for this scrapped quantity (mid-build scrap only).
       replacements.push({
         awo_line_item_id: input.awo_line_item_id,
