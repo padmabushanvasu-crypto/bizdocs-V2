@@ -1,7 +1,4 @@
 import { supabase } from "@/integrations/supabase/client";
-import { updateStockBucket } from "@/lib/items-api";
-import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
-import { STOCK_STATE } from "@/lib/stock-states";
 import { fetchFreeStockMap } from "@/lib/stock-free-api";
 import { createNotification } from "@/lib/notifications-api";
 
@@ -1120,116 +1117,57 @@ export async function acceptAssemblyWorkOrder(
     throw new Error(`Cannot accept: work order is '${awo.status}', expected 'awaiting_store'.`);
   }
 
-  const today = new Date().toISOString().split('T')[0];
-  const wip_bucket = awo.awo_type === 'finished_good' ? 'in_fg_wip' : 'in_subassembly_wip';
   const warnings: string[] = [];
 
-  // ── CONSUME the real WIP per line (issued − returned − scrapped). Ledger-first. ──
-  for (const li of awo.line_items ?? []) {
-    if (!li.item_id) continue;
-    const consumeQty = Math.max(
-      0,
-      (li.issued_qty ?? 0) - (li.returned_qty ?? 0) - (li.scrapped_qty ?? 0)
-    );
-    if (consumeQty <= 0) continue;
+  // p_accepted_by is a uuid — resolve the current auth user's id. (The `acceptedBy`
+  // display-name arg is no longer written here; the RPC owns accepted_by.)
+  const { data: { user } } = await supabase.auth.getUser();
+
+  // Single guarded RPC: consumes the real WIP per line (issued − returned −
+  // scrapped), writes awo_line_items.consumed_qty, posts the assembly_consumption
+  // and assembly_output ledger rows, credits the output bucket by awo_type, and
+  // flips the AWO to 'complete' with accepted_at/accepted_by — one server-side
+  // transaction. Throws (naming the failure) on any shortfall; re-throw so the
+  // caller's toast shows it and nothing partial is committed here.
+  const { error: rpcErr } = await (supabase as any).rpc('rpc_accept_awo_and_produce', {
+    p_company_id: companyId,
+    p_awo_id: awoId,
+    p_accepted_by: user?.id ?? null,
+  });
+  if (rpcErr) throw new Error(rpcErr.message);
+
+  // Finished good: create/upsert the serial_numbers row. Not handled by the RPC.
+  if (awo.item_id && awo.awo_type === 'finished_good' && awo.serial_number) {
     try {
-      await addStockLedgerEntry({
-        item_id: li.item_id,
-        item_code: li.item_code ?? null,
-        item_description: li.item_description ?? null,
-        transaction_date: today,
-        transaction_type: 'assembly_consumption',
-        qty_in: 0,
-        qty_out: consumeQty,
-        balance_qty: 0,
-        unit_cost: 0,
-        total_value: 0,
-        reference_type: 'assembly_work_order',
-        reference_id: awoId,
-        reference_number: awo.awo_number,
-        notes: `Component consumed — AWO #${awo.awo_number} accepted to store`,
-        created_by: null,
-        from_state: wip_bucket,
-        to_state: STOCK_STATE.CONSUMED,
-      });
-    } catch (e) {
-      console.error('[production] assembly_consumption ledger failed — line not consumed, no bucket change:', e);
-      warnings.push(`${li.item_code ?? li.item_description ?? li.id} — consumption not posted (ledger error)`);
-      continue;
-    }
-    await updateStockBucket(li.item_id, wip_bucket, -consumeQty);
-    // Record what left WIP so the return/scrap caps stop counting it as on-hand.
-    // Accept is one-shot (status guard prevents re-run), so a plain set is correct.
-    await (supabase as any)
-      .from("awo_line_items")
-      .update({ consumed_qty: consumeQty })
-      .eq("id", li.id)
-      .eq("company_id", companyId);
+      const { data: existingSn } = await (supabase as any)
+        .from("serial_numbers")
+        .select("id")
+        .eq("serial_number", awo.serial_number)
+        .eq("company_id", companyId)
+        .maybeSingle();
+      if (existingSn?.id) {
+        await (supabase as any).from("serial_numbers").update({ status: 'in_stock' }).eq("id", existingSn.id);
+      } else {
+        const { error: snErr } = await (supabase as any).from("serial_numbers").insert({
+          serial_number: awo.serial_number,
+          company_id: companyId,
+          item_id: awo.item_id ?? null,
+          item_code: awo.item_code ?? null,
+          item_description: awo.item_description ?? null,
+          status: 'in_stock',
+        });
+        if (snErr) console.error('[production] serial_numbers insert failed:', snErr);
+      }
+    } catch (e) { console.error('[production] serial_numbers upsert failed:', e); }
   }
 
-  // ── OUTPUT the built item: ledger-first, then credit by awo_type. ──
-  if (awo.item_id) {
-    const outBucket = awo.awo_type === 'finished_good' ? 'in_fg_ready' : 'free';
-    try {
-      await addStockLedgerEntry({
-        item_id: awo.item_id,
-        item_code: awo.item_code ?? null,
-        item_description: awo.item_description ?? null,
-        transaction_date: today,
-        transaction_type: 'assembly_output',
-        qty_in: awo.quantity_to_build,
-        qty_out: 0,
-        balance_qty: 0,
-        unit_cost: 0,
-        total_value: 0,
-        reference_type: 'assembly_work_order',
-        reference_id: awoId,
-        reference_number: awo.awo_number,
-        notes: `Assembly accepted to store — AWO #${awo.awo_number}`,
-        created_by: null,
-        from_state: null,
-        to_state: outBucket,
-      });
-      await updateStockBucket(awo.item_id, outBucket, +awo.quantity_to_build);
-    } catch (e) {
-      console.error('[production] assembly_output ledger failed:', e);
-      warnings.push(`${awo.item_code ?? awo.item_description ?? awoId} — output not posted (ledger error)`);
-    }
-
-    // Finished good: create/upsert the serial_numbers row (as the old completion did).
-    if (awo.awo_type === 'finished_good' && awo.serial_number) {
-      try {
-        const { data: existingSn } = await (supabase as any)
-          .from("serial_numbers")
-          .select("id")
-          .eq("serial_number", awo.serial_number)
-          .eq("company_id", companyId)
-          .maybeSingle();
-        if (existingSn?.id) {
-          await (supabase as any).from("serial_numbers").update({ status: 'in_stock' }).eq("id", existingSn.id);
-        } else {
-          const { error: snErr } = await (supabase as any).from("serial_numbers").insert({
-            serial_number: awo.serial_number,
-            company_id: companyId,
-            item_id: awo.item_id ?? null,
-            item_code: awo.item_code ?? null,
-            item_description: awo.item_description ?? null,
-            status: 'in_stock',
-          });
-          if (snErr) console.error('[production] serial_numbers insert failed:', snErr);
-        }
-      } catch (e) { console.error('[production] serial_numbers upsert failed:', e); }
-    }
-  }
-
-  // Record acceptance + mark complete. Status guard at the top prevents double-post.
+  // Persist the fields the RPC does NOT own: the storekeeper's rack/location (no
+  // RPC param) and completed_at (read by month stats). Deliberately NOT re-writing
+  // status / accepted_at / accepted_by — the RPC owns those (no duplicate write).
   await (supabase as any)
     .from("assembly_work_orders")
     .update({
-      status: 'complete',
       store_location: storeLocation ?? null,
-      accepted_at: new Date().toISOString(),
-      accepted_by: acceptedBy,
       completed_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
