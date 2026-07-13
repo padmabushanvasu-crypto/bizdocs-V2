@@ -105,64 +105,70 @@ export function AwoDeleteDialog({ awoId, open, onOpenChange, onDeleted }: Props)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
+      {/*
+        flex-col + max-h-[85vh]: header, all controls, and the footer are shrink-0
+        (always visible); only the outstanding-WIP list scrolls (min-h-0 +
+        max-h-[40vh] + overflow-y-auto), so a large component list (e.g. 82 lines)
+        can never push the Cancel/Delete buttons off-screen. Mirrors the app's
+        flex-col dialog shell (GstReports) + inner-scroll list (AWO detail).
+      */}
+      <DialogContent className="flex flex-col max-h-[85vh]">
+        <DialogHeader className="shrink-0">
           <DialogTitle>Delete work order{awo ? ` ${awo.awo_number}` : ""}?</DialogTitle>
         </DialogHeader>
 
         {isLoading || !awo ? (
           <p className="py-4 text-sm text-muted-foreground">Loading…</p>
         ) : (
-          <div className="space-y-4">
+          <>
             {!needsWipChoice && !isComplete && (
-              <p className="text-sm text-muted-foreground">
+              <p className="shrink-0 text-sm text-muted-foreground">
                 This will delete <b>{awo.awo_number}</b> ({awo.item_description ?? awo.item_code}). No stock
                 is affected.
               </p>
             )}
 
             {needsWipChoice && (
-              <div className="space-y-3">
-                {outstanding.length > 0 ? (
-                  <>
-                    <p className="text-sm text-muted-foreground">
-                      This work order holds components in WIP. Choose what happens to them before deleting:
-                    </p>
-                    <div className="divide-y rounded-md border text-sm">
-                      {outstanding.map(({ li, qty }) => (
-                        <div key={li.id} className="flex justify-between px-3 py-1.5">
-                          <span className="truncate">{li.item_code ?? li.item_description ?? "—"}</span>
-                          <span className="font-mono tabular-nums">
-                            {formatNumber(qty)} {li.unit ?? ""}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    No outstanding WIP is recorded, but this WO may still hold components. Choose a
-                    disposition to be safe:
-                  </p>
-                )}
-                <RadioGroup
-                  value={wipDisposition}
-                  onValueChange={(v) => setWipDisposition(v as "return" | "scrap")}
-                >
-                  <div className="flex items-center gap-2">
-                    <RadioGroupItem value="return" id="wip-return" />
-                    <Label htmlFor="wip-return">Return components to store</Label>
+              <p className="shrink-0 text-sm text-muted-foreground">
+                {outstanding.length > 0
+                  ? "This work order holds components in WIP. Choose what happens to them before deleting:"
+                  : "No outstanding WIP is recorded, but this WO may still hold components. Choose a disposition to be safe:"}
+              </p>
+            )}
+
+            {/* Only this list scrolls — everything else stays fixed. */}
+            {needsWipChoice && outstanding.length > 0 && (
+              <div className="min-h-0 max-h-[40vh] overflow-y-auto divide-y rounded-md border text-sm">
+                {outstanding.map(({ li, qty }) => (
+                  <div key={li.id} className="flex justify-between px-3 py-1.5">
+                    <span className="truncate">{li.item_code ?? li.item_description ?? "—"}</span>
+                    <span className="font-mono tabular-nums">
+                      {formatNumber(qty)} {li.unit ?? ""}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <RadioGroupItem value="scrap" id="wip-scrap" />
-                    <Label htmlFor="wip-scrap">Scrap components (write-off)</Label>
-                  </div>
-                </RadioGroup>
+                ))}
               </div>
             )}
 
+            {needsWipChoice && (
+              <RadioGroup
+                className="shrink-0"
+                value={wipDisposition}
+                onValueChange={(v) => setWipDisposition(v as "return" | "scrap")}
+              >
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="return" id="wip-return" />
+                  <Label htmlFor="wip-return">Return components to store</Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="scrap" id="wip-scrap" />
+                  <Label htmlFor="wip-scrap">Scrap components (write-off)</Label>
+                </div>
+              </RadioGroup>
+            )}
+
             {isComplete && (
-              <div className="space-y-3">
+              <div className="shrink-0 space-y-3">
                 <div className="flex gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                   <span>
@@ -184,7 +190,7 @@ export function AwoDeleteDialog({ awoId, open, onOpenChange, onDeleted }: Props)
               </div>
             )}
 
-            <div className="space-y-1">
+            <div className="shrink-0 space-y-1">
               <Label htmlFor="delete-notes" className="text-xs text-muted-foreground">
                 Notes (optional)
               </Label>
@@ -198,14 +204,14 @@ export function AwoDeleteDialog({ awoId, open, onOpenChange, onDeleted }: Props)
             </div>
 
             {errorMsg && (
-              <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+              <div className="shrink-0 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800">
                 {errorMsg}
               </div>
             )}
-          </div>
+          </>
         )}
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>
             Cancel
           </Button>
