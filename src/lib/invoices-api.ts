@@ -114,7 +114,7 @@ export async function updateInvoice(id: string, invoice: Record<string, any>, li
   }
 }
 
-export async function issueInvoice(id: string) {
+export async function issueInvoice(id: string): Promise<{ unresolvedWarnings: string[] }> {
   const { error } = await supabase.from("invoices").update({ status: "sent", issued_at: new Date().toISOString() }).eq("id", id);
   if (error) throw error;
 
@@ -123,21 +123,43 @@ export async function issueInvoice(id: string) {
   const today = new Date().toISOString().split("T")[0];
   const { invoice, lineItems } = await fetchInvoice(id);
 
+  // Lines that carry a real quantity but cannot be relieved (no drawing number,
+  // or no item matches the drawing) are collected and surfaced — never skipped
+  // silently, which previously let an invoiced unit leave no stock trail.
+  const unresolvedWarnings: string[] = [];
+
   for (const li of lineItems) {
     const line = li as any;
     const qty: number = line.quantity ?? 0;
-    // Only process lines with a drawing_number (the reliable item lookup key)
-    if (qty <= 0 || !line.drawing_number) continue;
+    // Zero-qty lines relieve nothing — a legitimate no-op, not an unresolved line.
+    if (qty <= 0) continue;
+    const lineLabel = line.description || `Line ${line.serial_number ?? "?"}`;
+    // drawing_number is the reliable item lookup key; a line without one cannot
+    // be relieved from stock.
+    if (!line.drawing_number) {
+      unresolvedWarnings.push(`${lineLabel} — no drawing number; stock NOT relieved`);
+      continue;
+    }
 
     const { data: itemRecord } = await supabase
       .from("items")
-      .select("id, item_code, description, current_stock")
+      .select("id, item_code, description, current_stock, item_type")
       .eq("drawing_revision", line.drawing_number)
       .eq("company_id", companyId)
       .maybeSingle();
 
-    if (!itemRecord) continue;
+    if (!itemRecord) {
+      unresolvedWarnings.push(`${lineLabel} (drawing ${line.drawing_number}) — no matching item; stock NOT relieved`);
+      continue;
+    }
     const rec = itemRecord as any;
+    // Route relief by item type: a finished good was produced into stock_in_fg_ready
+    // (production-api acceptAssemblyWorkOrder) and is relieved from there, mirroring
+    // dispatch-api. Everything else relieves stock_free as before. 'product' is
+    // treated as a finished good to match dispatch's FG set (dispatch-api.ts).
+    const isFinishedGood = rec.item_type === "finished_good" || rec.item_type === "product";
+    const bucket = isFinishedGood ? "in_fg_ready" : "free";
+    const fromState = isFinishedGood ? STOCK_STATE.FG_READY : STOCK_STATE.FREE;
     const newStock = Math.max(0, (rec.current_stock ?? 0) - qty);
     // Ledger-first per iteration (Scope 1). If a downstream line's ledger
     // insert fails, earlier lines stay committed and the operator sees the
@@ -158,12 +180,19 @@ export async function issueInvoice(id: string) {
       reference_number: (invoice as any).invoice_number,
       notes: `Invoice dispatch: ${(invoice as any).invoice_number}`,
       created_by: null,
-      from_state: STOCK_STATE.FREE,
+      from_state: fromState,
       to_state: STOCK_STATE.DISPATCHED,
     });
-    await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
-    await updateStockBucket(rec.id, 'free', -qty);
+    // current_stock mirrors stock_free only. Keep the legacy sync for free-relieved
+    // items; for finished goods, updateStockBucket re-syncs current_stock=stock_free
+    // itself, so touching it here would wrongly decrement it.
+    if (!isFinishedGood) {
+      await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
+    }
+    await updateStockBucket(rec.id, bucket, -qty);
   }
+
+  return { unresolvedWarnings };
 }
 
 export async function cancelInvoice(id: string, reason: string) {

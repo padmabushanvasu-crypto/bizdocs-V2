@@ -70,6 +70,18 @@ export default function InvoiceForm() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  // Surface invoice lines that were issued but could not relieve stock (no drawing
+  // number, or no matching item). The invoice still sends; this warns loudly so the
+  // operator can fix the item link rather than the relief being lost silently.
+  const surfaceUnresolved = (warnings: string[]) => {
+    if (!warnings.length) return;
+    toast({
+      title: `${warnings.length} line(s) issued without relieving stock`,
+      description: warnings.join(" · "),
+      variant: "destructive",
+    });
+  };
+
   // State
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [invoiceDate, setInvoiceDate] = useState<Date>(new Date());
@@ -350,7 +362,8 @@ export default function InvoiceForm() {
       if (isEdit) {
         await updateInvoice(id!, invoiceData, lineItems);
         if (status === "sent") {
-          await issueInvoice(id!);
+          const { unresolvedWarnings } = await issueInvoice(id!);
+          surfaceUnresolved(unresolvedWarnings);
           if (serialNumberId) {
             await assignSerialToInvoice(
               serialNumberId, id!, invoiceNumber,
@@ -363,7 +376,8 @@ export default function InvoiceForm() {
       } else {
         const inv = await createInvoice(invoiceData, lineItems);
         if (status === "sent") {
-          await issueInvoice(inv.id);
+          const { unresolvedWarnings } = await issueInvoice(inv.id);
+          surfaceUnresolved(unresolvedWarnings);
           if (serialNumberId) {
             await assignSerialToInvoice(
               serialNumberId, inv.id, invoiceNumber,
