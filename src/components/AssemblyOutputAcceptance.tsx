@@ -44,16 +44,25 @@ export function AssemblyOutputAcceptance() {
   const acceptMutation = useMutation({
     mutationFn: (awo: AssemblyWorkOrder) =>
       acceptAssemblyWorkOrder(awo.id, locations[awo.id]?.trim() || null, acceptedBy),
-    onSuccess: (res) => {
-      queryClient.invalidateQueries({ queryKey: ["awaiting-store-awos"] });
-      queryClient.invalidateQueries({ queryKey: ["sa-work-orders-wip"] });
-      queryClient.invalidateQueries({ queryKey: ["fg-work-orders-wip"] });
-      queryClient.invalidateQueries({ queryKey: ["awo-stats-dashboard"] });
+    onSuccess: (res, awo) => {
+      // Optimistic: drop the accepted card from the awaiting-store list at once.
+      queryClient.setQueryData<AssemblyWorkOrder[] | undefined>(
+        ["awaiting-store-awos"],
+        (old) => old?.filter((a) => a.id !== awo.id)
+      );
+
       toast({ title: "Assembly output accepted into stock" });
       const warnings = res?.warnings ?? [];
       if (warnings.length > 0) {
         toast({ title: "Some lines were not posted", description: warnings.join("; "), variant: "destructive" });
       }
+
+      // Non-blocking safety-net reconcile: the awaiting list (already patched) plus
+      // the derived WIP/stat aggregates that can't be cheaply patched here.
+      queryClient.invalidateQueries({ queryKey: ["awaiting-store-awos"] });
+      queryClient.invalidateQueries({ queryKey: ["sa-work-orders-wip"] });
+      queryClient.invalidateQueries({ queryKey: ["fg-work-orders-wip"] });
+      queryClient.invalidateQueries({ queryKey: ["awo-stats-dashboard"] });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });

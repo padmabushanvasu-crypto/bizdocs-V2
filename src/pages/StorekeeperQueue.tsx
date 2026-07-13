@@ -10,6 +10,7 @@ import {
   fetchMaterialIssueRequest,
   confirmMaterialIssue,
   type MirLineItem,
+  type MaterialIssueRequest,
 } from "@/lib/production-api";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -100,12 +101,33 @@ export default function StorekeeperQueue() {
       });
       return confirmMaterialIssue(selectedMirId, lineIssues, issuedBy);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["mirs"] });
-      queryClient.invalidateQueries({ queryKey: ["awo-detail"] });
+    onSuccess: (data) => {
+      const mirId = selectedMirId;
+      const awoId = mirDetail?.awo_id;
+      const today = new Date().toISOString().split("T")[0];
+
+      // Optimistic: patch the confirmed MIR's status in place across every cached
+      // ["mirs"] list. Membership under the active status filter (e.g. "pending")
+      // is reconciled by the background invalidate below — no full reload up front.
+      if (mirId) {
+        queryClient.setQueriesData<MaterialIssueRequest[] | undefined>(
+          { queryKey: ["mirs"] },
+          (old) =>
+            old?.map((m) =>
+              m.id === mirId ? { ...m, status: data.status, issue_date: today } : m
+            )
+        );
+      }
+
       toast({ title: "Materials issued successfully" });
       setSelectedMirId(null);
       setLineEdits({});
+
+      // Precise cross-page freshness (AWO detail — issued_qty changed) + a
+      // non-blocking safety-net reconcile of the MIR lists. Data is already
+      // patched, so both refetch in the background with no loading flash.
+      if (awoId) queryClient.invalidateQueries({ queryKey: ["awo-detail", awoId] });
+      queryClient.invalidateQueries({ queryKey: ["mirs"] });
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
