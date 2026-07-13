@@ -73,6 +73,9 @@ export interface AwoLineItem {
   damage_reason?: string | null;
   disposition?: 'scrap' | 'use_as_is' | null;
   scrapped_qty?: number;
+  // Set at acceptAssemblyWorkOrder when the real WIP is consumed. NULL on
+  // historical rows (pre-migration) — always read as `consumed_qty ?? 0`.
+  consumed_qty?: number | null;
   concession_qty?: number;
   concession_note?: string | null;
   concession_by?: string | null;
@@ -386,20 +389,23 @@ export async function returnAssemblyComponents(
     // Fresh authoritative read for idempotency + an accurate cap.
     const { data: fresh } = await (supabase as any)
       .from("awo_line_items")
-      .select("issued_qty, returned_qty, scrapped_qty, item_id, item_code, item_description")
+      .select("issued_qty, returned_qty, scrapped_qty, consumed_qty, item_id, item_code, item_description")
       .eq("id", input.awo_line_item_id)
       .eq("company_id", companyId)
       .maybeSingle();
     const issued = Number((fresh as any)?.issued_qty ?? snapshot.issued_qty ?? 0);
     const currentReturned = Number((fresh as any)?.returned_qty ?? snapshot.returned_qty ?? 0);
     const scrapped = Number((fresh as any)?.scrapped_qty ?? snapshot.scrapped_qty ?? 0);
+    const consumed = Number((fresh as any)?.consumed_qty ?? snapshot.consumed_qty ?? 0);
     const itemId = (fresh as any)?.item_id ?? snapshot.item_id ?? null;
     const itemCode = (fresh as any)?.item_code ?? snapshot.item_code ?? null;
     const itemDesc = (fresh as any)?.item_description ?? snapshot.item_description ?? null;
 
-    // CAP: never return beyond what's still in WIP for this line.
-    const availableInWip = Math.max(0, issued - currentReturned - scrapped);
-    const maxTarget = currentReturned + availableInWip; // == issued − scrapped
+    // CAP: never return beyond what's still in WIP for this line. Consumed units
+    // (posted at accept) have already left WIP — excluding them prevents
+    // over-return that would double-credit stock_free.
+    const availableInWip = Math.max(0, issued - currentReturned - scrapped - consumed);
+    const maxTarget = currentReturned + availableInWip; // == issued − scrapped − consumed
     // Cumulative target clamped so we never go below current or beyond the cap.
     const target = Math.min(Math.max(Number(input.returned_qty ?? 0), currentReturned), maxTarget);
     const delta = Math.max(0, target - currentReturned);
@@ -510,20 +516,22 @@ export async function scrapAssemblyComponents(
     // Fresh authoritative read for idempotency + an accurate cap.
     const { data: fresh } = await (supabase as any)
       .from("awo_line_items")
-      .select("issued_qty, returned_qty, scrapped_qty, item_id, item_code, item_description")
+      .select("issued_qty, returned_qty, scrapped_qty, consumed_qty, item_id, item_code, item_description")
       .eq("id", input.awo_line_item_id)
       .eq("company_id", companyId)
       .maybeSingle();
     const issued = Number((fresh as any)?.issued_qty ?? snapshot.issued_qty ?? 0);
     const currentReturned = Number((fresh as any)?.returned_qty ?? snapshot.returned_qty ?? 0);
     const currentScrapped = Number((fresh as any)?.scrapped_qty ?? snapshot.scrapped_qty ?? 0);
+    const consumed = Number((fresh as any)?.consumed_qty ?? snapshot.consumed_qty ?? 0);
     const itemId = (fresh as any)?.item_id ?? snapshot.item_id ?? null;
     const itemCode = (fresh as any)?.item_code ?? snapshot.item_code ?? null;
     const itemDesc = (fresh as any)?.item_description ?? snapshot.item_description ?? null;
 
-    // CAP: never scrap beyond what's still in WIP for this line.
-    const availableInWip = Math.max(0, issued - currentReturned - currentScrapped);
-    const maxTarget = currentScrapped + availableInWip; // == issued − returned
+    // CAP: never scrap beyond what's still in WIP for this line. Consumed units
+    // (posted at accept) have already left WIP.
+    const availableInWip = Math.max(0, issued - currentReturned - currentScrapped - consumed);
+    const maxTarget = currentScrapped + availableInWip; // == issued − returned − consumed
     const target = Math.min(Math.max(Number(input.scrapped_qty ?? 0), currentScrapped), maxTarget);
     const delta = Math.max(0, target - currentScrapped);
 
@@ -655,6 +663,14 @@ export async function cancelAssemblyWorkOrder(
 
   if (stockAction !== 'none') {
     const awo = await fetchAssemblyWorkOrder(id);
+    // Status guard: a 'complete' AWO already consumed its WIP at accept, and a
+    // 'cancelled' one already ran its reversal. Reversing again would double-credit
+    // stock (issued − returned − scrapped − consumed no longer reflects WIP on hand).
+    if (awo && (awo.status === 'complete' || awo.status === 'cancelled')) {
+      throw new Error(
+        `Cannot reverse WIP stock: work order is '${awo.status}'. Its components were already consumed or reversed.`
+      );
+    }
     const issuedLines = (awo?.line_items ?? []).filter(
       (li) => li.item_id && li.issued_qty > 0
     );
@@ -699,6 +715,17 @@ export async function cancelAssemblyWorkOrder(
       if (scrapLines.length > 0) await scrapAssemblyComponents(id, scrapLines, 'AWO cancelled');
     }
   }
+
+  // Cascade: cancel any still-open MIRs for this AWO. Left open, a pending /
+  // partially_issued MIR could later be confirmed (confirmMaterialIssue) and both
+  // move stock into WIP and resurrect the cancelled AWO to in_progress.
+  const { error: mirErr } = await (supabase as any)
+    .from("material_issue_requests")
+    .update({ status: 'cancelled' })
+    .eq("awo_id", id)
+    .eq("company_id", companyId)
+    .in("status", ['pending', 'partially_issued']);
+  if (mirErr) throw mirErr;
 
   const { error } = await (supabase as any)
     .from("assembly_work_orders")
@@ -947,6 +974,18 @@ export async function confirmMaterialIssue(
   const mir = await fetchMaterialIssueRequest(mir_id);
   if (!mir) throw new Error("MIR not found");
 
+  // Status guard: only a work order still awaiting/consuming materials may receive
+  // an issue. Blocks issuing against a completed or cancelled AWO — which would move
+  // stock into WIP and (for cancelled) resurrect it to in_progress. Rejects when the
+  // AWO is missing or in any other state.
+  const awoStatus = mir.awo?.status;
+  if (awoStatus !== 'pending_materials' && awoStatus !== 'in_progress') {
+    throw new Error(
+      `Cannot issue materials: work order is '${awoStatus ?? 'unknown'}'. ` +
+      `Only 'pending_materials' or 'in_progress' work orders can receive an issue.`
+    );
+  }
+
   // FIX 3A: determine correct WIP bucket from AWO type
   const awoType = mir.awo?.awo_type;
   const wip_bucket = awoType === 'finished_good' ? 'in_fg_wip' : 'in_subassembly_wip';
@@ -1097,7 +1136,7 @@ export async function completeAssemblyWorkOrder(id: string): Promise<void> {
   // stay in WIP and count; only scrapped/returned reduce it). Scrapped material
   // must be re-issued (auto-reissue MIR) before the build can complete.
   const unfulfilledLines = (awo.line_items ?? []).filter((li) => {
-    const availableInWip = (li.issued_qty ?? 0) - (li.returned_qty ?? 0) - (li.scrapped_qty ?? 0);
+    const availableInWip = (li.issued_qty ?? 0) - (li.returned_qty ?? 0) - (li.scrapped_qty ?? 0) - (li.consumed_qty ?? 0);
     return availableInWip < li.required_qty;
   });
   if (unfulfilledLines.length > 0) {
@@ -1183,6 +1222,13 @@ export async function acceptAssemblyWorkOrder(
       continue;
     }
     await updateStockBucket(li.item_id, wip_bucket, -consumeQty);
+    // Record what left WIP so the return/scrap caps stop counting it as on-hand.
+    // Accept is one-shot (status guard prevents re-run), so a plain set is correct.
+    await (supabase as any)
+      .from("awo_line_items")
+      .update({ consumed_qty: consumeQty })
+      .eq("id", li.id)
+      .eq("company_id", companyId);
   }
 
   // ── OUTPUT the built item: ledger-first, then credit by awo_type. ──
@@ -1286,7 +1332,7 @@ export async function reportComponentIssue(
 
   const { data: awoLine, error: lineError } = await (supabase as any)
     .from("awo_line_items")
-    .select("awo_id, issued_qty, returned_qty, scrapped_qty, concession_qty")
+    .select("awo_id, issued_qty, returned_qty, scrapped_qty, consumed_qty, concession_qty")
     .eq("id", awo_line_item_id)
     .eq("company_id", companyId)
     .single();
@@ -1323,8 +1369,9 @@ export async function reportComponentIssue(
     const issued = Number((awoLine as any).issued_qty ?? 0);
     const returned = Number((awoLine as any).returned_qty ?? 0);
     const scrapped = Number((awoLine as any).scrapped_qty ?? 0);
+    const consumed = Number((awoLine as any).consumed_qty ?? 0);
     const currentConcession = Number((awoLine as any).concession_qty ?? 0);
-    const availableInWip = Math.max(0, issued - returned - scrapped);
+    const availableInWip = Math.max(0, issued - returned - scrapped - consumed);
     const target = Math.min(Math.max(Number(target_qty), currentConcession), currentConcession + availableInWip);
     const { error: updErr } = await (supabase as any)
       .from("awo_line_items")
