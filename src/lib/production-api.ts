@@ -986,9 +986,7 @@ export async function confirmMaterialIssue(
     );
   }
 
-  // FIX 3A: determine correct WIP bucket from AWO type
-  const awoType = mir.awo?.awo_type;
-  const wip_bucket = awoType === 'finished_good' ? 'in_fg_wip' : 'in_subassembly_wip';
+  // The WIP bucket is derived from awo_type inside rpc_confirm_material_issue.
   const awoNumber = mir.awo?.awo_number ?? '';
 
   let hasShortages = false;
@@ -1012,39 +1010,21 @@ export async function confirmMaterialIssue(
     const targetIssued = Math.max(0, Number(issue.issued_qty ?? 0));
     const delta = Math.max(0, targetIssued - currentIssued);
 
-    // Ledger-FIRST: post the issue ledger, and only then move buckets. If the
-    // ledger insert fails, abort this line — no bucket change, issued/shortage
-    // left untouched so it can be retried.
+    // Atomic stock move via the guarded RPC: it writes the assembly_issue ledger
+    // row and moves stock_free -> WIP (bucket by awo_type) in one server-side
+    // transaction, throwing with the exact shortfall if free stock is insufficient.
+    // It does NOT check AWO status — that guard stays above. Re-throw so the
+    // caller's toast shows the RPC message; on failure the mir/awo line writes
+    // below are skipped for this line (issued/shortage stay retryable).
     if (delta > 0 && mirLine.item_id) {
-      try {
-        await addStockLedgerEntry({
-          item_id: mirLine.item_id,
-          item_code: mirLine.item_code ?? null,
-          item_description: mirLine.item_description ?? null,
-          transaction_date: new Date().toISOString().split('T')[0],
-          transaction_type: 'assembly_issue',
-          qty_in: 0,
-          qty_out: delta,
-          balance_qty: 0,
-          unit_cost: 0,
-          total_value: 0,
-          reference_type: 'assembly_work_order',
-          reference_id: mir.awo_id,
-          reference_number: awoNumber,
-          notes: `Material issued for AWO #${awoNumber}`,
-          created_by: null,
-          from_state: STOCK_STATE.FREE,
-          to_state: wip_bucket,
-        });
-      } catch (e) {
-        console.error('[production] assembly_issue ledger failed — line not issued, no bucket change:', e);
-        // Ledger failed: leave issued/shortage as-is; surface the still-open shortage.
-        if (Math.max(0, mirLine.requested_qty - currentIssued) > 0) hasShortages = true;
-        return;
-      }
-      // Ledger committed — now apply the bucket moves.
-      await updateStockBucket(mirLine.item_id, 'free', -delta);
-      await updateStockBucket(mirLine.item_id, wip_bucket, +delta);
+      const { error: rpcErr } = await (supabase as any).rpc('rpc_confirm_material_issue', {
+        p_company_id: companyId,
+        p_item_id: mirLine.item_id,
+        p_qty: delta,
+        p_awo_id: mir.awo_id,
+        p_notes: `Material issued for AWO #${awoNumber}`,
+      });
+      if (rpcErr) throw new Error(rpcErr.message);
     }
 
     // Persist the cumulative issued total (no-op write when delta === 0).
