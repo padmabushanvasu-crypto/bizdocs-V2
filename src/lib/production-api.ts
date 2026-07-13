@@ -43,6 +43,12 @@ export interface AssemblyWorkOrder {
   store_location: string | null;
   accepted_at: string | null;
   accepted_by: string | null;
+  // Soft-delete (rpc_delete_awo). deleted_at set => the WO is deleted; the
+  // disposition/notes record how outstanding WIP or produced stock was handled.
+  deleted_at: string | null;
+  deleted_by: string | null;
+  delete_disposition: string | null;
+  delete_notes: string | null;
   created_at: string;
   updated_at: string;
   line_items?: AwoLineItem[];
@@ -126,6 +132,7 @@ export async function fetchAssemblyWorkOrders(filters: {
   status?: string;
   search?: string;
   month?: string;
+  showDeleted?: boolean;
 } = {}): Promise<AssemblyWorkOrder[]> {
   const companyId = await getCompanyId();
   if (!companyId) return [];
@@ -135,6 +142,13 @@ export async function fetchAssemblyWorkOrders(filters: {
     .select("*")
     .eq("company_id", companyId)
     .order("created_at", { ascending: false });
+
+  // Default hides soft-deleted WOs; showDeleted flips to ONLY deleted.
+  if (filters.showDeleted) {
+    query = query.not("deleted_at", "is", null);
+  } else {
+    query = query.is("deleted_at", null);
+  }
 
   if (filters.type) {
     query = query.eq("awo_type", filters.type);
@@ -687,6 +701,43 @@ export async function cancelAssemblyWorkOrder(
     .eq("company_id", companyId);
 
   if (error) throw error;
+}
+
+// ── deleteAssemblyWorkOrder ───────────────────────────────────────────────────
+
+/**
+ * Soft-delete an AWO via the guarded rpc_delete_awo. The RPC owns all stock
+ * decisions in one server-side transaction:
+ *  - outstanding WIP (in_progress/awaiting_store) is returned or scrapped per
+ *    `wipDisposition` ('return' | 'scrap');
+ *  - a completed build's produced stock is reversed only when `reverseOutput` is
+ *    true AND the RPC confirms the stock hasn't moved on (else it blocks and rolls
+ *    back with zero side effects).
+ * It stamps deleted_at/deleted_by/delete_disposition/delete_notes.
+ *
+ * Errors are re-thrown verbatim so the caller can surface exactly what's
+ * outstanding or why the delete is blocked.
+ */
+export async function deleteAssemblyWorkOrder(
+  awoId: string,
+  opts: { wipDisposition?: 'return' | 'scrap'; reverseOutput?: boolean; notes?: string } = {}
+): Promise<{ deleted: boolean; disposition: string | null }> {
+  const companyId = await getCompanyId();
+  if (!companyId) throw new Error("Not authenticated");
+  const { data: { user } } = await supabase.auth.getUser();
+
+  const { data, error } = await (supabase as any).rpc('rpc_delete_awo', {
+    p_company_id: companyId,
+    p_awo_id: awoId,
+    p_wip_disposition: opts.wipDisposition ?? null,
+    p_reverse_output: opts.reverseOutput ?? false,
+    p_deleted_by: user?.id ?? null,
+    p_notes: opts.notes ?? null,
+  });
+  if (error) throw new Error(error.message);
+
+  const row = Array.isArray(data) ? (data[0] ?? {}) : (data ?? {});
+  return { deleted: !!(row as any).deleted, disposition: (row as any).disposition ?? null };
 }
 
 // ── createMaterialIssueRequest ────────────────────────────────────────────────
