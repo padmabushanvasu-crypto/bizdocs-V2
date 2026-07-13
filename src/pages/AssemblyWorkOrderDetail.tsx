@@ -2,7 +2,7 @@ import { useState } from "react";
 import { printWithLightMode } from "@/lib/print-utils";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Printer, Package, CheckCircle, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Printer, Package, CheckCircle, AlertTriangle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -42,6 +42,7 @@ import {
   type AwoLineItem,
   type MaterialIssueRequest,
 } from "@/lib/production-api";
+import { AwoDeleteDialog } from "@/components/AwoDeleteDialog";
 import { format, differenceInDays, parseISO } from "date-fns";
 
 type StockAction = 'none' | 'return_all' | 'partial' | 'scrap_all';
@@ -90,6 +91,7 @@ export default function AssemblyWorkOrderDetail() {
   const { user } = useAuth();
 
   const [confirmCompleteOpen, setConfirmCompleteOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelOption, setCancelOption] = useState<StockAction>('none');
   const [partialLines, setPartialLines] = useState<Record<string, { return_qty: number; scrap_qty: number }>>({});
@@ -438,6 +440,15 @@ export default function AssemblyWorkOrderDetail() {
                 Cancel
               </Button>
             )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive border-destructive hover:bg-destructive/10"
+              onClick={() => setDeleteOpen(true)}
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Delete
+            </Button>
           </div>
         </div>
       </div>
@@ -981,6 +992,16 @@ export default function AssemblyWorkOrderDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AwoDeleteDialog
+        awoId={awo.id}
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        onDeleted={() => {
+          queryClient.invalidateQueries({ queryKey: ["awo"] });
+          navigate(awo.awo_type === 'sub_assembly' ? '/sub-assembly-work-orders' : '/finished-good-work-orders');
+        }}
+      />
     </div>
   );
 }

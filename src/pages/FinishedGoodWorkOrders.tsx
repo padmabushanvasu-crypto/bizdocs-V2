@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Package, Plus } from "lucide-react";
+import { Package, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,7 @@ import {
 } from "@/lib/production-api";
 import { fetchItems } from "@/lib/items-api";
 import { fetchBomVariants } from "@/lib/bom-api";
+import { AwoDeleteDialog } from "@/components/AwoDeleteDialog";
 import { formatNumber } from "@/lib/gst-utils";
 import { format, differenceInDays, parseISO } from "date-fns";
 
@@ -102,6 +103,8 @@ export default function FinishedGoodWorkOrders() {
   }, []);
   const [search, setSearch] = useState("");
   const [showCancelled, setShowCancelled] = useState(false);
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<AssemblyWorkOrder | null>(null);
 
   const monthOptions = useMemo(() => {
     const opts: { value: string; label: string }[] = [];
@@ -119,8 +122,8 @@ export default function FinishedGoodWorkOrders() {
   const [month, setMonth] = useState<string | undefined>(undefined);
 
   const { data: awos = [], isLoading } = useQuery({
-    queryKey: ["awo", "finished_good", month],
-    queryFn: () => fetchAssemblyWorkOrders({ type: "finished_good", month: month || undefined }),
+    queryKey: ["awo", "finished_good", month, showDeleted],
+    queryFn: () => fetchAssemblyWorkOrders({ type: "finished_good", month: month || undefined, showDeleted }),
   });
 
   const { data: stats } = useQuery({
@@ -244,6 +247,13 @@ export default function FinishedGoodWorkOrders() {
           />
           Show cancelled
         </label>
+        <Button
+          variant={showDeleted ? "secondary" : "outline"}
+          size="sm"
+          onClick={() => setShowDeleted((d) => !d)}
+        >
+          <Trash2 className="h-3.5 w-3.5 mr-1" /> {showDeleted ? "Hide Deleted" : "Show Deleted"}
+        </Button>
       </div>
 
       {/* Table */}
@@ -277,8 +287,10 @@ export default function FinishedGoodWorkOrders() {
                 filtered.map((awo: AssemblyWorkOrder) => (
                   <tr
                     key={awo.id}
-                    className="cursor-pointer hover:bg-muted/30 transition-colors"
-                    onClick={() => navigate(`/assembly-work-orders/${awo.id}`)}
+                    className={awo.deleted_at
+                      ? "text-slate-400 line-through bg-slate-50/60"
+                      : "cursor-pointer hover:bg-muted/30 transition-colors"}
+                    onClick={awo.deleted_at ? undefined : () => navigate(`/assembly-work-orders/${awo.id}`)}
                   >
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-xs font-medium">{awo.awo_number}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
@@ -297,16 +309,35 @@ export default function FinishedGoodWorkOrders() {
                       {differenceInDays(new Date(), parseISO(awo.created_at))}d
                     </td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/assembly-work-orders/${awo.id}`);
-                        }}
-                      >
-                        View
-                      </Button>
+                      {awo.deleted_at ? (
+                        <span className="text-xs text-slate-400 no-underline">
+                          Deleted{awo.delete_disposition ? ` · ${awo.delete_disposition}` : ""}
+                        </span>
+                      ) : (
+                        <div className="flex items-center justify-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/assembly-work-orders/${awo.id}`);
+                            }}
+                          >
+                            View
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-600 hover:text-red-700"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteTarget(awo);
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -424,6 +455,17 @@ export default function FinishedGoodWorkOrders() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AwoDeleteDialog
+        awoId={deleteTarget?.id ?? null}
+        open={!!deleteTarget}
+        onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}
+        onDeleted={() => {
+          setDeleteTarget(null);
+          queryClient.invalidateQueries({ queryKey: ["awo", "finished_good"] });
+          queryClient.invalidateQueries({ queryKey: ["awo-stats", "finished_good"] });
+        }}
+      />
     </div>
   );
 }
