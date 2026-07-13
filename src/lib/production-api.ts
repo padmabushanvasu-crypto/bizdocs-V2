@@ -940,158 +940,50 @@ export async function fetchMaterialIssueRequest(id: string): Promise<MaterialIss
 // ── confirmMaterialIssue ──────────────────────────────────────────────────────
 
 /**
- * Confirm a material issue against a MIR.
+ * Confirm a material issue against a MIR — one atomic server-side call.
  *
- * CONTRACT (made explicit): `lineIssues[].issued_qty` is the NEW CUMULATIVE
- * issued total for that MIR line (the target), NOT a per-call delta. The server
- * re-reads the authoritative current issued_qty and derives `delta = target −
- * current`, then moves only `delta`. This makes a retry / double-click that
- * carries the same target a no-op (idempotent) — see point 2 below.
+ * `lineIssues[].issued_qty` is the NEW CUMULATIVE issued total per line (the
+ * target), NOT a delta. rpc_confirm_mir derives delta = target − current inside
+ * the transaction (so an idempotent re-submit resolves to delta 0), moves stock
+ * free → WIP + writes the assembly_issue ledger for every line via the hardened
+ * rpc_confirm_material_issue, updates the mir/awo line accruals, and writes the
+ * MIR status + flips the AWO to in_progress — all in one transaction.
  *
- * Discipline (matches the GRN hardening):
- *  1. Ledger-FIRST: post the assembly_issue stock_ledger row first; buckets
- *     (free −, wip +) move only if the ledger insert succeeds. A ledger failure
- *     aborts THAT line with no bucket change (the line stays issuable/retryable).
- *  2. Idempotency: delta is computed from a fresh DB read of issued_qty, so once
- *     a target is reached a re-submit yields delta 0 → no ledger, no bucket, no
- *     accrual. (Residual caveat: two *simultaneous* calls that both read the old
- *     value before either commits can still both post — same concurrency window
- *     acknowledged for addStockLedgerEntry; covers double-click/retry, the real
- *     case here.)
- *  3. Item identity: item_code/description are carried onto the ledger row.
- *
- * Partial-issue behaviour (accumulate toward required, shortage_qty), the WIP
- * bucket choice by awo_type, and MIR/AWO status transitions are unchanged.
+ * ALL-OR-NOTHING: if any line's delta exceeds free stock the RPC raises and the
+ * whole confirm rolls back (deliberate partial issues — issuing less than
+ * requested — are recorded as shortage_qty and never raise). The RPC also
+ * enforces the AWO status guard and records the issuer (name resolved from
+ * profiles) on the MIR. The old per-line loop wrote issued_by / a shortage note
+ * onto the AWO row too; nothing reads those, so the RPC's narrower AWO update
+ * (status only) is intentional.
  */
 export async function confirmMaterialIssue(
   mir_id: string,
   lineIssues: Array<{ mir_line_item_id: string; issued_qty: number; shortage_notes?: string }>,
-  issued_by: string
-): Promise<void> {
+  _issued_by?: string, // deprecated: the RPC records the issuer from p_issued_by (auth user id)
+): Promise<{ status: 'issued' | 'partially_issued' }> {
   const companyId = await getCompanyId();
   if (!companyId) throw new Error("Not authenticated");
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
 
-  // Fetch MIR with line items
-  const mir = await fetchMaterialIssueRequest(mir_id);
-  if (!mir) throw new Error("MIR not found");
+  if (!lineIssues.length) return { status: 'issued' };
 
-  // Status guard: only a work order still awaiting/consuming materials may receive
-  // an issue. Blocks issuing against a completed or cancelled AWO — which would move
-  // stock into WIP and (for cancelled) resurrect it to in_progress. Rejects when the
-  // AWO is missing or in any other state.
-  const awoStatus = mir.awo?.status;
-  if (awoStatus !== 'pending_materials' && awoStatus !== 'in_progress') {
-    throw new Error(
-      `Cannot issue materials: work order is '${awoStatus ?? 'unknown'}'. ` +
-      `Only 'pending_materials' or 'in_progress' work orders can receive an issue.`
-    );
-  }
+  const { data, error } = await (supabase as any).rpc('rpc_confirm_mir', {
+    p_company_id: companyId,
+    p_mir_id: mir_id,
+    p_lines: lineIssues.map((li) => ({
+      mir_line_id: li.mir_line_item_id,
+      target_issued: li.issued_qty,          // cumulative target (idempotent)
+      shortage_notes: li.shortage_notes ?? null,
+    })),
+    p_issued_by: user.id,
+  });
+  if (error) throw new Error(error.message);
 
-  // The WIP bucket is derived from awo_type inside rpc_confirm_material_issue.
-  const awoNumber = mir.awo?.awo_number ?? '';
-
-  let hasShortages = false;
-
-  // Process all line items in parallel to avoid sequential-await timeouts
-  await Promise.all(lineIssues.map(async (issue) => {
-    const mirLine = mir.line_items?.find((li) => li.id === issue.mir_line_item_id);
-    if (!mirLine) return;
-
-    // Idempotency: re-read the authoritative current issued_qty, then derive the
-    // delta to actually move. A re-submit carrying the same cumulative target
-    // resolves to delta 0 once the first call has committed.
-    const { data: freshLine } = await (supabase as any)
-      .from("mir_line_items")
-      .select("issued_qty")
-      .eq("id", issue.mir_line_item_id)
-      .eq("company_id", companyId)
-      .maybeSingle();
-    const currentIssued = Number((freshLine as any)?.issued_qty ?? mirLine.issued_qty ?? 0);
-
-    const targetIssued = Math.max(0, Number(issue.issued_qty ?? 0));
-    const delta = Math.max(0, targetIssued - currentIssued);
-
-    // Atomic stock move via the guarded RPC: it writes the assembly_issue ledger
-    // row and moves stock_free -> WIP (bucket by awo_type) in one server-side
-    // transaction, throwing with the exact shortfall if free stock is insufficient.
-    // It does NOT check AWO status — that guard stays above. Re-throw so the
-    // caller's toast shows the RPC message; on failure the mir/awo line writes
-    // below are skipped for this line (issued/shortage stay retryable).
-    if (delta > 0 && mirLine.item_id) {
-      const { error: rpcErr } = await (supabase as any).rpc('rpc_confirm_material_issue', {
-        p_company_id: companyId,
-        p_item_id: mirLine.item_id,
-        p_qty: delta,
-        p_awo_id: mir.awo_id,
-        p_notes: `Material issued for AWO #${awoNumber}`,
-      });
-      if (rpcErr) throw new Error(rpcErr.message);
-    }
-
-    // Persist the cumulative issued total (no-op write when delta === 0).
-    const newIssued = currentIssued + delta;
-    const shortage_qty = Math.max(0, mirLine.requested_qty - newIssued);
-    if (shortage_qty > 0) hasShortages = true;
-
-    await (supabase as any)
-      .from("mir_line_items")
-      .update({
-        issued_qty: newIssued,
-        shortage_qty,
-        shortage_notes: issue.shortage_notes ?? null,
-      })
-      .eq("id", issue.mir_line_item_id)
-      .eq("company_id", companyId);
-
-    // Accrue the AWO line by the actual delta (skip on a no-op re-submit).
-    if (mirLine.awo_line_item_id && delta > 0) {
-      const { data: awoLine } = await (supabase as any)
-        .from("awo_line_items")
-        .select("issued_qty")
-        .eq("id", mirLine.awo_line_item_id)
-        .single();
-      const currentAwoIssued = Number((awoLine as any)?.issued_qty ?? 0);
-      await (supabase as any)
-        .from("awo_line_items")
-        .update({ issued_qty: currentAwoIssued + delta })
-        .eq("id", mirLine.awo_line_item_id)
-        .eq("company_id", companyId);
-    }
-  }));
-
-  // Update MIR status (partially_issued when shortages exist)
-  const mirStatus = hasShortages ? 'partially_issued' : 'issued';
-  await (supabase as any)
-    .from("material_issue_requests")
-    .update({
-      status: mirStatus,
-      issue_date: new Date().toISOString().split('T')[0],
-      issued_by,
-      issued_by_user_id: user.id,
-    })
-    .eq("id", mir_id)
-    .eq("company_id", companyId);
-
-  // Update AWO status to in_progress
-  const awoUpdate: Record<string, unknown> = {
-    status: 'in_progress',
-    issued_by,
-    issued_by_user_id: user.id,
-    updated_at: new Date().toISOString(),
-  };
-
-  if (hasShortages) {
-    awoUpdate.notes = `Material shortages noted on MIR ${mir.mir_number}. Some items issued partially.`;
-  }
-
-  await (supabase as any)
-    .from("assembly_work_orders")
-    .update(awoUpdate)
-    .eq("id", mir.awo_id)
-    .eq("company_id", companyId);
+  const rows = (data ?? []) as Array<{ mir_status: string }>;
+  return { status: (rows[0]?.mir_status as 'issued' | 'partially_issued') ?? 'issued' };
 }
 
 // ── completeAssemblyWorkOrder ─────────────────────────────────────────────────
