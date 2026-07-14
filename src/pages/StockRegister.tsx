@@ -49,15 +49,18 @@ class StockRegisterErrorBoundary extends Component<
 // ── Type badge ─────────────────────────────────────────────────────────────────
 
 function TypeBadge({ type }: { type: string }) {
+  // Every distinct item_type gets its own consistent pill colour (no type left as
+  // plain/greyed text). Unknown types fall back to a neutral slate pill.
   const map: Record<string, { label: string; cls: string }> = {
-    component:    { label: "Component",     cls: "bg-slate-100 text-slate-700 border border-slate-200" },
+    component:    { label: "Component",     cls: "bg-indigo-50 text-indigo-700 border border-indigo-200" },
     bought_out:   { label: "Bought Out",    cls: "bg-blue-50 text-blue-700 border border-blue-200" },
     sub_assembly: { label: "Sub Assembly",  cls: "bg-purple-50 text-purple-700 border border-purple-200" },
     finished_good:{ label: "Finished Good", cls: "bg-emerald-50 text-emerald-700 border border-emerald-200" },
     raw_material: { label: "Raw Material",  cls: "bg-orange-50 text-orange-700 border border-orange-200" },
+    consumable:   { label: "Consumable",    cls: "bg-rose-50 text-rose-700 border border-rose-200" },
   };
   const t = map[type] ?? {
-    label: type.replace(/_/g, " "),
+    label: type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
     cls: "bg-slate-100 text-slate-600 border border-slate-200",
   };
   return (
