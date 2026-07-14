@@ -78,10 +78,14 @@ function StatChip({
   label,
   value,
   colour,
+  onClick,
+  active,
 }: {
   label: string;
   value: number;
   colour: "slate" | "green" | "amber" | "red";
+  onClick?: () => void;
+  active?: boolean;
 }) {
   const cls = {
     slate: "bg-slate-50 border-slate-200 text-slate-600",
@@ -89,13 +93,20 @@ function StatChip({
     amber: "bg-amber-50 border-amber-200 text-amber-700",
     red:   "bg-red-50 border-red-200 text-red-700",
   }[colour];
+  const interactive = onClick
+    ? "cursor-pointer hover:brightness-95 active:scale-[0.98] transition"
+    : "cursor-default";
+  const ring = active ? "ring-2 ring-offset-1 ring-slate-400" : "";
   return (
-    <div
-      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium ${cls}`}
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium ${cls} ${interactive} ${ring}`}
     >
       <span className="opacity-70">{label}</span>
       <span className="font-bold font-mono tabular-nums">{value}</span>
-    </div>
+    </button>
   );
 }
 
@@ -108,7 +119,7 @@ type AvailabilityFilter =
   | "in_production"
   | "ready_to_dispatch";
 
-type AlertFilter = "all" | "critical" | "warning" | "locked" | "healthy";
+type AlertFilter = "all" | "needs_attention" | "critical" | "warning" | "locked" | "healthy";
 
 type TypeFilter =
   | "all"
@@ -310,7 +321,11 @@ function StockRegisterInner() {
       });
     }
 
-    if (alertFilter !== "all") {
+    if (alertFilter === "needs_attention") {
+      result = result.filter((r) =>
+        ["critical", "warning", "locked"].includes(r.stock_alert_level ?? "healthy")
+      );
+    } else if (alertFilter !== "all") {
       result = result.filter(
         (r) => (r.stock_alert_level ?? "healthy") === alertFilter
       );
@@ -390,13 +405,33 @@ function StockRegisterInner() {
 
       {/* ── Stat chips ─────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap gap-2">
-        <StatChip label="Total Items"     value={chips.total}          colour="slate" />
-        <StatChip label="In Store"        value={chips.inStore}        colour="green" />
-        <StatChip label="At Vendor"       value={chips.atVendor}       colour="amber" />
+        <StatChip
+          label="Total Items"
+          value={chips.total}
+          colour="slate"
+          onClick={clearFilters}
+          active={!anyFilterActive}
+        />
+        <StatChip
+          label="In Store"
+          value={chips.inStore}
+          colour="green"
+          onClick={() => setAvailability((v) => (v === "in_store" ? "all" : "in_store"))}
+          active={availability === "in_store"}
+        />
+        <StatChip
+          label="At Vendor"
+          value={chips.atVendor}
+          colour="amber"
+          onClick={() => setAvailability((v) => (v === "at_vendor" ? "all" : "at_vendor"))}
+          active={availability === "at_vendor"}
+        />
         <StatChip
           label="Needs Attention"
           value={chips.needsAttention}
           colour={chips.needsAttention > 0 ? "red" : "slate"}
+          onClick={() => setAlertFilter((v) => (v === "needs_attention" ? "all" : "needs_attention"))}
+          active={alertFilter === "needs_attention"}
         />
       </div>
 
@@ -460,6 +495,7 @@ function StockRegisterInner() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="needs_attention">Needs Attention</SelectItem>
             <SelectItem value="critical">Needs Reorder</SelectItem>
             <SelectItem value="warning">Running Low</SelectItem>
             <SelectItem value="locked">Engaged</SelectItem>
