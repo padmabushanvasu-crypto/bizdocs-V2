@@ -610,7 +610,7 @@ function StockRegisterInner() {
                   return (
                     <tr
                       key={row.id}
-                      className="hover:bg-blue-50/40 cursor-pointer transition-colors"
+                      className="odd:bg-white even:bg-slate-50/70 hover:bg-blue-50/50 cursor-pointer transition-colors"
                       onClick={() => { setSelectedItem(row); setLedgerOpen(true); }}
                     >
                       {/* Item — name/description only. The code/drawing line was a
