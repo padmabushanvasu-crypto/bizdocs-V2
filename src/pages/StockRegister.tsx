@@ -211,6 +211,10 @@ function StockRegisterInner() {
     return "all";
   });
 
+  // Phase 2 filter toggles (below-reorder / zero-stock).
+  const [belowReorder, setBelowReorder] = useState(false);
+  const [zeroStock, setZeroStock] = useState(false);
+
   const [selectedItem, setSelectedItem] = useState<StockStatusRow | null>(null);
   const [ledgerOpen, setLedgerOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -278,7 +282,9 @@ function StockRegisterInner() {
     search.trim() !== "" ||
     availability !== "all" ||
     alertFilter !== "all" ||
-    typeFilter !== "all";
+    typeFilter !== "all" ||
+    belowReorder ||
+    zeroStock;
 
   // Stat chips — always from full unfiltered list
   const chips = useMemo(
@@ -331,8 +337,26 @@ function StockRegisterInner() {
       );
     }
 
+    if (zeroStock) {
+      result = result.filter(
+        (r) =>
+          (r.stock_free + r.stock_in_process + r.stock_in_subassembly_wip +
+            r.stock_in_fg_wip + r.awo_qty + r.stock_in_fg_ready) === 0
+      );
+    }
+
+    if (belowReorder) {
+      // Canonical reorder rule: COALESCE(min_stock_override, min_stock, 0) — a
+      // deliberate 0 override is honoured (null-check, not the falsy || the older
+      // display path used). Below-reorder = free stock at/under that threshold.
+      result = result.filter((r) => {
+        const em = r.min_stock_override ?? r.min_stock ?? 0;
+        return em > 0 && r.stock_free <= em;
+      });
+    }
+
     return result;
-  }, [rows, search, typeFilter, availability, alertFilter]);
+  }, [rows, search, typeFilter, availability, alertFilter, zeroStock, belowReorder]);
 
   // Footer cost rollups across the currently filtered set. Sums the same
   // per-row cost_* fields that the body cells render (so footer can never
@@ -369,6 +393,8 @@ function StockRegisterInner() {
     setAvailability("all");
     setAlertFilter("all");
     setTypeFilter("all");
+    setBelowReorder(false);
+    setZeroStock(false);
   };
 
   const AVAIL_OPTS: { v: AvailabilityFilter; label: string }[] = [
@@ -502,6 +528,26 @@ function StockRegisterInner() {
             <SelectItem value="healthy">Healthy</SelectItem>
           </SelectContent>
         </Select>
+
+        {/* Phase 2 toggles — below-reorder & zero-stock (default off; inert). */}
+        <Button
+          variant={belowReorder ? "secondary" : "outline"}
+          size="sm"
+          className="h-9 text-xs"
+          aria-pressed={belowReorder}
+          onClick={() => setBelowReorder((v) => !v)}
+        >
+          Below Reorder
+        </Button>
+        <Button
+          variant={zeroStock ? "secondary" : "outline"}
+          size="sm"
+          className="h-9 text-xs"
+          aria-pressed={zeroStock}
+          onClick={() => setZeroStock((v) => !v)}
+        >
+          Zero Stock
+        </Button>
 
         {anyFilterActive && (
           <Button
