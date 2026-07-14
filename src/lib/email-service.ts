@@ -23,7 +23,7 @@ function fmtDate(d?: string | null): string {
 
 function fmtAmt(n?: number | null): string {
   if (n == null || n === 0) return "";
-  return "₹" + n.toLocaleString("en-IN", { maximumFractionDigits: 0 });
+  return "₹" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 const DC_TYPE_LABELS: Record<string, string> = {
@@ -405,7 +405,7 @@ function _esc(s?: string | null): string {
 
 function _fmtNum(n?: number | null): string {
   if (n == null) return "—";
-  return "₹" + Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 });
+  return "₹" + Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 const _HTML_CSS = `

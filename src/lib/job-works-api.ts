@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
 import { logAudit } from "@/lib/audit-api";
 import { updateStockBucket } from "@/lib/items-api";
+import { formatCurrency } from "@/lib/gst-utils";
 import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
 import { STOCK_STATE } from "@/lib/stock-states";
 
@@ -377,7 +378,7 @@ export async function createJobWork(
     created.item_description,
     `qty ${created.quantity_original}`,
     created.initial_cost > 0
-      ? `initial cost ₹${created.initial_cost.toLocaleString("en-IN")}`
+      ? `initial cost ${formatCurrency(created.initial_cost)}`
       : null,
   ]
     .filter(Boolean)
@@ -486,9 +487,9 @@ export async function completeJobWork(
   const completedSummaryParts = [
     outcomeLabels[outcome],
     `${qtyAccepted} units accepted`,
-    `total cost ₹${totalCost.toLocaleString("en-IN")}`,
+    `total cost ${formatCurrency(totalCost)}`,
     costPerUnit != null
-      ? `₹${Number(costPerUnit).toLocaleString("en-IN", { maximumFractionDigits: 2 })} / unit`
+      ? `${formatCurrency(Number(costPerUnit))} / unit`
       : null,
   ].filter(Boolean);
 
@@ -711,7 +712,7 @@ export async function createJobWorkStep(
     const stepTotalCost =
       (data.labour_cost ?? 0) + (data.material_cost ?? 0) + (data.additional_cost ?? 0);
     logAudit("job_card", data.job_card_id, "Internal Step Added", {
-      summary: `Step ${stepNum} — ${stepName} added (₹${stepTotalCost.toLocaleString("en-IN")})`,
+      summary: `Step ${stepNum} — ${stepName} added (${formatCurrency(stepTotalCost)})`,
       step_number: stepNum,
       step_name: stepName,
       total_cost: stepTotalCost,
@@ -720,7 +721,7 @@ export async function createJobWorkStep(
     const vendor = data.vendor_name ?? "vendor";
     const charges = data.job_work_charges ?? 0;
     const duePart = data.expected_return_date ? `, due ${data.expected_return_date}` : "";
-    const costPart = charges > 0 ? ` (₹${charges.toLocaleString("en-IN")})` : "";
+    const costPart = charges > 0 ? ` (${formatCurrency(charges)})` : "";
     logAudit("job_card", data.job_card_id, "External Job Work Added", {
       summary: `Step ${stepNum} — ${stepName} sent to ${vendor}${costPart}${duePart}`,
       step_number: stepNum,
