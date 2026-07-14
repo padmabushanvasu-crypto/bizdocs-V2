@@ -610,11 +610,9 @@ function StockRegisterInner() {
                       className="hover:bg-blue-50/40 cursor-pointer transition-colors"
                       onClick={() => { setSelectedItem(row); setLedgerOpen(true); }}
                     >
-                      {/* Item */}
+                      {/* Item — name/description only. The code/drawing line was a
+                          duplicate of the dedicated Drawing Number column. */}
                       <td className="px-4 py-3 max-w-[280px]">
-                        <p className="text-[11px] text-slate-400 font-mono leading-none mb-0.5">
-                          {row.item_code}
-                        </p>
                         <p className="text-sm font-medium text-slate-800 leading-snug">
                           {row.description}
                         </p>
