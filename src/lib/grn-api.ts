@@ -2467,7 +2467,7 @@ export async function storeConfirmGRNItems(
     const remaining = conforming - curStore - curDmg;
     if (inStore + inDmg > remaining + EPS) {
       throw new Error(
-        `Confirmed (${inStore}) + damaged (${inDmg}) exceeds remaining (${remaining.toFixed(3)}) for line ${line.description ?? input.id}.`
+        `Confirmed (${inStore}) + damaged (${inDmg}) exceeds remaining (${remaining.toFixed(2)}) for line ${line.description ?? input.id}.`
       );
     }
     if (!line.item_id) {
