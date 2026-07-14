@@ -1,11 +1,19 @@
 import { useState, useMemo, Component, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Package, Shield, ArrowDownCircle, ArrowUpCircle, BarChart2, Database, X, Download } from "lucide-react";
+import { Package, Shield, ArrowDownCircle, ArrowUpCircle, BarChart2, Database, X, Download, Columns3 } from "lucide-react";
 import { format } from "date-fns";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuCheckboxItem,
+} from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { StockStatusBadge } from "@/components/StockStatusBadge";
 import { fetchStockStatus, fetchStockMovements, type StockStatusRow, type StockMovement } from "@/lib/items-api";
@@ -214,6 +222,12 @@ function StockRegisterInner() {
   // Phase 2 filter toggles (below-reorder / zero-stock).
   const [belowReorder, setBelowReorder] = useState(false);
   const [zeroStock, setZeroStock] = useState(false);
+
+  // Sparse optional-data columns, hidden by default behind a Columns toggle.
+  // Default HIDDEN is provisional pending the population audit — flip the initial
+  // useState value to `true` if Reorder Level turns out to be set for a majority.
+  const [showReorder, setShowReorder] = useState(false);
+  const [showAimed, setShowAimed] = useState(false);
 
   const [selectedItem, setSelectedItem] = useState<StockStatusRow | null>(null);
   const [ledgerOpen, setLedgerOpen] = useState(false);
@@ -560,8 +574,32 @@ function StockRegisterInner() {
           </Button>
         )}
 
-        {/* Export buttons — right-aligned */}
+        {/* Columns + Export — right-aligned */}
         <div className="ml-auto flex items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-9">
+                <Columns3 className="h-4 w-4 mr-1.5" />
+                Columns
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Optional columns</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuCheckboxItem
+                checked={showReorder}
+                onCheckedChange={(v) => setShowReorder(!!v)}
+              >
+                Reorder Level
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={showAimed}
+                onCheckedChange={(v) => setShowAimed(!!v)}
+              >
+                Aimed Qty
+              </DropdownMenuCheckboxItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             variant="outline"
             size="sm"
@@ -638,12 +676,16 @@ function StockRegisterInner() {
                 <th className="text-right px-3 py-3 text-xs font-semibold text-slate-700 uppercase tracking-wider whitespace-nowrap">
                   Cost: TOTAL
                 </th>
-                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                  Reorder Level
-                </th>
-                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                  Aimed Qty
-                </th>
+                {showReorder && (
+                  <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                    Reorder Level
+                  </th>
+                )}
+                {showAimed && (
+                  <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                    Aimed Qty
+                  </th>
+                )}
                 <th className="text-left px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
                   Status
                 </th>
@@ -655,13 +697,13 @@ function StockRegisterInner() {
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={18} className="text-center py-12 text-slate-400 text-sm">
+                  <td colSpan={16 + (showReorder ? 1 : 0) + (showAimed ? 1 : 0)} className="text-center py-12 text-slate-400 text-sm">
                     Loading…
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={18} className="py-16">
+                  <td colSpan={16 + (showReorder ? 1 : 0) + (showAimed ? 1 : 0)} className="py-16">
                     <div className="flex flex-col items-center gap-3">
                       <Package className="h-10 w-10 text-slate-300" />
                       <div className="text-center">
@@ -788,27 +830,31 @@ function StockRegisterInner() {
                         </span>
                       </td>
 
-                      {/* Reorder Level */}
-                      <td className="px-3 py-3 text-right">
-                        {minReq > 0 ? (
-                          <span className="text-sm font-mono tabular-nums text-slate-500">
-                            {minReq}
-                          </span>
-                        ) : (
-                          <span className="text-slate-300 text-sm select-none">—</span>
-                        )}
-                      </td>
+                      {/* Reorder Level (optional column) */}
+                      {showReorder && (
+                        <td className="px-3 py-3 text-right">
+                          {minReq > 0 ? (
+                            <span className="text-sm font-mono tabular-nums text-slate-500">
+                              {minReq}
+                            </span>
+                          ) : (
+                            <span className="text-slate-300 text-sm select-none">—</span>
+                          )}
+                        </td>
+                      )}
 
-                      {/* Aimed Qty */}
-                      <td className="px-3 py-3 text-right">
-                        {(row as any).aimed_stock > 0 ? (
-                          <span className="text-sm font-mono tabular-nums text-slate-500">
-                            {(row as any).aimed_stock}
-                          </span>
-                        ) : (
-                          <span className="text-slate-300 text-sm select-none">—</span>
-                        )}
-                      </td>
+                      {/* Aimed Qty (optional column) */}
+                      {showAimed && (
+                        <td className="px-3 py-3 text-right">
+                          {(row as any).aimed_stock > 0 ? (
+                            <span className="text-sm font-mono tabular-nums text-slate-500">
+                              {(row as any).aimed_stock}
+                            </span>
+                          ) : (
+                            <span className="text-slate-300 text-sm select-none">—</span>
+                          )}
+                        </td>
+                      )}
 
                       {/* Status */}
                       <td className="px-3 py-3">
@@ -974,10 +1020,8 @@ function StockRegisterInner() {
                   </span>
                 </td>
 
-                {/* Reorder Level */}
-                <td className="px-3 py-3" />
-                {/* Aimed Qty */}
-                <td className="px-3 py-3" />
+                {showReorder && <td className="px-3 py-3" />}
+                {showAimed && <td className="px-3 py-3" />}
                 {/* Status */}
                 <td className="px-3 py-3" />
                 {/* Action */}
