@@ -123,3 +123,9 @@ export function formatNumber(amount: number): string {
     maximumFractionDigits: 2,
   }).format(amount);
 }
+
+// Percentage display — exactly `decimals` places + trailing '%'. Display only;
+// the caller passes the already-computed percentage value (e.g. 92.5 -> "92.50%").
+export function formatPercent(value: number, decimals = 2): string {
+  return `${(Number(value) || 0).toFixed(decimals)}%`;
+}
