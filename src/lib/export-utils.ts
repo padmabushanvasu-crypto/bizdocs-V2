@@ -881,6 +881,234 @@ export function buildStockRegisterWorkbook(
   return { workbook: wb, filename };
 }
 
+// ── Enterprise report sheet (header block + styled table + totals + print) ──
+// Shared builder used by the store-receipt / store-acceptance exports. Lays out a
+// report-header block (company / title / filters / generated-at), a styled
+// column-header row, zebra data rows with right-aligned numerics, and a
+// medium-bordered totals row — reusing the app's existing #2D3282 / #F8FAFC /
+// QTY_DEC_FMT / #94A3B8 tokens (no new styling). Numbers are written as real
+// numeric cells + numFmt so Excel keeps them summable at 2 dp.
+const REPORT_HEADER_ROWS = 5; // company, title, filters, generated, spacer
+
+interface ReportSheetSpec {
+  sheetName: string;
+  title: string;
+  companyName: string;
+  generatedAt: string;
+  filters: string;
+  headers: string[];
+  dataRows: (string | number)[][];
+  totalsRow: (string | number)[];
+  colWidths: number[];
+  numFmtByCol: Record<number, string>; // 0-based col index -> Excel numFmt
+}
+
+function buildReportWorkbook(spec: ReportSheetSpec): XLSX.WorkBook {
+  const ncols = spec.headers.length;
+  const aoa: any[][] = [
+    [spec.companyName],
+    [spec.title],
+    [`Filters:  ${spec.filters}`],
+    [`Generated:  ${spec.generatedAt}`],
+    [],
+    spec.headers,
+    ...spec.dataRows,
+    spec.totalsRow,
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  const headerRow = REPORT_HEADER_ROWS; // 0-based row index of the column headers
+  const firstDataRow = headerRow + 1;
+  const totalsRow = aoa.length - 1;
+
+  // Merge each report-header line across the full table width.
+  ws["!merges"] = [0, 1, 2, 3].map((r) => ({ s: { r, c: 0 }, e: { r, c: ncols - 1 } }));
+
+  // Report-header block styling (style lives on the merge's top-left cell).
+  const blockStyles: Record<number, any> = {
+    0: { font: { bold: true, sz: 14, color: { rgb: "2D3282" } } },
+    1: { font: { bold: true, sz: 12 } },
+    2: { font: { italic: true, sz: 10, color: { rgb: "64748B" } } },
+    3: { font: { italic: true, sz: 10, color: { rgb: "64748B" } } },
+  };
+  for (const [r, s] of Object.entries(blockStyles)) {
+    const ref = XLSX.utils.encode_cell({ r: Number(r), c: 0 });
+    if (ws[ref]) ws[ref].s = s;
+  }
+
+  // Column-header row + data + totals.
+  for (let r = headerRow; r < aoa.length; r++) {
+    for (let c = 0; c < ncols; c++) {
+      const ref = XLSX.utils.encode_cell({ r, c });
+      const cell: any = ws[ref];
+      if (!cell) continue;
+
+      if (r === headerRow) {
+        cell.s = {
+          font: { bold: true, color: { rgb: "FFFFFF" }, sz: 11 },
+          fill: { fgColor: { rgb: "2D3282" } },
+          alignment: { horizontal: "center", vertical: "center" },
+        };
+        continue;
+      }
+
+      const fmt = spec.numFmtByCol[c];
+      const isNumericCol = fmt !== undefined;
+      if (isNumericCol && typeof cell.v === "number") {
+        cell.t = "n";
+        cell.z = fmt;
+      }
+      const isTotals = r === totalsRow;
+      const zebra =
+        !isTotals && (r - firstDataRow) % 2 === 1
+          ? { fill: { fgColor: { rgb: "F8FAFC" } } }
+          : {};
+      cell.s = {
+        ...zebra,
+        alignment: { horizontal: isNumericCol ? "right" : "left", vertical: "center" },
+        ...(isNumericCol ? { numFmt: fmt } : {}),
+        ...(isTotals
+          ? {
+              font: { bold: true, sz: 11 },
+              border: { top: { style: "medium", color: { rgb: "94A3B8" } } },
+            }
+          : {}),
+      };
+    }
+  }
+
+  ws["!cols"] = spec.colWidths.map((wch) => ({ wch }));
+
+  // Print setup — best-effort. The pinned xlsx-js-style (v1.2.0) drops view/print
+  // features on write (see buildStockRegisterWorkbook's freeze-pane note); these
+  // are attempted per spec and simply no-op if the library ignores them.
+  ws["!margins"] = { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.3, footer: 0.3 };
+  (ws as any)["!pageSetup"] = { orientation: "landscape", fitToWidth: 1, fitToHeight: 0, scale: 100 };
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, spec.sheetName);
+
+  // Repeat the column-header row on every printed page (Print_Titles).
+  (wb as any).Workbook = {
+    Names: [
+      {
+        Name: "_xlnm.Print_Titles",
+        Sheet: 0,
+        Ref: `'${spec.sheetName}'!$${headerRow + 1}:$${headerRow + 1}`,
+      },
+    ],
+  };
+
+  return wb;
+}
+
+interface StoreReceiptCardLike {
+  grn_number: string;
+  grn_date: string | null;
+  vendor_name: string | null;
+  line_items: Array<{
+    description: string;
+    drawing_number: string | null;
+    unit: string | null;
+    conforming_qty: number | null;
+    store_confirmed_qty: number | null;
+    damaged_qty: number | null;
+    remaining_qty: number | null;
+    store_confirmed: boolean;
+    store_location: string | null;
+  }>;
+}
+
+export function buildStoreReceiptWorkbook(
+  cards: StoreReceiptCardLike[],
+  opts: { companyName: string; generatedAt: string; filters: string },
+): { workbook: XLSX.WorkBook; filename: string } {
+  const headers = [
+    "GRN #", "GRN Date", "Vendor", "Drawing #", "Item / Description", "UOM",
+    "QC Accepted", "Store Confirmed", "Damaged", "Remaining", "Status", "Location",
+  ];
+  const dataRows: (string | number)[][] = [];
+  let tAcc = 0, tConf = 0, tDmg = 0, tRem = 0;
+  for (const card of cards) {
+    for (const li of card.line_items) {
+      const acc = Number(li.conforming_qty ?? 0);
+      const conf = Number(li.store_confirmed_qty ?? 0);
+      const dmg = Number(li.damaged_qty ?? 0);
+      const rem = Number(li.remaining_qty ?? 0);
+      tAcc += acc; tConf += conf; tDmg += dmg; tRem += rem;
+      dataRows.push([
+        card.grn_number,
+        card.grn_date ? formatDateGST(card.grn_date) : "",
+        card.vendor_name ?? "",
+        li.drawing_number ?? "",
+        li.description ?? "",
+        li.unit ?? "",
+        acc, conf, dmg, rem,
+        li.store_confirmed ? "Confirmed" : "Pending",
+        li.store_location ?? "",
+      ]);
+    }
+  }
+  const totalsRow = ["TOTAL", "", "", "", "", "", tAcc, tConf, tDmg, tRem, "", ""];
+  const numFmtByCol = { 6: QTY_DEC_FMT, 7: QTY_DEC_FMT, 8: QTY_DEC_FMT, 9: QTY_DEC_FMT };
+  const colWidths = [16, 13, 24, 16, 40, 8, 14, 16, 12, 12, 12, 16];
+  const wb = buildReportWorkbook({
+    sheetName: "Inward Receipt Queue",
+    title: "Inward Receipt Queue",
+    companyName: opts.companyName,
+    generatedAt: opts.generatedAt,
+    filters: opts.filters,
+    headers, dataRows, totalsRow, colWidths, numFmtByCol,
+  });
+  const filename = `inward-receipt-queue_${slugifyCompanyName(opts.companyName)}_${nowStampLocal()}.xlsx`;
+  return { workbook: wb, filename };
+}
+
+interface StoreAcceptedLineLike {
+  store_confirmed_at: string | null;
+  grn_number: string;
+  drawing_number: string | null;
+  description: string;
+  store_confirmed_qty: number | null;
+  unit: string | null;
+  store_confirmed_by: string | null;
+}
+
+export function buildStoreAcceptanceWorkbook(
+  rows: StoreAcceptedLineLike[],
+  opts: { companyName: string; generatedAt: string; filters: string },
+): { workbook: XLSX.WorkBook; filename: string } {
+  const headers = ["Date Accepted", "GRN #", "Drawing #", "Item / Description", "Qty", "UOM", "Accepted By"];
+  const dataRows: (string | number)[][] = [];
+  let tQty = 0;
+  for (const r of rows) {
+    const qty = Number(r.store_confirmed_qty ?? 0);
+    tQty += qty;
+    dataRows.push([
+      r.store_confirmed_at ? formatDateGST(r.store_confirmed_at) : "",
+      r.grn_number,
+      r.drawing_number ?? "",
+      r.description ?? "",
+      qty,
+      r.unit ?? "",
+      r.store_confirmed_by ?? "",
+    ]);
+  }
+  const totalsRow = ["TOTAL", "", "", "", tQty, "", ""];
+  const numFmtByCol = { 4: QTY_DEC_FMT };
+  const colWidths = [14, 16, 16, 40, 14, 8, 18];
+  const wb = buildReportWorkbook({
+    sheetName: "Store Acceptance",
+    title: "Store Acceptance Report",
+    companyName: opts.companyName,
+    generatedAt: opts.generatedAt,
+    filters: opts.filters,
+    headers, dataRows, totalsRow, colWidths, numFmtByCol,
+  });
+  const filename = `store-acceptance_${slugifyCompanyName(opts.companyName)}_${nowStampLocal()}.xlsx`;
+  return { workbook: wb, filename };
+}
+
 export function downloadWorkbook(workbook: XLSX.WorkBook, filename: string): void {
   XLSX.writeFile(workbook, filename);
 }
