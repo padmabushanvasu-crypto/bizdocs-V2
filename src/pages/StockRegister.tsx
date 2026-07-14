@@ -178,7 +178,7 @@ function Num({ value, bold }: { value: number; bold?: boolean }) {
         bold ? "font-semibold text-slate-800" : "text-slate-600"
       }`}
     >
-      {value}
+      {formatNumber(value)}
     </span>
   );
 }
@@ -783,7 +783,7 @@ function StockRegisterInner() {
                           <span className="text-slate-300 text-sm select-none">—</span>
                         ) : (
                           <span className="text-sm font-mono tabular-nums font-semibold text-slate-500">
-                            {total}
+                            {formatNumber(total)}
                           </span>
                         )}
                       </td>
@@ -835,7 +835,7 @@ function StockRegisterInner() {
                         <td className="px-3 py-3 text-right">
                           {minReq > 0 ? (
                             <span className="text-sm font-mono tabular-nums text-slate-500">
-                              {minReq}
+                              {formatNumber(minReq)}
                             </span>
                           ) : (
                             <span className="text-slate-300 text-sm select-none">—</span>
@@ -848,7 +848,7 @@ function StockRegisterInner() {
                         <td className="px-3 py-3 text-right">
                           {(row as any).aimed_stock > 0 ? (
                             <span className="text-sm font-mono tabular-nums text-slate-500">
-                              {(row as any).aimed_stock}
+                              {formatNumber((row as any).aimed_stock)}
                             </span>
                           ) : (
                             <span className="text-slate-300 text-sm select-none">—</span>
@@ -1077,15 +1077,15 @@ function StockRegisterInner() {
                   selectedItem.effective_min_stock > 0 && selectedItem.stock_free <= selectedItem.effective_min_stock ? "text-amber-600" :
                   "text-emerald-600"
                 }`}>
-                  {selectedItem.stock_free}
+                  {formatNumber(selectedItem.stock_free)}
                 </span>
                 <span className="text-sm text-slate-500">{selectedItem.unit} in store</span>
               </div>
               {(selectedItem.stock_in_process > 0 || (selectedItem.stock_in_subassembly_wip + selectedItem.stock_in_fg_wip) > 0) && (
                 <p className="text-xs text-slate-400 mt-0.5">
-                  {selectedItem.stock_in_process > 0 && `${selectedItem.stock_in_process} at vendor`}
+                  {selectedItem.stock_in_process > 0 && `${formatNumber(selectedItem.stock_in_process)} at vendor`}
                   {selectedItem.stock_in_process > 0 && (selectedItem.stock_in_subassembly_wip + selectedItem.stock_in_fg_wip) > 0 && " · "}
-                  {(selectedItem.stock_in_subassembly_wip + selectedItem.stock_in_fg_wip) > 0 && `${selectedItem.stock_in_subassembly_wip + selectedItem.stock_in_fg_wip} in production`}
+                  {(selectedItem.stock_in_subassembly_wip + selectedItem.stock_in_fg_wip) > 0 && `${formatNumber(selectedItem.stock_in_subassembly_wip + selectedItem.stock_in_fg_wip)} in production`}
                 </p>
               )}
               {(() => {
@@ -1096,7 +1096,7 @@ function StockRegisterInner() {
                 if (!pqc || pqc.qty === 0) return null;
                 return (
                   <p className="text-xs text-amber-600 mt-1">
-                    ⏳ {pqc.qty} {selectedItem.unit} awaiting QC — received {new Date(pqc.date).toLocaleDateString('en-IN')} from {pqc.vendor}
+                    ⏳ {formatNumber(pqc.qty)} {selectedItem.unit} awaiting QC — received {new Date(pqc.date).toLocaleDateString('en-IN')} from {pqc.vendor}
                   </p>
                 );
               })()}
