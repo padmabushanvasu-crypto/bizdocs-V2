@@ -4,6 +4,7 @@ import { ChevronLeft, CheckCircle, Eye, AlertTriangle } from "lucide-react";
 import { fetchVendorScorecards, fetchVendorDCHistory, fetchVendorGRNHistory } from "@/lib/parties-api";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { format } from "date-fns";
+import { formatPercent } from "@/lib/gst-utils";
 
 function RatingBadge({ rating }: { rating: string }) {
   if (rating === "reliable") return (
@@ -26,7 +27,7 @@ function RatingBadge({ rating }: { rating: string }) {
 
 function pct(val: number | null) {
   if (val === null) return "—";
-  return `${Number(val).toFixed(1)}%`;
+  return formatPercent(Number(val));
 }
 
 const DC_ACTION_LABELS: Record<string, string> = {

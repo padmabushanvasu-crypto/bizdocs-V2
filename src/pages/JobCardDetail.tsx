@@ -4,6 +4,7 @@ import { ChevronLeft, AlertTriangle, TrendingUp, CheckCircle2, Clock, Circle, Wr
 import { fetchJobWork, type JobWork, type JobWorkStep } from "@/lib/job-works-api";
 import { fetchProcessingRouteAll, type ProcessingRoute } from "@/lib/dc-intelligence-api";
 import { format } from "date-fns";
+import { formatPercent } from "@/lib/gst-utils";
 import { useAuth } from "@/hooks/useAuth";
 
 // ── Vertical timeline step ────────────────────────────────────────────────────
@@ -363,7 +364,7 @@ function CostSummaryPanel({ jc, steps }: { jc: JobWork; steps: JobWorkStep[] }) 
                 <span>Variance</span>
                 <span>
                   {variance >= 0 ? "+" : ""}{fmt(variance)}
-                  {variancePct !== null && ` (${variance >= 0 ? "+" : ""}${variancePct.toFixed(1)}%)`}
+                  {variancePct !== null && ` (${variance >= 0 ? "+" : ""}${formatPercent(variancePct)})`}
                 </span>
               </div>
             </>

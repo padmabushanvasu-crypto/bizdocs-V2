@@ -5,7 +5,7 @@ import { Star, AlertTriangle, Eye, Download, CheckCircle, ChevronLeft } from "lu
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { fetchVendorScorecards, fetchVendorGrnMetrics, type VendorScorecard, type VendorGrnMetrics } from "@/lib/parties-api";
-import { formatCurrency } from "@/lib/gst-utils";
+import { formatCurrency, formatPercent } from "@/lib/gst-utils";
 import { exportToExcel } from "@/lib/export-utils";
 import { format } from "date-fns";
 
@@ -71,13 +71,13 @@ function RatePct({
       : greenBelow !== undefined && value <= greenBelow
       ? "text-green-600 font-semibold"
       : "text-amber-600 font-semibold";
-  return <span className={`text-sm tabular-nums ${cls}`}>{value.toFixed(1)}%</span>;
+  return <span className={`text-sm tabular-nums ${cls}`}>{formatPercent(value)}</span>;
 }
 
 function FirstPassYield({ value }: { value: number | null }) {
   if (value === null) return <span className="text-muted-foreground text-sm">—</span>;
   const cls = value >= 90 ? 'text-green-600 font-semibold' : value >= 80 ? 'text-amber-600 font-semibold' : 'text-red-600 font-semibold';
-  return <span className={`text-sm tabular-nums ${cls}`}>{value.toFixed(1)}%</span>;
+  return <span className={`text-sm tabular-nums ${cls}`}>{formatPercent(value)}</span>;
 }
 
 function OnTimePct({ value }: { value: number | null }) {
@@ -88,7 +88,7 @@ function OnTimePct({ value }: { value: number | null }) {
       : value >= 70
       ? "text-amber-600 font-semibold"
       : "text-red-600 font-semibold";
-  return <span className={`text-sm tabular-nums ${cls}`}>{value.toFixed(1)}%</span>;
+  return <span className={`text-sm tabular-nums ${cls}`}>{formatPercent(value)}</span>;
 }
 
 export default function VendorScorecards() {
@@ -306,7 +306,7 @@ export default function VendorScorecards() {
                         const m = grnMetricsMap?.[row.vendor_id];
                         if (!m || m.acceptance_rate === null) return <span className="text-muted-foreground text-sm">—</span>;
                         const cls = m.acceptance_rate >= 95 ? 'text-green-600 font-semibold' : m.acceptance_rate >= 90 ? 'text-amber-600 font-semibold' : 'text-red-600 font-semibold';
-                        return <span className={`text-sm tabular-nums ${cls}`}>{m.acceptance_rate.toFixed(1)}%</span>;
+                        return <span className={`text-sm tabular-nums ${cls}`}>{formatPercent(m.acceptance_rate)}</span>;
                       })()}
                     </td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
@@ -314,7 +314,7 @@ export default function VendorScorecards() {
                         const m = grnMetricsMap?.[row.vendor_id];
                         if (!m || m.identity_match_rate === null) return <span className="text-muted-foreground text-sm">—</span>;
                         const cls = m.identity_match_rate >= 98 ? 'text-green-600 font-semibold' : m.identity_match_rate >= 90 ? 'text-amber-600 font-semibold' : 'text-red-600 font-semibold';
-                        return <span className={`text-sm tabular-nums ${cls}`}>{m.identity_match_rate.toFixed(1)}%</span>;
+                        return <span className={`text-sm tabular-nums ${cls}`}>{formatPercent(m.identity_match_rate)}</span>;
                       })()}
                     </td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
