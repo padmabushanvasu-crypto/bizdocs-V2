@@ -2689,6 +2689,74 @@ export async function fetchStoreConfirmedHistory(): Promise<StoreConfirmedItem[]
     }));
 }
 
+// ── "Accepted by store on date X" report ──────────────────────────────────
+// A date-scoped list of the individual GRN lines the store actually accepted,
+// keyed off store_confirmed_at (the acceptance timestamp) — distinct from the
+// receipt queue, which filters on grn_date. "Accepted qty" is store_confirmed_qty
+// (what the storekeeper moved into store), NOT conforming_qty (the QC-passed qty).
+export interface StoreAcceptedLine {
+  id: string;
+  grn_id: string;
+  grn_number: string;
+  vendor_name: string | null;
+  description: string;
+  drawing_number: string | null;
+  store_confirmed_qty: number | null;
+  unit: string | null;
+  store_confirmed_by: string | null;
+  store_confirmed_at: string | null;
+}
+
+export async function fetchStoreAcceptedByDate(
+  dateFrom: string,
+  dateTo: string,
+): Promise<StoreAcceptedLine[]> {
+  const companyId = await getCompanyId();
+  if (!companyId || !dateFrom || !dateTo) return [];
+
+  // store_confirmed_at is a timestamptz (UTC ISO). Include the whole end day by
+  // querying [dateFrom 00:00, dateTo+1 00:00). The UTC/IST midnight boundary is a
+  // known, accepted edge case — not handled explicitly here.
+  const end = new Date(dateTo);
+  end.setDate(end.getDate() + 1);
+  const endExclusive = end.toISOString().slice(0, 10);
+
+  const { data: lines, error } = await (supabase as any)
+    .from('grn_line_items')
+    .select('id, grn_id, description, drawing_number, store_confirmed_qty, unit, store_confirmed_by, store_confirmed_at')
+    .eq('company_id', companyId)
+    .eq('store_confirmed', true)
+    .gte('store_confirmed_at', dateFrom)
+    .lt('store_confirmed_at', endExclusive)
+    .order('store_confirmed_at', { ascending: false });
+  if (error) throw error;
+  if (!lines?.length) return [];
+
+  const grnIds = [...new Set((lines as any[]).map((l: any) => l.grn_id as string))];
+  const { data: grns } = await (supabase as any)
+    .from('grns')
+    .select('id, grn_number, vendor_name')
+    .in('id', grnIds)
+    .neq('status', 'deleted');
+  const grnMap: Record<string, any> = {};
+  for (const g of (grns ?? []) as any[]) grnMap[g.id] = g;
+
+  return (lines as any[])
+    .filter((l: any) => grnMap[l.grn_id])
+    .map((l: any) => ({
+      id: l.id,
+      grn_id: l.grn_id,
+      grn_number: grnMap[l.grn_id]?.grn_number ?? '—',
+      vendor_name: grnMap[l.grn_id]?.vendor_name ?? null,
+      description: l.description,
+      drawing_number: l.drawing_number ?? null,
+      store_confirmed_qty: l.store_confirmed_qty ?? null,
+      unit: l.unit ?? null,
+      store_confirmed_by: l.store_confirmed_by ?? null,
+      store_confirmed_at: l.store_confirmed_at ?? null,
+    }));
+}
+
 // ── Unified store-receipt queue (new GrnStoreQueue UI) ────────────────────
 // Single fetcher driving the redesigned Inward Receipt Queue. Returns one card
 // per GRN with its full line set + aggregate fields so the page can filter on

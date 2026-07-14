@@ -17,6 +17,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import {
   fetchGrnStoreReceiptQueue,
+  fetchStoreAcceptedByDate,
   storeConfirmGRNItems,
   type GrnStoreReceiptCard,
 } from "@/lib/grn-api";
@@ -120,11 +121,93 @@ const monthLabel = (m: string): string => {
   });
 };
 
+function tabCls(active: boolean): string {
+  return `px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+    active
+      ? "bg-slate-900 text-white border-slate-900"
+      : "bg-white dark:bg-transparent text-slate-600 dark:text-slate-300 border-slate-200 dark:border-white/15 hover:border-slate-400"
+  }`;
+}
+
+// "Accepted by store on date X" report — a flat, date-scoped list of the lines
+// the store actually accepted (filtered on store_confirmed_at, qty =
+// store_confirmed_qty). Distinct from the receipt queue (which filters grn_date).
+function StoreAcceptedView() {
+  const navigate = useNavigate();
+  const today = format(new Date(), "yyyy-MM-dd");
+  const [from, setFrom] = useState(today);
+  const [to, setTo] = useState(today);
+
+  const { data: rows = [], isLoading } = useQuery({
+    queryKey: ["store-accepted", from, to],
+    queryFn: () => fetchStoreAcceptedByDate(from, to),
+    staleTime: 30_000,
+  });
+
+  const thCls =
+    "px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide";
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2 items-center">
+        <Label className="text-xs text-slate-500">Accepted between</Label>
+        <Input type="date" aria-label="Accepted from" value={from} onChange={(e) => setFrom(e.target.value)} className="w-[150px]" />
+        <span className="text-slate-400 text-sm">to</span>
+        <Input type="date" aria-label="Accepted to" value={to} onChange={(e) => setTo(e.target.value)} className="w-[150px]" />
+      </div>
+
+      <div className="rounded-xl border border-slate-200 dark:border-white/10 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr className="bg-slate-50 dark:bg-[#0a0e1a] border-b border-slate-200 dark:border-white/10">
+                <th className={`${thCls} text-left`}>Date accepted</th>
+                <th className={`${thCls} text-left`}>GRN #</th>
+                <th className={`${thCls} text-left`}>Drawing No.</th>
+                <th className={`${thCls} text-left`}>Item</th>
+                <th className={`${thCls} text-right`}>Qty</th>
+                <th className={`${thCls} text-left`}>Unit</th>
+                <th className={`${thCls} text-left`}>Accepted by</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <tr><td colSpan={7} className="px-3 py-8 text-center text-slate-400 text-sm">Loading…</td></tr>
+              ) : rows.length === 0 ? (
+                <tr><td colSpan={7} className="px-3 py-8 text-center text-slate-400 text-sm">No items accepted in this range.</td></tr>
+              ) : (
+                rows.map((r) => (
+                  <tr key={r.id} className="border-b border-slate-100 dark:border-white/5 hover:bg-slate-50/60 dark:hover:bg-white/5">
+                    <td className="px-3 py-2 whitespace-nowrap text-slate-600 dark:text-slate-300">
+                      {r.store_confirmed_at ? format(new Date(r.store_confirmed_at), "dd MMM yyyy") : "—"}
+                    </td>
+                    <td className="px-3 py-2 font-mono">
+                      <button className="text-primary hover:underline" onClick={() => navigate(`/grn/${r.grn_id}`)}>
+                        {r.grn_number}
+                      </button>
+                    </td>
+                    <td className="px-3 py-2 font-mono text-slate-600 dark:text-slate-300">{r.drawing_number ?? "—"}</td>
+                    <td className="px-3 py-2 text-slate-800 dark:text-slate-100">{r.description}</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums">{formatNumber(Number(r.store_confirmed_qty ?? 0))}</td>
+                    <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{r.unit ?? "—"}</td>
+                    <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{r.store_confirmed_by ?? "—"}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function GrnStoreQueue() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
+  const [view, setView] = useState<"queue" | "accepted">("queue");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
   const [month, setMonth] = useState<string>(ALL_MONTHS);
   // Explicit inward-date range (grn_date), mutually exclusive with `month`.
@@ -311,6 +394,20 @@ export default function GrnStoreQueue() {
         </div>
       </div>
 
+      {/* View switch — receipt queue vs the date-scoped "accepted by store" report */}
+      <div className="flex flex-wrap gap-1.5">
+        <button type="button" onClick={() => setView("queue")} className={tabCls(view === "queue")}>
+          Receipt Queue
+        </button>
+        <button type="button" onClick={() => setView("accepted")} className={tabCls(view === "accepted")}>
+          Accepted on…
+        </button>
+      </div>
+
+      {view === "accepted" ? (
+        <StoreAcceptedView />
+      ) : (
+        <>
       {/* Assembly output awaiting store acceptance (A4) — same accept-into-rack action */}
       <AssemblyOutputAcceptance />
 
@@ -712,6 +809,8 @@ export default function GrnStoreQueue() {
             );
           })}
         </div>
+      )}
+        </>
       )}
     </div>
   );
