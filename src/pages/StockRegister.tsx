@@ -507,8 +507,8 @@ function StockRegisterInner() {
       <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
           <table className="w-full text-sm">
-            <thead className="sticky top-0 z-10 bg-white shadow-sm">
-              <tr className="border-b border-slate-200">
+            <thead className="sticky top-0 z-10 bg-slate-100 shadow-sm">
+              <tr className="border-b-2 border-slate-300">
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   Item
                 </th>
