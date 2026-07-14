@@ -879,10 +879,10 @@ export default function PurchaseOrderDetail() {
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">
                     {new Date(grn.grn_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
                   </td>
-                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-emerald-600">{grn.total_accepted}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-emerald-600">{formatNumber(grn.total_accepted)}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                     {grn.total_rejected > 0 ? (
-                      <span className="text-destructive">{grn.total_rejected}</span>
+                      <span className="text-destructive">{formatNumber(grn.total_rejected)}</span>
                     ) : "0"}
                   </td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
