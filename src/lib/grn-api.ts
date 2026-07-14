@@ -2698,6 +2698,11 @@ export async function fetchStoreConfirmedHistory(): Promise<StoreConfirmedItem[]
 export interface GrnStoreReceiptQueueFilters {
   status?: 'pending' | 'confirmed' | 'partial' | 'all';
   month?: string; // 'YYYY-MM' format, scoped to grns.grn_date
+  // Explicit inward-date range (YYYY-MM-DD), also scoped to grns.grn_date. Used
+  // by the queue's date search; mutually exclusive with `month` at the UI layer.
+  // Single day = dateFrom === dateTo (both ends inclusive).
+  dateFrom?: string;
+  dateTo?: string;
   search?: string; // matches grn_number / po_number / vendor_name; all-digit terms also match inward_sl_no
 }
 
@@ -2765,6 +2770,12 @@ export async function fetchGrnStoreReceiptQueue(
       grnQuery = grnQuery.gte('grn_date', start).lt('grn_date', nextMonth);
     }
   }
+
+  // Explicit date range (grn_date). Mutually exclusive with `month` at the UI
+  // layer, so these compose only when the caller intends a range; both ends
+  // inclusive (single-day range = dateFrom === dateTo).
+  if (filters.dateFrom) grnQuery = grnQuery.gte('grn_date', filters.dateFrom);
+  if (filters.dateTo)   grnQuery = grnQuery.lte('grn_date', filters.dateTo);
 
   // Text search — mirrors fetchGRNs (grn_number primary, po_number + vendor_name
   // secondary; all-digit terms also match the numeric inward_sl_no). Narrows

@@ -127,6 +127,9 @@ export default function GrnStoreQueue() {
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
   const [month, setMonth] = useState<string>(ALL_MONTHS);
+  // Explicit inward-date range (grn_date), mutually exclusive with `month`.
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [search, setSearch] = useState("");
 
   // Status-tab changes never touch the month filter — it only changes when the
@@ -137,11 +140,13 @@ export default function GrnStoreQueue() {
   };
 
   const { data: cardsData, isLoading } = useQuery({
-    queryKey: ["grn-store-queue", statusFilter, month, search],
+    queryKey: ["grn-store-queue", statusFilter, month, dateFrom, dateTo, search],
     queryFn: () =>
       fetchGrnStoreReceiptQueue({
         status: statusFilter !== "all" ? statusFilter : undefined,
         month: month && month !== ALL_MONTHS ? month : undefined,
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
         search: search.trim() || undefined,
       }),
     staleTime: 30_000,
@@ -331,7 +336,14 @@ export default function GrnStoreQueue() {
             <SelectItem value="all">All Statuses</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={month} onValueChange={setMonth}>
+        <Select
+          value={month}
+          onValueChange={(v) => {
+            setMonth(v);
+            // Month and explicit date range are mutually exclusive.
+            if (v !== ALL_MONTHS) { setDateFrom(""); setDateTo(""); }
+          }}
+        >
           <SelectTrigger className="w-[150px]">
             <SelectValue placeholder="Month" />
           </SelectTrigger>
@@ -343,6 +355,21 @@ export default function GrnStoreQueue() {
             ))}
           </SelectContent>
         </Select>
+        {/* Inward-date range (grn_date). Setting either date clears the month. */}
+        <Input
+          type="date"
+          aria-label="Inward date from"
+          value={dateFrom}
+          onChange={(e) => { setDateFrom(e.target.value); if (e.target.value) setMonth(ALL_MONTHS); }}
+          className="w-[150px]"
+        />
+        <Input
+          type="date"
+          aria-label="Inward date to"
+          value={dateTo}
+          onChange={(e) => { setDateTo(e.target.value); if (e.target.value) setMonth(ALL_MONTHS); }}
+          className="w-[150px]"
+        />
       </div>
 
       {isLoading ? (
