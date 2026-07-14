@@ -388,9 +388,9 @@ function GRNRegisterInner() {
                           </button>
                         ) : "—"}
                       </td>
-                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{grn.total_accepted}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(grn.total_accepted)}</td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
-                        {grn.total_rejected > 0 ? <span className="text-destructive font-medium">{grn.total_rejected}</span> : grn.total_rejected}
+                        {grn.total_rejected > 0 ? <span className="text-destructive font-medium">{formatNumber(grn.total_rejected)}</span> : formatNumber(grn.total_rejected)}
                       </td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
                         {isDeleted
