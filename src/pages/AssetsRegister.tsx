@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Package2, ChevronLeft } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId } from "@/lib/auth-helpers";
+import { formatCurrency } from "@/lib/gst-utils";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
 
 interface AssetRow {
@@ -126,7 +127,7 @@ export default function AssetsRegister() {
                     </td>
                     {!hideCosts && (
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
-                        {asset.standard_cost != null ? `₹${Number(asset.standard_cost).toLocaleString("en-IN")}` : "—"}
+                        {asset.standard_cost != null ? formatCurrency(Number(asset.standard_cost)) : "—"}
                       </td>
                     )}
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">

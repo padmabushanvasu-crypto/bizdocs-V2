@@ -4,6 +4,7 @@ import { ArrowLeft, Edit, Phone, Mail, MapPin, Building2, FileText, StickyNote, 
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fetchParty } from "@/lib/parties-api";
+import { formatCurrency } from "@/lib/gst-utils";
 import { getStateByName } from "@/lib/indian-states";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
@@ -192,7 +193,7 @@ export default function PartyDetail() {
             {party.credit_limit && (
               <div>
                 <span className="text-muted-foreground">Credit Limit:</span>
-                <p className="font-mono font-medium">₹{Number(party.credit_limit).toLocaleString("en-IN")}</p>
+                <p className="font-mono font-medium">{formatCurrency(Number(party.credit_limit))}</p>
               </div>
             )}
           </div>

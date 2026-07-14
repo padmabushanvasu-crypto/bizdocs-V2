@@ -19,7 +19,7 @@ import {
 } from "@/lib/settings-api";
 import { format } from "date-fns";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
-import { formatNumber } from "@/lib/gst-utils";
+import { formatNumber, formatCurrency } from "@/lib/gst-utils";
 
 const ITEM_TYPE_LABELS: Record<string, { label: string; cls: string }> = {
   raw_material:   { label: "Raw Material",  cls: "bg-slate-100 text-slate-700" },
@@ -349,7 +349,7 @@ export default function OpeningStock() {
                     </td>
                     {!hideCosts && (
                       <td className="px-4 py-3 text-right text-slate-500">
-                        {entry ? `₹${entry.unit_cost.toLocaleString("en-IN", { maximumFractionDigits: 2 })}` : "—"}
+                        {entry ? formatCurrency(entry.unit_cost) : "—"}
                       </td>
                     )}
                     <td className="px-4 py-3 text-right">

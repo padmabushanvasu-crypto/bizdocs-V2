@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { fetchCompanySettings } from "@/lib/settings-api";
+import { formatCurrency } from "@/lib/gst-utils";
 import { printWithLightMode } from "@/lib/print-utils";
 import {
   formatDocumentText,
@@ -59,7 +60,7 @@ export function DocumentActions({
     if (date) lines.push(`Date: ${date}`);
     if (partyName) lines.push(`To: ${partyName}`);
     if (amount != null) {
-      lines.push(`Amount: ₹${amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`);
+      lines.push(`Amount: ${formatCurrency(amount)}`);
     }
     return lines.join("\n");
   };
