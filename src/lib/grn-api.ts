@@ -324,9 +324,9 @@ export async function fetchGRN(id: string): Promise<GRN> {
 
 /**
  * @deprecated The DB trigger trg_grns_assign_number assigns grn_number on
- *   insert. Pass `grn_number: ''` to createGRN and read the value back from
- *   the returned row. This helper is retained for any read-only display
- *   needs but should not be the source of truth at insert time.
+ *   insert. Pass `grn_number: ''` to the GRN insert (rpc_record_grn) and read
+ *   the value back from the returned row. This helper is retained for any
+ *   read-only display needs but should not be the source of truth at insert time.
  */
 export async function getNextGRNNumber(): Promise<string> {
   const companyId = await getCompanyId();
@@ -355,100 +355,84 @@ interface CreateGRNData {
   lineItems: GRNLineItem[];
 }
 
-export async function createGRN({ grn, lineItems }: CreateGRNData) {
-  const companyId = await getCompanyId();
-  const { data: newGRN, error } = await supabase.from("grns").insert({
-    company_id: companyId,
-    // grn_number is assigned by trg_grns_assign_number on insert. The form
-    // may still pass a value (e.g. for legacy/import paths) — preserve it
-    // if non-empty so manual overrides still work.
-    grn_number: grn.grn_number && grn.grn_number.trim() !== "" ? grn.grn_number : "",
-    grn_date: grn.grn_date,
-    grn_type: (grn as any).grn_type ?? 'po_grn',
-    po_id: grn.po_id || null, po_number: grn.po_number || null,
-    linked_dc_id: (grn as any).linked_dc_id ?? null,
-    linked_dc_number: (grn as any).linked_dc_number ?? null,
-    vendor_id: grn.vendor_id || null, vendor_name: grn.vendor_name || null,
-    vendor_invoice_number: grn.vendor_invoice_number || null, vendor_invoice_date: grn.vendor_invoice_date || null,
-    transporter_name: grn.transporter_name || null,
-    vehicle_number: grn.vehicle_number || null, lr_reference: grn.lr_reference || null,
-    driver_name: (grn as any).driver_name ?? null,
-    driver_contact: (grn as any).driver_contact ?? null,
-    received_by: grn.received_by || null, notes: grn.notes || null,
-    total_received: grn.total_received, total_accepted: grn.total_accepted, total_rejected: grn.total_rejected,
-    status: grn.status, recorded_at: grn.recorded_at,
-    qc_remarks: grn.qc_remarks ?? null,
-    qc_prepared_by: grn.qc_prepared_by ?? null,
-    qc_inspected_by: grn.qc_inspected_by ?? null,
-    qc_approved_by: grn.qc_approved_by ?? null,
-    // Manual inward serial (optional). inward_fy is derived by the DB trigger —
-    // never sent from the client.
-    inward_sl_no: grn.inward_sl_no ?? null,
-    // Per-GRN acceptance basis (defaults to 'original' if unset).
-    acceptance_basis: grn.acceptance_basis ?? 'original',
-  } as any).select().single();
-  if (error) {
-    console.error("[GRN] create error:", error);
-    throw error;
-  }
-
-  if (lineItems.length > 0) {
-    const itemsToInsert = lineItems.map((item) => ({
-      company_id: companyId,
-      grn_id: (newGRN as any).id, po_line_item_id: item.po_line_item_id || null,
-      dc_line_item_id: item.dc_line_item_id || null,
-      item_id: item.item_id ?? null,
-      serial_number: item.serial_number, description: item.description,
-      drawing_number: item.drawing_number || null, unit: item.unit,
-      po_quantity: item.po_quantity, previously_received: item.previously_received,
-      previously_received_qty: item.previously_received || 0,
-      ordered_qty: item.po_quantity || 0,
-      // Alt-basis ordered qty/unit — mirror quick-create (createGrnFromPO/DC).
-      ordered_qty_2: item.ordered_qty_2 ?? null,
-      unit_2: item.unit_2 ?? null,
-      // Alt-basis receiving routes here; primary receiving_now/accepted stay 0.
-      received_now_2: item.received_now_2 ?? null,
-      pending_quantity: item.pending_quantity, receiving_now: item.receiving_now,
-      accepted_quantity: item.accepted_quantity, rejected_quantity: item.rejected_quantity,
-      rejection_reason: item.rejection_reason || null, remarks: item.remarks || null,
-      rejection_action: item.rejection_action || null,
-      replacement_cycle: item.replacement_cycle || 1,
-      is_replacement: item.is_replacement || false,
-      jig_confirmed: item.jig_confirmed ?? false,
-      stage1_rejected_qty: item.stage1_rejected_qty ?? null,
-    }));
-    const { error: itemsError } = await supabase.from("grn_line_items").insert(itemsToInsert as any);
-    if (itemsError) throw itemsError;
-  }
-  return newGRN as unknown as GRN;
-}
-
 export async function recordGRNAndUpdatePO(grnData: CreateGRNData) {
-  const grn = await createGRN(grnData);
   const companyId = await getCompanyId();
   const today = new Date().toISOString().split("T")[0];
+  const { grn: g, lineItems } = grnData;
 
+  // Atomic save: GRN header + line items + per-line received_quantity updates
+  // (with the over-receipt guard) + PO status recompute, all in ONE DB
+  // transaction via rpc_record_grn. A thrown over-receipt rolls the ENTIRE save
+  // back — no partial commit — and the PO-status rollup always runs on success.
+  // Previously these were separate auto-committed round-trips, so a guard throw
+  // could commit the GRN + received_quantity yet skip the status rollup, leaving
+  // the PO stuck at 'partially_received' (the status-drift bug).
+  const { data, error } = await (supabase as any).rpc("rpc_record_grn", {
+    p_company_id: companyId,
+    p_grn: {
+      grn_number: g.grn_number ?? "",
+      grn_date: g.grn_date,
+      grn_type: (g as any).grn_type ?? "po_grn",
+      po_id: g.po_id ?? null,
+      po_number: g.po_number ?? null,
+      linked_dc_id: (g as any).linked_dc_id ?? null,
+      linked_dc_number: (g as any).linked_dc_number ?? null,
+      vendor_id: g.vendor_id ?? null,
+      vendor_name: g.vendor_name ?? null,
+      vendor_invoice_number: g.vendor_invoice_number ?? null,
+      vendor_invoice_date: g.vendor_invoice_date ?? null,
+      transporter_name: g.transporter_name ?? null,
+      vehicle_number: g.vehicle_number ?? null,
+      lr_reference: g.lr_reference ?? null,
+      driver_name: (g as any).driver_name ?? null,
+      driver_contact: (g as any).driver_contact ?? null,
+      received_by: g.received_by ?? null,
+      notes: g.notes ?? null,
+      total_received: g.total_received,
+      total_accepted: g.total_accepted,
+      total_rejected: g.total_rejected,
+      status: g.status,
+      recorded_at: g.recorded_at ?? null,
+      qc_remarks: g.qc_remarks ?? null,
+      qc_prepared_by: g.qc_prepared_by ?? null,
+      qc_inspected_by: g.qc_inspected_by ?? null,
+      qc_approved_by: g.qc_approved_by ?? null,
+      inward_sl_no: g.inward_sl_no ?? null,
+      acceptance_basis: g.acceptance_basis ?? "original",
+    },
+    p_lines: lineItems.map((item) => ({
+      po_line_item_id: item.po_line_item_id ?? null,
+      dc_line_item_id: item.dc_line_item_id ?? null,
+      item_id: item.item_id ?? null,
+      serial_number: item.serial_number,
+      description: item.description,
+      drawing_number: item.drawing_number ?? null,
+      unit: item.unit,
+      po_quantity: item.po_quantity,
+      previously_received: item.previously_received ?? 0,
+      ordered_qty_2: item.ordered_qty_2 ?? null,
+      unit_2: item.unit_2 ?? null,
+      received_now_2: item.received_now_2 ?? null,
+      pending_quantity: item.pending_quantity,
+      receiving_now: item.receiving_now,
+      accepted_quantity: item.accepted_quantity,
+      rejected_quantity: item.rejected_quantity ?? 0,
+      rejection_reason: item.rejection_reason ?? null,
+      remarks: item.remarks ?? null,
+      rejection_action: item.rejection_action ?? null,
+      replacement_cycle: item.replacement_cycle ?? 1,
+      is_replacement: item.is_replacement ?? false,
+      jig_confirmed: item.jig_confirmed ?? false,
+      stage1_rejected_qty: item.stage1_rejected_qty ?? null,
+    })),
+  });
+  if (error) throw new Error(error.message);
+  const grn = data as GRN;
+
+  // Legacy single-stage stock credit — kept in JS, best-effort/non-fatal, exactly
+  // as before. Deliberately NOT inside the transaction (separate concern from the
+  // GRN+PO atomicity fix). Look up item by drawing_revision (= GRN line drawing_number).
   for (const item of grnData.lineItems) {
-    // Update PO line item received quantities — validate first, then update atomically
-    if (item.po_line_item_id && item.accepted_quantity > 0) {
-      const { data: poItem } = await supabase.from("po_line_items").select("received_quantity, quantity").eq("id", item.po_line_item_id).single();
-      if (poItem) {
-        const pi = poItem as any;
-        const currentReceived = pi.received_quantity || 0;
-        const ordered = pi.quantity || 0;
-        const maxAllowed = ordered - currentReceived;
-        if (item.accepted_quantity > maxAllowed) {
-          throw new Error(
-            `Over-receipt for "${item.description}": trying to receive ${item.accepted_quantity} but only ${maxAllowed} pending (ordered ${ordered}, already received ${currentReceived}). Reduce the quantity or split into a separate GRN.`
-          );
-        }
-        const newReceived = currentReceived + item.accepted_quantity;
-        const newPending = Math.max(0, ordered - newReceived);
-        await supabase.from("po_line_items").update({ received_quantity: newReceived, pending_quantity: newPending } as any).eq("id", item.po_line_item_id);
-      }
-    }
-
-    // Stock update: look up item by drawing_revision (drawing_number on GRN line)
     if (item.accepted_quantity > 0 && item.drawing_number) {
       const { data: itemRecord } = await supabase
         .from("items")
@@ -459,9 +443,8 @@ export async function recordGRNAndUpdatePO(grnData: CreateGRNData) {
 
       if (itemRecord) {
         const rec = itemRecord as any;
-        // Ledger the receipt so this (legacy single-stage) credit is visible to
-        // the stock engine — previously it only touched items.current_stock.
-        // qty math unchanged; INCOMING -> FREE. Non-fatal: never block creation.
+        // Ledger the receipt so this credit is visible to the stock engine.
+        // qty math unchanged; INCOMING -> FREE. Non-fatal: never block the save.
         try {
           await addStockLedgerEntry({
             item_id: rec.id,
@@ -492,24 +475,12 @@ export async function recordGRNAndUpdatePO(grnData: CreateGRNData) {
     }
   }
 
-  if (grnData.grn.po_id) await recalculatePOStatus(grnData.grn.po_id);
   return grn;
 }
 
-async function recalculatePOStatus(poId: string) {
-  const { data: lineItems } = await supabase.from("po_line_items").select("quantity, received_quantity").eq("po_id", poId);
-  if (!lineItems || lineItems.length === 0) return;
-  let allReceived = true, anyReceived = false;
-  for (const item of lineItems as any[]) {
-    if ((item.received_quantity || 0) < (item.quantity || 0)) allReceived = false;
-    if ((item.received_quantity || 0) > 0) anyReceived = true;
-  }
-  const newStatus = allReceived ? "fully_received" : anyReceived ? "partially_received" : "issued";
-  await supabase.from("purchase_orders").update({ status: newStatus } as any).eq("id", poId);
-}
-
-// Mirrors recalculatePOStatus but operates on a GRN's own status field.
-// Uses received_qty (set at Stage 1) vs ordered_qty from grn_line_items.
+// Recomputes a GRN's own status field (received_qty set at Stage 1 vs ordered_qty
+// from grn_line_items) — the GRN-level analogue of the PO-status rollup now done
+// inside rpc_record_grn.
 async function recalculateGRNStatusFromLines(grnId: string): Promise<void> {
   const { data: lines } = await (supabase as any)
     .from('grn_line_items')
