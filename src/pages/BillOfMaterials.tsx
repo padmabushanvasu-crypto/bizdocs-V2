@@ -134,7 +134,7 @@ function TreeRow({
         <td className="text-slate-700 max-w-[200px] truncate text-sm">{node.item_description}</td>
         <td><TypeBadge type={node.item_type} /></td>
         <td className="text-right font-mono tabular-nums text-sm">
-          {node.effective_qty % 1 === 0 ? node.effective_qty.toFixed(0) : node.effective_qty.toFixed(3)}
+          {formatNumber(node.effective_qty)}
           <span className="text-muted-foreground ml-1 text-xs">{node.unit}</span>
         </td>
         <td className="text-right font-mono tabular-nums text-sm text-muted-foreground">
@@ -230,9 +230,7 @@ function VisualTreeNode({
           />
           <span className="text-xs font-mono text-slate-700">
             ×{" "}
-            {node.effective_qty % 1 === 0
-              ? node.effective_qty.toFixed(0)
-              : node.effective_qty.toFixed(2)}{" "}
+            {formatNumber(node.effective_qty)}{" "}
             {node.unit}
           </span>
         </div>
@@ -377,7 +375,7 @@ function BomFlowNodeCard({ data, selected }: NodeProps) {
           background: d.is_sufficient ? "#22c55e" : "#ef4444",
         }} />
         <span style={{ fontFamily: "monospace", fontSize: 11, color: "#374151" }}>
-          Qty: {d.effective_qty % 1 === 0 ? d.effective_qty.toFixed(0) : d.effective_qty.toFixed(2)} {d.unit}
+          Qty: {formatNumber(d.effective_qty)} {d.unit}
         </span>
       </div>
 
@@ -1661,7 +1659,7 @@ function BillOfMaterialsInner() {
                     <td style={{ fontFamily: "monospace" }}>{row.drawing_number || row.item_code}</td>
                     <td style={{ paddingLeft: (row.level - 1) * 12 }}>{row.item_description}</td>
                     <td>{row.item_type?.replace(/_/g, " ")}</td>
-                    <td style={{ textAlign: "right" }}>{row.effective_qty.toFixed(3)}</td>
+                    <td style={{ textAlign: "right" }}>{formatNumber(row.effective_qty)}</td>
                     <td>{row.unit}</td>
                     <td style={{ textAlign: "right" }}>{formatCurrency(row.unit_cost)}</td>
                     <td style={{ textAlign: "right" }}>{formatCurrency(row.total_cost)}</td>
@@ -2626,7 +2624,7 @@ function BillOfMaterialsInner() {
                                             <td><TypeBadge type={item.item_type} /></td>
                                             <td className="text-right text-xs text-muted-foreground">L{item.level}</td>
                                             <td className="text-right font-mono tabular-nums">
-                                              {item.qty_required.toFixed(3)}
+                                              {formatNumber(item.qty_required)}
                                             </td>
                                             <td className="text-xs text-muted-foreground">{item.unit}</td>
                                             <td className="text-right font-mono tabular-nums text-muted-foreground">
@@ -3421,7 +3419,7 @@ function BillOfMaterialsInner() {
                 <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
                 <span>
                   With {lineForm.scrap_factor}% scrap factor, effective quantity will be{" "}
-                  <strong>{(lineForm.quantity * (1 + lineForm.scrap_factor / 100)).toFixed(3)}</strong>{" "}
+                  <strong>{formatNumber(lineForm.quantity * (1 + lineForm.scrap_factor / 100))}</strong>{" "}
                   per unit.
                 </span>
               </div>
