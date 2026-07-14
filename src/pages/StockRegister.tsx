@@ -644,10 +644,6 @@ function StockRegisterInner() {
                 <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
                   Aimed Qty
                 </th>
-                <ColHeader
-                  label="Pending QC"
-                  tip="Qty received but awaiting quality clearance. Will enter confirmed stock after QC approval."
-                />
                 <th className="text-left px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
                   Status
                 </th>
@@ -659,13 +655,13 @@ function StockRegisterInner() {
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={19} className="text-center py-12 text-slate-400 text-sm">
+                  <td colSpan={18} className="text-center py-12 text-slate-400 text-sm">
                     Loading…
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={19} className="py-16">
+                  <td colSpan={18} className="py-16">
                     <div className="flex flex-col items-center gap-3">
                       <Package className="h-10 w-10 text-slate-300" />
                       <div className="text-center">
@@ -812,26 +808,6 @@ function StockRegisterInner() {
                         ) : (
                           <span className="text-slate-300 text-sm select-none">—</span>
                         )}
-                      </td>
-
-                      {/* Pending QC */}
-                      <td className="px-3 py-2 text-right">
-                        {(() => {
-                          const pqc = pendingQcMap.get(row.item_code) ?? pendingQcMap.get((row as any).drawing_revision ?? '');
-                          if (!pqc || pqc.qty === 0) return <span className="text-slate-300 text-sm">—</span>;
-                          return (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="text-amber-600 font-mono text-sm font-semibold cursor-default">
-                                  ⏳ {pqc.qty}
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent side="top" className="max-w-[220px] text-xs">
-                                {pqc.qty} received on {new Date(pqc.date).toLocaleDateString('en-IN')} from {pqc.vendor} — awaiting quality clearance
-                              </TooltipContent>
-                            </Tooltip>
-                          );
-                        })()}
                       </td>
 
                       {/* Status */}
@@ -1002,8 +978,6 @@ function StockRegisterInner() {
                 <td className="px-3 py-3" />
                 {/* Aimed Qty */}
                 <td className="px-3 py-3" />
-                {/* Pending QC */}
-                <td className="px-3 py-3" />
                 {/* Status */}
                 <td className="px-3 py-3" />
                 {/* Action */}
@@ -1070,6 +1044,18 @@ function StockRegisterInner() {
                   {(selectedItem.stock_in_subassembly_wip + selectedItem.stock_in_fg_wip) > 0 && `${selectedItem.stock_in_subassembly_wip + selectedItem.stock_in_fg_wip} in production`}
                 </p>
               )}
+              {(() => {
+                // Pending QC lives here (drill-down) rather than the grid — it's
+                // transient workflow state, relevant only to items with an open
+                // in-QC GRN, not permanent item data.
+                const pqc = pendingQcMap.get(selectedItem.item_code) ?? pendingQcMap.get((selectedItem as any).drawing_revision ?? '');
+                if (!pqc || pqc.qty === 0) return null;
+                return (
+                  <p className="text-xs text-amber-600 mt-1">
+                    ⏳ {pqc.qty} {selectedItem.unit} awaiting QC — received {new Date(pqc.date).toLocaleDateString('en-IN')} from {pqc.vendor}
+                  </p>
+                );
+              })()}
               <button
                 className="text-xs text-blue-600 hover:underline mt-1.5"
                 onClick={() => { setLedgerOpen(false); navigate(`/inventory-ledger?item_id=${selectedItem.id}`); }}
