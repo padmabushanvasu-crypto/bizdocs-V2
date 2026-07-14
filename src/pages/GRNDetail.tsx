@@ -337,7 +337,7 @@ function Stage1Table({
 
                   {/* Ordered — with muted unit suffix */}
                   <td className="px-3 py-2 text-right tabular-nums text-slate-500">
-                    <span className="font-mono">{line.po_quantity}</span>
+                    <span className="font-mono">{formatNumber(line.po_quantity)}</span>
                     <span className="text-xs text-muted-foreground ml-1">{unit}</span>
                   </td>
 
@@ -541,7 +541,7 @@ function Stage1Table({
                         </label>
                         <div className="text-slate-600 dark:text-slate-300">
                           <span className="font-semibold uppercase tracking-wide text-[11px] text-indigo-600 dark:text-indigo-400 mr-2">Alt. Qty Pending</span>
-                          <span className="font-mono text-sm font-semibold text-slate-800 dark:text-slate-100">{altOrdered - (line.prev_received_2 ?? 0) - (line.received_now_2 ?? 0)}</span>
+                          <span className="font-mono text-sm font-semibold text-slate-800 dark:text-slate-100">{formatNumber(altOrdered - (line.prev_received_2 ?? 0) - (line.received_now_2 ?? 0))}</span>
                           {altUnit && <span className="text-muted-foreground ml-1">{altUnit}</span>}
                         </div>
                       </div>
@@ -688,12 +688,12 @@ function Stage1ReadOnly({ lines, isDcGrn }: { lines: S1Line[]; isDcGrn?: boolean
                       <div className="flex flex-wrap gap-x-6 gap-y-1 items-baseline text-slate-600 dark:text-slate-300">
                         <div>
                           <span className="font-semibold uppercase tracking-wide text-[11px] text-indigo-600 dark:text-indigo-400 mr-2">Alt. Qty Ordered</span>
-                          <span className="font-mono text-sm font-semibold">{l.ordered_qty_2}</span>
+                          <span className="font-mono text-sm font-semibold">{formatNumber(l.ordered_qty_2)}</span>
                           {l.unit_2 && <span className="text-muted-foreground ml-1">{l.unit_2}</span>}
                         </div>
                         <div>
                           <span className="font-semibold uppercase tracking-wide text-[11px] text-indigo-600 dark:text-indigo-400 mr-2">Alt. Qty Received</span>
-                          <span className="font-mono text-sm font-semibold">{l.received_now_2 ?? "—"}</span>
+                          <span className="font-mono text-sm font-semibold">{l.received_now_2 != null ? formatNumber(l.received_now_2) : "—"}</span>
                           {l.unit_2 && (l.received_now_2 != null) && <span className="text-muted-foreground ml-1">{l.unit_2}</span>}
                         </div>
                       </div>
@@ -819,14 +819,14 @@ function QCMeasurementEditor({
                 {Number(item.ordered_qty_2 ?? 0) > 0 && (
                   <span className="flex items-center gap-1.5 text-slate-600">
                     <span className="text-xs text-indigo-600 dark:text-indigo-400">Alt. qty ordered</span>
-                    <span className="font-mono text-sm font-semibold text-slate-800">{item.ordered_qty_2}</span>
+                    <span className="font-mono text-sm font-semibold text-slate-800">{formatNumber(item.ordered_qty_2)}</span>
                     <span className="text-muted-foreground">{item.unit_2}</span>
                   </span>
                 )}
                 {item.received_now_2 != null && (
                   <span className="flex items-center gap-1.5 text-slate-600">
                     <span className="text-xs text-indigo-600 dark:text-indigo-400">Alt. qty received</span>
-                    <span className="font-mono text-sm font-semibold text-slate-800">{item.received_now_2}</span>
+                    <span className="font-mono text-sm font-semibold text-slate-800">{formatNumber(item.received_now_2)}</span>
                     <span className="text-muted-foreground">{item.unit_2}</span>
                   </span>
                 )}
@@ -1114,13 +1114,13 @@ function QCMeasurementReadOnly({
                 {Number(item.ordered_qty_2 ?? 0) > 0 && (
                   <span>
                     <span className="font-semibold uppercase tracking-wide text-[11px] text-indigo-600 dark:text-indigo-400 mr-1.5">Alt. Qty Ordered</span>
-                    <span className="font-mono text-sm font-semibold">{item.ordered_qty_2}</span>
+                    <span className="font-mono text-sm font-semibold">{formatNumber(item.ordered_qty_2)}</span>
                     <span className="text-muted-foreground ml-1">{item.unit_2}</span>
                   </span>
                 )}
                 <span>
                   <span className="font-semibold uppercase tracking-wide text-[11px] text-indigo-600 dark:text-indigo-400 mr-1.5">Alt. Qty Accepted</span>
-                  <span className="font-mono text-sm font-semibold">{item.accepted_qty_2 ?? "—"}</span>
+                  <span className="font-mono text-sm font-semibold">{item.accepted_qty_2 != null ? formatNumber(item.accepted_qty_2) : "—"}</span>
                   {item.accepted_qty_2 != null && <span className="text-muted-foreground ml-1">{item.unit_2}</span>}
                 </span>
               </div>
@@ -1151,7 +1151,7 @@ function QCMeasurementReadOnly({
                         <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center text-slate-400">{row.sl_no}</td>
                         <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium text-slate-800">{row.characteristic}</td>
                         <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-slate-600">{row.specification || "—"}</td>
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center tabular-nums font-mono">{row.qty_checked ?? "—"}</td>
+                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center tabular-nums font-mono">{row.qty_checked != null ? formatNumber(row.qty_checked) : "—"}</td>
                         <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center font-mono text-xs">{row.sample_1 || "—"}</td>
                         <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center font-mono text-xs">{row.sample_2 || "—"}</td>
                         <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center font-mono text-xs">{row.sample_3 || "—"}</td>
@@ -1382,7 +1382,7 @@ function GRNPrintView({
                         <td style={{ padding: "2pt 3pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "center" }}>{row.sl_no}</td>
                         <td style={{ padding: "2pt 3pt", borderBottom: "0.5pt solid #E2E8F0" }}>{row.characteristic}</td>
                         <td style={{ padding: "2pt 3pt", borderBottom: "0.5pt solid #E2E8F0" }}>{row.specification || "—"}</td>
-                        <td style={{ padding: "2pt 3pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "center" }}>{row.qty_checked ?? "—"}</td>
+                        <td style={{ padding: "2pt 3pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "center" }}>{row.qty_checked != null ? formatNumber(row.qty_checked) : "—"}</td>
                         <td style={{ padding: "2pt 3pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "center", fontFamily: "Courier New, monospace" }}>{row.sample_1 || "—"}</td>
                         <td style={{ padding: "2pt 3pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "center", fontFamily: "Courier New, monospace" }}>{row.sample_2 || "—"}</td>
                         <td style={{ padding: "2pt 3pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "center", fontFamily: "Courier New, monospace" }}>{row.sample_3 || "—"}</td>
