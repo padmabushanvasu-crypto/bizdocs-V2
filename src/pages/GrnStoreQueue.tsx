@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { PackageCheck, ArrowRight, CheckCircle2, Search } from "lucide-react";
+import { PackageCheck, ArrowRight, CheckCircle2, Search, Download } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,8 @@ import {
 } from "@/lib/grn-api";
 import { logAudit } from "@/lib/audit-api";
 import { formatNumber } from "@/lib/gst-utils";
+import { fetchCompanySettings } from "@/lib/settings-api";
+import { buildStoreReceiptWorkbook, buildStoreAcceptanceWorkbook, downloadWorkbook } from "@/lib/export-utils";
 import { AssemblyOutputAcceptance } from "@/components/AssemblyOutputAcceptance";
 
 type StatusFilter = "pending" | "confirmed" | "partial" | "all";
@@ -132,7 +134,7 @@ function tabCls(active: boolean): string {
 // "Accepted by store on date X" report — a flat, date-scoped list of the lines
 // the store actually accepted (filtered on store_confirmed_at, qty =
 // store_confirmed_qty). Distinct from the receipt queue (which filters grn_date).
-function StoreAcceptedView() {
+function StoreAcceptedView({ companyName }: { companyName: string }) {
   const navigate = useNavigate();
   const today = format(new Date(), "yyyy-MM-dd");
   const [from, setFrom] = useState(today);
@@ -144,6 +146,16 @@ function StoreAcceptedView() {
     staleTime: 30_000,
   });
 
+  const handleExport = () => {
+    const filters = from === to ? `Accepted on ${from}` : `Accepted ${from} to ${to}`;
+    const { workbook, filename } = buildStoreAcceptanceWorkbook(rows, {
+      companyName,
+      generatedAt: format(new Date(), "dd MMM yyyy HH:mm"),
+      filters,
+    });
+    downloadWorkbook(workbook, filename);
+  };
+
   const thCls =
     "px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide";
 
@@ -154,6 +166,9 @@ function StoreAcceptedView() {
         <Input type="date" aria-label="Accepted from" value={from} onChange={(e) => setFrom(e.target.value)} className="w-[150px]" />
         <span className="text-slate-400 text-sm">to</span>
         <Input type="date" aria-label="Accepted to" value={to} onChange={(e) => setTo(e.target.value)} className="w-[150px]" />
+        <Button variant="outline" size="sm" className="h-9 ml-auto" disabled={rows.length === 0} onClick={handleExport}>
+          <Download className="h-4 w-4 mr-1.5" /> Export
+        </Button>
       </div>
 
       <div className="rounded-xl border border-slate-200 dark:border-white/10 overflow-hidden">
@@ -235,6 +250,35 @@ export default function GrnStoreQueue() {
     staleTime: 30_000,
   });
   const cards = useMemo(() => cardsData ?? [], [cardsData]);
+
+  const { data: companySettings } = useQuery({
+    queryKey: ["company-settings"],
+    queryFn: fetchCompanySettings,
+    staleTime: 5 * 60 * 1000,
+  });
+  const companyName = companySettings?.company_name ?? "client";
+
+  const handleQueueExport = () => {
+    const statusLabel = {
+      pending: "Pending Confirmation",
+      confirmed: "Confirmed",
+      partial: "With Damage",
+      all: "All Statuses",
+    }[statusFilter];
+    const dateDesc =
+      dateFrom && dateTo
+        ? `Inward ${dateFrom} to ${dateTo}`
+        : month !== ALL_MONTHS
+          ? monthLabel(month)
+          : "All dates";
+    const filters = `Status = ${statusLabel} · ${dateDesc}${search.trim() ? ` · Search "${search.trim()}"` : ""}`;
+    const { workbook, filename } = buildStoreReceiptWorkbook(cards, {
+      companyName,
+      generatedAt: format(new Date(), "dd MMM yyyy HH:mm"),
+      filters,
+    });
+    downloadWorkbook(workbook, filename);
+  };
 
   // Per-GRN form state — only built for cards that have pending lines.
   const [grnForms, setGrnForms] = useState<Record<string, GrnFormState>>({});
@@ -405,7 +449,7 @@ export default function GrnStoreQueue() {
       </div>
 
       {view === "accepted" ? (
-        <StoreAcceptedView />
+        <StoreAcceptedView companyName={companyName} />
       ) : (
         <>
       {/* Assembly output awaiting store acceptance (A4) — same accept-into-rack action */}
@@ -467,6 +511,9 @@ export default function GrnStoreQueue() {
           onChange={(e) => { setDateTo(e.target.value); if (e.target.value) setMonth(ALL_MONTHS); }}
           className="w-[150px]"
         />
+        <Button variant="outline" size="sm" className="h-9 ml-auto" disabled={cards.length === 0} onClick={handleQueueExport}>
+          <Download className="h-4 w-4 mr-1.5" /> Export
+        </Button>
       </div>
 
       {isLoading ? (
