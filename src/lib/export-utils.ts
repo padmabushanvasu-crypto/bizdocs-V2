@@ -41,6 +41,7 @@ const STATUS_LABELS: Record<string, string> = {
   issued: "Issued",
   partially_received: "Partially Received",
   fully_received: "Fully Received",
+  received_pending_store: "Received — Pending Store",
   cancelled: "Cancelled",
   closed: "Closed",
   partially_returned: "Partially Returned",

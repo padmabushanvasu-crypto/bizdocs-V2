@@ -29,7 +29,7 @@ async function fetchOutstandingPOs(companyId: string): Promise<OutstandingPO[]> 
       parties:vendor_id ( email1, phone1 )
     `)
     .eq("company_id", companyId)
-    .in("status", ["draft", "approved", "issued", "partially_received"])
+    .in("status", ["draft", "approved", "issued", "partially_received", "received_pending_store"])
     .order("created_at", { ascending: false });
 
   if (error) throw error;
@@ -51,12 +51,14 @@ const STATUS_BADGE: Record<string, string> = {
   draft:               "bg-slate-100 text-slate-600",
   issued:              "bg-blue-100 text-blue-700",
   partially_received:  "bg-amber-100 text-amber-700",
+  received_pending_store: "bg-amber-100 text-amber-700",
 };
 
 const STATUS_LABEL: Record<string, string> = {
   draft:               "Draft",
   issued:              "Issued",
   partially_received:  "Partial",
+  received_pending_store: "Pending Store",
 };
 
 function formatDate(iso: string) {

@@ -454,7 +454,7 @@ export async function fetchPOStats() {
   if (error) throw error;
   const pos = (allPOs ?? []) as any[];
   const thisMonth = pos.filter((p) => p.po_date >= monthStart);
-  const open = pos.filter((p) => ["draft", "approved", "issued", "partially_received"].includes(p.status));
+  const open = pos.filter((p) => ["draft", "approved", "issued", "partially_received", "received_pending_store"].includes(p.status));
   const totalValueThisMonth = thisMonth.reduce((s: number, p: any) => s + (Number(p.grand_total) || 0), 0);
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000).toISOString();
   const overdue = pos.filter((p) => p.status === "issued" && p.issued_at && p.issued_at < thirtyDaysAgo);

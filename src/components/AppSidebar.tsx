@@ -526,7 +526,7 @@ export function AppSidebar() {
         const { count, error } = await (supabase as any)
           .from("purchase_orders")
           .select("*", { count: "exact", head: true })
-          .in("status", ["draft", "approved", "issued", "partially_received"]);
+          .in("status", ["draft", "approved", "issued", "partially_received", "received_pending_store"]);
         if (error) return 0;
         return count ?? 0;
       } catch { return 0; }

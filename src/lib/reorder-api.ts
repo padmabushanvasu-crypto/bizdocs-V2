@@ -184,7 +184,7 @@ export async function fetchReorderAlerts(): Promise<ReorderAlert[]> {
       .from("purchase_orders")
       .select("id, po_number, status")
       .eq("company_id", companyId)
-      .in("status", ["draft", "issued", "partially_received"]);
+      .in("status", ["draft", "issued", "partially_received", "received_pending_store"]);
 
     const openPOIds = (openPOs || []).map((p: any) => p.id);
     const openPOMap: Record<string, { po_number: string }> = {};

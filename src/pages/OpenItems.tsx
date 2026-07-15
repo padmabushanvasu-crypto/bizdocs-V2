@@ -22,7 +22,7 @@ async function fetchOpenPOs() {
   const { data } = await supabase
     .from("purchase_orders")
     .select("*")
-    .in("status", ["issued", "partially_received"])
+    .in("status", ["issued", "partially_received", "received_pending_store"])
     .order("po_date", { ascending: true });
   return data ?? [];
 }

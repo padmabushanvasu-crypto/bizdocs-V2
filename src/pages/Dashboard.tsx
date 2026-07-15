@@ -71,7 +71,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
     supabase
       .from("purchase_orders")
       .select("grand_total")
-      .in("status", ["issued", "partially_received"]),
+      .in("status", ["issued", "partially_received", "received_pending_store"]),
     supabase
       .from("delivery_challans")
       .select("dc_type, return_due_date")
@@ -83,7 +83,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
     (supabase as any)
       .from("purchase_orders")
       .select("*", { count: "exact", head: true })
-      .in("status", ["draft", "issued", "partially_received"]),
+      .in("status", ["draft", "issued", "partially_received", "received_pending_store"]),
   ]);
 
   const invoices = (invsRes.data ?? []) as any[];
@@ -416,7 +416,7 @@ export default function Dashboard() {
         .from('purchase_orders')
         .select('id')
         .eq('company_id', companyId)
-        .in('status', ['draft', 'issued', 'partially_received']);
+        .in('status', ['draft', 'issued', 'partially_received', 'received_pending_store']);
       const openPOIds = (openPOs ?? []).map((p: any) => p.id);
       const { data: poLines } = openPOIds.length > 0
         ? await (supabase as any).from('po_line_items').select('item_id').in('item_id', itemIds).in('po_id', openPOIds)

@@ -406,7 +406,7 @@ export default function FollowUpTracker() {
     const items =
       tab === "po" ? (poQuery.data ?? []) :
       tab === "dc" ? [...(dcQuery.data ?? []), ...(partialDcQuery.data ?? [])] :
-      tab === "partial_po" ? (poQuery.data ?? []).filter((p) => p.status === "partially_received") :
+      tab === "partial_po" ? (poQuery.data ?? []).filter((p) => ["partially_received", "received_pending_store"].includes(p.status)) :
       (partialDcQuery.data ?? []);
     setLocalLogs((prev) => {
       const m = new Map(prev);
@@ -538,7 +538,7 @@ export default function FollowUpTracker() {
   // All items for each tab — no status exclusions, full dataset
   const poItems      = applyFilter(poQuery.data ?? []);
   const dcItems      = applyFilter([...(dcQuery.data ?? []), ...(partialDcQuery.data ?? [])]);
-  const partialPoItems = applyFilter((poQuery.data ?? []).filter((p) => p.status === "partially_received"));
+  const partialPoItems = applyFilter((poQuery.data ?? []).filter((p) => ["partially_received", "received_pending_store"].includes(p.status)));
   const partialDcItems = applyFilter(partialDcQuery.data ?? []);
 
   const activeItems =
@@ -551,7 +551,7 @@ export default function FollowUpTracker() {
   const allSource =
     tab === "po"         ? (poQuery.data ?? []) :
     tab === "dc"         ? [...(dcQuery.data ?? []), ...(partialDcQuery.data ?? [])] :
-    tab === "partial_po" ? (poQuery.data ?? []).filter((p) => p.status === "partially_received") :
+    tab === "partial_po" ? (poQuery.data ?? []).filter((p) => ["partially_received", "received_pending_store"].includes(p.status)) :
     (partialDcQuery.data ?? []);
   const visibleSource = allSource.filter((i) => !hiddenIds.has(i.id));
 

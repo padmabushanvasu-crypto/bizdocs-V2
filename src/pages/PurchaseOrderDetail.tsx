@@ -39,6 +39,7 @@ const statusClass: Record<string, string> = {
   issued: "bg-blue-50 text-blue-700 border border-blue-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
   partially_received: "status-overdue",
   fully_received: "status-paid",
+  received_pending_store: "bg-amber-50 text-amber-700 border border-amber-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
   cancelled: "status-cancelled",
   closed: "status-draft",
   pending_approval: "bg-amber-50 text-amber-700 border border-amber-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
@@ -47,6 +48,7 @@ const statusClass: Record<string, string> = {
 const statusLabels: Record<string, string> = {
   draft: "Draft", approved: "Approved", issued: "Issued", partially_received: "Partially Received",
   fully_received: "Fully Received", cancelled: "Cancelled", closed: "Closed",
+  received_pending_store: "Received — Pending Store",
   pending_approval: "Pending Approval", rejected: "Rejected",
 };
 

@@ -72,7 +72,7 @@ export async function fetchFollowUpPOs(): Promise<FollowUpPO[]> {
     .from("purchase_orders")
     .select("id, po_number, vendor_name, vendor_phone, vendor_email, status")
     .eq("company_id", companyId)
-    .in("status", ["issued", "partially_received"])
+    .in("status", ["issued", "partially_received", "received_pending_store"])
     .order("created_at", { ascending: false });
 
   if (error || !pos?.length) return [];
