@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, ChevronDown, Info, ChevronLeft, AlertTriangle, Lock, CheckCircle2 } from "lucide-react";
+import { Plus, Trash2, ChevronDown, Info, ChevronLeft, AlertTriangle, Lock, CheckCircle2, Wrench } from "lucide-react";
 import { ItemSuggest } from "@/components/ItemSuggest";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1298,6 +1298,16 @@ export default function DeliveryChallanForm() {
                         if (drawingNum.trim()) {
                           fetchJigsForDrawing(drawingNum.trim()).then(jigs => {
                             setLineJigs(prev => { const m = new Map(prev); m.set(index, jigs); return m; });
+                            // Default-check matched jigs on NEW DCs so "doing nothing" records the
+                            // jig (operator un-ticks to exclude). Never on edits — do not retroactively
+                            // assert jigs on historical DCs. Guard preserves any manual un-ticks.
+                            if (!isEdit) {
+                              const okIds = jigs.filter(j => j.status === 'ok' || j.status === 'in_progress').map(j => j.id);
+                              setLineJigsChecked(prev => {
+                                if (prev.has(index)) return prev;
+                                const m = new Map(prev); m.set(index, okIds); return m;
+                              });
+                            }
                           });
                           fetchMouldItemsForDrawing(drawingNum.trim()).then(moulds => {
                             setLineMouldItems(prev => { const m = new Map(prev); m.set(index, moulds); return m; });
@@ -1337,6 +1347,14 @@ export default function DeliveryChallanForm() {
                         if (e.target.value.trim().length >= 3) {
                           fetchJigsForDrawing(e.target.value.trim()).then(jigs => {
                             setLineJigs(prev => { const m = new Map(prev); m.set(index, jigs); return m; });
+                            // Default-check matched jigs on NEW DCs only (see item-select handler above).
+                            if (!isEdit) {
+                              const okIds = jigs.filter(j => j.status === 'ok' || j.status === 'in_progress').map(j => j.id);
+                              setLineJigsChecked(prev => {
+                                if (prev.has(index)) return prev;
+                                const m = new Map(prev); m.set(index, okIds); return m;
+                              });
+                            }
                           });
                           fetchMouldItemsForDrawing(e.target.value.trim()).then(moulds => {
                             setLineMouldItems(prev => { const m = new Map(prev); m.set(index, moulds); return m; });
@@ -1744,39 +1762,43 @@ export default function DeliveryChallanForm() {
                           </td>
                         </tr>
                       )}
-                      {okJigs.length > 0 && (
-                        <tr key={`jigs-ok-${index}`} className="bg-amber-50/30 border-b border-amber-100">
+                      {okJigs.length > 0 && (() => {
+                        const anyUnchecked = okJigs.some(j => !checked.includes(j.id));
+                        return (
+                        <tr key={`jigs-ok-${index}`} className={anyUnchecked ? "bg-red-50/40 border-b border-red-100" : "bg-amber-100/40 border-b border-amber-200"}>
                           <td />
                           <td colSpan={12} className="px-3 py-2">
-                            <div className="mt-1 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                              <p className="text-xs font-semibold text-amber-700 mb-2 flex items-center gap-1">
-                                <AlertTriangle className="h-3.5 w-3.5" /> Jig Required — must be sent with this component
+                            <div className={`mt-1 p-3 rounded-lg border-2 ring-1 ${anyUnchecked ? "bg-red-50 border-red-400 ring-red-300" : "bg-amber-100 border-amber-400 ring-amber-300"}`}>
+                              <p className={`text-sm font-bold mb-2 flex items-center gap-1.5 ${anyUnchecked ? "text-red-700" : "text-amber-800"}`}>
+                                <Wrench className="h-4 w-4" /> JIG REQUIRED — send with this component
                               </p>
-                              <div className="space-y-1">
-                                {okJigs.map(jig => (
-                                  <label key={jig.id} className="flex items-center gap-2 text-xs cursor-pointer">
+                              <div className="space-y-1.5">
+                                {okJigs.map(jig => {
+                                  const isChecked = checked.includes(jig.id);
+                                  return (
+                                  <label key={jig.id} className="flex items-center gap-2 text-sm cursor-pointer">
                                     <input
                                       type="checkbox"
-                                      checked={checked.includes(jig.id)}
+                                      checked={isChecked}
                                       onChange={(e) => toggleJigCheck(index, jig.id, e.target.checked)}
-                                      className="rounded"
+                                      className="h-4 w-4 rounded"
                                     />
-                                    <span className={checked.includes(jig.id) ? "line-through text-slate-400" : "text-amber-800"}>
+                                    <span className={isChecked ? "font-medium text-amber-900" : "font-semibold text-red-700"}>
                                       {jig.jig_number}
                                       {jig.associated_process ? ` — ${jig.associated_process}` : ""}
                                     </span>
+                                    <span className={`text-xs font-semibold ${isChecked ? "text-green-700" : "text-red-600"}`}>
+                                      {isChecked ? "✓ included" : "⚠ NOT included — confirm"}
+                                    </span>
                                   </label>
-                                ))}
+                                  );
+                                })}
                               </div>
-                              {okJigs.some(j => !checked.includes(j.id)) && (
-                                <p className="text-xs text-amber-600 mt-1 font-medium">
-                                  Confirm all jigs are included before saving
-                                </p>
-                              )}
                             </div>
                           </td>
                         </tr>
-                      )}
+                        );
+                      })()}
                     </>
                   );
                 })()}
