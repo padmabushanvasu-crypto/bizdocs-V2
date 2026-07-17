@@ -1295,6 +1295,13 @@ function GRNPrintView({
                 <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textTransform: "capitalize" }}>{(l.condition_on_arrival || "good").replace(/_/g, " ")}</td>
                 <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "center" }}>{l.packing_intact ? "Yes" : "No"}</td>
               </tr>
+              {companySettings?.show_nature_of_process !== false && (l.nature_of_process ?? "").trim() !== "" && (
+                <tr style={{ background: "#F8FAFC" }}>
+                  <td colSpan={9} style={{ padding: "2pt 4pt 2pt 16pt", borderBottom: "0.5pt solid #E2E8F0", fontSize: "7.5pt", color: "#475569" }}>
+                    Process: <strong>{l.nature_of_process}</strong>
+                  </td>
+                </tr>
+              )}
               {Number(l.ordered_qty_2 ?? 0) > 0 && (l.unit_2 ?? "").trim() !== "" && (
                 <tr style={{ background: "#F8FAFC" }}>
                   <td colSpan={9} style={{ padding: "2pt 4pt 2pt 16pt", borderBottom: "0.5pt solid #E2E8F0", fontSize: "7.5pt", color: "#475569" }}>
