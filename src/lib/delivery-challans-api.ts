@@ -28,6 +28,8 @@ export interface DCLineItem {
   amount: number;
   remarks?: string;
   nature_of_process?: string;
+  // Jig(s) issued to the vendor for this line (comma-joined jig numbers, jsonb).
+  jigs_sent?: string | string[] | null;
   // Quantity in multiple units
   qty_nos?: number;
   qty_kg?: number;
@@ -294,7 +296,7 @@ export async function fetchAllDCsForExport(
   const { data, error } = await supabase
     .from("delivery_challans")
     .select(
-      `*, line_items:dc_line_items(serial_number, description, drawing_number, quantity, unit, rate, amount, nature_of_process, qty_nos, qty_kg, qty_sft, returned_qty_nos, returned_qty_kg, returned_qty_sft)`
+      `*, line_items:dc_line_items(serial_number, description, drawing_number, quantity, unit, rate, amount, nature_of_process, jigs_sent, qty_nos, qty_kg, qty_sft, returned_qty_nos, returned_qty_kg, returned_qty_sft)`
     )
     .eq("company_id", companyId)
     .neq("status", "deleted")
@@ -316,7 +318,7 @@ export async function fetchAllDCReturnsForExport(
   const { data, error } = await supabase
     .from("delivery_challans")
     .select(
-      `*, line_items:dc_line_items(serial_number, description, drawing_number, quantity, unit, rate, amount, nature_of_process, qty_nos, qty_kg, qty_sft, returned_qty_nos, returned_qty_kg, returned_qty_sft)`
+      `*, line_items:dc_line_items(serial_number, description, drawing_number, quantity, unit, rate, amount, nature_of_process, jigs_sent, qty_nos, qty_kg, qty_sft, returned_qty_nos, returned_qty_kg, returned_qty_sft)`
     )
     .eq("company_id", companyId)
     .in("status", ["partially_returned", "fully_returned"])

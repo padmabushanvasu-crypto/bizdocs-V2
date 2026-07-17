@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -77,6 +77,13 @@ const categoryLabels: Record<string, string> = {
   supply_on_approval: "Supply on Approval", job_work_return: "Job Work Return",
   sales_return: "Sales Return", others: "Others",
 };
+
+// Normalize dc_line_items.jigs_sent (jsonb: comma-joined jig numbers, or an
+// array) to a display string. Mirrors the GRN-side helper (GRNDetail.tsx).
+function parseJigsSent(val: string | string[] | null | undefined): string | null {
+  if (!val) return null;
+  return Array.isArray(val) ? val.join(', ') : val;
+}
 
 export default function DeliveryChallanDetail() {
   const { id } = useParams();
@@ -383,6 +390,10 @@ export default function DeliveryChallanDetail() {
   const hasQtyKgs = items.some((i) => (i as any).qty_kgs != null);
   const hasQtySft = items.some((i) => (i as any).qty_sft != null);
   const hasAltQty = items.some((i) => Number((i as any).quantity_2) > 0);
+  // Column count for the full-width Jig(s) sub-row: 7 always-present columns
+  // (#, Description, Unit, Delivery Date, Qty, Rate, Amount) plus the optional
+  // ones that are actually rendered.
+  const printColCount = 7 + (hasDrawingNumber ? 1 : 0) + (hasNatureOfProcess ? 1 : 0) + (hasAltQty ? 2 : 0) + (hasQtyKgs ? 1 : 0) + (hasQtySft ? 1 : 0);
   const today = new Date().toISOString().split("T")[0];
   const isOverdue = dc.return_due_date && dc.return_due_date < today && !["fully_returned", "cancelled"].includes(dc.status);
 
@@ -497,8 +508,11 @@ export default function DeliveryChallanDetail() {
             </tr>
           </thead>
           <tbody>
-            {items.map((item, idx) => (
-              <tr key={item.serial_number} style={{ background: idx % 2 === 0 ? '#F8FAFC' : '#fff', borderBottom: '1pt solid #E2E8F0' }}>
+            {items.map((item, idx) => {
+              const jigs = parseJigsSent((item as any).jigs_sent);
+              return (
+              <Fragment key={item.serial_number}>
+              <tr style={{ background: idx % 2 === 0 ? '#F8FAFC' : '#fff', borderBottom: '1pt solid #E2E8F0' }}>
                 <td style={{ padding: rowPadding, color: '#64748b' }}>{item.serial_number}</td>
                 {hasDrawingNumber && <td style={{ padding: rowPadding, fontFamily: 'monospace', fontWeight: 700, color: '#1E3A5F' }}>{item.drawing_number || item.item_code || '—'}</td>}
                 <td style={{ padding: rowPadding }}>{item.description}</td>
@@ -513,7 +527,16 @@ export default function DeliveryChallanDetail() {
                 <td style={{ padding: rowPadding, textAlign: 'right', fontFamily: 'monospace' }}>{formatCurrency(item.rate || 0)}</td>
                 <td style={{ padding: rowPadding, textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}>{formatCurrency(item.amount || 0)}</td>
               </tr>
-            ))}
+              {jigs && (
+                <tr style={{ background: idx % 2 === 0 ? '#F8FAFC' : '#fff' }}>
+                  <td colSpan={printColCount} style={{ padding: rowPadding, paddingLeft: '16pt', color: '#475569', fontSize: rowFontSize, borderBottom: '1pt solid #E2E8F0' }}>
+                    Jig(s): <strong>{jigs}</strong>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
+              );
+            })}
           </tbody>
         </table>
 
