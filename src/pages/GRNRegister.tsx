@@ -77,9 +77,9 @@ class GrnRegisterErrorBoundary extends Component<{ children: ReactNode }, { erro
 
 // "Awaiting Receipt" (quantitative_pending) removed: that stage has no live GRNs
 // (single-stage receipt bypasses it; two-stage GRNs pass through transiently), so
-// a permanently-empty pill was misleading. "Awaiting QC" and "Pending Final
-// Receipt" both live in grn_stage='quality_done' and are split by whether QC has
-// actually inspected the GRN (quality_completed_by) — see effectiveFilters.
+// a permanently-empty pill was misleading. "Awaiting QC" is grn_stage='quality_pending'
+// (Stage-1 done, QC not yet performed); "Pending Final Receipt" is grn_stage='quality_done'
+// (QC done, awaiting store confirmation) — two distinct stages, see effectiveFilters.
 const STAGE_PILLS = [
   { label: 'All',              value: 'all' },
   { label: 'Awaiting QC',      value: 'awaiting_qc' },
@@ -140,7 +140,7 @@ function GRNRegisterInner() {
   useEffect(() => {
     if (role === 'qc_team') {
       setFilters(f => ({ ...f, month: undefined }));
-      setStageFilter(prev => prev === 'all' ? 'quality_pending' : prev);
+      setStageFilter(prev => prev === 'all' ? 'awaiting_qc' : prev);
     }
   }, [role]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -199,11 +199,12 @@ function GRNRegisterInner() {
   // Build effective filters including stage filter
   const effectiveFilters = useMemo(() => {
     const f = { ...filters };
-    // Awaiting QC vs Pending Final Receipt: both are grn_stage='quality_done',
-    // split by quality_completed_by (the QC-inspection signal). Not inspected →
-    // Awaiting QC (the previously-invisible QC queue); inspected → Pending Final
-    // Receipt. Read-only — never changes grn_stage or stock.
-    if (stageFilter === 'awaiting_qc') { (f as any).grn_stage = 'quality_done'; (f as any).qcInspected = false; }
+    // Awaiting QC = grn_stage='quality_pending' (Stage-1 quantitative done, QC not
+    // yet performed — quality_completed_by still NULL). Pending Final Receipt =
+    // grn_stage='quality_done' (QC done, awaiting store confirm); quality_completed_by
+    // is always set there, so qcInspected=true is redundant-but-harmless. Two distinct
+    // stages. Read-only — never changes grn_stage or stock.
+    if (stageFilter === 'awaiting_qc') (f as any).grn_stage = 'quality_pending';
     else if (stageFilter === 'quality_done') { (f as any).grn_stage = 'quality_done'; (f as any).qcInspected = true; }
     else if (stageFilter === 'awaiting_store') (f as any).grn_stage = 'awaiting_store';
     else if (stageFilter === 'closed_accepted') (f as any).grn_stage = 'closed';
