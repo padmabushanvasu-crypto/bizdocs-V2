@@ -91,7 +91,7 @@ function StatChip({
 }: {
   label: string;
   value: number;
-  colour: "slate" | "green" | "amber" | "red";
+  colour: "slate" | "green" | "amber" | "red" | "rose";
   onClick?: () => void;
   active?: boolean;
 }) {
@@ -100,6 +100,7 @@ function StatChip({
     green: "bg-green-50 border-green-200 text-green-700",
     amber: "bg-amber-50 border-amber-200 text-amber-700",
     red:   "bg-red-50 border-red-200 text-red-700",
+    rose:  "bg-rose-50 border-rose-300 text-rose-700",
   }[colour];
   const interactive = onClick
     ? "cursor-pointer hover:brightness-95 active:scale-[0.98] transition"
@@ -125,7 +126,8 @@ type AvailabilityFilter =
   | "in_store"
   | "at_vendor"
   | "in_production"
-  | "ready_to_dispatch";
+  | "ready_to_dispatch"
+  | "negative";
 
 type AlertFilter = "all" | "needs_attention" | "critical" | "warning" | "locked" | "healthy";
 
@@ -172,12 +174,11 @@ function ColHeader({
 function Num({ value, bold }: { value: number; bold?: boolean }) {
   if (!value)
     return <span className="text-slate-300 text-sm select-none">—</span>;
+  // Negative free stock (assembly over-issue) renders rose with its minus sign
+  // (formatNumber already emits it) so it can never read as a normal balance.
+  const colour = value < 0 ? "font-semibold text-rose-600" : bold ? "font-semibold text-slate-800" : "text-slate-600";
   return (
-    <span
-      className={`text-sm font-mono tabular-nums ${
-        bold ? "font-semibold text-slate-800" : "text-slate-600"
-      }`}
-    >
+    <span className={`text-sm font-mono tabular-nums ${colour}`}>
       {formatNumber(value)}
     </span>
   );
@@ -306,6 +307,7 @@ function StockRegisterInner() {
       total: rows.length,
       inStore: rows.filter((r) => r.stock_free > 0).length,
       atVendor: rows.filter((r) => r.stock_in_process > 0).length,
+      negative: rows.filter((r) => r.stock_free < 0).length,
       needsAttention: rows.filter((r) =>
         ["critical", "warning", "locked"].includes(r.stock_alert_level ?? "healthy")
       ).length,
@@ -337,6 +339,7 @@ function StockRegisterInner() {
         if (availability === "at_vendor")         return r.stock_in_process > 0;
         if (availability === "in_production")     return (r.stock_in_subassembly_wip + r.stock_in_fg_wip + r.awo_qty) > 0;
         if (availability === "ready_to_dispatch") return r.stock_in_fg_ready > 0;
+        if (availability === "negative")          return r.stock_free < 0;
         return true;
       });
     }
@@ -417,6 +420,7 @@ function StockRegisterInner() {
     { v: "at_vendor",         label: "At Vendor" },
     { v: "in_production",     label: "In Production" },
     { v: "ready_to_dispatch", label: "Ready to Dispatch" },
+    { v: "negative",          label: "Negative" },
   ];
 
   const TYPE_OPTS: { v: TypeFilter; label: string }[] = [
@@ -466,6 +470,15 @@ function StockRegisterInner() {
           onClick={() => setAvailability((v) => (v === "at_vendor" ? "all" : "at_vendor"))}
           active={availability === "at_vendor"}
         />
+        {chips.negative > 0 && (
+          <StatChip
+            label="Negative"
+            value={chips.negative}
+            colour="rose"
+            onClick={() => setAvailability((v) => (v === "negative" ? "all" : "negative"))}
+            active={availability === "negative"}
+          />
+        )}
         <StatChip
           label="Needs Attention"
           value={chips.needsAttention}
@@ -782,7 +795,7 @@ function StockRegisterInner() {
                         {total === 0 ? (
                           <span className="text-slate-300 text-sm select-none">—</span>
                         ) : (
-                          <span className="text-sm font-mono tabular-nums font-semibold text-slate-500">
+                          <span className={`text-sm font-mono tabular-nums font-semibold ${total < 0 ? "text-rose-600" : "text-slate-500"}`}>
                             {formatNumber(total)}
                           </span>
                         )}
@@ -1073,6 +1086,7 @@ function StockRegisterInner() {
             <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 shrink-0">
               <div className="flex items-baseline gap-1.5">
                 <span className={`text-2xl font-bold tabular-nums ${
+                  selectedItem.stock_free < 0 ? "text-rose-600" :
                   selectedItem.stock_free === 0 ? "text-red-600" :
                   selectedItem.effective_min_stock > 0 && selectedItem.stock_free <= selectedItem.effective_min_stock ? "text-amber-600" :
                   "text-emerald-600"
@@ -1152,6 +1166,7 @@ function StockRegisterInner() {
                       };
                       const refHref = refHrefMap[m.document_type];
                       const balanceColor =
+                        m.running_balance < 0 ? "text-rose-600" :
                         m.running_balance === 0 ? "text-red-600" :
                         selectedItem.effective_min_stock > 0 && m.running_balance <= selectedItem.effective_min_stock ? "text-amber-600" :
                         "text-slate-800";
