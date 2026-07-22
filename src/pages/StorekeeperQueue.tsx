@@ -89,21 +89,34 @@ export default function StorekeeperQueue() {
   }, [mirDetail]);
 
   const confirmMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!selectedMirId || !mirDetail?.line_items) throw new Error("No MIR selected");
+      // Capture which lines this submit pushes negative (amount-now > free stock).
+      // rpc_confirm_mir returns shortage_qty (= requested − issued, an UNDER-issue),
+      // not a negative-stock signal, so the going-negative fact is derived here from
+      // the same availability logic as the inline pre-confirm warning.
+      const negativeLines: { label: string; resulting: number }[] = [];
       const lineIssues = mirDetail.line_items.map((li: MirLineItem) => {
         const alreadyIssued = li.issued_qty ?? 0;
         // The UI field is "amount to issue now"; the API contract is the new
         // cumulative issued total, so send already-issued + amount-now.
         const amountNow = lineEdits[li.id]?.issued_qty
           ?? Math.max(0, li.requested_qty - alreadyIssued);
+        const avail = li.stock_free ?? 0;
+        if (amountNow > 0 && amountNow > avail) {
+          negativeLines.push({
+            label: li.item_description ?? li.item_code ?? li.drawing_number ?? "Item",
+            resulting: avail - amountNow,
+          });
+        }
         return {
           mir_line_item_id: li.id,
           issued_qty: alreadyIssued + amountNow, // cumulative target (idempotent)
           shortage_notes: lineEdits[li.id]?.shortage_notes || undefined,
         };
       });
-      return confirmMaterialIssue(selectedMirId, lineIssues, issuedBy);
+      const res = await confirmMaterialIssue(selectedMirId, lineIssues, issuedBy);
+      return { ...res, negativeLines };
     },
     onSuccess: (data) => {
       const mirId = selectedMirId;
@@ -123,7 +136,19 @@ export default function StorekeeperQueue() {
         );
       }
 
-      toast({ title: "Materials issued successfully" });
+      // Over-issue → stock went negative: toast rose (destructive) with the
+      // resulting negative balance per item. Otherwise the normal success toast.
+      if (data.negativeLines.length > 0) {
+        toast({
+          title: `Materials issued — ${data.negativeLines.length} item(s) now negative`,
+          description: data.negativeLines
+            .map((n) => `${n.label}: ${formatNumber(n.resulting)}`)
+            .join("  ·  "),
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: "Materials issued successfully" });
+      }
       setSelectedMirId(null);
       setLineEdits({});
 
