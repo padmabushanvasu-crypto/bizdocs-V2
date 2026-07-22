@@ -10,11 +10,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { StockAlertsBoard } from "@/components/StockAlertsBoard";
 import { OutstandingPOsWidget } from "@/components/OutstandingPOsWidget";
 import { OutstandingDCsWidget } from "@/components/OutstandingDCsWidget";
-import { formatCurrency } from "@/lib/gst-utils";
+import { formatCurrency, formatNumber } from "@/lib/gst-utils";
 import { fetchFatStats } from "@/lib/fat-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { fetchAllAuditLog, type AuditEntry } from "@/lib/audit-api";
 import { getCompanyId } from "@/lib/auth-helpers";
+import { fetchNegativeAssemblyStock } from "@/lib/negative-stock-api";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
 
@@ -385,6 +386,14 @@ export default function Dashboard() {
     staleTime: Infinity,
   });
 
+  // Negative assembly-issue stock — items pushed below zero by issue-ahead-of-PO.
+  const { data: negativeStock = [] } = useQuery({
+    queryKey: ['negative-assembly-stock', companyId],
+    enabled: !!companyId,
+    staleTime: 0,
+    queryFn: () => fetchNegativeAssemblyStock(companyId as string),
+  });
+
   // Live stock alerts from view
   const { data: stockAlertData = { unactioned: [] as StockAlertItem[], actioned: [] as StockAlertItem[] } } = useQuery({
     queryKey: ['stock-alerts-dashboard', companyId],
@@ -643,6 +652,70 @@ export default function Dashboard() {
             colour="red"
             onClick={() => navigate("/delivery-challans?status=rejected")}
           />
+        )}
+
+        {/* ── Assembly Issue — Negative Stock ──────────────────────────
+            Items an assembly issue pushed below zero (issue-ahead-of-PO).
+            Rose, NOT amber — amber is reserved for reorder/urgency. Renders
+            only when at least one item is currently negative. */}
+        {negativeStock.length > 0 && (
+          <div
+            className="rounded-xl p-4 lg:p-5 relative overflow-hidden"
+            style={glowBox(244, 63, 94, isDark)}
+          >
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-rose-500 shrink-0" />
+                <h2 className={`text-sm font-bold ${isDark ? "text-rose-300" : "text-rose-700"}`}>
+                  Assembly Issue — Negative Stock
+                </h2>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isDark ? "bg-rose-500/20 text-rose-300" : "bg-rose-100 text-rose-700"}`}>
+                  {negativeStock.length}
+                </span>
+              </div>
+              <button
+                className={`text-xs font-medium transition-colors ${isDark ? "text-sky-300 hover:text-sky-200" : "text-sky-600 hover:text-sky-700"}`}
+                onClick={() => navigate("/stock-register")}
+              >
+                Stock Register →
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className={`text-[10px] uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                    <th className="text-left font-semibold py-1.5 pr-3">Item</th>
+                    <th className="text-left font-semibold py-1.5 pr-3">Description</th>
+                    <th className="text-right font-semibold py-1.5 px-3">Negative Qty</th>
+                    <th className="text-right font-semibold py-1.5 px-3">Days Negative</th>
+                    <th className="text-right font-semibold py-1.5 pl-3">Open PO Qty</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {negativeStock.map((r) => {
+                    const daysNegative = r.first_negative_at
+                      ? Math.max(0, Math.floor((Date.now() - new Date(r.first_negative_at).getTime()) / 86400000))
+                      : null;
+                    return (
+                      <tr key={r.item_id} className={`border-t ${isDark ? "border-white/10" : "border-slate-100"}`}>
+                        <td className={`py-2 pr-3 font-mono ${isDark ? "text-slate-200" : "text-slate-800"}`}>{r.item_code}</td>
+                        <td className={`py-2 pr-3 max-w-[280px] truncate ${isDark ? "text-slate-400" : "text-slate-600"}`}>{r.description}</td>
+                        <td className={`py-2 px-3 text-right font-mono font-semibold tabular-nums ${isDark ? "text-rose-400" : "text-rose-600"}`}>
+                          {formatNumber(r.negative_qty)}
+                        </td>
+                        <td className={`py-2 px-3 text-right font-mono tabular-nums ${isDark ? "text-slate-300" : "text-slate-700"}`}>
+                          {daysNegative == null ? "—" : `${daysNegative}d`}
+                        </td>
+                        <td className={`py-2 pl-3 text-right font-mono tabular-nums ${r.open_po_qty > 0 ? (isDark ? "text-emerald-300" : "text-emerald-600") : (isDark ? "text-slate-500" : "text-slate-400")}`}>
+                          {r.open_po_qty > 0 ? formatNumber(r.open_po_qty) : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
         )}
 
         {/* ── Section 2: Stock Alerts Board ────────────────────────── */}
