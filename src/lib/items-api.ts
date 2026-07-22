@@ -957,6 +957,9 @@ function computeAlertLevel(
   min_stock: number,
   item_type?: string
 ): Item['stock_alert_level'] {
+  // Negative free stock (only reachable via assembly over-issue) is always critical,
+  // ahead of the min_stock checks so it flags even when min_stock is 0/unset.
+  if (stock_free < 0) return 'critical';
   if (!min_stock || min_stock <= 0) return 'healthy';
   if (item_type === 'service') return 'healthy';
   const effective = stock_free + stock_in_process + stock_in_subassembly_wip + stock_in_fg_wip + stock_in_fg_ready;
