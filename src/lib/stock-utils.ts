@@ -3,6 +3,11 @@ export function getStockStatusBadge(alertLevel: string, totalStock: number): {
   color: 'red' | 'amber' | 'blue' | 'green' | 'grey';
   tooltip?: string;
 } {
+  if (totalStock < 0) return {
+    label: 'Negative',
+    color: 'red',
+    tooltip: 'Stock is negative — more was issued than on hand (assembly over-issue).',
+  };
   if (totalStock === 0) return { label: 'No Stock', color: 'grey' };
   switch (alertLevel) {
     case 'critical': return { label: 'Reorder Now', color: 'red' };
