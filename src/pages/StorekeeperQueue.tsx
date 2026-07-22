@@ -36,6 +36,9 @@ export default function StorekeeperQueue() {
   const [selectedMirId, setSelectedMirId] = useState<string | null>(null);
   const [lineEdits, setLineEdits] = useState<Record<string, { issued_qty: number; shortage_notes: string }>>({});
   const [statusFilter, setStatusFilter] = useState("pending");
+  // Explicit gate: issuing more than free stock (assembly over-issue) is allowed
+  // now, but must be consciously confirmed before submit.
+  const [confirmOverIssue, setConfirmOverIssue] = useState(false);
 
   // Last-6-months options for month filter
   const monthOptions = (() => {
@@ -81,6 +84,7 @@ export default function StorekeeperQueue() {
         edits[li.id] = { issued_qty: remaining, shortage_notes: "" };
       }
       setLineEdits(edits);
+      setConfirmOverIssue(false);
     }
   }, [mirDetail]);
 
@@ -233,6 +237,21 @@ export default function StorekeeperQueue() {
     );
   }
 
+  // Lines whose "issue now" amount exceeds free stock — an assembly over-issue
+  // that will push stock negative. Keyed by line id for inline warnings + the
+  // submit gate. stock_free is enriched availability (v_stock_free); it is NOT a
+  // cap on the input (only requested_qty is), so over-issues are expected here.
+  const overIssueByLine: Record<string, { avail: number; amountNow: number; resulting: number }> = {};
+  for (const li of mirDetail.line_items ?? []) {
+    const remaining = Math.max(0, li.requested_qty - (li.issued_qty ?? 0));
+    const amountNow = lineEdits[li.id]?.issued_qty ?? remaining;
+    const avail = li.stock_free ?? 0;
+    if (amountNow > 0 && amountNow > avail) {
+      overIssueByLine[li.id] = { avail, amountNow, resulting: avail - amountNow };
+    }
+  }
+  const hasOverIssue = Object.keys(overIssueByLine).length > 0;
+
   return (
     <div className="p-4 md:p-6 space-y-4">
       {/* Header */}
@@ -301,20 +320,29 @@ export default function StorekeeperQueue() {
                           {fullyIssued ? <span className="text-green-600">✓ Done</span> : formatNumber(edit.issued_qty ?? 0)}
                         </span>
                       ) : (
-                        <Input
-                          type="number"
-                          min={0}
-                          max={remaining}
-                          value={edit.issued_qty}
-                          onChange={(e) => {
-                            const val = Math.min(remaining, Math.max(0, Number(e.target.value)));
-                            setLineEdits((prev) => ({
-                              ...prev,
-                              [li.id]: { ...edit, issued_qty: val },
-                            }));
-                          }}
-                          className="w-20 text-right ml-auto"
-                        />
+                        <div className="flex flex-col items-end gap-1">
+                          <Input
+                            type="number"
+                            min={0}
+                            max={remaining}
+                            value={edit.issued_qty}
+                            onChange={(e) => {
+                              const val = Math.min(remaining, Math.max(0, Number(e.target.value)));
+                              setLineEdits((prev) => ({
+                                ...prev,
+                                [li.id]: { ...edit, issued_qty: val },
+                              }));
+                            }}
+                            className="w-20 text-right ml-auto"
+                          />
+                          {overIssueByLine[li.id] && (
+                            <p className="text-[11px] leading-tight text-rose-600 font-medium">
+                              Available {formatNumber(overIssueByLine[li.id].avail)}, issuing{" "}
+                              {formatNumber(overIssueByLine[li.id].amountNow)} → stock will go to{" "}
+                              {formatNumber(overIssueByLine[li.id].resulting)}
+                            </p>
+                          )}
+                        </div>
                       )}
                     </td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
@@ -356,14 +384,30 @@ export default function StorekeeperQueue() {
           </span>
         </div>
         {mirDetail.status !== "issued" && (
-          <Button
-            className="bg-green-600 hover:bg-green-700 text-white"
-            onClick={() => confirmMutation.mutate()}
-            disabled={confirmMutation.isPending}
-          >
-            <CheckCircle className="w-4 h-4 mr-2" />
-            {confirmMutation.isPending ? "Confirming…" : "Confirm Issue"}
-          </Button>
+          <div className="flex flex-col items-end gap-2">
+            {hasOverIssue && (
+              <label className="flex items-start gap-2 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-md px-3 py-2 max-w-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={confirmOverIssue}
+                  onChange={(e) => setConfirmOverIssue(e.target.checked)}
+                  className="mt-0.5 accent-rose-600"
+                />
+                <span>
+                  Confirm over-issue: {Object.keys(overIssueByLine).length} item(s) will be
+                  issued beyond available stock and go negative.
+                </span>
+              </label>
+            )}
+            <Button
+              className="bg-green-600 hover:bg-green-700 text-white"
+              onClick={() => confirmMutation.mutate()}
+              disabled={confirmMutation.isPending || (hasOverIssue && !confirmOverIssue)}
+            >
+              <CheckCircle className="w-4 h-4 mr-2" />
+              {confirmMutation.isPending ? "Confirming…" : "Confirm Issue"}
+            </Button>
+          </div>
         )}
       </div>
     </div>
