@@ -588,7 +588,12 @@ export async function issueDeliveryChallan(id: string) {
 
     if (!itemRecord) continue;
     const rec = itemRecord as any;
-    const newStock = Math.max(0, (rec.current_stock ?? 0) - qty);
+    // Fail loud on insufficient stock instead of silently flooring to 0.
+    const proposedStock = (rec.current_stock ?? 0) - qty;
+    if (proposedStock < 0) {
+      throw new Error(`Insufficient stock to issue ${rec.item_code ?? rec.id}: have ${rec.current_stock ?? 0}, issuing ${qty}.`);
+    }
+    const newStock = proposedStock;
     const isReturnable = RETURNABLE_DC_TYPES.has(dc.dc_type);
     // Ledger-first per iteration (Scope 1).
     await addStockLedgerEntry({

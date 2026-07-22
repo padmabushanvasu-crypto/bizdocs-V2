@@ -439,7 +439,12 @@ export async function createScrapEntry(data: Partial<ScrapEntry>): Promise<Scrap
       .single();
 
     const currentStock: number = (itemData as any)?.current_stock ?? 0;
-    const newStock: number = Math.max(0, currentStock - (data.qty_scrapped || 0));
+    // Fail loud on insufficient stock instead of silently flooring to 0.
+    const proposedStock = currentStock - (data.qty_scrapped || 0);
+    if (proposedStock < 0) {
+      throw new Error(`Insufficient stock to scrap ${data.item_code ?? data.item_id}: have ${currentStock}, scrapping ${data.qty_scrapped}.`);
+    }
+    const newStock: number = proposedStock;
 
     await addStockLedgerEntry({
       item_id: data.item_id,

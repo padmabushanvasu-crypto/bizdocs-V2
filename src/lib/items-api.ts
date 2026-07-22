@@ -971,7 +971,7 @@ export async function updateStockBucket(
   itemId: string,
   bucket: StockBucket,
   delta: number,
-  options?: { skipAlertUpdate?: boolean }
+  options?: { skipAlertUpdate?: boolean; allowNegative?: boolean }
 ): Promise<void> {
   const col = BUCKET_COLUMN_MAP[bucket];
 
@@ -985,7 +985,20 @@ export async function updateStockBucket(
 
   const item = itemData as any;
   const current: number = item[col] ?? 0;
-  const newValue = Math.max(0, current + delta);
+  const raw = current + delta;
+  // Free stock may go negative ONLY when a caller explicitly opts in (assembly
+  // over-issue, allowNegative). Any other free-stock decrement that would go
+  // sub-zero is a real insufficient-stock error — fail loud instead of silently
+  // flooring to 0. Non-free buckets keep the historical floor-at-0 clamp.
+  let newValue: number;
+  if (col === 'stock_free') {
+    if (raw < 0 && !options?.allowNegative) {
+      throw new Error(`Insufficient stock: free stock would go to ${raw} (have ${current}, change ${delta}).`);
+    }
+    newValue = options?.allowNegative ? raw : Math.max(0, raw);
+  } else {
+    newValue = Math.max(0, raw);
+  }
 
   const updatedBuckets = {
     stock_free: item.stock_free ?? 0,
