@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
 import { normalizeItemType, normalizeUnit, type SkipReason } from "@/lib/import-utils";
+import { logAudit } from "@/lib/audit-api";
 
 export interface ItemClassification {
   id: string;
@@ -267,6 +268,12 @@ export async function createItem(item: Partial<Item>) {
       console.error("[createItem] error:", error);
       throw new Error(error.message ?? JSON.stringify(error));
     }
+    // Audit item creation (item lifecycle was previously unlogged).
+    await logAudit("item", (data as Item).id, "created", {
+      item_code: itemCode,
+      description: item.description ?? null,
+      item_type: (item as any).item_type ?? null,
+    });
     return data as Item;
   } catch (err: any) {
     console.error("[createItem] caught:", err);
@@ -542,6 +549,9 @@ export async function importItemsBatch(
   let updatedCount = 0;
   let skipped = 0;
   let autoCodeIndex = 1;
+  // Item codes actually inserted this batch — kept in sync with newCount so the
+  // audit entry (below) reflects real creations across all insert branches.
+  const insertedCodes: string[] = [];
   const errors: string[] = [];
   const skipReasons: SkipReason[] = [];
   const toInsert: any[] = [];
@@ -638,6 +648,7 @@ export async function importItemsBatch(
         if (error) throw error;
         imported += chunk.length;
         newCount += chunk.length;
+        insertedCodes.push(...(chunk.map((c: any) => c.item_code).filter(Boolean) as string[]));
       }));
       if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
     };
@@ -655,15 +666,16 @@ export async function importItemsBatch(
       }
       if (validInsert.length > 0) {
         try {
-          imported = 0; newCount = 0;
+          imported = 0; newCount = 0; insertedCodes.length = 0;
           await bulkInsert(validInsert);
         } catch {
-          imported = 0; newCount = 0;
+          imported = 0; newCount = 0; insertedCodes.length = 0;
           for (const itemData of validInsert) {
             try {
               const { error } = await supabase.from("items").insert(itemData);
               if (error) throw error;
               imported++; newCount++;
+              if (itemData.item_code) insertedCodes.push(itemData.item_code as string);
             } catch (err: any) {
               skipped++;
               const isDup = err?.code === "23505" || String(err?.message ?? "").toLowerCase().includes("duplicate");
@@ -733,12 +745,27 @@ export async function importItemsBatch(
             skipReasons.push({ row: rowNum, value: item.item_code as string, reason });
             skipped++;
             if (imported > 0) { imported--; newCount--; }
+            // Drop the non-persisted code so the audit reflects real creations.
+            const ci = insertedCodes.indexOf(item.item_code as string);
+            if (ci !== -1) insertedCodes.splice(ci, 1);
           }
         }
       }
     } catch {
       // Verification query failed — don't block the import result
     }
+  }
+
+  // Audit item creation — one batch-level entry (not per row) with the count
+  // and the created item codes. document_id is a per-batch marker (imports have
+  // no single item id). Only when this batch actually created items.
+  if (insertedCodes.length > 0) {
+    await logAudit("item", crypto.randomUUID(), "imported", {
+      source: "importItemsBatch",
+      inserted_count: newCount,
+      updated_count: updatedCount,
+      item_codes: insertedCodes,
+    });
   }
 
   return { imported, skipped, errors, skipReasons, updated: updatedCount };
@@ -810,6 +837,8 @@ export async function importItemsPatchBatch(
   const errors: string[] = [];
   const skipReasons: SkipReason[] = [];
   const toInsert: any[] = [];
+  // Item codes actually inserted this batch, for the audit entry below.
+  const insertedCodes: string[] = [];
   const patchOps: Array<{ id: string; patch: Record<string, unknown> }> = [];
   const codeToRow = new Map<string, number>();
   const VALID_TYPES = ["raw_material", "component", "sub_assembly", "bought_out", "finished_good", "product", "consumable", "service"];
@@ -941,6 +970,7 @@ export async function importItemsPatchBatch(
       const { error } = await supabase.from("items").insert(itemData);
       if (error) throw error;
       imported++;
+      if (itemData.item_code) insertedCodes.push(itemData.item_code as string);
     } catch (err: any) {
       skipped++;
       const isDup = err?.code === "23505" || String(err?.message ?? "").toLowerCase().includes("duplicate");
@@ -966,6 +996,17 @@ export async function importItemsPatchBatch(
       skipReasons.push({ row: 0, value: id, reason });
     }
     if (totalOps > 0) onProgress?.(Math.round((imported / totalOps) * 100));
+  }
+
+  // Audit item creation — one batch-level entry with the count and created
+  // item codes (patches are updates, excluded). Per-batch marker document_id.
+  if (insertedCodes.length > 0) {
+    await logAudit("item", crypto.randomUUID(), "imported", {
+      source: "importItemsPatchBatch",
+      inserted_count: insertedCodes.length,
+      updated_count: updatedCount,
+      item_codes: insertedCodes,
+    });
   }
 
   return { imported, skipped, errors, skipReasons, updated: updatedCount };
