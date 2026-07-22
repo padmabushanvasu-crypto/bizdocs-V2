@@ -169,6 +169,46 @@ export async function fetchItems(filters: ItemFilters = {}) {
   return { data: all, count: all.length };
 }
 
+// Fetch EVERY items row for a company, paging past PostgREST's ~1000-row cap
+// (same pattern as fetchItems). Then verify the snapshot against an exact row
+// count and FAIL LOUD on any shortfall: a truncated snapshot silently breaks
+// import matching — existing items look "new" and get duplicated — so an
+// incomplete load must abort the import rather than proceed on partial data.
+// `columns` is the caller's own select list (kept identical per call site).
+async function fetchAllCompanyItems(companyId: string, columns: string): Promise<any[]> {
+  const PAGE = 1000;
+  const MAX_PAGES = 20;
+  const all: any[] = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const from = page * PAGE;
+    const { data, error } = await (supabase as any)
+      .from("items")
+      .select(columns)
+      .eq("company_id", companyId)
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as any[];
+    all.push(...rows);
+    if (rows.length < PAGE) break;
+  }
+
+  // Loud completeness guard: compare the paged snapshot to the authoritative
+  // row count. A mismatch means we did not load every item — abort so unseen
+  // existing items are never treated as new and duplicated.
+  const { count, error: countErr } = await supabase
+    .from("items")
+    .select("id", { count: "exact", head: true })
+    .eq("company_id", companyId);
+  if (countErr) throw countErr;
+  if (count != null && all.length !== count) {
+    throw new Error(
+      `item snapshot incomplete — import aborted (loaded ${all.length} of ${count} items). Please retry.`
+    );
+  }
+
+  return all;
+}
+
 export async function fetchItem(id: string) {
   const { data, error } = await supabase.from("items").select("*").eq("id", id).single();
   if (error) throw error;
@@ -477,8 +517,10 @@ export async function importItemsBatch(
   const companyId = await getCompanyId();
   if (!companyId) throw new Error("Import failed: company ID is missing. Please complete company setup.");
 
-  const { data: existingItems } = await supabase
-    .from("items").select("id, item_code, drawing_revision").eq("company_id", companyId);
+  // Paged + completeness-guarded snapshot (PostgREST caps unbounded selects at
+  // ~1000 rows; a truncated snapshot would make existing items look new and get
+  // duplicated). Throws "item snapshot incomplete — import aborted" on shortfall.
+  const existingItems = await fetchAllCompanyItems(companyId, "id, item_code, drawing_revision");
 
   const normalizeItemCode = (s: string) => s.toUpperCase().replace(/[\s.]/g, "");
 
@@ -715,22 +757,24 @@ export async function importItemsPatchBatch(
   const companyId = await getCompanyId();
   if (!companyId) throw new Error("Import failed: company ID is missing. Please complete company setup.");
 
-  // Fetch existing items with all patchable fields
-  const { data: existingItems } = await supabase
-    .from("items")
-    .select("id, item_code, drawing_revision, description, drawing_number, unit, item_type, min_stock, aimed_stock, standard_cost")
-    .eq("company_id", companyId) as { data: Array<{
-      id: string;
-      item_code: string | null;
-      drawing_revision: string | null;
-      description: string | null;
-      drawing_number: string | null;
-      unit: string | null;
-      item_type: string | null;
-      min_stock: number | null;
-      aimed_stock: number | null;
-      standard_cost: number | null;
-    }> | null };
+  // Fetch existing items with all patchable fields — paged + completeness-guarded
+  // (see fetchAllCompanyItems). Throws "item snapshot incomplete — import aborted"
+  // if the snapshot is short, so existing items are never duplicated as new.
+  const existingItems = await fetchAllCompanyItems(
+    companyId,
+    "id, item_code, drawing_revision, description, drawing_number, unit, item_type, min_stock, aimed_stock, standard_cost"
+  ) as Array<{
+    id: string;
+    item_code: string | null;
+    drawing_revision: string | null;
+    description: string | null;
+    drawing_number: string | null;
+    unit: string | null;
+    item_type: string | null;
+    min_stock: number | null;
+    aimed_stock: number | null;
+    standard_cost: number | null;
+  }>;
 
   const normalizeItemCode = (s: string) => s.toUpperCase().replace(/[\s.]/g, "");
 
