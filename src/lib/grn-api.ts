@@ -592,6 +592,13 @@ export async function softDeleteGRN(
       .select('item_id, accepted_qty, accepted_quantity, drawing_number, description')
       .eq('grn_id', id);
 
+    // Resolve every line to (itemId, qty) up front. accepted qty is what the
+    // receipt credited to free; reversing it must not silently push free
+    // negative and must not half-apply. So validate ALL lines against available
+    // free stock BEFORE writing any ledger row or moving any bucket — this also
+    // closes the pre-existing partial-write hole (ledger written, bucket not,
+    // GRN not marked deleted) that a mid-loop failure left behind.
+    const reversals: { itemId: string; qty: number; description: string | null }[] = [];
     for (const line of (lines ?? []) as any[]) {
       const qty: number = (line.accepted_qty ?? line.accepted_quantity ?? 0);
       if (qty <= 0) continue;
@@ -608,27 +615,66 @@ export async function softDeleteGRN(
       }
       if (!itemId) continue;
 
-      // Ledger-first per iteration (Scope 1).
-      await addStockLedgerEntry({
-        item_id: itemId,
-        item_code: null,
-        item_description: line.description ?? null,
-        transaction_date: today,
-        transaction_type: 'manual_adjustment',
-        qty_in: 0,
-        qty_out: qty,
-        balance_qty: 0,
-        unit_cost: 0,
-        total_value: 0,
-        reference_type: 'grn',
-        reference_id: id,
-        reference_number: null,
-        notes,
-        created_by: null,
-        from_state: STOCK_STATE.FREE,
-        to_state: null,
-      });
-      await updateStockBucket(itemId, 'free', -qty);
+      reversals.push({ itemId, qty, description: line.description ?? null });
+    }
+
+    if (reversals.length > 0) {
+      // Cumulative demand per item — two lines can reverse the same item, and
+      // each individually passing does not mean their sum fits in free stock.
+      const neededByItem = new Map<string, number>();
+      for (const r of reversals) neededByItem.set(r.itemId, (neededByItem.get(r.itemId) ?? 0) + r.qty);
+
+      // One read for the current free stock of every affected item.
+      const { data: itemRows, error: itemErr } = await (supabase as any)
+        .from('items')
+        .select('id, item_code, description, stock_free')
+        .in('id', [...neededByItem.keys()]);
+      if (itemErr) throw itemErr;
+      const stockById = new Map<string, { free: number; label: string }>();
+      for (const it of (itemRows ?? []) as any[]) {
+        stockById.set(it.id, {
+          free: Number(it.stock_free ?? 0),
+          label: it.item_code ?? it.description ?? it.id,
+        });
+      }
+
+      // Hard stop: returning-to-vendor stock that has already been consumed is a
+      // genuine data error, not an edge case to silently allow. Collect every
+      // offending item, then throw before any write (no partial reversal).
+      const violations: string[] = [];
+      for (const [itemId, needed] of neededByItem) {
+        const info = stockById.get(itemId);
+        const free = info?.free ?? 0;
+        if (free < needed) {
+          violations.push(`Cannot return ${needed} units of ${info?.label ?? itemId}: only ${free} available in free stock`);
+        }
+      }
+      if (violations.length > 0) throw new Error(violations.join('; '));
+
+      // All lines validated — now write ledger rows + bucket decrements.
+      for (const r of reversals) {
+        // Ledger-first per iteration (Scope 1).
+        await addStockLedgerEntry({
+          item_id: r.itemId,
+          item_code: null,
+          item_description: r.description,
+          transaction_date: today,
+          transaction_type: 'manual_adjustment',
+          qty_in: 0,
+          qty_out: r.qty,
+          balance_qty: 0,
+          unit_cost: 0,
+          total_value: 0,
+          reference_type: 'grn',
+          reference_id: id,
+          reference_number: null,
+          notes,
+          created_by: null,
+          from_state: STOCK_STATE.FREE,
+          to_state: null,
+        });
+        await updateStockBucket(r.itemId, 'free', -r.qty);
+      }
     }
   }
 
