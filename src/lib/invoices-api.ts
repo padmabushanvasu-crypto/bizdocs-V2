@@ -160,14 +160,7 @@ export async function issueInvoice(id: string): Promise<{ unresolvedWarnings: st
     const isFinishedGood = rec.item_type === "finished_good" || rec.item_type === "product";
     const bucket = isFinishedGood ? "in_fg_ready" : "free";
     const fromState = isFinishedGood ? STOCK_STATE.FG_READY : STOCK_STATE.FREE;
-    // Non-FG relieves current_stock (~stock_free) — fail loud on insufficient stock
-    // instead of flooring to 0. FG relieves stock_in_fg_ready elsewhere, so its
-    // current_stock (may be 0) is not the relief basis and must not throw here.
-    const proposedStock = (rec.current_stock ?? 0) - qty;
-    if (!isFinishedGood && proposedStock < 0) {
-      throw new Error(`Insufficient stock to invoice ${rec.item_code ?? rec.id}: have ${rec.current_stock ?? 0}, dispatching ${qty}.`);
-    }
-    const newStock = Math.max(0, proposedStock);
+    const newStock = Math.max(0, (rec.current_stock ?? 0) - qty);
     // Ledger-first per iteration (Scope 1). If a downstream line's ledger
     // insert fails, earlier lines stay committed and the operator sees the
     // error mid-loop; transactional all-or-nothing is Scope 2.
