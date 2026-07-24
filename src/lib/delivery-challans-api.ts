@@ -10,6 +10,52 @@ const RETURNABLE_DC_TYPES = new Set([
   'job_work_143', 'job_work_out', 'job_work', 'sample', 'loan_borrow', 'returnable',
 ]);
 
+/**
+ * Resolve the items-master row for a document line, LOUDLY.
+ *
+ * items.item_code / drawing_revision are NOT unique in this DB (duplicate
+ * imports + deliberate category-label/shared-drawing rows), so a text lookup can
+ * match 0, 1, or many rows. Rules:
+ *   - Prefer the id the line already carries; only fall back to a text lookup
+ *     when there is no id upstream.
+ *   - In the fallback, fetch up to 2 and treat "2 rows" as an explicit ambiguity
+ *     error. Never `.maybeSingle()` (it collapses the multi-row case to a
+ *     swallowed error → null) and never silently skip.
+ *   - Any error / not-found / ambiguity throws, naming the code — so no stock
+ *     movement is ever silently dropped.
+ */
+export async function resolveLineItemLoud(
+  companyId: string,
+  ref: { itemId?: string | null; itemCode?: string | null },
+  columns: string = "id, item_code, description, current_stock"
+): Promise<any> {
+  if (ref.itemId) {
+    const { data, error } = await supabase
+      .from("items").select(columns).eq("id", ref.itemId).limit(2);
+    if (error) throw error;
+    const rows = (data ?? []) as any[];
+    if (rows.length === 0) {
+      throw new Error(`Item id ${ref.itemId} not found — cannot post stock movement.`);
+    }
+    return rows[0];
+  }
+  const code = ref.itemCode?.trim();
+  if (!code) {
+    throw new Error("Line has neither an item id nor an item code — cannot post stock movement.");
+  }
+  const { data, error } = await supabase
+    .from("items").select(columns).eq("company_id", companyId).eq("item_code", code).limit(2);
+  if (error) throw error;
+  const rows = (data ?? []) as any[];
+  if (rows.length === 0) {
+    throw new Error(`No item found for code "${code}" — cannot post stock movement.`);
+  }
+  if (rows.length > 1) {
+    throw new Error(`Ambiguous item code "${code}" matches multiple items — resolve the duplicate before proceeding. Stock movement aborted.`);
+  }
+  return rows[0];
+}
+
 export interface DCLineItem {
   id?: string;
   serial_number: number;
@@ -576,18 +622,16 @@ export async function issueDeliveryChallan(id: string) {
 
   for (const line of lineItems) {
     const qty: number = line.qty_nos ?? line.quantity ?? 0;
-    // Only process lines with a known item_code
-    if (qty <= 0 || !line.item_code) continue;
+    if (qty <= 0) continue;
+    // Genuinely non-stock line (free text / no identity) — nothing to relieve.
+    if (!line.item_id && !line.item_code) continue;
 
-    const { data: itemRecord } = await supabase
-      .from("items")
-      .select("id, item_code, description, current_stock")
-      .eq("item_code", line.item_code)
-      .eq("company_id", companyId)
-      .maybeSingle();
-
-    if (!itemRecord) continue;
-    const rec = itemRecord as any;
+    // Prefer the id the DC line already carries; text lookup is a loud fallback
+    // (item_code is not unique — a duplicate aborts instead of silently skipping).
+    const rec = await resolveLineItemLoud(companyId, {
+      itemId: (line as any).item_id,
+      itemCode: line.item_code,
+    });
     const newStock = Math.max(0, (rec.current_stock ?? 0) - qty);
     const isReturnable = RETURNABLE_DC_TYPES.has(dc.dc_type);
     // Ledger-first per iteration (Scope 1).
@@ -807,7 +851,7 @@ export async function recordDCReturn(dcId: string, returnDate: string, receivedB
     if (item.returned_nos > 0 || item.returned_kg > 0 || item.returned_sft > 0) {
       const { data: lineItem } = await supabase
         .from("dc_line_items")
-        .select("returned_qty_nos, returned_qty_kg, returned_qty_sft, returned_qty_rejected_nos, returned_qty_rejected_kg, returned_qty_rejected_sft, item_code, description")
+        .select("returned_qty_nos, returned_qty_kg, returned_qty_sft, returned_qty_rejected_nos, returned_qty_rejected_kg, returned_qty_rejected_sft, item_id, item_code, description")
         .eq("id", item.dc_line_item_id)
         .single();
       if (lineItem) {
@@ -825,16 +869,14 @@ export async function recordDCReturn(dcId: string, returnDate: string, receivedB
         } as any).eq("id", item.dc_line_item_id);
 
         // Stock return: add returned NOS qty back to item stock
-        if (item.returned_nos > 0 && li.item_code) {
-          const { data: itemRecord } = await supabase
-            .from("items")
-            .select("id, item_code, description, current_stock")
-            .eq("item_code", li.item_code)
-            .eq("company_id", companyId)
-            .maybeSingle();
-
-          if (itemRecord) {
-            const rec = itemRecord as any;
+        if (item.returned_nos > 0 && (li.item_id || li.item_code)) {
+          // Prefer the id the DC line carries; loud text fallback (item_code is
+          // not unique — a duplicate aborts instead of silently skipping).
+          const rec = await resolveLineItemLoud(companyId, {
+            itemId: li.item_id,
+            itemCode: li.item_code,
+          });
+          {
             const newStock = (rec.current_stock ?? 0) + item.returned_nos;
             const isReturnable = RETURNABLE_DC_TYPES.has(dcType);
             // Ledger-first per iteration.

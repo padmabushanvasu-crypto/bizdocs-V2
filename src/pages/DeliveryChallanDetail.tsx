@@ -23,6 +23,7 @@ import {
   rejectDC,
   markDCRejectionNoted,
   issueDeliveryChallan,
+  resolveLineItemLoud,
   type EnhancedReturnData,
   type DcDeleteStockAction,
   type DcCancelStockAction,
@@ -216,10 +217,22 @@ export default function DeliveryChallanDetail() {
     setReturnBomStages([]);
     setReturnProcessingLog(null);
 
+    // Display hint only (which BOM stages to show). Prefer the line's id; the
+    // code fallback fetches up to 2 and, since item_code is not unique, treats
+    // >1 as ambiguous — logs loudly and shows no stages rather than .maybeSingle()
+    // silently collapsing multiple matches to null. Non-blocking: never throws.
     let itemIdHint: string | null = lineItem.item_id ?? null;
     if (!itemIdHint && lineItem.item_code) {
-      const { data: itemRow } = await (supabase as any).from('items').select('id').eq('item_code', lineItem.item_code).maybeSingle();
-      itemIdHint = itemRow?.id ?? null;
+      const { data: itemRows, error } = await (supabase as any)
+        .from('items').select('id').eq('item_code', lineItem.item_code).limit(2);
+      const rows = (itemRows ?? []) as any[];
+      if (error) {
+        console.error('[DC return] item lookup failed:', error);
+      } else if (rows.length === 1) {
+        itemIdHint = rows[0].id;
+      } else if (rows.length > 1) {
+        console.warn(`[DC return] Ambiguous item_code "${lineItem.item_code}" (${rows.length}+ matches) — BOM stages hidden; resolve the duplicate.`);
+      }
     }
     if (itemIdHint) {
       const [stages, log] = await Promise.all([
@@ -1463,10 +1476,15 @@ export default function DeliveryChallanDetail() {
                 }
                 setRetSaving(true);
                 try {
-                  let itemId: string | null = null;
-                  if (returnLineItem.item_code) {
-                    const { data: itemRow } = await (supabase as any).from('items').select('id').eq('item_code', returnLineItem.item_code).maybeSingle();
-                    itemId = itemRow?.id ?? null;
+                  // Prefer the id the line already carries; only fall back to a
+                  // text lookup when there's no id, and there fail loud on an
+                  // ambiguous/duplicate code (surfaced via the catch → toast)
+                  // instead of .maybeSingle() silently returning null.
+                  let itemId: string | null = returnLineItem.item_id ?? null;
+                  if (!itemId && returnLineItem.item_code) {
+                    const companyId = await getCompanyId();
+                    const rec = await resolveLineItemLoud(companyId!, { itemCode: returnLineItem.item_code }, "id");
+                    itemId = rec.id;
                   }
 
                   const result = await recordEnhancedReturn(returnLineItem.id, {
