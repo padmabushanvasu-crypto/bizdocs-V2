@@ -7,6 +7,29 @@ import { logAudit } from "@/lib/audit-api";
 import { STOCK_STATE } from "@/lib/stock-states";
 import { createNotification } from "@/lib/notifications-api";
 
+/**
+ * Look up an items row by drawing_revision, honestly. drawing_revision is NOT
+ * unique in this DB (raw stock sharing a machined part's drawing, category-label
+ * rows like 'STICKER'), so a text lookup can match 0, 1, or many. Fetch up to 2
+ * and report `ambiguous` for >1 — never `.maybeSingle()` (it collapses the
+ * multi-row case into a swallowed error → null → silent skip). The caller
+ * decides whether ambiguity/error is fatal (abort) or non-fatal (log + skip).
+ */
+async function findItemByDrawingRevision(
+  companyId: string,
+  drawingRevision: string,
+  columns: string
+): Promise<{ row: any | null; ambiguous: boolean; error: any }> {
+  const { data, error } = await (supabase as any)
+    .from("items")
+    .select(columns)
+    .eq("drawing_revision", drawingRevision)
+    .eq("company_id", companyId)
+    .limit(2);
+  const rows = (data ?? []) as any[];
+  return { row: rows[0] ?? null, ambiguous: rows.length > 1, error };
+}
+
 export type GRNStage = 'draft' | 'quantitative_pending' | 'quantitative_done' | 'quality_pending' | 'quality_done' | 'closed' | 'awaiting_store';
 export type QualityVerdict = 'fully_accepted' | 'conditionally_accepted' | 'partially_returned' | 'returned';
 export type NonConformanceType = 'dimensional' | 'surface_finish' | 'material_grade' | 'functional' | 'packaging' | 'documentation' | 'other';
@@ -434,15 +457,37 @@ export async function recordGRNAndUpdatePO(grnData: CreateGRNData) {
   // GRN+PO atomicity fix). Look up item by drawing_revision (= GRN line drawing_number).
   for (const item of grnData.lineItems) {
     if (item.accepted_quantity > 0 && item.drawing_number) {
-      const { data: itemRecord } = await supabase
-        .from("items")
-        .select("id, item_code, description, current_stock")
-        .eq("drawing_revision", item.drawing_number)
-        .eq("company_id", companyId)
-        .maybeSingle();
+      // Prefer the id the GRN line carries; drawing_revision is a non-unique
+      // fallback. This legacy credit runs AFTER the GRN is already saved
+      // (best-effort), so an ambiguous/failed lookup is logged loudly and the
+      // one credit skipped — never silently, and never blocking the save.
+      // Store Confirm posts the authoritative stock_free credit regardless.
+      let rec: any = null;
+      if (item.item_id) {
+        const { data, error } = await supabase
+          .from("items")
+          .select("id, item_code, description, current_stock")
+          .eq("id", item.item_id)
+          .limit(2);
+        if (error) {
+          console.error(`[grn] legacy credit: item_id ${item.item_id} lookup failed; skipped:`, error);
+          continue;
+        }
+        rec = (data ?? [])[0] ?? null;
+      } else {
+        const found = await findItemByDrawingRevision(companyId, item.drawing_number, "id, item_code, description, current_stock");
+        if (found.error) {
+          console.error(`[grn] legacy credit: drawing '${item.drawing_number}' lookup failed; skipped:`, found.error);
+          continue;
+        }
+        if (found.ambiguous) {
+          console.error(`[grn] legacy credit: AMBIGUOUS drawing_revision '${item.drawing_number}' matches multiple items — credit skipped, resolve the duplicate. Store Confirm posts the authoritative credit.`);
+          continue;
+        }
+        rec = found.row;
+      }
 
-      if (itemRecord) {
-        const rec = itemRecord as any;
+      if (rec) {
         // Ledger the receipt so this credit is visible to the stock engine.
         // qty math unchanged; INCOMING -> FREE. Non-fatal: never block the save.
         try {
@@ -605,13 +650,15 @@ export async function softDeleteGRN(
 
       let itemId: string | null = line.item_id ?? null;
       if (!itemId && line.drawing_number && companyId) {
-        const { data: rec } = await supabase
-          .from('items')
-          .select('id')
-          .eq('drawing_revision', line.drawing_number)
-          .eq('company_id', companyId as any)
-          .maybeSingle();
-        itemId = (rec as any)?.id ?? null;
+        // drawing_revision is not unique — fail loud on error/ambiguity (before
+        // any write, since softDeleteGRN validates all lines first) rather than
+        // .maybeSingle() silently resolving a duplicate to null.
+        const found = await findItemByDrawingRevision(companyId, line.drawing_number, "id");
+        if (found.error) throw found.error;
+        if (found.ambiguous) {
+          throw new Error(`Ambiguous drawing '${line.drawing_number}' matches multiple items — cannot reverse GRN safely. Resolve the duplicate first.`);
+        }
+        itemId = found.row?.id ?? null;
       }
       if (!itemId) continue;
 
@@ -2224,16 +2271,18 @@ async function creditPartialStock(
   let itemCode: string | null = opts.itemCode ?? null;
   let itemDesc: string | null = opts.itemDescription ?? null;
   if (!resolvedItemId && opts.drawingNumber) {
-    const { data: itemRec } = await (supabase as any)
-      .from('items')
-      .select('id, item_code, description')
-      .eq('drawing_revision', opts.drawingNumber)
-      .eq('company_id', opts.companyId)
-      .maybeSingle();
-    if (itemRec) {
-      resolvedItemId = (itemRec as any).id;
-      itemCode = (itemRec as any).item_code;
-      itemDesc = (itemRec as any).description;
+    // drawing_revision is not unique — fail loud on error/ambiguity instead of
+    // .maybeSingle() collapsing a duplicate to null (which would fall through to
+    // the misleading "Store Confirm bypass" throw below).
+    const found = await findItemByDrawingRevision(opts.companyId, opts.drawingNumber, "id, item_code, description");
+    if (found.error) throw found.error;
+    if (found.ambiguous) {
+      throw new Error(`creditPartialStock: drawing '${opts.drawingNumber}' matches multiple items — ambiguous, cannot post credit. Resolve the duplicate first.`);
+    }
+    if (found.row) {
+      resolvedItemId = found.row.id;
+      itemCode = found.row.item_code;
+      itemDesc = found.row.description;
     }
   }
   if (!resolvedItemId) {
