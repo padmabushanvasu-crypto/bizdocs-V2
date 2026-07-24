@@ -807,6 +807,13 @@ function GRNFormInner({ defaultGrnType }: Props) {
       if (assignedNumber && assignedNumber !== grnNumber) {
         setGrnNumber(assignedNumber);
       }
+
+      // Non-blocking: the GRN saved, but one or more legacy store credits could
+      // not be auto-posted (ambiguous/unresolved item). Surface each so the
+      // storekeeper knows to expect the authoritative credit at Store Confirm.
+      for (const w of ((result as any)?.creditWarnings ?? []) as string[]) {
+        toast({ title: "Store credit not auto-posted", description: w });
+      }
       queryClient.invalidateQueries({ queryKey: ["grns"] });
       queryClient.invalidateQueries({ queryKey: ["grn-stats"] });
       queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });

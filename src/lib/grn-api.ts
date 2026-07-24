@@ -455,6 +455,15 @@ export async function recordGRNAndUpdatePO(grnData: CreateGRNData) {
   // Legacy single-stage stock credit — kept in JS, best-effort/non-fatal, exactly
   // as before. Deliberately NOT inside the transaction (separate concern from the
   // GRN+PO atomicity fix). Look up item by drawing_revision (= GRN line drawing_number).
+  //
+  // When a credit is skipped because the item couldn't be resolved (ambiguous
+  // duplicate / lookup error / stale id), collect a warning so the UI can tell
+  // the storekeeper — the skip is loud, not silent. The GRN itself still saved.
+  const creditWarnings: string[] = [];
+  const creditWarn = (label: string, reason: string) =>
+    creditWarnings.push(
+      `Store credit for item ${label} could not be posted automatically (${reason}). Store Confirm will post the authoritative credit.`
+    );
   for (const item of grnData.lineItems) {
     if (item.accepted_quantity > 0 && item.drawing_number) {
       // Prefer the id the GRN line carries; drawing_revision is a non-unique
@@ -462,6 +471,7 @@ export async function recordGRNAndUpdatePO(grnData: CreateGRNData) {
       // (best-effort), so an ambiguous/failed lookup is logged loudly and the
       // one credit skipped — never silently, and never blocking the save.
       // Store Confirm posts the authoritative stock_free credit regardless.
+      const label = item.drawing_number ?? item.description ?? item.item_id ?? "unknown";
       let rec: any = null;
       if (item.item_id) {
         const { data, error } = await supabase
@@ -471,17 +481,25 @@ export async function recordGRNAndUpdatePO(grnData: CreateGRNData) {
           .limit(2);
         if (error) {
           console.error(`[grn] legacy credit: item_id ${item.item_id} lookup failed; skipped:`, error);
+          creditWarn(label, "lookup failed");
           continue;
         }
         rec = (data ?? [])[0] ?? null;
+        if (!rec) {
+          console.error(`[grn] legacy credit: item_id ${item.item_id} not found; skipped`);
+          creditWarn(label, "item not found");
+          continue;
+        }
       } else {
         const found = await findItemByDrawingRevision(companyId, item.drawing_number, "id, item_code, description, current_stock");
         if (found.error) {
           console.error(`[grn] legacy credit: drawing '${item.drawing_number}' lookup failed; skipped:`, found.error);
+          creditWarn(label, "lookup failed");
           continue;
         }
         if (found.ambiguous) {
           console.error(`[grn] legacy credit: AMBIGUOUS drawing_revision '${item.drawing_number}' matches multiple items — credit skipped, resolve the duplicate. Store Confirm posts the authoritative credit.`);
+          creditWarn(label, "ambiguous item");
           continue;
         }
         rec = found.row;
@@ -520,7 +538,9 @@ export async function recordGRNAndUpdatePO(grnData: CreateGRNData) {
     }
   }
 
-  return grn;
+  // Attach any skipped-credit warnings to the returned GRN (non-breaking: all
+  // GRN fields are preserved). The UI surfaces them as non-blocking toasts.
+  return { ...grn, creditWarnings };
 }
 
 // Recomputes a GRN's own status field (received_qty set at Stage 1 vs ordered_qty
