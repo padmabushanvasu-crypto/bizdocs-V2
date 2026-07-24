@@ -611,29 +611,41 @@ export async function issueDeliveryChallan(id: string) {
     );
   }
 
-  const { error } = await supabase.from("delivery_challans").update({ status: "issued", issued_at: new Date().toISOString() } as any).eq("id", id);
-  if (error) throw error;
-
-  // Stock deduction: items sent out on this DC
   const companyId = await getCompanyId();
   const today = new Date().toISOString().split("T")[0];
   const dc = await fetchDeliveryChallan(id);
   const lineItems = dc.line_items ?? [];
+  const isReturnable = RETURNABLE_DC_TYPES.has(dc.dc_type);
 
+  // Pass 1 — resolve every stock line LOUDLY before any write. item_code is not
+  // unique, so an ambiguous line aborts here, before the status flip or any
+  // stock move — never a half-issued DC. (validate-all-then-write, like
+  // softDeleteGRN.)
+  const movements: Array<{ rec: any; qty: number }> = [];
   for (const line of lineItems) {
     const qty: number = line.qty_nos ?? line.quantity ?? 0;
     if (qty <= 0) continue;
     // Genuinely non-stock line (free text / no identity) — nothing to relieve.
     if (!line.item_id && !line.item_code) continue;
-
-    // Prefer the id the DC line already carries; text lookup is a loud fallback
-    // (item_code is not unique — a duplicate aborts instead of silently skipping).
+    // Prefer the id the DC line already carries; text lookup is a loud fallback.
     const rec = await resolveLineItemLoud(companyId, {
       itemId: (line as any).item_id,
       itemCode: line.item_code,
     });
-    const newStock = Math.max(0, (rec.current_stock ?? 0) - qty);
-    const isReturnable = RETURNABLE_DC_TYPES.has(dc.dc_type);
+    movements.push({ rec, qty });
+  }
+
+  // Pass 2 — all lines resolved; flip status, then post the stock movements.
+  const { error } = await supabase.from("delivery_challans").update({ status: "issued", issued_at: new Date().toISOString() } as any).eq("id", id);
+  if (error) throw error;
+
+  // Running current_stock per item so multiple lines relieving the same item
+  // accumulate correctly (pass 2 no longer re-reads fresh per line).
+  const runningStock = new Map<string, number>();
+  for (const { rec, qty } of movements) {
+    const base = runningStock.get(rec.id) ?? (rec.current_stock ?? 0);
+    const newStock = Math.max(0, base - qty);
+    runningStock.set(rec.id, newStock);
     // Ledger-first per iteration (Scope 1).
     await addStockLedgerEntry({
       item_id: rec.id,
@@ -828,6 +840,32 @@ export async function fetchDCReturns(dcId: string): Promise<DCReturn[]> {
 
 export async function recordDCReturn(dcId: string, returnDate: string, receivedBy: string, notes: string, items: DCReturnItem[]) {
   const companyId = await getCompanyId();
+
+  // Pass 1 — validate ALL stock lines before any write. Fetch each affected
+  // dc_line_item and resolve its stock item LOUDLY (item_code is not unique). An
+  // ambiguous item aborts here, before we create the return record, touch any
+  // rollup, or move stock — never a half-recorded return. (validate-all-then-
+  // write, like softDeleteGRN.)
+  const plans: Array<{ item: DCReturnItem; li: any; rec: any | null }> = [];
+  for (const item of items) {
+    if (!(item.returned_nos > 0 || item.returned_kg > 0 || item.returned_sft > 0)) continue;
+    const { data: lineItem } = await supabase
+      .from("dc_line_items")
+      .select("returned_qty_nos, returned_qty_kg, returned_qty_sft, returned_qty_rejected_nos, returned_qty_rejected_kg, returned_qty_rejected_sft, item_id, item_code, description")
+      .eq("id", item.dc_line_item_id)
+      .single();
+    if (!lineItem) continue;
+    const li = lineItem as any;
+    let rec: any = null;
+    if (item.returned_nos > 0 && (li.item_id || li.item_code)) {
+      // Prefer the id the DC line carries; loud text fallback (item_code is not
+      // unique — a duplicate aborts instead of silently skipping).
+      rec = await resolveLineItemLoud(companyId, { itemId: li.item_id, itemCode: li.item_code });
+    }
+    plans.push({ item, li, rec });
+  }
+
+  // Pass 2 — all lines validated; now write. Return header + rows first.
   const { data: newReturn, error } = await supabase.from("dc_returns").insert({ company_id: companyId, dc_id: dcId, return_date: returnDate, received_by: receivedBy, notes } as any).select().single();
   if (error) throw error;
 
@@ -846,66 +884,53 @@ export async function recordDCReturn(dcId: string, returnDate: string, receivedB
   const { data: dcHeader } = await supabase.from("delivery_challans").select("dc_number, dc_type").eq("id", dcId).single();
   const dcNumber = (dcHeader as any)?.dc_number ?? "";
   const dcType: string = (dcHeader as any)?.dc_type ?? "";
+  const isReturnable = RETURNABLE_DC_TYPES.has(dcType);
+  // Running current_stock per item so multiple lines crediting the same item
+  // accumulate correctly (pass 2 no longer re-reads fresh per line).
+  const runningStock = new Map<string, number>();
 
-  for (const item of items) {
-    if (item.returned_nos > 0 || item.returned_kg > 0 || item.returned_sft > 0) {
-      const { data: lineItem } = await supabase
-        .from("dc_line_items")
-        .select("returned_qty_nos, returned_qty_kg, returned_qty_sft, returned_qty_rejected_nos, returned_qty_rejected_kg, returned_qty_rejected_sft, item_id, item_code, description")
-        .eq("id", item.dc_line_item_id)
-        .single();
-      if (lineItem) {
-        const li = lineItem as any;
-        const rejNos = item.rejected_nos ?? 0;
-        const rejKg  = item.rejected_kg  ?? 0;
-        const rejSft = item.rejected_sft ?? 0;
-        await supabase.from("dc_line_items").update({
-          returned_qty_nos: (li.returned_qty_nos || 0) + item.returned_nos,
-          returned_qty_kg: (li.returned_qty_kg || 0) + item.returned_kg,
-          returned_qty_sft: (li.returned_qty_sft || 0) + item.returned_sft,
-          returned_qty_rejected_nos: (li.returned_qty_rejected_nos || 0) + rejNos,
-          returned_qty_rejected_kg:  (li.returned_qty_rejected_kg  || 0) + rejKg,
-          returned_qty_rejected_sft: (li.returned_qty_rejected_sft || 0) + rejSft,
-        } as any).eq("id", item.dc_line_item_id);
+  for (const { item, li, rec } of plans) {
+    const rejNos = item.rejected_nos ?? 0;
+    const rejKg  = item.rejected_kg  ?? 0;
+    const rejSft = item.rejected_sft ?? 0;
+    await supabase.from("dc_line_items").update({
+      returned_qty_nos: (li.returned_qty_nos || 0) + item.returned_nos,
+      returned_qty_kg: (li.returned_qty_kg || 0) + item.returned_kg,
+      returned_qty_sft: (li.returned_qty_sft || 0) + item.returned_sft,
+      returned_qty_rejected_nos: (li.returned_qty_rejected_nos || 0) + rejNos,
+      returned_qty_rejected_kg:  (li.returned_qty_rejected_kg  || 0) + rejKg,
+      returned_qty_rejected_sft: (li.returned_qty_rejected_sft || 0) + rejSft,
+    } as any).eq("id", item.dc_line_item_id);
 
-        // Stock return: add returned NOS qty back to item stock
-        if (item.returned_nos > 0 && (li.item_id || li.item_code)) {
-          // Prefer the id the DC line carries; loud text fallback (item_code is
-          // not unique — a duplicate aborts instead of silently skipping).
-          const rec = await resolveLineItemLoud(companyId, {
-            itemId: li.item_id,
-            itemCode: li.item_code,
-          });
-          {
-            const newStock = (rec.current_stock ?? 0) + item.returned_nos;
-            const isReturnable = RETURNABLE_DC_TYPES.has(dcType);
-            // Ledger-first per iteration.
-            await addStockLedgerEntry({
-              item_id: rec.id,
-              item_code: rec.item_code,
-              item_description: rec.description,
-              transaction_date: returnDate,
-              transaction_type: "dc_return",
-              qty_in: item.returned_nos,
-              qty_out: 0,
-              balance_qty: newStock,
-              unit_cost: 0,
-              total_value: 0,
-              reference_type: "delivery_challan",
-              reference_id: dcId,
-              reference_number: dcNumber,
-              notes: `DC return: ${dcNumber}`,
-              created_by: null,
-              from_state: STOCK_STATE.IN_PROCESS,
-              to_state: STOCK_STATE.FREE,
-            });
-            await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
-            if (isReturnable) {
-              await updateStockBucket(rec.id, 'in_process', -item.returned_nos);
-              await updateStockBucket(rec.id, 'free', +item.returned_nos);
-            }
-          }
-        }
+    // Stock return: add returned NOS qty back to item stock
+    if (rec && item.returned_nos > 0) {
+      const base = runningStock.get(rec.id) ?? (rec.current_stock ?? 0);
+      const newStock = base + item.returned_nos;
+      runningStock.set(rec.id, newStock);
+      // Ledger-first per iteration.
+      await addStockLedgerEntry({
+        item_id: rec.id,
+        item_code: rec.item_code,
+        item_description: rec.description,
+        transaction_date: returnDate,
+        transaction_type: "dc_return",
+        qty_in: item.returned_nos,
+        qty_out: 0,
+        balance_qty: newStock,
+        unit_cost: 0,
+        total_value: 0,
+        reference_type: "delivery_challan",
+        reference_id: dcId,
+        reference_number: dcNumber,
+        notes: `DC return: ${dcNumber}`,
+        created_by: null,
+        from_state: STOCK_STATE.IN_PROCESS,
+        to_state: STOCK_STATE.FREE,
+      });
+      await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
+      if (isReturnable) {
+        await updateStockBucket(rec.id, 'in_process', -item.returned_nos);
+        await updateStockBucket(rec.id, 'free', +item.returned_nos);
       }
     }
   }
