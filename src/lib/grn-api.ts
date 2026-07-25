@@ -2036,9 +2036,13 @@ export async function fetchGRNWithStages(id: string): Promise<GRN> {
 export async function fetchPendingQCGRNs(): Promise<GRN[]> {
   const companyId = await getCompanyId();
   if (!companyId) return [];
+  // Embed the QC line items (with item_id) so consumers can attribute pending-QC
+  // quantities to a specific item. A bare select('*') returns no line_items, so
+  // the Stock Register's awaiting-QC map was silently empty; the item_id lets it
+  // key by item rather than the non-unique drawing_number.
   const { data, error } = await (supabase as any)
     .from('grns')
-    .select('*')
+    .select('*, line_items:grn_line_items(item_id, drawing_number, received_qty, receiving_now)')
     .eq('grn_stage', 'quality_pending')
     .neq('status', 'deleted')
     .neq('status', 'cancelled')

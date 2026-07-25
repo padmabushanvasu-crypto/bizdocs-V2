@@ -275,14 +275,24 @@ function StockRegisterInner() {
     staleTime: 60000,
   });
 
+  // Key by item_id, NOT drawing_number: drawing_number is not unique (31 items
+  // share 'STICKER', raw stock shares numbers with machined parts), so keying by
+  // it merged different items' pending-QC quantities into one bucket. A line with
+  // no item_id can't be attributed without guessing by that non-unique field, so
+  // surface it (console.warn) and exclude it rather than mis-attribute.
   const pendingQcMap = useMemo(() => {
     const map = new Map<string, { qty: number; date: string; vendor: string }>();
     for (const grn of pendingQCGrns) {
       for (const item of (grn as any).line_items ?? []) {
-        if (!item.drawing_number) continue;
-        const key = item.drawing_number;
-        const existing = map.get(key);
+        if (!item.item_id) {
+          console.warn(
+            `[StockRegister] pending-QC line without item_id (drawing '${item.drawing_number ?? "?"}', GRN ${(grn as any).grn_number ?? grn.id}) — excluded from awaiting-QC totals.`
+          );
+          continue;
+        }
+        const key = item.item_id as string;
         const qty = (item.received_qty ?? item.receiving_now ?? 0);
+        const existing = map.get(key);
         if (existing) {
           map.set(key, { qty: existing.qty + qty, date: existing.date, vendor: existing.vendor });
         } else {
@@ -1106,7 +1116,7 @@ function StockRegisterInner() {
                 // Pending QC lives here (drill-down) rather than the grid — it's
                 // transient workflow state, relevant only to items with an open
                 // in-QC GRN, not permanent item data.
-                const pqc = pendingQcMap.get(selectedItem.item_code) ?? pendingQcMap.get((selectedItem as any).drawing_revision ?? '');
+                const pqc = pendingQcMap.get(selectedItem.id);
                 if (!pqc || pqc.qty === 0) return null;
                 return (
                   <p className="text-xs text-amber-600 mt-1">
