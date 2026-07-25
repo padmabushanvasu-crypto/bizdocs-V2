@@ -2,7 +2,7 @@
 
 Status, backlog, and blockers. The agent reads this only when a task needs context. Operating rules live in `CLAUDE.md`.
 
-_Last updated: 03 Jul 2026_
+_Last updated: 24 Jul 2026_
 
 ---
 
@@ -79,6 +79,7 @@ _Last updated: 03 Jul 2026_
 - Sidebar reorganization.
 - Weldment mapping — 60–70% buildable; build math blocked on client qty-per sheet.
 - **Store stock reconciliation** — verify item buckets = ledger sums; every accepted GRN line has a ledger row; no phantom/double posts. (Discovery-first; scope to sub-assemblies or GRN-active items initially.)
+- **[Tier-2] Move DC issue/return stock posting server-side into a guarded RPC** — same shape as `rpc_confirm_mir`: collapse the client N×round-trip loop into one atomic RPC with an advisory lock + idempotency, and move the stock arithmetic into Postgres (prefer computing there). Removes the residual from the loud-failure/atomicity work (commits `772ca60`, `6cd1879`, `bc6be4c`): pass-2 writes in `issueDeliveryChallan`/`recordDCReturn` are still sequential with no cross-call transaction, so a rare mid-write infra error can partial-commit. Do alongside the PO guard trigger, in a calmer session. Not urgent — the ambiguity/validation abort path is already fully pre-write.
 
 ## ⚪ Small follow-ups (don't lose)
 
