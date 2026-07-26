@@ -1,6 +1,11 @@
 import { supabase } from "@/integrations/supabase/client";
 import { fetchFreeStockMap } from "@/lib/stock-free-api";
 import { createNotification } from "@/lib/notifications-api";
+// Shared, session-cached company-id resolver (30-min module cache, warmed on
+// sign-in and cleared on auth change via useAuth). The storekeeper Assembly
+// Issue path uses this instead of the private uncached getCompanyId() below,
+// which re-runs getUser()+profiles on every call.
+import { getCompanyId as getCompanyIdShared } from "@/lib/auth-helpers";
 
 async function getCompanyId(): Promise<string | null> {
   const { data: { user } } = await supabase.auth.getUser();
@@ -817,7 +822,7 @@ export async function fetchMaterialIssueRequests(filters: {
   awo_id?: string;
   month?: string;
 } = {}): Promise<MaterialIssueRequest[]> {
-  const companyId = await getCompanyId();
+  const companyId = await getCompanyIdShared();
   if (!companyId) return [];
 
   let query = (supabase as any)
@@ -869,7 +874,7 @@ export async function fetchMaterialIssueRequests(filters: {
 // ── fetchMaterialIssueRequest ─────────────────────────────────────────────────
 
 export async function fetchMaterialIssueRequest(id: string): Promise<MaterialIssueRequest | null> {
-  const companyId = await getCompanyId();
+  const companyId = await getCompanyIdShared();
   if (!companyId) return null;
 
   const { data: mirData, error: mirError } = await (supabase as any)
@@ -962,10 +967,14 @@ export async function confirmMaterialIssue(
   lineIssues: Array<{ mir_line_item_id: string; issued_qty: number; shortage_notes?: string }>,
   _issued_by?: string, // deprecated: the RPC records the issuer from p_issued_by (auth user id)
 ): Promise<{ status: 'issued' | 'partially_issued' }> {
-  const companyId = await getCompanyId();
+  const companyId = await getCompanyIdShared();
   if (!companyId) throw new Error("Not authenticated");
 
-  const { data: { user } } = await supabase.auth.getUser();
+  // Local session read (no network round trip). user.id here only stamps
+  // p_issued_by (audit); the RPC + RLS enforce auth server-side against the JWT,
+  // so getSession() is sufficient and getUser()'s network validation is redundant.
+  const { data: { session } } = await supabase.auth.getSession();
+  const user = session?.user;
   if (!user) throw new Error("Not authenticated");
 
   if (!lineIssues.length) return { status: 'issued' };
