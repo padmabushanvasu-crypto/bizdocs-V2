@@ -668,7 +668,7 @@ function StockRegisterInner() {
                   tip="Completed finished goods awaiting dispatch"
                 />
                 <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                  Total
+                  Closing Stock
                 </th>
                 {/* ── Cost block — qty × standard_cost per Phase-13 bucket ── */}
                 <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap border-l border-border">
@@ -733,11 +733,11 @@ function StockRegisterInner() {
               ) : (
                 filtered.map((row) => {
                   const inProd = row.stock_in_subassembly_wip + row.stock_in_fg_wip + row.awo_qty;
-                  const total =
-                    row.stock_free +
-                    row.stock_in_process +
-                    inProd +
-                    row.stock_in_fg_ready;
+                  // Closing stock = free (issuable) stock only, per business rule.
+                  // Deliberately excludes in_process / WIP / fg_ready / awo_qty —
+                  // those stay visible in their own columns for audit, but none
+                  // count toward closing stock.
+                  const total = row.stock_free;
                   const minReq = row.min_stock_override || row.min_stock || 0;
 
                   return (

@@ -664,7 +664,7 @@ export function buildStockRegisterWorkbook(
     "Stock — Sub-Assy WIP",       // 8
     "Stock — FG WIP",             // 9
     "Stock — FG Ready",           // 10
-    "Stock — TOTAL",              // 11
+    "Stock — Closing Stock",      // 11
     "Cost — In Store (₹)",        // 12
     "Cost — At Vendor (₹)",       // 13
     "Cost — Sub-Assy WIP (₹)",    // 14
@@ -713,7 +713,9 @@ export function buildStockRegisterWorkbook(
       uom:     r.unit ?? "",
       std:     Number(r.standard_cost ?? 0),
       s_free, s_proc, s_sa, s_fgwip, s_fgr,
-      s_total: s_free + s_proc + s_sa + s_fgwip + s_fgr,
+      // Closing stock = free stock only (matches the Stock Register page). The
+      // other buckets stay in their own columns; none count toward closing stock.
+      s_total: s_free,
       c_free:  Number(r.cost_free               ?? 0),
       c_proc:  Number(r.cost_in_process         ?? 0),
       c_sa:    Number(r.cost_in_subassembly_wip ?? 0),
@@ -749,7 +751,7 @@ export function buildStockRegisterWorkbook(
     7:  qtyFmt,    // Stock — Sub-Assy WIP
     8:  qtyFmt,    // Stock — FG WIP
     9:  qtyFmt,    // Stock — FG Ready
-    10: qtyFmt,    // Stock — TOTAL
+    10: qtyFmt,    // Stock — Closing Stock
     11: RUPEE_FMT, // Cost — In Store
     12: RUPEE_FMT, // Cost — At Vendor
     13: RUPEE_FMT, // Cost — Sub-Assy WIP
@@ -853,7 +855,7 @@ export function buildStockRegisterWorkbook(
     { wch: 18 }, // Stock — Sub-Assy WIP
     { wch: 16 }, // Stock — FG WIP
     { wch: 16 }, // Stock — FG Ready
-    { wch: 16 }, // Stock — TOTAL
+    { wch: 16 }, // Stock — Closing Stock
     { wch: 18 }, // Cost — In Store
     { wch: 18 }, // Cost — At Vendor
     { wch: 20 }, // Cost — Sub-Assy WIP
