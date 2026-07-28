@@ -1231,7 +1231,8 @@ export async function fetchAwoStats(type: 'sub_assembly' | 'finished_good'): Pro
     .from("assembly_work_orders")
     .select("status, completed_at")
     .eq("company_id", companyId)
-    .eq("awo_type", type);
+    .eq("awo_type", type)
+    .is("deleted_at", null);
 
   if (error) throw error;
 
