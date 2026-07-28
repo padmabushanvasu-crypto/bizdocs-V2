@@ -162,6 +162,7 @@ const STATE_LABELS: Record<string, string> = {
   in_fg_ready: "FG Ready",
   in_fg_wip: "FG WIP",
   in_subassembly_wip: "Sub-Assy WIP",
+  subassembly_wip: "Sub-Assy WIP",
 };
 
 export function stateLabel(state: string | null | undefined): string {

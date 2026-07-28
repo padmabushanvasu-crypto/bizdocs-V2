@@ -8,12 +8,14 @@
 // postings, so a per-state ledger balance (free vs in_process vs wip …) is
 // computable. Values are chosen to match the existing live data where it was
 // already correct (free, in_process, incoming, consumed, scrapped, dispatched,
-// in_subassembly_wip, in_fg_wip, in_fg_ready) so no historical backfill is needed.
+// in_fg_wip, in_fg_ready) so no historical backfill is needed. Sub-assembly WIP
+// standardizes on 'subassembly_wip' (the value the live RPC writes); the older
+// 'in_subassembly_wip' / 'wip' spellings are retired but remain in history.
 export const STOCK_STATE = {
   INCOMING: 'incoming',                 // pre-acceptance — no bucket
   FREE: 'free',                         // -> stock_free (issuable)
   IN_PROCESS: 'in_process',             // -> stock_in_process (at vendor / job-work)
-  SUBASSEMBLY_WIP: 'in_subassembly_wip',// -> stock_in_subassembly_wip
+  SUBASSEMBLY_WIP: 'subassembly_wip',   // -> stock_in_subassembly_wip
   FG_WIP: 'in_fg_wip',                  // -> stock_in_fg_wip
   FG_READY: 'in_fg_ready',              // -> stock_in_fg_ready
   CONSUMED: 'consumed',                 // terminal — no bucket
@@ -29,7 +31,7 @@ export const STATE_BUCKET: Record<StockState, string | null> = {
   incoming: null,
   free: 'stock_free',
   in_process: 'stock_in_process',
-  in_subassembly_wip: 'stock_in_subassembly_wip',
+  subassembly_wip: 'stock_in_subassembly_wip',
   in_fg_wip: 'stock_in_fg_wip',
   in_fg_ready: 'stock_in_fg_ready',
   consumed: null,

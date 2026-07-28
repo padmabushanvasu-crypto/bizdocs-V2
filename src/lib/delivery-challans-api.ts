@@ -1148,7 +1148,7 @@ export async function recordLineItemReturn(
     }
   }
 
-  // 3. Move stock: wip → finished_goods
+  // 3. Move stock: subassembly_wip → free
   if (li.job_work_id && data.qty_accepted > 0) {
     const { data: jc } = await (supabase as any)
       .from("job_cards")
@@ -1183,8 +1183,8 @@ export async function recordLineItemReturn(
           reference_number: dcNumber,
           notes: `Job work return (per line): ${dcNumber}`,
           created_by: user?.id ?? null,
-          from_state: "wip",
-          to_state: "finished_goods",
+          from_state: STOCK_STATE.SUBASSEMBLY_WIP,
+          to_state: STOCK_STATE.FREE,
         });
       }
     }
@@ -1322,8 +1322,8 @@ export async function recordEnhancedReturn(
         reference_number: returnData.dc_number,
         notes: `Processing return — moved to finished goods: ${returnData.dc_number}`,
         created_by: user?.id ?? null,
-        from_state: 'wip',
-        to_state: 'finished_goods',
+        from_state: STOCK_STATE.SUBASSEMBLY_WIP,
+        to_state: STOCK_STATE.FREE,
       });
     }
   }

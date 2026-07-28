@@ -462,8 +462,8 @@ export async function completeJobWork(
         reference_number: (jc as any)?.jc_number ?? null,
         notes: `Returned to stock from ${(jc as any)?.jc_number ?? "work order"}`,
         created_by: null,
-        from_state: "wip",
-        to_state: "finished_goods",
+        from_state: STOCK_STATE.SUBASSEMBLY_WIP,
+        to_state: STOCK_STATE.FREE,
       });
     }
   }
