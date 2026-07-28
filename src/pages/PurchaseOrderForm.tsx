@@ -541,8 +541,19 @@ export default function PurchaseOrderForm() {
   const saveMutation = useMutation({
     mutationFn: async (status: string) => {
       const previousStatus = existingPO?.status;
-      // All edits always go to pending_approval for re-approval workflow
-      const effectiveStatus = isEdit ? 'pending_approval' : status;
+      // A PO that already has goods against it (any line received, or already in a
+      // received state) must NOT be bounced back to pending_approval by an unrelated
+      // edit — that silently wipes its receiving status and approval provenance.
+      // Preserve status + issue/approval stamps for such POs. Fresh, un-received PO
+      // edits keep the existing pending_approval re-approval behaviour unchanged.
+      const hasReceipts =
+        (existingPO?.line_items ?? []).some(
+          // received_quantity is returned by select("*") but not on POLineItem's type
+          (l) => Number((l as any).received_quantity ?? 0) > 0
+        ) || ['partially_received', 'fully_received'].includes(existingPO?.status ?? '');
+      const effectiveStatus = isEdit
+        ? (hasReceipts ? (previousStatus as string) : 'pending_approval')
+        : status;
       const effectiveGstRate = isForeignVendor ? 0 : gstRate;
       const poData = {
         po_number: poNumber,
@@ -580,13 +591,15 @@ export default function PurchaseOrderForm() {
         currency_symbol: currencySymbol,
         exchange_rate: exchangeRate,
         status: effectiveStatus,
-        issued_at: effectiveStatus === "issued" ? new Date().toISOString() : null,
+        issued_at: isEdit && hasReceipts
+          ? (existingPO?.issued_at ?? null)
+          : (effectiveStatus === "issued" ? new Date().toISOString() : null),
         cancelled_at: null,
         cancellation_reason: null,
         approval_requested_at: effectiveStatus === "pending_approval" ? new Date().toISOString() : null,
         approval_requested_by: effectiveStatus === "pending_approval" ? (profile?.display_name || profile?.full_name || profile?.email || null) : null,
-        approved_at: null,
-        approved_by: null,
+        approved_at: isEdit && hasReceipts ? (existingPO?.approved_at ?? null) : null,
+        approved_by: isEdit && hasReceipts ? (existingPO?.approved_by ?? null) : null,
         rejection_reason: null,
         rejection_noted: false,
       };
