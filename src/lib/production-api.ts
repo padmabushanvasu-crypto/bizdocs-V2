@@ -266,71 +266,26 @@ export async function createAssemblyWorkOrder(data: {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
 
-  const userName = await getCurrentUserName();
+  // Atomic header + line-item creation in one guarded RPC (dedup window prevents
+  // duplicate WOs on rapid double-submit; returns the existing row if within it).
+  // item_code/description and raised_by are resolved server-side from the join.
+  const { data: rows, error } = await (supabase as any).rpc("rpc_create_awo", {
+    p_company_id: companyId,
+    p_awo_type: data.awo_type,
+    p_item_id: data.item_id,
+    p_quantity_to_build: data.quantity_to_build,
+    p_bom_variant_id: data.bom_variant_id ?? null,
+    p_planned_date: data.planned_date ?? null,
+    p_work_order_ref: data.work_order_ref ?? null,
+    p_notes: data.notes ?? null,
+    p_serial_number: data.serial_number ?? null,
+    p_raised_by_user_id: user.id,
+  });
 
-  // Insert AWO — trigger will set awo_number
-  const { data: awoData, error: awoError } = await (supabase as any)
-    .from("assembly_work_orders")
-    .insert({
-      company_id: companyId,
-      awo_number: '',
-      awo_type: data.awo_type,
-      item_id: data.item_id,
-      item_code: data.item_code,
-      item_description: data.item_description,
-      quantity_to_build: data.quantity_to_build,
-      bom_variant_id: data.bom_variant_id ?? null,
-      planned_date: data.planned_date ?? null,
-      work_order_ref: data.work_order_ref ?? null,
-      notes: data.notes ?? null,
-      serial_number: data.serial_number ?? null,
-      raised_by: userName,
-      raised_by_user_id: user.id,
-      status: 'draft',
-    })
-    .select()
-    .single();
+  if (error) throw new Error(error.message);
 
-  if (awoError) throw awoError;
-  const awoId = (awoData as AssemblyWorkOrder).id;
-
-  // Load BOM lines
-  let bomQuery = (supabase as any)
-    .from("bom_lines")
-    .select("*")
-    .eq("parent_item_id", data.item_id)
-    .eq("company_id", companyId)
-    .order("bom_level", { ascending: true });
-
-  if (data.bom_variant_id) {
-    bomQuery = bomQuery.eq("variant_id", data.bom_variant_id);
-  }
-
-  const { data: bomLines, error: bomError } = await bomQuery;
-  if (bomError) throw bomError;
-
-  // Insert awo_line_items from BOM lines
-  if (bomLines && bomLines.length > 0) {
-    const lineInserts = (bomLines as any[]).map((bl) => ({
-      company_id: companyId,
-      awo_id: awoId,
-      item_id: bl.child_item_id ?? null,
-      item_code: bl.child_item_code ?? null,
-      item_description: bl.child_item_description ?? null,
-      drawing_number: bl.drawing_number ?? null,
-      required_qty: (bl.quantity ?? 1) * data.quantity_to_build,
-      issued_qty: 0,
-      unit: bl.unit ?? 'NOS',
-      is_critical: bl.is_critical ?? false,
-      shortage_qty: 0,
-    }));
-
-    const { error: lineError } = await (supabase as any)
-      .from("awo_line_items")
-      .insert(lineInserts);
-
-    if (lineError) throw lineError;
-  }
+  const awoId = (rows as { awo_id: string }[] | null)?.[0]?.awo_id;
+  if (!awoId) throw new Error("rpc_create_awo returned no awo_id");
 
   return awoId;
 }
