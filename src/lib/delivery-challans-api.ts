@@ -598,7 +598,7 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
 export async function issueDeliveryChallan(id: string) {
   const { data: dcCheck, error: fetchErr } = await supabase
     .from('delivery_challans')
-    .select('id, approved_at')
+    .select('id, approved_at, status, issued_at')
     .eq('id', id)
     .single();
 
@@ -609,6 +609,18 @@ export async function issueDeliveryChallan(id: string) {
     throw new Error(
       'This DC must be approved before it can be issued.'
     );
+  }
+
+  // Idempotency guard: a DC that is already issued must never re-post dc_issue —
+  // that double-counts the stock relief (the live block_duplicate_dc_issue
+  // trigger also rejects it at the DB). A no-op is correct here, not an error:
+  // the caller may legitimately re-save (an edit re-issue already reconciled
+  // stock via updateDeliveryChallan's manual_adjustment delta). Do not throw.
+  if ((dcCheck as any).status === 'issued' || (dcCheck as any).issued_at) {
+    console.warn(
+      `[DC] issueDeliveryChallan: DC ${id} already issued — skipping re-issue (no-op).`
+    );
+    return;
   }
 
   const companyId = await getCompanyId();

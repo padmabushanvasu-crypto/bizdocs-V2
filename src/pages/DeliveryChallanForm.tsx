@@ -713,7 +713,11 @@ export default function DeliveryChallanForm() {
       if (isEdit) {
         const prevStatus = (existingDC as any)?.status;
         await updateDeliveryChallan(id!, { dc: dcData as any, lineItems: items });
-        if (status === "issued") await issueDeliveryChallan(id!);
+        // Only issue when transitioning INTO issued. If the DC was already issued
+        // before this edit, updateDeliveryChallan has already posted the
+        // manual_adjustment delta for the qty change — re-issuing would double-count
+        // the full dc_issue (and the live block_duplicate_dc_issue trigger rejects it).
+        if (prevStatus !== "issued" && status === "issued") await issueDeliveryChallan(id!);
         const userName = (profile as any)?.display_name || (profile as any)?.full_name || (profile as any)?.email || null;
         await logAudit("delivery_challan", id!, "dc_edited", {
           previous_status: prevStatus,
