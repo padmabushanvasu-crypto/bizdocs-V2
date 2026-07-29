@@ -48,3 +48,60 @@ UPDATE material_issue_requests mir
 --                   '')
 --  WHERE company_id = '45c14753-4e54-4327-bf77-dd9fb72899dc'
 --    AND notes LIKE '%backfill 2026-07-29%';
+
+
+-- ═════════════════════════════════════════════════════════════════════════════
+-- Follow-up backfill (2026-07-29b): the 2 partially_issued orphans
+-- ═════════════════════════════════════════════════════════════════════════════
+--
+-- STATUS: EXECUTED ONCE against the live Supabase DB on 2026-07-29. DO NOT RE-RUN.
+--
+-- The first backfill (above) intentionally touched status='pending' only, leaving
+-- the 2 partially_issued MIRs on cancelled AWOs alone because they had already
+-- issued material — a blind cancel could strand WIP. WIP was then verified: ZERO
+-- stranded units across every cancelled/deleted AWO in the company (issued -
+-- returned - scrapped - consumed = 0 on all lines), so no stock decision was
+-- outstanding, and the 2 requests were safe to close.
+--
+-- The predicate below (partially_issued + parent AWO cancelled) matched exactly
+-- two rows — these were the rows it happened to select, NOT hand-picked criteria:
+--   MIR-961941  (AWO SA-WO-2627-002, parent cancelled)
+--   MIR-840060  (AWO SA-WO-2627-003, parent cancelled)
+--
+-- REVERSAL HANDLE: these rows carry 'backfill 2026-07-29b' in their notes.
+
+-- Literal statement as executed:
+BEGIN;
+
+update material_issue_requests mir
+set status = 'cancelled',
+    notes  = coalesce(mir.notes || ' | ', '') || 'auto-cancelled: parent AWO cancelled, WIP fully reconciled, zero stranded (backfill 2026-07-29b)'
+from assembly_work_orders awo
+where awo.id = mir.awo_id
+  and mir.company_id = '45c14753-4e54-4327-bf77-dd9fb72899dc'
+  and mir.status = 'partially_issued'
+  and awo.status = 'cancelled';
+
+COMMIT;
+
+-- ── Verified counts (final state, this company) ─────────────────────────────
+-- Rows affected: 2
+--
+--   status            | after
+--   ------------------+------
+--   pending           |     0
+--   partially_issued  |     0
+--   issued            |     4
+--   cancelled         |    94
+--
+-- All orphaned MIRs are now closed; no pending or partially_issued rows remain.
+
+-- ── Reversal (if ever needed) ───────────────────────────────────────────────
+-- UPDATE material_issue_requests
+--    SET status = 'partially_issued',
+--        notes  = regexp_replace(
+--                   notes,
+--                   ' \| auto-cancelled: parent AWO cancelled, WIP fully reconciled, zero stranded \(backfill 2026-07-29b\)$',
+--                   '')
+--  WHERE company_id = '45c14753-4e54-4327-bf77-dd9fb72899dc'
+--    AND notes LIKE '%backfill 2026-07-29b%';

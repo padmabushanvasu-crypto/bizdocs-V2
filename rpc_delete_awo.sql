@@ -1,17 +1,23 @@
 -- rpc_delete_awo — guarded soft-delete of an assembly work order.
 --
--- STATUS: APPLIED to the live Supabase DB on 2026-07-29 and verified present
--- (pg_get_functiondef). This file is a MIGRATION RECORD of the live definition,
--- NOT a pending change — do not re-run expecting a diff.
+-- STATUS: APPLIED to the live Supabase DB and verified present on 2026-07-29.
+-- MIGRATION RECORD of the live definition — NOT a pending change; do not re-run
+-- expecting a diff.
 --
--- This revision adds the child-MIR cascade: on delete, any still-open MIR
--- (pending / partially_issued) for the AWO is set to 'cancelled' inside the same
--- transaction as the deleted_at stamp — mirroring the cancel path
--- (production-api.ts:646-655). Without it, a soft-deleted AWO left its MIRs open,
--- so a later confirmMaterialIssue could move stock into WIP and resurrect the
--- deleted work order. The stamp still owns all stock disposition (WIP
--- return/scrap, output reversal); the cascade only closes the request records and
--- runs after every RAISE guard, so a blocked delete never cancels MIRs.
+-- Records TWO hardening changes, both applied + verified live 2026-07-29:
+--   1. MIR cascade — on delete, still-open MIRs (pending / partially_issued) for
+--      the AWO are set to 'cancelled' inside the delete transaction, mirroring the
+--      cancel path (production-api.ts:646-655). Without it a soft-deleted AWO left
+--      its MIRs open, so a later confirmMaterialIssue could move stock into WIP and
+--      resurrect the deleted work order.
+--   2. Fail-loud reversal guard — the 'complete' branch no longer clamps output
+--      reversal with GREATEST(0, ...). It pre-checks available stock and RAISEs on
+--      underflow, then subtracts unclamped — so stock/ledger drift surfaces loudly
+--      instead of being silently floored to zero and corrupting the balance.
+--
+-- Verbatim from pg_get_functiondef, with ONE deviation: a trailing semicolon was
+-- added after $function$ so the file is directly runnable (pg_get_functiondef
+-- emits none).
 
 CREATE OR REPLACE FUNCTION public.rpc_delete_awo(p_company_id uuid, p_awo_id uuid, p_wip_disposition text DEFAULT NULL::text, p_reverse_output boolean DEFAULT false, p_deleted_by uuid DEFAULT NULL::uuid, p_notes text DEFAULT NULL::text)
  RETURNS TABLE(deleted boolean, disposition text)
@@ -25,6 +31,7 @@ DECLARE
   v_output_item RECORD;
   v_output_ledger RECORD;
   v_moved_on boolean;
+  v_available numeric;
   v_disposition text := 'no_stock_impact';
 BEGIN
   SELECT * INTO v_awo FROM assembly_work_orders WHERE id = p_awo_id AND company_id = p_company_id FOR UPDATE;
@@ -74,11 +81,25 @@ BEGIN
     END IF;
 
     PERFORM pg_advisory_xact_lock(hashtextextended(v_output_item.id::text, 0));
+
+    -- Fail loud rather than clamping to zero: a reversal that would drive the
+    -- bucket negative means stock/ledger drift, and silently flooring it hides
+    -- the discrepancy and corrupts the balance. Abort and force manual review.
     IF v_output_item.item_type IN ('finished_good','product') THEN
-      UPDATE items SET stock_in_fg_ready = GREATEST(0, COALESCE(stock_in_fg_ready,0) - v_awo.quantity_to_build), last_stock_check = now() WHERE id = v_output_item.id;
+      v_available := COALESCE(v_output_item.stock_in_fg_ready,0);
+      IF v_available < v_awo.quantity_to_build THEN
+        RAISE EXCEPTION 'Cannot reverse AWO %: fg_ready stock for % is % but reversal requires % -- stock/ledger drift, resolve manually before deleting',
+          v_awo.awo_number, v_output_item.item_code, v_available, v_awo.quantity_to_build;
+      END IF;
+      UPDATE items SET stock_in_fg_ready = COALESCE(stock_in_fg_ready,0) - v_awo.quantity_to_build, last_stock_check = now() WHERE id = v_output_item.id;
     ELSE
-      UPDATE items SET stock_free = GREATEST(0, stock_free - v_awo.quantity_to_build),
-                        current_stock = GREATEST(0, stock_free - v_awo.quantity_to_build), last_stock_check = now() WHERE id = v_output_item.id;
+      v_available := COALESCE(v_output_item.stock_free,0);
+      IF v_available < v_awo.quantity_to_build THEN
+        RAISE EXCEPTION 'Cannot reverse AWO %: free stock for % is % but reversal requires % -- stock/ledger drift, resolve manually before deleting',
+          v_awo.awo_number, v_output_item.item_code, v_available, v_awo.quantity_to_build;
+      END IF;
+      UPDATE items SET stock_free = stock_free - v_awo.quantity_to_build,
+                        current_stock = stock_free - v_awo.quantity_to_build, last_stock_check = now() WHERE id = v_output_item.id;
     END IF;
 
     INSERT INTO stock_ledger (company_id, item_id, item_code, item_description, transaction_date,
@@ -107,4 +128,4 @@ BEGIN
 
   RETURN QUERY SELECT true, v_disposition;
 END;
-$function$
+$function$;
