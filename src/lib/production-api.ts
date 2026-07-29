@@ -776,16 +776,33 @@ export async function fetchMaterialIssueRequests(filters: {
   status?: string;
   awo_id?: string;
   month?: string;
+  // Issue Queue: drop MIRs whose parent AWO is dead (soft-deleted or cancelled).
+  // Off by default so other callers (e.g. the AWO detail page) still see the full
+  // history, including MIRs of a cancelled/deleted work order.
+  excludeDeadAwo?: boolean;
 } = {}): Promise<MaterialIssueRequest[]> {
   const companyId = await getCompanyIdShared();
   if (!companyId) return [];
 
+  // Embed the parent AWO. When excludeDeadAwo, use !inner + server-side filters so
+  // dead work orders are dropped BEFORE PostgREST's 1000-row cap — JS post-filtering
+  // would silently undercount by discarding rows after the cap. Without the flag the
+  // embed is a left join, preserving prior behaviour (MIRs kept even if AWO absent).
+  const awoEmbed = filters.excludeDeadAwo
+    ? "assembly_work_orders!inner(id, awo_number, item_description, quantity_to_build, deleted_at, status)"
+    : "assembly_work_orders(id, awo_number, item_description, quantity_to_build, deleted_at, status)";
+
   let query = (supabase as any)
     .from("material_issue_requests")
-    .select("*")
+    .select(`*, ${awoEmbed}`)
     .eq("company_id", companyId)
     .order("created_at", { ascending: false });
 
+  if (filters.excludeDeadAwo) {
+    query = query
+      .is("assembly_work_orders.deleted_at", null)
+      .neq("assembly_work_orders.status", "cancelled");
+  }
   if (filters.status) {
     query = query.eq("status", filters.status);
   }
@@ -801,28 +818,12 @@ export async function fetchMaterialIssueRequests(filters: {
   const { data, error } = await query;
   if (error) throw error;
 
-  const mirs = (data ?? []) as MaterialIssueRequest[];
+  const rows = (data ?? []) as Array<MaterialIssueRequest & { assembly_work_orders?: AssemblyWorkOrder }>;
 
-  // Enrich with AWO info
-  const awoIds = [...new Set(mirs.map((m) => m.awo_id).filter(Boolean))];
-  const awoMap: Record<string, AssemblyWorkOrder> = {};
-
-  if (awoIds.length > 0) {
-    const { data: awos } = await (supabase as any)
-      .from("assembly_work_orders")
-      .select("id, awo_number, item_description, quantity_to_build")
-      .in("id", awoIds);
-
-    if (awos) {
-      for (const awo of awos as AssemblyWorkOrder[]) {
-        awoMap[awo.id] = awo;
-      }
-    }
-  }
-
-  return mirs.map((mir) => ({
-    ...mir,
-    awo: mir.awo_id ? awoMap[mir.awo_id] : undefined,
+  // Lift the embedded AWO onto `awo`; drop the raw join key so the shape is unchanged.
+  return rows.map(({ assembly_work_orders, ...mir }) => ({
+    ...(mir as MaterialIssueRequest),
+    awo: assembly_work_orders ?? undefined,
   }));
 }
 

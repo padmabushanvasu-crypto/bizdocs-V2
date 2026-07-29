@@ -63,6 +63,7 @@ export default function StorekeeperQueue() {
     queryFn: () => fetchMaterialIssueRequests({
       status: statusFilter !== "all" ? statusFilter : undefined,
       month: month || undefined,
+      excludeDeadAwo: true,
     }),
     enabled: !selectedMirId,
   });
