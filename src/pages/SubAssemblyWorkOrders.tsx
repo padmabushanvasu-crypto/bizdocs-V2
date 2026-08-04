@@ -94,6 +94,9 @@ export default function SubAssemblyWorkOrders() {
   const [search, setSearch] = useState("");
   const [showCancelled, setShowCancelled] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
+  // Status filter (client-side). 'all' = current behaviour. Cancelled/Deleted are
+  // intentionally excluded here — they have their own Show Cancelled/Show Deleted toggles.
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   const [deleteTarget, setDeleteTarget] = useState<AssemblyWorkOrder | null>(null);
 
   const monthOptions = useMemo(() => {
@@ -162,6 +165,7 @@ export default function SubAssemblyWorkOrders() {
 
   const filtered = awos.filter((awo) => {
     if (!showCancelled && awo.status === 'cancelled') return false;
+    if (statusFilter !== 'all' && awo.status !== statusFilter) return false;
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return (
@@ -198,15 +202,39 @@ export default function SubAssemblyWorkOrders() {
         </Button>
       </div>
 
-      {/* Stat chips */}
-      <div className="flex flex-wrap gap-3 mb-6 text-sm text-muted-foreground">
-        <span><b className="text-foreground">{stats?.draft ?? 0}</b> draft</span>
+      {/* Stat chips — click to filter the table by that status (click again to clear) */}
+      <div className="flex flex-wrap items-center gap-2 mb-6 text-sm text-muted-foreground">
+        <button
+          type="button"
+          onClick={() => setStatusFilter((s) => (s === "draft" ? "all" : "draft"))}
+          className={`rounded px-2 py-0.5 cursor-pointer transition-colors hover:bg-muted ${statusFilter === "draft" ? "bg-muted ring-1 ring-border" : ""}`}
+        >
+          <b className="text-foreground">{stats?.draft ?? 0}</b> draft
+        </button>
         <span>·</span>
-        <span><b className="text-amber-600">{stats?.pending_materials ?? 0}</b> pending materials</span>
+        <button
+          type="button"
+          onClick={() => setStatusFilter((s) => (s === "pending_materials" ? "all" : "pending_materials"))}
+          className={`rounded px-2 py-0.5 cursor-pointer transition-colors hover:bg-muted ${statusFilter === "pending_materials" ? "bg-muted ring-1 ring-border" : ""}`}
+        >
+          <b className="text-amber-600">{stats?.pending_materials ?? 0}</b> pending materials
+        </button>
         <span>·</span>
-        <span><b className="text-blue-600">{stats?.in_progress ?? 0}</b> in progress</span>
+        <button
+          type="button"
+          onClick={() => setStatusFilter((s) => (s === "in_progress" ? "all" : "in_progress"))}
+          className={`rounded px-2 py-0.5 cursor-pointer transition-colors hover:bg-muted ${statusFilter === "in_progress" ? "bg-muted ring-1 ring-border" : ""}`}
+        >
+          <b className="text-blue-600">{stats?.in_progress ?? 0}</b> in progress
+        </button>
         <span>·</span>
-        <span><b className="text-green-600">{stats?.complete_this_month ?? 0}</b> complete this month</span>
+        <button
+          type="button"
+          onClick={() => setStatusFilter((s) => (s === "complete" ? "all" : "complete"))}
+          className={`rounded px-2 py-0.5 cursor-pointer transition-colors hover:bg-muted ${statusFilter === "complete" ? "bg-muted ring-1 ring-border" : ""}`}
+        >
+          <b className="text-green-600">{stats?.complete_this_month ?? 0}</b> complete this month
+        </button>
       </div>
 
       {/* Search + Month filter */}
@@ -226,6 +254,19 @@ export default function SubAssemblyWorkOrders() {
             {monthOptions.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
             ))}
+          </SelectContent>
+        </Select>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[170px]">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="pending_materials">Pending Materials</SelectItem>
+            <SelectItem value="in_progress">In Progress</SelectItem>
+            <SelectItem value="complete">Complete</SelectItem>
+            <SelectItem value="draft">Draft</SelectItem>
+            <SelectItem value="awaiting_store">Awaiting Store</SelectItem>
           </SelectContent>
         </Select>
         <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
