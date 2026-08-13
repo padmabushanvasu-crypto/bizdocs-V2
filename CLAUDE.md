@@ -13,6 +13,20 @@ This file is **rules only** and loads every session — keep it lean. Status, ba
 
 ---
 
+## Stock Governance Documents
+
+Before any change touching stock, documents (PO/GRN/DC/AWO/MIR/Invoice),
+their reverse paths (edit/delete/cancel/reversal), or any stock-displaying
+surface (Stock Register, Stock Ledger, Closing Stock, exports):
+- Read STOCK_LIFECYCLE_GOVERNANCE.md (flow, state machine, ownership,
+  decision rules)
+- Read STOCK_REGISTER_STANDARDS.md (reporting, rounding, traceability)
+These documents are authoritative. A change contradicting them is wrong
+until they are deliberately amended. If your change reveals they are
+outdated, amend the document in the same session as the change.
+
+---
+
 ## 1. Context
 Manufacturing ERP for an OLTC manufacturer. **Live in production.**
 Daily users **Latha and Priyanka** (storekeepers). Their **GRN receiving + confirmation flow is the #1 regression concern** — every change is judged first on whether it could break their day.
