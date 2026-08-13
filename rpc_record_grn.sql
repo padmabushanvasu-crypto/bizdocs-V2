@@ -14,6 +14,23 @@
 -- PO status rule: per-line (a PO is 'fully_received' only when EVERY line's
 -- received_quantity >= its ordered quantity), matching the reviewed decision.
 --
+-- ── LINE-MATCHING FIX (2026-08-13) ───────────────────────────────────────────
+-- po_line_items.received_quantity is now maintained ENTIRELY by the live AFTER
+-- trigger grn_line_items_sync_po_received -> recompute_po_line_received_quantity,
+-- which sums this GRN's line into the running total keyed strictly by
+-- po_line_item_id the instant each grn_line_items row is inserted.
+--
+-- This RPC used to ALSO carry its own manual over-receipt guard + received_quantity
+-- UPDATE. Once that trigger existed, the two double-counted: by the time the RPC's
+-- guard read received_quantity it ALREADY included the row just inserted, so
+-- v_max collapsed to 0 and the guard threw a FALSE "Over-receipt (already
+-- received N)" on a line that started at 0 — breaking every single-stage GRN, and
+-- most visibly PO lines that share an item_id + ordered qty (e.g. two RESISTANCE
+-- COIL specs both ordered 6). The manual guard+UPDATE are REMOVED; crediting is
+-- owned by the recompute trigger (keyed by po_line_item_id) and the over-receipt
+-- ceiling by the BEFORE trigger prevent_po_over_receipt. This RPC now only inserts
+-- and rolls up PO status. No line is ever resolved by item_id or by quantity.
+--
 -- SCOPE: this does NOT post stock. The legacy single-stage stock/ledger credit
 -- (items.current_stock + INCOMING->FREE ledger row) stays in JS after this RPC
 -- returns — best-effort/non-fatal, unchanged — a deliberately separate concern.
@@ -21,8 +38,7 @@
 -- grn_number is assigned by trg_grns_assign_number on INSERT (pass '' to let the
 -- trigger fill it; a non-empty value is preserved for manual/import overrides).
 -- SECURITY DEFINER bypasses RLS, so every statement is explicitly company-scoped
--- on p_company_id (mirrors rpc_confirm_mir). po_line_items are locked FOR UPDATE
--- to close the concurrent-GRN race the old JS left open.
+-- on p_company_id (mirrors rpc_confirm_mir).
 --
 -- Down / inverse (run only to roll back):
 --   DROP FUNCTION IF EXISTS public.rpc_record_grn(uuid, jsonb, jsonb);
@@ -42,12 +58,6 @@ DECLARE
   v_grn_id     uuid;
   v_po_id      uuid;
   v_line       jsonb;
-  v_po_line_id uuid;
-  v_accepted   numeric;
-  v_ordered    numeric;
-  v_received   numeric;
-  v_max        numeric;
-  v_desc       text;
   v_all_recv   boolean;
   v_any_recv   boolean;
   v_status     text;
@@ -98,7 +108,11 @@ BEGIN
   v_grn_id := v_grn.id;
   v_po_id  := v_grn.po_id;
 
-  -- 2. Line items + per-line over-receipt guard + received_quantity update.
+  -- 2. Line items ONLY. Each row carries its own po_line_item_id; the AFTER
+  --    trigger grn_line_items_sync_po_received recomputes that PO line's
+  --    received_quantity (keyed by po_line_item_id) and prevent_po_over_receipt
+  --    enforces the ceiling. This RPC intentionally does NOT touch
+  --    po_line_items.received_quantity itself (see header note).
   IF p_lines IS NOT NULL AND jsonb_array_length(p_lines) > 0 THEN
     FOR v_line IN SELECT * FROM jsonb_array_elements(p_lines)
     LOOP
@@ -138,33 +152,11 @@ BEGIN
         COALESCE((v_line->>'jig_confirmed')::boolean, false),
         NULLIF(v_line->>'stage1_rejected_qty', '')::numeric
       );
-
-      v_po_line_id := NULLIF(v_line->>'po_line_item_id', '')::uuid;
-      v_accepted   := COALESCE((v_line->>'accepted_quantity')::numeric, 0);
-      IF v_po_line_id IS NOT NULL AND v_accepted > 0 THEN
-        SELECT quantity, COALESCE(received_quantity, 0)
-          INTO v_ordered, v_received
-        FROM public.po_line_items
-        WHERE id = v_po_line_id AND company_id = p_company_id
-        FOR UPDATE;
-        IF FOUND THEN
-          v_max := v_ordered - v_received;
-          IF v_accepted > v_max THEN
-            v_desc := COALESCE(v_line->>'description', 'item');
-            RAISE EXCEPTION
-              'Over-receipt for "%": trying to receive % but only % pending (ordered %, already received %). Reduce the quantity or split into a separate GRN.',
-              v_desc, v_accepted, v_max, v_ordered, v_received;
-          END IF;
-          UPDATE public.po_line_items
-             SET received_quantity = v_received + v_accepted,
-                 pending_quantity  = GREATEST(0, v_ordered - (v_received + v_accepted))
-           WHERE id = v_po_line_id AND company_id = p_company_id;
-        END IF;
-      END IF;
     END LOOP;
   END IF;
 
   -- 3. Recompute parent PO status — PER-LINE rule (every line received >= ordered).
+  --    Reads received_quantity as maintained by the AFTER trigger in step 2.
   IF v_po_id IS NOT NULL THEN
     SELECT bool_and(COALESCE(received_quantity, 0) >= COALESCE(quantity, 0)),
            bool_or (COALESCE(received_quantity, 0) > 0)
