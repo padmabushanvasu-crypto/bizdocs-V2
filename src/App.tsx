@@ -31,6 +31,7 @@ import DCRecordReturn from "@/pages/DCRecordReturn";
 import GRNRegister from "@/pages/GRNRegister";
 import GRNForm from "@/pages/GRNForm";
 import GRNDetail from "@/pages/GRNDetail";
+import EditApprovalQueue from "@/pages/EditApprovalQueue";
 import DcGrn from "@/pages/DcGrn";
 import DcGrnForm from "@/pages/DcGrnForm";
 import PaymentReceipts from "@/pages/PaymentReceipts";
@@ -180,6 +181,8 @@ const App = () => (
               <Route path="/grn" element={<PageGuard page="grn"><GRNRegister /></PageGuard>} />
               <Route path="/grn/new" element={<PageGuard page="grn"><GRNForm /></PageGuard>} />
               <Route path="/grn/:id" element={<PageGuard page="grn"><GRNDetail /></PageGuard>} />
+              {/* Approver-only; the page self-guards via isEditApprover, hidden from nav. */}
+              <Route path="/edit-approvals" element={<EditApprovalQueue />} />
 
               <Route path="/follow-up-tracker" element={<PageGuard page="follow-up-tracker"><FollowUpTracker /></PageGuard>} />
 

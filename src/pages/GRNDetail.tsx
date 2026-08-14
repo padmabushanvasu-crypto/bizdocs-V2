@@ -55,6 +55,7 @@ import { createNotification } from "@/lib/notifications-api";
 import { UNITS } from "@/lib/constants";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { isEditApprover, friendlyEditRequestError } from "@/lib/permissions";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { isFinalBatch } from "@/lib/dc-receipt-utils";
 import { GRNFinanceApproval } from "@/components/GRNFinanceApproval";
@@ -130,6 +131,124 @@ interface S1Line {
   prev_accepted_live: number;
   // Alt-measure prior received (summary.received_2), for basis='alt' pending.
   prev_received_2: number;
+}
+
+// Derive the Stage 1 editable row buffer from a loaded GRN. Extracted so the
+// edit-approval revert path can reset s1Lines to persisted values without
+// duplicating the mapping. Pure — depends only on the passed GRN.
+function deriveS1Lines(grn: any): S1Line[] {
+  const items = grn?.line_items ?? [];
+  return items.map((item: any) => {
+    const a = item as any;
+    // Pre-fill priority for "Received Now": persisted → mid-edit → GRNForm entry
+    // → full pending. (See grn-api.ts — received_qty is only set once Stage 1 saves.)
+    let recv: number;
+    if (a.quantitative_verified_at != null) {
+      recv = a.received_qty ?? 0;
+    } else if (a.received_qty != null && a.received_qty !== 0) {
+      recv = a.received_qty;
+    } else if (a.receiving_now != null && a.receiving_now !== 0) {
+      recv = a.receiving_now;
+    } else {
+      recv = a.pending_quantity ?? a.po_quantity ?? 0;
+    }
+    return {
+      id:                   item.id ?? "",
+      item_code:            a.drawing_number ?? "",
+      description:          item.description,
+      po_quantity:          item.po_quantity ?? 0,
+      pending_quantity:     a.pending_quantity ?? item.po_quantity ?? 0,
+      received_qty:         recv,
+      qty_matched:          a.qty_matched_qty ?? (typeof a.qty_matched === 'number' ? a.qty_matched : recv),
+      condition_on_arrival: a.condition_on_arrival ?? "good",
+      packing_intact:       a.packing_intact !== false,
+      notes:                a.quantitative_notes ?? "",
+      is_final_grn:         a.is_final_grn ?? false,
+      store_confirmed:      a.store_confirmed ?? false,
+      store_confirmed_by:   a.store_confirmed_by ?? null,
+      product_match:        (a.product_match ?? 'yes') as 'yes' | 'partial' | 'no',
+      matching_units:       a.matching_units ?? recv,
+      non_matching_units:   a.non_matching_units ?? 0,
+      mismatch_reason:      a.mismatch_reason ?? "",
+      mismatch_disposition: a.mismatch_disposition ?? "",
+      jig_confirmed:        a.jig_confirmed ?? false,
+      jigs_sent:            (a as any).jigs_sent ?? null,
+      unit:                 a.unit ?? "NOS",
+      ordered_qty_2:        a.ordered_qty_2 ?? null,
+      unit_2:               a.unit_2 ?? null,
+      received_now_2:       a.received_now_2 ?? null,
+      dc_line_item_id:      a.dc_line_item_id ?? null,
+      po_line_item_id:      a.po_line_item_id ?? null,
+      nature_of_process:    a.nature_of_process ?? null,
+      stage1_rejected_qty:  a.stage1_rejected_qty ?? 0,
+      // Snapshots; overwritten by the live-aggregate refetch effect.
+      prev_received_live:   a.previously_received_qty ?? a.previously_received ?? 0,
+      prev_accepted_live:   0,
+      prev_received_2:      0,
+    };
+  });
+}
+
+// ── Stage 1 edit-approval diff ────────────────────────────────────────────────
+// Treat '', undefined and null as equivalent; compare numbers/bools by value so
+// a re-save with no real change files no request.
+function eqApprovalVal(a: unknown, b: unknown): boolean {
+  const na = a === "" || a === undefined ? null : a;
+  const nb = b === "" || b === undefined ? null : b;
+  // Booleans first: treat a never-set flag (null, e.g. legacy jig_confirmed) as
+  // false, so an explicit false doesn't read as a change.
+  if (typeof na === "boolean" || typeof nb === "boolean") return Boolean(na) === Boolean(nb);
+  if (na === null && nb === null) return true;
+  if (na === null || nb === null) return false;
+  if (typeof na === "number" || typeof nb === "number") return Number(na) === Number(nb);
+  return String(na) === String(nb);
+}
+
+// Build the grn_line_items payload a Stage 1 save WOULD write for this line
+// (mirrors saveQuantitativeStage's linePayload in grn-api.ts:1206, minus the
+// re-stamped verified_by/at), then return only the columns that differ from the
+// persisted row `prev`. Mirror columns travel together so an applied row stays
+// internally consistent.
+function diffStage1LineForApproval(
+  ln: QuantitativeLineData,
+  prev: any,
+  jigConfirmed: boolean,
+): Record<string, unknown> {
+  const wouldBe: Record<string, unknown> = {
+    received_qty:         ln.received_qty,
+    receiving_now:        ln.received_qty,
+    qty_matched:          ln.qty_matched >= ln.received_qty,
+    qty_matched_qty:      ln.qty_matched,
+    condition_on_arrival: ln.condition_on_arrival,
+    packing_intact:       ln.packing_intact,
+    quantitative_notes:   ln.quantitative_notes ?? null,
+    vendor_invoice_ref:   ln.vendor_invoice_ref ?? null,
+    product_match:        ln.product_match ?? 'yes',
+    matching_units:       ln.matching_units ?? null,
+    non_matching_units:   ln.non_matching_units ?? null,
+    mismatch_reason:      ln.mismatch_reason ?? null,
+    mismatch_disposition: ln.mismatch_disposition ?? null,
+    over_receipt_qty:     ln.over_receipt_qty ?? null,
+    received_now_2:       ln.received_now_2 ?? null,
+    stage1_rejected_qty:  ln.stage1_rejected_qty ?? null,
+    // Jig-return confirm is driven by the jigReturnConfirmed Set, not the line —
+    // mirror how saveQuantitativeStage writes it (grn-api.ts:1224) so a toggle is
+    // captured in the request instead of being silently dropped.
+    jig_confirmed:        jigConfirmed,
+  };
+  const changed: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(wouldBe)) {
+    if (!eqApprovalVal(v, prev?.[k])) changed[k] = v;
+  }
+  if ('received_qty' in changed || 'receiving_now' in changed) {
+    changed.received_qty = wouldBe.received_qty;
+    changed.receiving_now = wouldBe.receiving_now;
+  }
+  if ('qty_matched' in changed || 'qty_matched_qty' in changed) {
+    changed.qty_matched = wouldBe.qty_matched;
+    changed.qty_matched_qty = wouldBe.qty_matched_qty;
+  }
+  return changed;
 }
 
 // Normalise jigs_sent which may be a string or a JSON array (JSONB column)
@@ -1513,7 +1632,26 @@ export default function GRNDetail() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { role } = useAuth();
+  const { role, user } = useAuth();
+  const isApprover = isEditApprover(user?.id);
+
+  // Pending edit-requests for this GRN — drives the "Edit pending approval"
+  // indicator and blocks duplicate submissions by non-approvers.
+  const { data: pendingEditRequests = [] } = useQuery({
+    queryKey: ["grn-edit-requests", id],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("edit_requests")
+        .select("id, record_id, requested_by, requested_at")
+        .eq("entity_type", "grn")
+        .eq("entity_id", id)
+        .eq("status", "pending");
+      if (error) throw error;
+      return (data ?? []) as Array<{ id: string; record_id: string; requested_by: string | null; requested_at: string }>;
+    },
+    enabled: !!id,
+  });
+  const hasPendingEdit = pendingEditRequests.length > 0;
 
   // ── Data fetch ────────────────────────────────────────────────────────────
 
@@ -1635,62 +1773,7 @@ export default function GRNDetail() {
     const items = grn.line_items ?? [];
 
     // Stage 1
-    setS1Lines(
-      items.map((item) => {
-        const a = item as any;
-        // Pre-fill priority for the "Received Now" input:
-        //   1. Stage 1 already saved → persisted received_qty
-        //   2. Mid-edit value already on the row → received_qty
-        //   3. Quantity the operator entered in GRNForm → receiving_now
-        //      (GRNForm writes receiving_now at creation; received_qty is
-        //      only set when Stage 1 is saved, see grn-api.ts:1051)
-        //   4. No input yet → fall back to full pending_quantity
-        let recv: number;
-        if (a.quantitative_verified_at != null) {
-          recv = a.received_qty ?? 0;
-        } else if (a.received_qty != null && a.received_qty !== 0) {
-          recv = a.received_qty;
-        } else if (a.receiving_now != null && a.receiving_now !== 0) {
-          recv = a.receiving_now;
-        } else {
-          recv = a.pending_quantity ?? a.po_quantity ?? 0;
-        }
-        return {
-          id:                   item.id ?? "",
-          item_code:            a.drawing_number ?? "",
-          description:          item.description,
-          po_quantity:          item.po_quantity ?? 0,
-          pending_quantity:     a.pending_quantity ?? item.po_quantity ?? 0,
-          received_qty:         recv,
-          qty_matched:          a.qty_matched_qty ?? (typeof a.qty_matched === 'number' ? a.qty_matched : recv),
-          condition_on_arrival: a.condition_on_arrival ?? "good",
-          packing_intact:       a.packing_intact !== false,
-          notes:                a.quantitative_notes ?? "",
-          is_final_grn:         a.is_final_grn ?? false,
-          store_confirmed:      a.store_confirmed ?? false,
-          store_confirmed_by:   a.store_confirmed_by ?? null,
-          product_match:        (a.product_match ?? 'yes') as 'yes' | 'partial' | 'no',
-          matching_units:       a.matching_units ?? recv,
-          non_matching_units:   a.non_matching_units ?? 0,
-          mismatch_reason:      a.mismatch_reason ?? "",
-          mismatch_disposition: a.mismatch_disposition ?? "",
-          jig_confirmed:        a.jig_confirmed ?? false,
-          jigs_sent:            (a as any).jigs_sent ?? null,
-          unit:                 a.unit ?? "NOS",
-          ordered_qty_2:        a.ordered_qty_2 ?? null,
-          unit_2:               a.unit_2 ?? null,
-          received_now_2:       a.received_now_2 ?? null,
-          dc_line_item_id:      a.dc_line_item_id ?? null,
-          po_line_item_id:      a.po_line_item_id ?? null,
-          nature_of_process:    a.nature_of_process ?? null,
-          stage1_rejected_qty:  a.stage1_rejected_qty ?? 0,
-          // Snapshots; overwritten by the refetch effect below.
-          prev_received_live:   a.previously_received_qty ?? a.previously_received ?? 0,
-          prev_accepted_live:   0,
-          prev_received_2:      0,
-        };
-      })
-    );
+    setS1Lines(deriveS1Lines(grn));
 
     // Initialise jigReturnConfirmed from persisted jig_confirmed values
     setJigReturnConfirmed(
@@ -2020,6 +2103,36 @@ export default function GRNDetail() {
         };
       });
 
+      // ── Edit-approval routing (Stage 1 RE-EDIT only) ─────────────────────────
+      // A non-approver editing an already-completed Stage 1 (s1Editing) does NOT
+      // write to the live row. Instead we diff each line against its persisted DB
+      // values and file one edit_request per changed line for an approver to apply
+      // later. First-time entry (s1Editing === false) and approvers keep the
+      // existing direct save below — no behaviour change for them.
+      if (s1Editing && !isApprover) {
+        const persistedById = new Map<string, any>(
+          ((grn.line_items ?? []) as any[]).map((li: any) => [li.id, li]),
+        );
+        let submitted = 0;
+        for (const ln of lines) {
+          const prev = persistedById.get(ln.id);
+          if (!prev) continue;
+          const proposed = diffStage1LineForApproval(ln, prev, jigReturnConfirmed.has(ln.id));
+          if (Object.keys(proposed).length === 0) continue;
+          const { error } = await (supabase as any).rpc("rpc_submit_edit_request", {
+            p_entity_type: "grn",
+            p_entity_id: grn.id,
+            p_table_name: "grn_line_items",
+            p_record_id: ln.id,
+            p_proposed_changes: proposed,
+            p_reason: null,
+          });
+          if (error) throw new Error(friendlyEditRequestError(error));
+          submitted++;
+        }
+        return { mode: "approval" as const, submitted };
+      }
+
       const overrideStage = needsFinanceApproval ? "pending_finance_approval" : null;
       // Optional manual inward serial. Send null when blank/invalid; the DB
       // trigger derives inward_fy from grn_date — never send inward_fy here.
@@ -2061,8 +2174,28 @@ export default function GRNDetail() {
       }
 
       await logAudit("grn", id!, needsFinanceApproval ? "GRN Stage 1 — Pending Finance Approval" : "GRN Stage 1 Complete");
+      return { mode: "direct" as const };
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
+      // Approval path: DB row was NOT written — revert the buffer to persisted
+      // values (the stale `grn` closure still holds them, since nothing changed)
+      // so the read-only view never shows the edited values as if saved.
+      if (result?.mode === "approval") {
+        setS1Lines(deriveS1Lines(grn));
+        setS1Editing(false);
+        clearGrnDraft(id);
+        queryClient.invalidateQueries({ queryKey: ["grn-stages", id] });
+        queryClient.invalidateQueries({ queryKey: ["grn-edit-requests", id] });
+        if (result.submitted === 0) {
+          toast({ title: "No changes to submit", description: "Nothing was changed." });
+        } else {
+          toast({
+            title: "Changes submitted for approval",
+            description: "No changes have been applied yet.",
+          });
+        }
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: ["grn-stages", id] });
       queryClient.invalidateQueries({ queryKey: ["grns"] });
       queryClient.invalidateQueries({ queryKey: ["pending-qc-grns"] });
@@ -2672,10 +2805,27 @@ export default function GRNDetail() {
             <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-600 px-2 py-0.5 text-[11px] font-medium">Inward team</span>
           </div>
           <div className="flex items-center gap-3">
+            {/* Approver with a pending request → link to the review queue. */}
+            {hasPendingEdit && isApprover && (
+              <button
+                type="button"
+                onClick={() => navigate("/edit-approvals")}
+                className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 text-[11px] font-medium hover:bg-amber-100"
+              >
+                <Clock className="h-3 w-3" /> {pendingEditRequests.length} edit{pendingEditRequests.length === 1 ? "" : "s"} pending — Review
+              </button>
+            )}
             {s1RoleAllowed && s1Done && !s1Editing && !isDeletedOrCancelled && (
-              <Button variant="outline" size="sm" className="text-blue-700 border-blue-300 bg-white" onClick={() => setS1Editing(true)}>
-                Edit Receipt
-              </Button>
+              hasPendingEdit && !isApprover ? (
+                // Non-approver with a request already in flight → block duplicates.
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 text-[11px] font-medium">
+                  <Clock className="h-3 w-3" /> Edit pending approval
+                </span>
+              ) : (
+                <Button variant="outline" size="sm" className="text-blue-700 border-blue-300 bg-white" onClick={() => setS1Editing(true)}>
+                  Edit Receipt
+                </Button>
+              )
             )}
             {s1Done && (
               <span className="inline-flex items-center gap-1 text-xs text-blue-700 font-semibold">
