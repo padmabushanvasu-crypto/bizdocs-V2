@@ -102,15 +102,24 @@ export interface StockStatusRow {
   stock_in_fg_ready: number;
   // Per-bucket stock value = bucket qty × standard_cost. Computed in
   // fetchStockStatus so the page and any export read from one source.
-  // awo_qty is intentionally excluded — costs reflect the 5 physical buckets.
+  // The AWO-derived fields below are intentionally excluded — costs
+  // reflect the 5 physical buckets.
   cost_free: number;
   cost_in_process: number;
   cost_in_subassembly_wip: number;
   cost_in_fg_wip: number;
   cost_in_fg_ready: number;
   cost_total: number;
-  // Calculated from active AWOs — not stored in DB, computed in fetchStockStatus
-  awo_qty: number;
+  // Calculated from active AWOs — not stored in DB, computed in fetchStockStatus.
+  // Kept as three separate figures rather than one merged awo_qty:
+  //   wip_qty      — this item's own AWOs currently in_progress
+  //   queued_qty   — this item's own AWOs still pending_materials
+  //   reserved_for_other_builds_qty — this item consumed as a BOM component
+  //     by some OTHER item's active AWO (demand against this item, not its
+  //     own production)
+  wip_qty: number;
+  queued_qty: number;
+  reserved_for_other_builds_qty: number;
 }
 
 export interface ItemFilters {
@@ -339,14 +348,19 @@ export async function fetchStockStatus() {
   // Valid statuses: draft | pending_materials | in_progress | complete | cancelled
   const { data: awoData, error: awoError } = await (supabase as any)
     .from("assembly_work_orders")
-    .select("id, item_id, quantity_to_build")
+    .select("id, item_id, quantity_to_build, status")
     .eq("company_id", companyId)
     .in("status", ["pending_materials", "in_progress"])
     .is("deleted_at", null);
 
   if (awoError) console.error("[fetchStockStatus] AWO query error:", awoError);
 
-  const activeAwos = (awoData ?? []) as Array<{ id: string; item_id: string; quantity_to_build: number }>;
+  const activeAwos = (awoData ?? []) as Array<{
+    id: string;
+    item_id: string;
+    quantity_to_build: number;
+    status: "pending_materials" | "in_progress";
+  }>;
 
   // For each active AWO, fetch its BOM lines (parent_item_id = item being built, child_item_id = component)
   let bomLines: Array<{ parent_item_id: string; child_item_id: string; quantity: number }> = [];
@@ -361,18 +375,28 @@ export async function fetchStockStatus() {
     bomLines = (bomData ?? []) as typeof bomLines;
   }
 
-  // Build a per-item awo_qty map:
-  //   - For the sub-assembly itself: add quantity_to_build
-  //   - For each BOM component: add (bom_qty × quantity_to_build)
-  const awoQtyMap = new Map<string, number>();
+  // Build three per-item maps instead of one merged awo_qty:
+  //   - wip_qty: the sub-assembly's own AWOs currently in_progress
+  //   - queued_qty: the sub-assembly's own AWOs still pending_materials
+  //   - reserved_for_other_builds_qty: this item as a BOM component
+  //     (bom_qty × quantity_to_build) of some OTHER item's active AWO —
+  //     demand against this item, not its own production
+  const wipQtyMap = new Map<string, number>();
+  const queuedQtyMap = new Map<string, number>();
+  const reservedForOtherBuildsMap = new Map<string, number>();
   for (const awo of activeAwos) {
     const qtyToBuild = awo.quantity_to_build ?? 0;
-    // Sub-assembly being built
-    awoQtyMap.set(awo.item_id, (awoQtyMap.get(awo.item_id) ?? 0) + qtyToBuild);
-    // Components consumed by the AWO
+    // Sub-assembly being built, by the AWO's own status
+    const ownMap = awo.status === "in_progress" ? wipQtyMap : queuedQtyMap;
+    ownMap.set(awo.item_id, (ownMap.get(awo.item_id) ?? 0) + qtyToBuild);
+    // Components consumed by the AWO — always the "reserved" bucket,
+    // never merged into the built item's own wip/queued figures.
     for (const line of bomLines.filter((l) => l.parent_item_id === awo.item_id)) {
       const componentQty = (line.quantity ?? 0) * qtyToBuild;
-      awoQtyMap.set(line.child_item_id, (awoQtyMap.get(line.child_item_id) ?? 0) + componentQty);
+      reservedForOtherBuildsMap.set(
+        line.child_item_id,
+        (reservedForOtherBuildsMap.get(line.child_item_id) ?? 0) + componentQty
+      );
     }
   }
   // Compute stock_status and effective_min_stock client-side (same logic as the view)
@@ -403,7 +427,9 @@ export async function fetchStockStatus() {
       cost_in_fg_wip,
       cost_in_fg_ready,
       cost_total,
-      awo_qty: awoQtyMap.get(item.id) ?? 0,
+      wip_qty: wipQtyMap.get(item.id) ?? 0,
+      queued_qty: queuedQtyMap.get(item.id) ?? 0,
+      reserved_for_other_builds_qty: reservedForOtherBuildsMap.get(item.id) ?? 0,
     } as StockStatusRow;
   });
   return rows;
