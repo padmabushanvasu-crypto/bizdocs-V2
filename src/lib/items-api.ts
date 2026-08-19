@@ -341,7 +341,8 @@ export async function fetchStockStatus() {
     .from("assembly_work_orders")
     .select("id, item_id, quantity_to_build")
     .eq("company_id", companyId)
-    .in("status", ["pending_materials", "in_progress"]);
+    .in("status", ["pending_materials", "in_progress"])
+    .is("deleted_at", null);
 
   if (awoError) console.error("[fetchStockStatus] AWO query error:", awoError);
 
