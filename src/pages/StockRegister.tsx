@@ -347,7 +347,7 @@ function StockRegisterInner() {
       result = result.filter((r) => {
         if (availability === "in_store")          return r.stock_free > 0;
         if (availability === "at_vendor")         return r.stock_in_process > 0;
-        if (availability === "in_production")     return (r.stock_in_subassembly_wip + r.stock_in_fg_wip + r.awo_qty) > 0;
+        if (availability === "in_production")     return (r.stock_in_subassembly_wip + r.stock_in_fg_wip + r.wip_qty + r.queued_qty) > 0;
         if (availability === "ready_to_dispatch") return r.stock_in_fg_ready > 0;
         if (availability === "negative")          return r.stock_free < 0;
         return true;
@@ -368,7 +368,8 @@ function StockRegisterInner() {
       result = result.filter(
         (r) =>
           (r.stock_free + r.stock_in_process + r.stock_in_subassembly_wip +
-            r.stock_in_fg_wip + r.awo_qty + r.stock_in_fg_ready) === 0
+            r.stock_in_fg_wip + r.wip_qty + r.queued_qty +
+            r.reserved_for_other_builds_qty + r.stock_in_fg_ready) === 0
       );
     }
 
@@ -387,7 +388,8 @@ function StockRegisterInner() {
 
   // Footer cost rollups across the currently filtered set. Sums the same
   // per-row cost_* fields that the body cells render (so footer can never
-  // disagree with the body). awo_qty is excluded — costs reflect the 5
+  // disagree with the body). wip_qty/queued_qty/reserved_for_other_builds_qty
+  // are excluded — costs reflect the 5
   // physical buckets only.
   const footerTotals = useMemo(() => {
     let sum_cost_free = 0;
@@ -670,8 +672,16 @@ function StockRegisterInner() {
                   tip="Sent for processing via Delivery Challan, expected to return"
                 />
                 <ColHeader
-                  label="In Production"
-                  tip="Currently being assembled into a sub-assembly or finished good"
+                  label="WIP"
+                  tip="This item's own work orders currently in progress"
+                />
+                <ColHeader
+                  label="Queued"
+                  tip="This item's own work orders raised but still awaiting materials"
+                />
+                <ColHeader
+                  label="Reserved for Other Builds"
+                  tip="Quantity of this item required as a BOM component by another item's active work order — demand, not this item's own production"
                 />
                 <ColHeader
                   label="Ready to Ship"
@@ -742,11 +752,11 @@ function StockRegisterInner() {
                 </tr>
               ) : (
                 filtered.map((row) => {
-                  const inProd = row.stock_in_subassembly_wip + row.stock_in_fg_wip + row.awo_qty;
                   // Closing stock = free (issuable) stock only, per business rule.
-                  // Deliberately excludes in_process / WIP / fg_ready / awo_qty —
-                  // those stay visible in their own columns for audit, but none
-                  // count toward closing stock.
+                  // Deliberately excludes in_process / WIP / fg_ready / wip_qty /
+                  // queued_qty / reserved_for_other_builds_qty — those stay
+                  // visible in their own columns for audit, but none count
+                  // toward closing stock.
                   const total = row.stock_free;
                   const minReq = row.min_stock_override || row.min_stock || 0;
 
@@ -790,9 +800,19 @@ function StockRegisterInner() {
                         <Num value={row.stock_in_process} />
                       </td>
 
-                      {/* In Production */}
+                      {/* WIP */}
                       <td className="px-3 py-3 text-right">
-                        <Num value={inProd} />
+                        <Num value={row.wip_qty} />
+                      </td>
+
+                      {/* Queued */}
+                      <td className="px-3 py-3 text-right">
+                        <Num value={row.queued_qty} />
+                      </td>
+
+                      {/* Reserved for Other Builds */}
+                      <td className="px-3 py-3 text-right">
+                        <Num value={row.reserved_for_other_builds_qty} />
                       </td>
 
                       {/* Ready to Ship */}
@@ -999,7 +1019,11 @@ function StockRegisterInner() {
                 <td className="px-3 py-3" />
                 {/* At Vendor qty */}
                 <td className="px-3 py-3" />
-                {/* In Production qty */}
+                {/* WIP qty */}
+                <td className="px-3 py-3" />
+                {/* Queued qty */}
+                <td className="px-3 py-3" />
+                {/* Reserved for Other Builds qty */}
                 <td className="px-3 py-3" />
                 {/* Ready to Ship qty */}
                 <td className="px-3 py-3" />
