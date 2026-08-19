@@ -87,6 +87,14 @@ export default function PurchaseOrderForm() {
   const prefillState = location.state as { vendor_id?: string; prefill_items?: { item_id: string; description: string; qty: number; unit: string }[] } | null;
   const [prefillApplied, setPrefillApplied] = useState(false);
   const firstQtyRef = useRef<HTMLInputElement | null>(null);
+  // Guards the existingPO hydration effect below so it only seeds form state
+  // once per edit session, not on every existingPO/vendors refetch (which
+  // would otherwise wipe in-progress edits — e.g. a GRN save elsewhere in
+  // the same tab invalidating ["purchase-order", id]).
+  const hydratedPOIdRef = useRef<string | null>(null);
+  // Vendor lookup is guarded separately since `vendors` can resolve after
+  // existingPO — this keeps retrying until the vendor is found, then locks.
+  const vendorAutoSelectedForPOIdRef = useRef<string | null>(null);
 
   // Form state
   const [poNumber, setPONumber] = useState("");
@@ -197,7 +205,8 @@ export default function PurchaseOrderForm() {
 
 
   useEffect(() => {
-    if (existingPO) {
+    if (existingPO && hydratedPOIdRef.current !== existingPO.id) {
+      hydratedPOIdRef.current = existingPO.id;
       setPONumber(existingPO.po_number);
       setPODate(new Date(existingPO.po_date));
       setVendorId(existingPO.vendor_id);
@@ -213,7 +222,11 @@ export default function PurchaseOrderForm() {
       setGstRate(existingPO.gst_rate || 18);
       setAdditionalCharges(existingPO.additional_charges || []);
       if (existingPO.line_items?.length) {
-        setLineItems(existingPO.line_items);
+        // Clone so form state never shares object references with the
+        // ["purchase-order", id] query cache — updateLineItem below
+        // replaces objects rather than mutating them, but only if state
+        // doesn't start out aliased to the cache.
+        setLineItems(existingPO.line_items.map((item) => ({ ...item })));
       }
       // Restore currency
       const poCurrency = (existingPO as any).currency || "INR";
@@ -224,11 +237,20 @@ export default function PurchaseOrderForm() {
       setExchangeRate(poExchangeRate);
       setIsForeignVendor(poCurrency !== "INR");
       if (poCurrency !== "INR") setRateFetchStatus("manual");
-      // Find vendor
-      if (existingPO.vendor_id) {
-        const v = vendors.find((v) => v.id === existingPO.vendor_id);
-        if (v) setSelectedVendor(v);
-      }
+    }
+  }, [existingPO]);
+
+  // Vendor lookup is split out from the hydration effect above because
+  // `vendors` can still be loading when existingPO first resolves — this
+  // keeps retrying until found, then locks per PO id so a later vendors
+  // refetch can't override a vendor the user has since changed.
+  useEffect(() => {
+    if (!existingPO?.vendor_id) return;
+    if (vendorAutoSelectedForPOIdRef.current === existingPO.id) return;
+    const v = vendors.find((v) => v.id === existingPO.vendor_id);
+    if (v) {
+      setSelectedVendor(v);
+      vendorAutoSelectedForPOIdRef.current = existingPO.id;
     }
   }, [existingPO, vendors]);
 
@@ -464,14 +486,16 @@ export default function PurchaseOrderForm() {
 
   // Line item handlers
   const updateLineItem = (index: number, field: keyof POLineItem, value: any) => {
-    setLineItems((items) => {
-      const updated = [...items];
-      (updated[index] as any)[field] = value;
-      if (field === "quantity" || field === "unit_price") {
-        updated[index].line_total = Math.round(updated[index].quantity * updated[index].unit_price * 100) / 100;
-      }
-      return updated;
-    });
+    setLineItems((items) =>
+      items.map((item, i) => {
+        if (i !== index) return item;
+        const updated = { ...item, [field]: value };
+        if (field === "quantity" || field === "unit_price") {
+          updated.line_total = Math.round(updated.quantity * updated.unit_price * 100) / 100;
+        }
+        return updated;
+      })
+    );
   };
 
   const addLineItem = () => {
