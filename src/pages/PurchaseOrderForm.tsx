@@ -222,7 +222,11 @@ export default function PurchaseOrderForm() {
       setGstRate(existingPO.gst_rate || 18);
       setAdditionalCharges(existingPO.additional_charges || []);
       if (existingPO.line_items?.length) {
-        setLineItems(existingPO.line_items);
+        // Clone so form state never shares object references with the
+        // ["purchase-order", id] query cache — updateLineItem below
+        // replaces objects rather than mutating them, but only if state
+        // doesn't start out aliased to the cache.
+        setLineItems(existingPO.line_items.map((item) => ({ ...item })));
       }
       // Restore currency
       const poCurrency = (existingPO as any).currency || "INR";
@@ -482,14 +486,16 @@ export default function PurchaseOrderForm() {
 
   // Line item handlers
   const updateLineItem = (index: number, field: keyof POLineItem, value: any) => {
-    setLineItems((items) => {
-      const updated = [...items];
-      (updated[index] as any)[field] = value;
-      if (field === "quantity" || field === "unit_price") {
-        updated[index].line_total = Math.round(updated[index].quantity * updated[index].unit_price * 100) / 100;
-      }
-      return updated;
-    });
+    setLineItems((items) =>
+      items.map((item, i) => {
+        if (i !== index) return item;
+        const updated = { ...item, [field]: value };
+        if (field === "quantity" || field === "unit_price") {
+          updated.line_total = Math.round(updated.quantity * updated.unit_price * 100) / 100;
+        }
+        return updated;
+      })
+    );
   };
 
   const addLineItem = () => {
