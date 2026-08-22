@@ -1188,6 +1188,14 @@ export interface QuantitativeLineData {
   // dc_line_item_id is needed when GRN is a DC return so the alt
   // returned quantity can also be written back to dc_line_items.returned_qty_2.
   dc_line_item_id?: string | null;
+  // Approved item conversion (guard_grn_dc_item_conversion validates item_id).
+  // Set ONLY when the receiver picks a different item than the DC issued — the
+  // display columns travel with it so the row stays truthful. Absent otherwise,
+  // so a normal receipt never writes item_id and never invokes the guard.
+  item_id?: string | null;
+  description?: string | null;
+  drawing_number?: string | null;
+  unit?: string | null;
 }
 
 export async function saveQuantitativeStage(
@@ -1203,7 +1211,7 @@ export async function saveQuantitativeStage(
   const now = new Date().toISOString();
   // Update each line
   for (const line of lines) {
-    const linePayload = {
+    const linePayload: Record<string, unknown> = {
       received_qty: line.received_qty,
       receiving_now: line.received_qty, // keep legacy field in sync
       qty_matched: line.qty_matched >= line.received_qty, // boolean: did all received units match?
@@ -1224,6 +1232,16 @@ export async function saveQuantitativeStage(
       jig_confirmed: jigReturnConfirmed ? jigReturnConfirmed.has(line.id) : false,
       stage1_rejected_qty: line.stage1_rejected_qty ?? null,
     };
+    // Approved item conversion — only present when the receiver picked a
+    // different item. Writing item_id fires guard_grn_dc_item_conversion, which
+    // rejects anything outside {DC item} ∪ {active conversions}. The display
+    // columns keep the row consistent with the received item.
+    if (line.item_id !== undefined && line.item_id !== null) {
+      linePayload.item_id = line.item_id;
+      if (line.description !== undefined) linePayload.description = line.description;
+      if (line.drawing_number !== undefined) linePayload.drawing_number = line.drawing_number;
+      if (line.unit !== undefined) linePayload.unit = line.unit;
+    }
     const { error } = await (supabase as any)
       .from('grn_line_items')
       .update(linePayload)

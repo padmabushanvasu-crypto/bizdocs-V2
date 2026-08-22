@@ -56,6 +56,7 @@ import { UNITS } from "@/lib/constants";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { isEditApprover, friendlyEditRequestError } from "@/lib/permissions";
+import { fetchGrnConversionOptions, type GrnConversionOption } from "@/lib/item-conversions-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { isFinalBatch } from "@/lib/dc-receipt-utils";
 import { GRNFinanceApproval } from "@/components/GRNFinanceApproval";
@@ -120,6 +121,8 @@ interface S1Line {
   // Carried through so saveStage1 can stamp returned_qty_2 back onto dc_line_items
   dc_line_item_id?: string | null;
   po_line_item_id?: string | null;
+  // Current item on the line — editable via the DC conversion picker (Stage 1).
+  item_id: string | null;
   // For DC-return GRNs — the job-work stage / process this line was sent out for
   nature_of_process?: string | null;
   // Stage 1 visual rejection by Inward Team — independent of Stage 2 rejection.
@@ -179,6 +182,7 @@ function deriveS1Lines(grn: any): S1Line[] {
       received_now_2:       a.received_now_2 ?? null,
       dc_line_item_id:      a.dc_line_item_id ?? null,
       po_line_item_id:      a.po_line_item_id ?? null,
+      item_id:              a.item_id ?? null,
       nature_of_process:    a.nature_of_process ?? null,
       stage1_rejected_qty:  a.stage1_rejected_qty ?? 0,
       // Snapshots; overwritten by the live-aggregate refetch effect.
@@ -236,6 +240,16 @@ function diffStage1LineForApproval(
     // captured in the request instead of being silently dropped.
     jig_confirmed:        jigConfirmed,
   };
+  // Item conversion (Stage 1 picker): ln carries item_id only when the receiver
+  // changed it. Include it + its display columns so a non-approver's conversion
+  // during a re-edit is captured in the request, not silently dropped. The guard
+  // validates it when the approver applies the change.
+  if (ln.item_id !== undefined && ln.item_id !== null) {
+    wouldBe.item_id = ln.item_id;
+    if (ln.description !== undefined) wouldBe.description = ln.description;
+    if (ln.drawing_number !== undefined) wouldBe.drawing_number = ln.drawing_number;
+    if (ln.unit !== undefined) wouldBe.unit = ln.unit;
+  }
   const changed: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(wouldBe)) {
     if (!eqApprovalVal(v, prev?.[k])) changed[k] = v;
@@ -378,6 +392,8 @@ function Stage1Table({
   overQtyIds = [],
   withinToleranceIds = [],
   tolerancePct = 0,
+  conversionOptions = {},
+  onConvertItem,
 }: {
   lines: S1Line[];
   onChange: (idx: number, field: keyof S1Line, value: unknown) => void;
@@ -385,6 +401,8 @@ function Stage1Table({
   overQtyIds?: string[];
   withinToleranceIds?: string[];
   tolerancePct?: number;
+  conversionOptions?: Record<string, GrnConversionOption[]>;
+  onConvertItem?: (idx: number, opt: GrnConversionOption) => void;
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200">
@@ -452,6 +470,30 @@ function Stage1Table({
                         Process: {line.nature_of_process}
                       </p>
                     )}
+                    {/* DC conversion picker — only when the DC line has approved
+                        conversion targets. Default = item as issued (inert). */}
+                    {(() => {
+                      const opts = line.dc_line_item_id ? conversionOptions[line.dc_line_item_id] : undefined;
+                      if (!opts || opts.length <= 1) return null;
+                      return (
+                        <select
+                          className="mt-1 w-full text-xs border border-slate-300 rounded px-1 py-0.5 bg-white text-slate-700 disabled:opacity-60"
+                          value={line.item_id ?? ""}
+                          disabled={disabled}
+                          title="Received item (only approved conversions of the DC-issued item are allowed)"
+                          onChange={(e) => {
+                            const opt = opts.find((o) => o.item_id === e.target.value);
+                            if (opt) onConvertItem?.(idx, opt);
+                          }}
+                        >
+                          {opts.map((o) => (
+                            <option key={o.item_id} value={o.item_id}>
+                              {o.isOriginal ? `${o.label} (as issued)` : o.label}
+                            </option>
+                          ))}
+                        </select>
+                      );
+                    })()}
                   </td>
 
                   {/* Ordered — with muted unit suffix */}
@@ -1661,6 +1703,15 @@ export default function GRNDetail() {
     enabled: !!id,
   });
 
+  // Allowed item options per DC-linked line (own item + approved conversions).
+  // Non-fatal: on error the picker simply doesn't appear and receiving proceeds
+  // with the item as issued.
+  const { data: conversionOptions = {} } = useQuery({
+    queryKey: ["grn-conversion-options", id],
+    queryFn: () => fetchGrnConversionOptions((grn as any)?.company_id, grn),
+    enabled: !!grn && !!(grn as any)?.linked_dc_id,
+  });
+
   const { data: companySettings } = useQuery({
     queryKey: ["company-settings"],
     queryFn: fetchCompanySettings,
@@ -2082,8 +2133,16 @@ export default function GRNDetail() {
 
   const s1Mutation = useMutation({
     mutationFn: async () => {
+      const persistedById = new Map<string, any>(
+        ((grn.line_items ?? []) as any[]).map((li: any) => [li.id, li]),
+      );
       const lines: QuantitativeLineData[] = s1Lines.map((l) => {
         const tier = overReceiptTiers.find((t) => t.line.id === l.id);
+        // Item conversion: only carry item_id (+ display cols) when the receiver
+        // picked a different item than the DC issued. Absent otherwise, so a
+        // normal receipt never writes item_id and never invokes the guard.
+        const prev = persistedById.get(l.id);
+        const itemChanged = !!l.dc_line_item_id && l.item_id != null && prev && l.item_id !== prev.item_id;
         return {
           id:                   l.id,
           received_qty:         l.received_qty,
@@ -2100,6 +2159,12 @@ export default function GRNDetail() {
           received_now_2:       (l.ordered_qty_2 ?? 0) > 0 ? (l.received_now_2 ?? null) : null,
           dc_line_item_id:      l.dc_line_item_id ?? null,
           stage1_rejected_qty:  l.stage1_rejected_qty > 0 ? l.stage1_rejected_qty : null,
+          ...(itemChanged ? {
+            item_id:        l.item_id,
+            description:    l.description,
+            drawing_number: l.item_code,
+            unit:           l.unit,
+          } : {}),
         };
       });
 
@@ -2110,9 +2175,6 @@ export default function GRNDetail() {
       // later. First-time entry (s1Editing === false) and approvers keep the
       // existing direct save below — no behaviour change for them.
       if (s1Editing && !isApprover) {
-        const persistedById = new Map<string, any>(
-          ((grn.line_items ?? []) as any[]).map((li: any) => [li.id, li]),
-        );
         let submitted = 0;
         for (const ln of lines) {
           const prev = persistedById.get(ln.id);
@@ -2490,6 +2552,23 @@ export default function GRNDetail() {
     setS1Lines((prev) => {
       const next = [...prev];
       next[idx] = { ...next[idx], [field]: value };
+      return next;
+    });
+  };
+
+  // Apply a conversion pick: set item_id plus the display columns so the line
+  // stays truthful to the received item. The actual DB write happens in the
+  // Stage 1 save, gated by the guard trigger.
+  const convertS1LineItem = (idx: number, opt: GrnConversionOption) => {
+    setS1Lines((prev) => {
+      const next = [...prev];
+      next[idx] = {
+        ...next[idx],
+        item_id: opt.item_id,
+        item_code: opt.item_code ?? next[idx].item_code,
+        description: opt.description ?? next[idx].description,
+        unit: opt.unit ?? next[idx].unit,
+      };
       return next;
     });
   };
@@ -2974,6 +3053,8 @@ export default function GRNDetail() {
               overQtyIds={overQtyLines.map(l => l.id)}
               withinToleranceIds={withinToleranceItems.map(t => t.line.id)}
               tolerancePct={tolerancePct}
+              conversionOptions={conversionOptions}
+              onConvertItem={convertS1LineItem}
             />
           ) : (
             <Stage1ReadOnly lines={s1Lines} isDcGrn={!!g.linked_dc_id} />
