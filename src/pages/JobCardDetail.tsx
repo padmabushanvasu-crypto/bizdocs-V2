@@ -1,21 +1,30 @@
+import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, AlertTriangle, TrendingUp, CheckCircle2, Clock, Circle, Wrench, ExternalLink } from "lucide-react";
+import { ChevronLeft, AlertTriangle, TrendingUp, CheckCircle2, Clock, Circle, Wrench, ExternalLink, Send } from "lucide-react";
 import { fetchJobWork, type JobWork, type JobWorkStep } from "@/lib/job-works-api";
 import { fetchProcessingRouteAll, type ProcessingRoute } from "@/lib/dc-intelligence-api";
 import { format } from "date-fns";
 import { formatPercent } from "@/lib/gst-utils";
 import { useAuth } from "@/hooks/useAuth";
+import { useCanEdit } from "@/hooks/useCanEdit";
+import { SendMoreMaterialDialog } from "@/components/SendMoreMaterialDialog";
 
 // ── Vertical timeline step ────────────────────────────────────────────────────
 
 function TimelineStep({
   step,
   isLast,
+  canEdit = false,
+  onSendMore,
 }: {
   step: JobWorkStep;
   isLast: boolean;
+  canEdit?: boolean;
+  onSendMore?: (step: JobWorkStep) => void;
 }) {
+  const outwardDcs = step.outward_dcs ?? [];
+  const totalSent = outwardDcs.reduce((s, d) => s + (d.qty ?? 0), 0);
   const done = step.status === "done";
   const matReturned = step.status === "material_returned";
   const active = step.status === "in_progress";
@@ -70,7 +79,7 @@ function TimelineStep({
     if (step.step_type === "external") {
       statusLabel = step.vendor_name ? `At Vendor — ${step.vendor_name}` : "At Vendor";
       statusColor = "text-amber-700";
-      sublabel = step.dc_number ? `DC: ${step.dc_number}` : null;
+      // Outward DCs are listed below (multi-DC), not in the sublabel.
     } else {
       statusLabel = "In Progress";
       statusColor = "text-amber-700";
@@ -124,6 +133,47 @@ function TimelineStep({
               <p className="text-[11px] text-slate-400 mt-0.5">
                 Confirmed qty: {step.actual_qty} {step.unit ?? ""}
               </p>
+            )}
+
+            {/* Outward DCs — the multi-DC list (job_card_step_dcs), replacing the
+                single legacy outward_dc_id display. */}
+            {step.step_type === "external" && (
+              <div className="mt-1.5">
+                {outwardDcs.length > 0 ? (
+                  <div className="space-y-0.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Sent out</p>
+                    {outwardDcs.map((d) => (
+                      <div key={d.id} className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                        <span className="font-mono text-slate-600">{d.dc_number ?? "—"}</span>
+                        <span className="text-slate-300">·</span>
+                        <span className="tabular-nums">{d.qty} {step.unit ?? ""}</span>
+                        {d.dc_date && (
+                          <>
+                            <span className="text-slate-300">·</span>
+                            <span>{format(new Date(d.dc_date), "dd MMM yyyy")}</span>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                    <div className="text-[11px] font-medium text-slate-600 pt-0.5">
+                      Total sent: <span className="tabular-nums">{totalSent}</span> {step.unit ?? ""}
+                    </div>
+                  </div>
+                ) : step.dc_number ? (
+                  <div className="text-[11px] font-mono text-slate-500">{step.dc_number}</div>
+                ) : (
+                  <div className="text-[11px] text-slate-400">No outward DC</div>
+                )}
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => onSendMore?.(step)}
+                    className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+                  >
+                    <Send className="h-3 w-3" /> Send more material out
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -385,6 +435,8 @@ export default function JobCardDetail() {
   const navigate = useNavigate();
   const { role } = useAuth();
   const hideCosts = role === 'inward_team' || role === 'qc_team' || role === 'assembly_team';
+  const canEdit = useCanEdit('job-works');
+  const [sendMoreStep, setSendMoreStep] = useState<JobWorkStep | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["job-work", id],
@@ -552,7 +604,13 @@ export default function JobCardDetail() {
         ) : (
           <div>
             {steps.map((step, i) => (
-              <TimelineStep key={step.id} step={step} isLast={i === steps.length - 1} />
+              <TimelineStep
+                key={step.id}
+                step={step}
+                isLast={i === steps.length - 1}
+                canEdit={canEdit}
+                onSendMore={setSendMoreStep}
+              />
             ))}
           </div>
         )}
@@ -578,6 +636,14 @@ export default function JobCardDetail() {
           </div>
         </div>
       )}
+
+      <SendMoreMaterialDialog
+        stepId={sendMoreStep?.id ?? null}
+        stepName={sendMoreStep?.name ?? null}
+        jobCardId={id!}
+        open={!!sendMoreStep}
+        onClose={() => setSendMoreStep(null)}
+      />
     </div>
   );
 }
