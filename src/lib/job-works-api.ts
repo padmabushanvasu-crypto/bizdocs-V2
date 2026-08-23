@@ -118,6 +118,21 @@ export interface JobWorkStep {
   updated_at: string;
   // Derived (not in DB — populated by fetchJobWork join)
   dc_number?: string | null;
+  // Source of truth for outward DCs going forward (job_card_steps.outward_dc_id /
+  // qty_sent are legacy single-value). Populated by fetchJobWork.
+  outward_dcs?: StepOutwardDc[];
+}
+
+// One outward DC linked to a step via job_card_step_dcs. dc_number/dc_date come
+// from delivery_challans (the row has no date column of its own; created_at on
+// backfilled rows is the migration timestamp, not the send date).
+export interface StepOutwardDc {
+  id: string;
+  dc_id: string;
+  dc_line_item_id: string | null;
+  qty: number;
+  dc_number: string | null;
+  dc_date: string | null;
 }
 
 export interface JobWorkFilters {
@@ -291,9 +306,40 @@ export async function fetchJobWork(id: string): Promise<JobWork & { steps: JobWo
   ]);
   if (jcRes.error) throw jcRes.error;
   if (stepsRes.error) throw stepsRes.error;
+
+  // Outward DCs per step from job_card_step_dcs (the multi-DC source of truth).
+  // Date comes from delivery_challans.dc_date, not the row's backfill created_at.
+  const stepIds = (stepsRes.data ?? []).map((s: any) => s.id);
+  const outwardByStep = new Map<string, StepOutwardDc[]>();
+  if (stepIds.length > 0) {
+    const { data: stepDcs, error: stepDcErr } = await (supabase as any)
+      .from("job_card_step_dcs")
+      .select("id, job_card_step_id, dc_id, dc_line_item_id, qty, dc:delivery_challans!dc_id(dc_number, dc_date)")
+      .in("job_card_step_id", stepIds)
+      .eq("direction", "outward");
+    if (stepDcErr) throw stepDcErr;
+    for (const r of (stepDcs ?? []) as any[]) {
+      const arr = outwardByStep.get(r.job_card_step_id) ?? [];
+      arr.push({
+        id: r.id,
+        dc_id: r.dc_id,
+        dc_line_item_id: r.dc_line_item_id ?? null,
+        qty: Number(r.qty ?? 0),
+        dc_number: (r.dc as any)?.dc_number ?? null,
+        dc_date: (r.dc as any)?.dc_date ?? null,
+      });
+      outwardByStep.set(r.job_card_step_id, arr);
+    }
+    // Oldest send first.
+    for (const arr of outwardByStep.values()) {
+      arr.sort((a, b) => (a.dc_date ?? "").localeCompare(b.dc_date ?? ""));
+    }
+  }
+
   const steps: JobWorkStep[] = (stepsRes.data ?? []).map((s: any) => ({
     ...s,
     dc_number: (s.outward_dc as any)?.dc_number ?? null,
+    outward_dcs: outwardByStep.get(s.id) ?? [],
   }));
   const dcMap = new Map<string, LinkedDc>();
   for (const s of stepsRes.data ?? []) {
@@ -650,6 +696,59 @@ export async function fetchJobWorkSteps(jobCardId: string): Promise<JobWorkStep[
   return (data ?? []) as JobWorkStep[];
 }
 
+// DCs that can be linked to a step as an additional outward send: this company's
+// DCs not already linked to the step (unique (step, dc, direction)). Most recent
+// first. Used by the "Send more material out" picker.
+export async function fetchLinkableOutwardDcs(
+  stepId: string,
+): Promise<Array<{ id: string; dc_number: string; dc_date: string | null }>> {
+  const companyId = await getCompanyId();
+  if (!companyId) return [];
+  const { data: existing } = await (supabase as any)
+    .from("job_card_step_dcs")
+    .select("dc_id")
+    .eq("job_card_step_id", stepId)
+    .eq("direction", "outward");
+  const linked = new Set(((existing ?? []) as any[]).map((r) => r.dc_id));
+  const { data, error } = await (supabase as any)
+    .from("delivery_challans")
+    .select("id, dc_number, dc_date")
+    .eq("company_id", companyId)
+    .order("dc_date", { ascending: false })
+    .limit(100);
+  if (error) throw error;
+  return ((data ?? []) as any[])
+    .filter((d) => !linked.has(d.id))
+    .map((d) => ({ id: d.id, dc_number: d.dc_number, dc_date: d.dc_date ?? null }));
+}
+
+// Link an additional outward DC to a step (job_card_step_dcs INSERT — never
+// overwrites the legacy outward_dc_id). Stock-neutral (no triggers on the table).
+export async function addStepOutwardDc(params: {
+  stepId: string;
+  dcId: string;
+  qty: number;
+  dcLineItemId?: string | null;
+}): Promise<void> {
+  const companyId = await getCompanyId();
+  const { error } = await (supabase as any)
+    .from("job_card_step_dcs")
+    .insert({
+      company_id: companyId,
+      job_card_step_id: params.stepId,
+      dc_id: params.dcId,
+      dc_line_item_id: params.dcLineItemId ?? null,
+      direction: "outward",
+      qty: params.qty,
+    });
+  if (error) {
+    if ((error as any).code === "23505") {
+      throw new Error("This DC is already linked to this step.");
+    }
+    throw error;
+  }
+}
+
 export async function createJobWorkStep(
   data: Partial<JobWorkStep> & { job_card_id: string }
 ): Promise<JobWorkStep> {
@@ -693,6 +792,22 @@ export async function createJobWorkStep(
     .select()
     .single();
   if (error) throw error;
+
+  // Mirror the initial outward link into job_card_step_dcs so all outward links
+  // land in the new source-of-truth table (legacy outward_dc_id is kept as-is).
+  // Best-effort: a failure here must not fail step creation.
+  if (data.outward_dc_id) {
+    await (supabase as any)
+      .from("job_card_step_dcs")
+      .insert({
+        company_id: companyId,
+        job_card_step_id: (step as any).id,
+        dc_id: data.outward_dc_id,
+        direction: "outward",
+        qty: data.qty_sent ?? 0,
+      })
+      .then((r: any) => { if (r?.error) console.error("[job-works] step-dc link insert failed:", r.error); });
+  }
 
   // If external step, update job card location to at_vendor
   if (data.step_type === "external" && data.vendor_name) {
