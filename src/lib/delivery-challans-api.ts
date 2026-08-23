@@ -997,87 +997,18 @@ export async function softDeleteDeliveryChallan(
   options: { deletion_reason?: string; stockAction?: DcDeleteStockAction } = {}
 ): Promise<void> {
   const { deletion_reason, stockAction } = options;
-  const companyId = await getCompanyId();
-  const today = new Date().toISOString().split('T')[0];
-
-  if (stockAction) {
-    const { data: dcHeader } = await supabase
-      .from('delivery_challans')
-      .select('dc_number')
-      .eq('id', id)
-      .single();
-    const dcNumber = (dcHeader as any)?.dc_number ?? '';
-
-    const { data: lines } = await supabase
-      .from('dc_line_items')
-      .select('item_id, item_code, description, qty_nos, quantity')
-      .eq('dc_id', id);
-
-    for (const line of (lines ?? []) as any[]) {
-      if (!line.item_id) continue;
-      const qty: number = line.qty_nos ?? line.quantity ?? 0;
-      if (qty <= 0) continue;
-
-      if (stockAction === 'recalled' || stockAction === 'immediate_return') {
-        const notesLabel = stockAction === 'recalled'
-          ? 'DC deleted — recalled before dispatch'
-          : 'DC deleted — immediate vendor return';
-        const notes = deletion_reason ? `${notesLabel}: ${deletion_reason}` : notesLabel;
-        // Ledger-first per iteration.
-        await addStockLedgerEntry({
-          item_id: line.item_id,
-          item_code: line.item_code ?? null,
-          item_description: line.description ?? null,
-          transaction_date: today,
-          transaction_type: 'dc_return',
-          qty_in: qty,
-          qty_out: 0,
-          balance_qty: 0,
-          unit_cost: 0,
-          total_value: 0,
-          reference_type: 'delivery_challan',
-          reference_id: id,
-          reference_number: dcNumber,
-          notes,
-          created_by: null,
-          from_state: STOCK_STATE.IN_PROCESS,
-          to_state: STOCK_STATE.FREE,
-        });
-        await updateStockBucket(line.item_id, 'in_process', -qty);
-        await updateStockBucket(line.item_id, 'free', +qty);
-      } else if (stockAction === 'write_off') {
-        const notes = deletion_reason
-          ? `DC deleted — stock written off: ${deletion_reason}`
-          : 'DC deleted — stock written off';
-        // Ledger-first per iteration.
-        await addStockLedgerEntry({
-          item_id: line.item_id,
-          item_code: line.item_code ?? null,
-          item_description: line.description ?? null,
-          transaction_date: today,
-          transaction_type: 'rejection_writeoff',
-          qty_in: 0,
-          qty_out: qty,
-          balance_qty: 0,
-          unit_cost: 0,
-          total_value: 0,
-          reference_type: 'delivery_challan',
-          reference_id: id,
-          reference_number: dcNumber,
-          notes,
-          created_by: null,
-          from_state: STOCK_STATE.IN_PROCESS,
-          to_state: STOCK_STATE.SCRAPPED,
-        });
-        await updateStockBucket(line.item_id, 'in_process', -qty);
-      }
-    }
-  }
-
-  const { error } = await (supabase as any)
-    .from('delivery_challans')
-    .update({ status: 'deleted', deletion_reason: deletion_reason ?? null })
-    .eq('id', id);
+  // All stock reversal + job-card cleanup now lives in rpc_delete_delivery_challan,
+  // which always reverses outstanding stock (no more "delete with no stock
+  // handling" silent no-op — that was the bug). 'recalled' / 'immediate_return'
+  // both return stock to free; 'write_off' scraps it; omitted → 'return_to_free'.
+  const mappedAction = stockAction === 'write_off' ? 'write_off' : 'return_to_free';
+  const { error } = await (supabase as any).rpc('rpc_delete_delivery_challan', {
+    p_dc_id: id,
+    p_deletion_reason: deletion_reason ?? null,
+    p_stock_action: mappedAction,
+  });
+  // Let RPC errors (e.g. the returned-material guard) propagate as-is so the UI
+  // can surface them.
   if (error) throw error;
 }
 
