@@ -111,15 +111,20 @@ export interface StockStatusRow {
   cost_in_fg_ready: number;
   cost_total: number;
   // Calculated from active AWOs — not stored in DB, computed in fetchStockStatus.
-  // Kept as three separate figures rather than one merged awo_qty:
+  // Kept as separate figures rather than one merged awo_qty:
   //   wip_qty      — this item's own AWOs currently in_progress
   //   queued_qty   — this item's own AWOs still pending_materials
-  //   reserved_for_other_builds_qty — this item consumed as a BOM component
-  //     by some OTHER item's active AWO (demand against this item, not its
-  //     own production)
+  //   queued_for_other_builds_qty — this item as a BOM component of some
+  //     OTHER item's AWO that is still pending_materials: projected demand,
+  //     material not yet issued
+  //   consumed_by_other_builds_qty — stock_in_subassembly_wip +
+  //     stock_in_fg_wip: this item's own physical WIP buckets, i.e. material
+  //     already issued to some build (this item's own, or another's). Not
+  //     AWO-derived — re-surfaced from the bucket columns above.
   wip_qty: number;
   queued_qty: number;
-  reserved_for_other_builds_qty: number;
+  queued_for_other_builds_qty: number;
+  consumed_by_other_builds_qty: number;
 }
 
 export interface ItemFilters {
@@ -375,27 +380,33 @@ export async function fetchStockStatus() {
     bomLines = (bomData ?? []) as typeof bomLines;
   }
 
-  // Build three per-item maps instead of one merged awo_qty:
+  // Build per-item maps instead of one merged awo_qty:
   //   - wip_qty: the sub-assembly's own AWOs currently in_progress
   //   - queued_qty: the sub-assembly's own AWOs still pending_materials
-  //   - reserved_for_other_builds_qty: this item as a BOM component
-  //     (bom_qty × quantity_to_build) of some OTHER item's active AWO —
-  //     demand against this item, not its own production
+  //   - queued_for_other_builds_qty: this item as a BOM component
+  //     (bom_qty × quantity_to_build) of some OTHER item's AWO that is
+  //     still pending_materials — projected demand, material not yet
+  //     issued. Once that parent AWO moves to in_progress, the issue
+  //     shows up as this item's own stock_in_subassembly_wip/stock_in_fg_wip
+  //     (consumed_by_other_builds_qty below) instead — so in_progress
+  //     parents are deliberately excluded here to avoid double-counting.
   const wipQtyMap = new Map<string, number>();
   const queuedQtyMap = new Map<string, number>();
-  const reservedForOtherBuildsMap = new Map<string, number>();
+  const queuedForOtherBuildsMap = new Map<string, number>();
   for (const awo of activeAwos) {
     const qtyToBuild = awo.quantity_to_build ?? 0;
     // Sub-assembly being built, by the AWO's own status
     const ownMap = awo.status === "in_progress" ? wipQtyMap : queuedQtyMap;
     ownMap.set(awo.item_id, (ownMap.get(awo.item_id) ?? 0) + qtyToBuild);
-    // Components consumed by the AWO — always the "reserved" bucket,
-    // never merged into the built item's own wip/queued figures.
+    // Components of a still-pending_materials parent AWO only — material
+    // not yet issued. Never merged into the built item's own wip/queued
+    // figures.
+    if (awo.status !== "pending_materials") continue;
     for (const line of bomLines.filter((l) => l.parent_item_id === awo.item_id)) {
       const componentQty = (line.quantity ?? 0) * qtyToBuild;
-      reservedForOtherBuildsMap.set(
+      queuedForOtherBuildsMap.set(
         line.child_item_id,
-        (reservedForOtherBuildsMap.get(line.child_item_id) ?? 0) + componentQty
+        (queuedForOtherBuildsMap.get(line.child_item_id) ?? 0) + componentQty
       );
     }
   }
@@ -429,7 +440,9 @@ export async function fetchStockStatus() {
       cost_total,
       wip_qty: wipQtyMap.get(item.id) ?? 0,
       queued_qty: queuedQtyMap.get(item.id) ?? 0,
-      reserved_for_other_builds_qty: reservedForOtherBuildsMap.get(item.id) ?? 0,
+      queued_for_other_builds_qty: queuedForOtherBuildsMap.get(item.id) ?? 0,
+      consumed_by_other_builds_qty:
+        Number(item.stock_in_subassembly_wip ?? 0) + Number(item.stock_in_fg_wip ?? 0),
     } as StockStatusRow;
   });
   return rows;
