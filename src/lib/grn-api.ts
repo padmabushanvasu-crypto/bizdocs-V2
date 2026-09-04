@@ -1921,9 +1921,37 @@ export interface ReceiptSummaryEntry {
 }
 
 /**
- * Returns a map of { dc_line_item_id → { received, accepted } } across all
- * non-deleted, non-cancelled GRNs that were created against the given DC.
- * Pass excludeGrnId to skip the current GRN (edit-mode prevents double-counting).
+ * Key for matching a grn_line_items row back to its dc_line_items row by
+ * (item_id, drawing_number) instead of the raw dc_line_item_id FK.
+ *
+ * dc_line_item_id can't be trusted for this: DC edits DELETE + re-INSERT
+ * dc_line_items (STOCK_LIFECYCLE_GOVERNANCE.md §3.1), which assigns new ids
+ * and — because grn_line_items.dc_line_item_id carries no FK constraint —
+ * leaves every prior GRN pointing at a dangling id instead of erroring or
+ * nulling out. item_id survives that regeneration (it's a real FK to
+ * `items`), so pairing it with drawing_number reconnects orphaned rows
+ * while keeping legitimately distinct lines apart: some DCs carry two
+ * dc_line_items rows sharing an item_id with different drawing numbers
+ * (e.g. a generic hardware item like a bolt reused across parts), which a
+ * bare item_id key would incorrectly merge.
+ *
+ * Returns null when neither part identifies anything, so callers can keep
+ * their existing `if (!key) ...` skip guard.
+ */
+export function dcReceiptKey(
+  itemId?: string | null,
+  drawingNumber?: string | null,
+): string | null {
+  const dn = (drawingNumber ?? '').trim();
+  if (!itemId && !dn) return null;
+  return `${itemId ?? ''}::${dn}`;
+}
+
+/**
+ * Returns a map of { dcReceiptKey(item_id, drawing_number) → { received, accepted } }
+ * across all non-deleted, non-cancelled GRNs that were created against the
+ * given DC. Pass excludeGrnId to skip the current GRN (edit-mode prevents
+ * double-counting).
  *
  * `received` sums Stage 1's received_qty (with fallback to received_now /
  * receiving_now for pre-Stage-1 rows). `accepted` sums Stage 2's accepted_qty.
@@ -1943,11 +1971,11 @@ export async function fetchDCReceiptSummary(
   const grnIds = (grns as any[]).map((g: any) => g.id);
   const { data: items } = await (supabase as any)
     .from('grn_line_items')
-    .select('dc_line_item_id, received_qty, received_now, receiving_now, accepted_qty, accepted_quantity, received_now_2, accepted_qty_2')
+    .select('item_id, drawing_number, received_qty, received_now, receiving_now, accepted_qty, accepted_quantity, received_now_2, accepted_qty_2')
     .in('grn_id', grnIds);
   const summary: Record<string, ReceiptSummaryEntry> = {};
   for (const item of (items ?? []) as any[]) {
-    const key: string | null = item.dc_line_item_id;
+    const key = dcReceiptKey(item.item_id, item.drawing_number);
     if (!key) continue;
     const received = Number(item.received_qty ?? item.received_now ?? item.receiving_now ?? 0) || 0;
     const accepted = Number(item.accepted_qty ?? item.accepted_quantity ?? 0) || 0;

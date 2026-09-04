@@ -24,6 +24,7 @@ import {
   saveGRNScrapItems,
   fetchDCReceiptSummary,
   fetchPOReceiptSummary,
+  dcReceiptKey,
   type QuantitativeLineData,
   type QualitativeLineData,
   type InspectionMethod,
@@ -1927,7 +1928,7 @@ export default function GRNDetail() {
           const summary = await fetchDCReceiptSummary(g.linked_dc_id, id);
           if (cancelled) return;
           setS1Lines(prev => prev.map(l => {
-            const key = l.dc_line_item_id ?? null;
+            const key = dcReceiptKey(l.item_id, l.item_code);
             if (!key) return l;
             const e = summary[key];
             if (!e) return l;
