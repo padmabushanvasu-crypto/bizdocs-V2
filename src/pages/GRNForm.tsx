@@ -21,6 +21,7 @@ import {
   fetchPOLineItemsForGRN,
   fetchDCReceiptSummary,
   fetchPOReceiptSummary,
+  dcReceiptKey,
   recordGRNAndUpdatePO,
   fetchGRN,
   type GRNLineItem,
@@ -498,7 +499,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
           const summary = await fetchDCReceiptSummary(g.linked_dc_id, editId ?? null);
           if (cancelled) return;
           setLineItems(prev => prev.map(li => {
-            const key = (li as any).dc_line_item_id;
+            const key = dcReceiptKey(li.item_id, li.drawing_number);
             if (!key) return li;
             const entry = summary[key];
             if (!entry) return li;
@@ -607,7 +608,8 @@ function GRNFormInner({ defaultGrnType }: Props) {
         fetchDCReceiptSummary(dc.id, editId ?? null),
       ]);
       const pendingDCItems = (dcItems ?? []).filter((item: any) => {
-          const alreadyReceived = prevReceivedMap[item.id]?.received ?? 0;
+          const key = dcReceiptKey(item.item_id, item.drawing_number);
+          const alreadyReceived = (key ? prevReceivedMap[key]?.received : undefined) ?? 0;
           return (item.quantity || 0) - alreadyReceived > 0;
         });
       if (pendingDCItems.length === 0) {
@@ -617,8 +619,9 @@ function GRNFormInner({ defaultGrnType }: Props) {
       }
       setFullyReceived(false);
       const items: LineItemState[] = pendingDCItems.map((item: any, idx: number) => {
-          const alreadyReceived = prevReceivedMap[item.id]?.received ?? 0;
-          const prevAccepted = prevReceivedMap[item.id]?.accepted ?? 0;
+          const key = dcReceiptKey(item.item_id, item.drawing_number);
+          const alreadyReceived = (key ? prevReceivedMap[key]?.received : undefined) ?? 0;
+          const prevAccepted = (key ? prevReceivedMap[key]?.accepted : undefined) ?? 0;
           const pending = Math.max(0, (item.quantity || 0) - alreadyReceived);
           // Default receiving qty to 0 (same reasoning as handlePOSelect):
           // operator must explicitly enter what came back from the job worker.
