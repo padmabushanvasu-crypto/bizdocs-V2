@@ -2,13 +2,17 @@ import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, AlertTriangle, TrendingUp, CheckCircle2, Clock, Circle, Wrench, ExternalLink, Send } from "lucide-react";
-import { fetchJobWork, type JobWork, type JobWorkStep } from "@/lib/job-works-api";
+import {
+  fetchJobWork, fetchJobCardStagePositions,
+  type JobWork, type JobWorkStep, type JobCardStagePosition,
+} from "@/lib/job-works-api";
 import { fetchProcessingRouteAll, type ProcessingRoute } from "@/lib/dc-intelligence-api";
 import { format } from "date-fns";
 import { formatPercent } from "@/lib/gst-utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useCanEdit } from "@/hooks/useCanEdit";
 import { SendMoreMaterialDialog } from "@/components/SendMoreMaterialDialog";
+import { ConfirmInternalStepDialog } from "@/components/ConfirmInternalStepDialog";
 
 // ── Vertical timeline step ────────────────────────────────────────────────────
 
@@ -17,11 +21,16 @@ function TimelineStep({
   isLast,
   canEdit = false,
   onSendMore,
+  eligibleQty,
+  onConfirmInternal,
 }: {
   step: JobWorkStep;
   isLast: boolean;
   canEdit?: boolean;
   onSendMore?: (step: JobWorkStep) => void;
+  // New stage-ledger model only (non-legacy job cards) — undefined for legacy.
+  eligibleQty?: number;
+  onConfirmInternal?: (step: JobWorkStep) => void;
 }) {
   const outwardDcs = step.outward_dcs ?? [];
   const totalSent = outwardDcs.reduce((s, d) => s + (d.qty ?? 0), 0);
@@ -173,6 +182,21 @@ function TimelineStep({
                     <Send className="h-3 w-3" /> Send more material out
                   </button>
                 )}
+              </div>
+            )}
+
+            {/* Internal stage — new stage-ledger model only. Legacy cards never
+                pass eligibleQty, so this never renders for them. */}
+            {step.step_type === "internal" && eligibleQty != null && eligibleQty > 0 && (
+              <div className="mt-1.5">
+                <p className="text-[11px] text-slate-500">{eligibleQty} {step.unit ?? ""} eligible to confirm</p>
+                <button
+                  type="button"
+                  onClick={() => onConfirmInternal?.(step)}
+                  className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+                >
+                  <CheckCircle2 className="h-3 w-3" /> Confirm units done
+                </button>
               </div>
             )}
           </div>
@@ -437,6 +461,7 @@ export default function JobCardDetail() {
   const hideCosts = role === 'inward_team' || role === 'qc_team' || role === 'assembly_team';
   const canEdit = useCanEdit('job-works');
   const [sendMoreStep, setSendMoreStep] = useState<JobWorkStep | null>(null);
+  const [confirmStep, setConfirmStep] = useState<JobWorkStep | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["job-work", id],
@@ -449,6 +474,20 @@ export default function JobCardDetail() {
     queryFn: () => fetchProcessingRouteAll(data!.item_id!),
     enabled: !!data?.item_id,
   });
+
+  // New stage-ledger model only. `legacy` isn't on the JobWork type (frozen
+  // cards predate it) but job_cards is selected with "*", so it's present on
+  // the raw row. Legacy cards never query this — they keep their existing,
+  // untouched behavior exactly as today.
+  const isLegacy = (data as any)?.legacy !== false;
+  const { data: stagePositions = [] } = useQuery({
+    queryKey: ["job-card-stage-positions", id],
+    queryFn: () => fetchJobCardStagePositions(id!),
+    enabled: !!id && !isLegacy,
+  });
+  const eligibleByStep = new Map<number, JobCardStagePosition>(
+    stagePositions.map((p) => [p.step_number, p])
+  );
 
   if (isLoading) {
     return (
@@ -610,6 +649,12 @@ export default function JobCardDetail() {
                 isLast={i === steps.length - 1}
                 canEdit={canEdit}
                 onSendMore={setSendMoreStep}
+                eligibleQty={
+                  isLegacy || step.step_number == null
+                    ? undefined
+                    : eligibleByStep.get(step.step_number)?.eligible_qty
+                }
+                onConfirmInternal={setConfirmStep}
               />
             ))}
           </div>
@@ -644,6 +689,18 @@ export default function JobCardDetail() {
         open={!!sendMoreStep}
         onClose={() => setSendMoreStep(null)}
       />
+
+      {confirmStep && confirmStep.step_number != null && (
+        <ConfirmInternalStepDialog
+          open={!!confirmStep}
+          onOpenChange={(v) => { if (!v) setConfirmStep(null); }}
+          jobCardId={id!}
+          stepNumber={confirmStep.step_number}
+          stepName={confirmStep.name}
+          eligibleQty={eligibleByStep.get(confirmStep.step_number)?.eligible_qty ?? 0}
+          unit={confirmStep.unit}
+        />
+      )}
     </div>
   );
 }

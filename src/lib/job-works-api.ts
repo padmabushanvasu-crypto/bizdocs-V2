@@ -478,6 +478,60 @@ export async function openJobCard(params: {
   return row;
 }
 
+/** One row of v_job_card_stage_position — eligible_qty is what's still
+ *  available to send/confirm at that stage right now (net of everything
+ *  already issued/confirmed/reversed). See DC_STAGE_FLOW_REDESIGN.md §4.5. */
+export interface JobCardStagePosition {
+  job_card_id: string;
+  step_number: number;
+  is_gate: boolean;
+  upstream: number;
+  issued_qty: number;
+  returned_accepted_qty: number;
+  returned_rejected_qty: number;
+  internal_done_qty: number;
+  rework_in_qty: number;
+  scrapped_qty: number;
+  converted_out_qty: number;
+  released_unprocessed_qty: number;
+  completed_qty: number;
+  consumed_qty: number;
+  eligible_qty: number;
+}
+
+export async function fetchJobCardStagePositions(jobCardId: string): Promise<JobCardStagePosition[]> {
+  const { data, error } = await (supabase as any)
+    .from("v_job_card_stage_position")
+    .select("*")
+    .eq("job_card_id", jobCardId)
+    .order("step_number", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as JobCardStagePosition[];
+}
+
+/**
+ * Confirms qty done on an internal stage (step_type = 'internal') via
+ * rpc_confirm_internal_step. Ledger-only bookkeeping unless this happens to
+ * be the job card's final stage, in which case the RPC itself credits
+ * stock_free — never duplicate that here.
+ */
+export async function confirmInternalStep(params: {
+  job_card_id: string;
+  step_number: number;
+  qty: number;
+}): Promise<{ step_number: number; qty_confirmed: number; eligible_remaining: number; final_stage_credited: boolean }> {
+  const { data, error } = await (supabase as any).rpc("rpc_confirm_internal_step", {
+    p_job_card_id: params.job_card_id,
+    p_step_number: params.step_number,
+    p_qty: params.qty,
+    p_idempotency_key: crypto.randomUUID(),
+  });
+  if (error) throw new Error(error.message);
+  const row = (data as any[] | null)?.[0];
+  if (!row) throw new Error("rpc_confirm_internal_step returned no row");
+  return row;
+}
+
 export async function updateJobWork(id: string, data: Partial<JobWork>): Promise<JobWork> {
   const { data: jc, error } = await (supabase as any)
     .from("job_cards")
