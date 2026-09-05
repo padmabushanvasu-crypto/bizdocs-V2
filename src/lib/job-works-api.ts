@@ -441,6 +441,43 @@ export async function createJobWork(
   return jc as JobWork;
 }
 
+// ============================================================
+// New stage-ledger model (DC_STAGE_FLOW_REDESIGN.md) — forward path
+// ============================================================
+
+/**
+ * Opens a new-model job card via rpc_open_job_card. This is the ONLY way to
+ * create a job card under the new ledger model — the RPC snapshots the
+ * item's active bom_processing_routes into job_card_steps, writes the
+ * `entry` (+ `skipped`, if entering past the minimum stage) ledger rows, and
+ * moves the quantity `stock_free -> stock_in_process` atomically. Never
+ * reimplement any of that here; this is a thin call + verbatim error pass-through.
+ *
+ * p_reason is required by the RPC itself whenever p_entry_stage is above the
+ * item's minimum active stage — the caller should pre-validate that in the UI
+ * for a fast local error, but the RPC's own message is what gets shown on
+ * failure either way.
+ */
+export async function openJobCard(params: {
+  item_id: string;
+  qty: number;
+  entry_stage: number;
+  reason?: string | null;
+  notes?: string | null;
+}): Promise<{ job_card_id: string; jc_number: string }> {
+  const { data, error } = await (supabase as any).rpc("rpc_open_job_card", {
+    p_item_id: params.item_id,
+    p_qty: params.qty,
+    p_entry_stage: params.entry_stage,
+    p_reason: params.reason ?? null,
+    p_notes: params.notes ?? null,
+  });
+  if (error) throw new Error(error.message);
+  const row = (data as { job_card_id: string; jc_number: string }[] | null)?.[0];
+  if (!row) throw new Error("rpc_open_job_card returned no row");
+  return row;
+}
+
 export async function updateJobWork(id: string, data: Partial<JobWork>): Promise<JobWork> {
   const { data: jc, error } = await (supabase as any)
     .from("job_cards")

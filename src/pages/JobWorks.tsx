@@ -1,12 +1,13 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { Activity, Search, AlertTriangle } from "lucide-react";
+import { Activity, Search, AlertTriangle, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchJobWorks, type JobWorkSummary } from "@/lib/job-works-api";
 import { TablePageSize } from "@/components/TablePageSize";
+import { OpenJobCardDialog } from "@/components/OpenJobCardDialog";
 
 const STATUS_PILLS = [
   { label: "All",         value: "all" },
@@ -61,6 +62,7 @@ export default function JobWorks() {
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [openDialogOpen, setOpenDialogOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["job-works", { search, status, page, pageSize }],
@@ -83,7 +85,12 @@ export default function JobWorks() {
           <h1 className="text-2xl font-bold text-slate-900">Job Cards</h1>
           <p className="text-sm text-slate-500 mt-1">Track production and outsourced processing stages</p>
         </div>
+        <Button onClick={() => setOpenDialogOpen(true)}>
+          <Plus className="h-4 w-4 mr-1.5" /> Open Job Card
+        </Button>
       </div>
+
+      <OpenJobCardDialog open={openDialogOpen} onOpenChange={setOpenDialogOpen} />
 
       {/* Stage filter pills */}
       <div className="flex flex-wrap gap-1.5">

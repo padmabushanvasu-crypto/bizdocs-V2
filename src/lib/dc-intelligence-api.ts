@@ -14,6 +14,9 @@ export interface ProcessingRoute {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  // New stage-ledger model (DC_STAGE_FLOW_REDESIGN.md §4.3)
+  entry_allowed: boolean;
+  is_gate: boolean;
 }
 
 export interface BprVendor {
