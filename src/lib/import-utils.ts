@@ -55,7 +55,7 @@ const DROPDOWN_OPTIONS: Record<string, string[]> = {
   party_type: ["vendor", "customer", "both"],
   state: INDIAN_STATES.map((s) => s.name),
   gst_rate: ["0", "5", "12", "18", "28"],
-  item_type: ["raw_material", "component", "sub_assembly", "bought_out", "finished_good", "product", "consumable", "service", "asset"],
+  item_type: ["raw_material", "component", "sub_assembly", "bought_out", "finished_good", "consumable", "service"],
   unit: ["NOS", "KG", "MTR", "SFT", "SET", "ROLL", "LTR", "PKT", "BOX"],
 };
 
@@ -394,7 +394,7 @@ export const ITEMS_IMPORT_CONFIG: ImportConfig = {
     { key: "drawing_number", label: "Drawing No.", description: "Engineering drawing reference", required: false, example: "230082-R1" },
     { key: "item_code", label: "Code", description: "Your internal item code", required: true, example: "230082" },
     { key: "description", label: "Description", description: "Item description", required: true, example: "Bearing Housing ASGB" },
-    { key: "item_type", label: "Type", description: "raw_material/component/sub_assembly/bought_out/finished_good/product/consumable/service/asset", required: true, example: "component" },
+    { key: "item_type", label: "Type", description: "raw_material/component/sub_assembly/bought_out/finished_good/consumable/service", required: true, example: "component" },
     { key: "unit", label: "Unit", description: "NOS/KG/MTR/SFT/SET/ROLL etc", required: false, example: "NOS" },
     { key: "hsn_sac_code", label: "HSN", description: "HSN or SAC code", required: false, example: "8483" },
     { key: "min_stock", label: "Min Stock", description: "Minimum stock level (reorder trigger)", required: false, example: "10", validate: (v) => validators.positiveNumber("Min Stock")(v) },
@@ -699,7 +699,7 @@ export function normalizeUnit(raw: string): string {
 
 const VALID_ITEM_TYPES = [
   "raw_material", "component", "sub_assembly", "bought_out",
-  "finished_good", "product", "consumable", "service", "asset",
+  "finished_good", "product", "consumable", "service",
 ];
 
 export function normalizeItemType(raw: string): string {
@@ -715,7 +715,6 @@ export function normalizeItemType(raw: string): string {
   if (["product", "prod", "prd"].includes(v)) return "product";
   if (["consumable", "consum", "cons"].includes(v)) return "consumable";
   if (["service", "svc", "srv", "jobwork", "jw"].includes(v)) return "service";
-  if (["asset", "assets", "assest", "assests", "fixedasset", "fixedassets"].includes(v)) return "asset";
   // Fallback: convert to underscore form rather than silently substituting
   const withUnderscores = raw.toLowerCase().trim().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
   return withUnderscores || "component";

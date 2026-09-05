@@ -600,7 +600,7 @@ export async function importItemsBatch(
   const insertErrors = new Map<string, string>(); // item_code.toLowerCase() → DB error reason
   const insertingNormCodes = new Map<string, number>(); // normCode → index in toInsert
 
-  const VALID_TYPES = ["raw_material", "component", "sub_assembly", "bought_out", "finished_good", "product", "consumable", "service", "asset"];
+  const VALID_TYPES = ["raw_material", "component", "sub_assembly", "bought_out", "finished_good", "product", "consumable", "service"];
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -881,7 +881,7 @@ export async function importItemsPatchBatch(
   const insertedCodes: string[] = [];
   const patchOps: Array<{ id: string; patch: Record<string, unknown> }> = [];
   const codeToRow = new Map<string, number>();
-  const VALID_TYPES = ["raw_material", "component", "sub_assembly", "bought_out", "finished_good", "product", "consumable", "service", "asset"];
+  const VALID_TYPES = ["raw_material", "component", "sub_assembly", "bought_out", "finished_good", "product", "consumable", "service"];
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
