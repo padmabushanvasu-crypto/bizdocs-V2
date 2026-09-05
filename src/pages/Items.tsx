@@ -27,6 +27,7 @@ const ITEM_TYPES = [
   { value: "product", label: "Product" },
   { value: "consumable", label: "Consumable" },
   { value: "service", label: "Service" },
+  { value: "asset", label: "Asset" },
 ];
 
 const TYPE_BADGE: Record<string, string> = {
@@ -38,6 +39,7 @@ const TYPE_BADGE: Record<string, string> = {
   product: "bg-emerald-100 text-emerald-800",
   service: "bg-violet-100 text-violet-800",
   consumable: "bg-teal-100 text-teal-800",
+  asset: "bg-rose-100 text-rose-800",
 };
 
 const GST_RATES = [0, 5, 12, 18, 28];
