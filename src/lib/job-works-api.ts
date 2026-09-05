@@ -499,6 +499,67 @@ export interface JobCardStagePosition {
   eligible_qty: number;
 }
 
+/** Non-legacy, open job cards for an item — candidates for linking a
+ *  job-work DC line under the new stage-ledger model. Legacy job cards
+ *  (all 334 pre-cutover cards) are never returned here; they keep using
+ *  the existing job_work_id picker untouched. */
+export interface OpenJobCardOption {
+  id: string;
+  jc_number: string;
+  quantity_original: number;
+  unit: string | null;
+}
+
+export async function fetchOpenJobCardsForItem(itemId: string): Promise<OpenJobCardOption[]> {
+  const { data, error } = await (supabase as any)
+    .from("job_cards")
+    .select("id, jc_number, quantity_original, unit")
+    .eq("item_id", itemId)
+    .eq("legacy", false)
+    .eq("status", "in_progress")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as OpenJobCardOption[];
+}
+
+/** Eligible external stages for a job card — what a job-work DC line may
+ *  legally be issued against right now. Internal stages are excluded (they
+ *  never take a DC; see rpc_confirm_internal_step / ConfirmInternalStepDialog
+ *  instead). Joins job_card_steps for the display name since
+ *  v_job_card_stage_position only carries step_number. */
+export interface EligibleExternalStage {
+  step_number: number;
+  process_name: string;
+  eligible_qty: number;
+}
+
+export async function fetchEligibleExternalStagesForJobCard(jobCardId: string): Promise<EligibleExternalStage[]> {
+  const [{ data: positions, error: posErr }, { data: steps, error: stepErr }] = await Promise.all([
+    (supabase as any)
+      .from("v_job_card_stage_position")
+      .select("step_number, eligible_qty")
+      .eq("job_card_id", jobCardId)
+      .gt("eligible_qty", 0),
+    (supabase as any)
+      .from("job_card_steps")
+      .select("step_number, name, step_type")
+      .eq("job_card_id", jobCardId)
+      .eq("step_type", "external"),
+  ]);
+  if (posErr) throw posErr;
+  if (stepErr) throw stepErr;
+  const externalSteps = new Set((steps ?? []).map((s: any) => s.step_number));
+  const nameByStep = new Map((steps ?? []).map((s: any) => [s.step_number, s.name]));
+  return ((positions ?? []) as any[])
+    .filter((p) => externalSteps.has(p.step_number))
+    .map((p) => ({
+      step_number: p.step_number,
+      process_name: nameByStep.get(p.step_number) ?? `Stage ${p.step_number}`,
+      eligible_qty: Number(p.eligible_qty) || 0,
+    }))
+    .sort((a, b) => a.step_number - b.step_number);
+}
+
 export async function fetchJobCardStagePositions(jobCardId: string): Promise<JobCardStagePosition[]> {
   const { data, error } = await (supabase as any)
     .from("v_job_card_stage_position")
