@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { formatNumber } from "@/lib/gst-utils";
-import { recordPhysicalCount, type CountWorklistRow } from "@/lib/physical-count-api";
+import { submitPhysicalCount, type CountWorklistRow } from "@/lib/physical-count-api";
 
 type RowStatus = "OK" | "UNMATCHED" | "AMBIGUOUS" | "INVALID" | "DUPLICATE";
 
@@ -192,7 +192,7 @@ export function PhysicalCountImportDialog({
     for (let i = 0; i < okRows.length; i++) {
       const r = okRows[i];
       try {
-        await recordPhysicalCount(r.itemId!, r.counted!);
+        await submitPhysicalCount(r.itemId!, r.counted!);
         applied++;
       } catch (e: any) {
         failed++;
@@ -213,14 +213,15 @@ export function PhysicalCountImportDialog({
           <DialogTitle className="flex items-center gap-2"><Upload className="h-4 w-4 text-blue-600" /> Import counts from CSV</DialogTitle>
           <DialogDescription>
             CSV must include <code>item_code</code> and <code>counted_qty</code> columns (other columns are ignored).
-            Nothing is changed until you confirm — only <b>OK</b> rows are applied.
+            Nothing is submitted until you confirm — only <b>OK</b> rows are submitted, and each
+            goes to qc_team/admin approval before it affects stock.
           </DialogDescription>
         </DialogHeader>
 
         {/* Result summary (after apply) */}
         {result ? (
           <div className="py-4 space-y-2">
-            <div className="flex items-center gap-2 text-green-700"><CheckCircle2 className="h-5 w-5" /> Applied {result.applied} count(s).</div>
+            <div className="flex items-center gap-2 text-green-700"><CheckCircle2 className="h-5 w-5" /> Submitted {result.applied} count(s) for approval.</div>
             {result.failed > 0 && (
               <div className="text-red-600 text-sm">
                 {result.failed} failed:
@@ -298,7 +299,7 @@ export function PhysicalCountImportDialog({
             {confirming && (
               <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 flex items-start gap-2">
                 <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-                <span>This resets the FREE (on-shelf) stock for <b>{okRows.length}</b> item(s) and posts a physical-count ledger event for each. In-process / WIP stock is not affected. Proceed?</span>
+                <span>This submits a physical count for <b>{okRows.length}</b> item(s) for qc_team/admin approval. No stock changes until each one is approved. Proceed?</span>
               </div>
             )}
           </>
@@ -308,16 +309,16 @@ export function PhysicalCountImportDialog({
           {result ? (
             <Button onClick={() => { onOpenChange(false); reset(); }}>Done</Button>
           ) : applying ? (
-            <Button disabled>Applying {progress.done}/{progress.total}…</Button>
+            <Button disabled>Submitting {progress.done}/{progress.total}…</Button>
           ) : confirming ? (
             <>
               <Button variant="outline" onClick={() => setConfirming(false)}>Back</Button>
-              <Button onClick={applyAll}>Confirm &amp; apply {okRows.length}</Button>
+              <Button onClick={applyAll}>Confirm &amp; submit {okRows.length}</Button>
             </>
           ) : (
             <>
               <Button variant="outline" onClick={() => { onOpenChange(false); reset(); }}>Cancel</Button>
-              <Button disabled={okRows.length === 0} onClick={() => setConfirming(true)}>Apply {okRows.length} count{okRows.length === 1 ? "" : "s"}</Button>
+              <Button disabled={okRows.length === 0} onClick={() => setConfirming(true)}>Submit {okRows.length} count{okRows.length === 1 ? "" : "s"}</Button>
             </>
           )}
         </DialogFooter>
