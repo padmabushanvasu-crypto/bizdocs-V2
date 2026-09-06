@@ -523,6 +523,9 @@ export default function JobCardDetail() {
       Math.max(0, (t.returned_rejected_qty ?? 0) - (t.rework_in_qty ?? 0) - (t.scrapped_qty ?? 0)),
     ])
   );
+  const reworkCycleByStep = new Map<number, number>(
+    stageLedgerTotals.map((t) => [t.step_number, t.rework_cycle_count ?? 0])
+  );
   // Cancel is only offered while the ledger has nothing but entry/skip; any
   // other event flips to close-short. Mirrors rpc_cancel_job_card's own
   // "activity beyond entry/skip" check — computed here purely to decide
@@ -771,6 +774,7 @@ export default function JobCardDetail() {
           stepName={disposeStep.name}
           undispositionedQty={undispositionedByStep.get(disposeStep.step_number) ?? 0}
           unit={disposeStep.unit}
+          reworkCycleCount={reworkCycleByStep.get(disposeStep.step_number) ?? 0}
         />
       )}
 

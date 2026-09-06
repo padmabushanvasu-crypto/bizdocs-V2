@@ -614,6 +614,7 @@ export interface JobCardStageLedgerTotals {
   scrapped_qty: number;
   converted_out_qty: number;
   released_unprocessed_qty: number;
+  rework_cycle_count: number;
 }
 
 export async function fetchJobCardStageLedgerTotals(jobCardId: string): Promise<JobCardStageLedgerTotals[]> {
