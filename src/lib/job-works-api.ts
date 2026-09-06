@@ -593,6 +593,89 @@ export async function confirmInternalStep(params: {
   return row;
 }
 
+// ============================================================
+// New stage-ledger model — backward path (DC_STAGE_FLOW_REDESIGN.md §10.2)
+// ============================================================
+
+/** Per-stage running totals straight off the ledger — used to compute
+ *  undispositioned rejected qty (returned_rejected_qty - rework_in_qty -
+ *  scrapped_qty) and, for job-card cancel/close-short, whether anything has
+ *  happened beyond entry/skip. */
+export interface JobCardStageLedgerTotals {
+  job_card_id: string;
+  step_number: number;
+  entry_qty: number;
+  skipped_qty: number;
+  issued_qty: number;
+  returned_accepted_qty: number;
+  returned_rejected_qty: number;
+  internal_done_qty: number;
+  rework_in_qty: number;
+  scrapped_qty: number;
+  converted_out_qty: number;
+  released_unprocessed_qty: number;
+}
+
+export async function fetchJobCardStageLedgerTotals(jobCardId: string): Promise<JobCardStageLedgerTotals[]> {
+  const { data, error } = await (supabase as any)
+    .from("v_job_card_stage_ledger_totals")
+    .select("*")
+    .eq("job_card_id", jobCardId)
+    .order("step_number", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as JobCardStageLedgerTotals[];
+}
+
+/**
+ * Dispositions undispositioned rejected qty at a stage — 'rework' (goes back
+ * to the same step, eligible for a fresh DC) or 'scrap' (leaves the batch,
+ * ledger-only + stock write-off, both handled inside the RPC). Never
+ * reimplement either leg client-side.
+ */
+export async function disposeRejected(params: {
+  job_card_id: string;
+  step_number: number;
+  qty: number;
+  disposition: 'rework' | 'scrap';
+  reason: string;
+}): Promise<void> {
+  const { error } = await (supabase as any).rpc("rpc_dispose_rejected", {
+    p_job_card_id: params.job_card_id,
+    p_step_number: params.step_number,
+    p_qty: params.qty,
+    p_disposition: params.disposition,
+    p_reason: params.reason,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** Cancels a job card that has ONLY entry/skip ledger activity (nothing
+ *  issued or confirmed yet). Reverses the open-time free->in_process move. */
+export async function cancelJobCard(jobCardId: string, reason: string): Promise<void> {
+  const { error } = await (supabase as any).rpc("rpc_cancel_job_card", {
+    p_job_card_id: jobCardId,
+    p_reason: reason,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Closes a job card short once activity beyond entry/skip exists. Raises if
+ * material is still outstanding at a vendor (issued > returned on some
+ * external stage) — surfaced verbatim, not worked around.
+ */
+export async function closeJobCardShort(
+  jobCardId: string,
+  reason: string,
+): Promise<Array<{ step_number: number; released_qty: number }>> {
+  const { data, error } = await (supabase as any).rpc("rpc_close_job_card_short", {
+    p_job_card_id: jobCardId,
+    p_reason: reason,
+  });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Array<{ step_number: number; released_qty: number }>;
+}
+
 export async function updateJobWork(id: string, data: Partial<JobWork>): Promise<JobWork> {
   const { data: jc, error } = await (supabase as any)
     .from("job_cards")
