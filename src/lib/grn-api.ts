@@ -2407,99 +2407,36 @@ async function creditPartialStock(
 ): Promise<void> {
   if (!(storeQty > 0)) return;
 
-  // Resolve item_id by drawing_revision fallback if FK is missing.
-  let resolvedItemId: string | null = itemId;
-  let itemCode: string | null = opts.itemCode ?? null;
-  let itemDesc: string | null = opts.itemDescription ?? null;
-  if (!resolvedItemId && opts.drawingNumber) {
-    // drawing_revision is not unique — fail loud on error/ambiguity instead of
-    // .maybeSingle() collapsing a duplicate to null (which would fall through to
-    // the misleading "Store Confirm bypass" throw below).
-    const found = await findItemByDrawingRevision(opts.companyId, opts.drawingNumber, "id, item_code, description");
-    if (found.error) throw found.error;
-    if (found.ambiguous) {
-      throw new Error(`creditPartialStock: drawing '${opts.drawingNumber}' matches multiple items — ambiguous, cannot post credit. Resolve the duplicate first.`);
-    }
-    if (found.row) {
-      resolvedItemId = found.row.id;
-      itemCode = found.row.item_code;
-      itemDesc = found.row.description;
-    }
-  }
-  if (!resolvedItemId) {
-    throw new Error(
-      `creditPartialStock: cannot resolve item_id for grn=${grnId} line=${lineId}. ` +
-      `This indicates a Store Confirm bypass — storeConfirmGRNItems should have blocked this. ` +
-      `Investigate the calling path.`
-    );
-  }
-
-  const today = new Date().toISOString().split('T')[0];
-  const isDcReturn = opts.grnType === 'dc_grn' || !!opts.linkedDcId;
-
-  if (isDcReturn) {
-    // DC return: ledger-first so a failed insert aborts before buckets move.
-    await addStockLedgerEntry({
-      item_id: resolvedItemId,
-      item_code: itemCode,
-      item_description: itemDesc,
-      transaction_date: today,
-      transaction_type: 'dc_return',
-      qty_in: storeQty,
-      qty_out: 0,
-      balance_qty: 0,
-      unit_cost: 0,
-      total_value: 0,
-      reference_type: 'grn',
-      reference_id: grnId,
-      reference_number: opts.grnNumber,
-      notes: 'DC return — storekeeper confirmed (partial)',
-      created_by: null,
-      from_state: STOCK_STATE.IN_PROCESS,
-      to_state: STOCK_STATE.FREE,
-    });
-    await updateStockBucket(resolvedItemId, 'in_process', -storeQty);
-    await updateStockBucket(resolvedItemId, 'free', +storeQty);
-    // Gap A: returned/job-work components can satisfy assembly demand too.
-    await notifyAssemblyDemandRestock({
-      companyId: opts.companyId,
-      itemId: resolvedItemId,
-      itemCode,
-      itemDescription: itemDesc,
-      grnNumber: opts.grnNumber,
-      confirmedBy: opts.confirmedBy,
-    });
-    return;
-  }
-
-  // PO-GRN: credit stock_free from incoming. Ledger-first per Scope 1.
-  await addStockLedgerEntry({
-    item_id: resolvedItemId,
-    item_code: itemCode,
-    item_description: itemDesc,
-    transaction_date: today,
-    transaction_type: 'grn_receipt',
-    qty_in: storeQty,
-    qty_out: 0,
-    balance_qty: 0,
-    unit_cost: 0,
-    total_value: 0,
-    reference_type: 'grn',
-    reference_id: grnId,
-    reference_number: opts.grnNumber,
-    notes: `GRN ${opts.grnNumber ?? ''} store confirmed (partial)`.trim(),
-    created_by: null,
-    from_state: STOCK_STATE.INCOMING,
-    to_state: STOCK_STATE.FREE,
+  // Atomic: resolves the item (id, or drawing_revision fallback with the
+  // same ambiguity guard), posts the ledger row, and updates the bucket(s)
+  // in one guarded transaction with a row lock. Replaces three separate
+  // non-atomic calls. New: a genuine over-return guard on the DC-return leg
+  // — RAISE if returning more than is in in_process — that did not exist
+  // before (the old code relied entirely on updateStockBucket's clamp).
+  // INVENTORY_CONTROL_BLUEPRINT.md Phase 3.
+  const { data, error } = await (supabase as any).rpc('rpc_credit_partial_stock', {
+    p_grn_id: grnId,
+    p_line_id: lineId,
+    p_item_id: itemId,
+    p_store_qty: storeQty,
+    p_grn_type: opts.grnType,
+    p_grn_number: opts.grnNumber,
+    p_drawing_number: opts.drawingNumber,
+    p_company_id: opts.companyId,
+    p_linked_dc_id: opts.linkedDcId ?? null,
   });
-  await updateStockBucket(resolvedItemId, 'free', +storeQty);
+  if (error) throw new Error(error.message);
 
-  // Stock just landed FREE → alert if it satisfies open assembly demand.
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) return; // storeQty <= 0 case, matches the old early return
+
+  // Notification only, not a financial write — stays client-side, after
+  // the RPC has committed, exactly as before.
   await notifyAssemblyDemandRestock({
     companyId: opts.companyId,
-    itemId: resolvedItemId,
-    itemCode,
-    itemDescription: itemDesc,
+    itemId: row.out_resolved_item_id,
+    itemCode: row.out_item_code,
+    itemDescription: opts.itemDescription ?? null,
     grnNumber: opts.grnNumber,
     confirmedBy: opts.confirmedBy,
   });
