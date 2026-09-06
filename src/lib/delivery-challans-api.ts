@@ -803,142 +803,40 @@ export async function cancelDeliveryChallan(id: string, options: DcCancelOptions
   const { reason } = options;
   const stockAction: DcCancelStockAction = options.stockAction ?? 'return_to_free';
   const stepHandling: DcCancelStepHandling = options.jobCardStepHandling ?? 'reset';
-  const today = new Date().toISOString().split('T')[0];
 
-  // ── Header: was this DC ever issued? (issued_at survives partial returns) ──
-  const { data: dcHeader, error: hdrErr } = await supabase
-    .from('delivery_challans')
-    .select('id, dc_number, dc_type, status, issued_at')
-    .eq('id', id)
-    .single();
-  if (hdrErr || !dcHeader) throw hdrErr ?? new Error('DC not found');
-  const dc = dcHeader as any;
-  const dcNumber: string = dc.dc_number ?? '';
-  const wasIssued = !!dc.issued_at;
+  // Fetch header/steps up front ONLY for the audit log payload below — the
+  // RPC re-derives everything itself server-side and does its own guards.
+  const { data: dcHeader } = await supabase
+    .from('delivery_challans').select('dc_number, issued_at').eq('id', id).single();
+  const wasIssued = !!(dcHeader as any)?.issued_at;
+  const { data: stepRows } = await (supabase as any)
+    .from('job_card_steps').select('id').eq('outward_dc_id', id);
+  const linkedStepsCount = (stepRows ?? []).length;
 
-  if (!reason.trim()) {
-    throw new Error('A reason is required to cancel a DC.');
-  }
+  // Atomic: legacy-blocker guard, the existing rpc_cancel_dc call for
+  // job-card lines, the plain-line stock reversal/write-off loop, job-card
+  // step reset, and the status flip — all in one transaction with a row
+  // lock. Replaces a client-side loop where stock could already be reversed
+  // before a later failure left the DC status stuck at 'issued'. New: a
+  // genuine over-return guard (RAISE if outstanding exceeds actual
+  // in_process) that didn't exist before. INVENTORY_CONTROL_BLUEPRINT.md
+  // Phase 3. p_step_handling is now passed through and the RPC honors it
+  // correctly — 'reset' resets non-blocking linked steps to pending,
+  // 'leave' skips that update entirely (both verified by dry run on the
+  // DB side, closing the gap flagged in the previous commit on this branch).
+  const { error } = await (supabase as any).rpc('rpc_cancel_dc_plain_lines', {
+    p_dc_id: id,
+    p_reason: reason,
+    p_stock_action: stockAction,
+    p_step_handling: stepHandling,
+  });
+  if (error) throw new Error(error.message);
 
-  // ── Guard FIRST (before any mutation): linked legacy job-card steps ───────
-  const { data: stepRows, error: stepsErr } = await (supabase as any)
-    .from('job_card_steps')
-    .select('id, status, step_number, name, job_card_id, job_cards:job_card_id(jc_number)')
-    .eq('outward_dc_id', id);
-  if (stepsErr) throw stepsErr;
-  const linkedSteps = (stepRows ?? []) as any[];
-  const blockers = linkedSteps.filter(
-    (s) => s.status === 'done' || s.status === 'material_returned'
-  );
-  if (blockers.length > 0) {
-    const jc = blockers[0]?.job_cards?.jc_number ?? 'a linked job card';
-    throw new Error(
-      `Job card ${jc} already has returned material against this DC; resolve that before cancelling.`
-    );
-  }
-
-  // New stage-ledger model — job-card-linked lines never move stock_free/
-  // stock_in_process on cancel at all (the material is still owned by the
-  // batch, just no longer earmarked for this stage's vendor — it becomes
-  // eligible again at that stage, no stock side-effect). rpc_cancel_dc covers
-  // every such line on this DC in one transaction; it raises if any line
-  // already has a GRN receipt. Running it here — after the read-only legacy
-  // guard above, before any write below — means either guard rejecting
-  // leaves zero side effects; never half-cancel.
-  await cancelDcJobCardLines(id, reason.trim());
-
-  // ── 1. Stock reversal — only for an issued DC. Ledger-first per iteration.
-  //      Job-card-linked lines are excluded (see above — already reversed on
-  //      the job-card ledger, never touch stock buckets for them here). ──
-  if (wasIssued) {
-    const { data: lines } = await supabase
-      .from('dc_line_items')
-      .select('item_id, item_code, description, qty_nos, quantity, returned_qty_nos, job_card_id')
-      .eq('dc_id', id);
-
-    for (const line of (lines ?? []) as any[]) {
-      if (!line.item_id || line.job_card_id) continue;
-      // Outstanding = issued − already-returned, in the line's tracked UOM (NOS).
-      const issued = Number(line.qty_nos ?? line.quantity ?? 0);
-      const returned = Number(line.returned_qty_nos ?? 0);
-      const outstanding = Math.max(0, issued - returned);
-      if (outstanding <= 0) continue;
-
-      if (stockAction === 'return_to_free') {
-        const notes = reason
-          ? `DC cancelled — stock returned to free: ${reason}`
-          : 'DC cancelled — stock returned to free';
-        await addStockLedgerEntry({
-          item_id: line.item_id,
-          item_code: line.item_code ?? null,
-          item_description: line.description ?? null,
-          transaction_date: today,
-          transaction_type: 'dc_return',
-          qty_in: outstanding,
-          qty_out: 0,
-          balance_qty: 0,
-          unit_cost: 0,
-          total_value: 0,
-          reference_type: 'delivery_challan',
-          reference_id: id,
-          reference_number: dcNumber,
-          notes,
-          created_by: null,
-          from_state: STOCK_STATE.IN_PROCESS,
-          to_state: STOCK_STATE.FREE,
-        });
-        await updateStockBucket(line.item_id, 'in_process', -outstanding);
-        await updateStockBucket(line.item_id, 'free', +outstanding);
-      } else if (stockAction === 'write_off') {
-        const notes = reason
-          ? `DC cancelled — stock written off: ${reason}`
-          : 'DC cancelled — stock written off';
-        await addStockLedgerEntry({
-          item_id: line.item_id,
-          item_code: line.item_code ?? null,
-          item_description: line.description ?? null,
-          transaction_date: today,
-          transaction_type: 'rejection_writeoff',
-          qty_in: 0,
-          qty_out: outstanding,
-          balance_qty: 0,
-          unit_cost: 0,
-          total_value: 0,
-          reference_type: 'delivery_challan',
-          reference_id: id,
-          reference_number: dcNumber,
-          notes,
-          created_by: null,
-          from_state: STOCK_STATE.IN_PROCESS,
-          to_state: STOCK_STATE.SCRAPPED,
-        });
-        await updateStockBucket(line.item_id, 'in_process', -outstanding);
-      }
-    }
-  }
-
-  // ── 2. Job-card steps: reset the non-blocking steps (material recalled). ───
-  if (linkedSteps.length > 0 && stepHandling === 'reset') {
-    const { error: resetErr } = await (supabase as any)
-      .from('job_card_steps')
-      .update({ status: 'pending' })
-      .in('id', linkedSteps.map((s) => s.id));
-    if (resetErr) throw resetErr;
-  }
-
-  // ── 3. Status flip LAST. ──────────────────────────────────────────────────
-  const { error } = await supabase
-    .from('delivery_challans')
-    .update({ status: 'cancelled', cancelled_at: new Date().toISOString(), cancellation_reason: reason } as any)
-    .eq('id', id);
-  if (error) throw error;
-
-  // ── 4. Audit. ─────────────────────────────────────────────────────────────
   await logAudit('delivery_challan', id, 'cancelled', {
     reason,
     stockAction: wasIssued ? stockAction : 'none (not issued)',
-    jobCardStepHandling: linkedSteps.length > 0 ? stepHandling : 'no linked steps',
-    linked_steps: linkedSteps.length,
+    jobCardStepHandling: linkedStepsCount > 0 ? stepHandling : 'no linked steps',
+    linked_steps: linkedStepsCount,
   });
 }
 
