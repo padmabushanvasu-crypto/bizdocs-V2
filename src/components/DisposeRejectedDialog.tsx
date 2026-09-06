@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,9 @@ interface DisposeRejectedDialogProps {
   stepName: string;
   undispositionedQty: number;
   unit?: string | null;
+  // From v_job_card_stage_ledger_totals.rework_cycle_count — informational
+  // only, no blocking logic attached.
+  reworkCycleCount?: number;
 }
 
 // Backward path (DC_STAGE_FLOW_REDESIGN.md §10.2, rejection disposition rows)
@@ -23,7 +27,7 @@ interface DisposeRejectedDialogProps {
 // the batch and writes off stock. Both legs live entirely in
 // rpc_dispose_rejected; this is a thin call + verbatim error pass-through.
 export function DisposeRejectedDialog({
-  open, onOpenChange, jobCardId, stepNumber, stepName, undispositionedQty, unit,
+  open, onOpenChange, jobCardId, stepNumber, stepName, undispositionedQty, unit, reworkCycleCount,
 }: DisposeRejectedDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -55,6 +59,13 @@ export function DisposeRejectedDialog({
         </DialogHeader>
 
         <div className="space-y-3 py-2">
+          {(reworkCycleCount ?? 0) >= 2 && (
+            <p className="flex items-center gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              Reworked {reworkCycleCount} times already at this stage.
+            </p>
+          )}
+
           <div className="flex gap-2">
             <Button
               type="button"
