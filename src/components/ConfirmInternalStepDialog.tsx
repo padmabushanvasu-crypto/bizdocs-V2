@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -26,15 +26,27 @@ export function ConfirmInternalStepDialog({
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [qty, setQty] = useState<number | undefined>();
+  // One key per dialog instance so a retry after a network error reuses the
+  // same key instead of minting a fresh one the DB's unique index can't dedupe.
+  const idempotencyKeyRef = useRef<string>(crypto.randomUUID());
 
   useEffect(() => {
     if (open) setQty(eligibleQty > 0 ? eligibleQty : undefined);
   }, [open, eligibleQty]);
 
+  useEffect(() => {
+    if (open) idempotencyKeyRef.current = crypto.randomUUID();
+  }, [open]);
+
   const mutation = useMutation({
     mutationFn: () => {
       if (!qty || qty <= 0) throw new Error("Enter a quantity greater than zero.");
-      return confirmInternalStep({ job_card_id: jobCardId, step_number: stepNumber, qty });
+      return confirmInternalStep({
+        job_card_id: jobCardId,
+        step_number: stepNumber,
+        qty,
+        idempotency_key: idempotencyKeyRef.current,
+      });
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["job-card-stage-positions", jobCardId] });

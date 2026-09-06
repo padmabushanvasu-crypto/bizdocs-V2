@@ -580,12 +580,13 @@ export async function confirmInternalStep(params: {
   job_card_id: string;
   step_number: number;
   qty: number;
+  idempotency_key: string;
 }): Promise<{ step_number: number; qty_confirmed: number; eligible_remaining: number; final_stage_credited: boolean }> {
   const { data, error } = await (supabase as any).rpc("rpc_confirm_internal_step", {
     p_job_card_id: params.job_card_id,
     p_step_number: params.step_number,
     p_qty: params.qty,
-    p_idempotency_key: crypto.randomUUID(),
+    p_idempotency_key: params.idempotency_key,
   });
   if (error) throw new Error(error.message);
   const row = (data as any[] | null)?.[0];

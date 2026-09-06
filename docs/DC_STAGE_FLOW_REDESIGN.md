@@ -376,6 +376,30 @@ Rather than guess, built **confirm-at-receipt**: the decision is deferred to the
 
 **Frontend (Claude Code, branch `feat/grn-confirm-at-receipt-picker`):** `GrnStoreQueue.tsx` now calls `rpc_get_pending_job_card_links` (filtered to the lines being confirmed) before `storeConfirmGRNItems`; if non-empty, `ConfirmJobCardLinkDialog` shows the candidates from `rpc_get_job_card_link_candidates` plus a "Not part of a job card" option and calls `rpc_link_dc_line_to_job_card` per line before store-confirm proceeds. `p_step_number` is deliberately never passed — the server resolves it via `_jcsl_open_external_step`, the same value the dialog displayed. No change for the 243 auto-resolving lines or any Phase-3-onward DC. Pending: PR merge and one live click-through on a real two-candidate item.
 
+## 11b. Hardening pass — 6 Sep 2026 (P2 items and design gaps from the §11a audit)
+
+Everything below is deployed and verified against the live DB. Dry runs were `BEGIN…ROLLBACK` against real cards; nothing live was mutated.
+
+| Item | What changed |
+|---|---|
+| Position view walked `step_number + 1` | `v_job_card_stage_position` now walks to the next *existing* step via `lead()`; `rpc_reverse_grn_return` and `rpc_undo_internal_step` use a shared `_jcsl_next_step()` for their downstream-consumption guard. Verified: every non-legacy card's view row count equals its step count at/after entry, including the two gapped 230335 cards. |
+| Running balance ordered by user-entered `transaction_date` | New `_stock_ledger_last_balance(item_id)` orders by `created_at` (insertion order). All six stage-ledger stock writers use it. Legacy writers still order by `transaction_date` and should migrate — flagged, not changed. |
+| `rpc_update_dc_line_qty` wrote `qty_nos` only | Now writes `qty_nos` and `quantity` (verified identical on 1,883/1,883 lines) and recomputes `amount` when `rate_basis` is primary. |
+| `rpc_dispose_rejected` had no role gate; `rpc_disposition_damage` did | Scrap now requires a `qc_team`/`admin` caller (rework ungated), mirroring the damage RPC. This closes §7 decision 3 as "QC's call for scrap". One-line revert if the shop floor disagrees. |
+| `rework_reversed` / `scrap_reversed` unreachable | New `rpc_undo_disposition(job_card, step, qty, 'rework'\|'scrap', reason)`. Rework undo is legal only while the re-admitted units are still un-sent (`eligible_qty_raw ≥ qty`). Scrap undo is QC/admin, restores `stock_in_process` via a compensating `stock_ledger` row and appends a **negative** `scrap_register` row so the register stays append-only with honest totals. Dry-run round trip reject→scrap→undo→rework→partial-undo produced exactly the expected net figures. |
+| No audit trail on reversals | `trg_jcsl_audit_reversal` (AFTER INSERT on the ledger) writes an `audit_log` row (`action='ledger_reversal'`) for every reversal event, naming the row and event it undoes. Covers all reversal RPCs with no per-function code. |
+| No invariant reconciliation | `v_jcsl_invariant_violations` lists six invariants (negative eligible, returns > issued, over-dispositioned, over-reversed, card qty > `stock_in_process`, active line on a closed card). `pg_cron` job `jcsl_invariant_check` runs nightly 20:30 UTC and writes `audit_log` (`document_type='system'`, `action='invariant_violations'`) when non-empty. Today: only the 42 known drift rows; the ledger itself is clean. |
+| DC status was free text with no transition rule | `chk_dc_status` CHECK on the eight real values plus `trg_dc_status_transition`. Graph derived from every status write in the frontend: pre-issue family ↔ itself → issued/cancelled/deleted; post-issue family ↔ itself (GRN post and reversal) → cancelled/deleted; `cancelled` → `deleted` only; `deleted` terminal. Verified a legal return-progress move passes and `deleted → issued` is blocked. |
+| Stale `_jcsl_reverse_qty_fifo` overload | The original 6-arg body survived the `CREATE OR REPLACE` that added default params (a second overload, not a replacement). Dropped; the 8-arg body serves all callers. Caught by the §11a verification query itself. |
+
+### Not done in this pass, and why
+
+- **`p_idempotency_key` on `rpc_confirm_internal_step`** — the frontend generates a fresh UUID per call, so retries are not deduplicated. This is a frontend fix (generate the key once when the dialog opens, reuse on retry). Handed to Claude Code.
+- **Issue path is three client transactions** (`rpc_issue_dc` → status flip → legacy stock loop). Making it atomic means moving the legacy stock posting into the RPC — a change to the daily-used path with no live defect behind it. Left as is; the RPC is idempotent so a partial failure is recoverable by re-issuing.
+- **Item conversion mid-route** (`converted_out` / `conversion_reversed`, §10.1 item 5) — unbuilt feature, not a defect. `rpc_confirm_grn_store` still refuses conversion lines loudly. Needs three decisions before it can be built: (1) does `converted_out` on the parent equal the DC line's issued qty or the GRN-derived input qty; (2) child card entry stage — the output item's first stage, or its first stage *after* the process that performed the conversion; (3) is the conversion ratio taken from `item_conversions` or from the GRN line's received qty. 
+- **42-item `stock_in_process` drift** — visible nightly via violation 5; reconciliation needs a per-item decision on which figure is true.
+- **27 deferred cutover items** — unchanged, pending the store team's stock-take.
+
 ## 11. References
 
 - SAP PP external processing (control key `PP02`, subcontract PR → PO, `541` transfer, GR auto-confirms the operation as `EODL`): community.sap.com threads on operation subcontracting.
