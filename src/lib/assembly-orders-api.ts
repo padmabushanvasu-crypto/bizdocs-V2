@@ -272,54 +272,34 @@ export async function fetchStockLedger(filters: StockLedgerFilters = {}) {
   return { data: pageRows as StockLedgerEntry[], count };
 }
 
+/**
+ * Posts one stock_ledger row via rpc_post_stock_ledger_row — a server-side
+ * replacement for what used to be a client-computed balance + direct insert.
+ * The RPC row-locks the item and computes balance_qty itself, closing the
+ * concurrent-write race the old JS-side read-then-insert had. created_by is
+ * always auth.uid() server-side; this function no longer accepts or forwards
+ * a caller-supplied override.
+ */
 export async function addStockLedgerEntry(
   data: Omit<StockLedgerEntry, "id" | "company_id" | "created_at">
 ): Promise<void> {
-  const companyId = await getCompanyId();
-  const { data: { user } } = await supabase.auth.getUser();
-
-  // Compute the new running balance at write time so direct SQL consumers
-  // (audits, exports, BI reports) see correct cumulative balances on every
-  // row without needing the JS-side fetchStockLedger pass. fetchStockLedger
-  // still recomputes at read for defence in depth — if a write here misses
-  // or a row arrives backdated, the UI is self-healing.
-  //
-  // Concurrency caveat (acknowledged, accepted for single-operator usage):
-  // two concurrent writes against the same item_id can both read the same
-  // previous balance and produce duplicate next values. Mitigation deferred
-  // pending a row-level lock or trigger. Low risk on this app.
-  //
-  // Backdating caveat: previous-balance is the LATEST row by
-  // (transaction_date DESC, created_at DESC) regardless of the new row's
-  // transaction_date. A backdated entry will get the post-everything total
-  // as its stored balance. The read-time JS pass shows correct chronological
-  // balances regardless. Acceptable given backdating is rare here.
-  const qtyIn = Number(data.qty_in ?? 0);
-  const qtyOut = Number(data.qty_out ?? 0);
-  let computedBalance = qtyIn - qtyOut;
-  if (data.item_id) {
-    const { data: prev, error: prevErr } = await (supabase as any)
-      .from("stock_ledger")
-      .select("balance_qty")
-      .eq("item_id", data.item_id)
-      .order("transaction_date", { ascending: false })
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (prevErr) throw prevErr;
-    const previousBalance = Number((prev as any)?.balance_qty ?? 0);
-    computedBalance = previousBalance + qtyIn - qtyOut;
-  }
-
-  const { error } = await (supabase as any).from("stock_ledger").insert({
-    ...data,
-    balance_qty: computedBalance,
-    company_id: companyId,
-    created_by: data.created_by ?? user?.id ?? null,
+  const { error } = await (supabase as any).rpc("rpc_post_stock_ledger_row", {
+    p_item_id: data.item_id,
+    p_item_code: data.item_code,
+    p_item_description: data.item_description,
+    p_transaction_date: data.transaction_date,
+    p_transaction_type: data.transaction_type,
+    p_qty_in: data.qty_in ?? 0,
+    p_qty_out: data.qty_out ?? 0,
+    p_unit_cost: data.unit_cost ?? 0,
+    p_total_value: data.total_value ?? null,
+    p_reference_type: data.reference_type ?? null,
+    p_reference_id: data.reference_id ?? null,
+    p_reference_number: data.reference_number ?? null,
+    p_notes: data.notes ?? null,
+    p_from_state: data.from_state ?? null,
+    p_to_state: data.to_state ?? null,
   });
-  // Errors propagate to callers. The prior silent-swallow caused
-  // bucket-vs-ledger drift: Store Confirm could move items.stock_free
-  // without writing a ledger row. Callers must handle (toast + abort).
   if (error) throw error;
 }
 
