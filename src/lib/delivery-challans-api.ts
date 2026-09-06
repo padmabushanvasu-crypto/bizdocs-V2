@@ -100,6 +100,11 @@ export interface DCLineItem {
   rework_cycle?: number;
   parent_dc_line_id?: string | null;
   rejection_action?: string | null;
+  // New stage-ledger model (DC_STAGE_FLOW_REDESIGN.md) — separate from the
+  // legacy job_work_id / job_work_step_id pair above. Set only for lines
+  // linked to a non-legacy job card; rpc_issue_dc reads these two columns.
+  job_card_id?: string | null;
+  step_number?: number | null;
   processing_log_id?: string | null;
 }
 
@@ -458,6 +463,8 @@ export async function createDeliveryChallan({ dc, lineItems }: CreateDCData) {
       is_rework: item.is_rework ?? false,
       rework_cycle: item.rework_cycle ?? 1,
       parent_dc_line_id: item.parent_dc_line_id ?? null,
+      job_card_id: item.job_card_id ?? null,
+      step_number: item.step_number ?? null,
     }));
     const { error: itemsError } = await supabase.from("dc_line_items").insert(itemsToInsert as any);
     if (itemsError) throw itemsError;
@@ -532,6 +539,8 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
       is_rework: item.is_rework ?? false,
       rework_cycle: item.rework_cycle ?? 1,
       parent_dc_line_id: item.parent_dc_line_id ?? null,
+      job_card_id: item.job_card_id ?? null,
+      step_number: item.step_number ?? null,
     }));
     const { error: itemsError } = await supabase.from("dc_line_items").insert(itemsToInsert as any);
     if (itemsError) throw itemsError;
@@ -637,8 +646,17 @@ export async function issueDeliveryChallan(id: string) {
   // unique, so an ambiguous line aborts here, before the status flip or any
   // stock move — never a half-issued DC. (validate-all-then-write, like
   // softDeleteGRN.)
+  //
+  // Lines linked to a new-model job card (job_card_id set) are EXCLUDED from
+  // this legacy free->in_process posting: rpc_open_job_card already moved
+  // that quantity to in_process the moment the job card was opened, and
+  // rpc_issue_dc (called below) posts zero stock-bucket writes of its own —
+  // it only records the `issued` ledger event. Posting dc_issue here too
+  // would double-debit stock_free for material that already left days or
+  // weeks earlier. See DC_STAGE_FLOW_REDESIGN.md §4.4/§4.5.
   const movements: Array<{ rec: any; qty: number }> = [];
   for (const line of lineItems) {
+    if ((line as any).job_card_id) continue;
     const qty: number = line.qty_nos ?? line.quantity ?? 0;
     if (qty <= 0) continue;
     // Genuinely non-stock line (free text / no identity) — nothing to relieve.
@@ -650,6 +668,18 @@ export async function issueDeliveryChallan(id: string) {
     });
     movements.push({ rec, qty });
   }
+
+  // New-model job-work lines (job_card_id set) — one atomic RPC call covering
+  // every such line on this DC, run BEFORE the status flip below. rpc_issue_dc
+  // is a single transaction (fails loudly and rolls back entirely on any
+  // line's guard failure), so running it first means a rejection here aborts
+  // issuance cleanly — before delivery_challans.status changes and before any
+  // legacy stock movement posts — rather than leaving the DC marked "issued"
+  // with a partially-recorded job-card ledger. No client-side ledger or stock
+  // writes here; the RPC validates eligibility per line and posts `issued`
+  // rows itself — never reimplement any of its guards client-side.
+  const { error: issueDcErr } = await (supabase as any).rpc("rpc_issue_dc", { p_dc_id: id });
+  if (issueDcErr) throw new Error(issueDcErr.message);
 
   // Pass 2 — all lines resolved; flip status, then post the stock movements.
   const { error } = await supabase.from("delivery_challans").update({ status: "issued", issued_at: new Date().toISOString() } as any).eq("id", id);

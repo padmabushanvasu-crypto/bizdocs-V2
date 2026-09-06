@@ -29,6 +29,7 @@ import {
   type DCLineItem,
 } from "@/lib/delivery-challans-api";
 import { fetchJobCardsForItem, type JobCardForLink } from "@/lib/job-works-api";
+import { JobCardLinePicker } from "@/components/JobCardLinePicker";
 import { getCompanyId } from "@/lib/auth-helpers";
 import { fetchFreeStock } from "@/lib/stock-free-api";
 import { UNITS } from "@/lib/constants";
@@ -220,6 +221,11 @@ export default function DeliveryChallanForm() {
   const [lineItemStock, setLineItemStock] = useState<Map<number, number>>(new Map());
   // Per-line non-cancelled JCs for the picker (steps embedded for soft warning + step_id resolution)
   const [lineJobCards, setLineJobCards] = useState<Map<number, JobCardForLink[]>>(new Map());
+  // New stage-ledger model (DC_STAGE_FLOW_REDESIGN.md) — separate from the
+  // legacy job_work_id / lineRoutes picker above. stepNumber is null whenever
+  // the line isn't ready to issue (see JobCardLinePicker for exactly when).
+  const [lineNewJobCardId, setLineNewJobCardId] = useState<Map<number, string>>(new Map());
+  const [lineNewStepNumber, setLineNewStepNumber] = useState<Map<number, number>>(new Map());
 
   const selectStage = (lineIndex: number, stage: ProcessingRoute) => {
     setLineSelectedStageId(prev => { const m = new Map(prev); m.set(lineIndex, stage.id); return m; });
@@ -707,6 +713,8 @@ export default function DeliveryChallanForm() {
             // change, so the default was silently dropped). No alt qty -> null,
             // to avoid orphan units. Mirrors the PO fix (Slice 1, dcc68a0).
             unit_2: (i.quantity_2 != null && Number(i.quantity_2) > 0) ? (i.unit_2 || "NOS") : null,
+            job_card_id: lineNewJobCardId.get(idx) ?? null,
+            step_number: lineNewStepNumber.get(idx) ?? null,
           };
         });
 
@@ -871,6 +879,25 @@ export default function DeliveryChallanForm() {
           toast({
             title: "Processing stage required",
             description: `Please select a processing route stage (e.g. ${exampleStage}) for line item ${idx + 1} — click one of the stage pills in the Processing Route section.`,
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+      // New stage-ledger model: a line linked to a job card must resolve to
+      // an exact stage before it can be issued — zero eligible stages,
+      // or more than one with nothing picked yet, both leave step_number
+      // null (see JobCardLinePicker). rpc_issue_dc would reject these
+      // anyway, but blocking here gives a clear, line-specific message
+      // instead of a raw RPC exception.
+      for (let idx = 0; idx < lineItems.length; idx++) {
+        if (!lineItems[idx].description.trim()) continue;
+        if (lineNewJobCardId.get(idx) && lineNewStepNumber.get(idx) == null) {
+          const row = document.querySelector(`tr[data-line-index="${idx}"]`);
+          if (row) row.scrollIntoView({ behavior: "smooth", block: "center" });
+          toast({
+            title: "Job card stage required",
+            description: `Line item ${idx + 1} is linked to a job card but has no stage selected — pick a stage, or nothing is currently eligible to send for that job card.`,
             variant: "destructive",
           });
           return;
@@ -1724,6 +1751,28 @@ export default function DeliveryChallanForm() {
                     </tr>
                   );
                 })()}
+                {/* New stage-ledger model — job card + stage picker, fully separate
+                    from the legacy job_work_id block above. Renders nothing (no
+                    row at all) when the line's item has no open (non-legacy)
+                    job cards — JobCardLinePicker returns its own <tr> or null. */}
+                <JobCardLinePicker
+                  key={`new-jc-${index}`}
+                  itemId={item.item_id ?? itemIdByIndex.get(index) ?? null}
+                  jobCardId={lineNewJobCardId.get(index) ?? null}
+                  stepNumber={lineNewStepNumber.get(index) ?? null}
+                  onChange={(jobCardId, stepNumber) => {
+                    setLineNewJobCardId(prev => {
+                      const m = new Map(prev);
+                      if (jobCardId) m.set(index, jobCardId); else m.delete(index);
+                      return m;
+                    });
+                    setLineNewStepNumber(prev => {
+                      const m = new Map(prev);
+                      if (stepNumber != null) m.set(index, stepNumber); else m.delete(index);
+                      return m;
+                    });
+                  }}
+                />
                 {/* Jig alerts — fire whenever the line's drawing matches a jig.
                   *
                   * The earlier `MACHINING_PROCESS_CODES` gate that suppressed alerts

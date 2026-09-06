@@ -2594,13 +2594,36 @@ export async function storeConfirmGRNItems(
   const lineIds = items.map((i) => i.id);
   const { data: currentLines, error: fetchErr } = await (supabase as any)
     .from('grn_line_items')
-    .select('id, grn_id, item_id, description, drawing_number, conforming_qty, store_confirmed_qty, damaged_qty, store_confirmed')
+    .select('id, grn_id, item_id, description, drawing_number, conforming_qty, store_confirmed_qty, damaged_qty, store_confirmed, dc_line_item_id')
     .in('id', lineIds);
   if (fetchErr) throw fetchErr;
 
   const lineMap = new Map<string, any>(
     ((currentLines ?? []) as any[]).map((l: any) => [l.id, l])
   );
+
+  // New stage-ledger model (DC_STAGE_FLOW_REDESIGN.md §4.4/§4.5) — lines whose
+  // dc_line_item_id resolves to a job-work DC line linked to a job card credit
+  // stock exclusively via rpc_confirm_grn_store, never via creditPartialStock
+  // below (that would double-credit: the RPC's own _jcsl_credit_if_final_stage
+  // helper is what moves in_process -> free, and only when the line's stage is
+  // that job card's final stage — a different, stricter condition than this
+  // GRN line's own is_final_grn flag).
+  const dcLineIds = [...new Set(
+    ((currentLines ?? []) as any[]).map((l: any) => l.dc_line_item_id).filter(Boolean)
+  )];
+  const jobCardIdByDcLine = new Map<string, string>();
+  if (dcLineIds.length > 0) {
+    const { data: dcLines, error: dcLineErr } = await (supabase as any)
+      .from('dc_line_items')
+      .select('id, job_card_id')
+      .in('id', dcLineIds);
+    if (dcLineErr) throw dcLineErr;
+    for (const dl of (dcLines ?? []) as any[]) {
+      if (dl.job_card_id) jobCardIdByDcLine.set(dl.id, dl.job_card_id);
+    }
+  }
+  const isJobCardLine = (line: any) => !!line.dc_line_item_id && jobCardIdByDcLine.has(line.dc_line_item_id);
 
   // Parent GRN header — needed by creditPartialStock to route PO vs DC and
   // to stamp ledger reference_number / MIR notifications.
@@ -2656,6 +2679,7 @@ export async function storeConfirmGRNItems(
     qty: number;
     reason: string | null;
   }> = [];
+  let newlyConfirmedJobCardLines = false;
 
   for (const input of items) {
     const line = lineMap.get(input.id);
@@ -2696,9 +2720,21 @@ export async function storeConfirmGRNItems(
     if (isFullyConfirmed) fullyConfirmed.push(input.id);
     else stillPending.push(input.id);
 
+    const jobCardLine = isJobCardLine(line);
+    if (jobCardLine && isFullyConfirmed && !line.store_confirmed) {
+      // Newly reaching full confirmation this call — rpc_confirm_grn_store
+      // will pick this line up (it reads accepted_quantity directly, not a
+      // partial delta). Collected and called once after this loop.
+      newlyConfirmedJobCardLines = true;
+    }
+
     // Credit stock_free per partial increment (storeQty only, damaged units excluded).
     // Safe to call repeatedly across partials — updateStockBucket is additive.
-    if (inStore > 0) {
+    // SKIPPED for job-card-linked lines: their crediting happens exclusively
+    // via rpc_confirm_grn_store below, which posts in_process -> free itself,
+    // only when this stage is the job card's own final stage. Crediting here
+    // too would double-count against stock_free.
+    if (inStore > 0 && !jobCardLine) {
       await creditPartialStock(grnId, input.id, line.item_id ?? null, inStore, {
         grnType: grnHeader?.grn_type ?? 'po_grn',
         grnNumber: grnHeader?.grn_number ?? null,
@@ -2747,6 +2783,21 @@ export async function storeConfirmGRNItems(
         to_state: STOCK_STATE.SCRAPPED,
       });
     }
+  }
+
+  // New stage-ledger model — at least one job-card-linked line newly reached
+  // full store-confirmation this call. One RPC call covers every dc-linked
+  // line on this GRN; it posts returned_accepted/returned_rejected itself
+  // and credits stock_free only when a line's stage is that job card's own
+  // final stage (_jcsl_credit_if_final_stage) — no client-side stock or
+  // ledger writes here. Known, documented, deliberately-unimplemented gap:
+  // a conversion line (received item differs from the shipped item) makes
+  // the RPC raise rather than guess at cross-item stock mechanics — that
+  // exception is allowed to propagate verbatim, not caught or worked around
+  // here (see DC_STAGE_FLOW_REDESIGN.md §10.1 item 5).
+  if (newlyConfirmedJobCardLines) {
+    const { error: confirmStoreErr } = await (supabase as any).rpc('rpc_confirm_grn_store', { p_grn_id: grnId });
+    if (confirmStoreErr) throw new Error(confirmStoreErr.message);
   }
 
   // Recompute parent-GRN state from the authoritative line set.
