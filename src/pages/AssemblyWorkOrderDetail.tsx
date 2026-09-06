@@ -42,6 +42,8 @@ import {
   type AwoLineItem,
   type MaterialIssueRequest,
 } from "@/lib/production-api";
+import { ReportDamageDialog } from "@/components/ReportDamageDialog";
+import { DispositionDamageDialog } from "@/components/DispositionDamageDialog";
 import { AwoDeleteDialog } from "@/components/AwoDeleteDialog";
 import { format, differenceInDays, parseISO } from "date-fns";
 
@@ -100,7 +102,9 @@ export default function AssemblyWorkOrderDetail() {
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
   const [returnEdits, setReturnEdits] = useState<Record<string, number>>({});
 
-  // FIX 5B: Report Issue dialog state
+  // FIX 5B: Report Issue dialog state — short-line shortfall explanation only
+  // (issued_qty < required_qty). Fully-issued-line damage now goes through
+  // ReportDamageDialog / DispositionDamageDialog below (A2).
   const [reportIssueOpen, setReportIssueOpen] = useState(false);
   const [reportIssueLine, setReportIssueLine] = useState<AwoLineItem | null>(null);
   const [reportIssueForm, setReportIssueForm] = useState<{
@@ -108,6 +112,12 @@ export default function AssemblyWorkOrderDetail() {
     disposition: 'scrap' | 'use_as_is';
     reason: string;
   }>({ damage_qty: 0, disposition: 'scrap', reason: '' });
+
+  // Damage disposition (A2) dialog state — fully-issued-line damage only.
+  const [damageReportOpen, setDamageReportOpen] = useState(false);
+  const [damageReportLine, setDamageReportLine] = useState<AwoLineItem | null>(null);
+  const [dispositionOpen, setDispositionOpen] = useState(false);
+  const [dispositionLine, setDispositionLine] = useState<AwoLineItem | null>(null);
 
   const { data: awo, isLoading } = useQuery({
     queryKey: ["awo-detail", id],
@@ -250,6 +260,17 @@ export default function AssemblyWorkOrderDetail() {
   // (concession units stay in WIP and are consumed, so they don't reduce it).
   const availableInWip = (li: AwoLineItem): number =>
     Math.max(0, (li.issued_qty ?? 0) - (li.returned_qty ?? 0) - (li.scrapped_qty ?? 0));
+
+  // Cap for a fresh damage report — mirrors rpc_report_damage's own guard
+  // exactly (issued − returned − scrapped − consumed − already-pending-damage)
+  // so the UI never shows an allowance the RPC would reject.
+  const availableForDamageReport = (li: AwoLineItem): number => {
+    const pendingDamage = (li.damage_qty ?? 0) - (li.damage_resolved_qty ?? 0);
+    return Math.max(
+      0,
+      (li.issued_qty ?? 0) - (li.returned_qty ?? 0) - (li.scrapped_qty ?? 0) - (li.consumed_qty ?? 0) - pendingDamage,
+    );
+  };
 
   const latestMir: MaterialIssueRequest | undefined = mirs[0];
 
@@ -550,27 +571,52 @@ export default function AssemblyWorkOrderDetail() {
                         )}
                       </td>
                       <td className="px-3 py-2 border-b border-slate-100 text-center">
-                        {(li.issued_qty ?? 0) >= li.required_qty && awo.status === 'in_progress' ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-xs h-6 px-2 text-orange-700 border-orange-300 hover:bg-orange-50"
-                            onClick={() => {
-                              setReportIssueLine(li);
-                              setReportIssueForm({
-                                damage_qty: 1,
-                                disposition: 'scrap',
-                                reason: '',
-                              });
-                              setReportIssueOpen(true);
-                            }}
-                          >
-                            <AlertTriangle className="w-3 h-3 mr-1" />
-                            Report Damage
-                          </Button>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
+                        {(() => {
+                          const pending = (li.damage_qty ?? 0) - (li.damage_resolved_qty ?? 0);
+                          const canReport = (li.issued_qty ?? 0) >= li.required_qty && awo.status === 'in_progress';
+                          const canDispose = pending > 0 && awo.status === 'in_progress';
+                          if (!canReport && !canDispose) {
+                            return <span className="text-muted-foreground">—</span>;
+                          }
+                          return (
+                            <div className="flex flex-col items-center gap-1">
+                              {pending > 0 && (
+                                <span className="text-amber-700 text-xs font-medium">
+                                  {formatNumber(pending)} pending disposition
+                                </span>
+                              )}
+                              <div className="flex gap-1">
+                                {canReport && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-xs h-6 px-2 text-orange-700 border-orange-300 hover:bg-orange-50"
+                                    onClick={() => {
+                                      setDamageReportLine(li);
+                                      setDamageReportOpen(true);
+                                    }}
+                                  >
+                                    <AlertTriangle className="w-3 h-3 mr-1" />
+                                    Report Damage
+                                  </Button>
+                                )}
+                                {canDispose && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-xs h-6 px-2 text-amber-700 border-amber-300 hover:bg-amber-50"
+                                    onClick={() => {
+                                      setDispositionLine(li);
+                                      setDispositionOpen(true);
+                                    }}
+                                  >
+                                    Disposition
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </td>
                     </tr>
                   ))
@@ -690,9 +736,9 @@ export default function AssemblyWorkOrderDetail() {
         </DialogContent>
       </Dialog>
 
-      {/* FIX 5B: Report Issue / Damage dialog — adapts to two scenarios:
-          (1) Short line — assembler explains why MIR fell short
-          (2) Fully issued line — assembler reports a unit damaged during build */}
+      {/* FIX 5B: Report Issue dialog — short-line shortfall explanation only
+          (assembler explains why a MIR fell short). Fully-issued-line damage
+          now goes through ReportDamageDialog / DispositionDamageDialog (A2). */}
       <Dialog open={reportIssueOpen} onOpenChange={setReportIssueOpen}>
         <DialogContent>
           {(() => {
@@ -795,6 +841,30 @@ export default function AssemblyWorkOrderDetail() {
           })()}
         </DialogContent>
       </Dialog>
+
+      {/* Damage disposition (A2) — report (phase 1) and disposition (phase 2) */}
+      {damageReportLine && (
+        <ReportDamageDialog
+          open={damageReportOpen}
+          onOpenChange={(v) => { setDamageReportOpen(v); if (!v) setDamageReportLine(null); }}
+          awoId={id!}
+          awoLineId={damageReportLine.id}
+          itemLabel={damageReportLine.item_description ?? damageReportLine.item_code ?? 'Component'}
+          availableQty={availableForDamageReport(damageReportLine)}
+          unit={damageReportLine.unit}
+        />
+      )}
+      {dispositionLine && (
+        <DispositionDamageDialog
+          open={dispositionOpen}
+          onOpenChange={(v) => { setDispositionOpen(v); if (!v) setDispositionLine(null); }}
+          awoId={id!}
+          awoLineId={dispositionLine.id}
+          itemLabel={dispositionLine.item_description ?? dispositionLine.item_code ?? 'Component'}
+          pendingQty={(dispositionLine.damage_qty ?? 0) - (dispositionLine.damage_resolved_qty ?? 0)}
+          unit={dispositionLine.unit}
+        />
+      )}
 
       {/* Mark-build-complete confirmation dialog */}
       <Dialog open={confirmCompleteOpen} onOpenChange={setConfirmCompleteOpen}>

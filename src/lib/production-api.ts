@@ -79,7 +79,10 @@ export interface AwoLineItem {
   // legacy total-damaged input still read by the completion guard.
   damage_qty?: number;
   damage_reason?: string | null;
-  disposition?: 'scrap' | 'use_as_is' | null;
+  disposition?: 'scrap' | 'use_as_is' | 'return_to_vendor' | null;
+  // Damage disposition (A2): cumulative qty of damage_qty already dispositioned
+  // via rpc_disposition_damage. Pending disposition = damage_qty - damage_resolved_qty.
+  damage_resolved_qty?: number;
   scrapped_qty?: number;
   // Set at acceptAssemblyWorkOrder when the real WIP is consumed. NULL on
   // historical rows (pre-migration) — always read as `consumed_qty ?? 0`.
@@ -1088,19 +1091,21 @@ export async function acceptAssemblyWorkOrder(
 // ── reportComponentIssue ─────────────────────────────────────────────────────
 
 /**
- * Report damaged components on an AWO line. Two dispositions only:
- *  - 'scrap'     → write-off, leaves WIP (tracked cumulatively in scrapped_qty).
- *  - 'use_as_is' → concession: damaged but kept, stays in WIP and is consumed
- *                  normally (tracked in concession_qty). NO stock movement.
+ * Explains a SHORT line — a line where issued_qty < required_qty because a
+ * partial MIR fell short — by writing off the un-covered gap ('scrap') or
+ * recording a concession to proceed without it ('use_as_is').
+ *
+ * NOT the WIP-damage path (see rpc_report_damage / rpc_disposition_damage
+ * below, for units that WERE issued and were later found damaged). This is
+ * a distinct, narrower use case kept only for the "Report Issue" action on
+ * short lines; the "Report Damage" action on fully-issued lines uses the
+ * new RPCs instead.
  *
  * CONTRACT: `target_qty` is the NEW CUMULATIVE total for the chosen disposition
  * (total scrapped, or total concession) for this line — NOT a per-call delta.
  *
  * SCRAP routes through scrapAssemblyComponents (capped, idempotent, ledger-first,
  * bucket-by-type). USE-AS-IS just records the cumulative concession + reason.
- *
- * damage_qty / disposition are kept in sync as the legacy inputs still read by
- * the completion guard (completeAssemblyWorkOrder), which is out of A3's scope.
  */
 export async function reportComponentIssue(
   awo_line_item_id: string,
@@ -1170,6 +1175,84 @@ export async function reportComponentIssue(
       .eq("company_id", companyId);
     if (updErr) throw updErr;
   }
+}
+
+// ── Damage disposition (A2) ───────────────────────────────────────────────────
+// Two-phase, RPC-owned. Phase 1 (report) only flags damage found on units that
+// WERE issued — no stock movement. Phase 2 (disposition) acts on the pending
+// amount in parts: scrap / return_to_vendor (both write off stock, feed
+// scrap_register with scrap_category='damage') or use_as_is (concession —
+// no stock movement, requires a qc_team/admin approver, enforced server-side
+// in rpc_disposition_damage). Never reimplement either leg client-side.
+
+/**
+ * Flags qty units of an AWO line's issued material as damaged. No stock
+ * movement — this only records the damage, pending a later disposition call.
+ */
+export async function reportDamage(
+  awoLineId: string,
+  qty: number,
+  reason: string,
+): Promise<void> {
+  const companyId = await getCompanyId();
+  if (!companyId) throw new Error("Not authenticated");
+  const { error } = await (supabase as any).rpc('rpc_report_damage', {
+    p_company_id: companyId,
+    p_awo_line_id: awoLineId,
+    p_qty: qty,
+    p_damage_reason: reason,
+  });
+  if (error) throw error;
+}
+
+/**
+ * Dispositions qty units of an AWO line's pending (undispositioned) damage.
+ * Per-quantity — a line's damage can be dispositioned across several calls,
+ * same as rejected-material disposition in the job-card flow.
+ *
+ * 'use_as_is' requires concessionBy (a profiles.id with role qc_team/admin);
+ * the RPC itself re-validates the role server-side.
+ */
+export async function dispositionDamage(params: {
+  awoLineId: string;
+  qty: number;
+  disposition: 'scrap' | 'return_to_vendor' | 'use_as_is';
+  notes: string;
+  concessionBy?: string | null;
+}): Promise<void> {
+  const companyId = await getCompanyId();
+  if (!companyId) throw new Error("Not authenticated");
+  const { error } = await (supabase as any).rpc('rpc_disposition_damage', {
+    p_company_id: companyId,
+    p_awo_line_id: params.awoLineId,
+    p_qty: params.qty,
+    p_disposition: params.disposition,
+    p_notes: params.notes,
+    p_concession_by: params.concessionBy ?? null,
+  });
+  if (error) throw error;
+}
+
+/**
+ * Lists profiles eligible to approve a 'use_as_is' concession (qc_team or
+ * admin, active users only). The picker only offers valid approvers — the
+ * RPC's own role check is defense-in-depth, not the primary UX gate.
+ */
+export async function fetchConcessionApprovers(): Promise<Array<{ id: string; name: string }>> {
+  const companyId = await getCompanyId();
+  if (!companyId) return [];
+  const { data, error } = await (supabase as any)
+    .from("profiles")
+    .select("id, display_name, full_name, email, role, is_active")
+    .eq("company_id", companyId)
+    .in("role", ["qc_team", "admin"])
+    .eq("is_active", true)
+    .order("display_name", { ascending: true });
+  if (error) throw error;
+  return ((data ?? []) as any[]).map((p) => ({
+    id: p.id,
+    name: p.display_name || p.full_name || p.email || "Unknown",
+  }));
 }
 
 // ── fetchAwoStats ─────────────────────────────────────────────────────────────
