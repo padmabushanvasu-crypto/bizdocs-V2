@@ -1065,86 +1065,24 @@ export async function updateMinStockOverride(id: string, value: number | null) {
 
 // ── Phase 13: Stock Buckets ───────────────────────────────────────────────────
 
-const BUCKET_COLUMN_MAP: Record<StockBucket, string> = {
-  free: 'stock_free',
-  in_process: 'stock_in_process',
-  in_subassembly_wip: 'stock_in_subassembly_wip',
-  in_fg_wip: 'stock_in_fg_wip',
-  in_fg_ready: 'stock_in_fg_ready',
-};
-
-function computeAlertLevel(
-  stock_free: number,
-  stock_in_process: number,
-  stock_in_subassembly_wip: number,
-  stock_in_fg_wip: number,
-  stock_in_fg_ready: number,
-  min_stock: number,
-  item_type?: string
-): Item['stock_alert_level'] {
-  // Negative free stock (only reachable via assembly over-issue) is always critical,
-  // ahead of the min_stock checks so it flags even when min_stock is 0/unset.
-  if (stock_free < 0) return 'critical';
-  if (!min_stock || min_stock <= 0) return 'healthy';
-  if (item_type === 'service') return 'healthy';
-  const effective = stock_free + stock_in_process + stock_in_subassembly_wip + stock_in_fg_wip + stock_in_fg_ready;
-  if (effective < min_stock) return 'critical';
-  return 'healthy';
-}
-
+/**
+ * Adjusts one stock bucket via rpc_update_stock_bucket, which row-locks the
+ * item and RAISEs if the delta would drive the bucket negative — replacing
+ * the old Math.max(0, ...) clamp that silently absorbed over-issue/over-return
+ * deficits instead of blocking them (INVENTORY_CONTROL_BLUEPRINT.md, 6 Sep 2026).
+ */
 export async function updateStockBucket(
   itemId: string,
   bucket: StockBucket,
   delta: number,
   options?: { skipAlertUpdate?: boolean }
 ): Promise<void> {
-  const col = BUCKET_COLUMN_MAP[bucket];
-
-  // Fetch current item to get all bucket values
-  const { data: itemData, error: fetchErr } = await (supabase as any)
-    .from('items')
-    .select('stock_free, stock_in_process, stock_in_subassembly_wip, stock_in_fg_wip, stock_in_fg_ready, min_stock')
-    .eq('id', itemId)
-    .single();
-  if (fetchErr) throw fetchErr;
-
-  const item = itemData as any;
-  const current: number = item[col] ?? 0;
-  const newValue = Math.max(0, current + delta);
-
-  const updatedBuckets = {
-    stock_free: item.stock_free ?? 0,
-    stock_in_process: item.stock_in_process ?? 0,
-    stock_in_subassembly_wip: item.stock_in_subassembly_wip ?? 0,
-    stock_in_fg_wip: item.stock_in_fg_wip ?? 0,
-    stock_in_fg_ready: item.stock_in_fg_ready ?? 0,
-  };
-  updatedBuckets[col as keyof typeof updatedBuckets] = newValue;
-
-  const minStock: number = item.min_stock ?? 0;
-  const alertLevel = options?.skipAlertUpdate
-    ? undefined
-    : computeAlertLevel(
-        updatedBuckets.stock_free,
-        updatedBuckets.stock_in_process,
-        updatedBuckets.stock_in_subassembly_wip,
-        updatedBuckets.stock_in_fg_wip,
-        updatedBuckets.stock_in_fg_ready,
-        minStock
-      );
-
-  const updatePayload: Record<string, any> = {
-    ...updatedBuckets,
-    // Keep current_stock in sync with stock_free for backward compat
-    current_stock: updatedBuckets.stock_free,
-    last_stock_check: new Date().toISOString(),
-  };
-  if (alertLevel !== undefined) updatePayload.stock_alert_level = alertLevel;
-
-  const { error: updateErr } = await (supabase as any)
-    .from('items')
-    .update(updatePayload)
-    .eq('id', itemId);
-  if (updateErr) throw updateErr;
+  const { error } = await (supabase as any).rpc('rpc_update_stock_bucket', {
+    p_item_id: itemId,
+    p_bucket: bucket,
+    p_delta: delta,
+    p_skip_alert_update: options?.skipAlertUpdate ?? false,
+  });
+  if (error) throw error;
 }
 
