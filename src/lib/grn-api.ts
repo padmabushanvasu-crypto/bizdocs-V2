@@ -1921,6 +1921,24 @@ export interface ReceiptSummaryEntry {
 }
 
 /**
+ * Reverses a job-card-linked GRN return via rpc_reverse_grn_return. Raises
+ * (and this throws verbatim) naming the downstream stage if the returned
+ * units have already been sent onward, or if the credited stock already
+ * left as free stock elsewhere — never worked around here, surfaced as-is.
+ */
+export async function reverseGrnReturn(
+  grnLineItemId: string,
+  reason: string,
+): Promise<Array<{ out_event: string; out_qty: number; out_stock_clawed_back: boolean }>> {
+  const { data, error } = await (supabase as any).rpc('rpc_reverse_grn_return', {
+    p_grn_line_item_id: grnLineItemId,
+    p_reason: reason,
+  });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Array<{ out_event: string; out_qty: number; out_stock_clawed_back: boolean }>;
+}
+
+/**
  * Key for matching a grn_line_items row back to its dc_line_items row by
  * (item_id, drawing_number) instead of the raw dc_line_item_id FK.
  *

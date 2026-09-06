@@ -3,8 +3,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, AlertTriangle, TrendingUp, CheckCircle2, Clock, Circle, Wrench, ExternalLink, Send } from "lucide-react";
 import {
-  fetchJobWork, fetchJobCardStagePositions,
-  type JobWork, type JobWorkStep, type JobCardStagePosition,
+  fetchJobWork, fetchJobCardStagePositions, fetchJobCardStageLedgerTotals,
+  type JobWork, type JobWorkStep, type JobCardStagePosition, type JobCardStageLedgerTotals,
 } from "@/lib/job-works-api";
 import { fetchProcessingRouteAll, type ProcessingRoute } from "@/lib/dc-intelligence-api";
 import { format } from "date-fns";
@@ -13,6 +13,9 @@ import { useAuth } from "@/hooks/useAuth";
 import { useCanEdit } from "@/hooks/useCanEdit";
 import { SendMoreMaterialDialog } from "@/components/SendMoreMaterialDialog";
 import { ConfirmInternalStepDialog } from "@/components/ConfirmInternalStepDialog";
+import { DisposeRejectedDialog } from "@/components/DisposeRejectedDialog";
+import { CancelOrCloseJobCardDialog } from "@/components/CancelOrCloseJobCardDialog";
+import { Button } from "@/components/ui/button";
 
 // ── Vertical timeline step ────────────────────────────────────────────────────
 
@@ -23,6 +26,8 @@ function TimelineStep({
   onSendMore,
   eligibleQty,
   onConfirmInternal,
+  undispositionedRejectedQty,
+  onDisposeRejected,
 }: {
   step: JobWorkStep;
   isLast: boolean;
@@ -31,6 +36,8 @@ function TimelineStep({
   // New stage-ledger model only (non-legacy job cards) — undefined for legacy.
   eligibleQty?: number;
   onConfirmInternal?: (step: JobWorkStep) => void;
+  undispositionedRejectedQty?: number;
+  onDisposeRejected?: (step: JobWorkStep) => void;
 }) {
   const outwardDcs = step.outward_dcs ?? [];
   const totalSent = outwardDcs.reduce((s, d) => s + (d.qty ?? 0), 0);
@@ -181,6 +188,22 @@ function TimelineStep({
                   >
                     <Send className="h-3 w-3" /> Send more material out
                   </button>
+                )}
+                {/* Backward path — new stage-ledger model only. Legacy cards
+                    never pass this, so it never renders for them. */}
+                {undispositionedRejectedQty != null && undispositionedRejectedQty > 0 && (
+                  <div className="mt-1.5">
+                    <p className="text-[11px] text-red-600 font-medium">
+                      {undispositionedRejectedQty} {step.unit ?? ""} rejected, undispositioned
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => onDisposeRejected?.(step)}
+                      className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+                    >
+                      Rework / Scrap…
+                    </button>
+                  </div>
                 )}
               </div>
             )}
@@ -489,6 +512,29 @@ export default function JobCardDetail() {
     stagePositions.map((p) => [p.step_number, p])
   );
 
+  const { data: stageLedgerTotals = [] } = useQuery({
+    queryKey: ["job-card-stage-ledger-totals", id],
+    queryFn: () => fetchJobCardStageLedgerTotals(id!),
+    enabled: !!id && !isLegacy,
+  });
+  const undispositionedByStep = new Map<number, number>(
+    stageLedgerTotals.map((t) => [
+      t.step_number,
+      Math.max(0, (t.returned_rejected_qty ?? 0) - (t.rework_in_qty ?? 0) - (t.scrapped_qty ?? 0)),
+    ])
+  );
+  // Cancel is only offered while the ledger has nothing but entry/skip; any
+  // other event flips to close-short. Mirrors rpc_cancel_job_card's own
+  // "activity beyond entry/skip" check — computed here purely to decide
+  // which single action to show, never to bypass the RPC's own guard.
+  const hasActivityBeyondEntry = stageLedgerTotals.some((t) =>
+    (t.issued_qty ?? 0) > 0 || (t.returned_accepted_qty ?? 0) > 0 || (t.returned_rejected_qty ?? 0) > 0 ||
+    (t.internal_done_qty ?? 0) > 0 || (t.rework_in_qty ?? 0) > 0 || (t.scrapped_qty ?? 0) > 0 ||
+    (t.converted_out_qty ?? 0) > 0 || (t.released_unprocessed_qty ?? 0) > 0
+  );
+  const [disposeStep, setDisposeStep] = useState<JobWorkStep | null>(null);
+  const [cancelOrCloseOpen, setCancelOrCloseOpen] = useState(false);
+
   if (isLoading) {
     return (
       <div className="p-6 text-muted-foreground text-sm animate-pulse">
@@ -542,17 +588,27 @@ export default function JobCardDetail() {
               <p className="text-sm text-muted-foreground">{data.item_code}</p>
             )}
           </div>
-          <span
-            className={`text-xs font-medium px-2.5 py-1 rounded-full border shrink-0 ${
-              data.status === "completed"
-                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                : data.status === "on_hold"
-                ? "bg-amber-50 text-amber-700 border-amber-200"
-                : "bg-blue-50 text-blue-700 border-blue-200"
-            }`}
-          >
-            {data.status.replace(/_/g, " ")}
-          </span>
+          <div className="flex flex-col items-end gap-2 shrink-0">
+            <span
+              className={`text-xs font-medium px-2.5 py-1 rounded-full border ${
+                data.status === "completed"
+                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                  : data.status === "on_hold"
+                  ? "bg-amber-50 text-amber-700 border-amber-200"
+                  : "bg-blue-50 text-blue-700 border-blue-200"
+              }`}
+            >
+              {data.status.replace(/_/g, " ")}
+            </span>
+            {/* Backward path — new stage-ledger model only, and only while
+                still in_progress. Exactly one of Cancel/Close Short is ever
+                offered — decided from the ledger state above, never both. */}
+            {!isLegacy && data.status === "in_progress" && (
+              <Button variant="outline" size="sm" onClick={() => setCancelOrCloseOpen(true)}>
+                {hasActivityBeyondEntry ? "Close Short" : "Cancel Job Card"}
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* ── Linked DCs ── */}
@@ -655,6 +711,10 @@ export default function JobCardDetail() {
                     : eligibleByStep.get(step.step_number)?.eligible_qty
                 }
                 onConfirmInternal={setConfirmStep}
+                undispositionedRejectedQty={
+                  isLegacy || step.step_number == null ? undefined : undispositionedByStep.get(step.step_number)
+                }
+                onDisposeRejected={setDisposeStep}
               />
             ))}
           </div>
@@ -699,6 +759,28 @@ export default function JobCardDetail() {
           stepName={confirmStep.name}
           eligibleQty={eligibleByStep.get(confirmStep.step_number)?.eligible_qty ?? 0}
           unit={confirmStep.unit}
+        />
+      )}
+
+      {disposeStep && disposeStep.step_number != null && (
+        <DisposeRejectedDialog
+          open={!!disposeStep}
+          onOpenChange={(v) => { if (!v) setDisposeStep(null); }}
+          jobCardId={id!}
+          stepNumber={disposeStep.step_number}
+          stepName={disposeStep.name}
+          undispositionedQty={undispositionedByStep.get(disposeStep.step_number) ?? 0}
+          unit={disposeStep.unit}
+        />
+      )}
+
+      {!isLegacy && (
+        <CancelOrCloseJobCardDialog
+          open={cancelOrCloseOpen}
+          onOpenChange={setCancelOrCloseOpen}
+          jobCardId={id!}
+          jcNumber={data.jc_number}
+          mode={hasActivityBeyondEntry ? 'close_short' : 'cancel'}
         />
       )}
     </div>
