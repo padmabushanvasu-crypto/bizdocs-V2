@@ -501,6 +501,24 @@ export async function updateDcLineQty(
 }
 
 /**
+ * Sibling of updateDcLineQty for plain (non-job-card) lines that already
+ * have a GRN receipt against them. rpc_update_dc_line_qty_plain raises if
+ * newQty would go below the line's already-received qty.
+ */
+export async function updateDcLineQtyPlain(
+  dcLineItemId: string,
+  newQty: number,
+  reason: string | null,
+): Promise<void> {
+  const { error } = await (supabase as any).rpc('rpc_update_dc_line_qty_plain', {
+    p_dc_line_item_id: dcLineItemId,
+    p_new_qty: newQty,
+    p_reason: reason ?? null,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
  * Reverses every job-work line's outstanding issued qty on a DC via
  * rpc_cancel_dc — covers every job_card_id-linked line on the DC in one
  * transaction. Raises (and this throws) if any such line already has a
@@ -550,6 +568,24 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
   const existingJobCardLines = originalLines.filter((l) => l.job_card_id);
   const existingJobCardLineIds = new Set(existingJobCardLines.map((l) => l.id));
 
+  // Plain lines with an existing GRN receipt hit grn_line_items' real
+  // ON DELETE RESTRICT FK if the delete-and-reinsert below tries to touch
+  // them — confirmed live risk, 820 DCs / 1,650 lines. Preserved in place
+  // exactly like job-card lines, just via a different RPC
+  // (rpc_update_dc_line_qty_plain) since they have no job-card ledger.
+  let receiptedPlainLineIds = new Set<string>();
+  if (isIssued && originalLines.length > 0) {
+    const plainLineIds = originalLines.filter((l) => !l.job_card_id).map((l) => l.id);
+    if (plainLineIds.length > 0) {
+      const { data: receiptedRows } = await (supabase as any)
+        .from('grn_line_items')
+        .select('dc_line_item_id')
+        .in('dc_line_item_id', plainLineIds);
+      receiptedPlainLineIds = new Set((receiptedRows ?? []).map((r: any) => r.dc_line_item_id));
+    }
+  }
+  const protectedLineIds = new Set<string>([...existingJobCardLineIds, ...receiptedPlainLineIds]);
+
   if (isIssued) {
     // Validate everything BEFORE any write — fail loud, never half-edit.
     for (const orig of existingJobCardLines) {
@@ -598,15 +634,16 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
     console.error("[DC] update error:", error);
     throw error;
   }
-  // Preserved job-card lines are excluded from BOTH the delete and the
-  // reinsert below — their id must survive untouched.
+  // Preserved lines (job-card-linked, or plain with a GRN receipt) are
+  // excluded from BOTH the delete and the reinsert below — their id must
+  // survive untouched.
   let deleteQuery = supabase.from("dc_line_items").delete().eq("dc_id", id);
-  if (existingJobCardLineIds.size > 0) {
-    deleteQuery = deleteQuery.not("id", "in", `(${[...existingJobCardLineIds].join(",")})`);
+  if (protectedLineIds.size > 0) {
+    deleteQuery = deleteQuery.not("id", "in", `(${[...protectedLineIds].join(",")})`);
   }
   await deleteQuery;
 
-  const newLineItems = lineItems.filter((item) => !(item.id && existingJobCardLineIds.has(item.id)));
+  const newLineItems = lineItems.filter((item) => !(item.id && protectedLineIds.has(item.id)));
   if (newLineItems.length > 0) {
     const itemsToInsert = newLineItems.map((item) => ({
       company_id: companyId,
@@ -663,6 +700,39 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
     if (desiredQty !== currentQty) {
       const reason = incoming?.job_card_qty_change_reason ?? null;
       await updateDcLineQty(orig.id, desiredQty, reason);
+    }
+  }
+
+  // Preserved receipted plain lines: same in-place-UPDATE-plus-qty-RPC
+  // treatment as job-card lines above, via rpc_update_dc_line_qty_plain
+  // instead (these have no job-card ledger). A line missing from the new
+  // lineItems array (removed in the form) is treated as reduced to zero —
+  // never physically deleted, matching the job-card line's own contract.
+  const receiptedPlainLines = originalLines.filter((l) => receiptedPlainLineIds.has(l.id));
+  for (const orig of receiptedPlainLines) {
+    const incoming = lineItems.find((li) => li.id === orig.id);
+    if (incoming) {
+      const { error: lineUpdErr } = await supabase.from("dc_line_items").update({
+        description: incoming.description,
+        item_code: incoming.item_code || null,
+        hsn_sac_code: incoming.hsn_sac_code || null,
+        unit: incoming.unit || "NOS",
+        rate: incoming.rate || 0,
+        amount: incoming.amount || 0,
+        drawing_number: incoming.drawing_number || null,
+        remarks: incoming.remarks || null,
+        material_type: incoming.material_type || "FINISH",
+      } as any).eq("id", orig.id);
+      if (lineUpdErr) throw lineUpdErr;
+    }
+    const desiredQty = incoming ? (incoming.qty_nos ?? incoming.quantity ?? 0) : 0;
+    const currentQty = orig.qty_nos ?? orig.quantity ?? 0;
+    if (desiredQty !== currentQty) {
+      // Throws a clear, actionable message if desiredQty would go below
+      // what's already been received via GRN — including the "line removed
+      // from the form" case, where desiredQty is 0 (matches the job-card
+      // line's own "never physically deleted, reduced to zero" contract).
+      await updateDcLineQtyPlain(orig.id, desiredQty, null);
     }
   }
 
