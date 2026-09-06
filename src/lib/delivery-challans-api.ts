@@ -762,88 +762,16 @@ export async function issueDeliveryChallan(id: string) {
     return;
   }
 
-  const companyId = await getCompanyId();
-  const today = new Date().toISOString().split("T")[0];
-  const dc = await fetchDeliveryChallan(id);
-  const lineItems = dc.line_items ?? [];
-  const isReturnable = RETURNABLE_DC_TYPES.has(dc.dc_type);
-
-  // Pass 1 — resolve every stock line LOUDLY before any write. item_code is not
-  // unique, so an ambiguous line aborts here, before the status flip or any
-  // stock move — never a half-issued DC. (validate-all-then-write, like
-  // softDeleteGRN.)
-  //
-  // Lines linked to a new-model job card (job_card_id set) are EXCLUDED from
-  // this legacy free->in_process posting: rpc_open_job_card already moved
-  // that quantity to in_process the moment the job card was opened, and
-  // rpc_issue_dc (called below) posts zero stock-bucket writes of its own —
-  // it only records the `issued` ledger event. Posting dc_issue here too
-  // would double-debit stock_free for material that already left days or
-  // weeks earlier. See DC_STAGE_FLOW_REDESIGN.md §4.4/§4.5.
-  const movements: Array<{ rec: any; qty: number }> = [];
-  for (const line of lineItems) {
-    if ((line as any).job_card_id) continue;
-    const qty: number = line.qty_nos ?? line.quantity ?? 0;
-    if (qty <= 0) continue;
-    // Genuinely non-stock line (free text / no identity) — nothing to relieve.
-    if (!line.item_id && !line.item_code) continue;
-    // Prefer the id the DC line already carries; text lookup is a loud fallback.
-    const rec = await resolveLineItemLoud(companyId, {
-      itemId: (line as any).item_id,
-      itemCode: line.item_code,
-    });
-    movements.push({ rec, qty });
-  }
-
-  // New-model job-work lines (job_card_id set) — one atomic RPC call covering
-  // every such line on this DC, run BEFORE the status flip below. rpc_issue_dc
-  // is a single transaction (fails loudly and rolls back entirely on any
-  // line's guard failure), so running it first means a rejection here aborts
-  // issuance cleanly — before delivery_challans.status changes and before any
-  // legacy stock movement posts — rather than leaving the DC marked "issued"
-  // with a partially-recorded job-card ledger. No client-side ledger or stock
-  // writes here; the RPC validates eligibility per line and posts `issued`
-  // rows itself — never reimplement any of its guards client-side.
-  const { error: issueDcErr } = await (supabase as any).rpc("rpc_issue_dc", { p_dc_id: id });
-  if (issueDcErr) throw new Error(issueDcErr.message);
-
-  // Pass 2 — all lines resolved; flip status, then post the stock movements.
-  const { error } = await supabase.from("delivery_challans").update({ status: "issued", issued_at: new Date().toISOString() } as any).eq("id", id);
-  if (error) throw error;
-
-  // Running current_stock per item so multiple lines relieving the same item
-  // accumulate correctly (pass 2 no longer re-reads fresh per line).
-  const runningStock = new Map<string, number>();
-  for (const { rec, qty } of movements) {
-    const base = runningStock.get(rec.id) ?? (rec.current_stock ?? 0);
-    const newStock = Math.max(0, base - qty);
-    runningStock.set(rec.id, newStock);
-    // Ledger-first per iteration (Scope 1).
-    await addStockLedgerEntry({
-      item_id: rec.id,
-      item_code: rec.item_code,
-      item_description: rec.description,
-      transaction_date: today,
-      transaction_type: "dc_issue",
-      qty_in: 0,
-      qty_out: qty,
-      balance_qty: newStock,
-      unit_cost: 0,
-      total_value: 0,
-      reference_type: "delivery_challan",
-      reference_id: id,
-      reference_number: dc.dc_number,
-      notes: `DC issued: ${dc.dc_number}`,
-      created_by: null,
-      from_state: STOCK_STATE.FREE,
-      to_state: isReturnable ? STOCK_STATE.IN_PROCESS : STOCK_STATE.DISPATCHED,
-    });
-    await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
-    if (isReturnable) {
-      await updateStockBucket(rec.id, 'free', -qty);
-      await updateStockBucket(rec.id, 'in_process', +qty);
-    }
-  }
+  // Atomic: resolves plain lines, calls rpc_issue_dc for job-card lines,
+  // flips status, and posts every stock+ledger movement in one guarded
+  // transaction. Replaces the old three-step client dance that computed
+  // newStock with its own Math.max(0,...) clamp and wrote
+  // items.current_stock directly with no guard. INVENTORY_CONTROL_BLUEPRINT.md
+  // Phase 3. This WILL now throw (instead of silently succeeding at zero)
+  // if a line would drive stock_free negative — surface the RPC's error
+  // message verbatim, it names the item and the shortfall.
+  const { error } = await (supabase as any).rpc('rpc_issue_dc_plain_lines', { p_dc_id: id });
+  if (error) throw new Error(error.message);
 }
 
 // Cancel resolution options.
