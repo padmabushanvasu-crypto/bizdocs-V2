@@ -226,6 +226,11 @@ export default function DeliveryChallanForm() {
   // the line isn't ready to issue (see JobCardLinePicker for exactly when).
   const [lineNewJobCardId, setLineNewJobCardId] = useState<Map<number, string>>(new Map());
   const [lineNewStepNumber, setLineNewStepNumber] = useState<Map<number, number>>(new Map());
+  // Backward path (DC_STAGE_FLOW_REDESIGN.md §10.2) — the persisted qty for an
+  // already-issued job-card line, so editing can detect a real change and
+  // require a reason for it. Only ever populated on edit-load.
+  const [lineOriginalJobCardQty, setLineOriginalJobCardQty] = useState<Map<number, number>>(new Map());
+  const [lineQtyChangeReason, setLineQtyChangeReason] = useState<Map<number, string>>(new Map());
 
   const selectStage = (lineIndex: number, stage: ProcessingRoute) => {
     setLineSelectedStageId(prev => { const m = new Map(prev); m.set(lineIndex, stage.id); return m; });
@@ -380,6 +385,9 @@ export default function DeliveryChallanForm() {
       if (existingDC.return_due_date) setReturnDueDate(new Date(existingDC.return_due_date));
       if (existingDC.line_items?.length) {
         setLineItems(existingDC.line_items);
+        const newJcIds = new Map<number, string>();
+        const newStepNums = new Map<number, number>();
+        const origQtys = new Map<number, number>();
         existingDC.line_items.forEach((li: any, idx: number) => {
           const itemId = li.item_id;
           if (itemId) {
@@ -387,7 +395,19 @@ export default function DeliveryChallanForm() {
               setLineJobCards(prev => { const m = new Map(prev); m.set(idx, jcs); return m; });
             }).catch(() => {/* non-fatal */});
           }
+          // New stage-ledger model — restore the job-card link so
+          // JobCardLinePicker reflects reality on reopen, and so
+          // handleSave/updateDeliveryChallan can detect a real qty change
+          // against the persisted value.
+          if (li.job_card_id) {
+            newJcIds.set(idx, li.job_card_id);
+            if (li.step_number != null) newStepNums.set(idx, li.step_number);
+            origQtys.set(idx, li.qty_nos ?? li.quantity ?? 0);
+          }
         });
+        setLineNewJobCardId(newJcIds);
+        setLineNewStepNumber(newStepNums);
+        setLineOriginalJobCardQty(origQtys);
       }
       if (existingDC.party_id) {
         const p = parties.find((p) => p.id === existingDC.party_id);
@@ -715,6 +735,7 @@ export default function DeliveryChallanForm() {
             unit_2: (i.quantity_2 != null && Number(i.quantity_2) > 0) ? (i.unit_2 || "NOS") : null,
             job_card_id: lineNewJobCardId.get(idx) ?? null,
             step_number: lineNewStepNumber.get(idx) ?? null,
+            job_card_qty_change_reason: lineQtyChangeReason.get(idx)?.trim() || null,
           };
         });
 
@@ -898,6 +919,30 @@ export default function DeliveryChallanForm() {
           toast({
             title: "Job card stage required",
             description: `Line item ${idx + 1} is linked to a job card but has no stage selected — pick a stage, or nothing is currently eligible to send for that job card.`,
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+    }
+    // Backward path: editing an already-issued job-card line's quantity
+    // routes through rpc_update_dc_line_qty, which requires a reason for a
+    // decrease (increase doesn't need one — only reducing what's already out
+    // needs explaining). Checked on every edit save, not just "issued",
+    // since an edit to an issued DC always re-saves as pending_approval.
+    if (isEdit && (existingDC as any)?.status === 'issued') {
+      for (let idx = 0; idx < lineItems.length; idx++) {
+        if (!lineItems[idx].description.trim()) continue;
+        if (!lineNewJobCardId.get(idx)) continue;
+        const original = lineOriginalJobCardQty.get(idx);
+        if (original == null) continue;
+        const desired = Number(lineItems[idx].quantity) || 0;
+        if (desired < original && !lineQtyChangeReason.get(idx)?.trim()) {
+          const row = document.querySelector(`tr[data-line-index="${idx}"]`);
+          if (row) row.scrollIntoView({ behavior: "smooth", block: "center" });
+          toast({
+            title: "Reason required",
+            description: `Line item ${idx + 1}: a reason is required to reduce an already-issued job-card line's quantity (${original} → ${desired}).`,
             variant: "destructive",
           });
           return;
@@ -1773,6 +1818,31 @@ export default function DeliveryChallanForm() {
                     });
                   }}
                 />
+                {/* Backward path — reason for reducing an already-issued job-card
+                    line's quantity (rpc_update_dc_line_qty requires it server-side
+                    too; this just gives a line-specific prompt instead of a raw
+                    RPC exception). Only ever shown when editing an issued DC. */}
+                {isEdit && (existingDC as any)?.status === 'issued' && lineNewJobCardId.get(index)
+                  && lineOriginalJobCardQty.get(index) != null
+                  && (Number(item.quantity) || 0) < (lineOriginalJobCardQty.get(index) as number) && (
+                  <tr key={`qty-reason-${index}`}>
+                    <td />
+                    <td colSpan={12} className="px-3 py-2">
+                      <div className="p-2 bg-amber-50 border border-amber-200 rounded text-xs space-y-1.5">
+                        <Label className="text-[11px] font-semibold text-amber-800 uppercase tracking-wide">
+                          Reason for reducing quantity ({lineOriginalJobCardQty.get(index)} → {Number(item.quantity) || 0}) *
+                        </Label>
+                        <Textarea
+                          className="text-sm bg-white"
+                          rows={2}
+                          value={lineQtyChangeReason.get(index) ?? ""}
+                          onChange={(e) => setLineQtyChangeReason(prev => { const m = new Map(prev); m.set(index, e.target.value); return m; })}
+                          placeholder="Required — why is this job-work line's quantity being reduced?"
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                )}
                 {/* Jig alerts — fire whenever the line's drawing matches a jig.
                   *
                   * The earlier `MACHINING_PROCESS_CODES` gate that suppressed alerts

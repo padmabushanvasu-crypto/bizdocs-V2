@@ -105,6 +105,10 @@ export interface DCLineItem {
   // linked to a non-legacy job card; rpc_issue_dc reads these two columns.
   job_card_id?: string | null;
   step_number?: number | null;
+  // Transient, UI-only — never persisted to dc_line_items. Read by
+  // updateDeliveryChallan to pass through to rpc_update_dc_line_qty when
+  // this line's quantity changes on an already-issued DC.
+  job_card_qty_change_reason?: string | null;
   processing_log_id?: string | null;
 }
 
@@ -472,6 +476,49 @@ export async function createDeliveryChallan({ dc, lineItems }: CreateDCData) {
   return newDC as unknown as DeliveryChallan;
 }
 
+// ============================================================
+// New stage-ledger model (DC_STAGE_FLOW_REDESIGN.md) — backward path
+// ============================================================
+
+/**
+ * Changes an already-issued job-work DC line's quantity in place via
+ * rpc_update_dc_line_qty — never delete+reinsert for these lines (that
+ * severs the id job_card_stage_ledger.ref_id points at). The RPC itself
+ * writes dc_line_items.qty_nos; nothing else should also write it.
+ * Reason is required by the RPC when reducing; pass null for an increase.
+ */
+export async function updateDcLineQty(
+  dcLineItemId: string,
+  newQty: number,
+  reason: string | null,
+): Promise<void> {
+  const { error } = await (supabase as any).rpc('rpc_update_dc_line_qty', {
+    p_dc_line_item_id: dcLineItemId,
+    p_new_qty: newQty,
+    p_reason: reason ?? null,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Reverses every job-work line's outstanding issued qty on a DC via
+ * rpc_cancel_dc — covers every job_card_id-linked line on the DC in one
+ * transaction. Raises (and this throws) if any such line already has a
+ * GRN receipt; the caller must not half-cancel around that — surface the
+ * error and abort the whole cancellation.
+ */
+export async function cancelDcJobCardLines(
+  dcId: string,
+  reason: string,
+): Promise<Array<{ dc_line_item_id: string; qty_reversed: number }>> {
+  const { data, error } = await (supabase as any).rpc('rpc_cancel_dc', {
+    p_dc_id: dcId,
+    p_reason: reason,
+  });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Array<{ dc_line_item_id: string; qty_reversed: number }>;
+}
+
 export async function updateDeliveryChallan(id: string, { dc, lineItems }: CreateDCData) {
   const companyId = await getCompanyId();
 
@@ -483,14 +530,49 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
     .single();
   const isIssued = (currentDC as any)?.status === 'issued';
 
-  type OrigLine = { item_id: string | null; qty_nos: number | null; quantity: number | null };
+  type OrigLine = { id: string; item_id: string | null; qty_nos: number | null; quantity: number | null; job_card_id: string | null; step_number: number | null };
   let originalLines: OrigLine[] = [];
-  if (isIssued && RETURNABLE_DC_TYPES.has(dc.dc_type)) {
+  if (isIssued) {
     const { data: origLines } = await supabase
       .from('dc_line_items')
-      .select('item_id, qty_nos, quantity')
+      .select('id, item_id, qty_nos, quantity, job_card_id, step_number')
       .eq('dc_id', id);
     originalLines = (origLines ?? []) as OrigLine[];
+  }
+
+  // New stage-ledger model — a job-card-linked line on an ALREADY-issued DC is
+  // never deleted+reinserted below (that would sever the id
+  // job_card_stage_ledger.ref_id points at). Preserved in place instead: qty
+  // changes route through rpc_update_dc_line_qty (the RPC is the sole writer
+  // of qty_nos for these rows — nothing else may also set it); other field
+  // edits apply as a plain UPDATE keyed on id. See DC_STAGE_FLOW_REDESIGN.md
+  // §10.2, "DC line qty reduced/increased after issue".
+  const existingJobCardLines = originalLines.filter((l) => l.job_card_id);
+  const existingJobCardLineIds = new Set(existingJobCardLines.map((l) => l.id));
+
+  if (isIssued) {
+    // Validate everything BEFORE any write — fail loud, never half-edit.
+    for (const orig of existingJobCardLines) {
+      const incoming = lineItems.find((li) => li.id === orig.id);
+      if (incoming && (incoming.job_card_id ?? null) !== orig.job_card_id) {
+        throw new Error(
+          `Line "${incoming.description}": changing which job card an already-issued line is linked to isn't supported yet — cancel this DC line and issue a fresh one against the new job card/stage instead.`
+        );
+      }
+      if (incoming && incoming.job_card_id && (incoming.step_number ?? null) !== orig.step_number) {
+        throw new Error(
+          `Line "${incoming.description}": changing the stage of an already-issued job-card line isn't supported yet — cancel this DC line and issue a fresh one at the new stage instead.`
+        );
+      }
+    }
+    for (const incoming of lineItems) {
+      const isNewLine = !incoming.id || !existingJobCardLineIds.has(incoming.id);
+      if (isNewLine && incoming.job_card_id) {
+        throw new Error(
+          `Line "${incoming.description}": adding a new job-card-linked line to an already-issued DC isn't supported yet — raise a separate DC for this job card and stage instead.`
+        );
+      }
+    }
   }
 
   const { error } = await supabase.from("delivery_challans").update({
@@ -516,9 +598,17 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
     console.error("[DC] update error:", error);
     throw error;
   }
-  await supabase.from("dc_line_items").delete().eq("dc_id", id);
-  if (lineItems.length > 0) {
-    const itemsToInsert = lineItems.map((item) => ({
+  // Preserved job-card lines are excluded from BOTH the delete and the
+  // reinsert below — their id must survive untouched.
+  let deleteQuery = supabase.from("dc_line_items").delete().eq("dc_id", id);
+  if (existingJobCardLineIds.size > 0) {
+    deleteQuery = deleteQuery.not("id", "in", `(${[...existingJobCardLineIds].join(",")})`);
+  }
+  await deleteQuery;
+
+  const newLineItems = lineItems.filter((item) => !(item.id && existingJobCardLineIds.has(item.id)));
+  if (newLineItems.length > 0) {
+    const itemsToInsert = newLineItems.map((item) => ({
       company_id: companyId,
       dc_id: id, serial_number: item.serial_number, description: item.description,
       item_id: item.item_id || null,
@@ -546,22 +636,58 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
     if (itemsError) throw itemsError;
   }
 
-  // Part 7: apply stock bucket deltas when editing an issued returnable DC
+  // Preserved job-card lines: plain in-place UPDATE for every field except
+  // qty_nos/quantity (rpc_update_dc_line_qty is the sole writer of those),
+  // then the RPC call if the desired qty actually changed. A line missing
+  // from the new lineItems array (removed in the form) is treated as
+  // reduced to zero — never physically deleted, matching the RPC's own
+  // "line row soft-flagged, never deleted" contract.
+  for (const orig of existingJobCardLines) {
+    const incoming = lineItems.find((li) => li.id === orig.id);
+    if (incoming) {
+      const { error: lineUpdErr } = await supabase.from("dc_line_items").update({
+        description: incoming.description,
+        item_code: incoming.item_code || null,
+        hsn_sac_code: incoming.hsn_sac_code || null,
+        unit: incoming.unit || "NOS",
+        rate: incoming.rate || 0,
+        amount: incoming.amount || 0,
+        drawing_number: incoming.drawing_number || null,
+        remarks: incoming.remarks || null,
+        material_type: incoming.material_type || "FINISH",
+      } as any).eq("id", orig.id);
+      if (lineUpdErr) throw lineUpdErr;
+    }
+    const desiredQty = incoming ? (incoming.qty_nos ?? incoming.quantity ?? 0) : 0;
+    const currentQty = orig.qty_nos ?? orig.quantity ?? 0;
+    if (desiredQty !== currentQty) {
+      const reason = incoming?.job_card_qty_change_reason ?? null;
+      await updateDcLineQty(orig.id, desiredQty, reason);
+    }
+  }
+
+  // Part 7: apply stock bucket deltas when editing an issued returnable DC.
+  // Job-card-linked lines are excluded — under the new model an issued
+  // line's qty is a re-allocation of stock that already left free at the
+  // job card's own open time (rpc_open_job_card); it never moves stock_free
+  // again here, and rpc_update_dc_line_qty above correctly posts zero stock
+  // writes of its own. Applying this legacy delta on top would move stock
+  // that never actually left the building a second time.
   if (isIssued && RETURNABLE_DC_TYPES.has(dc.dc_type) && originalLines.length > 0) {
     const today = new Date().toISOString().split('T')[0];
 
-    // Build item_id → original qty map
+    // Build item_id → original qty map (job-card lines excluded — see above)
     const origMap = new Map<string, number>();
     for (const ol of originalLines) {
-      if (ol.item_id) {
+      if (ol.item_id && !ol.job_card_id) {
         origMap.set(ol.item_id, (ol.qty_nos ?? ol.quantity ?? 0));
       }
     }
 
-    // Build item_id → new qty map
+    // Build item_id → new qty map (job-card lines excluded — see above)
     const newMap = new Map<string, number>();
     for (const nl of lineItems) {
-      if (nl.item_id) {
+      if (nl.item_id && !nl.job_card_id) {
         const qty = (nl.qty_nos ?? nl.quantity ?? 0);
         newMap.set(nl.item_id, (newMap.get(nl.item_id) ?? 0) + qty);
       }
@@ -762,7 +888,11 @@ export async function cancelDeliveryChallan(id: string, options: DcCancelOptions
   const dcNumber: string = dc.dc_number ?? '';
   const wasIssued = !!dc.issued_at;
 
-  // ── Guard FIRST (before any mutation): linked job-card steps ──────────────
+  if (!reason.trim()) {
+    throw new Error('A reason is required to cancel a DC.');
+  }
+
+  // ── Guard FIRST (before any mutation): linked legacy job-card steps ───────
   const { data: stepRows, error: stepsErr } = await (supabase as any)
     .from('job_card_steps')
     .select('id, status, step_number, name, job_card_id, job_cards:job_card_id(jc_number)')
@@ -779,15 +909,27 @@ export async function cancelDeliveryChallan(id: string, options: DcCancelOptions
     );
   }
 
-  // ── 1. Stock reversal — only for an issued DC. Ledger-first per iteration. ──
+  // New stage-ledger model — job-card-linked lines never move stock_free/
+  // stock_in_process on cancel at all (the material is still owned by the
+  // batch, just no longer earmarked for this stage's vendor — it becomes
+  // eligible again at that stage, no stock side-effect). rpc_cancel_dc covers
+  // every such line on this DC in one transaction; it raises if any line
+  // already has a GRN receipt. Running it here — after the read-only legacy
+  // guard above, before any write below — means either guard rejecting
+  // leaves zero side effects; never half-cancel.
+  await cancelDcJobCardLines(id, reason.trim());
+
+  // ── 1. Stock reversal — only for an issued DC. Ledger-first per iteration.
+  //      Job-card-linked lines are excluded (see above — already reversed on
+  //      the job-card ledger, never touch stock buckets for them here). ──
   if (wasIssued) {
     const { data: lines } = await supabase
       .from('dc_line_items')
-      .select('item_id, item_code, description, qty_nos, quantity, returned_qty_nos')
+      .select('item_id, item_code, description, qty_nos, quantity, returned_qty_nos, job_card_id')
       .eq('dc_id', id);
 
     for (const line of (lines ?? []) as any[]) {
-      if (!line.item_id) continue;
+      if (!line.item_id || line.job_card_id) continue;
       // Outstanding = issued − already-returned, in the line's tracked UOM (NOS).
       const issued = Number(line.qty_nos ?? line.quantity ?? 0);
       const returned = Number(line.returned_qty_nos ?? 0);
@@ -1031,6 +1173,23 @@ export async function softDeleteDeliveryChallan(
   options: { deletion_reason?: string; stockAction?: DcDeleteStockAction } = {}
 ): Promise<void> {
   const { deletion_reason, stockAction } = options;
+  // rpc_delete_delivery_challan predates the stage-ledger model and knows
+  // nothing about job_card_stage_ledger — it would delete a job-work line
+  // (or reverse its stock) without ever posting the reversal the new ledger
+  // needs, leaving the job card's position permanently wrong. Refuse rather
+  // than silently corrupt it; Cancel (rpc_cancel_dc, wired in
+  // cancelDeliveryChallan above) is the correct path for these lines.
+  const { count: jobCardLineCount, error: jclErr } = await (supabase as any)
+    .from('dc_line_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('dc_id', id)
+    .not('job_card_id', 'is', null);
+  if (jclErr) throw jclErr;
+  if ((jobCardLineCount ?? 0) > 0) {
+    throw new Error(
+      'This DC has job-card-linked line(s) and cannot be deleted — use Cancel instead, which correctly reverses them on the job card ledger.'
+    );
+  }
   // All stock reversal + job-card cleanup now lives in rpc_delete_delivery_challan,
   // which always reverses outstanding stock (no more "delete with no stock
   // handling" silent no-op — that was the bug). 'recalled' / 'immediate_return'
