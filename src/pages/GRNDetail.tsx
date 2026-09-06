@@ -3,7 +3,7 @@ import { printWithLightMode } from "@/lib/print-utils";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  ChevronLeft, Printer, CheckCircle2, Clock, AlertTriangle, Trash2, Plus, PackageCheck, Lock, Info,
+  ChevronLeft, Printer, CheckCircle2, Clock, AlertTriangle, Trash2, Plus, PackageCheck, Lock, Info, RotateCcw,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -61,6 +61,7 @@ import { fetchGrnConversionOptions, type GrnConversionOption } from "@/lib/item-
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { isFinalBatch } from "@/lib/dc-receipt-utils";
 import { GRNFinanceApproval } from "@/components/GRNFinanceApproval";
+import { ReverseGrnReturnDialog } from "@/components/ReverseGrnReturnDialog";
 
 // ── Lookup tables ──────────────────────────────────────────────────────────────
 
@@ -767,8 +768,19 @@ function Stage1Table({
 
 // ── Stage 1 — read-only table ──────────────────────────────────────────────────
 
-function Stage1ReadOnly({ lines, isDcGrn }: { lines: S1Line[]; isDcGrn?: boolean }) {
-  const hasStoreTracking = lines.some(l => l.is_final_grn);
+function Stage1ReadOnly({
+  lines, isDcGrn, jobCardIdByDcLine, onReverse,
+}: {
+  lines: S1Line[];
+  isDcGrn?: boolean;
+  jobCardIdByDcLine?: Map<string, string>;
+  onReverse?: (line: S1Line) => void;
+}) {
+  const isJobCardLine = (l: S1Line) => !!(l.dc_line_item_id && jobCardIdByDcLine?.has(l.dc_line_item_id));
+  // is_final_grn (legacy) and job-card linkage (new model) are orthogonal —
+  // a job-card line can be store_confirmed with is_final_grn false, so the
+  // column must show for either.
+  const hasStoreTracking = lines.some(l => l.is_final_grn || isJobCardLine(l));
   const hasJigData = isDcGrn && lines.some(l => l.jig_confirmed === true);
   return (
     <div className="overflow-x-auto rounded-lg border border-blue-100">
@@ -819,11 +831,23 @@ function Stage1ReadOnly({ lines, isDcGrn }: { lines: S1Line[]; isDcGrn?: boolean
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-xs text-slate-500">{l.notes || "—"}</td>
                   {hasStoreTracking && (
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center text-xs">
-                      {!l.is_final_grn ? (
+                      {!l.is_final_grn && !isJobCardLine(l) ? (
                         <span className="text-slate-300">—</span>
                       ) : l.store_confirmed ? (
                         <span className="inline-flex items-center gap-1 text-green-700 font-medium">
                           ✓ {l.store_confirmed_by ? <span className="font-normal text-slate-500">{l.store_confirmed_by}</span> : null}
+                          {/* Backward path — corrective action, not common; a
+                              small icon is enough, no prominent placement. */}
+                          {isJobCardLine(l) && onReverse && (
+                            <button
+                              type="button"
+                              title="Reverse this return"
+                              onClick={() => onReverse(l)}
+                              className="ml-1 text-slate-400 hover:text-red-600"
+                            >
+                              <RotateCcw className="h-3 w-3" />
+                            </button>
+                          )}
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 text-amber-600 font-medium">
@@ -1790,6 +1814,29 @@ export default function GRNDetail() {
   const [s1Notes,         setS1Notes]         = useState("");
   const [s1Editing,       setS1Editing]       = useState(false);
   const [s2Editing,       setS2Editing]       = useState(false);
+  const [reverseGrnLine,  setReverseGrnLine]  = useState<S1Line | null>(null);
+
+  // Backward path (DC_STAGE_FLOW_REDESIGN.md §10.2) — which of this GRN's
+  // store-confirmed lines are job-card-linked, so the reverse action only
+  // ever appears where rpc_reverse_grn_return actually applies. Read-only,
+  // gates UI display only — never used for any stock/ledger decision.
+  const dcLineIds = [...new Set(s1Lines.map(l => l.dc_line_item_id).filter(Boolean))] as string[];
+  const { data: jobCardIdByDcLine = new Map<string, string>() } = useQuery({
+    queryKey: ["dc-line-job-card-ids", dcLineIds.join(",")],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("dc_line_items")
+        .select("id, job_card_id")
+        .in("id", dcLineIds);
+      if (error) throw error;
+      const m = new Map<string, string>();
+      for (const row of (data ?? []) as any[]) {
+        if (row.job_card_id) m.set(row.id, row.job_card_id);
+      }
+      return m;
+    },
+    enabled: dcLineIds.length > 0,
+  });
 
   // ── Stage 2 state ─────────────────────────────────────────────────────────
 
@@ -3058,7 +3105,12 @@ export default function GRNDetail() {
               onConvertItem={convertS1LineItem}
             />
           ) : (
-            <Stage1ReadOnly lines={s1Lines} isDcGrn={!!g.linked_dc_id} />
+            <Stage1ReadOnly
+              lines={s1Lines}
+              isDcGrn={!!g.linked_dc_id}
+              jobCardIdByDcLine={jobCardIdByDcLine}
+              onReverse={setReverseGrnLine}
+            />
           )}
 
           {s1Editable && (
@@ -3761,6 +3813,16 @@ export default function GRNDetail() {
           })()}
         </DialogContent>
       </Dialog>
+
+      {reverseGrnLine && (
+        <ReverseGrnReturnDialog
+          open={!!reverseGrnLine}
+          onOpenChange={(v) => { if (!v) setReverseGrnLine(null); }}
+          grnLineItemId={reverseGrnLine.id}
+          lineDescription={reverseGrnLine.description}
+          grnId={id!}
+        />
+      )}
     </div>
   );
 }
