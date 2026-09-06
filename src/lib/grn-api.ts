@@ -1938,6 +1938,59 @@ export async function reverseGrnReturn(
   return (data ?? []) as Array<{ out_event: string; out_qty: number; out_stock_clawed_back: boolean }>;
 }
 
+/** One grn_line_item whose dc_line_item needs a human job-card-link decision
+ * before store-confirm can run (rpc_confirm_grn_store can't auto-resolve it —
+ * 0 or 2+ open job cards for the item, or 1 with no single open stage). */
+export interface PendingJobCardLink {
+  grn_line_item_id: string;
+  dc_line_item_id: string;
+  item_id: string;
+  item_code: string;
+  dc_number: string;
+  dc_stage_number: number | null;
+  dc_stage_name: string | null;
+  n_candidates: number;
+}
+
+export async function getPendingJobCardLinks(grnId: string): Promise<PendingJobCardLink[]> {
+  const { data, error } = await (supabase as any).rpc('rpc_get_pending_job_card_links', {
+    p_grn_id: grnId,
+  });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as PendingJobCardLink[];
+}
+
+/** A job card the storekeeper could link a pending DC line to.
+ * open_external_step = null means the card has no single resolvable open
+ * external stage — it cannot be linked without a supervisor. */
+export interface JobCardLinkCandidate {
+  job_card_id: string;
+  jc_number: string;
+  entry_stage: number;
+  current_stage_name: string | null;
+  quantity_original: number;
+  open_external_step: number | null;
+}
+
+export async function getJobCardLinkCandidates(dcLineItemId: string): Promise<JobCardLinkCandidate[]> {
+  const { data, error } = await (supabase as any).rpc('rpc_get_job_card_link_candidates', {
+    p_dc_line_item_id: dcLineItemId,
+  });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as JobCardLinkCandidate[];
+}
+
+/** jobCardId = null records "not part of a job card". The card's open
+ * external step is resolved server-side (rpc_link_dc_line_to_job_card) —
+ * never pass a step number from here. */
+export async function linkDcLineToJobCard(dcLineItemId: string, jobCardId: string | null): Promise<void> {
+  const { error } = await (supabase as any).rpc('rpc_link_dc_line_to_job_card', {
+    p_dc_line_item_id: dcLineItemId,
+    p_job_card_id: jobCardId,
+  });
+  if (error) throw new Error(error.message);
+}
+
 /**
  * Key for matching a grn_line_items row back to its dc_line_items row by
  * (item_id, drawing_number) instead of the raw dc_line_item_id FK.

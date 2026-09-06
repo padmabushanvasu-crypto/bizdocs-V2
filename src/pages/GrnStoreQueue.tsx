@@ -19,13 +19,17 @@ import {
   fetchGrnStoreReceiptQueue,
   fetchStoreAcceptedByDate,
   storeConfirmGRNItems,
+  getPendingJobCardLinks,
   type GrnStoreReceiptCard,
+  type GrnStoreReceiptCardLine,
+  type PendingJobCardLink,
 } from "@/lib/grn-api";
 import { logAudit } from "@/lib/audit-api";
 import { formatNumber } from "@/lib/gst-utils";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { buildStoreReceiptWorkbook, buildStoreAcceptanceWorkbook, downloadWorkbook } from "@/lib/export-utils";
 import { AssemblyOutputAcceptance } from "@/components/AssemblyOutputAcceptance";
+import { ConfirmJobCardLinkDialog } from "@/components/ConfirmJobCardLinkDialog";
 
 type StatusFilter = "pending" | "confirmed" | "partial" | "all";
 
@@ -318,29 +322,20 @@ export default function GrnStoreQueue() {
   }
 
   const [confirming, setConfirming] = useState<Record<string, boolean>>({});
+  const [jobCardLinkGate, setJobCardLinkGate] = useState<{
+    grnId: string;
+    form: GrnFormState;
+    checkedItems: GrnStoreReceiptCardLine[];
+    pending: PendingJobCardLink[];
+  } | null>(null);
 
-  async function handleConfirmGRN(card: GrnStoreReceiptCard) {
-    const grnId = card.grn_id;
-    const form = grnForms[grnId];
-    if (!form) return;
-
-    if (!form.confirmedBy.trim()) {
-      toast({ title: "Received By is required", variant: "destructive" });
-      return;
-    }
-
-    const pendingLines = card.line_items.filter((li) => !li.store_confirmed);
-    const checkedItems = pendingLines.filter((li) => form.items[li.id]?.checked);
-    if (checkedItems.length === 0) {
-      toast({
-        title: "No items selected",
-        description: "Check at least one item to confirm.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setConfirming((prev) => ({ ...prev, [grnId]: true }));
+  // Runs the store-confirm call itself — unchanged from before this feature.
+  // Callers must have already set confirming[grnId] = true.
+  async function runStoreConfirm(
+    grnId: string,
+    form: GrnFormState,
+    checkedItems: GrnStoreReceiptCardLine[],
+  ) {
     try {
       await storeConfirmGRNItems(
         grnId,
@@ -373,6 +368,48 @@ export default function GrnStoreQueue() {
     } finally {
       setConfirming((prev) => ({ ...prev, [grnId]: false }));
     }
+  }
+
+  async function handleConfirmGRN(card: GrnStoreReceiptCard) {
+    const grnId = card.grn_id;
+    const form = grnForms[grnId];
+    if (!form) return;
+
+    if (!form.confirmedBy.trim()) {
+      toast({ title: "Received By is required", variant: "destructive" });
+      return;
+    }
+
+    const pendingLines = card.line_items.filter((li) => !li.store_confirmed);
+    const checkedItems = pendingLines.filter((li) => form.items[li.id]?.checked);
+    if (checkedItems.length === 0) {
+      toast({
+        title: "No items selected",
+        description: "Check at least one item to confirm.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setConfirming((prev) => ({ ...prev, [grnId]: true }));
+
+    let pending: PendingJobCardLink[];
+    try {
+      pending = (await getPendingJobCardLinks(grnId)).filter((p) =>
+        checkedItems.some((ci) => ci.id === p.grn_line_item_id)
+      );
+    } catch (err: any) {
+      toast({ title: "Error checking job card links", description: err.message, variant: "destructive" });
+      setConfirming((prev) => ({ ...prev, [grnId]: false }));
+      return;
+    }
+
+    if (pending.length > 0) {
+      setJobCardLinkGate({ grnId, form, checkedItems, pending });
+      return;
+    }
+
+    await runStoreConfirm(grnId, form, checkedItems);
   }
 
   // Status-aware empty-state copy + icon. Month-aware where useful to hint at
@@ -858,6 +895,23 @@ export default function GrnStoreQueue() {
         </div>
       )}
         </>
+      )}
+
+      {jobCardLinkGate && (
+        <ConfirmJobCardLinkDialog
+          open
+          onOpenChange={(v) => { if (!v) setJobCardLinkGate(null); }}
+          pendingLines={jobCardLinkGate.pending}
+          onResolved={() => {
+            const { grnId, form, checkedItems } = jobCardLinkGate;
+            setJobCardLinkGate(null);
+            runStoreConfirm(grnId, form, checkedItems);
+          }}
+          onCancelled={() => {
+            setConfirming((prev) => ({ ...prev, [jobCardLinkGate.grnId]: false }));
+            setJobCardLinkGate(null);
+          }}
+        />
       )}
     </div>
   );
