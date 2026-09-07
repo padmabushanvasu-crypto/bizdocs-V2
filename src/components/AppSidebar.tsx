@@ -185,7 +185,7 @@ const GROUP_PATHS: Record<string, string[]> = {
   "PROCUREMENT":           ["/purchase-orders", "/delivery-challans", "/follow-up-tracker", "/vendor-scorecards", "/parties", "/reorder-intelligence"],
   "INWARD & QC":           ["/grn", "/storekeeper-queue", "/ready-to-move", "/dc-grn"],
   "PRODUCTION & JOB WORK": ["/job-works", "/wip-register", "/sub-assembly-work-orders", "/finished-good-work-orders"],
-  "INVENTORY & STORES":    ["/stock-register", "/inventory-ledger", "/opening-stock", "/storekeeper", "/store-locator", "/physical-count", "/consumables", "/scrap-register"],
+  "INVENTORY & STORES":    ["/stock-register", "/inventory-ledger", "/opening-stock", "/storekeeper", "/store-locator", "/physical-count", "/physical-count/approvals", "/consumables", "/scrap-register"],
   "DISPATCH":              ["/ready-to-dispatch", "/dispatch-records", "/serial-numbers", "/fat-certificates"],
   "FINANCE & COMPLIANCE":  ["/gst-reports"],
   "MASTERS & SETUP":       ["/items", "/bill-of-materials", "/jig-master", "/assets-register", "/settings"],
@@ -896,6 +896,12 @@ export function AppSidebar() {
       url: "/physical-count",
       icon: ClipboardCheck,
       allowedRoles: ['admin', 'finance', 'storekeeper'],
+    },
+    {
+      title: "Count Approvals",
+      url: "/physical-count/approvals",
+      icon: CheckCircle,
+      allowedRoles: ['admin', 'qc_team'],
     },
     {
       title: "Consumables Issue",

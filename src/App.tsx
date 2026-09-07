@@ -50,6 +50,7 @@ import BillOfMaterials from "@/pages/BillOfMaterials";
 import InventoryLedger from "@/pages/InventoryLedger";
 import StoreLocator from "@/pages/StoreLocator";
 import PhysicalCount from "@/pages/PhysicalCount";
+import PhysicalCountApprovalQueue from "@/pages/PhysicalCountApprovalQueue";
 import Notifications from "@/pages/Notifications";
 import DataImport from "@/pages/DataImport";
 import CostMasterImport from "@/pages/CostMasterImport";
@@ -205,6 +206,7 @@ const App = () => (
               <Route path="/inventory-ledger" element={<PageGuard page="stock-ledger"><InventoryLedger /></PageGuard>} />
               <Route path="/store-locator" element={<PageGuard page="stock-ledger"><StoreLocator /></PageGuard>} />
               <Route path="/physical-count" element={<PageGuard page="stock-ledger"><PhysicalCount /></PageGuard>} />
+              <Route path="/physical-count/approvals" element={<PhysicalCountApprovalQueue />} />
               <Route path="/notifications" element={<Notifications />} />
 
               <Route path="/serial-numbers" element={<PageGuard page="serial-numbers"><SerialNumbers /></PageGuard>} />

@@ -10,9 +10,8 @@ import { formatNumber } from "@/lib/gst-utils";
 import { PhysicalCountImportDialog } from "@/components/PhysicalCountImportDialog";
 import {
   fetchCountWorklist,
-  recordPhysicalCount,
+  submitPhysicalCount,
   type CountWorklistRow,
-  type RecordedCount,
 } from "@/lib/physical-count-api";
 
 type SortKey = "item_code" | "description" | "system_free";
@@ -29,8 +28,10 @@ export default function PhysicalCount() {
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
-  // Variance shown after save (system_free becomes counted on refetch, so keep it).
-  const [justSaved, setJustSaved] = useState<Record<string, RecordedCount>>({});
+  // Rows with a live pending submission show a read-only "Pending approval"
+  // state instead of the input; toggling this reveals the input again to
+  // let the user resubmit (which supersedes the old pending row server-side).
+  const [revising, setRevising] = useState<Record<string, boolean>>({});
 
   // Fetch the FULL list so "X of N counted" is accurate; filter client-side.
   const { data: rows = [], isLoading } = useQuery({
@@ -57,17 +58,19 @@ export default function PhysicalCount() {
     return out;
   }, [rows, search, hideCounted, sortKey, sortDir]);
 
-  const saveMutation = useMutation({
+  const submitMutation = useMutation({
     mutationFn: ({ itemId, counted }: { itemId: string; counted: number }) =>
-      recordPhysicalCount(itemId, counted),
-    onSuccess: (res) => {
-      setJustSaved((prev) => ({ ...prev, [res.item_id]: res }));
-      setInputs((prev) => { const n = { ...prev }; delete n[res.item_id]; return n; });
+      submitPhysicalCount(itemId, counted),
+    onSuccess: (row) => {
+      setInputs((prev) => { const n = { ...prev }; delete n[row.item_id]; return n; });
+      setRevising((prev) => { const n = { ...prev }; delete n[row.item_id]; return n; });
       queryClient.invalidateQueries({ queryKey: ["count-worklist"] });
-      queryClient.invalidateQueries({ queryKey: ["item-locations"] });
-      toast({ title: "Count saved", description: `Free set to ${formatNumber(res.counted_free)} (variance ${res.variance >= 0 ? "+" : ""}${formatNumber(res.variance)})` });
+      toast({
+        title: "Count submitted for approval",
+        description: `${formatNumber(row.counted_qty)} submitted — awaiting qc_team/admin review.`,
+      });
     },
-    onError: (err: any) => toast({ title: "Could not save count", description: err.message, variant: "destructive" }),
+    onError: (err: any) => toast({ title: "Could not submit count", description: err.message, variant: "destructive" }),
   });
 
   const toggleSort = (k: SortKey) => {
@@ -97,8 +100,8 @@ export default function PhysicalCount() {
             <ClipboardCheck className="h-5 w-5 text-blue-600" /> Physical Count
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Enter the actual on-shelf (free) quantity per item. Saving sets availability and
-            resets the stock ledger base for that item.
+            Enter the actual on-shelf (free) quantity per item. Submitting sends it for
+            qc_team/admin approval — stock isn't affected until it's approved.
           </p>
         </div>
         <div className="flex items-center gap-4">
@@ -147,7 +150,7 @@ export default function PhysicalCount() {
                 <Th k="system_free" label="System Free" align="right" />
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Counted Free</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Variance</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Save</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Submit</th>
               </tr>
             </thead>
             <tbody>
@@ -157,16 +160,24 @@ export default function PhysicalCount() {
                 <tr><td colSpan={6} className="px-3 py-8 text-center text-sm text-slate-400">No items</td></tr>
               ) : (
                 filtered.map((r: CountWorklistRow) => {
-                  const saved = justSaved[r.id];
                   const inputVal = inputs[r.id] ?? "";
-                  const busy = savingId === r.id && saveMutation.isPending;
-                  const canSave = inputVal.trim() !== "" && Number(inputVal) >= 0;
+                  const busy = savingId === r.id && submitMutation.isPending;
+                  const canSubmit = inputVal.trim() !== "" && Number(inputVal) >= 0;
+                  const isPending = !!r.pending_count_id;
+                  const showInput = !isPending || revising[r.id];
+                  const pendingVariance = isPending ? (r.pending_qty as number) - r.system_free : null;
+
+                  const submit = () => {
+                    setSavingId(r.id);
+                    submitMutation.mutate({ itemId: r.id, counted: Number(inputVal) });
+                  };
+
                   return (
-                    <tr key={r.id} className={`hover:bg-muted/30 transition-colors ${r.counted ? "bg-green-50/30" : ""}`}>
+                    <tr key={r.id} className={`hover:bg-muted/30 transition-colors ${isPending ? "bg-amber-50/40" : r.counted ? "bg-green-50/30" : ""}`}>
                       <td className="px-3 py-2 border-b border-slate-100 font-mono text-xs text-slate-700">
                         {r.item_code}
                         {r.counted && r.last_counted_at && (
-                          <span className="ml-2 text-[10px] text-green-600">✓ {format(new Date(saved?.counted_at ?? r.last_counted_at), "dd MMM")}</span>
+                          <span className="ml-2 text-[10px] text-green-600">✓ {format(new Date(r.last_counted_at), "dd MMM")}</span>
                         )}
                       </td>
                       <td className="px-3 py-2 border-b border-slate-100 text-slate-800 max-w-[280px] truncate">{r.description}</td>
@@ -174,42 +185,51 @@ export default function PhysicalCount() {
                         {formatNumber(r.system_free)} <span className="text-xs text-slate-400">{r.unit}</span>
                       </td>
                       <td className="px-3 py-2 border-b border-slate-100 text-right">
-                        <Input
-                          type="number"
-                          min={0}
-                          value={inputVal}
-                          placeholder="—"
-                          onChange={(e) => setInputs((prev) => ({ ...prev, [r.id]: e.target.value }))}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && canSave) {
-                              setSavingId(r.id);
-                              saveMutation.mutate({ itemId: r.id, counted: Number(inputVal) });
-                            }
-                          }}
-                          className="w-24 text-right ml-auto"
-                        />
+                        {showInput ? (
+                          <Input
+                            type="number"
+                            min={0}
+                            value={inputVal}
+                            placeholder="—"
+                            onChange={(e) => setInputs((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && canSubmit) submit();
+                            }}
+                            className="w-24 text-right ml-auto"
+                          />
+                        ) : (
+                          <div className="flex items-center justify-end gap-1.5">
+                            <span className="font-mono tabular-nums text-slate-700">{formatNumber(r.pending_qty as number)}</span>
+                            <span className="text-[10px] font-medium text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">Pending approval</span>
+                          </div>
+                        )}
                       </td>
                       <td className="px-3 py-2 border-b border-slate-100 text-right font-mono tabular-nums">
-                        {saved ? (
-                          <span className={saved.variance === 0 ? "text-slate-400" : saved.variance > 0 ? "text-green-600" : "text-red-600"}>
-                            {saved.variance > 0 ? "+" : ""}{formatNumber(saved.variance)}
+                        {pendingVariance != null ? (
+                          <span className={pendingVariance === 0 ? "text-slate-400" : pendingVariance > 0 ? "text-green-600" : "text-red-600"}>
+                            {pendingVariance > 0 ? "+" : ""}{formatNumber(pendingVariance)}
                           </span>
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
                       </td>
                       <td className="px-3 py-2 border-b border-slate-100 text-center">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!canSave || busy}
-                          onClick={() => {
-                            setSavingId(r.id);
-                            saveMutation.mutate({ itemId: r.id, counted: Number(inputVal) });
-                          }}
-                        >
-                          {busy ? "Saving…" : "Save"}
-                        </Button>
+                        {showInput ? (
+                          <Button size="sm" variant="outline" disabled={!canSubmit || busy} onClick={submit}>
+                            {busy ? "Submitting…" : "Submit"}
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setRevising((prev) => ({ ...prev, [r.id]: true }));
+                              setInputs((prev) => ({ ...prev, [r.id]: String(r.pending_qty ?? "") }));
+                            }}
+                          >
+                            Revise
+                          </Button>
+                        )}
                       </td>
                     </tr>
                   );
