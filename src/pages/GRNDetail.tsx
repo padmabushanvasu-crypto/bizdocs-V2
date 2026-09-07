@@ -85,9 +85,9 @@ const NC_TYPES: { value: NonConformanceType; label: string }[] = [
 const DISPOSITIONS: { value: Disposition; label: string }[] = [
   { value: "accept_as_is",       label: "Accept As-Is" },
   { value: "conditional_accept", label: "Conditional Accept" },
-  { value: "return_to_vendor",   label: "Return to vendor" },
-  { value: "scrap",              label: "Scrap" },
-  { value: "rework_our_scope",   label: "Rework (in-house)" },
+  { value: "return_to_vendor",   label: "Reject - Return to Vendor" },
+  { value: "scrap",              label: "Reject - Scrap" },
+  { value: "rework_our_scope",   label: "Reject - Rework (In-house)" },
 ];
 
 // ── Stage 1 line state ─────────────────────────────────────────────────────────
