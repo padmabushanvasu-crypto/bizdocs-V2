@@ -15,7 +15,6 @@ import {
   fetchDeliveryChallan,
   cancelDeliveryChallan,
   softDeleteDeliveryChallan,
-  fetchDCReturns,
   recordEnhancedReturn,
   fetchBomStagesForItemDC,
   fetchComponentProcessingLog,
@@ -135,7 +134,6 @@ export default function DeliveryChallanDetail() {
   const [retReworkVendorId, setRetReworkVendorId] = useState<string | null>(null);
   const [retReworkVendorName, setRetReworkVendorName] = useState('');
   const [retSaving, setRetSaving] = useState(false);
-  const [showDeletedReturns, setShowDeletedReturns] = useState(false);
   const [jcDialogOpen, setJcDialogOpen] = useState(false);
   const [existingJobCards, setExistingJobCards] = useState<Record<string, { id: string; jc_number: string; current_stage: number; status: string }[]>>({});
 
@@ -165,12 +163,6 @@ export default function DeliveryChallanDetail() {
   const { data: dc, isLoading } = useQuery({
     queryKey: ["delivery-challan", id],
     queryFn: () => fetchDeliveryChallan(id!),
-    enabled: !!id,
-  });
-
-  const { data: returns } = useQuery({
-    queryKey: ["dc-returns", id],
-    queryFn: () => fetchDCReturns(id!),
     enabled: !!id,
   });
 
@@ -1206,56 +1198,12 @@ export default function DeliveryChallanDetail() {
               <h3 className="text-xs font-semibold text-slate-500">Return History</h3>
               <p className="text-xs text-muted-foreground mt-0.5">Records material physically returned by the job worker. To send goods back to a <em>vendor</em>, raise a new DC with type "Return to Vendor".</p>
             </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant={showDeletedReturns ? "secondary" : "outline"}
-                size="sm"
-                onClick={() => setShowDeletedReturns(v => !v)}
-              >
-                <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-                {showDeletedReturns ? "Hide Deleted" : "Show Deleted"}
+            {["issued", "partially_returned"].includes(dc.status) && !isDeleted && (
+              <Button size="sm" variant="outline" disabled={createGrnMutation.isPending} onClick={() => createGrnMutation.mutate()}>
+                <RotateCcw className="h-3.5 w-3.5 mr-1" /> {createGrnMutation.isPending ? "Creating GRN…" : "Record Return"}
               </Button>
-              {["issued", "partially_returned"].includes(dc.status) && !isDeleted && (
-                <Button size="sm" variant="outline" disabled={createGrnMutation.isPending} onClick={() => createGrnMutation.mutate()}>
-                  <RotateCcw className="h-3.5 w-3.5 mr-1" /> {createGrnMutation.isPending ? "Creating GRN…" : "Record Return"}
-                </Button>
-              )}
-            </div>
+            )}
           </div>
-          {(() => {
-            const filteredReturns = showDeletedReturns
-              ? (returns ?? [])
-              : (returns ?? []).filter(r => (r as any).status !== "deleted");
-            return filteredReturns.length === 0 ? (
-              <div className="text-center py-6">
-                <AlertTriangle className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">No returns recorded yet</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto rounded-lg border border-slate-200">
-              <table className="w-full border-collapse text-sm">
-                <thead>
-                  <tr>
-                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Date</th>
-                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Received By</th>
-                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Items Returned</th>
-                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredReturns.map((ret) => (
-                    <tr key={ret.id} className={(ret as any).status === "deleted" ? "opacity-50" : ""}>
-                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{new Date(ret.return_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</td>
-                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{ret.received_by || "—"}</td>
-                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{ret.items?.length ?? 0} items</td>
-                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">{ret.notes || "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              </div>
-            );
-          })()}
       </div>
 
       {/* Audit Trail */}

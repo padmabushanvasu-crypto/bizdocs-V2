@@ -27,7 +27,6 @@ import PurchaseOrderDetail from "@/pages/PurchaseOrderDetail";
 import DeliveryChallansRegister from "@/pages/DeliveryChallansRegister";
 import DeliveryChallanForm from "@/pages/DeliveryChallanForm";
 import DeliveryChallanDetail from "@/pages/DeliveryChallanDetail";
-import DCRecordReturn from "@/pages/DCRecordReturn";
 import GRNRegister from "@/pages/GRNRegister";
 import GRNForm from "@/pages/GRNForm";
 import GRNDetail from "@/pages/GRNDetail";
@@ -176,7 +175,6 @@ const App = () => (
               <Route path="/delivery-challans/new" element={<PageGuard page="delivery-challans"><DeliveryChallanForm /></PageGuard>} />
               <Route path="/delivery-challans/:id" element={<PageGuard page="delivery-challans"><DeliveryChallanDetail /></PageGuard>} />
               <Route path="/delivery-challans/:id/edit" element={<PageGuard page="delivery-challans"><DeliveryChallanForm /></PageGuard>} />
-              <Route path="/delivery-challans/:id/record-return" element={<PageGuard page="delivery-challans"><DCRecordReturn /></PageGuard>} />
 
               <Route path="/grn" element={<PageGuard page="grn"><GRNRegister /></PageGuard>} />
               <Route path="/grn/new" element={<PageGuard page="grn"><GRNForm /></PageGuard>} />
