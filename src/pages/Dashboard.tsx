@@ -404,7 +404,8 @@ export default function Dashboard() {
         .from('stock_alerts')
         .select('*')
         .eq('company_id', companyId)
-        .neq('item_type', 'service');
+        .neq('item_type', 'service')
+        .neq('item_type', 'asset');
 
       if (error) {
         console.error('Stock alerts error:', error);
