@@ -27,7 +27,7 @@ export interface AssemblyWorkOrder {
   id: string;
   company_id: string;
   awo_number: string;
-  awo_type: 'sub_assembly' | 'finished_good';
+  awo_type: 'sub_assembly' | 'finished_good' | 'component';
   awo_date: string;
   item_id: string | null;
   item_code: string | null;
@@ -252,7 +252,7 @@ export async function fetchAssemblyWorkOrder(id: string): Promise<AssemblyWorkOr
 // ── createAssemblyWorkOrder ───────────────────────────────────────────────────
 
 export async function createAssemblyWorkOrder(data: {
-  awo_type: 'sub_assembly' | 'finished_good';
+  awo_type: 'sub_assembly' | 'finished_good' | 'component';
   item_id: string;
   item_code: string;
   item_description: string;
@@ -1257,7 +1257,7 @@ export async function fetchConcessionApprovers(): Promise<Array<{ id: string; na
 
 // ── fetchAwoStats ─────────────────────────────────────────────────────────────
 
-export async function fetchAwoStats(type: 'sub_assembly' | 'finished_good'): Promise<{
+export async function fetchAwoStats(type: 'sub_assembly' | 'finished_good' | 'component'): Promise<{
   draft: number;
   pending_materials: number;
   in_progress: number;

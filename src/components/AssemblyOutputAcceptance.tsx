@@ -101,7 +101,7 @@ export function AssemblyOutputAcceptance() {
                     {awo.awo_number}
                   </button>
                   <span className="ml-2 text-xs text-slate-500">
-                    {awo.awo_type === "finished_good" ? "Finished Good" : "Sub-Assembly"}
+                    {awo.awo_type === "finished_good" ? "Finished Good" : awo.awo_type === "component" ? "Component" : "Sub-Assembly"}
                   </span>
                   <p className="text-sm text-slate-800 dark:text-slate-100 truncate">
                     {awo.item_description ?? awo.item_code ?? "—"}
