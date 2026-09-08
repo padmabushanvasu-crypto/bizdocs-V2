@@ -30,6 +30,7 @@ const ITEM_TYPE_LABELS: Record<string, { label: string; cls: string }> = {
   product:        { label: "Product",       cls: "bg-green-100 text-green-700" },
   consumable:     { label: "Consumable",    cls: "bg-amber-100 text-amber-700" },
   service:        { label: "Service",       cls: "bg-gray-100 text-gray-600" },
+  asset:          { label: "Asset",         cls: "bg-red-100 text-red-700" },
 };
 
 const EDIT_REASONS = [
@@ -98,7 +99,7 @@ export default function OpeningStock() {
     queryKey: ["items-opening-stock"],
     queryFn: () => fetchItems({ status: "active", pageSize: 1000 }),
   });
-  const items = (itemsData?.data ?? []).filter(i => i.item_type !== "service");
+  const items = (itemsData?.data ?? []).filter(i => i.item_type !== "service" && i.item_type !== "asset");
 
   const { data: openingMap = {}, isLoading: ledgerLoading } = useQuery({
     queryKey: ["opening-stock-entries"],

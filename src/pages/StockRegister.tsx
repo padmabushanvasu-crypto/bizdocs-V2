@@ -66,6 +66,7 @@ function TypeBadge({ type }: { type: string }) {
     finished_good:{ label: "Finished Good", cls: "bg-emerald-50 text-emerald-700 border border-emerald-200" },
     raw_material: { label: "Raw Material",  cls: "bg-orange-50 text-orange-700 border border-orange-200" },
     consumable:   { label: "Consumable",    cls: "bg-rose-50 text-rose-700 border border-rose-200" },
+    asset:        { label: "Asset",         cls: "bg-red-50 text-red-700 border border-red-200" },
   };
   const t = map[type] ?? {
     label: type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),

@@ -20,6 +20,7 @@ const TYPE_SHORT: Record<string, string> = {
   finished_good: "FG",
   consumable: "CONS",
   service: "SVC",
+  asset: "AST",
 };
 
 export function ItemSuggest({

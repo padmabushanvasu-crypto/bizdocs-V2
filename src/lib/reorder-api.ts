@@ -117,7 +117,8 @@ export async function fetchReorderAlerts(): Promise<ReorderAlert[]> {
     .eq("company_id", companyId)
     .eq("status", "active")
     .eq("stock_alert_level", "critical")
-    .neq("item_type", "service");
+    .neq("item_type", "service")
+    .neq("item_type", "asset");
   if (itemsError) throw itemsError;
 
   const items = (itemsRaw || []) as any[];

@@ -84,7 +84,8 @@ async function fetchStockAlertBoard(companyId: string): Promise<{ rows: StockAle
     .select("*")
     .eq("company_id", companyId)
     .neq("item_type", "service")
-    .neq("item_type", "finished_good");
+    .neq("item_type", "finished_good")
+    .neq("item_type", "asset");
 
   let rawRows: any[] = [];
   let aimMap = new Map<string, number>();
@@ -108,6 +109,7 @@ async function fetchStockAlertBoard(companyId: string): Promise<{ rows: StockAle
       .eq("company_id", companyId)
       .neq("item_type", "service")
       .neq("item_type", "finished_good")
+      .neq("item_type", "asset")
       .gt("min_stock", 0);
 
     if (itemsError) throw itemsError;
@@ -243,6 +245,7 @@ const ITEM_TYPE_LABELS: Record<string, string> = {
   component:    "Component",
   bought_out:   "Bought Out",
   sub_assembly: "Sub-Assembly",
+  asset:        "Asset",
 };
 
 function itemTypeBadge(type: string) {
@@ -252,6 +255,7 @@ function itemTypeBadge(type: string) {
     component:    "bg-purple-50 text-purple-700 border-purple-200",
     bought_out:   "bg-teal-50 text-teal-700 border-teal-200",
     sub_assembly: "bg-amber-50 text-amber-700 border-amber-200",
+    asset:        "bg-red-50 text-red-700 border-red-200",
   };
   return { label, className: clsMap[type] ?? "bg-slate-50 text-slate-700 border-slate-200" };
 }

@@ -74,6 +74,7 @@ const typeColor: Record<string, string> = {
   consumable:     "bg-teal-100 text-teal-800",
   raw_material:   "bg-orange-100 text-orange-800",
   service:        "bg-pink-100 text-pink-800",
+  asset:          "bg-red-100 text-red-800",
 };
 
 const CHART_COLORS = ["#3b82f6", "#f59e0b", "#10b981", "#6366f1"];
@@ -184,6 +185,7 @@ const NODE_STYLE: Record<string, { border: string; bg: string; lineColor: string
   raw_material:   { border: "border-orange-400",  bg: "bg-orange-50", lineColor: "#fb923c" },
   consumable:     { border: "border-teal-400",    bg: "bg-teal-50",   lineColor: "#2dd4bf" },
   service:        { border: "border-pink-400",    bg: "bg-pink-50",   lineColor: "#f472b6" },
+  asset:          { border: "border-red-400",     bg: "bg-red-50",    lineColor: "#f87171" },
 };
 const DEFAULT_NODE_STYLE = { border: "border-slate-300", bg: "bg-slate-50", lineColor: "#94a3b8" };
 
@@ -312,6 +314,7 @@ const RF_NODE_COLORS: Record<string, { border: string; bg: string }> = {
   raw_material:  { border: "#6366f1", bg: "#eef2ff" },
   consumable:    { border: "#f97316", bg: "#fff7ed" },
   service:       { border: "#6b7280", bg: "#f9fafb" },
+  asset:         { border: "#dc2626", bg: "#fef2f2" },
 };
 
 function BomFlowNodeCard({ data, selected }: NodeProps) {
