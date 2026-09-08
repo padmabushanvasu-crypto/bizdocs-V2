@@ -94,6 +94,7 @@ const ASSEMBLY_TEAM_MAP: Record<string, PageAccess> = {
   'wip-register':               { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
   'sub-assembly-work-orders':   { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
   'finished-good-work-orders':  { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
+  'component-work-orders':      { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
   'stock-register':             { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
   'serial-numbers':             { canView: true,  canEdit: false, canExport: true,  hideCosts: false },
   'fat-certificates':           { canView: true,  canEdit: false, canExport: false, hideCosts: true  },

@@ -49,6 +49,12 @@ import { format, differenceInDays, parseISO } from "date-fns";
 
 type StockAction = 'none' | 'return_all' | 'partial' | 'scrap_all';
 
+function awoListRoute(awoType: string | undefined): string {
+  if (awoType === 'sub_assembly') return '/sub-assembly-work-orders';
+  if (awoType === 'component') return '/component-work-orders';
+  return '/finished-good-work-orders';
+}
+
 function statusBadge(status: string) {
   const map: Record<string, { label: string; className: string }> = {
     draft: { label: "Draft", className: "bg-slate-100 text-slate-700" },
@@ -181,11 +187,7 @@ export default function AssemblyWorkOrderDetail() {
       queryClient.invalidateQueries({ queryKey: ["awo-stats-dashboard"] });
       setCancelDialogOpen(false);
       toast({ title: "Work order cancelled" });
-      if (awo?.awo_type === 'sub_assembly') {
-        navigate('/sub-assembly-work-orders');
-      } else {
-        navigate('/finished-good-work-orders');
-      }
+      navigate(awoListRoute(awo?.awo_type));
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -1069,7 +1071,7 @@ export default function AssemblyWorkOrderDetail() {
         onOpenChange={setDeleteOpen}
         onDeleted={() => {
           queryClient.invalidateQueries({ queryKey: ["awo"] });
-          navigate(awo.awo_type === 'sub_assembly' ? '/sub-assembly-work-orders' : '/finished-good-work-orders');
+          navigate(awoListRoute(awo.awo_type));
         }}
       />
     </div>
