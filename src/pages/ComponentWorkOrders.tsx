@@ -29,11 +29,53 @@ import {
   fetchAwoStats,
   type AssemblyWorkOrder,
 } from "@/lib/production-api";
-import { fetchItems } from "@/lib/items-api";
 import { fetchBomVariants } from "@/lib/bom-api";
 import { AwoDeleteDialog } from "@/components/AwoDeleteDialog";
 import { formatNumber } from "@/lib/gst-utils";
+import { supabase } from "@/integrations/supabase/client";
+import { getCompanyId } from "@/lib/auth-helpers";
 import { format, differenceInDays, parseISO } from "date-fns";
+
+interface BuildableComponentItem {
+  id: string;
+  item_code: string;
+  description: string;
+}
+
+// Only components with at least one raw-material BOM line are worth offering
+// here — most item_type='component' rows have no BOM defined yet (or only
+// legacy non-raw-material lines), which would raise a component AWO with an
+// empty BOM Checklist. Narrows the dropdown, not the item_type itself — a
+// component gains eligibility the moment a raw-material BOM line is added,
+// no hardcoded list to maintain.
+async function fetchBuildableComponentItems(): Promise<BuildableComponentItem[]> {
+  const companyId = await getCompanyId();
+  if (!companyId) return [];
+
+  const { data: bomRows, error: bomErr } = await (supabase as any)
+    .from("bom_lines")
+    .select("parent_item_id, items!bom_lines_child_item_id_fkey!inner(item_type)")
+    .eq("company_id", companyId)
+    .eq("items.item_type", "raw_material");
+  if (bomErr) throw bomErr;
+
+  const parentIds = Array.from(
+    new Set((bomRows ?? []).map((r: any) => r.parent_item_id).filter(Boolean))
+  );
+  if (parentIds.length === 0) return [];
+
+  const { data: items, error: itemsErr } = await (supabase as any)
+    .from("items")
+    .select("id, item_code, description")
+    .eq("company_id", companyId)
+    .eq("item_type", "component")
+    .eq("status", "active")
+    .in("id", parentIds)
+    .order("item_code", { ascending: true });
+  if (itemsErr) throw itemsErr;
+
+  return (items ?? []) as BuildableComponentItem[];
+}
 
 function statusBadge(status: string) {
   const map: Record<string, { label: string; className: string }> = {
@@ -124,13 +166,11 @@ export default function ComponentWorkOrders() {
     queryFn: () => fetchAwoStats("component"),
   });
 
-  const { data: itemsData } = useQuery({
-    queryKey: ["items", "component"],
-    queryFn: () => fetchItems({ type: "component", pageSize: 200 }),
+  const { data: items = [] } = useQuery({
+    queryKey: ["items", "component", "buildable"],
+    queryFn: fetchBuildableComponentItems,
     enabled: dialogOpen,
   });
-
-  const items = itemsData?.data ?? [];
 
   const { data: bomVariants = [] } = useQuery({
     queryKey: ["bom-variants", form.item_id],
