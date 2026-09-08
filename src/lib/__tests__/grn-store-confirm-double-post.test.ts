@@ -24,7 +24,7 @@ let testItem: any;
 
 function makeSelectChain(resolve: () => { data: any; error: any }) {
   const chain: any = {};
-  for (const m of ["eq", "neq", "in", "gt", "order", "limit"]) chain[m] = () => chain;
+  for (const m of ["eq", "neq", "in", "gt", "gte", "ilike", "order", "limit"]) chain[m] = () => chain;
   chain.single = () => Promise.resolve(resolve());
   chain.then = (onF: any, onR: any) => Promise.resolve(resolve()).then(onF, onR);
   return chain;
