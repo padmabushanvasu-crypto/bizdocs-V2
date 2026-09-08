@@ -40,6 +40,7 @@ interface BuildableComponentItem {
   id: string;
   item_code: string;
   description: string;
+  drawing_number: string | null;
 }
 
 // Only components with at least one raw-material BOM line are worth offering
@@ -66,7 +67,7 @@ async function fetchBuildableComponentItems(): Promise<BuildableComponentItem[]>
 
   const { data: items, error: itemsErr } = await (supabase as any)
     .from("items")
-    .select("id, item_code, description")
+    .select("id, item_code, description, drawing_number")
     .eq("company_id", companyId)
     .eq("item_type", "component")
     .eq("status", "active")
@@ -171,6 +172,24 @@ export default function ComponentWorkOrders() {
     queryFn: fetchBuildableComponentItems,
     enabled: dialogOpen,
   });
+
+  // Client-side filter over the already-fetched buildable list — no network
+  // call per keystroke (unlike ItemSuggest, which queries all items company-
+  // wide and would bypass the buildable-only filter above).
+  const [itemSearch, setItemSearch] = useState("");
+  const filteredItems = useMemo(() => {
+    const q = itemSearch.trim().toLowerCase();
+    if (!q) return items;
+    const matches = (i: BuildableComponentItem) =>
+      i.item_code.toLowerCase().includes(q) ||
+      i.description.toLowerCase().includes(q) ||
+      (i.drawing_number ?? "").toLowerCase().includes(q);
+    const matchesDrawing = (i: BuildableComponentItem) =>
+      (i.drawing_number ?? "").toLowerCase().includes(q);
+    return items
+      .filter(matches)
+      .sort((a, b) => (matchesDrawing(a) ? 0 : 1) - (matchesDrawing(b) ? 0 : 1));
+  }, [items, itemSearch]);
 
   const { data: bomVariants = [] } = useQuery({
     queryKey: ["bom-variants", form.item_id],
@@ -417,27 +436,54 @@ export default function ComponentWorkOrders() {
       </div>
 
       {/* Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setForm(defaultForm); }}>
+      <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) { setForm(defaultForm); setItemSearch(""); } }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Raise New Component Work Order</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            {/* Item select */}
+            {/* Item select — client-side filtered list over the already-fetched
+                buildable (has-a-raw-material-BOM) items, no per-keystroke fetch */}
             <div className="space-y-1">
               <Label>Item to Build</Label>
-              <Select value={form.item_id} onValueChange={handleItemSelect}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select component item…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {items.map((item) => (
-                    <SelectItem key={item.id} value={item.id}>
-                      {item.item_code} — {item.description}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Input
+                placeholder="Type to search components…"
+                value={itemSearch}
+                onChange={(e) => setItemSearch(e.target.value)}
+              />
+              <div className="border rounded-md max-h-48 overflow-y-auto divide-y">
+                {filteredItems.length === 0 ? (
+                  <p className="px-3 py-4 text-sm text-muted-foreground text-center">
+                    {items.length === 0 ? "No buildable components found." : "No components match your search."}
+                  </p>
+                ) : (
+                  filteredItems.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => handleItemSelect(item.id)}
+                      className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                        form.item_id === item.id ? "bg-accent" : "hover:bg-accent/50"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-medium font-mono shrink-0">{item.item_code}</span>
+                        <span className="truncate flex-1 text-muted-foreground">{item.description}</span>
+                        {item.drawing_number && (
+                          <span className="text-xs text-muted-foreground font-mono shrink-0">
+                            DRW: {item.drawing_number}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+              {form.item_id && (
+                <p className="text-xs text-muted-foreground">
+                  Selected: <span className="font-mono">{form.item_code}</span> — {form.item_description}
+                </p>
+              )}
             </div>
 
             {/* Quantity */}
