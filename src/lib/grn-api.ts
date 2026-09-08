@@ -380,7 +380,6 @@ interface CreateGRNData {
 
 export async function recordGRNAndUpdatePO(grnData: CreateGRNData) {
   const companyId = await getCompanyId();
-  const today = new Date().toISOString().split("T")[0];
   const { grn: g, lineItems } = grnData;
 
   // Atomic save: GRN header + line items + per-line received_quantity updates
@@ -506,34 +505,28 @@ export async function recordGRNAndUpdatePO(grnData: CreateGRNData) {
       }
 
       if (rec) {
-        // Ledger the receipt so this credit is visible to the stock engine.
-        // qty math unchanged; INCOMING -> FREE. Non-fatal: never block the save.
-        try {
-          await addStockLedgerEntry({
-            item_id: rec.id,
-            item_code: rec.item_code ?? null,
-            item_description: rec.description ?? null,
-            transaction_date: today,
-            transaction_type: 'grn_receipt',
-            qty_in: item.accepted_quantity,
-            qty_out: 0,
-            balance_qty: 0,
-            unit_cost: 0,
-            total_value: 0,
-            reference_type: 'grn',
-            reference_id: grn.id,
-            reference_number: grn.grn_number,
-            notes: `GRN ${grn.grn_number ?? ''} received (single-stage)`.trim(),
-            created_by: null,
-            from_state: STOCK_STATE.INCOMING,
-            to_state: STOCK_STATE.FREE,
-          });
-        } catch (e) {
-          console.error('[grn] recordGRNAndUpdatePO ledger write failed (non-fatal):', e);
-        }
+        // GRN-DOUBLE-POST FIX (see STOCK_LIFECYCLE_GOVERNANCE.md §2 Stage B):
+        // this block does NOT touch stock_free or stock_ledger — Store Confirm
+        // (creditPartialStock / rpc_credit_partial_stock) is the sole,
+        // authoritative poster of the incoming->free grn_receipt ledger entry
+        // for a GRN line, gated by stock_posted_at. A ledger entry used to be
+        // written here too (notes: "... received (single-stage)"), but it
+        // never corresponded to an actual stock_free credit (only current_stock,
+        // below, moved) and was never guarded by/reflected in stock_posted_at —
+        // so every accepted-quantity line got double-posted to stock_ledger once
+        // Store Confirm ran its own (correct) credit afterward. Confirmed via
+        // live-DB audit: 619 duplicate `grn_receipt`/incoming->free rows,
+        // 8 Jun–7 Sep 2026, sharing accepted_quantity with a matching
+        // "store confirmed (partial)" row. Do NOT reintroduce a ledger write
+        // here without also making this the sole credit path (see guard in
+        // rpc_credit_partial_stock and storeConfirmGRNItems).
+        //
+        // current_stock is a separate, legacy "immediate visibility" figure
+        // read elsewhere in the app; bumping it here is intentionally kept so
+        // store staff still see it update right away — this is not touched by
+        // this fix and is not part of the stock_free/ledger discipline above.
         const newStock = (rec.current_stock ?? 0) + item.accepted_quantity;
         await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
-        // stock_free is updated at storeConfirmGRN (after QC), not at creation.
       }
     }
   }
@@ -2602,7 +2595,7 @@ export async function storeConfirmGRNItems(
   const lineIds = items.map((i) => i.id);
   const { data: currentLines, error: fetchErr } = await (supabase as any)
     .from('grn_line_items')
-    .select('id, grn_id, item_id, description, drawing_number, conforming_qty, store_confirmed_qty, damaged_qty, store_confirmed, dc_line_item_id')
+    .select('id, grn_id, item_id, description, drawing_number, conforming_qty, store_confirmed_qty, damaged_qty, store_confirmed, dc_line_item_id, stock_posted_at')
     .in('id', lineIds);
   if (fetchErr) throw fetchErr;
 
@@ -2714,9 +2707,13 @@ export async function storeConfirmGRNItems(
       updatePayload.store_confirmed = true;
       updatePayload.store_confirmed_by = data.confirmedBy;
       updatePayload.store_confirmed_at = confirmedAt;
-      // Marker completeness only — final lines are credited here as before; this
-      // just tags the line so the QC posting pass treats it as already posted.
-      updatePayload.stock_posted_at = confirmedAt;
+      // NOTE: stock_posted_at is NOT set here. It is set below, only after the
+      // stock-side credit for this line has actually run (or been confirmed
+      // already-run) — see the GRN-DOUBLE-POST FIX guard immediately after.
+      // Setting it in this pre-credit payload was the double-post bug: it
+      // marked the line "posted" before creditPartialStock ran, so a defensive
+      // stock_posted_at check inside that credit path would have blocked the
+      // very call meant to perform the credit.
     }
 
     const { error: updErr } = await (supabase as any)
@@ -2736,6 +2733,15 @@ export async function storeConfirmGRNItems(
       newlyConfirmedJobCardLines = true;
     }
 
+    // GRN-DOUBLE-POST FIX (STOCK_LIFECYCLE_GOVERNANCE.md §2 Stage B / §5.5
+    // "credit exactly once"): stock_posted_at is this line's single source of
+    // truth for "has this line's stock already been credited." Read BEFORE
+    // any update in this call (captured in `line`, from the pre-loop fetch),
+    // so a line already posted by a prior call (or, historically, by the
+    // receipt-time single-stage credit) is detected and skipped here —
+    // no-op on the stock side, confirmation metadata above still applies.
+    const alreadyPosted = !!line.stock_posted_at;
+
     // Credit stock_free per partial increment (storeQty only, damaged units excluded).
     // Safe to call repeatedly across partials — updateStockBucket is additive.
     // SKIPPED for job-card-linked lines: their crediting happens exclusively
@@ -2743,16 +2749,34 @@ export async function storeConfirmGRNItems(
     // only when this stage is the job card's own final stage. Crediting here
     // too would double-count against stock_free.
     if (inStore > 0 && !jobCardLine) {
-      await creditPartialStock(grnId, input.id, line.item_id ?? null, inStore, {
-        grnType: grnHeader?.grn_type ?? 'po_grn',
-        grnNumber: grnHeader?.grn_number ?? null,
-        drawingNumber: line.drawing_number ?? null,
-        companyId: grnHeader?.company_id,
-        confirmedBy: data.confirmedBy,
-        linkedDcId: grnHeader?.linked_dc_id ?? null,
-        itemCode: null, // column doesn't exist on grn_line_items; could be looked up via items table by line.item_id if needed
-        itemDescription: line.description ?? null,
-      });
+      if (alreadyPosted) {
+        console.warn(
+          `[grn] storeConfirmGRNItems: line ${input.id} (grn ${grnId}) already stock-posted at ${line.stock_posted_at} — refusing to credit stock_free again. Confirmation metadata was still recorded.`
+        );
+      } else {
+        await creditPartialStock(grnId, input.id, line.item_id ?? null, inStore, {
+          grnType: grnHeader?.grn_type ?? 'po_grn',
+          grnNumber: grnHeader?.grn_number ?? null,
+          drawingNumber: line.drawing_number ?? null,
+          companyId: grnHeader?.company_id,
+          confirmedBy: data.confirmedBy,
+          linkedDcId: grnHeader?.linked_dc_id ?? null,
+          itemCode: null, // column doesn't exist on grn_line_items; could be looked up via items table by line.item_id if needed
+          itemDescription: line.description ?? null,
+        });
+      }
+    }
+
+    // Once this line's full conforming_qty is accounted for (store + damaged),
+    // no further crediting will ever be attempted for it (the remaining-qty
+    // guard above caps future calls at 0) — so this is the correct, single
+    // point to mark it posted. Only stamp it the first time.
+    if (isFullyConfirmed && !alreadyPosted) {
+      const { error: postedErr } = await (supabase as any)
+        .from('grn_line_items')
+        .update({ stock_posted_at: confirmedAt })
+        .eq('id', input.id);
+      if (postedErr) throw postedErr;
     }
 
     // Damaged write-off is keyed on the INCREMENT supplied this call, not the cumulative
