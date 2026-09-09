@@ -93,6 +93,7 @@ export interface AwoLineItem {
   concession_at?: string | null;
   // enriched from items table
   stock_free?: number;
+  item_type?: string | null;
   created_at: string;
 }
 
@@ -217,12 +218,12 @@ export async function fetchAssemblyWorkOrder(id: string): Promise<AssemblyWorkOr
     .filter((id): id is string => id !== null);
 
   const stockMap: Record<string, number> = {};
-  const itemsInfoMap: Record<string, { item_code: string | null; description: string | null; unit: string | null }> = {};
+  const itemsInfoMap: Record<string, { item_code: string | null; description: string | null; unit: string | null; item_type: string | null }> = {};
 
   if (itemIds.length > 0) {
     const { data: itemsData } = await supabase
       .from("items")
-      .select("id, stock_free, item_code, description, unit")
+      .select("id, stock_free, item_code, description, unit, item_type")
       .in("id", itemIds);
 
     if (itemsData) {
@@ -232,6 +233,7 @@ export async function fetchAssemblyWorkOrder(id: string): Promise<AssemblyWorkOr
           item_code: item.item_code ?? null,
           description: item.description ?? null,
           unit: item.unit ?? null,
+          item_type: item.item_type ?? null,
         };
       }
     }
@@ -244,6 +246,7 @@ export async function fetchAssemblyWorkOrder(id: string): Promise<AssemblyWorkOr
     drawing_number: li.item_id ? (itemsInfoMap[li.item_id]?.item_code ?? li.drawing_number ?? null) : li.drawing_number,
     item_description: li.item_description ?? (li.item_id ? (itemsInfoMap[li.item_id]?.description ?? null) : null),
     unit: li.unit || (li.item_id ? (itemsInfoMap[li.item_id]?.unit ?? 'NOS') : 'NOS'),
+    item_type: li.item_id ? (itemsInfoMap[li.item_id]?.item_type ?? null) : null,
   }));
 
   return awo;
@@ -1288,4 +1291,109 @@ export async function fetchAwoStats(type: 'sub_assembly' | 'finished_good' | 'co
       (r) => r.status === 'complete' && r.completed_at != null && r.completed_at >= startOfMonth
     ).length,
   };
+}
+
+// ── Draw from GRN (off-book conversion path) ─────────────────────────────────
+// For raw material that was received on a GRN but never physically entered the
+// store (the GRN line's "Final GRN" checkbox was left unticked, so it went
+// straight to in-house processing/job-work). Lets a raw-material AWO line draw
+// directly against such a GRN line instead of going through the normal
+// MIR/store-issue path. rpc_allocate_grn_to_conversion is the only write path
+// and re-validates everything server-side (is_final_grn, dc_line_item_id,
+// available qty) — the view below is for display/selection only.
+
+export interface GrnLineAvailableForConversion {
+  grn_line_item_id: string;
+  company_id: string;
+  grn_id: string;
+  grn_number: string;
+  po_id: string | null;
+  po_number: string | null;
+  item_id: string;
+  description: string | null;
+  drawing_number: string | null;
+  unit: string | null;
+  accepted_quantity: number;
+  store_confirmed_qty: number;
+  damaged_qty: number;
+  qty_already_converted: number;
+  available_qty: number;
+}
+
+export async function fetchGrnLinesAvailableForConversion(itemId: string): Promise<GrnLineAvailableForConversion[]> {
+  const companyId = await getCompanyId();
+  if (!companyId || !itemId) return [];
+
+  const { data, error } = await (supabase as any)
+    .from("v_grn_lines_available_for_conversion")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("item_id", itemId)
+    .gt("available_qty", 0)
+    .order("grn_number", { ascending: true });
+  if (error) throw error;
+
+  return (data ?? []) as GrnLineAvailableForConversion[];
+}
+
+export async function allocateGrnToConversion(params: {
+  grnLineItemId: string;
+  awoLineItemId: string;
+  qty: number;
+  notes?: string;
+}): Promise<{ allocationId: string; newAvailableQty: number }> {
+  const companyId = await getCompanyId();
+  if (!companyId) throw new Error("Not authenticated");
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  const { data, error } = await (supabase as any).rpc("rpc_allocate_grn_to_conversion", {
+    p_company_id: companyId,
+    p_grn_line_item_id: params.grnLineItemId,
+    p_awo_line_item_id: params.awoLineItemId,
+    p_qty: params.qty,
+    p_allocated_by: user.id,
+    p_notes: params.notes ?? null,
+  });
+  // rpc_allocate_grn_to_conversion raises descriptive exceptions (e.g. "Cannot
+  // allocate...") — surface verbatim, don't reword.
+  if (error) throw new Error(error.message);
+
+  const row = (Array.isArray(data) ? data[0] : data) as { allocation_id: string; new_available_qty: number } | null;
+  return {
+    allocationId: row?.allocation_id ?? '',
+    newAvailableQty: Number(row?.new_available_qty ?? 0),
+  };
+}
+
+export interface GrnAllocationSource {
+  grn_number: string;
+  qty_allocated: number;
+}
+
+// Bulk fetch for the "Issued via: GRN-xxxx (qty), GRN-yyyy (qty)" traceability
+// indicator — one query for every line on the AWO, keyed by awo_line_item_id.
+// Only active (non-reversed) allocations count.
+export async function fetchGrnAllocationsForAwoLines(
+  awoLineItemIds: string[]
+): Promise<Record<string, GrnAllocationSource[]>> {
+  const companyId = await getCompanyId();
+  if (!companyId || awoLineItemIds.length === 0) return {};
+
+  const { data, error } = await (supabase as any)
+    .from("rm_conversion_grn_allocations")
+    .select("awo_line_item_id, qty_allocated, grn_line_items(grn_id, grns(grn_number))")
+    .eq("company_id", companyId)
+    .in("awo_line_item_id", awoLineItemIds)
+    .is("reversed_at", null);
+  if (error) throw error;
+
+  const map: Record<string, GrnAllocationSource[]> = {};
+  for (const row of (data ?? []) as any[]) {
+    const lineId = row.awo_line_item_id as string;
+    const grnNumber = row.grn_line_items?.grns?.grn_number ?? '—';
+    if (!map[lineId]) map[lineId] = [];
+    map[lineId].push({ grn_number: grnNumber, qty_allocated: Number(row.qty_allocated ?? 0) });
+  }
+  return map;
 }

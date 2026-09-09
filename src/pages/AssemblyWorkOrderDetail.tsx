@@ -2,7 +2,7 @@ import { useState } from "react";
 import { printWithLightMode } from "@/lib/print-utils";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Printer, Package, CheckCircle, AlertTriangle, Trash2 } from "lucide-react";
+import { ArrowLeft, Printer, Package, CheckCircle, AlertTriangle, Trash2, PackageOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,9 @@ import {
   cancelAssemblyWorkOrder,
   reportComponentIssue,
   returnAssemblyComponents,
+  fetchGrnLinesAvailableForConversion,
+  allocateGrnToConversion,
+  fetchGrnAllocationsForAwoLines,
   type AwoLineItem,
   type MaterialIssueRequest,
 } from "@/lib/production-api";
@@ -125,6 +128,14 @@ export default function AssemblyWorkOrderDetail() {
   const [dispositionOpen, setDispositionOpen] = useState(false);
   const [dispositionLine, setDispositionLine] = useState<AwoLineItem | null>(null);
 
+  // Draw from GRN — raw material received on a GRN but never entered the store
+  // (Final GRN left unticked), drawn directly for conversion instead of via the
+  // normal MIR/store-issue path.
+  const [drawGrnOpen, setDrawGrnOpen] = useState(false);
+  const [drawGrnLine, setDrawGrnLine] = useState<AwoLineItem | null>(null);
+  const [drawGrnSelectedId, setDrawGrnSelectedId] = useState<string | null>(null);
+  const [drawGrnQty, setDrawGrnQty] = useState<number>(0);
+
   const { data: awo, isLoading } = useQuery({
     queryKey: ["awo-detail", id],
     queryFn: () => fetchAssemblyWorkOrder(id!),
@@ -135,6 +146,47 @@ export default function AssemblyWorkOrderDetail() {
     queryKey: ["mirs", id],
     queryFn: () => fetchMaterialIssueRequests({ awo_id: id }),
     enabled: !!id,
+  });
+
+  // Traceability — which GRN(s) each line's issued qty actually came from
+  // (Draw-from-GRN allocations only; normal MIR issuance isn't tracked here).
+  const lineItemIds = (awo?.line_items ?? []).map((li) => li.id);
+  const { data: grnAllocationsByLine = {} } = useQuery({
+    queryKey: ["grn-allocations", id],
+    queryFn: () => fetchGrnAllocationsForAwoLines(lineItemIds),
+    enabled: !!awo && lineItemIds.length > 0,
+  });
+
+  const { data: eligibleGrnLines = [], isLoading: grnLinesLoading } = useQuery({
+    queryKey: ["grn-lines-for-conversion", drawGrnLine?.item_id],
+    queryFn: () => fetchGrnLinesAvailableForConversion(drawGrnLine!.item_id!),
+    enabled: drawGrnOpen && !!drawGrnLine?.item_id,
+  });
+
+  const drawFromGrnMutation = useMutation({
+    mutationFn: () => {
+      if (!drawGrnLine || !drawGrnSelectedId) throw new Error("Select a GRN line first");
+      return allocateGrnToConversion({
+        grnLineItemId: drawGrnSelectedId,
+        awoLineItemId: drawGrnLine.id,
+        qty: drawGrnQty,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["awo-detail", id] });
+      queryClient.invalidateQueries({ queryKey: ["grn-allocations", id] });
+      queryClient.invalidateQueries({ queryKey: ["grn-lines-for-conversion", drawGrnLine?.item_id] });
+      setDrawGrnOpen(false);
+      setDrawGrnLine(null);
+      setDrawGrnSelectedId(null);
+      setDrawGrnQty(0);
+      toast({ title: "Material drawn from GRN", description: "Issued Qty updated." });
+    },
+    onError: (err: Error) => {
+      // rpc_allocate_grn_to_conversion's exception message is descriptive
+      // ("Cannot allocate...") — surface verbatim, don't reword.
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
   });
 
   const requestMaterialsMutation = useMutation({
@@ -323,6 +375,19 @@ export default function AssemblyWorkOrderDetail() {
     setPartialLines(lines);
     setCancelDialogOpen(true);
   };
+
+  const openDrawGrnDialog = (li: AwoLineItem) => {
+    setDrawGrnLine(li);
+    setDrawGrnSelectedId(null);
+    setDrawGrnQty(0);
+    setDrawGrnOpen(true);
+  };
+
+  const selectedGrnLine = eligibleGrnLines.find((g) => g.grn_line_item_id === drawGrnSelectedId) ?? null;
+  // AWO statuses where drawing more raw material still makes sense — mirrors
+  // the normal issuance gates elsewhere on this page (build already
+  // awaiting_store/complete/cancelled has no more use for it).
+  const canDrawFromGrn = awo.status === 'draft' || awo.status === 'pending_materials' || awo.status === 'in_progress';
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -538,7 +603,29 @@ export default function AssemblyWorkOrderDetail() {
                         ) : "Standard"}
                       </td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(li.required_qty)}</td>
-                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(li.issued_qty ?? 0)}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right">
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="tabular-nums font-mono">{formatNumber(li.issued_qty ?? 0)}</span>
+                          {(grnAllocationsByLine[li.id] ?? []).length > 0 && (
+                            <span className="text-[11px] text-muted-foreground text-right">
+                              Issued via: {(grnAllocationsByLine[li.id] ?? [])
+                                .map((a) => `${a.grn_number} (${formatNumber(a.qty_allocated)})`)
+                                .join(", ")}
+                            </span>
+                          )}
+                          {li.item_type === 'raw_material' && canDrawFromGrn && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-xs h-6 px-2"
+                              onClick={() => openDrawGrnDialog(li)}
+                            >
+                              <PackageOpen className="w-3 h-3 mr-1" />
+                              Draw from GRN
+                            </Button>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(li.stock_free ?? 0)}</td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center"><AvailabilityCell line={li} /></td>
                       <td className="px-3 py-2 border-b border-slate-100 text-center">
@@ -867,6 +954,106 @@ export default function AssemblyWorkOrderDetail() {
           unit={dispositionLine.unit}
         />
       )}
+
+      {/* Draw from GRN — raw material received but never entered the store */}
+      <Dialog open={drawGrnOpen} onOpenChange={(v) => { setDrawGrnOpen(v); if (!v) { setDrawGrnLine(null); setDrawGrnSelectedId(null); setDrawGrnQty(0); } }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Draw from GRN</DialogTitle>
+            <DialogDescription>
+              For material received on a GRN that never physically entered the store (Final GRN left
+              unticked). Pick the GRN line it came in on — this issues it straight to this component,
+              bypassing the normal Request Materials / store-issue path.
+            </DialogDescription>
+          </DialogHeader>
+          {drawGrnLine && (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                For <b className="text-foreground">{drawGrnLine.item_description ?? drawGrnLine.item_code}</b>
+                {" "}— required {formatNumber(drawGrnLine.required_qty)} {drawGrnLine.unit}, issued so far {formatNumber(drawGrnLine.issued_qty ?? 0)} {drawGrnLine.unit}.
+              </p>
+              <div className="max-h-[40vh] overflow-y-auto rounded-lg border border-slate-200">
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr>
+                      <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left"></th>
+                      <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">GRN Number</th>
+                      <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">PO Number</th>
+                      <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                      <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Available</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {grnLinesLoading ? (
+                      <tr>
+                        <td colSpan={5} className="px-3 py-6 text-center text-sm text-slate-400">Loading eligible GRN lines…</td>
+                      </tr>
+                    ) : eligibleGrnLines.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-3 py-6 text-center text-sm text-slate-400">
+                          No GRN lines available for this item — nothing was received off-book, or it's all
+                          already in the store or converted.
+                        </td>
+                      </tr>
+                    ) : (
+                      eligibleGrnLines.map((g) => (
+                        <tr
+                          key={g.grn_line_item_id}
+                          className="cursor-pointer hover:bg-muted/30 transition-colors"
+                          onClick={() => { setDrawGrnSelectedId(g.grn_line_item_id); setDrawGrnQty(g.available_qty); }}
+                        >
+                          <td className="px-3 py-2 border-b border-slate-100 text-center">
+                            <input
+                              type="radio"
+                              checked={drawGrnSelectedId === g.grn_line_item_id}
+                              onChange={() => { setDrawGrnSelectedId(g.grn_line_item_id); setDrawGrnQty(g.available_qty); }}
+                            />
+                          </td>
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{g.grn_number}</td>
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{g.po_number ?? "—"}</td>
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{g.description ?? "—"}</td>
+                          <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(g.available_qty)} {g.unit}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {selectedGrnLine && (
+                <div className="space-y-1 max-w-xs">
+                  <Label>Quantity to draw</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={selectedGrnLine.available_qty}
+                    value={drawGrnQty}
+                    onChange={(e) => setDrawGrnQty(Number(e.target.value))}
+                  />
+                  {drawGrnQty > selectedGrnLine.available_qty && (
+                    <p className="text-xs text-red-600">
+                      Only {formatNumber(selectedGrnLine.available_qty)} available on this GRN line.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDrawGrnOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => drawFromGrnMutation.mutate()}
+              disabled={
+                !selectedGrnLine ||
+                !(drawGrnQty > 0) ||
+                drawGrnQty > (selectedGrnLine?.available_qty ?? 0) ||
+                drawFromGrnMutation.isPending
+              }
+            >
+              {drawFromGrnMutation.isPending ? "Drawing…" : "Draw Material"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Mark-build-complete confirmation dialog */}
       <Dialog open={confirmCompleteOpen} onOpenChange={setConfirmCompleteOpen}>
