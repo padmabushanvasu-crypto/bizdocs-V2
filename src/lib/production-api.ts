@@ -1018,6 +1018,7 @@ export async function acceptAssemblyWorkOrder(
   awoId: string,
   storeLocation: string | null,
   acceptedBy: string,
+  actualQuantityProduced?: number | null,
 ): Promise<{ warnings: string[] }> {
   const companyId = await getCompanyId();
   if (!companyId) throw new Error("Not authenticated");
@@ -1043,10 +1044,13 @@ export async function acceptAssemblyWorkOrder(
   // flips the AWO to 'complete' with accepted_at/accepted_by — one server-side
   // transaction. Throws (naming the failure) on any shortfall; re-throw so the
   // caller's toast shows it and nothing partial is committed here.
+  // p_actual_quantity_produced is optional — the RPC falls back to
+  // quantity_to_build when omitted (fully backward compatible).
   const { error: rpcErr } = await (supabase as any).rpc('rpc_accept_awo_and_produce', {
     p_company_id: companyId,
     p_awo_id: awoId,
     p_accepted_by: user?.id ?? null,
+    p_actual_quantity_produced: actualQuantityProduced ?? null,
   });
   if (rpcErr) throw new Error(rpcErr.message);
 

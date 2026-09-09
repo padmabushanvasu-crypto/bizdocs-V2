@@ -811,7 +811,7 @@ export function AppSidebar() {
       icon: PackageCheck,
       badge: awaitingStoreCount > 0 ? awaitingStoreCount : undefined,
       badgeColor: "amber" as const,
-      allowedRoles: ['admin', 'finance', 'storekeeper'],
+      allowedRoles: ['admin', 'finance', 'storekeeper', 'purchase_team', 'inward_team'],
     },
     {
       title: "Ready to Move to Store",
