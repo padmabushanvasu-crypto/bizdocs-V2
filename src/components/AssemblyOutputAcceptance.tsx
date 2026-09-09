@@ -28,6 +28,7 @@ export function AssemblyOutputAcceptance() {
   const queryClient = useQueryClient();
 
   const [locations, setLocations] = useState<Record<string, string>>({});
+  const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [accepting, setAccepting] = useState<Record<string, boolean>>({});
 
   const { data: awos = [], isLoading } = useQuery({
@@ -42,8 +43,11 @@ export function AssemblyOutputAcceptance() {
     "Storekeeper";
 
   const acceptMutation = useMutation({
-    mutationFn: (awo: AssemblyWorkOrder) =>
-      acceptAssemblyWorkOrder(awo.id, locations[awo.id]?.trim() || null, acceptedBy),
+    mutationFn: (awo: AssemblyWorkOrder) => {
+      const qtyStr = quantities[awo.id];
+      const actualQty = qtyStr !== undefined && qtyStr.trim() !== "" ? Number(qtyStr) : awo.quantity_to_build;
+      return acceptAssemblyWorkOrder(awo.id, locations[awo.id]?.trim() || null, acceptedBy, actualQty);
+    },
     onSuccess: (res, awo) => {
       // Optimistic: drop the accepted card from the awaiting-store list at once.
       queryClient.setQueryData<AssemblyWorkOrder[] | undefined>(
@@ -108,6 +112,14 @@ export function AssemblyOutputAcceptance() {
                     <span className="text-slate-500"> · build {formatNumber(awo.quantity_to_build)}</span>
                   </p>
                 </div>
+                <Input
+                  type="number"
+                  min={0}
+                  placeholder="Qty produced"
+                  className="w-28"
+                  value={quantities[awo.id] ?? String(awo.quantity_to_build)}
+                  onChange={(e) => setQuantities((prev) => ({ ...prev, [awo.id]: e.target.value }))}
+                />
                 <Input
                   placeholder="Rack / location"
                   className="w-40"
