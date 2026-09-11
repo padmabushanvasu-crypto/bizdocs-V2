@@ -998,41 +998,67 @@ export async function createJobWorkStep(
     .order("step_number", { ascending: false })
     .limit(1);
   const nextStepNumber = existing && existing.length > 0 ? existing[0].step_number + 1 : 1;
+  const stepNumber = data.step_number ?? nextStepNumber;
 
-  const { data: step, error } = await (supabase as any)
+  // job_card_steps has a partial unique index on (job_card_id, step_number)
+  // WHERE NOT legacy. Job cards are now routinely created with their full
+  // stage route pre-populated upfront (every stage inserted in one batch at
+  // JC creation), so a caller targeting a stage that already has an active
+  // row — e.g. the DC "link existing JC" flow continuing from a later,
+  // already-provisioned stage — must UPDATE that row instead of inserting a
+  // duplicate, or the unique index rejects it with a duplicate-key error.
+  // Older-style job cards built up incrementally have no pre-existing row for
+  // a not-yet-reached stage, so they fall through to the insert path below
+  // unchanged.
+  const { data: activeStep } = await (supabase as any)
     .from("job_card_steps")
-    .insert({
-      company_id: companyId,
-      job_card_id: data.job_card_id,
-      step_number: data.step_number ?? nextStepNumber,
-      step_type: data.step_type,
-      name: data.name,
-      stage_template_id: data.stage_template_id ?? null,
-      status: data.status ?? "pending",
-      labour_cost: data.labour_cost ?? 0,
-      material_cost: data.material_cost ?? 0,
-      additional_cost: data.additional_cost ?? 0,
-      vendor_id: data.vendor_id ?? null,
-      vendor_name: data.vendor_name ?? null,
-      outward_dc_id: data.outward_dc_id ?? null,
-      expected_return_date: data.expected_return_date ?? null,
-      qty_sent: data.qty_sent ?? null,
-      unit: data.unit ?? "NOS",
-      job_work_charges: data.job_work_charges ?? 0,
-      transport_cost_out: data.transport_cost_out ?? 0,
-      transport_cost_in: data.transport_cost_in ?? 0,
-      material_consumed: data.material_consumed ?? 0,
-      is_rework: data.is_rework ?? false,
-      rework_reason: data.rework_reason ?? null,
-      notes: data.notes ?? null,
-    })
-    .select()
-    .single();
-  if (error) throw error;
+    .select("id")
+    .eq("job_card_id", data.job_card_id)
+    .eq("step_number", stepNumber)
+    .eq("legacy", false)
+    .maybeSingle();
 
-  // Mirror the initial outward link into job_card_step_dcs so all outward links
+  let step: JobWorkStep;
+  if (activeStep) {
+    const { job_card_id: _jobCardId, step_number: _stepNumber, ...updateFields } = data;
+    step = await updateJobWorkStep((activeStep as any).id, updateFields);
+  } else {
+    const { data: inserted, error } = await (supabase as any)
+      .from("job_card_steps")
+      .insert({
+        company_id: companyId,
+        job_card_id: data.job_card_id,
+        step_number: stepNumber,
+        step_type: data.step_type,
+        name: data.name,
+        stage_template_id: data.stage_template_id ?? null,
+        status: data.status ?? "pending",
+        labour_cost: data.labour_cost ?? 0,
+        material_cost: data.material_cost ?? 0,
+        additional_cost: data.additional_cost ?? 0,
+        vendor_id: data.vendor_id ?? null,
+        vendor_name: data.vendor_name ?? null,
+        outward_dc_id: data.outward_dc_id ?? null,
+        expected_return_date: data.expected_return_date ?? null,
+        qty_sent: data.qty_sent ?? null,
+        unit: data.unit ?? "NOS",
+        job_work_charges: data.job_work_charges ?? 0,
+        transport_cost_out: data.transport_cost_out ?? 0,
+        transport_cost_in: data.transport_cost_in ?? 0,
+        material_consumed: data.material_consumed ?? 0,
+        is_rework: data.is_rework ?? false,
+        rework_reason: data.rework_reason ?? null,
+        notes: data.notes ?? null,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    step = inserted as JobWorkStep;
+  }
+
+  // Mirror the outward link into job_card_step_dcs so all outward links
   // land in the new source-of-truth table (legacy outward_dc_id is kept as-is).
-  // Best-effort: a failure here must not fail step creation.
+  // Best-effort: a failure here must not fail step creation/update.
   if (data.outward_dc_id) {
     await (supabase as any)
       .from("job_card_step_dcs")
