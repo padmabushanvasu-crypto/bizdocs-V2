@@ -81,6 +81,34 @@ function TypeBadge({ type }: { type: string }) {
   );
 }
 
+// ── Pending Verification badge ──────────────────────────────────────────────────
+// Additive flag, separate from stock_alert_level/TypeBadge/critical badge —
+// surfaces only when the item has a live stored-vs-ledger discrepancy
+// (v_stock_pending_verification.needs_verification). Same pill grammar as
+// StockStatusBadge (rounded-full, text-xs font-semibold border) so it reads as
+// part of the same badge family, not a new visual language.
+
+function PendingVerificationBadge({
+  varianceQty,
+  valueAtStake,
+}: {
+  varianceQty: number;
+  valueAtStake: number;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap bg-blue-50 text-blue-700 border-blue-200 cursor-default">
+          Pending Verification
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="left" className="max-w-[240px] text-xs">
+        Variance: {formatNumber(varianceQty)} · Value at stake: {formatCurrency(valueAtStake)}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 // ── Stat chip ──────────────────────────────────────────────────────────────────
 
 function StatChip({
@@ -911,22 +939,30 @@ function StockRegisterInner() {
 
                       {/* Status */}
                       <td className="px-3 py-3">
-                        {row.stock_alert_level === 'critical' ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap bg-red-50 text-red-700 border-red-200">
-                            Action Required
-                          </span>
-                        ) : (
-                          <StockStatusBadge
-                            alertLevel={row.stock_alert_level ?? "healthy"}
-                            totalStock={
-                              row.stock_free +
-                              row.stock_in_process +
-                              row.stock_in_subassembly_wip +
-                              row.stock_in_fg_wip +
-                              row.stock_in_fg_ready
-                            }
-                          />
-                        )}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {row.stock_alert_level === 'critical' ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap bg-red-50 text-red-700 border-red-200">
+                              Action Required
+                            </span>
+                          ) : (
+                            <StockStatusBadge
+                              alertLevel={row.stock_alert_level ?? "healthy"}
+                              totalStock={
+                                row.stock_free +
+                                row.stock_in_process +
+                                row.stock_in_subassembly_wip +
+                                row.stock_in_fg_wip +
+                                row.stock_in_fg_ready
+                              }
+                            />
+                          )}
+                          {row.needs_verification && (
+                            <PendingVerificationBadge
+                              varianceQty={row.variance_qty}
+                              valueAtStake={row.value_at_stake}
+                            />
+                          )}
+                        </div>
                       </td>
 
                       {/* Action */}
