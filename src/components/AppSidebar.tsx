@@ -875,7 +875,12 @@ export function AppSidebar() {
 
   // ── Group 5: Inventory & Stores ──
   const inventoryNav: NavItem[] = [
-    { title: "Stock Register", url: "/stock-register", icon: BarChart3 },
+    {
+      title: "Stock Register",
+      url: "/stock-register",
+      icon: BarChart3,
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'storekeeper', 'assembly_team'],
+    },
     {
       title: "Inventory Ledger",
       url: "/inventory-ledger",
