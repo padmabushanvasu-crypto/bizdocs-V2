@@ -2060,12 +2060,30 @@ export function dcLineReceiptKey(dcLineItemId: string): string {
 
 /**
  * Looks up a DC line's prior-receipt entry from fetchDCReceiptSummary's map.
- * Prefers the exact dc_line_item_id bucket — this disambiguates duplicate
- * lines sharing the same item_id + drawing_number. Falls back to the
- * item_id+drawing_number bucket for GRN rows whose dc_line_item_id is null
- * or points at a since-deleted row (DC edit delete+reinsert,
- * STOCK_LIFECYCLE_GOVERNANCE.md §3.1) — same resilience fetchDCReceiptSummary
- * has always had, just no longer the only path.
+ * Sums the exact dc_line_item_id bucket (disambiguates duplicate lines
+ * sharing the same item_id + drawing_number) with the item_id+drawing_number
+ * fallback bucket (for GRN rows whose dc_line_item_id is null or points at a
+ * since-deleted row — DC edit delete+reinsert, STOCK_LIFECYCLE_GOVERNANCE.md
+ * §3.1) — rather than preferring one over the other. A single grn_line_items
+ * row is only ever counted under ONE of the two keys (fetchDCReceiptSummary
+ * picks exactly one per row), so for the common case — one line per
+ * item+drawing, or a duplicate-line DC with no legacy null-FK history for
+ * that item+drawing — summing both is exactly the same as before. It only
+ * changes the answer when a line's real receipt history is genuinely split
+ * across both keys (some GRNs tagged dc_line_item_id, an older GRN for the
+ * same line didn't), where preferring one bucket used to silently shadow the
+ * other's history — including shadowing a non-empty bucket with an id bucket
+ * that merely exists at zero (`if (byId) return byId` treated a real object
+ * with received: 0 as "found", never falling through).
+ *
+ * Residual limitation, not introduced by this change: for a duplicate-line
+ * DC where the fallback bucket is genuinely needed (both lines' GRNs left
+ * dc_line_item_id null for that item+drawing), the fallback bucket is shared
+ * across every line, so summing it into each line still can't tell the
+ * lines' historical receipts apart — same ambiguity dcReceiptKey has always
+ * had. Checked live: no such case exists in current data (every duplicate-
+ * line DC's GRN history is either fully id-tagged or fully untagged, never
+ * split), so this doesn't affect any DC today.
  */
 export function getDcLineReceipt(
   summary: Record<string, ReceiptSummaryEntry>,
@@ -2073,12 +2091,17 @@ export function getDcLineReceipt(
   itemId: string | null | undefined,
   drawingNumber: string | null | undefined,
 ): ReceiptSummaryEntry | undefined {
-  if (dcLineItemId) {
-    const byId = summary[dcLineReceiptKey(dcLineItemId)];
-    if (byId) return byId;
-  }
+  const byId = dcLineItemId ? summary[dcLineReceiptKey(dcLineItemId)] : undefined;
   const pairKey = dcReceiptKey(itemId, drawingNumber);
-  return pairKey ? summary[pairKey] : undefined;
+  const byPair = pairKey ? summary[pairKey] : undefined;
+  if (!byId) return byPair;
+  if (!byPair) return byId;
+  return {
+    received: byId.received + byPair.received,
+    accepted: byId.accepted + byPair.accepted,
+    received_2: byId.received_2 + byPair.received_2,
+    accepted_2: byId.accepted_2 + byPair.accepted_2,
+  };
 }
 
 /**

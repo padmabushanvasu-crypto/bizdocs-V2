@@ -109,4 +109,35 @@ describe("DC-GRN duplicate-line receipt aggregation", () => {
     expect(summary[dcLineReceiptKey("dcli-only")]).toBeUndefined();
     expect(summary[dcReceiptKey("item-2", "230230")!]?.received).toBe(40.45);
   });
+
+  it("2. sums the id-keyed and pair-key buckets instead of shadowing one with the other", async () => {
+    // Found in review of 1d07e51: getDcLineReceipt returned EITHER bucket,
+    // never both (`if (byId) return byId`), so a duplicate-line DC where one
+    // GRN populated dc_line_item_id for a line while an older GRN for that
+    // SAME logical line left it null would have its pair-key history
+    // silently dropped — the id bucket "won" even though it alone didn't
+    // reflect the line's full receipt history.
+    fixture = {
+      grns: [{ id: "grn-new" }, { id: "grn-old" }].map((g) => ({ ...g, status: "partially_received" })),
+      dcLines: [{ id: "dcli-line1" }, { id: "dcli-line2" }],
+      grnLineItems: [
+        { dc_line_item_id: "dcli-line1", item_id: "item-3", drawing_number: "DWG-3", received_qty: 10, received_now: null, receiving_now: null, accepted_qty: 10, accepted_quantity: null, received_now_2: null, accepted_qty_2: null },
+        { dc_line_item_id: null, item_id: "item-3", drawing_number: "DWG-3", received_qty: 5, received_now: null, receiving_now: null, accepted_qty: 5, accepted_quantity: null, received_now_2: null, accepted_qty_2: null },
+      ],
+    };
+
+    const summary = await fetchDCReceiptSummary("dc-mixed");
+
+    // Both buckets genuinely exist and are non-empty — the fixture is
+    // exercising the real split, not one empty side.
+    expect(summary[dcLineReceiptKey("dcli-line1")]?.received).toBe(10);
+    expect(summary[dcReceiptKey("item-3", "DWG-3")!]?.received).toBe(5);
+
+    const entry = getDcLineReceipt(summary, "dcli-line1", "item-3", "DWG-3");
+    // The bug: this used to return 10 (the id bucket only), silently
+    // dropping the 5 units of real history sitting under the pair-key
+    // bucket. Summing is the fix.
+    expect(entry?.received).toBe(15);
+    expect(entry?.accepted).toBe(15);
+  });
 });
