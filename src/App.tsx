@@ -135,7 +135,7 @@ const App = () => (
               <Route path="/" element={<Dashboard />} />
               <Route path="/open-items" element={<PageGuard page="open-items"><OpenItems /></PageGuard>} />
               <Route path="/items" element={<Items />} />
-              <Route path="/stock-register" element={<StockRegister />} />
+              <Route path="/stock-register" element={<PageGuard page="stock-register"><StockRegister /></PageGuard>} />
               <Route path="/receipts" element={<PageGuard page="receipts"><PaymentReceipts /></PageGuard>} />
               <Route path="/warranty-tracker" element={<WarrantyTracker />} />
               <Route path="/sales-orders" element={<PageGuard page="sales-orders"><SalesOrders /></PageGuard>} />
