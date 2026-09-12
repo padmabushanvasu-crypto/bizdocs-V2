@@ -1471,37 +1471,46 @@ export async function fetchWipSummary(): Promise<WipSummary> {
   };
 }
 
-// ── Completed steps for item (used by DC form + JC creation dialog) ──────────
+// ── Stage progress for a specific job card (used by JC creation dialog) ──────
 
 /**
- * @deprecated The DC form now uses fetchJobCardsForItem() with an explicit
- *   per-JC picker. The "most recent JC for item" approximation here gives
- *   wrong answers whenever parallel JCs exist for the same item (e.g.
- *   JC-A's completed Stage 5 leaks into JC-B's selector). One caller
- *   remains — JobCardCreationDialog uses it for an informational display
- *   on the JC-creation surface, where item-level scoping is defensible.
- *   Do not introduce new callers.
+ * Reads the real step statuses for ONE job card (by id) and derives:
+ *  - completedStageNumbers: stage numbers with status 'done' or 'material_returned'
+ *  - lastCompletedStage: the highest completed stage number (null if none)
+ *  - nextOpenStage: the lowest stage number that is not yet done and not a
+ *    'pre_bizdocs' placeholder (mirrors the "remaining steps" logic in
+ *    grn-api.ts's return-confirmation flow — the stage the job card is
+ *    actually open at, whether 'pending' or already 'in_progress')
+ *
+ * Callers must resolve the job_card_id themselves (e.g. via the specific
+ * in-progress job card already matched for an item) rather than guessing
+ * "the most recent job card for this item" — that approximation leaks an
+ * unrelated, older job card's completed steps onto a different job card.
  */
-export async function fetchCompletedStepsForItem(itemId: string): Promise<Set<number>> {
-  const { data: jc } = await (supabase as any)
-    .from("job_cards")
-    .select("id")
-    .eq("item_id", itemId)
-    .not("status", "eq", "cancelled")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (!jc?.id) return new Set();
+export async function fetchJobCardStepProgress(jobCardId: string): Promise<{
+  completedStageNumbers: Set<number>;
+  lastCompletedStage: number | null;
+  nextOpenStage: number | null;
+}> {
   const { data: steps } = await (supabase as any)
     .from("job_card_steps")
-    .select("step_number")
-    .eq("job_card_id", jc.id)
-    .in("status", ["done", "material_returned"]);
-  const result = new Set<number>();
+    .select("step_number, status")
+    .eq("job_card_id", jobCardId)
+    .order("step_number", { ascending: true });
+
+  const completedStageNumbers = new Set<number>();
+  let lastCompletedStage: number | null = null;
+  let nextOpenStage: number | null = null;
   for (const s of steps ?? []) {
-    if (s.step_number != null) result.add(s.step_number);
+    if (s.step_number == null) continue;
+    if (s.status === "done" || s.status === "material_returned") {
+      completedStageNumbers.add(s.step_number);
+      lastCompletedStage = s.step_number;
+    } else if (nextOpenStage === null && s.status !== "pre_bizdocs") {
+      nextOpenStage = s.step_number;
+    }
   }
-  return result;
+  return { completedStageNumbers, lastCompletedStage, nextOpenStage };
 }
 
 // ── JC picker for DC creation form ──────────────────────────────────────────

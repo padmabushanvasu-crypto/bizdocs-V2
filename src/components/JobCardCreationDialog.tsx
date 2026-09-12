@@ -7,7 +7,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { fetchProcessingRouteAll, type ProcessingRoute } from "@/lib/dc-intelligence-api";
-import { createJobWork, createJobWorkStep, fetchCompletedStepsForItem } from "@/lib/job-works-api";
+import { createJobWork, createJobWorkStep, fetchJobCardStepProgress } from "@/lib/job-works-api";
 import { type DCLineItem } from "@/lib/delivery-challans-api";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -17,6 +17,7 @@ type JCItemState = {
   routes: ProcessingRoute[];
   selectedStageNumber: number | null;
   completedStageNumbers: Set<number>;
+  lastCompletedStage: number | null;
   skip: boolean;
   existingMode: boolean;
   existingJCNumber: string;
@@ -62,15 +63,21 @@ export function JobCardCreationDialog({
       .map((li, idx) => {
         const itemId = (li as any).item_id ?? itemIdByIndex.get(idx) ?? null;
         const existingMatch = itemId ? existingJobCards[itemId]?.[0] : undefined;
-        const suggestedStage = existingMatch ? (existingMatch.current_stage ?? 0) + 1 : null;
         return {
           lineItem: li,
           itemId,
           routes: [],
-          selectedStageNumber: suggestedStage,
+          // Resolved once fetchJobCardStepProgress() returns real step
+          // statuses for existingMatch — see effect below. Left null (no
+          // stage pre-selected, no banner shown) until then rather than
+          // guessing from the job_cards.current_stage column, which is
+          // unreliable (unset on new job cards, and only conditionally
+          // updated afterwards).
+          selectedStageNumber: null,
           completedStageNumbers: new Set<number>(),
+          lastCompletedStage: null,
           skip: false,
-          existingMode: suggestedStage !== null && suggestedStage > 1,
+          existingMode: false,
           existingJCNumber: existingMatch?.jc_number ?? "",
           useExisting: existingMatch != null,
           existingJCs: existingMatch ? [existingMatch] : [],
@@ -91,13 +98,29 @@ export function JobCardCreationDialog({
       }).catch(err => {
         toast({ title: "Failed to load processing routes", description: err.message, variant: "destructive" });
       });
-      fetchCompletedStepsForItem(item.itemId).then(completedStageNumbers => {
+
+      // Only inspect step history for the job card actually matched to this
+      // item (existingJobCards, scoped to this item + in_progress status).
+      // Do NOT fall back to "most recent job card for this item" — that
+      // leaks a different, unrelated job card's completed steps onto this
+      // one (see fetchJobCardStepProgress doc comment).
+      const existingMatch = existingJobCards[item.itemId]?.[0];
+      if (!existingMatch) return;
+      fetchJobCardStepProgress(existingMatch.id).then(({ completedStageNumbers, lastCompletedStage, nextOpenStage }) => {
         setJcItems(prev => {
           const updated = [...prev];
-          if (updated[idx]) updated[idx] = { ...updated[idx], completedStageNumbers };
+          if (updated[idx]) {
+            updated[idx] = {
+              ...updated[idx],
+              completedStageNumbers,
+              lastCompletedStage,
+              selectedStageNumber: nextOpenStage,
+              existingMode: nextOpenStage !== null && nextOpenStage > 1,
+            };
+          }
           return updated;
         });
-      }).catch(() => {/* ignore — completed stages are a display enhancement */});
+      }).catch(() => {/* ignore — stage progress is a display enhancement */});
     });
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -342,7 +365,9 @@ export function JobCardCreationDialog({
                   <>
                     {item.itemId && existingJobCards[item.itemId]?.[0] && item.selectedStageNumber !== null && (
                       <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
-                        Continuing from Stage {existingJobCards[item.itemId][0].current_stage} ({existingJobCards[item.itemId][0].jc_number}) — suggesting Stage {item.selectedStageNumber}
+                        {item.lastCompletedStage !== null
+                          ? <>Continuing from Stage {item.lastCompletedStage} ({existingJobCards[item.itemId][0].jc_number}) — suggesting Stage {item.selectedStageNumber}</>
+                          : <>Existing job card ({existingJobCards[item.itemId][0].jc_number}) has no completed stages yet — suggesting Stage {item.selectedStageNumber}</>}
                       </p>
                     )}
                     {item.routes.length === 0 ? (
