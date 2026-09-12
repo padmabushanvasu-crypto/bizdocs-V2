@@ -125,6 +125,13 @@ export interface StockStatusRow {
   queued_qty: number;
   queued_for_other_builds_qty: number;
   consumed_by_other_builds_qty: number;
+  // Pending-verification overlay from v_stock_pending_verification (see
+  // fetchStockPendingVerification below). false/0 when the item has no live
+  // discrepancy or the overlay query failed — display-only, never blocks the
+  // rest of the register from loading.
+  needs_verification: boolean;
+  variance_qty: number;
+  value_at_stake: number;
 }
 
 export interface ItemFilters {
@@ -318,6 +325,29 @@ export async function deleteItem(id: string) {
   return updateItem(id, { status: "inactive" } as any);
 }
 
+export interface StockPendingVerification {
+  item_id: string;
+  variance_qty: number;
+  value_at_stake: number;
+}
+
+// v_stock_pending_verification is owned by `postgres` (rolbypassrls = true),
+// so it bypasses items' RLS company_isolation policy entirely and applies no
+// company_id filter of its own — same setup as stock_alerts/stock_status.
+// The explicit .eq('company_id', ...) below is REQUIRED, not defensive
+// belt-and-suspenders: without it this call returns every company's variance
+// rows. Matches the pattern at Dashboard.tsx:406, reorder-api.ts:238,
+// AppSidebar.tsx:478, StockAlertsBoard.tsx:85.
+export async function fetchStockPendingVerification(companyId: string): Promise<StockPendingVerification[]> {
+  const { data, error } = await (supabase as any)
+    .from("v_stock_pending_verification")
+    .select("item_id, variance_qty, value_at_stake")
+    .eq("company_id", companyId)
+    .eq("needs_verification", true);
+  if (error) throw error;
+  return (data ?? []) as StockPendingVerification[];
+}
+
 export async function fetchStockStatus() {
   // Query items table directly so stock_alert_level is always available.
   // The stock_status view may not expose this column.
@@ -410,6 +440,20 @@ export async function fetchStockStatus() {
       );
     }
   }
+  // ── Pending-verification overlay ─────────────────────────────────────────
+  // Additive, display-only flag. A failure here must not take down the whole
+  // Stock Register (same posture as the AWO overlay above) — log and continue
+  // with an empty map so every item just shows no pending-verification badge.
+  let pendingVerification: StockPendingVerification[] = [];
+  try {
+    pendingVerification = await fetchStockPendingVerification(companyId);
+  } catch (pvError) {
+    console.error("[fetchStockStatus] pending-verification query error:", pvError);
+  }
+  const pendingVerificationMap = new Map<string, StockPendingVerification>(
+    pendingVerification.map((row) => [row.item_id, row])
+  );
+
   // Compute stock_status and effective_min_stock client-side (same logic as the view)
   const rows = itemRows.map((item: any) => {
     // Use || not ?? so that a stored value of 0 is treated as "not set"
@@ -443,6 +487,9 @@ export async function fetchStockStatus() {
       queued_for_other_builds_qty: queuedForOtherBuildsMap.get(item.id) ?? 0,
       consumed_by_other_builds_qty:
         Number(item.stock_in_subassembly_wip ?? 0) + Number(item.stock_in_fg_wip ?? 0),
+      needs_verification: pendingVerificationMap.has(item.id),
+      variance_qty: pendingVerificationMap.get(item.id)?.variance_qty ?? 0,
+      value_at_stake: pendingVerificationMap.get(item.id)?.value_at_stake ?? 0,
     } as StockStatusRow;
   });
   return rows;
