@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,9 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
 import {
   getJobCardLinkCandidates,
+  getJobCardStepNames,
   linkDcLineToJobCard,
+  resolveCandidateStageName,
   type PendingJobCardLink,
 } from "@/lib/grn-api";
 
@@ -35,6 +37,14 @@ function LineSection({
     queryFn: () => getJobCardLinkCandidates(line.dc_line_item_id),
   });
 
+  const jobCardIds = useMemo(() => candidates.map((c) => c.job_card_id), [candidates]);
+
+  const { data: stepNames = [] } = useQuery({
+    queryKey: ["job-card-step-names", jobCardIds],
+    queryFn: () => getJobCardStepNames(jobCardIds),
+    enabled: jobCardIds.length > 0,
+  });
+
   return (
     <div className="space-y-2 border-b pb-3 last:border-b-0">
       <div className="text-sm font-medium">
@@ -57,7 +67,7 @@ function LineSection({
               <div key={c.job_card_id} className="flex items-start gap-2">
                 <RadioGroupItem value={c.job_card_id} id={id} disabled={disabled} className="mt-0.5" />
                 <Label htmlFor={id} className={disabled ? "text-muted-foreground font-normal" : "font-normal"}>
-                  {c.jc_number} — stage {c.entry_stage} ({c.current_stage_name ?? "—"}), qty {c.quantity_original}
+                  {c.jc_number} — stage {c.entry_stage} ({resolveCandidateStageName(c, stepNames)}), qty {c.quantity_original}
                   {disabled && (
                     <span className="block text-[11px] text-amber-700">
                       needs supervisor — no single open stage
