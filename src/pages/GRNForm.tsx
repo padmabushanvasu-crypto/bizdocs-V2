@@ -21,7 +21,7 @@ import {
   fetchPOLineItemsForGRN,
   fetchDCReceiptSummary,
   fetchPOReceiptSummary,
-  dcReceiptKey,
+  getDcLineReceipt,
   recordGRNAndUpdatePO,
   fetchGRN,
   type GRNLineItem,
@@ -499,9 +499,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
           const summary = await fetchDCReceiptSummary(g.linked_dc_id, editId ?? null);
           if (cancelled) return;
           setLineItems(prev => prev.map(li => {
-            const key = dcReceiptKey(li.item_id, li.drawing_number);
-            if (!key) return li;
-            const entry = summary[key];
+            const entry = getDcLineReceipt(summary, (li as any).dc_line_item_id, li.item_id, li.drawing_number);
             if (!entry) return li;
             return {
               ...li,
@@ -608,8 +606,7 @@ function GRNFormInner({ defaultGrnType }: Props) {
         fetchDCReceiptSummary(dc.id, editId ?? null),
       ]);
       const pendingDCItems = (dcItems ?? []).filter((item: any) => {
-          const key = dcReceiptKey(item.item_id, item.drawing_number);
-          const alreadyReceived = (key ? prevReceivedMap[key]?.received : undefined) ?? 0;
+          const alreadyReceived = getDcLineReceipt(prevReceivedMap, item.id, item.item_id, item.drawing_number)?.received ?? 0;
           return (item.quantity || 0) - alreadyReceived > 0;
         });
       if (pendingDCItems.length === 0) {
@@ -619,9 +616,9 @@ function GRNFormInner({ defaultGrnType }: Props) {
       }
       setFullyReceived(false);
       const items: LineItemState[] = pendingDCItems.map((item: any, idx: number) => {
-          const key = dcReceiptKey(item.item_id, item.drawing_number);
-          const alreadyReceived = (key ? prevReceivedMap[key]?.received : undefined) ?? 0;
-          const prevAccepted = (key ? prevReceivedMap[key]?.accepted : undefined) ?? 0;
+          const entry = getDcLineReceipt(prevReceivedMap, item.id, item.item_id, item.drawing_number);
+          const alreadyReceived = entry?.received ?? 0;
+          const prevAccepted = entry?.accepted ?? 0;
           const pending = Math.max(0, (item.quantity || 0) - alreadyReceived);
           // Default receiving qty to 0 (same reasoning as handlePOSelect):
           // operator must explicitly enter what came back from the job worker.

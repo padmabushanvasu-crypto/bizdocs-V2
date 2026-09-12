@@ -1044,12 +1044,12 @@ export async function createGrnFromDC(data: CreateGrnFromDCData): Promise<GRN> {
   const { data: dcItems, error: liErr } = await (supabase as any).from("dc_line_items").select("*").eq("dc_id", data.dc_id).order("serial_number", { ascending: true });
   if (liErr) throw liErr;
 
-  // PROBLEM 3: compute already-received quantities per dc_line_item_id
   const receiptSummary = await fetchDCReceiptSummary(data.dc_id);
 
   // Build list of items that still have pending quantity — skip fully-received lines
   const pendingItems = (dcItems ?? []).map((item: any) => {
-    const prevReceived = receiptSummary[item.id as string]?.received ?? 0;
+    const entry = getDcLineReceipt(receiptSummary, item.id, item.item_id, item.drawing_number);
+    const prevReceived = entry?.received ?? 0;
     const pendingQty = Math.max(0, (item.quantity ?? 0) - prevReceived);
     return { item, prevReceived, pendingQty };
   }).filter(({ pendingQty }) => pendingQty > 0);
@@ -2049,10 +2049,72 @@ export function dcReceiptKey(
 }
 
 /**
- * Returns a map of { dcReceiptKey(item_id, drawing_number) → { received, accepted } }
- * across all non-deleted, non-cancelled GRNs that were created against the
- * given DC. Pass excludeGrnId to skip the current GRN (edit-mode prevents
- * double-counting).
+ * Key for a receipt bucket attributed to one specific dc_line_items row by
+ * its id — the precise, non-merging identity dcReceiptKey can't provide for
+ * two lines that share the same item_id + drawing_number (e.g. two "230108 B
+ * R6" lines on one DC with different quantities).
+ */
+export function dcLineReceiptKey(dcLineItemId: string): string {
+  return `id:${dcLineItemId}`;
+}
+
+/**
+ * Looks up a DC line's prior-receipt entry from fetchDCReceiptSummary's map.
+ * Sums the exact dc_line_item_id bucket (disambiguates duplicate lines
+ * sharing the same item_id + drawing_number) with the item_id+drawing_number
+ * fallback bucket (for GRN rows whose dc_line_item_id is null or points at a
+ * since-deleted row — DC edit delete+reinsert, STOCK_LIFECYCLE_GOVERNANCE.md
+ * §3.1) — rather than preferring one over the other. A single grn_line_items
+ * row is only ever counted under ONE of the two keys (fetchDCReceiptSummary
+ * picks exactly one per row), so for the common case — one line per
+ * item+drawing, or a duplicate-line DC with no legacy null-FK history for
+ * that item+drawing — summing both is exactly the same as before. It only
+ * changes the answer when a line's real receipt history is genuinely split
+ * across both keys (some GRNs tagged dc_line_item_id, an older GRN for the
+ * same line didn't), where preferring one bucket used to silently shadow the
+ * other's history — including shadowing a non-empty bucket with an id bucket
+ * that merely exists at zero (`if (byId) return byId` treated a real object
+ * with received: 0 as "found", never falling through).
+ *
+ * Residual limitation, not introduced by this change: for a duplicate-line
+ * DC where the fallback bucket is genuinely needed (both lines' GRNs left
+ * dc_line_item_id null for that item+drawing), the fallback bucket is shared
+ * across every line, so summing it into each line still can't tell the
+ * lines' historical receipts apart — same ambiguity dcReceiptKey has always
+ * had. Checked live: no such case exists in current data (every duplicate-
+ * line DC's GRN history is either fully id-tagged or fully untagged, never
+ * split), so this doesn't affect any DC today.
+ */
+export function getDcLineReceipt(
+  summary: Record<string, ReceiptSummaryEntry>,
+  dcLineItemId: string | null | undefined,
+  itemId: string | null | undefined,
+  drawingNumber: string | null | undefined,
+): ReceiptSummaryEntry | undefined {
+  const byId = dcLineItemId ? summary[dcLineReceiptKey(dcLineItemId)] : undefined;
+  const pairKey = dcReceiptKey(itemId, drawingNumber);
+  const byPair = pairKey ? summary[pairKey] : undefined;
+  if (!byId) return byPair;
+  if (!byPair) return byId;
+  return {
+    received: byId.received + byPair.received,
+    accepted: byId.accepted + byPair.accepted,
+    received_2: byId.received_2 + byPair.received_2,
+    accepted_2: byId.accepted_2 + byPair.accepted_2,
+  };
+}
+
+/**
+ * Returns a map of prior-receipt entries across all non-deleted,
+ * non-cancelled GRNs created against the given DC. Pass excludeGrnId to skip
+ * the current GRN (edit-mode prevents double-counting).
+ *
+ * Keyed primarily by dcLineReceiptKey(dc_line_item_id) when that id resolves
+ * to a dc_line_items row belonging to this DC — this is what lets two lines
+ * sharing the same item + drawing number be tracked separately. Falls back
+ * to dcReceiptKey(item_id, drawing_number) when dc_line_item_id is null or
+ * stale (DC edit delete+reinsert, STOCK_LIFECYCLE_GOVERNANCE.md §3.1). Use
+ * getDcLineReceipt to read from the returned map.
  *
  * `received` sums Stage 1's received_qty (with fallback to received_now /
  * receiving_now for pre-Stage-1 rows). `accepted` sums Stage 2's accepted_qty.
@@ -2070,13 +2132,22 @@ export async function fetchDCReceiptSummary(
   const { data: grns } = await grnsQuery;
   if (!grns?.length) return {};
   const grnIds = (grns as any[]).map((g: any) => g.id);
+  // Which dc_line_item_id values genuinely belong to this DC — guards
+  // against attributing a receipt to a stale/foreign id.
+  const { data: dcLines } = await (supabase as any)
+    .from('dc_line_items')
+    .select('id')
+    .eq('dc_id', dcId);
+  const validDcLineIds = new Set((dcLines ?? []).map((d: any) => d.id as string));
   const { data: items } = await (supabase as any)
     .from('grn_line_items')
-    .select('item_id, drawing_number, received_qty, received_now, receiving_now, accepted_qty, accepted_quantity, received_now_2, accepted_qty_2')
+    .select('dc_line_item_id, item_id, drawing_number, received_qty, received_now, receiving_now, accepted_qty, accepted_quantity, received_now_2, accepted_qty_2')
     .in('grn_id', grnIds);
   const summary: Record<string, ReceiptSummaryEntry> = {};
   for (const item of (items ?? []) as any[]) {
-    const key = dcReceiptKey(item.item_id, item.drawing_number);
+    const key = (item.dc_line_item_id && validDcLineIds.has(item.dc_line_item_id))
+      ? dcLineReceiptKey(item.dc_line_item_id)
+      : dcReceiptKey(item.item_id, item.drawing_number);
     if (!key) continue;
     const received = Number(item.received_qty ?? item.received_now ?? item.receiving_now ?? 0) || 0;
     const accepted = Number(item.accepted_qty ?? item.accepted_quantity ?? 0) || 0;
