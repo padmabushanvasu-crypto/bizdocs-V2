@@ -1480,6 +1480,7 @@ export async function saveQualityStage(
 
   for (const line of lines) {
     const lineIsFinal = finalGrnPerLine ? (finalGrnPerLine[line.id] ?? false) : (isFinalGrn ?? false);
+    const lineAcceptedQty = line.conforming_qty + (line.non_conforming_qty > 0 && ['accept_as_is','conditional_accept'].includes(line.disposition ?? '') ? line.non_conforming_qty : 0);
     const { error } = await (supabase as any)
       .from('grn_line_items')
       .update({
@@ -1494,7 +1495,18 @@ export async function saveQualityStage(
         qc_notes: line.qc_notes ?? null,
         qc_inspected_by: inspectedBy,
         qc_inspected_at: now,
-        accepted_qty: line.conforming_qty + (line.non_conforming_qty > 0 && ['accept_as_is','conditional_accept'].includes(line.disposition ?? '') ? line.non_conforming_qty : 0),
+        accepted_qty: lineAcceptedQty,
+        // Legacy mirror — recompute_po_line_received_quantity (the live trigger
+        // that owns po_line_items.received_quantity) reads THIS column, not
+        // accepted_qty. Stage 1 seeds it to the full received amount before QC
+        // (GRNForm.tsx s1 submit / updateGrnLineStage1); if QC later reduces or
+        // rejects the line and this write is skipped, the legacy value is stuck
+        // at the pre-QC amount and received_quantity overstates what was
+        // actually accepted — up to falsely reading "fully received" and
+        // blocking a legitimate new GRN (confirmed on PO-26-27/462 line
+        // 230372-01: accepted 0 of 291 rejected, legacy column left at the
+        // stage-1 value until corrected).
+        accepted_quantity: lineAcceptedQty,
         rejected_qty: line.non_conforming_qty > 0 && ['return_to_vendor','scrap'].includes(line.disposition ?? '') ? line.non_conforming_qty : 0,
         // Derived disposal method (the field the vendor scorecard reads). supplier_ref
         // only stamped for return-to-vendor (GRN's vendor); never clobbered otherwise.
