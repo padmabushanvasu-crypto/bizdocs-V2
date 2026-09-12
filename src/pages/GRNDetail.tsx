@@ -24,7 +24,7 @@ import {
   saveGRNScrapItems,
   fetchDCReceiptSummary,
   fetchPOReceiptSummary,
-  dcReceiptKey,
+  getDcLineReceipt,
   type QuantitativeLineData,
   type QualitativeLineData,
   type InspectionMethod,
@@ -1975,9 +1975,7 @@ export default function GRNDetail() {
           const summary = await fetchDCReceiptSummary(g.linked_dc_id, id);
           if (cancelled) return;
           setS1Lines(prev => prev.map(l => {
-            const key = dcReceiptKey(l.item_id, l.item_code);
-            if (!key) return l;
-            const e = summary[key];
+            const e = getDcLineReceipt(summary, l.dc_line_item_id, l.item_id, l.item_code);
             if (!e) return l;
             return { ...l, prev_received_live: e.received, prev_accepted_live: e.accepted, prev_received_2: e.received_2 };
           }));
