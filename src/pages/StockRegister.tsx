@@ -15,6 +15,7 @@ import {
   DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useRoleAccess } from "@/hooks/useRoleAccess";
 import { StockStatusBadge } from "@/components/StockStatusBadge";
 import { fetchStockStatus, fetchStockMovements, type StockStatusRow, type StockMovement } from "@/lib/items-api";
 import { fetchPendingQCGRNs } from "@/lib/grn-api";
@@ -218,6 +219,7 @@ function Num({ value, bold }: { value: number; bold?: boolean }) {
 function StockRegisterInner() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { hideCosts, canExport } = useRoleAccess();
 
   // Pre-set filters from URL params
   const urlParams = new URLSearchParams(location.search);
@@ -654,26 +656,30 @@ function StockRegisterInner() {
               </DropdownMenuCheckboxItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9"
-            disabled={isExporting}
-            onClick={() => handleExport("view")}
-          >
-            <Download className="h-4 w-4 mr-1.5" />
-            {isExporting ? "Exporting…" : "Export view"}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9"
-            disabled={isExporting}
-            onClick={() => handleExport("all")}
-          >
-            <Download className="h-4 w-4 mr-1.5" />
-            {isExporting ? "Exporting…" : "Export all items"}
-          </Button>
+          {canExport && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9"
+              disabled={isExporting}
+              onClick={() => handleExport("view")}
+            >
+              <Download className="h-4 w-4 mr-1.5" />
+              {isExporting ? "Exporting…" : "Export view"}
+            </Button>
+          )}
+          {canExport && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9"
+              disabled={isExporting}
+              onClick={() => handleExport("all")}
+            >
+              <Download className="h-4 w-4 mr-1.5" />
+              {isExporting ? "Exporting…" : "Export all items"}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -724,24 +730,36 @@ function StockRegisterInner() {
                   Closing Stock
                 </th>
                 {/* ── Cost block — qty × standard_cost per Phase-13 bucket ── */}
-                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap border-l border-border">
-                  Cost: In Store
-                </th>
-                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                  Cost: At Vendor
-                </th>
-                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                  Cost: Sub-Assy
-                </th>
-                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                  Cost: FG WIP
-                </th>
-                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                  Cost: FG Ready
-                </th>
-                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-700 uppercase tracking-wider whitespace-nowrap">
-                  Cost: TOTAL
-                </th>
+                {!hideCosts && (
+                  <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap border-l border-border">
+                    Cost: In Store
+                  </th>
+                )}
+                {!hideCosts && (
+                  <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                    Cost: At Vendor
+                  </th>
+                )}
+                {!hideCosts && (
+                  <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                    Cost: Sub-Assy
+                  </th>
+                )}
+                {!hideCosts && (
+                  <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                    Cost: FG WIP
+                  </th>
+                )}
+                {!hideCosts && (
+                  <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                    Cost: FG Ready
+                  </th>
+                )}
+                {!hideCosts && (
+                  <th className="text-right px-3 py-3 text-xs font-semibold text-slate-700 uppercase tracking-wider whitespace-nowrap">
+                    Cost: TOTAL
+                  </th>
+                )}
                 {showReorder && (
                   <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
                     Reorder Level
@@ -763,13 +781,13 @@ function StockRegisterInner() {
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={16 + (showReorder ? 1 : 0) + (showAimed ? 1 : 0)} className="text-center py-12 text-slate-400 text-sm">
+                  <td colSpan={16 + (showReorder ? 1 : 0) + (showAimed ? 1 : 0) - (hideCosts ? 6 : 0)} className="text-center py-12 text-slate-400 text-sm">
                     Loading…
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={16 + (showReorder ? 1 : 0) + (showAimed ? 1 : 0)} className="py-16">
+                  <td colSpan={16 + (showReorder ? 1 : 0) + (showAimed ? 1 : 0) - (hideCosts ? 6 : 0)} className="py-16">
                     <div className="flex flex-col items-center gap-3">
                       <Package className="h-10 w-10 text-slate-300" />
                       <div className="text-center">
@@ -870,46 +888,58 @@ function StockRegisterInner() {
                       </td>
 
                       {/* Cost: In Store */}
-                      <td className="px-3 py-3 text-right whitespace-nowrap border-l border-border">
-                        <span className="text-sm font-mono tabular-nums text-slate-600">
-                          {formatCurrency(row.cost_free)}
-                        </span>
-                      </td>
+                      {!hideCosts && (
+                        <td className="px-3 py-3 text-right whitespace-nowrap border-l border-border">
+                          <span className="text-sm font-mono tabular-nums text-slate-600">
+                            {formatCurrency(row.cost_free)}
+                          </span>
+                        </td>
+                      )}
 
                       {/* Cost: At Vendor */}
-                      <td className="px-3 py-3 text-right whitespace-nowrap">
-                        <span className="text-sm font-mono tabular-nums text-slate-600">
-                          {formatCurrency(row.cost_in_process)}
-                        </span>
-                      </td>
+                      {!hideCosts && (
+                        <td className="px-3 py-3 text-right whitespace-nowrap">
+                          <span className="text-sm font-mono tabular-nums text-slate-600">
+                            {formatCurrency(row.cost_in_process)}
+                          </span>
+                        </td>
+                      )}
 
                       {/* Cost: Sub-Assy */}
-                      <td className="px-3 py-3 text-right whitespace-nowrap">
-                        <span className="text-sm font-mono tabular-nums text-slate-600">
-                          {formatCurrency(row.cost_in_subassembly_wip)}
-                        </span>
-                      </td>
+                      {!hideCosts && (
+                        <td className="px-3 py-3 text-right whitespace-nowrap">
+                          <span className="text-sm font-mono tabular-nums text-slate-600">
+                            {formatCurrency(row.cost_in_subassembly_wip)}
+                          </span>
+                        </td>
+                      )}
 
                       {/* Cost: FG WIP */}
-                      <td className="px-3 py-3 text-right whitespace-nowrap">
-                        <span className="text-sm font-mono tabular-nums text-slate-600">
-                          {formatCurrency(row.cost_in_fg_wip)}
-                        </span>
-                      </td>
+                      {!hideCosts && (
+                        <td className="px-3 py-3 text-right whitespace-nowrap">
+                          <span className="text-sm font-mono tabular-nums text-slate-600">
+                            {formatCurrency(row.cost_in_fg_wip)}
+                          </span>
+                        </td>
+                      )}
 
                       {/* Cost: FG Ready */}
-                      <td className="px-3 py-3 text-right whitespace-nowrap">
-                        <span className="text-sm font-mono tabular-nums text-slate-600">
-                          {formatCurrency(row.cost_in_fg_ready)}
-                        </span>
-                      </td>
+                      {!hideCosts && (
+                        <td className="px-3 py-3 text-right whitespace-nowrap">
+                          <span className="text-sm font-mono tabular-nums text-slate-600">
+                            {formatCurrency(row.cost_in_fg_ready)}
+                          </span>
+                        </td>
+                      )}
 
                       {/* Cost: TOTAL */}
-                      <td className="px-3 py-3 text-right whitespace-nowrap font-semibold">
-                        <span className="text-sm font-mono tabular-nums font-semibold text-slate-800">
-                          {formatCurrency(row.cost_total)}
-                        </span>
-                      </td>
+                      {!hideCosts && (
+                        <td className="px-3 py-3 text-right whitespace-nowrap font-semibold">
+                          <span className="text-sm font-mono tabular-nums font-semibold text-slate-800">
+                            {formatCurrency(row.cost_total)}
+                          </span>
+                        </td>
+                      )}
 
                       {/* Reorder Level (optional column) */}
                       {showReorder && (
@@ -1079,41 +1109,53 @@ function StockRegisterInner() {
                 <td className="px-3 py-3" />
 
                 {/* Cost: In Store */}
-                <td className="px-3 py-3 text-right whitespace-nowrap border-l border-border">
-                  <span className="text-sm font-mono tabular-nums text-slate-700">
-                    {formatCurrency(footerTotals.sum_cost_free)}
-                  </span>
-                </td>
+                {!hideCosts && (
+                  <td className="px-3 py-3 text-right whitespace-nowrap border-l border-border">
+                    <span className="text-sm font-mono tabular-nums text-slate-700">
+                      {formatCurrency(footerTotals.sum_cost_free)}
+                    </span>
+                  </td>
+                )}
                 {/* Cost: At Vendor */}
-                <td className="px-3 py-3 text-right whitespace-nowrap">
-                  <span className="text-sm font-mono tabular-nums text-slate-700">
-                    {formatCurrency(footerTotals.sum_cost_in_process)}
-                  </span>
-                </td>
+                {!hideCosts && (
+                  <td className="px-3 py-3 text-right whitespace-nowrap">
+                    <span className="text-sm font-mono tabular-nums text-slate-700">
+                      {formatCurrency(footerTotals.sum_cost_in_process)}
+                    </span>
+                  </td>
+                )}
                 {/* Cost: Sub-Assy */}
-                <td className="px-3 py-3 text-right whitespace-nowrap">
-                  <span className="text-sm font-mono tabular-nums text-slate-700">
-                    {formatCurrency(footerTotals.sum_cost_in_subassembly_wip)}
-                  </span>
-                </td>
+                {!hideCosts && (
+                  <td className="px-3 py-3 text-right whitespace-nowrap">
+                    <span className="text-sm font-mono tabular-nums text-slate-700">
+                      {formatCurrency(footerTotals.sum_cost_in_subassembly_wip)}
+                    </span>
+                  </td>
+                )}
                 {/* Cost: FG WIP */}
-                <td className="px-3 py-3 text-right whitespace-nowrap">
-                  <span className="text-sm font-mono tabular-nums text-slate-700">
-                    {formatCurrency(footerTotals.sum_cost_in_fg_wip)}
-                  </span>
-                </td>
+                {!hideCosts && (
+                  <td className="px-3 py-3 text-right whitespace-nowrap">
+                    <span className="text-sm font-mono tabular-nums text-slate-700">
+                      {formatCurrency(footerTotals.sum_cost_in_fg_wip)}
+                    </span>
+                  </td>
+                )}
                 {/* Cost: FG Ready */}
-                <td className="px-3 py-3 text-right whitespace-nowrap">
-                  <span className="text-sm font-mono tabular-nums text-slate-700">
-                    {formatCurrency(footerTotals.sum_cost_in_fg_ready)}
-                  </span>
-                </td>
+                {!hideCosts && (
+                  <td className="px-3 py-3 text-right whitespace-nowrap">
+                    <span className="text-sm font-mono tabular-nums text-slate-700">
+                      {formatCurrency(footerTotals.sum_cost_in_fg_ready)}
+                    </span>
+                  </td>
+                )}
                 {/* Cost: TOTAL */}
-                <td className="px-3 py-3 text-right whitespace-nowrap">
-                  <span className="text-base font-mono tabular-nums font-semibold text-slate-900">
-                    {formatCurrency(footerTotals.sum_cost_total)}
-                  </span>
-                </td>
+                {!hideCosts && (
+                  <td className="px-3 py-3 text-right whitespace-nowrap">
+                    <span className="text-base font-mono tabular-nums font-semibold text-slate-900">
+                      {formatCurrency(footerTotals.sum_cost_total)}
+                    </span>
+                  </td>
+                )}
 
                 {showReorder && <td className="px-3 py-3" />}
                 {showAimed && <td className="px-3 py-3" />}
