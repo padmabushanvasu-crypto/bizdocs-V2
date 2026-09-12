@@ -2454,6 +2454,52 @@ async function creditPartialStock(
     throw new Error(msg);
   }
 
+  // Second guard, for PARTIAL confirmations (double-post fix #2, 8 Sep 2026):
+  // stock_posted_at above only catches a re-post after FULL confirmation —
+  // it is never set on a partial call, so a partial confirmation re-submitted
+  // seconds later (double-click, a client retry after a network blip) sails
+  // straight past the check above and posts twice. Live incident: 36
+  // confirmed duplicate pairs since 26 May 2026, same GRN+item+qty, 2-8
+  // seconds apart, still recurring. Guard: refuse if an identical credit
+  // (same GRN, item, qty, movement type) already posted within the last
+  // DEDUP_WINDOW_MS. Deliberately narrow and qty-exact so a genuinely
+  // separate partial receipt of the same quantity — minutes, hours, or days
+  // later — is never blocked; only a near-simultaneous re-submission of the
+  // *same* confirmation is. Skips (does not throw): unlike the backstop
+  // above, this condition is an expected operational hazard, not a caller
+  // bug, and the original submission already succeeded — the caller
+  // (storeConfirmGRNItems) should complete normally, not surface an error
+  // for a redundant click that already worked.
+  const isDcReturn = opts.grnType === 'dc_grn' || !!opts.linkedDcId;
+  const dedupTransactionType = isDcReturn ? 'dc_return' : 'grn_receipt';
+  const dedupNotesPattern = isDcReturn ? '%storekeeper confirmed (partial)%' : '%store confirmed (partial)%';
+  const DEDUP_WINDOW_MS = 2 * 60 * 1000;
+  const dedupCutoff = new Date(Date.now() - DEDUP_WINDOW_MS).toISOString();
+  let recentDupQuery = (supabase as any)
+    .from('stock_ledger')
+    .select('id, created_at')
+    .eq('reference_type', 'grn')
+    .eq('reference_id', grnId)
+    .eq('transaction_type', dedupTransactionType)
+    .eq('qty_in', storeQty)
+    .ilike('notes', dedupNotesPattern)
+    .gte('created_at', dedupCutoff)
+    .order('created_at', { ascending: false })
+    .limit(1);
+  if (itemId) recentDupQuery = recentDupQuery.eq('item_id', itemId);
+  const { data: recentDup, error: recentDupErr } = await recentDupQuery;
+  if (recentDupErr) {
+    throw new Error(`creditPartialStock: could not check for a recent duplicate posting: ${recentDupErr.message}`);
+  }
+  if (recentDup && recentDup.length > 0) {
+    console.error(
+      `[GRN] creditPartialStock: an identical credit for grn ${grnId} item ${itemId ?? '(unresolved)'} qty ${storeQty} ` +
+      `was already posted at ${recentDup[0].created_at} (line ${lineId}) — refusing to post again within ` +
+      `${DEDUP_WINDOW_MS / 1000}s. Treating as a duplicate submission (double-click or retry), not an error.`
+    );
+    return;
+  }
+
   // Atomic: resolves the item (id, or drawing_revision fallback with the
   // same ambiguity guard), posts the ledger row, and updates the bucket(s)
   // in one guarded transaction with a row lock. Replaces three separate
@@ -2474,15 +2520,18 @@ async function creditPartialStock(
   });
   if (error) throw new Error(error.message);
 
-  // Stamp the idempotency marker ourselves too — defense-in-depth so a future
-  // caller that forgets its own pre-check still can't double-post through here.
-  // Harmless if a caller also sets it (e.g. storeConfirmGRNItems on full
-  // confirmation): same column, same intent, idempotent overwrite.
-  const { error: stampErr } = await (supabase as any)
-    .from('grn_line_items')
-    .update({ stock_posted_at: new Date().toISOString() })
-    .eq('id', lineId);
-  if (stampErr) console.error(`[GRN] creditPartialStock: failed to stamp stock_posted_at for line ${lineId} (non-fatal, credit already posted):`, stampErr);
+  // Deliberately NOT stamping stock_posted_at here (an earlier version of this
+  // fix did, as "harmless" defense-in-depth — it was not harmless: stamping
+  // after every credit, including a PARTIAL one, made stock_posted_at look
+  // "fully credited" after the first partial call and silently blocked every
+  // legitimate later partial credit for the same line via the alreadyPosted
+  // guard above. stock_posted_at means "this line's crediting is complete,"
+  // which only each CALLER can know (full confirmation in storeConfirmGRNItems,
+  // or a one-shot credit in saveQualityStage/recordGRNAndUpdatePO) — they
+  // already stamp it themselves at the right moment. The near-simultaneous
+  // re-submit case (double-post bug #2) is caught by the recent-duplicate
+  // check above instead, which is qty- and time-window-scoped and does not
+  // have this problem.
 
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) return; // storeQty <= 0 case, matches the old early return
