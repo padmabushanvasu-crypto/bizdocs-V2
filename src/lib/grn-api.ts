@@ -2010,6 +2010,41 @@ export async function getJobCardLinkCandidates(dcLineItemId: string): Promise<Jo
   return (data ?? []) as JobCardLinkCandidate[];
 }
 
+export interface JobCardStepName {
+  job_card_id: string;
+  step_number: number;
+  name: string;
+}
+
+/** Real step names for the given job cards, keyed by (job_card_id, step_number). */
+export async function getJobCardStepNames(jobCardIds: string[]): Promise<JobCardStepName[]> {
+  if (jobCardIds.length === 0) return [];
+  const { data, error } = await (supabase as any)
+    .from("job_card_steps")
+    .select("job_card_id, step_number, name")
+    .in("job_card_id", jobCardIds);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as JobCardStepName[];
+}
+
+/**
+ * Stage name for a job-card-link candidate, resolved from job_card_steps by
+ * matching entry_stage to that step's step_number — not from
+ * candidate.current_stage_name, which shares the staleness problem PR #71
+ * fixed elsewhere (job_cards.current_stage_name can be NULL or point at a
+ * different stage than entry_stage). Falls back to "—" only when no step
+ * with that step_number exists for the job card.
+ */
+export function resolveCandidateStageName(
+  candidate: Pick<JobCardLinkCandidate, "job_card_id" | "entry_stage">,
+  steps: JobCardStepName[],
+): string {
+  const step = steps.find(
+    (s) => s.job_card_id === candidate.job_card_id && s.step_number === candidate.entry_stage,
+  );
+  return step?.name ?? "—";
+}
+
 /** jobCardId = null records "not part of a job card". The card's open
  * external step is resolved server-side (rpc_link_dc_line_to_job_card) —
  * never pass a step number from here. */
