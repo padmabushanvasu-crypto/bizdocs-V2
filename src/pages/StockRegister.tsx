@@ -417,35 +417,17 @@ function StockRegisterInner() {
     return result;
   }, [rows, search, typeFilter, availability, alertFilter, zeroStock, belowReorder]);
 
-  // Footer cost rollups across the currently filtered set. Sums the same
-  // per-row cost_* fields that the body cells render (so footer can never
-  // disagree with the body). wip_qty/queued_qty/queued_for_other_builds_qty/
-  // consumed_by_other_builds_qty are excluded — costs reflect the 5
+  // Footer Stock Value rollup across the currently filtered set. Sums the
+  // same cost_total the body cells render (so footer can never disagree with
+  // the body). wip_qty/queued_qty/queued_for_other_builds_qty/
+  // consumed_by_other_builds_qty are excluded — cost_total reflects the 5
   // physical buckets only.
   const footerTotals = useMemo(() => {
-    let sum_cost_free = 0;
-    let sum_cost_in_process = 0;
-    let sum_cost_in_subassembly_wip = 0;
-    let sum_cost_in_fg_wip = 0;
-    let sum_cost_in_fg_ready = 0;
     let sum_cost_total = 0;
     for (const r of filtered) {
-      sum_cost_free               += Number(r.cost_free               ?? 0);
-      sum_cost_in_process         += Number(r.cost_in_process         ?? 0);
-      sum_cost_in_subassembly_wip += Number(r.cost_in_subassembly_wip ?? 0);
-      sum_cost_in_fg_wip          += Number(r.cost_in_fg_wip          ?? 0);
-      sum_cost_in_fg_ready        += Number(r.cost_in_fg_ready        ?? 0);
-      sum_cost_total              += Number(r.cost_total              ?? 0);
+      sum_cost_total += Number(r.cost_total ?? 0);
     }
-    return {
-      sum_cost_free,
-      sum_cost_in_process,
-      sum_cost_in_subassembly_wip,
-      sum_cost_in_fg_wip,
-      sum_cost_in_fg_ready,
-      sum_cost_total,
-      filteredCount: filtered.length,
-    };
+    return { sum_cost_total, filteredCount: filtered.length };
   }, [filtered]);
 
   const clearFilters = () => {
@@ -700,7 +682,7 @@ function StockRegisterInner() {
                 </th>
                 <ColHeader
                   label="In Store"
-                  tip="Physically available in store, ready to use"
+                  tip="Physically available in store, ready to use — the only bucket counted as closing stock. Deliberately excludes At Vendor, WIP, and other in-progress buckets, which stay visible in their own columns."
                 />
                 <ColHeader
                   label="At Vendor"
@@ -726,38 +708,12 @@ function StockRegisterInner() {
                   label="Ready to Ship"
                   tip="Completed finished goods awaiting dispatch"
                 />
-                <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                  Closing Stock
-                </th>
-                {/* ── Cost block — qty × standard_cost per Phase-13 bucket ── */}
+                {/* ── Stock Value — cost_total (qty × standard_cost, summed across all
+                     Phase-13 buckets). The per-bucket breakdown lives in the item
+                     drill-down panel instead of as separate columns here. ── */}
                 {!hideCosts && (
-                  <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap border-l border-border">
-                    Cost: In Store
-                  </th>
-                )}
-                {!hideCosts && (
-                  <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                    Cost: At Vendor
-                  </th>
-                )}
-                {!hideCosts && (
-                  <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                    Cost: Sub-Assy
-                  </th>
-                )}
-                {!hideCosts && (
-                  <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                    Cost: FG WIP
-                  </th>
-                )}
-                {!hideCosts && (
-                  <th className="text-right px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                    Cost: FG Ready
-                  </th>
-                )}
-                {!hideCosts && (
-                  <th className="text-right px-3 py-3 text-xs font-semibold text-slate-700 uppercase tracking-wider whitespace-nowrap">
-                    Cost: TOTAL
+                  <th className="text-right px-3 py-3 text-xs font-semibold text-slate-700 uppercase tracking-wider whitespace-nowrap border-l border-border">
+                    Stock Value
                   </th>
                 )}
                 {showReorder && (
@@ -781,13 +737,13 @@ function StockRegisterInner() {
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={16 + (showReorder ? 1 : 0) + (showAimed ? 1 : 0) - (hideCosts ? 6 : 0)} className="text-center py-12 text-slate-400 text-sm">
+                  <td colSpan={10 + (showReorder ? 1 : 0) + (showAimed ? 1 : 0) - (hideCosts ? 1 : 0)} className="text-center py-12 text-slate-400 text-sm">
                     Loading…
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={16 + (showReorder ? 1 : 0) + (showAimed ? 1 : 0) - (hideCosts ? 6 : 0)} className="py-16">
+                  <td colSpan={10 + (showReorder ? 1 : 0) + (showAimed ? 1 : 0) - (hideCosts ? 1 : 0)} className="py-16">
                     <div className="flex flex-col items-center gap-3">
                       <Package className="h-10 w-10 text-slate-300" />
                       <div className="text-center">
@@ -803,12 +759,6 @@ function StockRegisterInner() {
                 </tr>
               ) : (
                 filtered.map((row) => {
-                  // Closing stock = free (issuable) stock only, per business rule.
-                  // Deliberately excludes in_process / WIP / fg_ready / wip_qty /
-                  // queued_qty / queued_for_other_builds_qty /
-                  // consumed_by_other_builds_qty — those stay visible in their
-                  // own columns for audit, but none count toward closing stock.
-                  const total = row.stock_free;
                   const minReq = row.min_stock_override || row.min_stock || 0;
 
                   return (
@@ -876,65 +826,10 @@ function StockRegisterInner() {
                         <Num value={row.stock_in_fg_ready} />
                       </td>
 
-                      {/* Total */}
-                      <td className="px-3 py-3 text-right">
-                        {total === 0 ? (
-                          <span className="text-slate-300 text-sm select-none">—</span>
-                        ) : (
-                          <span className={`text-sm font-mono tabular-nums font-semibold ${total < 0 ? "text-rose-600" : "text-slate-500"}`}>
-                            {formatNumber(total)}
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Cost: In Store */}
+                      {/* Stock Value — cost_total, replaces the 6 per-bucket cost
+                          columns; the breakdown lives in the drill-down panel. */}
                       {!hideCosts && (
                         <td className="px-3 py-3 text-right whitespace-nowrap border-l border-border">
-                          <span className="text-sm font-mono tabular-nums text-slate-600">
-                            {formatCurrency(row.cost_free)}
-                          </span>
-                        </td>
-                      )}
-
-                      {/* Cost: At Vendor */}
-                      {!hideCosts && (
-                        <td className="px-3 py-3 text-right whitespace-nowrap">
-                          <span className="text-sm font-mono tabular-nums text-slate-600">
-                            {formatCurrency(row.cost_in_process)}
-                          </span>
-                        </td>
-                      )}
-
-                      {/* Cost: Sub-Assy */}
-                      {!hideCosts && (
-                        <td className="px-3 py-3 text-right whitespace-nowrap">
-                          <span className="text-sm font-mono tabular-nums text-slate-600">
-                            {formatCurrency(row.cost_in_subassembly_wip)}
-                          </span>
-                        </td>
-                      )}
-
-                      {/* Cost: FG WIP */}
-                      {!hideCosts && (
-                        <td className="px-3 py-3 text-right whitespace-nowrap">
-                          <span className="text-sm font-mono tabular-nums text-slate-600">
-                            {formatCurrency(row.cost_in_fg_wip)}
-                          </span>
-                        </td>
-                      )}
-
-                      {/* Cost: FG Ready */}
-                      {!hideCosts && (
-                        <td className="px-3 py-3 text-right whitespace-nowrap">
-                          <span className="text-sm font-mono tabular-nums text-slate-600">
-                            {formatCurrency(row.cost_in_fg_ready)}
-                          </span>
-                        </td>
-                      )}
-
-                      {/* Cost: TOTAL */}
-                      {!hideCosts && (
-                        <td className="px-3 py-3 text-right whitespace-nowrap font-semibold">
                           <span className="text-sm font-mono tabular-nums font-semibold text-slate-800">
                             {formatCurrency(row.cost_total)}
                           </span>
@@ -1105,52 +1000,10 @@ function StockRegisterInner() {
                 <td className="px-3 py-3" />
                 {/* Ready to Ship qty */}
                 <td className="px-3 py-3" />
-                {/* Total qty */}
-                <td className="px-3 py-3" />
 
-                {/* Cost: In Store */}
+                {/* Stock Value */}
                 {!hideCosts && (
                   <td className="px-3 py-3 text-right whitespace-nowrap border-l border-border">
-                    <span className="text-sm font-mono tabular-nums text-slate-700">
-                      {formatCurrency(footerTotals.sum_cost_free)}
-                    </span>
-                  </td>
-                )}
-                {/* Cost: At Vendor */}
-                {!hideCosts && (
-                  <td className="px-3 py-3 text-right whitespace-nowrap">
-                    <span className="text-sm font-mono tabular-nums text-slate-700">
-                      {formatCurrency(footerTotals.sum_cost_in_process)}
-                    </span>
-                  </td>
-                )}
-                {/* Cost: Sub-Assy */}
-                {!hideCosts && (
-                  <td className="px-3 py-3 text-right whitespace-nowrap">
-                    <span className="text-sm font-mono tabular-nums text-slate-700">
-                      {formatCurrency(footerTotals.sum_cost_in_subassembly_wip)}
-                    </span>
-                  </td>
-                )}
-                {/* Cost: FG WIP */}
-                {!hideCosts && (
-                  <td className="px-3 py-3 text-right whitespace-nowrap">
-                    <span className="text-sm font-mono tabular-nums text-slate-700">
-                      {formatCurrency(footerTotals.sum_cost_in_fg_wip)}
-                    </span>
-                  </td>
-                )}
-                {/* Cost: FG Ready */}
-                {!hideCosts && (
-                  <td className="px-3 py-3 text-right whitespace-nowrap">
-                    <span className="text-sm font-mono tabular-nums text-slate-700">
-                      {formatCurrency(footerTotals.sum_cost_in_fg_ready)}
-                    </span>
-                  </td>
-                )}
-                {/* Cost: TOTAL */}
-                {!hideCosts && (
-                  <td className="px-3 py-3 text-right whitespace-nowrap">
                     <span className="text-base font-mono tabular-nums font-semibold text-slate-900">
                       {formatCurrency(footerTotals.sum_cost_total)}
                     </span>
@@ -1225,6 +1078,31 @@ function StockRegisterInner() {
                   {selectedItem.stock_in_process > 0 && (selectedItem.stock_in_subassembly_wip + selectedItem.stock_in_fg_wip) > 0 && " · "}
                   {(selectedItem.stock_in_subassembly_wip + selectedItem.stock_in_fg_wip) > 0 && `${formatNumber(selectedItem.stock_in_subassembly_wip + selectedItem.stock_in_fg_wip)} in production`}
                 </p>
+              )}
+              {/* Stock Value breakdown — the 5-way per-bucket detail the grid used
+                  to render as 6 separate cost columns, moved here since the grid
+                  now shows a single Stock Value (cost_total) column. Same
+                  !hideCosts gate as the grid column — same roles see it. */}
+              {!hideCosts && (
+                <div className="mt-2 pt-2 border-t border-slate-200">
+                  <p className="text-[11px] uppercase tracking-wide text-slate-400 font-semibold mb-1">
+                    Stock Value
+                  </p>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
+                    <span className="text-slate-500">In Store</span>
+                    <span className="text-right font-mono tabular-nums text-slate-600">{formatCurrency(selectedItem.cost_free)}</span>
+                    <span className="text-slate-500">At Vendor</span>
+                    <span className="text-right font-mono tabular-nums text-slate-600">{formatCurrency(selectedItem.cost_in_process)}</span>
+                    <span className="text-slate-500">Sub-Assy WIP</span>
+                    <span className="text-right font-mono tabular-nums text-slate-600">{formatCurrency(selectedItem.cost_in_subassembly_wip)}</span>
+                    <span className="text-slate-500">FG WIP</span>
+                    <span className="text-right font-mono tabular-nums text-slate-600">{formatCurrency(selectedItem.cost_in_fg_wip)}</span>
+                    <span className="text-slate-500">FG Ready</span>
+                    <span className="text-right font-mono tabular-nums text-slate-600">{formatCurrency(selectedItem.cost_in_fg_ready)}</span>
+                    <span className="text-slate-700 font-semibold pt-0.5 border-t border-slate-200">Total</span>
+                    <span className="text-right font-mono tabular-nums font-semibold text-slate-800 pt-0.5 border-t border-slate-200">{formatCurrency(selectedItem.cost_total)}</span>
+                  </div>
+                </div>
               )}
               {(() => {
                 // Pending QC lives here (drill-down) rather than the grid — it's
