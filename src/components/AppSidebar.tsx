@@ -911,7 +911,7 @@ export function AppSidebar() {
       title: "Physical Count",
       url: "/physical-count",
       icon: ClipboardCheck,
-      allowedRoles: ['admin', 'finance', 'storekeeper'],
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'storekeeper'],
     },
     {
       title: "Count Approvals",

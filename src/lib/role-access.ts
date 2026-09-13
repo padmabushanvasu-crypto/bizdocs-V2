@@ -75,6 +75,7 @@ const QC_TEAM_MAP: Record<string, PageAccess> = {
   'scrap-register':             { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
   'ready-to-dispatch':          { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
   'items':                      { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
+  'count-approvals':            { canView: true,  canEdit: true,  canExport: false, hideCosts: false },
 };
 
 const STOREKEEPER_MAP: Record<string, PageAccess> = {
