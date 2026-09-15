@@ -46,6 +46,7 @@ const PURCHASE_TEAM_MAP: Record<string, PageAccess> = {
   'open-items':           { canView: true,  canEdit: false, canExport: false, hideCosts: false },
   'reorder-rules':        { canView: true,  canEdit: false, canExport: false, hideCosts: false },
   'component-work-orders': { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
+  'rm-conversions':       { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
   'storekeeper-queue':    { canView: true, canEdit: true,  canExport: true,  hideCosts: true },
 };
 
@@ -61,6 +62,7 @@ const INWARD_TEAM_MAP: Record<string, PageAccess> = {
   'stock-ledger':       { canView: true,  canEdit: false, canExport: false, hideCosts: true },
   'items':              { canView: true,  canEdit: false, canExport: false, hideCosts: true },
   'component-work-orders': { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
+  'rm-conversions':     { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
   'storekeeper-queue':  { canView: true, canEdit: true,  canExport: true,  hideCosts: true },
 };
 
@@ -99,6 +101,7 @@ const ASSEMBLY_TEAM_MAP: Record<string, PageAccess> = {
   'sub-assembly-work-orders':   { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
   'finished-good-work-orders':  { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
   'component-work-orders':      { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
+  'rm-conversions':             { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
   'stock-register':             { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
   'serial-numbers':             { canView: true,  canEdit: false, canExport: true,  hideCosts: false },
   'fat-certificates':           { canView: true,  canEdit: false, canExport: false, hideCosts: true  },

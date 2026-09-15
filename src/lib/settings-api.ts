@@ -55,6 +55,10 @@ export interface CompanySettings {
   registered_state: string | null;
   registered_state_code: string | null;
   registered_pin_code: string | null;
+  // RM Conversion — % tolerance for the variable-alt-factor advisory check
+  // (rpc_post_rm_conversion). DB default 15.00; fetchCompanySettings's
+  // select("*") already returns it, no query change needed.
+  conversion_factor_tolerance_pct: number | null;
 }
 
 export interface DocumentSettings {
