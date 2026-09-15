@@ -684,20 +684,48 @@ export async function softDeleteGRN(
 
     const { data: lines } = await (supabase as any)
       .from('grn_line_items')
-      .select('item_id, accepted_qty, accepted_quantity, drawing_number, description')
+      .select('item_id, drawing_number, description')
       .eq('grn_id', id);
 
-    // Resolve every line to (itemId, qty) up front. accepted qty is what the
-    // receipt credited to free; reversing it must not silently push free
-    // negative and must not half-apply. So validate ALL lines against available
-    // free stock BEFORE writing any ledger row or moving any bucket — this also
-    // closes the pre-existing partial-write hole (ledger written, bucket not,
-    // GRN not marked deleted) that a mid-loop failure left behind.
-    const reversals: { itemId: string; qty: number; description: string | null }[] = [];
-    for (const line of (lines ?? []) as any[]) {
-      const qty: number = (line.accepted_qty ?? line.accepted_quantity ?? 0);
-      if (qty <= 0) continue;
+    // The authoritative amount to reverse is whatever actually got credited to
+    // stock_free for this GRN — read from stock_ledger, not inferred from
+    // grn_line_items.accepted_qty / accepted_quantity. Those two columns can
+    // disagree: accepted_qty (new) stays 0 until Stage 2 QC runs, while a
+    // Stage-1-only GRN's stock was already credited via the "legacy
+    // single-stage credit" path in recordGRNAndUpdatePO, which posts using
+    // accepted_quantity (legacy). `line.accepted_qty ?? line.accepted_quantity`
+    // silently computed "nothing to reverse" for such a line, because
+    // `0 ?? x` is `0`, not a fall-through — confirmed live via GRN-26-27/2145
+    // (accepted_qty 0, accepted_quantity 292, a real 292 grn_receipt ledger
+    // row, reversal silently skipped). Reading the ledger sidesteps this whole
+    // class of dual-schema mismatch and also covers DC-return GRNs, whose
+    // credit posts under 'dc_return' rather than 'grn_receipt'.
+    const { data: creditRows, error: creditErr } = await (supabase as any)
+      .from('stock_ledger')
+      .select('item_id, qty_in, qty_out')
+      .eq('company_id', companyId)
+      .eq('reference_type', 'grn')
+      .eq('reference_id', id)
+      .in('transaction_type', ['grn_receipt', 'dc_return']);
+    if (creditErr) throw creditErr;
+    const creditedByItem = new Map<string, number>();
+    for (const row of (creditRows ?? []) as any[]) {
+      if (!row.item_id) continue;
+      const net = Number(row.qty_in ?? 0) - Number(row.qty_out ?? 0);
+      creditedByItem.set(row.item_id, (creditedByItem.get(row.item_id) ?? 0) + net);
+    }
 
+    // Resolve every line to an item_id, collecting one entry per DISTINCT
+    // item — a GRN can have more than one line for the same item, but the
+    // ledger-sourced credited amount above is already that item's total
+    // across the whole GRN, so it must be applied once per item, not once
+    // per line (which would double-reverse). Validate ALL items against
+    // available free stock BEFORE writing any ledger row or moving any
+    // bucket — this also closes the pre-existing partial-write hole (ledger
+    // written, bucket not, GRN not marked deleted) that a mid-loop failure
+    // left behind.
+    const descByItem = new Map<string, string | null>();
+    for (const line of (lines ?? []) as any[]) {
       let itemId: string | null = line.item_id ?? null;
       if (!itemId && line.drawing_number && companyId) {
         // drawing_revision is not unique — fail loud on error/ambiguity (before
@@ -711,8 +739,14 @@ export async function softDeleteGRN(
         itemId = found.row?.id ?? null;
       }
       if (!itemId) continue;
+      if (!descByItem.has(itemId)) descByItem.set(itemId, line.description ?? null);
+    }
 
-      reversals.push({ itemId, qty, description: line.description ?? null });
+    const reversals: { itemId: string; qty: number; description: string | null }[] = [];
+    for (const [itemId, description] of descByItem) {
+      const qty = creditedByItem.get(itemId) ?? 0;
+      if (qty <= 0) continue;
+      reversals.push({ itemId, qty, description });
     }
 
     if (reversals.length > 0) {
