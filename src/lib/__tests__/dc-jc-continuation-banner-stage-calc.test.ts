@@ -20,11 +20,16 @@ import { describe, it, expect, vi } from "vitest";
 //  2. current_stage is unreliably populated in the first place — the
 //     "create new JC" path (createJobWork) never sets it at all, so it can
 //     be NULL on a job card whose job_card_steps are perfectly fine.
-//     Verified live: JC JW-26-27/024 (item 230046) has steps 1-4 done
-//     (step 4 'material_returned', a real vendor + linked DC) and step 5
-//     genuinely 'pending' — but current_stage was NULL, so the old code
+//     Verified live: JC JW-26-27/024 (item 230046) has steps 1-3 done and
+//     step 4 'material_returned' (material physically back from the vendor,
+//     not yet accepted/QC'd) — but current_stage was NULL, so the old code
 //     rendered a blank stage number and suggested Stage 1, even though
-//     steps 1-4 are already done.
+//     steps 1-3 are already done.
+//
+// Fixture note: step 4 here is 'material_returned', which fetchJobCardStepProgress
+// treats as NOT complete (see job-card-step-material-returned.test.ts) — it
+// renders the same as 'in_progress', open/current, never struck through.
+// Stage 4 is therefore the nextOpenStage, not stage 5.
 //
 // The fix (fetchJobCardStepProgress) derives both numbers directly from
 // job_card_steps — the same reliable source already used correctly for the
@@ -67,7 +72,7 @@ vi.mock("@/integrations/supabase/client", () => ({
 import { fetchJobCardStepProgress } from "@/lib/job-works-api";
 
 describe("fetchJobCardStepProgress — DC-creation continuation banner", () => {
-  it("JW-26-27/024 (item 230046): steps 1-4 done, step 5 pending — suggests Stage 5, not Stage 1", async () => {
+  it("JW-26-27/024 (item 230046): steps 1-3 done, step 4 material_returned (not yet accepted) — suggests Stage 4, not Stage 5", async () => {
     stepsTable = [
       { job_card_id: "jc-024", step_number: 1, status: "done" },
       { job_card_id: "jc-024", step_number: 2, status: "done" },
@@ -78,9 +83,9 @@ describe("fetchJobCardStepProgress — DC-creation continuation banner", () => {
 
     const result = await fetchJobCardStepProgress("jc-024");
 
-    expect(result.lastCompletedStage).toBe(4);
-    expect(result.nextOpenStage).toBe(5);
-    expect(result.completedStageNumbers).toEqual(new Set([1, 2, 3, 4]));
+    expect(result.lastCompletedStage).toBe(3);
+    expect(result.nextOpenStage).toBe(4);
+    expect(result.completedStageNumbers).toEqual(new Set([1, 2, 3]));
   });
 
   it("JW-26-27/140 (item 230054): only 5 stages exist, step 5 itself still pending — suggests Stage 5, never Stage 6", async () => {
@@ -119,10 +124,10 @@ describe("fetchJobCardStepProgress — DC-creation continuation banner", () => {
     expect(result.nextOpenStage).toBe(1);
   });
 
-  it("returns nextOpenStage=null once every real step is done (nothing left to suggest)", async () => {
+  it("returns nextOpenStage=null once every real step is 'done' (nothing left to suggest)", async () => {
     stepsTable = [
       { job_card_id: "jc-done", step_number: 1, status: "done" },
-      { job_card_id: "jc-done", step_number: 2, status: "material_returned" },
+      { job_card_id: "jc-done", step_number: 2, status: "done" },
     ];
 
     const result = await fetchJobCardStepProgress("jc-done");
@@ -130,5 +135,18 @@ describe("fetchJobCardStepProgress — DC-creation continuation banner", () => {
     expect(result.lastCompletedStage).toBe(2);
     expect(result.nextOpenStage).toBeNull();
     expect(result.completedStageNumbers).toEqual(new Set([1, 2]));
+  });
+
+  it("a trailing 'material_returned' step is still open, not done — nextOpenStage points at it", async () => {
+    stepsTable = [
+      { job_card_id: "jc-mr", step_number: 1, status: "done" },
+      { job_card_id: "jc-mr", step_number: 2, status: "material_returned" },
+    ];
+
+    const result = await fetchJobCardStepProgress("jc-mr");
+
+    expect(result.lastCompletedStage).toBe(1);
+    expect(result.nextOpenStage).toBe(2);
+    expect(result.completedStageNumbers).toEqual(new Set([1]));
   });
 });

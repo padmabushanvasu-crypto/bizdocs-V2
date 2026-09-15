@@ -1475,12 +1475,15 @@ export async function fetchWipSummary(): Promise<WipSummary> {
 
 /**
  * Reads the real step statuses for ONE job card (by id) and derives:
- *  - completedStageNumbers: stage numbers with status 'done' or 'material_returned'
- *  - lastCompletedStage: the highest completed stage number (null if none)
+ *  - completedStageNumbers: stage numbers with status 'done' — 'material_returned'
+ *    means material is physically back from the vendor but not yet
+ *    accepted/QC'd (qty_accepted and completed_at still null), so it is NOT
+ *    complete; it renders the same as 'in_progress' — open/current.
+ *  - lastCompletedStage: the highest completed ('done') stage number (null if none)
  *  - nextOpenStage: the lowest stage number that is not yet done and not a
  *    'pre_bizdocs' placeholder (mirrors the "remaining steps" logic in
  *    grn-api.ts's return-confirmation flow — the stage the job card is
- *    actually open at, whether 'pending' or already 'in_progress')
+ *    actually open at, whether 'pending', 'in_progress', or 'material_returned')
  *
  * Callers must resolve the job_card_id themselves (e.g. via the specific
  * in-progress job card already matched for an item) rather than guessing
@@ -1503,7 +1506,7 @@ export async function fetchJobCardStepProgress(jobCardId: string): Promise<{
   let nextOpenStage: number | null = null;
   for (const s of steps ?? []) {
     if (s.step_number == null) continue;
-    if (s.status === "done" || s.status === "material_returned") {
+    if (s.status === "done") {
       completedStageNumbers.add(s.step_number);
       lastCompletedStage = s.step_number;
     } else if (nextOpenStage === null && s.status !== "pre_bizdocs") {
