@@ -38,6 +38,7 @@ import {
   Archive,
   Phone,
   MapPin,
+  Recycle,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -140,6 +141,7 @@ const TOOLTIP_TEXT: Record<string, string> = {
   "Opening Stock": "Set and edit opening stock quantities",
   "Procurement Intelligence": "Smart view of what needs to be procured",
   "Jig Master": "Manage jigs and drilling tools",
+  "RM Conversions": "Convert raw material inputs (from store or drawn directly off a GRN) into a produced output item.",
 };
 
 // ── Search items (all pages) ──────────────────────────────────────────────────
@@ -173,6 +175,7 @@ const ALL_SEARCH_ITEMS: { title: string; url: string }[] = [
   { title: "Assets Register", url: "/assets-register" },
   { title: "Bill of Materials", url: "/bill-of-materials" },
   { title: "Jig Master", url: "/jig-master" },
+  { title: "RM Conversions", url: "/rm-conversions" },
   { title: "Settings", url: "/settings" },
 ];
 
@@ -185,7 +188,7 @@ const GROUP_PATHS: Record<string, string[]> = {
   "DASHBOARD":             ["/"],
   "PROCUREMENT":           ["/purchase-orders", "/delivery-challans", "/follow-up-tracker", "/vendor-scorecards", "/parties", "/reorder-intelligence"],
   "INWARD & QC":           ["/grn", "/storekeeper-queue", "/ready-to-move", "/dc-grn"],
-  "PRODUCTION & JOB WORK": ["/job-works", "/wip-register", "/sub-assembly-work-orders", "/finished-good-work-orders", "/component-work-orders"],
+  "PRODUCTION & JOB WORK": ["/job-works", "/wip-register", "/sub-assembly-work-orders", "/finished-good-work-orders", "/component-work-orders", "/rm-conversions"],
   "INVENTORY & STORES":    ["/stock-register", "/inventory-ledger", "/opening-stock", "/storekeeper", "/store-locator", "/physical-count", "/physical-count/approvals", "/consumables", "/scrap-register"],
   "DISPATCH":              ["/ready-to-dispatch", "/dispatch-records", "/serial-numbers", "/fat-certificates"],
   "FINANCE & COMPLIANCE":  ["/gst-reports"],
@@ -870,6 +873,12 @@ export function AppSidebar() {
       badge: awoStats?.co_active && awoStats.co_active > 0 ? awoStats.co_active : undefined,
       badgeColor: "amber" as const,
       allowedRoles: ['admin', 'finance', 'assembly_team'],
+    },
+    {
+      title: "RM Conversions",
+      url: "/rm-conversions",
+      icon: Recycle,
+      allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'assembly_team'],
     },
   ];
 
