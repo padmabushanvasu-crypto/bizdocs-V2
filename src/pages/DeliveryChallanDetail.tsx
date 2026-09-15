@@ -535,6 +535,9 @@ export default function DeliveryChallanDetail() {
           <tbody>
             {items.map((item, idx) => {
               const jigs = parseJigsSent((item as any).jigs_sent);
+              // Distinct physical jigs, not a per-jig quantity — jig_master has no
+              // quantity column and jig_number is unique per row.
+              const jigCount = jigs ? jigs.split(',').length : 0;
               return (
               <Fragment key={item.serial_number}>
               <tr style={{ background: idx % 2 === 0 ? '#F8FAFC' : '#fff', borderBottom: '1pt solid #E2E8F0' }}>
@@ -555,7 +558,7 @@ export default function DeliveryChallanDetail() {
               {jigs && (
                 <tr style={{ background: idx % 2 === 0 ? '#F8FAFC' : '#fff' }}>
                   <td colSpan={printColCount} style={{ padding: rowPadding, paddingLeft: '16pt', color: '#475569', fontSize: rowFontSize, borderBottom: '1pt solid #E2E8F0' }}>
-                    Jig(s): <strong>{jigs}</strong>
+                    Jig(s) ({jigCount}): <strong>{jigs}</strong>
                   </td>
                 </tr>
               )}
