@@ -778,6 +778,28 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
   }
 }
 
+/**
+ * A line linked to a job card (job_card_id set) but with no stage resolved
+ * (step_number null) — rpc_issue_dc / rpc_issue_dc_plain_lines reject these
+ * (zero eligible stages, or more than one with nothing picked yet — see
+ * JobCardLinePicker). Shared by DeliveryChallanForm's submit-as-issued guard
+ * and DeliveryChallanDetail's separate Issue action so both surfaces give
+ * the same clear, line-specific message instead of a raw RPC exception.
+ */
+export function isJobCardLineMissingStage(
+  jobCardId: string | null | undefined,
+  stepNumber: number | null | undefined,
+): boolean {
+  return !!jobCardId && stepNumber == null;
+}
+
+/** Every line on the DC currently missing a job-card stage — see isJobCardLineMissingStage. */
+export function findLinesMissingJobCardStage<T extends { job_card_id?: string | null; step_number?: number | null }>(
+  lineItems: T[],
+): T[] {
+  return lineItems.filter((li) => isJobCardLineMissingStage(li.job_card_id, li.step_number));
+}
+
 export async function issueDeliveryChallan(id: string) {
   const { data: dcCheck, error: fetchErr } = await supabase
     .from('delivery_challans')

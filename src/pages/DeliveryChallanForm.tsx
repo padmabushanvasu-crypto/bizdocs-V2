@@ -26,6 +26,7 @@ import {
   updateDeliveryChallan,
   issueDeliveryChallan,
   fetchBomStagesForItemDC,
+  isJobCardLineMissingStage,
   type DCLineItem,
 } from "@/lib/delivery-challans-api";
 import { fetchJobCardsForItem, type JobCardForLink } from "@/lib/job-works-api";
@@ -913,7 +914,7 @@ export default function DeliveryChallanForm() {
       // instead of a raw RPC exception.
       for (let idx = 0; idx < lineItems.length; idx++) {
         if (!lineItems[idx].description.trim()) continue;
-        if (lineNewJobCardId.get(idx) && lineNewStepNumber.get(idx) == null) {
+        if (isJobCardLineMissingStage(lineNewJobCardId.get(idx), lineNewStepNumber.get(idx))) {
           const row = document.querySelector(`tr[data-line-index="${idx}"]`);
           if (row) row.scrollIntoView({ behavior: "smooth", block: "center" });
           toast({
