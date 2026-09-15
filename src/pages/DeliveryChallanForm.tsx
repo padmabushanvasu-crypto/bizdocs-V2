@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, ChevronDown, Info, ChevronLeft, AlertTriangle, Lock, CheckCircle2, Wrench } from "lucide-react";
 import { ItemSuggest } from "@/components/ItemSuggest";
 import { Button } from "@/components/ui/button";
@@ -29,7 +29,7 @@ import {
   isJobCardLineMissingStage,
   type DCLineItem,
 } from "@/lib/delivery-challans-api";
-import { fetchJobCardsForItem, type JobCardForLink } from "@/lib/job-works-api";
+import { fetchJobCardsForItem, fetchEligibleExternalStagesForJobCard, type JobCardForLink } from "@/lib/job-works-api";
 import { JobCardLinePicker } from "@/components/JobCardLinePicker";
 import { getCompanyId } from "@/lib/auth-helpers";
 import { fetchFreeStock } from "@/lib/stock-free-api";
@@ -232,6 +232,42 @@ export default function DeliveryChallanForm() {
   // require a reason for it. Only ever populated on edit-load.
   const [lineOriginalJobCardQty, setLineOriginalJobCardQty] = useState<Map<number, number>>(new Map());
   const [lineQtyChangeReason, setLineQtyChangeReason] = useState<Map<number, string>>(new Map());
+
+  // Zero-eligible-stage detection for job-card-linked lines — mirrors
+  // JobCardLinePicker's own "Nothing currently eligible to send for this
+  // job card" query (same queryKey, so react-query serves this from the
+  // same cache entry — no extra round-trip). Needed here because a line's
+  // job_card_id survives even while its picker shows zero eligible stages,
+  // and handleSave must block Save/Save & Submit for that case, not just
+  // issuing — see DC-26-27/1064: saved as a draft with step_number null,
+  // only failed later at rpc_issue_dc time. The "exactly one eligible" and
+  // "more than one eligible, unresolved" branches stay untouched — they're
+  // still only gated at issue time by the existing check below.
+  const linkedJobCardIds = useMemo(() => {
+    const ids = new Set<string>();
+    lineNewJobCardId.forEach((jcId) => { if (jcId) ids.add(jcId); });
+    return Array.from(ids);
+  }, [lineNewJobCardId]);
+
+  const eligibleStagesQueries = useQueries({
+    queries: linkedJobCardIds.map((jcId) => ({
+      queryKey: ["eligible-external-stages", jcId],
+      queryFn: () => fetchEligibleExternalStagesForJobCard(jcId),
+    })),
+  });
+
+  // job_card_id -> true once its query has resolved with zero eligible
+  // stages. A job card is absent from this map (not just false) while its
+  // query is still loading, so handleSave never blocks on a stale read.
+  const zeroEligibleByJobCardId = useMemo(() => {
+    const m = new Map<string, boolean>();
+    linkedJobCardIds.forEach((jcId, i) => {
+      const q = eligibleStagesQueries[i];
+      if (!q?.isSuccess) return;
+      m.set(jcId, (q.data ?? []).length === 0);
+    });
+    return m;
+  }, [linkedJobCardIds, eligibleStagesQueries]);
 
   const selectStage = (lineIndex: number, stage: ProcessingRoute) => {
     setLineSelectedStageId(prev => { const m = new Map(prev); m.set(lineIndex, stage.id); return m; });
@@ -856,6 +892,26 @@ export default function DeliveryChallanForm() {
         variant: "destructive",
       });
       return;
+    }
+    // New stage-ledger model: a line linked to a job card with NOTHING
+    // currently eligible at any stage is a dead end — never persist it,
+    // draft or not (DC-26-27/1064: saved as a draft with step_number null,
+    // only failed later at rpc_issue_dc time). Unlike the "more than one
+    // eligible, unresolved" and "exactly one eligible" cases (still only
+    // gated at issue time, below), zero eligible stages blocks every save.
+    for (let idx = 0; idx < lineItems.length; idx++) {
+      if (!lineItems[idx].description.trim()) continue;
+      const jcId = lineNewJobCardId.get(idx);
+      if (jcId && zeroEligibleByJobCardId.get(jcId)) {
+        const row = document.querySelector(`tr[data-line-index="${idx}"]`);
+        if (row) row.scrollIntoView({ behavior: "smooth", block: "center" });
+        toast({
+          title: "Nothing eligible for this job card",
+          description: `Line item ${idx + 1} is linked to a job card with nothing currently eligible to send at any stage — remove the line, or pick a different job card/stage, before saving.`,
+          variant: "destructive",
+        });
+        return;
+      }
     }
     // Change 3: block save if any line has a 'to_be_made' jig
     for (let idx = 0; idx < lineItems.length; idx++) {
