@@ -432,6 +432,7 @@ export async function createDeliveryChallan({ dc, lineItems }: CreateDCData) {
       qty_nos: item.qty_nos || item.quantity || 0, qty_kg: item.qty_kg || 0,
       qty_kgs: item.qty_kgs || null, qty_sft: item.qty_sft || null,
       nature_of_process: item.nature_of_process || null, material_type: item.material_type || "FINISH",
+      jigs_sent: item.jigs_sent ?? null,
       job_work_id: item.job_work_id || null,
       job_work_number: item.job_work_number || null,
       job_work_step_id: item.job_work_step_id || null,
@@ -631,6 +632,7 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
       qty_nos: item.qty_nos || item.quantity || 0, qty_kg: item.qty_kg || 0,
       qty_kgs: item.qty_kgs || null, qty_sft: item.qty_sft || null,
       nature_of_process: item.nature_of_process || null, material_type: item.material_type || "FINISH",
+      jigs_sent: item.jigs_sent ?? null,
       job_work_id: item.job_work_id || null,
       job_work_number: item.job_work_number || null,
       job_work_step_id: item.job_work_step_id || null,
@@ -666,6 +668,7 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
         drawing_number: incoming.drawing_number || null,
         remarks: incoming.remarks || null,
         material_type: incoming.material_type || "FINISH",
+        jigs_sent: incoming.jigs_sent ?? null,
       } as any).eq("id", orig.id);
       if (lineUpdErr) throw lineUpdErr;
     }
@@ -696,6 +699,7 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
         drawing_number: incoming.drawing_number || null,
         remarks: incoming.remarks || null,
         material_type: incoming.material_type || "FINISH",
+        jigs_sent: incoming.jigs_sent ?? null,
       } as any).eq("id", orig.id);
       if (lineUpdErr) throw lineUpdErr;
     }
