@@ -97,8 +97,8 @@ const TOOLTIP_TEXT: Record<string, string> = {
     "Record goods arriving from a vendor. Links to the original PO. Stock updates automatically when saved.",
   "DC Returns":
     "Record goods returning from job work vendors. Links to the Delivery Challan sent earlier.",
-  "Invoices":
-    "Raise a GST tax invoice to a customer. Only FAT-passed units can be invoiced.",
+  "Sales":
+    "Draft an invoice for finished goods, then Sale complete — this numbers the invoice, records the sale, and backflushes stock.",
   "Receipts":
     "Record payment received from a customer against an invoice. Updates outstanding balance.",
   "Sales Orders":
@@ -156,7 +156,7 @@ const ALL_SEARCH_ITEMS: { title: string; url: string }[] = [
   { title: "Purchase Orders", url: "/purchase-orders" },
   { title: "GRN", url: "/grn" },
   { title: "DC Returns", url: "/dc-grn" },
-  { title: "Invoices", url: "/invoices" },
+  { title: "Sales", url: "/invoices" },
   { title: "Receipts", url: "/receipts" },
   { title: "Sales Orders", url: "/sales-orders" },
   { title: "Dispatch Notes", url: "/dispatch-notes" },
@@ -239,7 +239,7 @@ function getActiveGroupForPath(pathname: string): string | null {
 // ── Static nav arrays ─────────────────────────────────────────────────────────
 
 const billingNav: NavItem[] = [
-  { title: "Invoices", url: "/invoices", icon: FileText },
+  { title: "Sales", url: "/invoices", icon: FileText },
   { title: "Receipts", url: "/receipts", icon: Receipt },
   { title: "Sales Orders", url: "/sales-orders", icon: ShoppingBag },
   { title: "Dispatch Notes", url: "/dispatch-notes", icon: Send },

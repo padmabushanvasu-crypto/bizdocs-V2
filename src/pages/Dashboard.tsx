@@ -24,7 +24,6 @@ import { format } from "date-fns";
 interface DashboardData {
   thisMonthRevenue: number;
   fyRevenue: number;
-  overdueInvoiceCount: number;
   openPOValue: number;
   overdueDCCount: number;
   rawMaterialCount: number;
@@ -45,15 +44,6 @@ interface StockAlertItem {
   actionedWith: 'PO' | 'DC' | 'AO' | null;
 }
 
-interface ReadyToShipRow {
-  id: string;
-  serial_number: string;
-  item_code: string | null;
-  item_description: string | null;
-  fat_completed_at: string | null;
-  created_at: string;
-}
-
 // ─── Data fetching ───────────────────────────────────────────────────────────
 
 async function fetchDashboardData(): Promise<DashboardData> {
@@ -68,7 +58,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
       .from("invoices")
       .select("grand_total, invoice_date, due_date, status")
       .gte("invoice_date", fyStart)
-      .neq("status", "cancelled"),
+      .eq("status", "sale_complete"),
     supabase
       .from("purchase_orders")
       .select("grand_total")
@@ -96,9 +86,6 @@ async function fetchDashboardData(): Promise<DashboardData> {
     .filter((i) => i.invoice_date >= monthStart)
     .reduce((s, i) => s + (i.grand_total ?? 0), 0);
   const fyRevenue = invoices.reduce((s, i) => s + (i.grand_total ?? 0), 0);
-  const overdueInvoiceCount = invoices.filter(
-    (i) => i.due_date && i.due_date < todayStr && i.status !== "paid" && i.status !== "cancelled"
-  ).length;
   const openPOValue = openPOs.reduce((s, p) => s + (p.grand_total ?? 0), 0);
   const overdueDCCount = openDCs.filter(
     (dc) => dc.dc_type === "returnable" && dc.return_due_date && dc.return_due_date < todayStr
@@ -120,7 +107,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
   const overduePOCount = overduePOsRes.count ?? 0;
 
   return {
-    thisMonthRevenue, fyRevenue, overdueInvoiceCount,
+    thisMonthRevenue, fyRevenue,
     openPOValue, overdueDCCount,
     rawMaterialCount, componentCount, finishedGoodCount,
     needsBuildingCount, overduePOCount,
@@ -157,18 +144,6 @@ async function fetchAwoStats(): Promise<{ buildsInProgress: number; pendingCount
   return { buildsInProgress, pendingCount, wipComponentsCount };
 }
 
-async function fetchReadyToShip(): Promise<ReadyToShipRow[]> {
-  const { data, error } = await supabase
-    .from("serial_numbers")
-    .select("id, serial_number, item_code, item_description, fat_completed_at, created_at")
-    .eq("fat_completed", true)
-    .is("invoice_id", null)
-    .eq("status", "in_stock")
-    .order("fat_completed_at", { ascending: true });
-  if (error) throw error;
-  return (data ?? []) as ReadyToShipRow[];
-}
-
 async function fetchRecentActivity(): Promise<AuditEntry[]> {
   const { data } = await fetchAllAuditLog({ pageSize: 10, page: 1 });
   return data;
@@ -184,11 +159,6 @@ function timeAgo(dateStr: string): string {
   const hours = Math.floor(mins / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
-}
-
-function daysSince(dateStr: string | null): number {
-  if (!dateStr) return 0;
-  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
 }
 
 const DOC_TAGS: Record<string, { cls: string; label: string }> = {
@@ -316,12 +286,6 @@ export default function Dashboard() {
   const { data: dashData } = useQuery({
     queryKey: ["dashboard-data-v3"],
     queryFn: fetchDashboardData,
-    staleTime: STALE,
-    refetchInterval: STALE,
-  });
-  const { data: readyToShip = [] } = useQuery({
-    queryKey: ["ready-to-ship-db"],
-    queryFn: fetchReadyToShip,
     staleTime: STALE,
     refetchInterval: STALE,
   });
@@ -477,9 +441,8 @@ export default function Dashboard() {
   const criticalCount     = stockAlertData.unactioned.length;
   const actionedCount     = stockAlertData.actioned.length;
   const fatPending        = fatStats?.pending ?? 0;
-  const uninvoicedUnits   = readyToShip.length;
 
-  const totalAlerts = overdueDCReturns + criticalCount + actionedCount + fatPending + uninvoicedUnits + (dashData?.needsBuildingCount ?? 0) + (dashData?.overduePOCount ?? 0) + pendingApprovalCount + unreadRejectionCount + pendingDCApprovalCount + unreadDCRejectionCount;
+  const totalAlerts = overdueDCReturns + criticalCount + actionedCount + fatPending + (dashData?.needsBuildingCount ?? 0) + (dashData?.overduePOCount ?? 0) + pendingApprovalCount + unreadRejectionCount + pendingDCApprovalCount + unreadDCRejectionCount;
   const allClear = totalAlerts === 0;
 
   // Company info
@@ -569,11 +532,11 @@ export default function Dashboard() {
                   body: "Use this when testing a finished OLTC unit. Record all 12 IEC test results and mark pass or fail. A unit cannot be invoiced without a passed FAT.",
                 },
                 {
-                  label: "Raise Invoice",
+                  label: "New sale",
                   route: "/invoices/new",
                   state: undefined as any,
-                  title: "Invoice",
-                  body: "Use this to bill a customer after goods are assembled, FAT-passed and ready to dispatch. Only FAT-passed serial numbers appear in the dropdown.",
+                  title: "Sale",
+                  body: "Draft an invoice for finished goods, then Sale complete — this numbers the invoice, records the sale, and backflushes stock.",
                 },
               ].map((btn) => (
                 <Tooltip key={btn.label} delayDuration={400}>
@@ -789,7 +752,6 @@ export default function Dashboard() {
             </p>
             <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">This month's revenue</p>
             <div className={`divide-y ${isDark ? "divide-white/10" : "divide-slate-100"}`}>
-              <LightStatRow dark={isDark} label="Overdue Invoices" value={dashData?.overdueInvoiceCount ?? "—"} highlight={(dashData?.overdueInvoiceCount ?? 0) > 0} onClick={() => navigate("/invoices")} />
               <LightStatRow dark={isDark} label="Overdue POs" value={dashData?.overduePOCount ?? "—"} highlight={(dashData?.overduePOCount ?? 0) > 0} onClick={() => navigate("/purchase-orders")} />
               <LightStatRow dark={isDark} label="Open PO Value" value={formatCurrency(dashData?.openPOValue ?? 0)} onClick={() => navigate("/purchase-orders")} />
               <LightStatRow dark={isDark} label="FY Revenue" value={formatCurrency(dashData?.fyRevenue ?? 0)} />
@@ -797,65 +759,6 @@ export default function Dashboard() {
           </div>
 
         </div>
-        )}
-
-        {/* ── Section 5: Finished Goods Ready to Ship — hidden for storekeeper ── */}
-        {!isStorekeeper && readyToShip.length > 0 && (
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
-            <div className="flex items-center justify-between px-4 lg:px-5 py-3.5 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                <h2 className="font-semibold text-slate-900 text-sm">Finished Goods — Ready to Ship</h2>
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">
-                  {readyToShip.length}
-                </span>
-              </div>
-              <button
-                className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors"
-                onClick={() => navigate("/fat-certificates")}
-              >
-                View all →
-              </button>
-            </div>
-            <div className="overflow-x-auto rounded-lg border border-slate-200">
-              <table className="w-full border-collapse text-sm">
-                <thead>
-                  <tr>
-                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Serial #</th>
-                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item Code</th>
-                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
-                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Age</th>
-                    <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center w-36">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {readyToShip.map((sn) => {
-                    const age = daysSince(sn.fat_completed_at ?? sn.created_at);
-                    return (
-                      <tr key={sn.id} className={age > 30 ? "bg-amber-50/50" : ""}>
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-semibold text-slate-800">{sn.serial_number}</td>
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-xs text-slate-500">{sn.item_code ?? "—"}</td>
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{sn.item_description ?? "—"}</td>
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
-                          <span className={`${age > 30 ? "text-amber-700 font-semibold" : "text-slate-600"}`}>
-                            {age}d
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
-                          <button
-                            className="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors"
-                            onClick={() => navigate("/invoices/new", { state: { serial_number_id: sn.id } })}
-                          >
-                            Raise Invoice →
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
         )}
 
         {/* ── Section 6: Recent Activity Feed ──────────────────────── */}

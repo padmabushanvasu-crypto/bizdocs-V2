@@ -121,7 +121,7 @@ const MORE_GROUPS = [
 const MAIN_TABS = [
   { label: "Home", icon: LayoutDashboard, to: "/", end: true },
   { label: "Work Orders", icon: ClipboardList, to: "/job-works", end: false },
-  { label: "Invoices", icon: FileText, to: "/invoices", end: false },
+  { label: "Sales", icon: FileText, to: "/invoices", end: false },
   { label: "Items", icon: Package, to: "/items", end: false },
 ];
 
