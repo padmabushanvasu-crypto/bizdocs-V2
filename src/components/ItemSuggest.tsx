@@ -74,11 +74,17 @@ export function ItemSuggest({
   const updatePosition = () => {
     if (!inputRef.current) return;
     const rect = inputRef.current.getBoundingClientRect();
+    const margin = 8;
+    // Clamp to the viewport so a narrow input near a screen edge (common on
+    // phone widths) can't push the dropdown past the right edge and force
+    // the page into horizontal scroll.
+    const width = Math.min(Math.max(rect.width, 300), window.innerWidth - margin * 2);
+    const left = Math.min(Math.max(rect.left, margin), window.innerWidth - width - margin);
     setDropdownStyle({
       position: "fixed",
       top: rect.bottom + 4,
-      left: rect.left,
-      width: Math.max(rect.width, 300),
+      left,
+      width,
       zIndex: 9999,
       maxHeight: 300,
       overflowY: "auto",
