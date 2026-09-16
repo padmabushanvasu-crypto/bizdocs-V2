@@ -72,14 +72,15 @@ export async function createInvoice(invoice: Record<string, any>, lineItems: Inv
     throw invErr;
   }
   if (lineItems.length > 0) {
+    // Draft lines carry only raw inputs — discount_amount/taxable_amount/
+    // cgst/sgst/igst/line_total are computed (and overwritten) server-side
+    // by rpc_complete_sale; the client never writes them.
     const items = lineItems.map((li) => ({
       company_id: companyId,
       invoice_id: inv.id, serial_number: li.serial_number, item_id: li.item_id, description: li.description,
       drawing_number: li.drawing_number || null, hsn_sac_code: li.hsn_sac_code || null,
       quantity: li.quantity, unit: li.unit, unit_price: li.unit_price,
-      discount_percent: li.discount_percent, discount_amount: li.discount_amount,
-      taxable_amount: li.taxable_amount, gst_rate: li.gst_rate,
-      cgst: li.cgst, sgst: li.sgst, igst: li.igst, line_total: li.line_total,
+      discount_percent: li.discount_percent, gst_rate: li.gst_rate,
     }));
     const { error: liErr } = await supabase.from("invoice_line_items").insert(items as any);
     if (liErr) {
@@ -101,9 +102,7 @@ export async function updateInvoice(id: string, invoice: Record<string, any>, li
       invoice_id: id, serial_number: li.serial_number, item_id: li.item_id, description: li.description,
       drawing_number: li.drawing_number || null, hsn_sac_code: li.hsn_sac_code || null,
       quantity: li.quantity, unit: li.unit, unit_price: li.unit_price,
-      discount_percent: li.discount_percent, discount_amount: li.discount_amount,
-      taxable_amount: li.taxable_amount, gst_rate: li.gst_rate,
-      cgst: li.cgst, sgst: li.sgst, igst: li.igst, line_total: li.line_total,
+      discount_percent: li.discount_percent, gst_rate: li.gst_rate,
     }));
     const { error } = await supabase.from("invoice_line_items").insert(items as any);
     if (error) throw error;

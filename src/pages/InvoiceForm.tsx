@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, Search, ChevronDown, ChevronUp, Truck, ChevronLeft } from "lucide-react";
+import { Plus, Trash2, ChevronDown, ChevronUp, Truck, ChevronLeft } from "lucide-react";
 import { ItemSuggest } from "@/components/ItemSuggest";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,34 +11,30 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { format, addDays } from "date-fns";
-import { cn } from "@/lib/utils";
 import { fetchParties, type Party } from "@/lib/parties-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
-import { fetchItems, type Item } from "@/lib/items-api";
 import {
   fetchInvoice,
-  getNextInvoiceNumber,
   createInvoice,
   updateInvoice,
-  issueInvoice,
+  completeSale,
   type InvoiceLineItem,
 } from "@/lib/invoices-api";
 import { formatCurrency, formatNumber, amountInWords } from "@/lib/gst-utils";
 import { getGSTType, calculateLineTax, round2, resolveStateCode, getStateName, type GSTType } from "@/lib/tax-utils";
-import { fetchSerialNumbers, assignSerialToInvoice } from "@/lib/fat-api";
 import { UNITS } from "@/lib/constants";
 
 const PAYMENT_TERMS = ["Immediate", "7 Days", "15 Days", "30 Days", "45 Days", "60 Days"];
 const GST_RATES = [0, 5, 12, 18, 28];
-// Company state code fetched dynamically from settings
+const FINISHED_GOOD_TYPES = ["finished_good"];
 
 function emptyLineItem(serial: number): InvoiceLineItem {
   return {
     serial_number: serial,
+    item_id: null,
     description: "",
     drawing_number: "",
     hsn_sac_code: "",
@@ -70,20 +66,14 @@ export default function InvoiceForm() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Surface invoice lines that were issued but could not relieve stock (no drawing
-  // number, or no matching item). The invoice still sends; this warns loudly so the
-  // operator can fix the item link rather than the relief being lost silently.
-  const surfaceUnresolved = (warnings: string[]) => {
-    if (!warnings.length) return;
-    toast({
-      title: `${warnings.length} line(s) issued without relieving stock`,
-      description: warnings.join(" · "),
-      variant: "destructive",
-    });
-  };
+  // A freshly-created draft's id, tracked locally so a retry after a failed
+  // "Save & Sale complete" updates that same draft instead of inserting a
+  // second one (createInvoice only ever runs once per session per invoice).
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const effectiveId = id ?? draftId;
+  const effectiveIsEdit = isEdit || !!draftId;
 
   // State
-  const [invoiceNumber, setInvoiceNumber] = useState("");
   const [invoiceDate, setInvoiceDate] = useState<Date>(new Date());
   const [dueDate, setDueDate] = useState<Date>(addDays(new Date(), 30));
   const [paymentTerms, setPaymentTerms] = useState("30 Days");
@@ -100,10 +90,8 @@ export default function InvoiceForm() {
   const [bankIfsc, setBankIfsc] = useState("");
   const [bankBranch, setBankBranch] = useState("");
   const [lineItems, setLineItems] = useState<InvoiceLineItem[]>([emptyLineItem(1)]);
-  const [successOpen, setSuccessOpen] = useState(false);
-  const [savedId, setSavedId] = useState<string | null>(null);
 
-  // Dispatch & Transport fields (FIX 7)
+  // Transport details (optional, informational only — never fed to the RPC)
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const [reverseCharge, setReverseCharge] = useState(false);
   const [supplyType, setSupplyType] = useState("");
@@ -112,11 +100,6 @@ export default function InvoiceForm() {
   const [transporterName, setTransporterName] = useState("");
   const [lrNumber, setLrNumber] = useState("");
   const [lrDate, setLrDate] = useState("");
-  const [serialNumberRef, setSerialNumberRef] = useState("");
-  const [serialNumberId, setSerialNumberId] = useState<string | null>(null);
-  const [serialSearchOpen, setSerialSearchOpen] = useState(false);
-  const [dispatchThrough, setDispatchThrough] = useState("");
-  const [destination, setDestination] = useState("");
 
   // Queries
   const { data: companySettings } = useQuery({
@@ -131,31 +114,23 @@ export default function InvoiceForm() {
     queryFn: () => fetchParties({ type: "customer", status: "active", pageSize: 500 }),
   });
 
-  const { data: nextNum } = useQuery({
-    queryKey: ["next-invoice-number"],
-    queryFn: getNextInvoiceNumber,
-    enabled: !isEdit,
-  });
-
   const { data: existingInvoice } = useQuery({
     queryKey: ["invoice", id],
     queryFn: () => fetchInvoice(id!),
     enabled: isEdit,
   });
 
-  const { data: availableSerials } = useQuery({
-    queryKey: ["serial-numbers-available"],
-    queryFn: () => fetchSerialNumbers({ status: "in_stock", fatCompleted: true, pageSize: 200 }),
-  });
-
+  // A non-draft invoice is immutable at the DB — the form is not the place to
+  // view it. Send the user to the read-only detail page instead.
   useEffect(() => {
-    if (!isEdit && nextNum) setInvoiceNumber(nextNum);
-  }, [nextNum, isEdit]);
+    if (isEdit && existingInvoice && existingInvoice.invoice.status !== "draft") {
+      navigate(`/invoices/${id}`, { replace: true });
+    }
+  }, [isEdit, existingInvoice, id, navigate]);
 
   useEffect(() => {
     if (isEdit && existingInvoice) {
       const inv = existingInvoice.invoice;
-      setInvoiceNumber(inv.invoice_number);
       setInvoiceDate(new Date(inv.invoice_date));
       if (inv.due_date) setDueDate(new Date(inv.due_date));
       setPaymentTerms(inv.payment_terms || "30 Days");
@@ -176,9 +151,6 @@ export default function InvoiceForm() {
       setTransporterName((inv as any).transporter_name || "");
       setLrNumber((inv as any).lr_number || "");
       setLrDate((inv as any).lr_date || "");
-      setSerialNumberRef((inv as any).serial_number_ref || "");
-      setDispatchThrough((inv as any).dispatch_through || "");
-      setDestination((inv as any).destination || "");
       if (inv.customer_id) {
         setSelectedCustomer({
           id: inv.customer_id,
@@ -194,6 +166,7 @@ export default function InvoiceForm() {
         setLineItems(
           existingInvoice.lineItems.map((li: any) => ({
             serial_number: li.serial_number,
+            item_id: li.item_id ?? null,
             description: li.description,
             drawing_number: li.drawing_number || "",
             hsn_sac_code: li.hsn_sac_code || "",
@@ -231,7 +204,9 @@ export default function InvoiceForm() {
     setDueDate(getDueDateFromTerms(invoiceDate, terms));
   }, [invoiceDate]);
 
-  // GST type — derived from company state vs customer/place-of-supply state
+  // GST type — derived from company state vs customer/place-of-supply state.
+  // This drives the live preview ONLY; the DB recomputes it independently
+  // (and authoritatively) inside rpc_complete_sale.
   const gstType = useMemo<GSTType>(
     () => getGSTType(COMPANY_STATE_CODE, placeOfSupply || selectedCustomer?.state_code),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -265,7 +240,7 @@ export default function InvoiceForm() {
       const updated = [...prev];
       const item = { ...updated[index], [field]: value };
 
-      // Recalculate
+      // Recalculate the live preview only — none of this is sent to the API.
       const baseAmount = round2(item.quantity * item.unit_price);
       item.discount_amount = round2(baseAmount * ((item.discount_percent ?? 0) / 100));
       item.taxable_amount = round2(baseAmount - item.discount_amount);
@@ -285,7 +260,8 @@ export default function InvoiceForm() {
     setLineItems((prev) => prev.filter((_, i) => i !== index).map((item, i) => ({ ...item, serial_number: i + 1 })));
   };
 
-  // Totals
+  // Totals — an ESTIMATE for the operator's benefit. The DB computes and
+  // stores the authoritative figures inside rpc_complete_sale.
   const totals = useMemo(() => {
     const subTotal = lineItems.reduce((s, li) => s + li.quantity * li.unit_price, 0);
     const totalDiscount = lineItems.reduce((s, li) => s + li.discount_amount, 0);
@@ -314,9 +290,8 @@ export default function InvoiceForm() {
 
   // Save
   const saveMutation = useMutation({
-    mutationFn: async (status: string) => {
+    mutationFn: async (action: "draft" | "complete") => {
       const invoiceData: Record<string, any> = {
-        invoice_number: invoiceNumber,
         invoice_date: format(invoiceDate, "yyyy-MM-dd"),
         due_date: format(dueDate, "yyyy-MM-dd"),
         customer_id: selectedCustomer?.id || null,
@@ -343,70 +318,40 @@ export default function InvoiceForm() {
         transporter_name: transporterName || null,
         lr_number: lrNumber || null,
         lr_date: lrDate || null,
-        serial_number_ref: serialNumberRef || null,
-        dispatch_through: dispatchThrough || null,
-        destination: destination || null,
-        sub_total: totals.subTotal,
-        total_discount: totals.totalDiscount,
-        taxable_value: totals.taxableValue,
-        cgst_amount: totals.totalCgst,
-        sgst_amount: totals.totalSgst,
-        igst_amount: totals.totalIgst,
-        total_gst: totals.totalGst,
-        round_off: totals.roundOff,
-        grand_total: totals.grandTotal,
-        amount_outstanding: totals.grandTotal,
-        status,
       };
 
-      if (isEdit) {
-        await updateInvoice(id!, invoiceData, lineItems);
-        if (status === "sent") {
-          const { unresolvedWarnings } = await issueInvoice(id!);
-          surfaceUnresolved(unresolvedWarnings);
-          if (serialNumberId) {
-            await assignSerialToInvoice(
-              serialNumberId, id!, invoiceNumber,
-              selectedCustomer?.name || null,
-              format(invoiceDate, "yyyy-MM-dd")
-            );
-          }
-        }
-        return id;
+      let invId = effectiveId;
+      if (effectiveIsEdit) {
+        await updateInvoice(invId!, invoiceData, lineItems);
       } else {
         const inv = await createInvoice(invoiceData, lineItems);
-        if (status === "sent") {
-          const { unresolvedWarnings } = await issueInvoice(inv.id);
-          surfaceUnresolved(unresolvedWarnings);
-          if (serialNumberId) {
-            await assignSerialToInvoice(
-              serialNumberId, inv.id, invoiceNumber,
-              selectedCustomer?.name || null,
-              format(invoiceDate, "yyyy-MM-dd")
-            );
-          }
-        }
-        return inv.id;
+        invId = inv.id;
+        setDraftId(inv.id);
       }
+
+      if (action === "complete") {
+        const result = await completeSale(invId!);
+        return { invId, result };
+      }
+      return { invId, result: null as null };
     },
-    onSuccess: (invId, status) => {
+    onSuccess: ({ invId, result }, action) => {
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
       queryClient.invalidateQueries({ queryKey: ["invoice-stats"] });
-      setSavedId(invId as string);
-      if (status === "sent") {
-        setSuccessOpen(true);
+      if (action === "complete" && result) {
+        toast({ title: "Sale complete", description: `Invoice ${result.invoice_number} issued.` });
       } else {
-        toast({ title: "Invoice saved as draft" });
-        navigate(`/invoices/${invId}`);
+        toast({ title: "Draft saved" });
       }
+      navigate(`/invoices/${invId}`);
     },
     onError: (err: any) => {
       console.error("[InvoiceForm] save error:", err);
-      toast({ title: "Error saving invoice", description: err.message, variant: "destructive" });
+      toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });
 
-  const handleSave = (status: string) => {
+  const handleSave = (action: "draft" | "complete") => {
     if (!selectedCustomer) {
       toast({ title: "Please select a customer", variant: "destructive" });
       return;
@@ -416,7 +361,7 @@ export default function InvoiceForm() {
       toast({ title: "Add at least one line item", variant: "destructive" });
       return;
     }
-    saveMutation.mutate(status);
+    saveMutation.mutate(action);
   };
 
   const customerList = customers?.data ?? [];
@@ -432,8 +377,8 @@ export default function InvoiceForm() {
       </button>
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-display font-bold text-foreground">{isEdit ? "Edit Invoice" : "New Sales Invoice"}</h1>
-          <p className="text-sm text-muted-foreground">GST-compliant tax invoice</p>
+          <h1 className="text-xl font-display font-bold text-foreground">{isEdit ? "Edit Sale" : "New Sale"}</h1>
+          <p className="text-sm text-muted-foreground">Draft a sale of finished goods, then Sale complete to number and post it</p>
         </div>
       </div>
 
@@ -507,10 +452,6 @@ export default function InvoiceForm() {
         </div>
 
         <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label>Invoice Number</Label>
-            <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} className="font-mono" />
-          </div>
           <div className="space-y-1.5">
             <Label>Invoice Date *</Label>
             <Popover>
@@ -589,8 +530,10 @@ export default function InvoiceForm() {
                   <td className="px-1 py-1">
                     <ItemSuggest
                       value={li.description}
+                      itemTypes={FINISHED_GOOD_TYPES}
                       onChange={(v) => updateLineItem(i, "description", v)}
                       onSelect={(item) => {
+                        updateLineItem(i, "item_id", item.id);
                         updateLineItem(i, "description", item.description);
                         updateLineItem(i, "hsn_sac_code", item.hsn_sac_code || "");
                         updateLineItem(i, "unit", item.unit || "NOS");
@@ -598,7 +541,7 @@ export default function InvoiceForm() {
                         updateLineItem(i, "gst_rate", item.gst_rate || 18);
                         updateLineItem(i, "drawing_number", item.drawing_revision || "");
                       }}
-                      placeholder="Type to search items..."
+                      placeholder="Type to search finished goods..."
                       className="h-8 text-sm w-full"
                     />
                   </td>
@@ -730,6 +673,9 @@ export default function InvoiceForm() {
 
         {/* Totals */}
         <div className="bg-card border border-border rounded-md p-4 space-y-2 text-sm">
+          <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[11px] font-semibold mb-1">
+            Estimated — final figures are computed on Sale complete
+          </div>
           <div className="flex justify-between"><span className="text-muted-foreground">Sub Total</span><span className="font-mono tabular-nums">{formatCurrency(totals.subTotal)}</span></div>
           {totals.totalDiscount > 0 && (
             <div className="flex justify-between text-emerald-600"><span>Total Discount</span><span className="font-mono tabular-nums">-{formatCurrency(totals.totalDiscount)}</span></div>
@@ -783,7 +729,7 @@ export default function InvoiceForm() {
         </div>
       </div>
 
-      {/* Dispatch & Transport Details */}
+      {/* Transport Details */}
       <div className="border border-border rounded-lg">
         <button
           type="button"
@@ -792,7 +738,7 @@ export default function InvoiceForm() {
         >
           <div className="flex items-center gap-2">
             <Truck className="h-4 w-4 text-slate-500" />
-            <span className="font-medium text-sm text-slate-700">Dispatch & Transport Details</span>
+            <span className="font-medium text-sm text-slate-700">Transport Details</span>
             <span className="text-xs text-muted-foreground">(optional)</span>
           </div>
           {dispatchOpen
@@ -844,62 +790,6 @@ export default function InvoiceForm() {
                 <Label className="text-sm font-medium text-slate-700">LR Date</Label>
                 <Input type="date" value={lrDate} onChange={(e) => setLrDate(e.target.value)} />
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-slate-700">Serial Number</Label>
-                <Popover open={serialSearchOpen} onOpenChange={setSerialSearchOpen}>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" role="combobox" className="w-full justify-between font-normal h-9 text-sm">
-                      {serialNumberRef || "Select serial number..."}
-                      <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[320px] p-0" align="start">
-                    <Command>
-                      <CommandInput placeholder="Search serial number, item..." />
-                      <CommandList>
-                        <CommandEmpty>No available serial numbers.</CommandEmpty>
-                        <CommandGroup>
-                          {(availableSerials?.data ?? []).map((sn) => (
-                            <CommandItem
-                              key={sn.id}
-                              value={sn.serial_number}
-                              onSelect={() => {
-                                setSerialNumberRef(sn.serial_number);
-                                setSerialNumberId(sn.id);
-                                setSerialSearchOpen(false);
-                              }}
-                            >
-                              <div>
-                                <p className="font-mono font-semibold text-sm">{sn.serial_number}</p>
-                                {sn.item_description && (
-                                  <p className="text-xs text-muted-foreground">{sn.item_description}</p>
-                                )}
-                              </div>
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
-                {serialNumberRef && (
-                  <button
-                    type="button"
-                    className="text-xs text-muted-foreground hover:text-red-600 underline"
-                    onClick={() => { setSerialNumberRef(""); setSerialNumberId(null); }}
-                  >
-                    Clear selection
-                  </button>
-                )}
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-slate-700">Dispatch Through</Label>
-                <Input value={dispatchThrough} onChange={(e) => setDispatchThrough(e.target.value)} placeholder="Mode of dispatch" />
-              </div>
-              <div className="space-y-1.5 sm:col-span-2">
-                <Label className="text-sm font-medium text-slate-700">Destination</Label>
-                <Input value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="Place of delivery" />
-              </div>
             </div>
           </div>
         )}
@@ -908,23 +798,9 @@ export default function InvoiceForm() {
       {/* Action Bar */}
       <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-border p-4 flex justify-end gap-3 z-50">
         <Button variant="outline" onClick={() => navigate("/invoices")}>Cancel</Button>
-        <Button variant="secondary" onClick={() => handleSave("draft")} disabled={saveMutation.isPending}>Save as Draft</Button>
-        <Button onClick={() => handleSave("sent")} disabled={saveMutation.isPending}>Issue Invoice →</Button>
+        <Button variant="secondary" onClick={() => handleSave("draft")} disabled={saveMutation.isPending}>Save draft</Button>
+        <Button onClick={() => handleSave("complete")} disabled={saveMutation.isPending}>Save & Sale complete →</Button>
       </div>
-
-      {/* Success Dialog */}
-      <Dialog open={successOpen} onOpenChange={setSuccessOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Invoice Issued!</DialogTitle>
-            <DialogDescription>Invoice {invoiceNumber} has been issued successfully.</DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button variant="outline" onClick={() => navigate(`/invoices/${savedId}`)}>View Invoice</Button>
-            <Button onClick={() => { setSuccessOpen(false); navigate("/invoices/new"); }}>Create Another</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
