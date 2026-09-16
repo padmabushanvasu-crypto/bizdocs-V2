@@ -1,17 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Regression test for the live GRN store-confirmation double-post bug
-// (619 confirmed instances, 8 Jun-7 Sep 2026): a single-stage GRN line got
-// credited to stock_ledger once at receipt time (recordGRNAndUpdatePO's
-// legacy "received (single-stage)" leg) and again at Store Confirm
-// ("store confirmed (partial)"), both incoming->free, same qty — because
-// grn_line_items.stock_posted_at was never set by the receipt-time path,
-// so Store Confirm had no way to know the line was already credited.
-//
-// This test exercises the real, exported functions end-to-end against a
-// fake Postgrest client: recordGRNAndUpdatePO (creation, single-stage
-// credit) followed by storeConfirmGRNItems (store confirm) for the SAME
-// line, and asserts rpc_credit_partial_stock is called at most once.
+// Regression test, updated 2026-09-15: recordGRNAndUpdatePO's legacy
+// "received (single-stage)" receipt-time credit was removed (is_final_grn
+// leak fix — it credited stock_free for every line before QC/is_final_grn
+// was ever decided, structurally bypassing the governed flow). The original
+// double-post bug this file guarded (619 confirmed instances, 8 Jun-7 Sep
+// 2026: the legacy leg and Store Confirm both crediting the same line) can no
+// longer occur, since only one code path credits stock now. This test now
+// asserts: recordGRNAndUpdatePO never touches the stock ledger or
+// stock_posted_at, and storeConfirmGRNItems remains the sole, correctly
+// single-firing credit path for a freshly-created line.
 
 const rpcCalls: Array<{ name: string; args: any }> = [];
 const grnLineUpdateCalls: Array<{ payload: any }> = [];
@@ -121,9 +119,7 @@ describe("GRN store-confirm double-post regression (single-stage GRN)", () => {
     };
   });
 
-  it("does not re-credit stock at Store Confirm for a line already credited at receipt", async () => {
-    // 1. GRN creation — fires the legacy single-stage credit and (with the fix)
-    //    stamps stock_posted_at on the line.
+  it("recordGRNAndUpdatePO no longer credits stock or stamps stock_posted_at at creation", async () => {
     await recordGRNAndUpdatePO({
       grn: { grn_number: "GRN-TEST-1", grn_date: "2026-09-08" } as any,
       lineItems: [
@@ -143,10 +139,12 @@ describe("GRN store-confirm double-post regression (single-stage GRN)", () => {
       ],
     });
 
-    expect(rpcCalls.filter((c) => c.name === "rpc_post_stock_ledger_row")).toHaveLength(1);
-    expect(testLine.stock_posted_at).toBeTruthy(); // the fix: this must now be set
+    expect(rpcCalls.filter((c) => c.name === "rpc_post_stock_ledger_row")).toHaveLength(0);
+    expect(rpcCalls.filter((c) => c.name === "rpc_credit_partial_stock")).toHaveLength(0);
+    expect(testLine.stock_posted_at).toBeFalsy();
 
-    // 2. Store Confirm on the same line — must NOT post a second credit.
+    // Store Confirm on the same, never-posted line — must post exactly once,
+    // since nothing credited it earlier.
     await storeConfirmGRNItems(
       "grn-1",
       [{ id: "line-1", storeQty: 10 }],
@@ -154,9 +152,9 @@ describe("GRN store-confirm double-post regression (single-stage GRN)", () => {
     );
 
     const creditCalls = rpcCalls.filter((c) => c.name === "rpc_credit_partial_stock");
-    expect(creditCalls).toHaveLength(0); // the bug: this used to be 1, double-posting
+    expect(creditCalls).toHaveLength(1);
 
-    // Confirmation metadata must still update normally — Store Confirm isn't a no-op overall.
+    // Confirmation metadata must still update normally.
     const confirmUpdate = grnLineUpdateCalls.find((c) => c.payload.store_confirmed === true);
     expect(confirmUpdate).toBeTruthy();
     expect(confirmUpdate!.payload.store_confirmed_qty).toBe(10);

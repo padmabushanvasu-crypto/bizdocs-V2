@@ -380,7 +380,6 @@ interface CreateGRNData {
 
 export async function recordGRNAndUpdatePO(grnData: CreateGRNData) {
   const companyId = await getCompanyId();
-  const today = new Date().toISOString().split("T")[0];
   const { grn: g, lineItems } = grnData;
 
   // Atomic save: GRN header + line items + per-line received_quantity updates
@@ -452,125 +451,18 @@ export async function recordGRNAndUpdatePO(grnData: CreateGRNData) {
   if (error) throw new Error(error.message);
   const grn = data as GRN;
 
-  // Legacy single-stage stock credit — kept in JS, best-effort/non-fatal, exactly
-  // as before. Deliberately NOT inside the transaction (separate concern from the
-  // GRN+PO atomicity fix). Look up item by drawing_revision (= GRN line drawing_number).
-  //
-  // When a credit is skipped because the item couldn't be resolved (ambiguous
-  // duplicate / lookup error / stale id), collect a warning so the UI can tell
-  // the storekeeper — the skip is loud, not silent. The GRN itself still saved.
-  const creditWarnings: string[] = [];
-  const creditWarn = (label: string, reason: string) =>
-    creditWarnings.push(
-      `Store credit for item ${label} could not be posted automatically (${reason}). Store Confirm will post the authoritative credit.`
-    );
-
-  // Map serial_number -> grn_line_items.id for the freshly-inserted lines, so the
-  // credit below can stamp stock_posted_at on the correct row. rpc_record_grn
-  // returns only the GRN header (to_jsonb(v_grn)), never the inserted lines, so
-  // this is a separate read-back; serial_number is the reliable per-GRN join key
-  // (already used as each line's stable ordinal — see the p_lines mapping above).
-  const { data: insertedLines, error: insertedLinesErr } = await (supabase as any)
-    .from('grn_line_items')
-    .select('id, serial_number')
-    .eq('grn_id', grn.id);
-  if (insertedLinesErr) console.error('[grn] could not read back inserted line ids (non-fatal, stock_posted_at will not be stamped):', insertedLinesErr);
-  const lineIdBySerial = new Map<number, string>(
-    ((insertedLines ?? []) as any[]).map((l) => [l.serial_number, l.id])
-  );
-
-  for (const item of grnData.lineItems) {
-    if (item.accepted_quantity > 0 && item.drawing_number) {
-      // Prefer the id the GRN line carries; drawing_revision is a non-unique
-      // fallback. This legacy credit runs AFTER the GRN is already saved
-      // (best-effort), so an ambiguous/failed lookup is logged loudly and the
-      // one credit skipped — never silently, and never blocking the save.
-      // Store Confirm posts the authoritative stock_free credit regardless.
-      const label = item.drawing_number ?? item.description ?? item.item_id ?? "unknown";
-      let rec: any = null;
-      if (item.item_id) {
-        const { data, error } = await supabase
-          .from("items")
-          .select("id, item_code, description, current_stock")
-          .eq("id", item.item_id)
-          .limit(2);
-        if (error) {
-          console.error(`[grn] legacy credit: item_id ${item.item_id} lookup failed; skipped:`, error);
-          creditWarn(label, "lookup failed");
-          continue;
-        }
-        rec = (data ?? [])[0] ?? null;
-        if (!rec) {
-          console.error(`[grn] legacy credit: item_id ${item.item_id} not found; skipped`);
-          creditWarn(label, "item not found");
-          continue;
-        }
-      } else {
-        const found = await findItemByDrawingRevision(companyId, item.drawing_number, "id, item_code, description, current_stock");
-        if (found.error) {
-          console.error(`[grn] legacy credit: drawing '${item.drawing_number}' lookup failed; skipped:`, found.error);
-          creditWarn(label, "lookup failed");
-          continue;
-        }
-        if (found.ambiguous) {
-          console.error(`[grn] legacy credit: AMBIGUOUS drawing_revision '${item.drawing_number}' matches multiple items — credit skipped, resolve the duplicate. Store Confirm posts the authoritative credit.`);
-          creditWarn(label, "ambiguous item");
-          continue;
-        }
-        rec = found.row;
-      }
-
-      if (rec) {
-        // Ledger the receipt so this credit is visible to the stock engine.
-        // qty math unchanged; INCOMING -> FREE. Non-fatal: never block the save.
-        try {
-          await addStockLedgerEntry({
-            item_id: rec.id,
-            item_code: rec.item_code ?? null,
-            item_description: rec.description ?? null,
-            transaction_date: today,
-            transaction_type: 'grn_receipt',
-            qty_in: item.accepted_quantity,
-            qty_out: 0,
-            balance_qty: 0,
-            unit_cost: 0,
-            total_value: 0,
-            reference_type: 'grn',
-            reference_id: grn.id,
-            reference_number: grn.grn_number,
-            notes: `GRN ${grn.grn_number ?? ''} received (single-stage)`.trim(),
-            created_by: null,
-            from_state: STOCK_STATE.INCOMING,
-            to_state: STOCK_STATE.FREE,
-          });
-        } catch (e) {
-          console.error('[grn] recordGRNAndUpdatePO ledger write failed (non-fatal):', e);
-        }
-        const newStock = (rec.current_stock ?? 0) + item.accepted_quantity;
-        await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
-        // stock_free is updated at storeConfirmGRN (after QC), not at creation.
-
-        // Stamp stock_posted_at so Store Confirm (storeConfirmGRNItems) knows this
-        // line's stock credit already happened here and does not post it again —
-        // the fix for the live double-post bug (619 confirmed instances): this
-        // column existed for exactly this purpose but was never set on this path.
-        const lineId = lineIdBySerial.get(item.serial_number);
-        if (lineId) {
-          const { error: stampErr } = await supabase
-            .from("grn_line_items")
-            .update({ stock_posted_at: new Date().toISOString() } as any)
-            .eq("id", lineId);
-          if (stampErr) console.error(`[grn] legacy credit: failed to stamp stock_posted_at for line ${lineId} (non-fatal, but Store Confirm may double-post):`, stampErr);
-        } else {
-          console.error(`[grn] legacy credit: could not find grn_line_items row for serial_number ${item.serial_number} on GRN ${grn.id} — stock_posted_at not set; Store Confirm may double-post this line.`);
-        }
-      }
-    }
-  }
-
-  // Attach any skipped-credit warnings to the returned GRN (non-breaking: all
-  // GRN fields are preserved). The UI surfaces them as non-blocking toasts.
-  return { ...grn, creditWarnings };
+  // Legacy single-stage stock credit REMOVED 2026-09-15 (is_final_grn leak fix).
+  // It credited stock_free for every line with accepted_quantity > 0 immediately
+  // at GRN creation — before QC, before is_final_grn is ever assigned — then
+  // stamped stock_posted_at, which permanently blocked the two correctly-gated
+  // mechanisms (the QC-completion pass in saveQualityStage, and
+  // storeConfirmGRNItems) from ever posting for that line. Confirmed via live
+  // data (audit + reliability check, same date) that those two mechanisms
+  // already carry the real load — Store Confirm alone accounts for ~99% of
+  // final-line credits and the pending-confirmation backlog is near-zero — so
+  // stock is now credited exactly once, at the correct lifecycle point, by
+  // whichever of those two paths applies to the line.
+  return grn;
 }
 
 // Recomputes a GRN's own status field (received_qty set at Stage 1 vs ordered_qty
