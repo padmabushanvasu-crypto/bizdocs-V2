@@ -72,7 +72,7 @@ function GrnCard({
               </Badge>
             ) : grn.grn_stage === "quality_done" ? (
               <Badge className="text-[10px] bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200 border-teal-200 dark:border-teal-800/50">
-                Pending Final Receipt
+                Legacy — Not Store-Confirmed
               </Badge>
             ) : (
               <Badge className="text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 border-amber-200 dark:border-amber-800/50">
@@ -218,9 +218,14 @@ export default function GrnQueue() {
     [confirmedGRNs, search]
   );
 
-  // Split the pending queue: awaiting_store etc. are storekeeper-actionable;
-  // non-final quality_done GRNs are intentionally open ("Pending Final Receipt")
-  // and must not read as store work. Presentation only — same underlying list.
+  // Split the pending queue: awaiting_store etc. are storekeeper-actionable.
+  // quality_done is legacy-only since the stock-routing fix (Sep 2026) — every
+  // freshly QC'd GRN now advances straight to awaiting_store, so a quality_done
+  // GRN can only be one QC'd before that fix, whose non-final lines were
+  // credited at QC and never routed to a storekeeper. Kept as its own section
+  // (never merged into "Awaiting Store Confirmation") so it stays visible for
+  // cleanup without reading as active store work. Presentation only — same
+  // underlying list.
   const pendingAwaitingStore = useMemo(
     () => filteredPending.filter((g) => g.grn_stage !== "quality_done"),
     [filteredPending]
@@ -378,10 +383,11 @@ export default function GrnQueue() {
           {pendingFinalReceipt.length > 0 && (
             <section className="space-y-3">
               <h2 className="text-xs font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-300">
-                Pending Final Receipt
+                Legacy — QC done, not store-confirmed
               </h2>
               <p className="-mt-1 text-xs text-muted-foreground">
-                Received &amp; stocked; no Final GRN line — not awaiting a storekeeper action.
+                QC'd before the stock-routing fix; stock was credited at QC and
+                these lines were never routed to a storekeeper for confirmation.
               </p>
               {pendingFinalReceipt.map((grn) => (
                 <GrnCard key={grn.id} grn={grn} variant="pending" onClick={() => navigate(`/grn/${grn.id}`)} />
