@@ -116,8 +116,8 @@ export default function RmConversionRegister() {
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Posted</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Output Item</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty Produced</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Unit Cost</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Posted By</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right hidden md:table-cell">Unit Cost</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left hidden md:table-cell">Posted By</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Action</th>
               </tr>
@@ -151,10 +151,10 @@ export default function RmConversionRegister() {
                         <td className="px-3 py-2 border-b border-slate-100 text-right font-mono tabular-nums">
                           {formatNumber(r.output_qty_base)} {r.output_unit}
                         </td>
-                        <td className="px-3 py-2 border-b border-slate-100 text-right font-mono tabular-nums text-slate-600">
+                        <td className="px-3 py-2 border-b border-slate-100 text-right font-mono tabular-nums text-slate-600 hidden md:table-cell">
                           {r.output_unit_cost != null ? formatCurrency(r.output_unit_cost) : "—"}
                         </td>
-                        <td className="px-3 py-2 border-b border-slate-100 text-slate-600">{r.posted_by_name ?? "—"}</td>
+                        <td className="px-3 py-2 border-b border-slate-100 text-slate-600 hidden md:table-cell">{r.posted_by_name ?? "—"}</td>
                         <td className="px-3 py-2 border-b border-slate-100 text-center">
                           <StatusBadge status={r.status} />
                         </td>

@@ -240,7 +240,7 @@ export default function RmConversionNew() {
                     type="button"
                     onClick={() => removeRow(row.key)}
                     disabled={rows.length <= 1}
-                    className="mt-6 text-slate-400 hover:text-red-600 disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+                    className="mt-6 h-8 w-8 flex items-center justify-center rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
                     title="Remove row"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -249,14 +249,14 @@ export default function RmConversionNew() {
 
                 {row.item && (
                   <>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 items-end">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 items-end">
                       <div>
                         <Label className="text-xs">Source</Label>
                         <div className="flex gap-1.5 mt-1">
                           <button
                             type="button"
                             onClick={() => updateRow(row.key, { source: "store", grnLine: null })}
-                            className={`px-2 py-1 rounded text-xs font-medium border transition-colors ${
+                            className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
                               row.source === "store"
                                 ? "bg-slate-900 text-white border-slate-900"
                                 : "border-slate-200 hover:border-slate-400"
@@ -267,7 +267,7 @@ export default function RmConversionNew() {
                           <button
                             type="button"
                             onClick={() => updateRow(row.key, { source: "grn_direct" })}
-                            className={`px-2 py-1 rounded text-xs font-medium border transition-colors ${
+                            className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
                               row.source === "grn_direct"
                                 ? "bg-slate-900 text-white border-slate-900"
                                 : "border-slate-200 hover:border-slate-400"
