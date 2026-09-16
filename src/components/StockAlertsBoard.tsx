@@ -124,16 +124,41 @@ async function fetchStockAlertBoard(companyId: string): Promise<{ rows: StockAle
     (itemsData ?? []).forEach((i: any) => aimMap.set(i.id, i.aimed_stock ?? 0));
   }
 
-  // At-max-stock count: items where aimed_stock > 0 and stock_free >= aimed_stock
-  const { count: atMaxStockCount } = await (supabase as any)
-    .from("items")
-    .select("id", { count: "exact", head: true })
-    .eq("company_id", companyId)
-    .eq("status", "active")
-    .gt("aimed_stock", 0)
-    .filter("stock_free", "gte", "aimed_stock");
+  // At-max-stock count: items where aimed_stock > 0 and stock_free >= aimed_stock.
+  // PostgREST filters compare a column to a supplied value, never to another
+  // column — .filter("stock_free", "gte", "aimed_stock") sent stock_free=gte.
+  // aimed_stock, which PostgREST tried (and failed, HTTP 400) to parse
+  // "aimed_stock" as a numeric literal. The error was never checked, so this
+  // silently returned atMaxStockCount ?? 0 = 0 on every load. Fetch the
+  // (typically small) aimed_stock>0 subset and compare client-side instead.
+  // Paginated per the .range() convention used elsewhere (items-api.ts
+  // fetchStockStatus) since this is a new query — not the already-parked
+  // stock-alerts fallback pagination gap noted in
+  // STOCK_LIFECYCLE_GOVERNANCE.md §6/§7.
+  let atMaxStockCount = 0;
+  {
+    const PAGE = 1000;
+    const MAX_PAGES = 20;
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const from = page * PAGE;
+      const { data: aimedPage, error: aimedErr } = await (supabase as any)
+        .from("items")
+        .select("id, stock_free, aimed_stock")
+        .eq("company_id", companyId)
+        .eq("status", "active")
+        .gt("aimed_stock", 0)
+        .range(from, from + PAGE - 1);
+      if (aimedErr) {
+        console.error("[StockAlertsBoard] at-max-stock count query failed (non-fatal):", aimedErr);
+        break;
+      }
+      const rows = (aimedPage ?? []) as any[];
+      atMaxStockCount += rows.filter((r) => (r.stock_free ?? 0) >= (r.aimed_stock ?? 0)).length;
+      if (rows.length < PAGE) break;
+    }
+  }
 
-  if (rawRows.length === 0) return { rows: [], atMaxStockCount: atMaxStockCount ?? 0 };
+  if (rawRows.length === 0) return { rows: [], atMaxStockCount };
 
   const itemIds = rawRows.map((r: any) => r.id);
   const itemCodeMap: Record<string, string> = {};
