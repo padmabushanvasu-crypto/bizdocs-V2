@@ -61,7 +61,7 @@ export function GrnDrawPicker({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Draw from GRN</DialogTitle>
           <DialogDescription>
@@ -75,7 +75,7 @@ export function GrnDrawPicker({
             {itemUnit ? ` (${itemUnit})` : ""}
           </p>
         )}
-        <div className="max-h-[40vh] overflow-y-auto rounded-lg border border-slate-200">
+        <div className="max-h-[40vh] overflow-auto rounded-lg border border-slate-200">
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr>

@@ -577,7 +577,7 @@ export default function AssemblyWorkOrderDetail() {
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-300 uppercase tracking-wide bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-left">Type</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-300 uppercase tracking-wide bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-right">Required Qty</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-300 uppercase tracking-wide bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-right">Issued Qty</th>
-                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-300 uppercase tracking-wide bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-right">Available</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-300 uppercase tracking-wide bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-right hidden md:table-cell">Available</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-300 uppercase tracking-wide bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-center">Status</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-300 uppercase tracking-wide bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-center">Action</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-300 uppercase tracking-wide bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-center">Damage</th>
@@ -626,7 +626,7 @@ export default function AssemblyWorkOrderDetail() {
                           )}
                         </div>
                       </td>
-                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(li.stock_free ?? 0)}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono hidden md:table-cell">{formatNumber(li.stock_free ?? 0)}</td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center"><AvailabilityCell line={li} /></td>
                       <td className="px-3 py-2 border-b border-slate-100 text-center">
                         {li.disposition === 'use_as_is' ? (
@@ -763,14 +763,14 @@ export default function AssemblyWorkOrderDetail() {
 
       {/* Return Components dialog — return unused WIP back to free store stock */}
       <Dialog open={returnDialogOpen} onOpenChange={setReturnDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Return Components to Store</DialogTitle>
             <DialogDescription>
               Return unused components from WIP back to free stock. You can return up to the available (in-WIP) quantity per line.
             </DialogDescription>
           </DialogHeader>
-          <div className="max-h-[55vh] overflow-y-auto rounded-lg border border-slate-200">
+          <div className="max-h-[55vh] overflow-auto rounded-lg border border-slate-200">
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr>
@@ -829,7 +829,7 @@ export default function AssemblyWorkOrderDetail() {
           (assembler explains why a MIR fell short). Fully-issued-line damage
           now goes through ReportDamageDialog / DispositionDamageDialog (A2). */}
       <Dialog open={reportIssueOpen} onOpenChange={setReportIssueOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           {(() => {
             const issued = reportIssueLine?.issued_qty ?? 0;
             const returned = reportIssueLine?.returned_qty ?? 0;
@@ -957,7 +957,7 @@ export default function AssemblyWorkOrderDetail() {
 
       {/* Draw from GRN — raw material received but never entered the store */}
       <Dialog open={drawGrnOpen} onOpenChange={(v) => { setDrawGrnOpen(v); if (!v) { setDrawGrnLine(null); setDrawGrnSelectedId(null); setDrawGrnQty(0); } }}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Draw from GRN</DialogTitle>
             <DialogDescription>
@@ -972,7 +972,7 @@ export default function AssemblyWorkOrderDetail() {
                 For <b className="text-foreground">{drawGrnLine.item_description ?? drawGrnLine.item_code}</b>
                 {" "}— required {formatNumber(drawGrnLine.required_qty)} {drawGrnLine.unit}, issued so far {formatNumber(drawGrnLine.issued_qty ?? 0)} {drawGrnLine.unit}.
               </p>
-              <div className="max-h-[40vh] overflow-y-auto rounded-lg border border-slate-200">
+              <div className="max-h-[40vh] overflow-auto rounded-lg border border-slate-200">
                 <table className="w-full border-collapse text-sm">
                   <thead>
                     <tr>
@@ -1057,7 +1057,7 @@ export default function AssemblyWorkOrderDetail() {
 
       {/* Mark-build-complete confirmation dialog */}
       <Dialog open={confirmCompleteOpen} onOpenChange={setConfirmCompleteOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Mark Build Complete?</DialogTitle>
             <DialogDescription>
@@ -1088,7 +1088,7 @@ export default function AssemblyWorkOrderDetail() {
 
       {/* Cancel work order dialog */}
       <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Cancel Work Order</DialogTitle>
             <DialogDescription>
