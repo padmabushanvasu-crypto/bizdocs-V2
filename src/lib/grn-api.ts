@@ -1449,8 +1449,11 @@ export async function saveQualityStage(
     })
     .eq('id', grnId);
   if (grnErr) throw grnErr;
-  // If any line is final GRN, override stage to awaiting_store
-  if (anyFinalGrn) {
+  // Target rule (routing fix, Sep 2026): EVERY GRN routes to awaiting_store after
+  // QC, final or not — is_final_grn no longer decides the stage. Store confirmation
+  // is now the single gate for all lines; 'quality_done' is legacy-only (reachable
+  // only on GRNs QC'd before this change, never assigned to a fresh QC completion).
+  {
     const { error: stageErr } = await (supabase as any)
       .from('grns')
       .update({ grn_stage: 'awaiting_store' })
@@ -1480,14 +1483,6 @@ export async function saveQualityStage(
     } catch {
       // Notifications table may not exist yet — non-fatal
     }
-  } else {
-    // No final GRN lines — goods are going back out for more processing.
-    // Transition to quality_done so the GRN is not left stuck at quality_pending.
-    const { error: qualDoneErr } = await (supabase as any)
-      .from('grns')
-      .update({ grn_stage: 'quality_done' })
-      .eq('id', grnId);
-    if (qualDoneErr) throw qualDoneErr;
   }
 
   // ── Ledger-post non-final lines at QC completion (stock fix, step 2) ───────
