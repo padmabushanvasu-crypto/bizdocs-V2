@@ -2898,12 +2898,17 @@ export async function storeConfirmGRNItems(
     if (confirmStoreErr) throw new Error(confirmStoreErr.message);
   }
 
-  // Recompute parent-GRN state from the authoritative line set.
+  // Recompute parent-GRN state from the authoritative line set. A GRN is fully
+  // confirmed only when NO line remains unconfirmed — final or not (target
+  // rule, Sep 2026; previously scoped to is_final_grn = true, which let a GRN
+  // with only non-final lines left open report itself as closed). Job-card
+  // lines need no separate exclusion here: the per-line loop above already
+  // sets store_confirmed = true for them once their quantities are fully
+  // accounted, independent of which mechanism credited their stock.
   const { data: remainingLines } = await (supabase as any)
     .from('grn_line_items')
     .select('id')
     .eq('grn_id', grnId)
-    .eq('is_final_grn', true)
     .neq('store_confirmed', true);
 
   if (!remainingLines?.length) {
