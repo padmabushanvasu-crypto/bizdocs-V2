@@ -30,6 +30,7 @@ import {
   X,
   CheckCircle,
   MapPin,
+  Recycle,
 } from "lucide-react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -55,6 +56,7 @@ const MORE_GROUPS = [
       { label: "Finished Good Work Orders", to: "/finished-good-work-orders", icon: Package },
       { label: "Component Work Orders", to: "/component-work-orders", icon: Puzzle },
       { label: "Storekeeper Queue", to: "/storekeeper", icon: PackageCheck },
+      { label: "RM Conversions", to: "/rm-conversions", icon: Recycle },
     ],
   },
   {
