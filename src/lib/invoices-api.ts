@@ -1,12 +1,10 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
-import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
-import { updateStockBucket } from "@/lib/items-api";
-import { STOCK_STATE } from "@/lib/stock-states";
 
 export interface InvoiceLineItem {
   id?: string;
   serial_number: number;
+  item_id: string | null;
   description: string;
   drawing_number?: string;
   hsn_sac_code?: string;
@@ -21,6 +19,8 @@ export interface InvoiceLineItem {
   sgst: number;
   igst: number;
   line_total: number;
+  drained_qty?: number;
+  backflushed_qty?: number;
 }
 
 export interface InvoiceFilters {
@@ -37,9 +37,7 @@ export async function fetchInvoices(filters: InvoiceFilters = {}) {
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
   let query = supabase.from("invoices").select("*", { count: "exact" }).order("created_at", { ascending: false }).range(from, to);
-  if (status === "unpaid") query = query.in("status", ["sent", "partially_paid"]).gt("amount_outstanding", 0);
-  else if (status === "overdue") query = query.in("status", ["sent", "partially_paid"]).lt("due_date", new Date().toISOString().split("T")[0]);
-  else if (status !== "all") query = query.eq("status", status);
+  if (status !== "all") query = query.eq("status", status);
   if (search?.trim()) {
     const sanitized = sanitizeSearchTerm(search);
     if (sanitized) {
@@ -62,15 +60,13 @@ export async function fetchInvoice(id: string) {
   return { invoice: invoiceRes.data, lineItems: itemsRes.data ?? [] };
 }
 
-export async function getNextInvoiceNumber(): Promise<string> {
-  const companyId = await getCompanyId();
-  const { getNextDocNumber } = await import("@/lib/doc-number-utils");
-  return getNextDocNumber("invoices", "invoice_number", companyId, "invoice_prefix");
-}
-
 export async function createInvoice(invoice: Record<string, any>, lineItems: InvoiceLineItem[]) {
   const companyId = await getCompanyId();
-  const { data: inv, error: invErr } = await supabase.from("invoices").insert({ ...invoice, company_id: companyId } as any).select().single();
+  const { data: inv, error: invErr } = await supabase
+    .from("invoices")
+    .insert({ ...invoice, company_id: companyId, status: "draft" } as any)
+    .select()
+    .single();
   if (invErr) {
     console.error("[Invoice] create error:", invErr);
     throw invErr;
@@ -78,7 +74,7 @@ export async function createInvoice(invoice: Record<string, any>, lineItems: Inv
   if (lineItems.length > 0) {
     const items = lineItems.map((li) => ({
       company_id: companyId,
-      invoice_id: inv.id, serial_number: li.serial_number, description: li.description,
+      invoice_id: inv.id, serial_number: li.serial_number, item_id: li.item_id, description: li.description,
       drawing_number: li.drawing_number || null, hsn_sac_code: li.hsn_sac_code || null,
       quantity: li.quantity, unit: li.unit, unit_price: li.unit_price,
       discount_percent: li.discount_percent, discount_amount: li.discount_amount,
@@ -96,13 +92,13 @@ export async function createInvoice(invoice: Record<string, any>, lineItems: Inv
 
 export async function updateInvoice(id: string, invoice: Record<string, any>, lineItems: InvoiceLineItem[]) {
   const companyId = await getCompanyId();
-  const { error: invErr } = await supabase.from("invoices").update(invoice).eq("id", id);
+  const { error: invErr } = await supabase.from("invoices").update({ ...invoice, status: "draft" } as any).eq("id", id);
   if (invErr) throw invErr;
   await supabase.from("invoice_line_items").delete().eq("invoice_id", id);
   if (lineItems.length > 0) {
     const items = lineItems.map((li) => ({
       company_id: companyId,
-      invoice_id: id, serial_number: li.serial_number, description: li.description,
+      invoice_id: id, serial_number: li.serial_number, item_id: li.item_id, description: li.description,
       drawing_number: li.drawing_number || null, hsn_sac_code: li.hsn_sac_code || null,
       quantity: li.quantity, unit: li.unit, unit_price: li.unit_price,
       discount_percent: li.discount_percent, discount_amount: li.discount_amount,
@@ -114,93 +110,36 @@ export async function updateInvoice(id: string, invoice: Record<string, any>, li
   }
 }
 
-export async function issueInvoice(id: string): Promise<{ unresolvedWarnings: string[] }> {
-  const { error } = await supabase.from("invoices").update({ status: "sent", issued_at: new Date().toISOString() }).eq("id", id);
-  if (error) throw error;
-
-  // Stock dispatch: deduct each line item from inventory
-  const companyId = await getCompanyId();
-  const today = new Date().toISOString().split("T")[0];
-  const { invoice, lineItems } = await fetchInvoice(id);
-
-  // Lines that carry a real quantity but cannot be relieved (no drawing number,
-  // or no item matches the drawing) are collected and surfaced — never skipped
-  // silently, which previously let an invoiced unit leave no stock trail.
-  const unresolvedWarnings: string[] = [];
-
-  for (const li of lineItems) {
-    const line = li as any;
-    const qty: number = line.quantity ?? 0;
-    // Zero-qty lines relieve nothing — a legitimate no-op, not an unresolved line.
-    if (qty <= 0) continue;
-    const lineLabel = line.description || `Line ${line.serial_number ?? "?"}`;
-    // drawing_number is the reliable item lookup key; a line without one cannot
-    // be relieved from stock.
-    if (!line.drawing_number) {
-      unresolvedWarnings.push(`${lineLabel} — no drawing number; stock NOT relieved`);
-      continue;
-    }
-
-    const { data: itemRecord } = await supabase
-      .from("items")
-      .select("id, item_code, description, current_stock, item_type")
-      .eq("drawing_revision", line.drawing_number)
-      .eq("company_id", companyId)
-      .maybeSingle();
-
-    if (!itemRecord) {
-      unresolvedWarnings.push(`${lineLabel} (drawing ${line.drawing_number}) — no matching item; stock NOT relieved`);
-      continue;
-    }
-    const rec = itemRecord as any;
-    // Route relief by item type: a finished good was produced into stock_in_fg_ready
-    // (production-api acceptAssemblyWorkOrder) and is relieved from there, mirroring
-    // dispatch-api. Everything else relieves stock_free as before. 'product' is
-    // treated as a finished good to match dispatch's FG set (dispatch-api.ts).
-    const isFinishedGood = rec.item_type === "finished_good" || rec.item_type === "product";
-    const bucket = isFinishedGood ? "in_fg_ready" : "free";
-    const fromState = isFinishedGood ? STOCK_STATE.FG_READY : STOCK_STATE.FREE;
-    const newStock = Math.max(0, (rec.current_stock ?? 0) - qty);
-    // Ledger-first per iteration (Scope 1). If a downstream line's ledger
-    // insert fails, earlier lines stay committed and the operator sees the
-    // error mid-loop; transactional all-or-nothing is Scope 2.
-    await addStockLedgerEntry({
-      item_id: rec.id,
-      item_code: rec.item_code,
-      item_description: rec.description,
-      transaction_date: today,
-      transaction_type: "invoice_dispatch",
-      qty_in: 0,
-      qty_out: qty,
-      balance_qty: newStock,
-      unit_cost: line.unit_price ?? 0,
-      total_value: qty * (line.unit_price ?? 0),
-      reference_type: "invoice",
-      reference_id: id,
-      reference_number: (invoice as any).invoice_number,
-      notes: `Invoice dispatch: ${(invoice as any).invoice_number}`,
-      created_by: null,
-      from_state: fromState,
-      to_state: STOCK_STATE.DISPATCHED,
-    });
-    // current_stock mirrors stock_free only. Keep the legacy sync for free-relieved
-    // items; for finished goods, updateStockBucket re-syncs current_stock=stock_free
-    // itself, so touching it here would wrongly decrement it.
-    if (!isFinishedGood) {
-      await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
-    }
-    await updateStockBucket(rec.id, bucket, -qty);
-  }
-
-  return { unresolvedWarnings };
+/**
+ * Numbers, totals and stock are server-authoritative — this only invokes the RPC.
+ * DB error messages are user-facing by design; callers surface them verbatim.
+ */
+export async function completeSale(id: string): Promise<{ invoice_number: string; grand_total: number; lines: number; backflush_rows: number; shortfalls: number }> {
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data, error } = await supabase.rpc("rpc_complete_sale", {
+    p_invoice_id: id,
+    p_completed_by: user?.id ?? null,
+  } as any);
+  if (error) throw new Error(error.message);
+  return data as any;
 }
 
-export async function cancelInvoice(id: string, reason: string) {
-  const { error } = await supabase.from("invoices").update({ status: "cancelled", cancelled_at: new Date().toISOString(), cancellation_reason: reason }).eq("id", id);
-  if (error) throw error;
+export async function cancelSale(id: string, reason: string, unbuild: boolean): Promise<{ invoice_number: string; status: string; lines_returned: number; backflush_reversed: number; unbuild: boolean }> {
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data, error } = await supabase.rpc("rpc_cancel_sale", {
+    p_invoice_id: id,
+    p_reason: reason,
+    p_cancelled_by: user?.id ?? null,
+    p_unbuild: unbuild,
+  } as any);
+  if (error) throw new Error(error.message);
+  return data as any;
 }
 
 export async function softDeleteInvoice(id: string) {
+  const { data: inv, error: fetchErr } = await supabase.from("invoices").select("status").eq("id", id).single();
+  if (fetchErr) throw fetchErr;
+  if (inv.status !== "draft") throw new Error("Only a draft invoice can be deleted");
   const { error } = await supabase.from("invoices").update({ status: "deleted" } as any).eq("id", id);
   if (error) throw error;
 }
@@ -208,37 +147,15 @@ export async function softDeleteInvoice(id: string) {
 export async function fetchInvoiceStats() {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
-  const today = now.toISOString().split("T")[0];
-  const { data: all } = await supabase.from("invoices").select("grand_total, amount_paid, amount_outstanding, status, due_date, invoice_date").neq("status", "cancelled");
+  const { data: all } = await supabase
+    .from("invoices")
+    .select("grand_total, invoice_date, status")
+    .eq("status", "sale_complete");
   const thisMonth = (all ?? []).filter((i: any) => i.invoice_date >= monthStart);
-  const outstanding = (all ?? []).filter((i: any) => (i.amount_outstanding ?? 0) > 0);
-  const overdue = outstanding.filter((i: any) => i.due_date && i.due_date < today);
   return {
     billedThisMonth: thisMonth.reduce((s: number, i: any) => s + (i.grand_total ?? 0), 0),
-    collectedThisMonth: thisMonth.reduce((s: number, i: any) => s + (i.amount_paid ?? 0), 0),
-    totalOutstanding: outstanding.reduce((s: number, i: any) => s + (i.amount_outstanding ?? 0), 0),
-    overdueAmount: overdue.reduce((s: number, i: any) => s + (i.amount_outstanding ?? 0), 0),
+    fyRevenue: (all ?? []).reduce((s: number, i: any) => s + (i.grand_total ?? 0), 0),
   };
-}
-
-export async function recordPayment(payment: Record<string, any>) {
-  const companyId = await getCompanyId();
-  const { data: pmt, error: pmtErr } = await supabase.from("payments").insert({ ...payment, company_id: companyId } as any).select().single();
-  if (pmtErr) throw pmtErr;
-  const { data: inv } = await supabase.from("invoices").select("amount_paid, grand_total").eq("id", payment.invoice_id).single();
-  if (inv) {
-    const newPaid = (inv.amount_paid ?? 0) + payment.amount;
-    const newOutstanding = Math.max(0, (inv.grand_total ?? 0) - newPaid);
-    const newStatus = newOutstanding <= 0 ? "fully_paid" : "partially_paid";
-    await supabase.from("invoices").update({ amount_paid: newPaid, amount_outstanding: newOutstanding, status: newStatus }).eq("id", payment.invoice_id);
-  }
-  return pmt;
-}
-
-export async function fetchInvoicePayments(invoiceId: string) {
-  const { data, error } = await supabase.from("payments").select("*").eq("invoice_id", invoiceId).order("payment_date", { ascending: false });
-  if (error) throw error;
-  return data ?? [];
 }
 
 export async function fetchPayments(filters: { search?: string; page?: number; pageSize?: number } = {}) {
@@ -258,57 +175,32 @@ export async function fetchPayments(filters: { search?: string; page?: number; p
   return { data: data ?? [], count: count ?? 0 };
 }
 
-export async function getNextReceiptNumber(): Promise<string> {
-  const companyId = await getCompanyId();
-  const { getNextDocNumber } = await import("@/lib/doc-number-utils");
-  return getNextDocNumber("payments", "receipt_number", companyId, "rcp_prefix");
+export interface SaleShortfall {
+  id: string;
+  invoice_line_id: string;
+  child_item_id: string;
+  qty_short: number;
+  position_after: number;
+  resolved_at: string | null;
+  item_code: string;
+  description: string;
 }
 
-export async function fetchUnpaidInvoices(): Promise<{ id: string; invoice_number: string; customer_name: string; grand_total: number; amount_paid: number; amount_outstanding: number }[]> {
-  const { data } = await supabase
-    .from("invoices")
-    .select("id, invoice_number, customer_name, grand_total, amount_paid, amount_outstanding")
-    .in("status", ["sent", "partially_paid"])
-    .gt("amount_outstanding", 0)
-    .order("invoice_date", { ascending: false })
-    .limit(200);
-  return (data ?? []) as any[];
-}
-
-export async function createReceipt(receipt: {
-  receipt_number: string;
-  receipt_date: string;
-  invoice_id: string;
-  invoice_number: string;
-  customer_name: string;
-  amount: number;
-  payment_mode: string;
-  reference_number?: string;
-  bank_name?: string;
-  notes?: string;
-}): Promise<void> {
-  const companyId = await getCompanyId();
-  const { data: inv } = await supabase
-    .from("invoices")
-    .select("amount_paid, grand_total")
-    .eq("id", receipt.invoice_id)
-    .single();
-  if (!inv) throw new Error("Invoice not found");
-
-  const newPaid = Math.round(((inv.amount_paid ?? 0) + receipt.amount) * 100) / 100;
-  const newOutstanding = Math.max(0, Math.round(((inv.grand_total ?? 0) - newPaid) * 100) / 100);
-  const newStatus = newOutstanding <= 0 ? "fully_paid" : "partially_paid";
-
-  const { error: pmtErr } = await supabase.from("payments").insert({
-    ...receipt,
-    company_id: companyId,
-    payment_date: receipt.receipt_date,
-  } as any);
-  if (pmtErr) throw pmtErr;
-
-  const { error: invErr } = await supabase
-    .from("invoices")
-    .update({ amount_paid: newPaid, amount_outstanding: newOutstanding, status: newStatus })
-    .eq("id", receipt.invoice_id);
-  if (invErr) throw invErr;
+export async function fetchSaleShortfalls(invoiceId: string): Promise<SaleShortfall[]> {
+  const { data, error } = await supabase
+    .from("sale_shortfalls")
+    .select("id, invoice_line_id, child_item_id, qty_short, position_after, resolved_at, items:child_item_id(item_code, description)")
+    .eq("invoice_id", invoiceId)
+    .is("resolved_at", null);
+  if (error) throw error;
+  return (data ?? []).map((r: any) => ({
+    id: r.id,
+    invoice_line_id: r.invoice_line_id,
+    child_item_id: r.child_item_id,
+    qty_short: r.qty_short,
+    position_after: r.position_after,
+    resolved_at: r.resolved_at,
+    item_code: r.items?.item_code ?? "",
+    description: r.items?.description ?? "",
+  }));
 }
