@@ -38,6 +38,8 @@ import { createAssemblyWorkOrder } from "@/lib/production-api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+type AlertSeverity = "negative" | "zero" | "low" | "covered_by_po";
+
 interface StockAlertBoardRow {
   id: string;
   item_code: string;
@@ -49,6 +51,13 @@ interface StockAlertBoardRow {
   shortage: number;
   actionedWith: "PO" | "WO" | null;
   po_numbers: string;   // distinct matched open-PO numbers, comma-joined ("" if none)
+  // stock_alerts view fields (Sep 2026). View rows carry these directly; the
+  // items-table fallback path (view unavailable) approximates them locally —
+  // see fetchStockAlertBoard.
+  severity: AlertSeverity;
+  on_order_qty: number;
+  net_shortage: number;
+  suggested_reorder_qty: number;
 }
 
 interface WoFormState {
@@ -116,24 +125,63 @@ async function fetchStockAlertBoard(companyId: string): Promise<{ rows: StockAle
 
     rawRows = (itemsData ?? [])
       .filter((i: any) => (i.stock_free ?? 0) < (i.min_stock ?? 0))
-      .map((i: any) => ({
-        ...i,
-        effective_stock: i.stock_free ?? 0,
-        shortage: Math.max(0, (i.min_stock ?? 0) - (i.stock_free ?? 0)),
-      }));
+      .map((i: any) => {
+        const stockFree = i.stock_free ?? 0;
+        const aimed = i.aimed_stock ?? 0;
+        const shortage = Math.max(0, (i.min_stock ?? 0) - stockFree);
+        // Fallback-only approximation (view unavailable): the view's own
+        // severity/on_order_qty/net_shortage/suggested_reorder_qty aren't
+        // available here. on_order_qty stays 0 for now — the PO-detection
+        // pass below fills it in, and also promotes severity to
+        // 'covered_by_po' once open-PO matches are known.
+        return {
+          ...i,
+          effective_stock: stockFree,
+          shortage,
+          severity: (stockFree < 0 ? "negative" : stockFree === 0 ? "zero" : "low") as AlertSeverity,
+          on_order_qty: 0,
+          net_shortage: shortage,
+          suggested_reorder_qty: aimed > 0 ? Math.max(0, aimed - stockFree) : shortage,
+        };
+      });
     (itemsData ?? []).forEach((i: any) => aimMap.set(i.id, i.aimed_stock ?? 0));
   }
 
-  // At-max-stock count: items where aimed_stock > 0 and stock_free >= aimed_stock
-  const { count: atMaxStockCount } = await (supabase as any)
-    .from("items")
-    .select("id", { count: "exact", head: true })
-    .eq("company_id", companyId)
-    .eq("status", "active")
-    .gt("aimed_stock", 0)
-    .filter("stock_free", "gte", "aimed_stock");
+  // At-max-stock count: items where aimed_stock > 0 and stock_free >= aimed_stock.
+  // PostgREST filters compare a column to a supplied value, never to another
+  // column — .filter("stock_free", "gte", "aimed_stock") sent stock_free=gte.
+  // aimed_stock, which PostgREST tried (and failed, HTTP 400) to parse
+  // "aimed_stock" as a numeric literal. The error was never checked, so this
+  // silently returned atMaxStockCount ?? 0 = 0 on every load. Fetch the
+  // (typically small) aimed_stock>0 subset and compare client-side instead.
+  // Paginated per the .range() convention used elsewhere (items-api.ts
+  // fetchStockStatus) since this is a new query — not the already-parked
+  // stock-alerts fallback pagination gap noted in
+  // STOCK_LIFECYCLE_GOVERNANCE.md §6/§7.
+  let atMaxStockCount = 0;
+  {
+    const PAGE = 1000;
+    const MAX_PAGES = 20;
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const from = page * PAGE;
+      const { data: aimedPage, error: aimedErr } = await (supabase as any)
+        .from("items")
+        .select("id, stock_free, aimed_stock")
+        .eq("company_id", companyId)
+        .eq("status", "active")
+        .gt("aimed_stock", 0)
+        .range(from, from + PAGE - 1);
+      if (aimedErr) {
+        console.error("[StockAlertsBoard] at-max-stock count query failed (non-fatal):", aimedErr);
+        break;
+      }
+      const rows = (aimedPage ?? []) as any[];
+      atMaxStockCount += rows.filter((r) => (r.stock_free ?? 0) >= (r.aimed_stock ?? 0)).length;
+      if (rows.length < PAGE) break;
+    }
+  }
 
-  if (rawRows.length === 0) return { rows: [], atMaxStockCount: atMaxStockCount ?? 0 };
+  if (rawRows.length === 0) return { rows: [], atMaxStockCount };
 
   const itemIds = rawRows.map((r: any) => r.id);
   const itemCodeMap: Record<string, string> = {};
@@ -159,12 +207,22 @@ async function fetchStockAlertBoard(companyId: string): Promise<{ rows: StockAle
     if (!poNumbersByItem.has(itemId)) poNumbersByItem.set(itemId, new Set<string>());
     poNumbersByItem.get(itemId)!.add(num);
   };
+  // item_id → summed pending (not-yet-received) qty across matched open-PO
+  // lines. Only used as the on_order_qty fallback when a row doesn't already
+  // carry one from the stock_alerts view.
+  const poQtyByItem = new Map<string, number>();
+  const addPoQty = (itemId: string, line: any) => {
+    const pending = line.pending_quantity != null
+      ? Number(line.pending_quantity) || 0
+      : Math.max(0, (Number(line.quantity) || 0) - (Number(line.received_quantity) || 0));
+    poQtyByItem.set(itemId, (poQtyByItem.get(itemId) ?? 0) + pending);
+  };
 
   if (openPOIds.length > 0) {
     // Pass 1: match by item_id FK (populated for newer POs)
     const { data: poLinesById } = await (supabase as any)
       .from("po_line_items")
-      .select("item_id, description, po_id")
+      .select("item_id, description, po_id, quantity, received_quantity, pending_quantity")
       .in("po_id", openPOIds);
 
     const validLines = (poLinesById ?? []).filter((l: any) => l.po_id && openPOIds.includes(l.po_id));
@@ -172,7 +230,7 @@ async function fetchStockAlertBoard(companyId: string): Promise<{ rows: StockAle
     // Items matched by item_id
     validLines
       .filter((l: any) => l.item_id && itemIds.includes(l.item_id))
-      .forEach((l: any) => { itemsWithPO.add(l.item_id); addPoNumber(l.item_id, l.po_id); });
+      .forEach((l: any) => { itemsWithPO.add(l.item_id); addPoNumber(l.item_id, l.po_id); addPoQty(l.item_id, l); });
 
     // Pass 2: description ILIKE fallback for items not yet matched by item_id
     const unmatchedIds = itemIds.filter((id) => !itemsWithPO.has(id));
@@ -186,6 +244,7 @@ async function fetchStockAlertBoard(companyId: string): Promise<{ rows: StockAle
             if (code && desc.includes(code)) {
               itemsWithPO.add(id);
               addPoNumber(id, l.po_id);
+              addPoQty(id, l);
             }
           });
         });
@@ -229,12 +288,28 @@ async function fetchStockAlertBoard(companyId: string): Promise<{ rows: StockAle
         shortage,
         actionedWith: itemsWithPO.has(r.id) ? "PO" : itemsWithWO.has(r.id) ? "WO" : null,
         po_numbers: Array.from(poNumbersByItem.get(r.id) ?? []).sort().join(", "),
+        // The view's own severity is authoritative when present — never
+        // recomputed here. The items-table fallback path has no such column,
+        // so derive one locally: PO-covered wins over the raw stock-level
+        // read, matching the view's own precedence.
+        severity: (r.severity ?? (itemsWithPO.has(r.id) ? "covered_by_po" : (stock < 0 ? "negative" : stock === 0 ? "zero" : "low"))) as AlertSeverity,
+        on_order_qty: r.on_order_qty ?? poQtyByItem.get(r.id) ?? 0,
+        net_shortage: r.net_shortage ?? shortage,
+        suggested_reorder_qty: r.suggested_reorder_qty ?? (aimed > 0 ? Math.max(0, aimed - stock) : shortage),
       };
     })
     // Suppress items already at or above aimed stock
     .filter((r) => !(r.aimed_stock > 0 && r.current_stock >= r.aimed_stock));
 
-  const sorted = enriched.sort((a, b) => b.shortage - a.shortage);
+  // Group by severity (negative worst, then zero, then low), covered_by_po
+  // last since the board renders it muted/collapsed; shortage descending
+  // within each group.
+  const SEVERITY_RANK: Record<AlertSeverity, number> = { negative: 0, zero: 1, low: 2, covered_by_po: 3 };
+  const sorted = enriched.sort((a, b) => {
+    const rankDiff = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
+    if (rankDiff !== 0) return rankDiff;
+    return b.shortage - a.shortage;
+  });
   return { rows: sorted, atMaxStockCount: atMaxStockCount ?? 0 };
 }
 
@@ -258,6 +333,25 @@ function itemTypeBadge(type: string) {
     asset:        "bg-red-50 text-red-700 border-red-200",
   };
   return { label, className: clsMap[type] ?? "bg-slate-50 text-slate-700 border-slate-200" };
+}
+
+const SEVERITY_LABELS: Record<AlertSeverity, string> = {
+  negative: "Count Required",
+  zero: "Zero Stock",
+  low: "Low Stock",
+  covered_by_po: "Covered by PO",
+};
+
+function severityBadge(severity: AlertSeverity) {
+  const clsMap: Record<AlertSeverity, string> = {
+    // Distinct from the other severities: negative stock_free means the book
+    // and the shelf disagree — this needs a physical count, not a reorder.
+    negative: "bg-red-600 text-white border-red-700 font-bold",
+    zero: "bg-red-50 text-red-700 border-red-200",
+    low: "bg-amber-50 text-amber-700 border-amber-200",
+    covered_by_po: "bg-slate-100 text-slate-500 border-slate-200",
+  };
+  return { label: SEVERITY_LABELS[severity], className: clsMap[severity] };
 }
 
 function needsPO(type: string) {
@@ -321,6 +415,11 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
   // Filter state — dashboard defaults to "needs_action", full-height page defaults to "all"
   type FilterKey = "all" | "needs_action" | "po_raised" | "production_started";
   const [activeFilter, setActiveFilter] = useState<FilterKey>(fullHeight ? "all" : "needs_action");
+  // 'covered_by_po' severity rows are collapsed by default within whichever
+  // filter is active — this is a display fold, not a new filter, so it never
+  // changes what the existing filter pills above (needs_action/po_raised/
+  // production_started/all) match.
+  const [showCoveredByPO, setShowCoveredByPO] = useState(false);
 
   const { data: alertData, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["stock-alerts-board", companyId],
@@ -405,9 +504,12 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
     return true; // "all"
   });
 
+  // 'covered_by_po' rows fold out of the main table into a collapsed section
+  // below it (see showCoveredByPO), independent of which filter pill is active.
+  const visibleRows = filteredRows.filter((r) => r.severity !== "covered_by_po");
+  const coveredByPoRows = filteredRows.filter((r) => r.severity === "covered_by_po");
+
   // ── Export (reuses exportToExcel — no new dependency) ──────────────────────
-  const suggestedOrder = (r: StockAlertBoardRow) =>
-    r.aimed_stock > 0 ? Math.max(0, (r.aimed_stock ?? 0) - (r.current_stock ?? 0)) : (r.shortage ?? 0);
   const statusLabel = (r: StockAlertBoardRow) =>
     r.actionedWith === "PO" ? "PO Raised" : r.actionedWith === "WO" ? "Production Started" : "Needs Action";
 
@@ -428,11 +530,13 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
       item_code: r.item_code,
       item_name: r.item_name,
       type: ITEM_TYPE_LABELS[r.item_type] ?? r.item_type,
+      severity: SEVERITY_LABELS[r.severity] ?? r.severity,
       current_stock: r.current_stock ?? 0,
       min_stock: r.min_stock ?? 0,
       aimed_qty: r.aimed_stock ?? 0,
       shortage: r.shortage ?? 0,
-      suggested_order: suggestedOrder(r),
+      suggested_order: r.suggested_reorder_qty ?? 0,
+      on_order: r.on_order_qty ?? 0,
       status: statusLabel(r),
       po_no: r.po_numbers || "",
     }));
@@ -440,16 +544,118 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
       { key: "item_code", label: "Item Code", width: 16 },
       { key: "item_name", label: "Item Name", width: 36 },
       { key: "type", label: "Type", width: 16 },
+      { key: "severity", label: "Severity", width: 16 },
       { key: "current_stock", label: "Current Stock", type: "number", width: 14 },
       { key: "min_stock", label: "Min Stock", type: "number", width: 12 },
       { key: "aimed_qty", label: "Aimed Qty", type: "number", width: 12 },
       { key: "shortage", label: "Shortage", type: "number", width: 12 },
-      { key: "suggested_order", label: "Suggested Order", type: "number", width: 16 },
+      { key: "suggested_order", label: "Suggested Reorder", type: "number", width: 16 },
+      { key: "on_order", label: "On Order", type: "number", width: 14 },
       { key: "status", label: "Status", width: 20 },
       { key: "po_no", label: "PO No.", width: 24 },
     ];
     const date = new Date().toISOString().split("T")[0];
     exportToExcel(data, columns, `Reorder_${view.slug}_${date}.xlsx`, "Reorder Alerts");
+  };
+
+  // Shared row renderer for both the main table and the collapsed
+  // covered-by-PO section — `muted` dims a covered-by-PO row so it reads as
+  // lower-priority without hiding its data.
+  const renderAlertRow = (row: StockAlertBoardRow, idx: number, muted: boolean) => {
+    const { label: typeLabel, className: typeCls } = itemTypeBadge(row.item_type);
+    const { label: severityLabel, className: severityCls } = severityBadge(row.severity);
+    const raisePO   = needsPO(row.item_type);
+    const startProd = needsProduction(row.item_type);
+
+    return (
+      <tr
+        key={row.id}
+        className={`border-b border-slate-100 ${muted ? "opacity-60" : idx % 2 === 1 ? "bg-slate-50/50" : "bg-white"}`}
+      >
+        <td className="px-4 py-2 font-mono text-xs text-slate-700">{row.item_code}</td>
+        <td className="px-4 py-2 text-sm text-slate-800">{row.item_name}</td>
+        <td className="px-4 py-2">
+          <span className={`inline-flex items-center px-2 py-0.5 rounded-md border text-[11px] font-medium ${typeCls}`}>
+            {typeLabel}
+          </span>
+        </td>
+        <td className="px-4 py-2">
+          <span className={`inline-flex items-center px-2 py-0.5 rounded-md border text-[11px] font-medium ${severityCls}`}>
+            {row.severity === "negative" && "⚠ "}
+            {severityLabel}
+          </span>
+        </td>
+        <td className="px-4 py-2 text-right font-mono text-sm tabular-nums text-slate-700">
+          {formatNumber(row.current_stock ?? 0)}
+        </td>
+        <td className="px-4 py-2 text-right font-mono text-sm tabular-nums text-slate-500">
+          {formatNumber(row.min_stock ?? 0)}
+        </td>
+        <td className="px-4 py-2 text-right font-mono text-sm tabular-nums text-slate-400">
+          {row.aimed_stock > 0 ? formatNumber(row.aimed_stock) : "—"}
+        </td>
+        <td className="px-4 py-2 text-right font-mono text-sm tabular-nums font-semibold text-red-600">
+          {formatNumber(row.shortage ?? 0)}
+        </td>
+        <td className="px-4 py-2 text-right font-mono text-sm tabular-nums font-semibold text-blue-700">
+          {formatNumber(row.suggested_reorder_qty ?? 0)}
+        </td>
+        <td className="px-4 py-2 text-right font-mono text-sm tabular-nums text-slate-500">
+          {row.on_order_qty > 0 ? formatNumber(row.on_order_qty) : "—"}
+        </td>
+        <td className="px-4 py-2 text-center">
+          {row.actionedWith === "PO" ? (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-green-200 bg-green-50 text-green-700 text-xs font-semibold">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+              PO Raised
+            </span>
+          ) : row.actionedWith === "WO" ? (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-blue-200 bg-blue-50 text-blue-700 text-xs font-semibold">
+              <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+              In Production
+            </span>
+          ) : raisePO ? (
+            <Button
+              size="sm"
+              variant="destructive"
+              className="h-7 text-xs px-3"
+              onClick={() =>
+                navigate("/purchase-orders/new", {
+                  state: {
+                    prefill_items: [{
+                      item_id: row.id,
+                      description: row.item_name,
+                      qty: Math.max(1, Math.ceil(row.shortage)),
+                      unit: "NOS",
+                    }],
+                  },
+                })
+              }
+            >
+              Raise PO
+            </Button>
+          ) : startProd ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs px-3 border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+              onClick={() => openWoDialog(row)}
+            >
+              Start Production
+            </Button>
+          ) : (
+            <span className="text-xs text-slate-400">—</span>
+          )}
+        </td>
+        <td className="px-4 py-2 font-mono text-xs text-slate-600">
+          {row.po_numbers ? (
+            <span title={row.po_numbers}>{row.po_numbers}</span>
+          ) : (
+            <span className="text-slate-300">—</span>
+          )}
+        </td>
+      </tr>
+    );
   };
 
   return (
@@ -584,11 +790,13 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
                   <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide w-32 border-b border-slate-200">Item Code</th>
                   <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide border-b border-slate-200">Item Name</th>
                   <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide w-32 border-b border-slate-200">Type</th>
+                  <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide w-32 border-b border-slate-200">Severity</th>
                   <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide w-28 border-b border-slate-200">Current Stock</th>
                   <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide w-24 border-b border-slate-200">Min Stock</th>
                   <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide w-24 border-b border-slate-200">Aimed Qty</th>
                   <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide w-24 border-b border-slate-200">Shortage</th>
-                  <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide w-28 border-b border-slate-200">Suggested Order</th>
+                  <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide w-28 border-b border-slate-200">Suggested Reorder</th>
+                  <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide w-24 border-b border-slate-200">On Order</th>
                   <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide w-36 border-b border-slate-200">Action</th>
                   <th className="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide w-32 border-b border-slate-200">PO No.</th>
                 </tr>
@@ -596,95 +804,32 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
               <tbody>
                 {filteredRows.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-8 text-center text-sm text-slate-400">
+                    <td colSpan={12} className="px-4 py-8 text-center text-sm text-slate-400">
                       No items match this filter.
                     </td>
                   </tr>
-                ) : filteredRows.map((row, idx) => {
-                  const { label: typeLabel, className: typeCls } = itemTypeBadge(row.item_type);
-                  const raisePO   = needsPO(row.item_type);
-                  const startProd = needsProduction(row.item_type);
-
-                  return (
-                    <tr key={row.id} className={`border-b border-slate-100 ${idx % 2 === 1 ? "bg-slate-50/50" : "bg-white"}`}>
-                      <td className="px-4 py-2 font-mono text-xs text-slate-700">{row.item_code}</td>
-                      <td className="px-4 py-2 text-sm text-slate-800">{row.item_name}</td>
-                      <td className="px-4 py-2">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-md border text-[11px] font-medium ${typeCls}`}>
-                          {typeLabel}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2 text-right font-mono text-sm tabular-nums text-slate-700">
-                        {formatNumber(row.current_stock ?? 0)}
-                      </td>
-                      <td className="px-4 py-2 text-right font-mono text-sm tabular-nums text-slate-500">
-                        {formatNumber(row.min_stock ?? 0)}
-                      </td>
-                      <td className="px-4 py-2 text-right font-mono text-sm tabular-nums text-slate-400">
-                        {row.aimed_stock > 0 ? formatNumber(row.aimed_stock) : "—"}
-                      </td>
-                      <td className="px-4 py-2 text-right font-mono text-sm tabular-nums font-semibold text-red-600">
-                        {formatNumber(row.shortage ?? 0)}
-                      </td>
-                      <td className="px-4 py-2 text-right font-mono text-sm tabular-nums font-semibold text-blue-700">
-                        {row.aimed_stock > 0
-                          ? formatNumber(Math.max(0, (row.aimed_stock ?? 0) - (row.current_stock ?? 0)))
-                          : formatNumber(row.shortage ?? 0)}
-                      </td>
-                      <td className="px-4 py-2 text-center">
-                        {row.actionedWith === "PO" ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-green-200 bg-green-50 text-green-700 text-xs font-semibold">
-                            <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                            PO Raised
-                          </span>
-                        ) : row.actionedWith === "WO" ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-blue-200 bg-blue-50 text-blue-700 text-xs font-semibold">
-                            <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-                            In Production
-                          </span>
-                        ) : raisePO ? (
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            className="h-7 text-xs px-3"
-                            onClick={() =>
-                              navigate("/purchase-orders/new", {
-                                state: {
-                                  prefill_items: [{
-                                    item_id: row.id,
-                                    description: row.item_name,
-                                    qty: Math.max(1, Math.ceil(row.shortage)),
-                                    unit: "NOS",
-                                  }],
-                                },
-                              })
-                            }
-                          >
-                            Raise PO
-                          </Button>
-                        ) : startProd ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs px-3 border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
-                            onClick={() => openWoDialog(row)}
-                          >
-                            Start Production
-                          </Button>
-                        ) : (
-                          <span className="text-xs text-slate-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2 font-mono text-xs text-slate-600">
-                        {row.po_numbers ? (
-                          <span title={row.po_numbers}>{row.po_numbers}</span>
-                        ) : (
-                          <span className="text-slate-300">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
+                ) : (
+                  <>
+                    {visibleRows.map((row, idx) => renderAlertRow(row, idx, false))}
+                    {coveredByPoRows.length > 0 && (
+                      <>
+                        <tr className="bg-slate-50 border-b border-slate-100">
+                          <td colSpan={12} className="px-4 py-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setShowCoveredByPO((v) => !v)}
+                              className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-800"
+                            >
+                              <span className={`transition-transform ${showCoveredByPO ? "rotate-90" : ""}`}>›</span>
+                              {showCoveredByPO ? "Hide" : "Show"} {coveredByPoRows.length} item{coveredByPoRows.length !== 1 ? "s" : ""} covered by an open PO
+                            </button>
+                          </td>
+                        </tr>
+                        {showCoveredByPO && coveredByPoRows.map((row, idx) => renderAlertRow(row, idx, true))}
+                      </>
+                    )}
+                  </>
+                )}
               </tbody>
             </table>
           </div>
