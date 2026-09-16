@@ -777,10 +777,9 @@ function Stage1ReadOnly({
   onReverse?: (line: S1Line) => void;
 }) {
   const isJobCardLine = (l: S1Line) => !!(l.dc_line_item_id && jobCardIdByDcLine?.has(l.dc_line_item_id));
-  // is_final_grn (legacy) and job-card linkage (new model) are orthogonal —
-  // a job-card line can be store_confirmed with is_final_grn false, so the
-  // column must show for either.
-  const hasStoreTracking = lines.some(l => l.is_final_grn || isJobCardLine(l));
+  // Target rule (Sep 2026): every line routes through store confirmation now,
+  // final or not, so is_final_grn no longer gates whether the column shows.
+  const hasStoreTracking = lines.length > 0;
   const hasJigData = isDcGrn && lines.some(l => l.jig_confirmed === true);
   return (
     <div className="overflow-x-auto rounded-lg border border-blue-100">
@@ -831,9 +830,7 @@ function Stage1ReadOnly({
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-xs text-slate-500">{l.notes || "—"}</td>
                   {hasStoreTracking && (
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center text-xs">
-                      {!l.is_final_grn && !isJobCardLine(l) ? (
-                        <span className="text-slate-300">—</span>
-                      ) : l.store_confirmed ? (
+                      {l.store_confirmed ? (
                         <span className="inline-flex items-center gap-1 text-green-700 font-medium">
                           ✓ {l.store_confirmed_by ? <span className="font-normal text-slate-500">{l.store_confirmed_by}</span> : null}
                           {/* Backward path — corrective action, not common; a
