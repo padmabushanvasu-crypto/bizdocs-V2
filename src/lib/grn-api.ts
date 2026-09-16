@@ -1449,8 +1449,11 @@ export async function saveQualityStage(
     })
     .eq('id', grnId);
   if (grnErr) throw grnErr;
-  // If any line is final GRN, override stage to awaiting_store
-  if (anyFinalGrn) {
+  // Target rule (routing fix, Sep 2026): EVERY GRN routes to awaiting_store after
+  // QC, final or not — is_final_grn no longer decides the stage. Store confirmation
+  // is now the single gate for all lines; 'quality_done' is legacy-only (reachable
+  // only on GRNs QC'd before this change, never assigned to a fresh QC completion).
+  {
     const { error: stageErr } = await (supabase as any)
       .from('grns')
       .update({ grn_stage: 'awaiting_store' })
@@ -1480,83 +1483,32 @@ export async function saveQualityStage(
     } catch {
       // Notifications table may not exist yet — non-fatal
     }
-  } else {
-    // No final GRN lines — goods are going back out for more processing.
-    // Transition to quality_done so the GRN is not left stuck at quality_pending.
-    const { error: qualDoneErr } = await (supabase as any)
-      .from('grns')
-      .update({ grn_stage: 'quality_done' })
-      .eq('id', grnId);
-    if (qualDoneErr) throw qualDoneErr;
   }
 
-  // ── Ledger-post non-final lines at QC completion (stock fix, step 2) ───────
-  // Non-final lines historically had their stock added by the legacy DB trigger.
-  // Post them through the real ledger path here instead — exactly once, guarded
-  // by stock_posted_at — so once the trigger is retired every receipt is
-  // ledgered. Final lines still credit at store-confirm (unchanged). This pass
-  // NEVER blocks QC completion: each line is wrapped so one failure doesn't abort
-  // the save; unlinked / failed lines are collected into stockWarnings.
+  // Stock is no longer credited at QC completion for ANY line (target rule, Sep
+  // 2026): every line, final or not, now credits exactly once, at store
+  // confirmation (storeConfirmGRNItems / creditPartialStock). The QC-completion
+  // posting pass that used to call creditPartialStock for non-final lines here
+  // has been removed outright — see grn-store-confirm-double-post.test.ts for
+  // the regression coverage asserting saveQualityStage never touches the ledger.
   const stockWarnings: string[] = [];
   // Billing warnings are a SEPARATE channel from stockWarnings (billing != stock).
   // Populated when an alt-basis line is billed on primary qty due to a missing
   // alt-conforming capture (see the refined job-work charge block below).
   const billingWarnings: string[] = [];
-  try {
-    const lineIds = lines.map((l) => l.id);
-    const { data: postHdr } = await (supabase as any)
-      .from('grns')
-      .select('grn_type, grn_number, linked_dc_id, company_id')
-      .eq('id', grnId)
-      .single();
-    const { data: postLines } = await (supabase as any)
-      .from('grn_line_items')
-      .select('id, item_id, drawing_number, description, accepted_qty, is_final_grn, stock_posted_at')
-      .eq('grn_id', grnId)
-      .in('id', lineIds);
 
-    const postNow = new Date().toISOString();
-    for (const pl of (postLines ?? []) as any[]) {
-      if (pl.is_final_grn === true) continue;       // final lines credit at store-confirm
-      if (pl.stock_posted_at) continue;             // already credited — idempotent guard
-      const acceptedQty = Number(pl.accepted_qty ?? 0);
-      if (!(acceptedQty > 0)) continue;             // nothing accepted → nothing to credit
-      if (!pl.item_id) {
-        // creditPartialStock would throw on a missing item_id. Do NOT post and do
-        // NOT mark stock_posted_at — surface a non-blocking warning instead.
-        stockWarnings.push(`${pl.description ?? pl.id} — stock not credited; link the item first`);
-        continue;
-      }
-      try {
-        await creditPartialStock(grnId, pl.id, pl.item_id, acceptedQty, {
-          grnType: postHdr?.grn_type ?? 'po_grn',
-          grnNumber: postHdr?.grn_number ?? null,
-          drawingNumber: pl.drawing_number ?? null,
-          companyId: postHdr?.company_id,
-          confirmedBy: inspectedBy,
-          linkedDcId: postHdr?.linked_dc_id ?? null,
-          itemCode: null,
-          itemDescription: pl.description ?? null,
-        }, !!pl.stock_posted_at); // already false here (the `continue` above filters it), passed explicitly for the shared guard
-        await (supabase as any)
-          .from('grn_line_items')
-          .update({ stock_posted_at: postNow })
-          .eq('id', pl.id);
-      } catch (postErr) {
-        console.error(`[GRN] QC stock post failed for line ${pl.id} (non-fatal):`, postErr);
-        stockWarnings.push(`${pl.description ?? pl.id} — stock posting failed`);
-      }
-    }
-  } catch (passErr) {
-    console.error('[GRN] QC stock posting pass failed (non-fatal):', passErr);
-  }
-
-  // ── EDIT MODE: corrective stock deltas for already-credited non-final lines ──
-  // Phase 1 (pre-store-confirm). Each previously-credited NON-final line gets ONE
-  // corrective leg for Δ = new_accepted − old_accepted (mirrors the original credit
-  // direction; manual_adjustment, no new movement_type). Final lines and not-yet-
-  // credited lines are left to the first-save pass above. Non-fatal: collected into
-  // stockWarnings, never aborts the resave.
+  // ── EDIT MODE, LEGACY ONLY: corrective stock deltas for lines credited at QC
+  // before this change ──────────────────────────────────────────────────────
+  // Under the current rule no line is ever credited at QC, so `stock_posted_at`
+  // is never set before store-confirm for a line QC'd after this change — this
+  // block can only ever match a line that was QC-credited under the OLD regime
+  // (is_final_grn === false, credited at QC, stock_posted_at already set) and is
+  // now being re-saved. For those legacy lines only, post ONE corrective leg for
+  // Δ = new_accepted − old_accepted (manual_adjustment, mirrors the original
+  // credit direction) so a QC re-save doesn't silently diverge from stock_free.
+  // Lines never credited at QC (the new, common case) are left untouched here —
+  // their first and only credit happens at store-confirm. Non-fatal: collected
+  // into stockWarnings, never aborts the resave.
   if (opts?.isEdit) {
     try {
       const { data: hdr } = await (supabase as any)
@@ -1568,8 +1520,8 @@ export async function saveQualityStage(
       const today = new Date().toISOString().split('T')[0];
       for (const line of lines) {
         const prior = editPrior.get(line.id);
-        if (!prior || prior.is_final) continue;       // final lines are never QC-credited
-        if (!prior.stock_posted_at) continue;         // uncredited → first-save pass owns it
+        if (!prior) continue;
+        if (!prior.stock_posted_at) continue;         // never credited at QC — nothing to correct here
         const newAccepted = line.conforming_qty + (line.non_conforming_qty > 0 && ['accept_as_is','conditional_accept'].includes(line.disposition ?? '') ? line.non_conforming_qty : 0);
         const delta = newAccepted - prior.old_accepted;
         if (delta === 0) continue;
@@ -2616,15 +2568,17 @@ export async function fetchAwaitingStoreCount(): Promise<number> {
   try {
     const companyId = await getCompanyId();
     if (!companyId) return 0;
-    // FK-embed `grns!inner(status)` joins parent GRN and the `.neq('grns.status', ...)`
-    // filters live on the joined row. Without this, lines belonging to a
+    // FK-embed `grns!inner(status, grn_stage)` joins parent GRN and filters live
+    // on the joined row. Without the status filter, lines belonging to a
     // soft-deleted GRN (which doesn't cascade-delete the line items) would
-    // still show in the "Awaiting Store" badge.
+    // still show in the "Awaiting Store" badge. Driven by the header's
+    // grn_stage — not is_final_grn — so ALL lines on an awaiting_store GRN
+    // count, final or not (target rule, Sep 2026).
     const { count, error } = await (supabase as any)
       .from('grn_line_items')
-      .select('id, grns!inner(status)', { count: 'exact', head: true })
+      .select('id, grns!inner(status, grn_stage)', { count: 'exact', head: true })
       .eq('company_id', companyId)
-      .eq('is_final_grn', true)
+      .eq('grns.grn_stage', 'awaiting_store')
       .neq('store_confirmed', true)
       .neq('grns.status', 'deleted')
       .neq('grns.status', 'cancelled');
@@ -2655,11 +2609,13 @@ export interface AwaitingStoreLineItem {
 export async function fetchAwaitingStoreLineItems(): Promise<AwaitingStoreLineItem[]> {
   const companyId = await getCompanyId();
   if (!companyId) return [];
+  // Driven by the header's grn_stage — not is_final_grn — so ALL lines on an
+  // awaiting_store GRN appear here, final or not (target rule, Sep 2026).
   const { data: lineItems, error } = await (supabase as any)
     .from('grn_line_items')
-    .select('id, grn_id, description, drawing_number, conforming_qty, unit, store_confirmed_qty, damaged_qty, damaged_reason, store_confirmation_notes')
+    .select('id, grn_id, description, drawing_number, conforming_qty, unit, store_confirmed_qty, damaged_qty, damaged_reason, store_confirmation_notes, grns!inner(grn_stage)')
     .eq('company_id', companyId)
-    .eq('is_final_grn', true)
+    .eq('grns.grn_stage', 'awaiting_store')
     .neq('store_confirmed', true)
     .order('created_at', { ascending: true });
   if (error) throw error;
@@ -2942,12 +2898,17 @@ export async function storeConfirmGRNItems(
     if (confirmStoreErr) throw new Error(confirmStoreErr.message);
   }
 
-  // Recompute parent-GRN state from the authoritative line set.
+  // Recompute parent-GRN state from the authoritative line set. A GRN is fully
+  // confirmed only when NO line remains unconfirmed — final or not (target
+  // rule, Sep 2026; previously scoped to is_final_grn = true, which let a GRN
+  // with only non-final lines left open report itself as closed). Job-card
+  // lines need no separate exclusion here: the per-line loop above already
+  // sets store_confirmed = true for them once their quantities are fully
+  // accounted, independent of which mechanism credited their stock.
   const { data: remainingLines } = await (supabase as any)
     .from('grn_line_items')
     .select('id')
     .eq('grn_id', grnId)
-    .eq('is_final_grn', true)
     .neq('store_confirmed', true);
 
   if (!remainingLines?.length) {
@@ -3227,12 +3188,22 @@ export async function fetchGrnStoreReceiptQueue(
   const grnMap: Record<string, any> = {};
   for (const g of grns as any[]) grnMap[g.id] = g;
 
-  // Step 2 — pull is_final_grn lines, SCOPED to Query A's GRN set and batched in
-  // chunks of 100 grn_ids. A single unscoped fetch hit PostgREST's ~1000-row
-  // default cap and silently truncated the tail — dropping valid awaiting_store
-  // GRNs (same silent-truncation class as 779b92f) — while one .in() over every
-  // id blows the URL-length limit. Chunking the id list avoids both. Empty id
-  // set → no line items.
+  // Step 2 — pull lines whose parent GRN has passed QC (awaiting_store, still
+  // open/partial, or closed — fully store-confirmed), SCOPED to Query A's GRN
+  // set and batched in chunks of 100 grn_ids. A single unscoped fetch hit
+  // PostgREST's ~1000-row default cap and silently truncated the tail —
+  // dropping valid awaiting_store GRNs (same silent-truncation class as
+  // 779b92f) — while one .in() over every id blows the URL-length limit.
+  // Chunking the id list avoids both. Empty id set → no line items.
+  //
+  // Driven by the header's grn_stage — not is_final_grn — so ALL lines route
+  // through here, final or not (target rule, Sep 2026). Both 'awaiting_store'
+  // and 'closed' are included (not just 'awaiting_store' plus a store_confirmed
+  // filter): this card view needs BOTH pending and already-confirmed lines
+  // together — card_status (pending/confirmed/partial) and pending_lines /
+  // fully_confirmed_lines are derived per-card from the full line set below,
+  // so narrowing to unconfirmed lines here would break the confirmed/partial/
+  // history views entirely.
   const grnIds = (grns as any[]).map((g) => g.id);
   const LINE_ID_CHUNK = 100;
   const chunks: string[][] = [];
@@ -3246,10 +3217,10 @@ export async function fetchGrnStoreReceiptQueue(
       (supabase as any)
         .from('grn_line_items')
         .select(
-          'id, grn_id, item_id, description, drawing_number, unit, conforming_qty, store_confirmed_qty, damaged_qty, store_confirmed, store_confirmed_at, store_confirmed_by, damaged_reason, store_confirmation_notes, store_location, ordered_qty_2, received_now_2, accepted_qty_2, unit_2'
+          'id, grn_id, item_id, description, drawing_number, unit, conforming_qty, store_confirmed_qty, damaged_qty, store_confirmed, store_confirmed_at, store_confirmed_by, damaged_reason, store_confirmation_notes, store_location, ordered_qty_2, received_now_2, accepted_qty_2, unit_2, grns!inner(grn_stage)'
         )
         .eq('company_id', companyId)
-        .eq('is_final_grn', true)
+        .in('grns.grn_stage', ['awaiting_store', 'closed'])
         .in('grn_id', chunk)
     )
   );

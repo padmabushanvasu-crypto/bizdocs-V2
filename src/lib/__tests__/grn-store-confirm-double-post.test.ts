@@ -10,6 +10,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // asserts: recordGRNAndUpdatePO never touches the stock ledger or
 // stock_posted_at, and storeConfirmGRNItems remains the sole, correctly
 // single-firing credit path for a freshly-created line.
+//
+// Updated again 2026-09-16 (non-final stock routing fix): the QC-completion
+// credit pass that used to fire for non-final lines is now deleted outright
+// (not merely re-gated), so the "sole credit path" claim above extends to
+// non-final lines too, not just is_final_grn=true ones. See
+// grn-non-final-stock-routing.test.ts, grn-store-confirm-nonfinal-open.test.ts,
+// and grn-store-queue-non-final.test.ts for the routing-specific coverage
+// (stage transition, closure check, and store-queue visibility).
 
 const rpcCalls: Array<{ name: string; args: any }> = [];
 const grnLineUpdateCalls: Array<{ payload: any }> = [];
