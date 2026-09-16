@@ -9,8 +9,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { ItemSuggest } from "@/components/ItemSuggest";
 import { GrnDrawPicker } from "@/components/GrnDrawPicker";
 import { useToast } from "@/hooks/use-toast";
-import { type Item } from "@/lib/items-api";
+import { fetchItem, type Item } from "@/lib/items-api";
 import { type GrnLineAvailableForConversion } from "@/lib/production-api";
+import { fetchBomLines, type BomLine } from "@/lib/bom-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { formatNumber } from "@/lib/gst-utils";
 import {
@@ -88,6 +89,54 @@ export default function RmConversionNew() {
     staleTime: 5 * 60 * 1000,
   });
   const tolerancePct = companySettings?.conversion_factor_tolerance_pct ?? 15;
+
+  // BOM-aware suggestions: once an output component is picked, its default-
+  // variant BOM children (if any) are offered as quick-select inputs. Purely
+  // additive — components with no BOM (the majority, per discovery) just get
+  // no suggestions and the free-search picker behaves as before.
+  const { data: bomLines = [] } = useQuery({
+    queryKey: ["bom-lines", outputItem?.id],
+    queryFn: () => fetchBomLines(outputItem!.id),
+    enabled: !!outputItem,
+    staleTime: 60_000,
+  });
+
+  const addInputFromBomLine = async (line: BomLine) => {
+    try {
+      const item = await fetchItem(line.child_item_id);
+      const scale = Number(outputQty) > 0 ? Number(outputQty) : 1;
+      const suggestedQty = (line.quantity ?? 0) * scale;
+      const lineUnit = (line.unit ?? "").trim().toLowerCase();
+      const patch: Partial<InputRow> = {
+        item,
+        itemSearch: "",
+        source: "store",
+        grnLine: null,
+        altQty: "",
+      };
+      // Only inject a number into qty/altQty when the BOM line's unit matches
+      // one of the item's own units exactly — bom_lines.unit can legitimately
+      // differ from both with no stored conversion factor (see items.alt_unit
+      // comment), and guessing would silently put a wrong-unit number in.
+      if (lineUnit && item.unit && lineUnit === item.unit.trim().toLowerCase()) {
+        patch.qty = String(suggestedQty);
+      } else if (lineUnit && item.alt_unit && lineUnit === item.alt_unit.trim().toLowerCase()) {
+        patch.altQty = String(suggestedQty);
+      }
+      setRows((prev) => {
+        if (prev.length === 1 && !prev[0].item) {
+          return [{ ...prev[0], ...patch }];
+        }
+        return [...prev, { ...newInputRow(), ...patch }];
+      });
+    } catch (err) {
+      toast({
+        title: "Could not add suggested input",
+        description: (err as Error).message,
+        variant: "destructive",
+      });
+    }
+  };
 
   const updateRow = (key: string, patch: Partial<InputRow>) => {
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -213,6 +262,33 @@ export default function RmConversionNew() {
           </Button>
         </div>
 
+        {outputItem && bomLines.length > 0 && (
+          <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-3 space-y-2">
+            <p className="text-xs font-medium text-indigo-700">
+              Suggested from BOM — {outputItem.item_code}
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {bomLines.map((line) => {
+                const scale = Number(outputQty) > 0 ? Number(outputQty) : 1;
+                const qty = (line.quantity ?? 0) * scale;
+                return (
+                  <button
+                    key={line.id}
+                    type="button"
+                    onClick={() => addInputFromBomLine(line)}
+                    title={line.child_item_description ?? undefined}
+                    className="text-xs font-medium bg-white border border-indigo-200 rounded-full px-2.5 py-1 hover:bg-indigo-100 hover:border-indigo-400 transition-colors"
+                  >
+                    <span className="font-mono">{line.child_item_code}</span>
+                    <span className="text-slate-400 mx-1">·</span>
+                    {formatNumber(qty)} {line.unit ?? line.child_unit ?? ""}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <div className="space-y-3">
           {rows.map((row) => {
             const warning = rowWarnings.get(row.key);
@@ -234,6 +310,7 @@ export default function RmConversionNew() {
                         })
                       }
                       placeholder="Search raw material..."
+                      itemType="raw_material"
                     />
                   </div>
                   <button
@@ -396,6 +473,7 @@ export default function RmConversionNew() {
               onChange={(v) => { setOutputSearch(v); setOutputItem(null); }}
               onSelect={(item) => { setOutputItem(item); setOutputSearch(""); setOutputAltQty(""); }}
               placeholder="Search output item..."
+              itemType="component"
             />
           </div>
           <div>

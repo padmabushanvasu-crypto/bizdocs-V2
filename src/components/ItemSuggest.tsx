@@ -10,6 +10,10 @@ interface ItemSuggestProps {
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
+  // Restricts results to one item_type (e.g. "raw_material") or a set of
+  // types (passed straight through to fetchItems' type/types filter).
+  // Omit for the historical unrestricted behavior every other caller relies on.
+  itemType?: string | string[];
 }
 
 const TYPE_SHORT: Record<string, string> = {
@@ -29,6 +33,7 @@ export function ItemSuggest({
   onChange,
   placeholder = "Type to search items...",
   className,
+  itemType,
 }: ItemSuggestProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -40,8 +45,14 @@ export function ItemSuggest({
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const { data } = useQuery({
-    queryKey: ["items-suggest", search],
-    queryFn: () => fetchItems({ search, status: "active", pageSize: 10 }),
+    queryKey: ["items-suggest", search, itemType],
+    queryFn: () =>
+      fetchItems({
+        search,
+        status: "active",
+        pageSize: 10,
+        ...(Array.isArray(itemType) ? { types: itemType } : itemType ? { type: itemType } : {}),
+      }),
     enabled: search.length >= 2,
     staleTime: 30_000,
   });
