@@ -223,7 +223,7 @@ export async function fetchAssemblyWorkOrder(id: string): Promise<AssemblyWorkOr
   if (itemIds.length > 0) {
     const { data: itemsData } = await supabase
       .from("items")
-      .select("id, stock_free, item_code, description, unit, item_type")
+      .select("id, stock_free, item_code, description, unit, item_type, alt_unit, alt_factor, alt_factor_mode")
       .in("id", itemIds);
 
     if (itemsData) {

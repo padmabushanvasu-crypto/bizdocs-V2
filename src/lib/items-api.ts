@@ -72,6 +72,12 @@ export interface Item {
   stock_in_fg_ready: number;
   stock_alert_level: 'critical' | 'warning' | 'watch' | 'locked' | 'healthy';
   custom_classification_id: string | null;
+  // RM Conversion — alternate UOM for raw materials. Nullable as a group:
+  // all three null, or all three set together (items_alt_uom_consistency
+  // CHECK constraint; alt_unit FKs to uom_master(code)).
+  alt_unit?: string | null;
+  alt_factor?: number | null;
+  alt_factor_mode?: 'fixed' | 'variable' | null;
 }
 
 export type StockBucket = 'free' | 'in_process' | 'in_subassembly_wip' | 'in_fg_wip' | 'in_fg_ready';

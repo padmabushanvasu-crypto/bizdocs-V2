@@ -23,6 +23,7 @@ import {
   markDCRejectionNoted,
   issueDeliveryChallan,
   resolveLineItemLoud,
+  findLinesMissingJobCardStage,
   type EnhancedReturnData,
   type DcDeleteStockAction,
   type DcCancelStockAction,
@@ -365,6 +366,25 @@ export default function DeliveryChallanDetail() {
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
+  // Mirrors DeliveryChallanForm's submit-as-issued guard: a line linked to a
+  // job card but with no stage resolved (step_number null) is rejected by
+  // rpc_issue_dc / rpc_issue_dc_plain_lines anyway — blocking here gives a
+  // clear, line-specific message pointing back to the edit form instead of
+  // a raw RPC exception.
+  const handleIssue = () => {
+    const missing = findLinesMissingJobCardStage(dc?.line_items ?? []);
+    if (missing.length > 0) {
+      const first = missing[0];
+      toast({
+        title: "Job card stage required",
+        description: `Line item ${first.serial_number}${first.description ? ` (${first.description})` : ""} is linked to a job card but has no stage selected — edit this DC and pick a stage before issuing.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    issueMutation.mutate();
+  };
+
   const createGrnMutation = useMutation({
     mutationFn: () => createGrnFromDC({ dc_id: id!, date: new Date().toISOString().split("T")[0] }),
     onSuccess: (newGrn) => {
@@ -515,6 +535,9 @@ export default function DeliveryChallanDetail() {
           <tbody>
             {items.map((item, idx) => {
               const jigs = parseJigsSent((item as any).jigs_sent);
+              // Distinct physical jigs, not a per-jig quantity — jig_master has no
+              // quantity column and jig_number is unique per row.
+              const jigCount = jigs ? jigs.split(',').length : 0;
               return (
               <Fragment key={item.serial_number}>
               <tr style={{ background: idx % 2 === 0 ? '#F8FAFC' : '#fff', borderBottom: '1pt solid #E2E8F0' }}>
@@ -535,7 +558,7 @@ export default function DeliveryChallanDetail() {
               {jigs && (
                 <tr style={{ background: idx % 2 === 0 ? '#F8FAFC' : '#fff' }}>
                   <td colSpan={printColCount} style={{ padding: rowPadding, paddingLeft: '16pt', color: '#475569', fontSize: rowFontSize, borderBottom: '1pt solid #E2E8F0' }}>
-                    Jig(s): <strong>{jigs}</strong>
+                    Jig(s) ({jigCount}): <strong>{jigs}</strong>
                   </td>
                 </tr>
               )}
@@ -748,7 +771,7 @@ export default function DeliveryChallanDetail() {
               size="sm"
               className="shrink-0 bg-green-700 hover:bg-green-800 text-white"
               disabled={issueMutation.isPending}
-              onClick={() => issueMutation.mutate()}
+              onClick={handleIssue}
             >
               {issueMutation.isPending ? "Issuing…" : "Issue DC →"}
             </Button>

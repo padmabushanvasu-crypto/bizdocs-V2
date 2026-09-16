@@ -75,6 +75,8 @@ import JigMaster from "@/pages/JigMaster";
 import SubAssemblyWorkOrders from "@/pages/SubAssemblyWorkOrders";
 import FinishedGoodWorkOrders from "@/pages/FinishedGoodWorkOrders";
 import ComponentWorkOrders from "@/pages/ComponentWorkOrders";
+import RmConversionNew from "@/pages/RmConversionNew";
+import RmConversionRegister from "@/pages/RmConversionRegister";
 import AssemblyWorkOrderDetail from "@/pages/AssemblyWorkOrderDetail";
 import StorekeeperQueue from "@/pages/StorekeeperQueue";
 import GrnStoreQueue from "@/pages/GrnStoreQueue";
@@ -222,6 +224,8 @@ const App = () => (
               <Route path="/sub-assembly-work-orders" element={<PageGuard page="sub-assembly-work-orders"><SubAssemblyWorkOrders /></PageGuard>} />
               <Route path="/finished-good-work-orders" element={<PageGuard page="finished-good-work-orders"><FinishedGoodWorkOrders /></PageGuard>} />
               <Route path="/component-work-orders" element={<PageGuard page="component-work-orders"><ComponentWorkOrders /></PageGuard>} />
+              <Route path="/rm-conversions" element={<PageGuard page="rm-conversions"><RmConversionRegister /></PageGuard>} />
+              <Route path="/rm-conversions/new" element={<PageGuard page="rm-conversions"><RmConversionNew /></PageGuard>} />
 
               <Route path="/storekeeper" element={<PageGuard page="storekeeper"><StorekeeperQueue /></PageGuard>} />
               <Route path="/storekeeper-queue" element={<PageGuard page="storekeeper-queue"><GrnStoreQueue /></PageGuard>} />

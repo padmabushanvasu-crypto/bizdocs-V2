@@ -17,6 +17,7 @@ import { exportToExcel, ITEMS_EXPORT_COLS } from "@/lib/export-utils";
 import { formatCurrency, formatNumber } from "@/lib/gst-utils";
 import { UNITS } from "@/lib/constants";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
+import { fetchUomOptions } from "@/lib/rm-conversions-api";
 
 const ITEM_TYPES = [
   { value: "raw_material", label: "Raw Material" },
@@ -49,6 +50,10 @@ const emptyItem = {
   unit: "NOS", hsn_sac_code: "", gst_rate: 18,
   min_stock: 0, aimed_stock: 0, notes: "", standard_cost: 0,
   production_batch_size: 1,
+  // RM Conversion — alt UOM, raw materials only. "" means "not set"; enforced
+  // all-or-nothing client-side in saveMutation (items_alt_uom_consistency
+  // CHECK constraint would otherwise reject a partial set with a raw error).
+  alt_unit: "", alt_factor: 0, alt_factor_mode: "" as "" | "fixed" | "variable",
 };
 
 export default function Items() {
@@ -97,6 +102,12 @@ export default function Items() {
     enabled: !!companyId,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
+  });
+
+  const { data: uomOptions = [] } = useQuery({
+    queryKey: ["uom-options"],
+    queryFn: fetchUomOptions,
+    staleTime: 10 * 60 * 1000,
   });
 
   const allItems = data?.data ?? [];
@@ -185,6 +196,16 @@ export default function Items() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      // items_alt_uom_consistency CHECK: all three alt_* columns null, or all
+      // three set together. Enforce client-side so a partial set surfaces a
+      // clear message here instead of a raw Postgres constraint error.
+      const altUnitSet = form.alt_unit.trim() !== "";
+      const altFactorSet = form.alt_factor > 0;
+      const altModeSet = form.alt_factor_mode !== "";
+      if ((altUnitSet || altFactorSet || altModeSet) && !(altUnitSet && altFactorSet && altModeSet)) {
+        throw new Error("Alt Unit, Alt Factor, and Alt Factor Mode must all be set together, or all left blank.");
+      }
+
       // Normalize optional text fields — send null, not empty string
       const payload = {
         ...form,
@@ -194,6 +215,9 @@ export default function Items() {
         notes: form.notes || null,
         standard_cost: form.standard_cost || 0,
         custom_classification_id: customClassifId ?? null,
+        alt_unit: altUnitSet ? form.alt_unit : null,
+        alt_factor: altFactorSet ? form.alt_factor : null,
+        alt_factor_mode: altModeSet ? form.alt_factor_mode : null,
         // min_stock_override intentionally omitted — never set by this form;
         // sending explicit null overwrites any value set via other means and
         // fails if PostgREST schema cache hasn't refreshed since the migration.
@@ -259,6 +283,9 @@ export default function Items() {
       gst_rate: item.gst_rate, min_stock: item.min_stock, aimed_stock: (item as any).aimed_stock ?? 0, notes: item.notes || "",
       standard_cost: item.standard_cost ?? 0,
       production_batch_size: (item as any).production_batch_size ?? 1,
+      alt_unit: item.alt_unit ?? "",
+      alt_factor: item.alt_factor ?? 0,
+      alt_factor_mode: (item.alt_factor_mode ?? "") as "" | "fixed" | "variable",
     });
     setFormOpen(true);
   };
@@ -471,6 +498,9 @@ export default function Items() {
               {form.item_type === "finished_good" && (
                 <TabsTrigger value="production" className="flex-1">Production</TabsTrigger>
               )}
+              {form.item_type === "raw_material" && (
+                <TabsTrigger value="rm-conversion" className="flex-1">RM Conversion</TabsTrigger>
+              )}
             </TabsList>
 
             <TabsContent value="general" className="space-y-3 mt-3">
@@ -611,6 +641,79 @@ export default function Items() {
                     />
                     <p className="text-xs text-muted-foreground">Default quantity per production run.</p>
                   </div>
+                </div>
+              </TabsContent>
+            )}
+
+            {form.item_type === "raw_material" && (
+              <TabsContent value="rm-conversion" className="space-y-3 mt-3">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
+                  Set these only if this item is measured in a second unit for RM Conversion (e.g. weighed
+                  in KG while its base unit is NOS). Leave all three blank if not applicable — they must be
+                  set together or not at all.
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label>Alt Unit</Label>
+                    <Select
+                      value={form.alt_unit || "__none__"}
+                      onValueChange={(v) => setForm((f) => ({ ...f, alt_unit: v === "__none__" ? "" : v }))}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">Not set</SelectItem>
+                        {uomOptions.map((u) => (
+                          <SelectItem key={u.code} value={u.code}>{u.code} — {u.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Alt Factor ({form.unit} per {form.alt_unit || "alt unit"})</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      step={0.000001}
+                      value={form.alt_factor || ""}
+                      onChange={(e) => setForm((f) => ({ ...f, alt_factor: parseFloat(e.target.value) || 0 }))}
+                      placeholder="0.000000"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Alt Factor Mode</Label>
+                  <div className="flex gap-2">
+                    {([
+                      { v: "fixed", label: "Fixed" },
+                      { v: "variable", label: "Variable" },
+                    ] as const).map(({ v, label }) => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => setForm((f) => ({ ...f, alt_factor_mode: v }))}
+                        className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${
+                          form.alt_factor_mode === v
+                            ? "bg-slate-900 text-white border-slate-900"
+                            : "border-slate-200 hover:border-slate-400"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                    {form.alt_factor_mode !== "" && (
+                      <button
+                        type="button"
+                        onClick={() => setForm((f) => ({ ...f, alt_factor_mode: "" }))}
+                        className="px-3 py-1 rounded text-xs font-medium border border-slate-200 hover:border-slate-400 text-slate-500"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Variable: RM Conversion warns (does not block) if an entered factor drifts beyond the
+                    tolerance in Settings. Fixed: not currently validated at entry.
+                  </p>
                 </div>
               </TabsContent>
             )}
