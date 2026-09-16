@@ -1485,73 +1485,30 @@ export async function saveQualityStage(
     }
   }
 
-  // ── Ledger-post non-final lines at QC completion (stock fix, step 2) ───────
-  // Non-final lines historically had their stock added by the legacy DB trigger.
-  // Post them through the real ledger path here instead — exactly once, guarded
-  // by stock_posted_at — so once the trigger is retired every receipt is
-  // ledgered. Final lines still credit at store-confirm (unchanged). This pass
-  // NEVER blocks QC completion: each line is wrapped so one failure doesn't abort
-  // the save; unlinked / failed lines are collected into stockWarnings.
+  // Stock is no longer credited at QC completion for ANY line (target rule, Sep
+  // 2026): every line, final or not, now credits exactly once, at store
+  // confirmation (storeConfirmGRNItems / creditPartialStock). The QC-completion
+  // posting pass that used to call creditPartialStock for non-final lines here
+  // has been removed outright — see grn-store-confirm-double-post.test.ts for
+  // the regression coverage asserting saveQualityStage never touches the ledger.
   const stockWarnings: string[] = [];
   // Billing warnings are a SEPARATE channel from stockWarnings (billing != stock).
   // Populated when an alt-basis line is billed on primary qty due to a missing
   // alt-conforming capture (see the refined job-work charge block below).
   const billingWarnings: string[] = [];
-  try {
-    const lineIds = lines.map((l) => l.id);
-    const { data: postHdr } = await (supabase as any)
-      .from('grns')
-      .select('grn_type, grn_number, linked_dc_id, company_id')
-      .eq('id', grnId)
-      .single();
-    const { data: postLines } = await (supabase as any)
-      .from('grn_line_items')
-      .select('id, item_id, drawing_number, description, accepted_qty, is_final_grn, stock_posted_at')
-      .eq('grn_id', grnId)
-      .in('id', lineIds);
 
-    const postNow = new Date().toISOString();
-    for (const pl of (postLines ?? []) as any[]) {
-      if (pl.is_final_grn === true) continue;       // final lines credit at store-confirm
-      if (pl.stock_posted_at) continue;             // already credited — idempotent guard
-      const acceptedQty = Number(pl.accepted_qty ?? 0);
-      if (!(acceptedQty > 0)) continue;             // nothing accepted → nothing to credit
-      if (!pl.item_id) {
-        // creditPartialStock would throw on a missing item_id. Do NOT post and do
-        // NOT mark stock_posted_at — surface a non-blocking warning instead.
-        stockWarnings.push(`${pl.description ?? pl.id} — stock not credited; link the item first`);
-        continue;
-      }
-      try {
-        await creditPartialStock(grnId, pl.id, pl.item_id, acceptedQty, {
-          grnType: postHdr?.grn_type ?? 'po_grn',
-          grnNumber: postHdr?.grn_number ?? null,
-          drawingNumber: pl.drawing_number ?? null,
-          companyId: postHdr?.company_id,
-          confirmedBy: inspectedBy,
-          linkedDcId: postHdr?.linked_dc_id ?? null,
-          itemCode: null,
-          itemDescription: pl.description ?? null,
-        }, !!pl.stock_posted_at); // already false here (the `continue` above filters it), passed explicitly for the shared guard
-        await (supabase as any)
-          .from('grn_line_items')
-          .update({ stock_posted_at: postNow })
-          .eq('id', pl.id);
-      } catch (postErr) {
-        console.error(`[GRN] QC stock post failed for line ${pl.id} (non-fatal):`, postErr);
-        stockWarnings.push(`${pl.description ?? pl.id} — stock posting failed`);
-      }
-    }
-  } catch (passErr) {
-    console.error('[GRN] QC stock posting pass failed (non-fatal):', passErr);
-  }
-
-  // ── EDIT MODE: corrective stock deltas for already-credited non-final lines ──
-  // Phase 1 (pre-store-confirm). Each previously-credited NON-final line gets ONE
-  // corrective leg for Δ = new_accepted − old_accepted (mirrors the original credit
-  // direction; manual_adjustment, no new movement_type). Final lines and not-yet-
-  // credited lines are left to the first-save pass above. Non-fatal: collected into
-  // stockWarnings, never aborts the resave.
+  // ── EDIT MODE, LEGACY ONLY: corrective stock deltas for lines credited at QC
+  // before this change ──────────────────────────────────────────────────────
+  // Under the current rule no line is ever credited at QC, so `stock_posted_at`
+  // is never set before store-confirm for a line QC'd after this change — this
+  // block can only ever match a line that was QC-credited under the OLD regime
+  // (is_final_grn === false, credited at QC, stock_posted_at already set) and is
+  // now being re-saved. For those legacy lines only, post ONE corrective leg for
+  // Δ = new_accepted − old_accepted (manual_adjustment, mirrors the original
+  // credit direction) so a QC re-save doesn't silently diverge from stock_free.
+  // Lines never credited at QC (the new, common case) are left untouched here —
+  // their first and only credit happens at store-confirm. Non-fatal: collected
+  // into stockWarnings, never aborts the resave.
   if (opts?.isEdit) {
     try {
       const { data: hdr } = await (supabase as any)
@@ -1563,8 +1520,8 @@ export async function saveQualityStage(
       const today = new Date().toISOString().split('T')[0];
       for (const line of lines) {
         const prior = editPrior.get(line.id);
-        if (!prior || prior.is_final) continue;       // final lines are never QC-credited
-        if (!prior.stock_posted_at) continue;         // uncredited → first-save pass owns it
+        if (!prior) continue;
+        if (!prior.stock_posted_at) continue;         // never credited at QC — nothing to correct here
         const newAccepted = line.conforming_qty + (line.non_conforming_qty > 0 && ['accept_as_is','conditional_accept'].includes(line.disposition ?? '') ? line.non_conforming_qty : 0);
         const delta = newAccepted - prior.old_accepted;
         if (delta === 0) continue;
