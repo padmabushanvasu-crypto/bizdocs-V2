@@ -2568,15 +2568,17 @@ export async function fetchAwaitingStoreCount(): Promise<number> {
   try {
     const companyId = await getCompanyId();
     if (!companyId) return 0;
-    // FK-embed `grns!inner(status)` joins parent GRN and the `.neq('grns.status', ...)`
-    // filters live on the joined row. Without this, lines belonging to a
+    // FK-embed `grns!inner(status, grn_stage)` joins parent GRN and filters live
+    // on the joined row. Without the status filter, lines belonging to a
     // soft-deleted GRN (which doesn't cascade-delete the line items) would
-    // still show in the "Awaiting Store" badge.
+    // still show in the "Awaiting Store" badge. Driven by the header's
+    // grn_stage — not is_final_grn — so ALL lines on an awaiting_store GRN
+    // count, final or not (target rule, Sep 2026).
     const { count, error } = await (supabase as any)
       .from('grn_line_items')
-      .select('id, grns!inner(status)', { count: 'exact', head: true })
+      .select('id, grns!inner(status, grn_stage)', { count: 'exact', head: true })
       .eq('company_id', companyId)
-      .eq('is_final_grn', true)
+      .eq('grns.grn_stage', 'awaiting_store')
       .neq('store_confirmed', true)
       .neq('grns.status', 'deleted')
       .neq('grns.status', 'cancelled');
@@ -2607,11 +2609,13 @@ export interface AwaitingStoreLineItem {
 export async function fetchAwaitingStoreLineItems(): Promise<AwaitingStoreLineItem[]> {
   const companyId = await getCompanyId();
   if (!companyId) return [];
+  // Driven by the header's grn_stage — not is_final_grn — so ALL lines on an
+  // awaiting_store GRN appear here, final or not (target rule, Sep 2026).
   const { data: lineItems, error } = await (supabase as any)
     .from('grn_line_items')
-    .select('id, grn_id, description, drawing_number, conforming_qty, unit, store_confirmed_qty, damaged_qty, damaged_reason, store_confirmation_notes')
+    .select('id, grn_id, description, drawing_number, conforming_qty, unit, store_confirmed_qty, damaged_qty, damaged_reason, store_confirmation_notes, grns!inner(grn_stage)')
     .eq('company_id', companyId)
-    .eq('is_final_grn', true)
+    .eq('grns.grn_stage', 'awaiting_store')
     .neq('store_confirmed', true)
     .order('created_at', { ascending: true });
   if (error) throw error;
@@ -3179,12 +3183,22 @@ export async function fetchGrnStoreReceiptQueue(
   const grnMap: Record<string, any> = {};
   for (const g of grns as any[]) grnMap[g.id] = g;
 
-  // Step 2 — pull is_final_grn lines, SCOPED to Query A's GRN set and batched in
-  // chunks of 100 grn_ids. A single unscoped fetch hit PostgREST's ~1000-row
-  // default cap and silently truncated the tail — dropping valid awaiting_store
-  // GRNs (same silent-truncation class as 779b92f) — while one .in() over every
-  // id blows the URL-length limit. Chunking the id list avoids both. Empty id
-  // set → no line items.
+  // Step 2 — pull lines whose parent GRN has passed QC (awaiting_store, still
+  // open/partial, or closed — fully store-confirmed), SCOPED to Query A's GRN
+  // set and batched in chunks of 100 grn_ids. A single unscoped fetch hit
+  // PostgREST's ~1000-row default cap and silently truncated the tail —
+  // dropping valid awaiting_store GRNs (same silent-truncation class as
+  // 779b92f) — while one .in() over every id blows the URL-length limit.
+  // Chunking the id list avoids both. Empty id set → no line items.
+  //
+  // Driven by the header's grn_stage — not is_final_grn — so ALL lines route
+  // through here, final or not (target rule, Sep 2026). Both 'awaiting_store'
+  // and 'closed' are included (not just 'awaiting_store' plus a store_confirmed
+  // filter): this card view needs BOTH pending and already-confirmed lines
+  // together — card_status (pending/confirmed/partial) and pending_lines /
+  // fully_confirmed_lines are derived per-card from the full line set below,
+  // so narrowing to unconfirmed lines here would break the confirmed/partial/
+  // history views entirely.
   const grnIds = (grns as any[]).map((g) => g.id);
   const LINE_ID_CHUNK = 100;
   const chunks: string[][] = [];
@@ -3198,10 +3212,10 @@ export async function fetchGrnStoreReceiptQueue(
       (supabase as any)
         .from('grn_line_items')
         .select(
-          'id, grn_id, item_id, description, drawing_number, unit, conforming_qty, store_confirmed_qty, damaged_qty, store_confirmed, store_confirmed_at, store_confirmed_by, damaged_reason, store_confirmation_notes, store_location, ordered_qty_2, received_now_2, accepted_qty_2, unit_2'
+          'id, grn_id, item_id, description, drawing_number, unit, conforming_qty, store_confirmed_qty, damaged_qty, store_confirmed, store_confirmed_at, store_confirmed_by, damaged_reason, store_confirmation_notes, store_location, ordered_qty_2, received_now_2, accepted_qty_2, unit_2, grns!inner(grn_stage)'
         )
         .eq('company_id', companyId)
-        .eq('is_final_grn', true)
+        .in('grns.grn_stage', ['awaiting_store', 'closed'])
         .in('grn_id', chunk)
     )
   );
