@@ -1,17 +1,15 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { printWithLightMode } from "@/lib/print-utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, Download, Edit, XCircle, IndianRupee, CheckCircle2, Truck, Printer } from "lucide-react";
+import { ChevronLeft, Edit, XCircle, CheckCircle2, Printer, Trash2, AlertTriangle, PackageSearch } from "lucide-react";
 import { EditableSection } from "@/components/EditableSection";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { fetchInvoice, fetchInvoicePayments, cancelInvoice, recordPayment, getNextReceiptNumber } from "@/lib/invoices-api";
+import { fetchInvoice, completeSale, cancelSale, softDeleteInvoice, fetchSaleShortfalls } from "@/lib/invoices-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { formatCurrency, formatNumber, amountInWords } from "@/lib/gst-utils";
 import { format } from "date-fns";
@@ -21,17 +19,14 @@ import { AuditTimeline } from "@/components/AuditTimeline";
 import { DocumentSignature } from "@/components/DocumentSignature";
 
 const statusLabels: Record<string, string> = {
-  draft: "Draft", sent: "Sent", partially_paid: "Partially Paid", fully_paid: "Fully Paid", cancelled: "Cancelled",
+  draft: "Draft", sale_complete: "Sale Complete", cancelled: "Cancelled", deleted: "Deleted",
 };
 const statusClass: Record<string, string> = {
   draft: "status-draft",
-  sent: "bg-blue-50 text-blue-700 border border-blue-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
-  partially_paid: "status-overdue",
-  fully_paid: "status-paid",
+  sale_complete: "status-paid",
   cancelled: "status-cancelled",
+  deleted: "bg-gray-100 text-gray-500 border border-gray-200 text-xs font-medium px-2.5 py-0.5 rounded-full line-through",
 };
-
-const PAYMENT_MODES = ["Cash", "Cheque", "NEFT", "RTGS", "UPI", "Other"];
 
 export default function InvoiceDetail() {
   const { id } = useParams();
@@ -39,9 +34,10 @@ export default function InvoiceDetail() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [completeOpen, setCompleteOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  const [cancelUnbuild, setCancelUnbuild] = useState(false);
   const [invCopyLabel, setInvCopyLabel] = useState("");
   const [invPrintDialogOpen, setInvPrintDialogOpen] = useState(false);
   const [invPrintCopies, setInvPrintCopies] = useState(3);
@@ -69,15 +65,6 @@ export default function InvoiceDetail() {
     }, 100);
   };
 
-  // Payment form state
-  const [payAmount, setPayAmount] = useState(0);
-  const [payDate, setPayDate] = useState(format(new Date(), "yyyy-MM-dd"));
-  const [payMode, setPayMode] = useState("NEFT");
-  const [payRef, setPayRef] = useState("");
-  const [payBank, setPayBank] = useState("");
-  const [payReceivedBy, setPayReceivedBy] = useState("");
-  const [payNotes, setPayNotes] = useState("");
-
   const { data, isLoading } = useQuery({
     queryKey: ["invoice", id],
     queryFn: () => fetchInvoice(id!),
@@ -90,74 +77,68 @@ export default function InvoiceDetail() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const { data: payments } = useQuery({
-    queryKey: ["invoice-payments", id],
-    queryFn: () => fetchInvoicePayments(id!),
-    enabled: !!id,
+  const inv = data?.invoice;
+
+  const { data: shortfalls } = useQuery({
+    queryKey: ["sale-shortfalls", id],
+    queryFn: () => fetchSaleShortfalls(id!),
+    enabled: !!id && !!inv && inv.status !== "draft",
+  });
+
+  const completeMutation = useMutation({
+    mutationFn: () => completeSale(id!),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["invoice", id] });
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["invoice-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["sale-shortfalls", id] });
+      setCompleteOpen(false);
+      toast({ title: "Sale complete", description: `Invoice ${result.invoice_number} issued.` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error completing sale", description: err.message, variant: "destructive" });
+    },
   });
 
   const cancelMutation = useMutation({
-    mutationFn: () => cancelInvoice(id!, cancelReason),
+    mutationFn: () => cancelSale(id!, cancelReason, cancelUnbuild),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["invoice", id] });
-      setCancelOpen(false);
-      toast({ title: "Invoice cancelled" });
-    },
-  });
-
-  const paymentMutation = useMutation({
-    mutationFn: async () => {
-      const receiptNum = await getNextReceiptNumber();
-      return recordPayment({
-        receipt_number: receiptNum,
-        payment_date: payDate,
-        invoice_id: id,
-        invoice_number: inv?.invoice_number,
-        customer_id: inv?.customer_id,
-        customer_name: inv?.customer_name,
-        amount: payAmount,
-        payment_mode: payMode.toLowerCase(),
-        reference_number: payRef || null,
-        bank_name: payBank || null,
-        received_by: payReceivedBy || null,
-        notes: payNotes || null,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["invoice", id] });
-      queryClient.invalidateQueries({ queryKey: ["invoice-payments", id] });
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
       queryClient.invalidateQueries({ queryKey: ["invoice-stats"] });
-      setPaymentOpen(false);
-      toast({ title: "Payment recorded", description: `Invoice updated to ${(inv?.amount_outstanding ?? 0) - payAmount <= 0 ? "Fully Paid" : "Partially Paid"}` });
+      queryClient.invalidateQueries({ queryKey: ["sale-shortfalls", id] });
+      setCancelOpen(false);
+      toast({ title: "Sale cancelled" });
     },
     onError: (err: any) => {
-      toast({ title: "Error recording payment", description: err.message, variant: "destructive" });
+      toast({ title: "Error cancelling sale", description: err.message, variant: "destructive" });
     },
   });
 
-  if (isLoading || !data) return <div className="p-6 text-muted-foreground">Loading...</div>;
+  const deleteMutation = useMutation({
+    mutationFn: () => softDeleteInvoice(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      toast({ title: "Draft deleted" });
+      navigate("/invoices");
+    },
+    onError: (err: any) => {
+      toast({ title: "Error deleting draft", description: err.message, variant: "destructive" });
+    },
+  });
 
-  const inv = data.invoice;
+  if (isLoading || !data || !inv) return <div className="p-6 text-muted-foreground">Loading...</div>;
+
   const items = data.lineItems;
-  // Determine tax type from the saved amounts — never hardcode state codes
+  const isDraft = inv.status === "draft";
+  const isComplete = inv.status === "sale_complete";
+  const isCancelled = inv.status === "cancelled";
   const hasCGST = (inv.cgst_amount ?? 0) > 0;
   const hasIGST = (inv.igst_amount ?? 0) > 0;
-  const outstanding = inv.amount_outstanding ?? 0;
-  const isFullyPaid = inv.status === "fully_paid";
-  const isCancelled = inv.status === "cancelled";
-
-  const openPayment = () => {
-    setPayAmount(outstanding);
-    setPayDate(format(new Date(), "yyyy-MM-dd"));
-    setPayRef("");
-    setPayBank("");
-    setPayReceivedBy("");
-    setPayNotes("");
-    setPaymentOpen(true);
-  };
 
   // Auto-condensing: detect empty columns to hide in print
   const allDiscountsZero = items.every((li: any) => !li.discount_percent || li.discount_percent === 0);
+  const showStockCol = !isDraft;
 
   // GST breakdown by rate
   const gstByRate: Record<number, { taxable: number; cgst: number; sgst: number; igst: number }> = {};
@@ -177,61 +158,70 @@ export default function InvoiceDetail() {
         className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 transition-colors mb-3 print:hidden"
       >
         <ChevronLeft className="h-4 w-4" />
-        Back to Invoices
+        Back to Sales
       </button>
       {/* Top bar */}
       <div className="flex items-center justify-between flex-wrap gap-3 print:hidden">
         <div className="flex items-center gap-3">
           <div>
-            <h1 className="text-xl font-display font-bold text-foreground font-mono">{inv.invoice_number}</h1>
+            <h1 className="text-xl font-display font-bold text-foreground font-mono">{inv.invoice_number || "DRAFT"}</h1>
             <span className={statusClass[inv.status] || "status-draft"}>{statusLabels[inv.status] || inv.status}</span>
           </div>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Button variant="outline" size="sm" onClick={() => setInvPrintDialogOpen(true)}>
-            <Printer className="h-3.5 w-3.5 mr-1" /> Print Options
-          </Button>
-          <DocumentActions
-            documentNumber={inv.invoice_number}
-            documentType="Tax Invoice"
-            documentData={{ ...inv, line_items: items } as Record<string, unknown>}
-          />
-          {!isFullyPaid && !isCancelled && (
-            <Button onClick={openPayment}><IndianRupee className="h-4 w-4 mr-1" /> Record Payment</Button>
+          {!isDraft && (
+            <>
+              <Button variant="outline" size="sm" onClick={() => setInvPrintDialogOpen(true)}>
+                <Printer className="h-3.5 w-3.5 mr-1" /> Print Options
+              </Button>
+              <DocumentActions
+                documentNumber={inv.invoice_number || ""}
+                documentType="Tax Invoice"
+                documentData={{ ...inv, line_items: items } as Record<string, unknown>}
+              />
+            </>
           )}
-          {inv.status === "draft" && (
-            <Button variant="outline" onClick={() => navigate(`/invoices/${id}/edit`)}><Edit className="h-4 w-4 mr-1" /> Edit</Button>
+          {isDraft && (
+            <>
+              <Button variant="outline" onClick={() => navigate(`/invoices/${id}/edit`)}><Edit className="h-4 w-4 mr-1" /> Edit</Button>
+              <Button onClick={() => setCompleteOpen(true)}><CheckCircle2 className="h-4 w-4 mr-1" /> Sale complete</Button>
+              <Button variant="outline" className="text-destructive hover:text-destructive" onClick={() => deleteMutation.mutate()} disabled={deleteMutation.isPending}>
+                <Trash2 className="h-4 w-4 mr-1" /> Delete
+              </Button>
+            </>
           )}
-          {!isCancelled && (
-            <Button
-              variant="outline"
-              onClick={() => navigate(`/dispatch-notes/new?invoice_id=${id}`)}
-            >
-              <Truck className="h-4 w-4 mr-1" /> Create Dispatch Note
-            </Button>
-          )}
-          {!isCancelled && !isFullyPaid && (
-            <Button variant="outline" onClick={() => setCancelOpen(true)}><XCircle className="h-4 w-4 mr-1" /> Cancel</Button>
+          {isComplete && (
+            <Button variant="outline" onClick={() => setCancelOpen(true)}><XCircle className="h-4 w-4 mr-1" /> Cancel sale</Button>
           )}
         </div>
       </div>
 
-      {/* Fully paid banner */}
-      {isFullyPaid && (
+      {/* Sale complete banner */}
+      {isComplete && (
         <div className="bg-emerald-50 border border-emerald-200 rounded-md p-3 flex items-center gap-2 text-emerald-700 font-medium print:hidden">
-          <CheckCircle2 className="h-5 w-5" /> PAID IN FULL
+          <CheckCircle2 className="h-5 w-5" /> SALE COMPLETE
         </div>
       )}
 
-      {/* Outstanding banner */}
-      {outstanding > 0 && !isCancelled && (
-        <div className="bg-amber-50 border border-amber-200 rounded-md p-3 text-amber-700 font-medium print:hidden">
-          Outstanding: {formatCurrency(outstanding)}
+      {/* Cancellation banner */}
+      {isCancelled && (
+        <div className="bg-rose-50 border border-rose-200 rounded-md p-3 text-rose-700 print:hidden space-y-0.5">
+          <div className="font-medium flex items-center gap-2"><XCircle className="h-5 w-5" /> SALE CANCELLED</div>
+          {inv.cancellation_reason && <div className="text-sm">Reason: {inv.cancellation_reason}</div>}
+          {inv.cancelled_at && <div className="text-xs text-rose-600">Cancelled on {format(new Date(inv.cancelled_at), "dd MMM yyyy, HH:mm")}</div>}
         </div>
       )}
 
       {/* Document preview */}
-      <div className="paper-card space-y-4 po-print-wrapper">
+      <div className="paper-card space-y-4 po-print-wrapper relative">
+        {/* Print-only cancellation watermark */}
+        {isCancelled && (
+          <div className="hidden print:flex absolute inset-0 items-center justify-center pointer-events-none z-10">
+            <span style={{ fontSize: '72pt', fontWeight: 800, color: 'rgba(220,38,38,0.28)', transform: 'rotate(-30deg)', letterSpacing: '0.1em' }}>
+              CANCELLED
+            </span>
+          </div>
+        )}
         {/* ── SCREEN header ── */}
         <div className="print:hidden">
           <DocumentHeader />
@@ -255,7 +245,7 @@ export default function InvoiceDetail() {
             <div style={{ flex: '0 0 42%', textAlign: 'right' }}>
               <div style={{ fontWeight: '700', fontSize: '13pt', color: '#1E3A5F', letterSpacing: '0.04em' }}>TAX INVOICE</div>
               {invCopyLabel && <div style={{ fontSize: '8pt', fontWeight: '700', border: '1pt solid currentColor', display: 'inline-block', padding: '1px 6px', marginBottom: '2px' }}>{invCopyLabel}</div>}
-              <div style={{ fontWeight: '700', fontSize: '9pt' }}>Invoice No: {inv.invoice_number}</div>
+              <div style={{ fontWeight: '700', fontSize: '9pt' }}>Invoice No: {inv.invoice_number || "DRAFT"}</div>
               <div style={{ fontSize: '9pt' }}>Date: {inv.invoice_date}</div>
               {inv.due_date && <div style={{ fontSize: '9pt' }}>Due: {inv.due_date}</div>}
               {inv.payment_terms && <div style={{ fontSize: '9pt' }}>Terms: {inv.payment_terms}</div>}
@@ -266,7 +256,7 @@ export default function InvoiceDetail() {
         </div>
 
         <EditableSection
-          editable={inv.status === "draft"}
+          editable={isDraft}
           onEdit={() => navigate(`/invoices/${id}/edit`)}
           label="Click to edit"
           className="p-4 -mx-4"
@@ -280,7 +270,7 @@ export default function InvoiceDetail() {
               {inv.customer_phone && <div>Phone: {inv.customer_phone}</div>}
             </div>
             <div className="text-right space-y-1">
-              <div><span className="text-muted-foreground">Invoice No:</span> <span className="font-mono font-medium">{inv.invoice_number}</span></div>
+              <div><span className="text-muted-foreground">Invoice No:</span> <span className="font-mono font-medium">{inv.invoice_number || "DRAFT"}</span></div>
               <div><span className="text-muted-foreground">Date:</span> {inv.invoice_date}</div>
               <div><span className="text-muted-foreground">Due Date:</span> {inv.due_date || "—"}</div>
               {inv.place_of_supply && <div><span className="text-muted-foreground">Place of Supply:</span> {inv.place_of_supply}</div>}
@@ -295,17 +285,20 @@ export default function InvoiceDetail() {
           <table className="w-full border-collapse text-sm po-line-items-table">
             <thead>
               <tr>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left" style={{ width: '4%' }}>#</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left" style={{ width: allDiscountsZero ? '28%' : '24%' }}>Description</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left" style={{ width: '8%' }}>HSN/SAC</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right" style={{ width: '6%' }}>Qty</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left" style={{ width: '5%' }}>Unit</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right" style={{ width: '12%' }}>Rate</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">#</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Description</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">HSN/SAC</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Unit</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Rate</th>
                 {/* Hide Disc% column in print when all zero */}
-                <th className={`px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right${allDiscountsZero ? " print:hidden" : ""}`} style={{ width: allDiscountsZero ? undefined : '7%' }}>Disc%</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right" style={{ width: allDiscountsZero ? '14%' : '12%' }}>Taxable</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right" style={{ width: '6%' }}>GST%</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right" style={{ width: allDiscountsZero ? '17%' : '14%' }}>Amount</th>
+                <th className={`px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right${allDiscountsZero ? " print:hidden" : ""}`}>Disc%</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Taxable</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">GST%</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Amount</th>
+                {showStockCol && (
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left print:hidden">Stock</th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -326,11 +319,41 @@ export default function InvoiceDetail() {
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(li.taxable_amount)}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{li.gst_rate}%</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-semibold">{formatCurrency(li.line_total)}</td>
+                  {showStockCol && (
+                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left print:hidden">
+                      drained {formatNumber(li.drained_qty ?? 0)} / built {formatNumber(li.backflushed_qty ?? 0)}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+
+        {/* Backflush shortfalls */}
+        {!isDraft && shortfalls && shortfalls.length > 0 && (
+          <div className="print:hidden bg-amber-50 border border-amber-200 rounded-md p-3 space-y-2">
+            <div className="flex items-center gap-2 text-amber-800 font-medium text-sm">
+              <AlertTriangle className="h-4 w-4" /> Backflush shortfalls — count required
+            </div>
+            <ul className="space-y-1">
+              {shortfalls.map((s) => (
+                <li key={s.id} className="text-sm flex items-center justify-between gap-2">
+                  <span>
+                    <span className="font-mono font-medium">{s.item_code}</span> short {formatNumber(s.qty_short)} (position now {formatNumber(s.position_after)})
+                  </span>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 text-amber-700 hover:text-amber-900 underline text-xs shrink-0"
+                    onClick={() => navigate("/reorder-intelligence")}
+                  >
+                    <PackageSearch className="h-3.5 w-3.5" /> Reorder
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Totals */}
         <div className="flex justify-end">
@@ -365,7 +388,7 @@ export default function InvoiceDetail() {
               <div className="flex justify-between text-xs"><span className="text-muted-foreground">Round Off</span><span className="font-mono">{inv.round_off > 0 ? "+" : ""}{inv.round_off?.toFixed(2)}</span></div>
             )}
             <div className="flex justify-between text-lg font-bold"><span>Grand Total</span><span className="font-mono tabular-nums">{formatCurrency(inv.grand_total)}</span></div>
-            <div className="text-xs text-muted-foreground italic">{amountInWords(inv.grand_total)}</div>
+            <div className="text-xs text-muted-foreground italic">{amountInWords(inv.grand_total ?? 0)}</div>
           </div>
         </div>
 
@@ -395,119 +418,61 @@ export default function InvoiceDetail() {
         </div>
       </div>
 
-      {/* Payment History */}
-      <div className="paper-card space-y-4 print:hidden">
-        <div className="flex items-center justify-between">
-          <h2 className="font-display font-bold text-foreground">Payment History</h2>
-          {!isFullyPaid && !isCancelled && (
-            <Button size="sm" onClick={openPayment}><IndianRupee className="h-4 w-4 mr-1" /> Record Payment</Button>
-          )}
-        </div>
-        {(!payments || payments.length === 0) ? (
-          <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
-        ) : (
-          <div className="overflow-x-auto rounded-lg border border-slate-200">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr>
-                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Receipt #</th>
-                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Date</th>
-                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Mode</th>
-                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Reference</th>
-                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Amount</th>
-                  <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Notes</th>
-                </tr>
-              </thead>
-              <tbody>
-                {payments.map((p: any) => (
-                  <tr key={p.id}>
-                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{p.receipt_number}</td>
-                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{p.payment_date}</td>
-                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left capitalize">{p.payment_mode}</td>
-                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">{p.reference_number || "—"}</td>
-                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-semibold">{formatCurrency(p.amount)}</td>
-                    <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">{p.notes || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
       {/* Audit Trail */}
       <div className="print:hidden">
         <AuditTimeline documentId={id!} />
       </div>
 
-      {/* Payment Modal */}
-      <Dialog open={paymentOpen} onOpenChange={setPaymentOpen}>
-        <DialogContent className="max-w-md">
+      {/* Sale Complete Dialog */}
+      <Dialog open={completeOpen} onOpenChange={setCompleteOpen}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Record Payment</DialogTitle>
-            <DialogDescription>Against Invoice {inv.invoice_number}</DialogDescription>
+            <DialogTitle>Sale complete</DialogTitle>
+            <DialogDescription>This assigns the invoice number and posts stock; it cannot be edited afterwards.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label>Amount Received *</Label>
-              <Input type="number" value={payAmount || ""} onChange={(e) => setPayAmount(parseFloat(e.target.value) || 0)} />
-              <p className="text-xs text-muted-foreground">
-                Outstanding: {formatCurrency(outstanding)} → After payment: {formatCurrency(Math.max(0, outstanding - payAmount))}
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Payment Date *</Label>
-              <Input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Payment Mode *</Label>
-              <Select value={payMode} onValueChange={setPayMode}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{PAYMENT_MODES.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Reference (UTR / Cheque No.)</Label>
-              <Input value={payRef} onChange={(e) => setPayRef(e.target.value)} />
-            </div>
-            {["Cheque", "NEFT", "RTGS"].includes(payMode) && (
-              <div className="space-y-1.5">
-                <Label>Bank Name</Label>
-                <Input value={payBank} onChange={(e) => setPayBank(e.target.value)} />
+          <div className="space-y-1 max-h-64 overflow-y-auto border border-border rounded-md divide-y divide-border">
+            {items.map((li: any) => (
+              <div key={li.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                <span className="font-medium">{li.description}</span>
+                <span className="font-mono text-muted-foreground">{formatNumber(li.quantity)} {li.unit}</span>
               </div>
-            )}
-            <div className="space-y-1.5">
-              <Label>Received By</Label>
-              <Input value={payReceivedBy} onChange={(e) => setPayReceivedBy(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Notes</Label>
-              <Textarea value={payNotes} onChange={(e) => setPayNotes(e.target.value)} rows={2} />
-            </div>
+            ))}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPaymentOpen(false)}>Cancel</Button>
-            <Button onClick={() => paymentMutation.mutate()} disabled={paymentMutation.isPending || payAmount <= 0}>
-              Record Payment
+            <Button variant="outline" onClick={() => setCompleteOpen(false)}>Cancel</Button>
+            <Button onClick={() => completeMutation.mutate()} disabled={completeMutation.isPending}>
+              {completeMutation.isPending ? "Completing…" : "Confirm Sale complete"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Cancel Dialog */}
+      {/* Cancel Sale Dialog */}
       <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Cancel Invoice</DialogTitle>
+            <DialogTitle>Cancel Sale</DialogTitle>
             <DialogDescription>This action cannot be undone.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-1.5">
-            <Label>Reason for cancellation</Label>
-            <Textarea value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} />
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Reason for cancellation *</Label>
+              <Textarea value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} placeholder="Required" />
+            </div>
+            <label className="flex items-start gap-2 text-sm cursor-pointer">
+              <Checkbox checked={cancelUnbuild} onCheckedChange={(v) => setCancelUnbuild(v === true)} className="mt-0.5" />
+              <span>Unbuild — reverse the component backflush too <span className="text-muted-foreground">(use only if the unit was never built)</span></span>
+            </label>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCancelOpen(false)}>Keep Invoice</Button>
-            <Button variant="destructive" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>Cancel Invoice</Button>
+            <Button variant="outline" onClick={() => setCancelOpen(false)}>Keep Sale</Button>
+            <Button
+              variant="destructive"
+              onClick={() => cancelMutation.mutate()}
+              disabled={cancelMutation.isPending || cancelReason.trim().length < 3}
+            >
+              Cancel Sale
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
