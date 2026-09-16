@@ -207,7 +207,7 @@ const App = () => (
               <Route path="/inventory-ledger" element={<PageGuard page="stock-ledger"><InventoryLedger /></PageGuard>} />
               <Route path="/store-locator" element={<PageGuard page="stock-ledger"><StoreLocator /></PageGuard>} />
               <Route path="/physical-count" element={<PageGuard page="stock-ledger"><PhysicalCount /></PageGuard>} />
-              <Route path="/physical-count/approvals" element={<PhysicalCountApprovalQueue />} />
+              <Route path="/physical-count/approvals" element={<PageGuard page="count-approvals"><PhysicalCountApprovalQueue /></PageGuard>} />
               <Route path="/notifications" element={<Notifications />} />
 
               <Route path="/serial-numbers" element={<PageGuard page="serial-numbers"><SerialNumbers /></PageGuard>} />
