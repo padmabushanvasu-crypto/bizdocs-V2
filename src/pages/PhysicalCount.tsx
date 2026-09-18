@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { formatNumber } from "@/lib/gst-utils";
 import { supabase } from "@/integrations/supabase/client";
+import { getCompanyId } from "@/lib/auth-helpers";
 import { PhysicalCountImportDialog } from "@/components/PhysicalCountImportDialog";
 import {
   fetchCountWorklist,
@@ -17,12 +18,15 @@ import {
 
 // Fallback for a ?item= deep link whose item isn't in the active worklist
 // (e.g. filtered out server-side) — fetched directly so a single count can
-// still be submitted.
+// still be submitted. Company-scoped like every other query here.
 async function fetchItemForQuickCount(itemId: string): Promise<CountWorklistRow | null> {
+  const companyId = await getCompanyId();
+  if (!companyId) return null;
   const { data, error } = await (supabase as any)
     .from("items")
     .select("id, item_code, description, unit, stock_free")
     .eq("id", itemId)
+    .eq("company_id", companyId)
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
