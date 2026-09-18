@@ -1,6 +1,7 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Archive, Search, Edit2, Plus, AlertCircle } from "lucide-react";
+import { Archive, Search, Edit2, Plus, AlertCircle, ClipboardCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId } from "@/lib/auth-helpers";
-import { fetchItems, updateStockBucket, type Item } from "@/lib/items-api";
+import { fetchItems, type Item } from "@/lib/items-api";
 import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
 import { STOCK_STATE } from "@/lib/stock-states";
 import {
@@ -33,12 +34,14 @@ const ITEM_TYPE_LABELS: Record<string, { label: string; cls: string }> = {
   asset:          { label: "Asset",         cls: "bg-red-100 text-red-700" },
 };
 
-const EDIT_REASONS = [
-  "Initial stock entry",
-  "Physical stock count correction",
-  "Migration from previous system",
-  "Audit adjustment",
-  "Other",
+// value is what's persisted into the ledger note (`Reason: <value>`) — keep
+// stable even when the label shown to users changes.
+const EDIT_REASONS: { value: string; label: string }[] = [
+  { value: "Initial stock entry", label: "Initial stock (new item only)" },
+  { value: "Physical stock count correction", label: "Physical stock count correction" },
+  { value: "Migration from previous system", label: "Migration from previous system" },
+  { value: "Audit adjustment", label: "Audit adjustment" },
+  { value: "Other", label: "Other" },
 ];
 
 interface OpeningStockEntry {
@@ -72,6 +75,31 @@ async function fetchLatestOpeningStock(): Promise<Record<string, OpeningStockEnt
   return map;
 }
 
+// Any stock_ledger row at all (not just opening_stock) marks an item as
+// having history — mirrors the DB guard in rpc_post_stock_ledger_row.
+async function fetchItemIdsWithHistory(): Promise<Set<string>> {
+  const companyId = await getCompanyId();
+  const ids = new Set<string>();
+  if (!companyId) return ids;
+  const PAGE = 1000;
+  let offset = 0;
+  while (true) {
+    const { data, error } = await (supabase as any)
+      .from("stock_ledger")
+      .select("item_id")
+      .eq("company_id", companyId)
+      .range(offset, offset + PAGE - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as any[];
+    for (const row of rows) {
+      if (row.item_id) ids.add(row.item_id);
+    }
+    if (rows.length < PAGE) break;
+    offset += PAGE;
+  }
+  return ids;
+}
+
 interface EditState {
   item: Item;
   editedBy: string;
@@ -83,6 +111,7 @@ interface EditState {
 
 export default function OpeningStock() {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { hideCosts } = useRoleAccess();
 
@@ -104,6 +133,11 @@ export default function OpeningStock() {
   const { data: openingMap = {}, isLoading: ledgerLoading } = useQuery({
     queryKey: ["opening-stock-entries"],
     queryFn: fetchLatestOpeningStock,
+  });
+
+  const { data: historyIds = new Set<string>(), isLoading: historyLoading } = useQuery({
+    queryKey: ["opening-stock-item-history"],
+    queryFn: fetchItemIdsWithHistory,
   });
 
   const { data: notifSettings } = useQuery({
@@ -151,7 +185,6 @@ export default function OpeningStock() {
       if (!companyId) throw new Error("No company");
       const newQty = parseFloat(state.newQty) || 0;
       const costPerUnit = parseFloat(state.costPerUnit) || 0;
-      const currentFree = state.item.stock_free ?? 0;
       const reasonText = state.reason === "Other" ? state.otherReason.trim() || "Other" : state.reason;
       const notesText = `Reason: ${reasonText} | Edited by: ${state.editedBy}`;
 
@@ -177,11 +210,7 @@ export default function OpeningStock() {
         to_state: STOCK_STATE.FREE,
       });
 
-      // Update stock bucket (delta from current free stock)
-      const diff = newQty - currentFree;
-      if (diff !== 0) {
-        await updateStockBucket(state.item.id, "free", diff);
-      }
+      // stock_free is ledger-owned (DB trigger) — no separate bucket write.
       return { editorName: state.editedBy, itemDescription: state.item.description };
     },
     onSuccess: ({ editorName, itemDescription }) => {
@@ -191,10 +220,17 @@ export default function OpeningStock() {
       setAddNameDraft("");
       queryClient.invalidateQueries({ queryKey: ["items-opening-stock"] });
       queryClient.invalidateQueries({ queryKey: ["opening-stock-entries"] });
+      queryClient.invalidateQueries({ queryKey: ["opening-stock-item-history"] });
       queryClient.invalidateQueries({ queryKey: ["items"] });
     },
     onError: (err: any) => {
-      toast({ title: "Save failed", description: err.message, variant: "destructive" });
+      const message = err?.message ?? "";
+      const isHistoryGuard = err?.code === "23514" || message.includes("already has stock history");
+      if (isHistoryGuard) {
+        toast({ title: message, description: "Use Physical Count to correct this item instead.", variant: "destructive" });
+      } else {
+        toast({ title: "Save failed", description: message, variant: "destructive" });
+      }
     },
   });
 
@@ -211,7 +247,7 @@ export default function OpeningStock() {
     return true;
   });
 
-  const isLoading = itemsLoading || ledgerLoading;
+  const isLoading = itemsLoading || ledgerLoading || historyLoading;
 
   const openEdit = (item: Item) => {
     const entry = openingMap[item.id];
@@ -313,6 +349,7 @@ export default function OpeningStock() {
               filteredItems.map(item => {
                 const entry = openingMap[item.id];
                 const typeInfo = ITEM_TYPE_LABELS[item.item_type] ?? { label: item.item_type, cls: "bg-gray-100 text-gray-600" };
+                const hasHistory = historyIds.has(item.id);
                 return (
                   <tr key={item.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3 font-mono text-xs text-slate-700">{item.item_code}</td>
@@ -354,15 +391,27 @@ export default function OpeningStock() {
                       </td>
                     )}
                     <td className="px-4 py-3 text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-slate-500 hover:text-slate-800"
-                        onClick={() => openEdit(item)}
-                      >
-                        <Edit2 className="h-3.5 w-3.5 mr-1" />
-                        Edit
-                      </Button>
+                      {hasHistory ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-blue-600 hover:text-blue-800"
+                          onClick={() => navigate(`/physical-count?item=${item.id}`)}
+                        >
+                          <ClipboardCheck className="h-3.5 w-3.5 mr-1" />
+                          Count
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-slate-500 hover:text-slate-800"
+                          onClick={() => openEdit(item)}
+                        >
+                          <Edit2 className="h-3.5 w-3.5 mr-1" />
+                          Edit
+                        </Button>
+                      )}
                     </td>
                   </tr>
                 );
@@ -508,7 +557,7 @@ export default function OpeningStock() {
                   </SelectTrigger>
                   <SelectContent>
                     {EDIT_REASONS.map(r => (
-                      <SelectItem key={r} value={r}>{r}</SelectItem>
+                      <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
