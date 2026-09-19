@@ -9,13 +9,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { ItemSuggest } from "@/components/ItemSuggest";
 import { GrnDrawPicker } from "@/components/GrnDrawPicker";
 import { useToast } from "@/hooks/use-toast";
-import { type Item } from "@/lib/items-api";
+import { fetchItem, type Item } from "@/lib/items-api";
 import { type GrnLineAvailableForConversion } from "@/lib/production-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { formatNumber } from "@/lib/gst-utils";
 import {
   postRmConversion,
+  fetchSuggestedComponents,
   type RmConversionInputPayload,
+  type SuggestedComponent,
 } from "@/lib/rm-conversions-api";
 
 interface InputRow {
@@ -80,6 +82,31 @@ export default function RmConversionNew() {
   const [outputQty, setOutputQty] = useState("");
   const [outputAltQty, setOutputAltQty] = useState("");
   const [notes, setNotes] = useState("");
+  const [suggestionLoadingId, setSuggestionLoadingId] = useState<string | null>(null);
+
+  // Suggested output components for the first input row's raw material
+  // (item_conversion_map, fully_matched links only). Purely a shortcut —
+  // free search is always available and never restricted by this.
+  const firstInputItem = rows[0]?.item ?? null;
+  const { data: suggestedComponents = [] } = useQuery({
+    queryKey: ["rm-conversion-suggested-components", firstInputItem?.id],
+    queryFn: () => fetchSuggestedComponents(firstInputItem!.id),
+    enabled: !!firstInputItem,
+  });
+
+  const selectSuggestedComponent = async (s: SuggestedComponent) => {
+    setSuggestionLoadingId(s.item_id);
+    try {
+      const item = await fetchItem(s.item_id);
+      setOutputItem(item);
+      setOutputSearch("");
+      setOutputAltQty("");
+    } catch (err: any) {
+      toast({ title: "Could not load item", description: err.message, variant: "destructive" });
+    } finally {
+      setSuggestionLoadingId(null);
+    }
+  };
 
   // Generated once per submit ATTEMPT, not per click — reused across a
   // retry-after-error so a duplicate network send resolves idempotently.
@@ -413,6 +440,26 @@ export default function RmConversionNew() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="md:col-span-2">
             <Label className="text-xs">Item</Label>
+            {!outputItem && outputSearch.trim() === "" && suggestedComponents.length > 0 && (
+              <div className="mb-1.5 rounded-md border border-blue-200 bg-blue-50 p-2">
+                <p className="text-[10px] font-semibold text-blue-700 uppercase tracking-wide mb-1">
+                  Suggested for {firstInputItem?.item_code}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {suggestedComponents.map((s) => (
+                    <button
+                      key={s.item_id}
+                      type="button"
+                      disabled={suggestionLoadingId === s.item_id}
+                      onClick={() => selectSuggestedComponent(s)}
+                      className="text-xs bg-white border border-blue-200 rounded px-2 py-1 hover:bg-blue-100 transition-colors disabled:opacity-50"
+                    >
+                      <span className="font-mono">{s.item_code}</span> — {s.description}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <ItemSuggest
               value={outputItem ? `${outputItem.item_code} — ${outputItem.description}` : outputSearch}
               onChange={(v) => { setOutputSearch(v); setOutputItem(null); }}

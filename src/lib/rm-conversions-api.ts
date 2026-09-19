@@ -20,6 +20,50 @@ export async function fetchUomOptions(): Promise<UomOption[]> {
   return (data ?? []) as UomOption[];
 }
 
+// ── Suggested components for a raw material (item_conversion_map) ──────────────
+// item_conversion_map has two FKs to items (component_item_id, raw_material_item_id)
+// -- queried as two plain steps rather than a PostgREST embed to sidestep that
+// relationship ambiguity entirely.
+
+export interface SuggestedComponent {
+  item_id: string;
+  item_code: string;
+  description: string;
+  unit: string;
+}
+
+export async function fetchSuggestedComponents(rawItemId: string): Promise<SuggestedComponent[]> {
+  const companyId = await getCompanyId();
+  if (!companyId) return [];
+
+  const { data: mapRows, error: mapError } = await (supabase as any)
+    .from("item_conversion_map")
+    .select("component_item_id")
+    .eq("company_id", companyId)
+    .eq("raw_material_item_id", rawItemId)
+    .eq("match_status", "fully_matched")
+    .not("component_item_id", "is", null);
+  if (mapError) throw mapError;
+
+  const itemIds = [...new Set((mapRows ?? []).map((r: any) => r.component_item_id as string))];
+  if (itemIds.length === 0) return [];
+
+  const { data: items, error: itemsError } = await (supabase as any)
+    .from("items")
+    .select("id, item_code, description, unit")
+    .eq("company_id", companyId)
+    .in("id", itemIds)
+    .order("item_code", { ascending: true });
+  if (itemsError) throw itemsError;
+
+  return ((items ?? []) as any[]).map((i) => ({
+    item_id: i.id,
+    item_code: i.item_code ?? "",
+    description: i.description ?? "",
+    unit: i.unit ?? "NOS",
+  }));
+}
+
 // ── rpc_post_rm_conversion payload ──────────────────────────────────────────────
 // Mirrors the RPC's jsonb payload contract exactly (backend is authoritative;
 // this shape is documentation, not a source of truth). quantity_2-style
