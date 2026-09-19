@@ -1,12 +1,14 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ClipboardCheck, Search, ChevronLeft, ArrowDownUp, Upload } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { formatNumber } from "@/lib/gst-utils";
+import { supabase } from "@/integrations/supabase/client";
+import { getCompanyId } from "@/lib/auth-helpers";
 import { PhysicalCountImportDialog } from "@/components/PhysicalCountImportDialog";
 import {
   fetchCountWorklist,
@@ -14,12 +16,43 @@ import {
   type CountWorklistRow,
 } from "@/lib/physical-count-api";
 
+// Fallback for a ?item= deep link whose item isn't in the active worklist
+// (e.g. filtered out server-side) — fetched directly so a single count can
+// still be submitted. Company-scoped like every other query here.
+async function fetchItemForQuickCount(itemId: string): Promise<CountWorklistRow | null> {
+  const companyId = await getCompanyId();
+  if (!companyId) return null;
+  const { data, error } = await (supabase as any)
+    .from("items")
+    .select("id, item_code, description, unit, stock_free")
+    .eq("id", itemId)
+    .eq("company_id", companyId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return {
+    id: data.id,
+    item_code: data.item_code ?? "",
+    description: data.description ?? "",
+    unit: data.unit ?? "NOS",
+    system_free: Number(data.stock_free ?? 0),
+    counted: false,
+    last_counted_at: null,
+    pending_count_id: null,
+    pending_qty: null,
+  };
+}
+
 type SortKey = "item_code" | "description" | "system_free";
 
 export default function PhysicalCount() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Deep link from Opening Stock (or elsewhere) for a single-item quick count.
+  const itemParam = searchParams.get("item");
 
   const [search, setSearch] = useState("");
   const [hideCounted, setHideCounted] = useState(false);
@@ -39,10 +72,23 @@ export default function PhysicalCount() {
     queryFn: () => fetchCountWorklist(),
   });
 
+  // Only needed when the ?item= target isn't already in the worklist.
+  const itemInWorklist = !!itemParam && rows.some((r) => r.id === itemParam);
+  const { data: quickCountItem } = useQuery({
+    queryKey: ["physical-count-quick-item", itemParam],
+    queryFn: () => fetchItemForQuickCount(itemParam as string),
+    enabled: !!itemParam && !itemInWorklist,
+  });
+
   const totalCount = rows.length;
   const countedCount = rows.filter((r) => r.counted).length;
 
   const filtered = useMemo(() => {
+    if (itemParam) {
+      const match = rows.find((r) => r.id === itemParam);
+      if (match) return [match];
+      return quickCountItem ? [quickCountItem] : [];
+    }
     const term = search.trim().toLowerCase();
     let out = rows.filter((r) => {
       if (hideCounted && r.counted) return false;
@@ -56,7 +102,7 @@ export default function PhysicalCount() {
       return sortDir === "asc" ? cmp : -cmp;
     });
     return out;
-  }, [rows, search, hideCounted, sortKey, sortDir]);
+  }, [rows, search, hideCounted, sortKey, sortDir, itemParam, quickCountItem]);
 
   const submitMutation = useMutation({
     mutationFn: ({ itemId, counted }: { itemId: string; counted: number }) =>
@@ -191,6 +237,7 @@ export default function PhysicalCount() {
                             min={0}
                             value={inputVal}
                             placeholder="—"
+                            autoFocus={r.id === itemParam}
                             onChange={(e) => setInputs((prev) => ({ ...prev, [r.id]: e.target.value }))}
                             onKeyDown={(e) => {
                               if (e.key === "Enter" && canSubmit) submit();

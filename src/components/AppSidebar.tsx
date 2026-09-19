@@ -138,7 +138,7 @@ const TOOLTIP_TEXT: Record<string, string> = {
   "Finished Goods": "Manage finished good work orders",
   "Assembly Issue Queue": "Issue materials from store to production",
   "Inward Receipt Queue": "Confirm received materials into store",
-  "Opening Stock": "Set and edit opening stock quantities",
+  "Opening Stock": "Set opening stock for new items — use Physical Count to correct existing stock",
   "Procurement Intelligence": "Smart view of what needs to be procured",
   "Jig Master": "Manage jigs and drilling tools",
   "RM Conversions": "Convert raw material inputs (from store or drawn directly off a GRN) into a produced output item.",
