@@ -9,13 +9,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { ItemSuggest } from "@/components/ItemSuggest";
 import { GrnDrawPicker } from "@/components/GrnDrawPicker";
 import { useToast } from "@/hooks/use-toast";
-import { type Item } from "@/lib/items-api";
+import { fetchItem, type Item } from "@/lib/items-api";
 import { type GrnLineAvailableForConversion } from "@/lib/production-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { formatNumber } from "@/lib/gst-utils";
 import {
   postRmConversion,
+  fetchSuggestedComponents,
   type RmConversionInputPayload,
+  type SuggestedComponent,
 } from "@/lib/rm-conversions-api";
 
 interface InputRow {
@@ -30,13 +32,10 @@ interface InputRow {
   returnQty: string;
   notes: string;
   pickerOpen: boolean;
-  // Set only when grnLine's unit didn't match item.unit and the user
-  // reconciled it via GrnDrawPicker's "Reconcile & Credit Store" step —
-  // qty above is already qty_base (post-factor). Once set, this row posts
-  // as source: 'store' (material is already in stock_free) and the source
-  // toggle is locked, since flipping back to grn_direct would try to draw
-  // the same GRN line a second time.
-  reconciledFrom: { fromUnit: string; conversionFactor: number } | null;
+  // "GRN-direct" is off by default and hidden behind a disclosure link —
+  // the office almost always enters actuals against store stock. Set once
+  // the user clicks through to say the material never entered the store.
+  showSourceToggle: boolean;
 }
 
 function newInputRow(): InputRow {
@@ -52,7 +51,7 @@ function newInputRow(): InputRow {
     returnQty: "0",
     notes: "",
     pickerOpen: false,
-    reconciledFrom: null,
+    showSourceToggle: false,
   };
 }
 
@@ -83,6 +82,31 @@ export default function RmConversionNew() {
   const [outputQty, setOutputQty] = useState("");
   const [outputAltQty, setOutputAltQty] = useState("");
   const [notes, setNotes] = useState("");
+  const [suggestionLoadingId, setSuggestionLoadingId] = useState<string | null>(null);
+
+  // Suggested output components for the first input row's raw material
+  // (item_conversion_map, fully_matched links only). Purely a shortcut —
+  // free search is always available and never restricted by this.
+  const firstInputItem = rows[0]?.item ?? null;
+  const { data: suggestedComponents = [] } = useQuery({
+    queryKey: ["rm-conversion-suggested-components", firstInputItem?.id],
+    queryFn: () => fetchSuggestedComponents(firstInputItem!.id),
+    enabled: !!firstInputItem,
+  });
+
+  const selectSuggestedComponent = async (s: SuggestedComponent) => {
+    setSuggestionLoadingId(s.item_id);
+    try {
+      const item = await fetchItem(s.item_id);
+      setOutputItem(item);
+      setOutputSearch("");
+      setOutputAltQty("");
+    } catch (err: any) {
+      toast({ title: "Could not load item", description: err.message, variant: "destructive" });
+    } finally {
+      setSuggestionLoadingId(null);
+    }
+  };
 
   // Generated once per submit ATTEMPT, not per click — reused across a
   // retry-after-error so a duplicate network send resolves idempotently.
@@ -239,7 +263,7 @@ export default function RmConversionNew() {
                           source: "store",
                           grnLine: null,
                           altQty: "",
-                          reconciledFrom: null,
+                          showSourceToggle: false,
                         })
                       }
                       placeholder="Search raw material..."
@@ -261,13 +285,7 @@ export default function RmConversionNew() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 items-end">
                       <div>
                         <Label className="text-xs">Source</Label>
-                        {row.reconciledFrom ? (
-                          <div className="mt-1">
-                            <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-emerald-100 text-emerald-700">
-                              Store (reconciled)
-                            </span>
-                          </div>
-                        ) : (
+                        {row.showSourceToggle ? (
                           <div className="flex gap-1.5 mt-1">
                             <button
                               type="button"
@@ -292,24 +310,28 @@ export default function RmConversionNew() {
                               GRN-direct
                             </button>
                           </div>
+                        ) : (
+                          <div className="mt-1.5">
+                            <button
+                              type="button"
+                              onClick={() => updateRow(row.key, { showSourceToggle: true })}
+                              className="text-xs text-slate-500 underline decoration-dotted hover:text-slate-900"
+                            >
+                              Material never entered the store?
+                            </button>
+                          </div>
                         )}
                       </div>
 
                       {row.source === "store" ? (
                         <div>
-                          <Label className="text-xs">Qty ({row.item.unit})</Label>
+                          <Label className="text-xs">Qty used ({row.item.unit})</Label>
                           <Input
                             type="number"
                             min={0}
                             value={row.qty}
                             onChange={(e) => updateRow(row.key, { qty: e.target.value })}
                           />
-                          {row.reconciledFrom && row.grnLine && (
-                            <p className="text-[11px] text-emerald-600 mt-0.5">
-                              Reconciled from {row.grnLine.grn_number} (1 {row.reconciledFrom.fromUnit} ={" "}
-                              {row.reconciledFrom.conversionFactor} {row.item.unit}).
-                            </p>
-                          )}
                           {Number(row.qty) > (row.item.stock_free ?? 0) && (
                             <p className="text-[11px] text-amber-600 mt-0.5">
                               Only {formatNumber(row.item.stock_free ?? 0)} in store.
@@ -396,12 +418,11 @@ export default function RmConversionNew() {
                       itemId={row.item.id}
                       itemLabel={row.item.description}
                       itemUnit={row.item.unit}
-                      onConfirm={(line, qty, reconciled) =>
+                      onConfirm={(line, qty) =>
                         updateRow(row.key, {
                           grnLine: line,
                           qty: String(qty),
-                          source: reconciled ? "store" : "grn_direct",
-                          reconciledFrom: reconciled ?? null,
+                          source: "grn_direct",
                         })
                       }
                     />
@@ -419,6 +440,26 @@ export default function RmConversionNew() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="md:col-span-2">
             <Label className="text-xs">Item</Label>
+            {!outputItem && outputSearch.trim() === "" && suggestedComponents.length > 0 && (
+              <div className="mb-1.5 rounded-md border border-blue-200 bg-blue-50 p-2">
+                <p className="text-[10px] font-semibold text-blue-700 uppercase tracking-wide mb-1">
+                  Suggested for {firstInputItem?.item_code}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {suggestedComponents.map((s) => (
+                    <button
+                      key={s.item_id}
+                      type="button"
+                      disabled={suggestionLoadingId === s.item_id}
+                      onClick={() => selectSuggestedComponent(s)}
+                      className="text-xs bg-white border border-blue-200 rounded px-2 py-1 hover:bg-blue-100 transition-colors disabled:opacity-50"
+                    >
+                      <span className="font-mono">{s.item_code}</span> — {s.description}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <ItemSuggest
               value={outputItem ? `${outputItem.item_code} — ${outputItem.description}` : outputSearch}
               onChange={(v) => { setOutputSearch(v); setOutputItem(null); }}
@@ -427,7 +468,7 @@ export default function RmConversionNew() {
             />
           </div>
           <div>
-            <Label className="text-xs">Qty {outputItem ? `(${outputItem.unit})` : ""}</Label>
+            <Label className="text-xs">Qty produced {outputItem ? `(${outputItem.unit})` : ""}</Label>
             <Input
               type="number"
               min={0}

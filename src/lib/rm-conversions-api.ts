@@ -20,6 +20,50 @@ export async function fetchUomOptions(): Promise<UomOption[]> {
   return (data ?? []) as UomOption[];
 }
 
+// ── Suggested components for a raw material (item_conversion_map) ──────────────
+// item_conversion_map has two FKs to items (component_item_id, raw_material_item_id)
+// -- queried as two plain steps rather than a PostgREST embed to sidestep that
+// relationship ambiguity entirely.
+
+export interface SuggestedComponent {
+  item_id: string;
+  item_code: string;
+  description: string;
+  unit: string;
+}
+
+export async function fetchSuggestedComponents(rawItemId: string): Promise<SuggestedComponent[]> {
+  const companyId = await getCompanyId();
+  if (!companyId) return [];
+
+  const { data: mapRows, error: mapError } = await (supabase as any)
+    .from("item_conversion_map")
+    .select("component_item_id")
+    .eq("company_id", companyId)
+    .eq("raw_material_item_id", rawItemId)
+    .eq("match_status", "fully_matched")
+    .not("component_item_id", "is", null);
+  if (mapError) throw mapError;
+
+  const itemIds = [...new Set((mapRows ?? []).map((r: any) => r.component_item_id as string))];
+  if (itemIds.length === 0) return [];
+
+  const { data: items, error: itemsError } = await (supabase as any)
+    .from("items")
+    .select("id, item_code, description, unit")
+    .eq("company_id", companyId)
+    .in("id", itemIds)
+    .order("item_code", { ascending: true });
+  if (itemsError) throw itemsError;
+
+  return ((items ?? []) as any[]).map((i) => ({
+    item_id: i.id,
+    item_code: i.item_code ?? "",
+    description: i.description ?? "",
+    unit: i.unit ?? "NOS",
+  }));
+}
+
 // ── rpc_post_rm_conversion payload ──────────────────────────────────────────────
 // Mirrors the RPC's jsonb payload contract exactly (backend is authoritative;
 // this shape is documentation, not a source of truth). quantity_2-style
@@ -108,55 +152,6 @@ export async function reverseRmConversion(rmConversionId: string, reason: string
     p_reversed_by: user.id,
   });
   if (error) throw new Error(error.message);
-}
-
-// ── GRN-line unit reconciliation ────────────────────────────────────────────────
-// One-off manual fix for a GRN line whose recorded unit doesn't match the
-// item's base unit (rpc_post_rm_conversion's grn_direct guard blocks that
-// pairing outright, unconditionally, regardless of payload -- by design, left
-// untouched). This credits items.stock_free directly for the reconciled
-// quantity (manual_adjustment, incoming -> free) and records an allocation
-// row against the GRN line, so the caller then posts the RM conversion input
-// with source: 'store' instead of 'grn_direct' -- no guard involved at all.
-
-export interface ReconcileGrnUnitResult {
-  reconciliation_id: string;
-  qty_base: number;
-  new_stock_free: number;
-}
-
-export async function reconcileGrnUnitToStore(params: {
-  grnLineItemId: string;
-  itemId: string;
-  enteredQty: number;
-  fromUnit: string;
-  conversionFactor: number;
-  notes: string;
-}): Promise<ReconcileGrnUnitResult> {
-  const companyId = await getCompanyId();
-  if (!companyId) throw new Error("Not authenticated");
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
-
-  const { data, error } = await (supabase as any).rpc("rpc_reconcile_grn_unit_to_store", {
-    p_company_id: companyId,
-    p_grn_line_item_id: params.grnLineItemId,
-    p_item_id: params.itemId,
-    p_entered_qty: params.enteredQty,
-    p_from_unit: params.fromUnit,
-    p_conversion_factor: params.conversionFactor,
-    p_reconciled_by: user.id,
-    p_notes: params.notes,
-  });
-  // The RPC raises descriptive exceptions (over the GRN line's available_qty,
-  // invalid factor, etc.) -- surface verbatim, don't reword.
-  if (error) throw new Error(error.message);
-  const row = Array.isArray(data) ? data[0] : data;
-  return {
-    reconciliation_id: row.reconciliation_id,
-    qty_base: Number(row.qty_base),
-    new_stock_free: Number(row.new_stock_free),
-  };
 }
 
 // ── Register (list + expandable detail) ─────────────────────────────────────────
