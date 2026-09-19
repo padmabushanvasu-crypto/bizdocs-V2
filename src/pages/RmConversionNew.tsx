@@ -30,13 +30,10 @@ interface InputRow {
   returnQty: string;
   notes: string;
   pickerOpen: boolean;
-  // Set only when grnLine's unit didn't match item.unit and the user
-  // reconciled it via GrnDrawPicker's "Reconcile & Credit Store" step —
-  // qty above is already qty_base (post-factor). Once set, this row posts
-  // as source: 'store' (material is already in stock_free) and the source
-  // toggle is locked, since flipping back to grn_direct would try to draw
-  // the same GRN line a second time.
-  reconciledFrom: { fromUnit: string; conversionFactor: number } | null;
+  // "GRN-direct" is off by default and hidden behind a disclosure link —
+  // the office almost always enters actuals against store stock. Set once
+  // the user clicks through to say the material never entered the store.
+  showSourceToggle: boolean;
 }
 
 function newInputRow(): InputRow {
@@ -52,7 +49,7 @@ function newInputRow(): InputRow {
     returnQty: "0",
     notes: "",
     pickerOpen: false,
-    reconciledFrom: null,
+    showSourceToggle: false,
   };
 }
 
@@ -239,7 +236,7 @@ export default function RmConversionNew() {
                           source: "store",
                           grnLine: null,
                           altQty: "",
-                          reconciledFrom: null,
+                          showSourceToggle: false,
                         })
                       }
                       placeholder="Search raw material..."
@@ -261,13 +258,7 @@ export default function RmConversionNew() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 items-end">
                       <div>
                         <Label className="text-xs">Source</Label>
-                        {row.reconciledFrom ? (
-                          <div className="mt-1">
-                            <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-emerald-100 text-emerald-700">
-                              Store (reconciled)
-                            </span>
-                          </div>
-                        ) : (
+                        {row.showSourceToggle ? (
                           <div className="flex gap-1.5 mt-1">
                             <button
                               type="button"
@@ -292,24 +283,28 @@ export default function RmConversionNew() {
                               GRN-direct
                             </button>
                           </div>
+                        ) : (
+                          <div className="mt-1.5">
+                            <button
+                              type="button"
+                              onClick={() => updateRow(row.key, { showSourceToggle: true })}
+                              className="text-xs text-slate-500 underline decoration-dotted hover:text-slate-900"
+                            >
+                              Material never entered the store?
+                            </button>
+                          </div>
                         )}
                       </div>
 
                       {row.source === "store" ? (
                         <div>
-                          <Label className="text-xs">Qty ({row.item.unit})</Label>
+                          <Label className="text-xs">Qty used ({row.item.unit})</Label>
                           <Input
                             type="number"
                             min={0}
                             value={row.qty}
                             onChange={(e) => updateRow(row.key, { qty: e.target.value })}
                           />
-                          {row.reconciledFrom && row.grnLine && (
-                            <p className="text-[11px] text-emerald-600 mt-0.5">
-                              Reconciled from {row.grnLine.grn_number} (1 {row.reconciledFrom.fromUnit} ={" "}
-                              {row.reconciledFrom.conversionFactor} {row.item.unit}).
-                            </p>
-                          )}
                           {Number(row.qty) > (row.item.stock_free ?? 0) && (
                             <p className="text-[11px] text-amber-600 mt-0.5">
                               Only {formatNumber(row.item.stock_free ?? 0)} in store.
@@ -396,12 +391,11 @@ export default function RmConversionNew() {
                       itemId={row.item.id}
                       itemLabel={row.item.description}
                       itemUnit={row.item.unit}
-                      onConfirm={(line, qty, reconciled) =>
+                      onConfirm={(line, qty) =>
                         updateRow(row.key, {
                           grnLine: line,
                           qty: String(qty),
-                          source: reconciled ? "store" : "grn_direct",
-                          reconciledFrom: reconciled ?? null,
+                          source: "grn_direct",
                         })
                       }
                     />
@@ -427,7 +421,7 @@ export default function RmConversionNew() {
             />
           </div>
           <div>
-            <Label className="text-xs">Qty {outputItem ? `(${outputItem.unit})` : ""}</Label>
+            <Label className="text-xs">Qty produced {outputItem ? `(${outputItem.unit})` : ""}</Label>
             <Input
               type="number"
               min={0}

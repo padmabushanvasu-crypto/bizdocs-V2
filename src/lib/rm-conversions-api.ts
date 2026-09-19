@@ -110,55 +110,6 @@ export async function reverseRmConversion(rmConversionId: string, reason: string
   if (error) throw new Error(error.message);
 }
 
-// ── GRN-line unit reconciliation ────────────────────────────────────────────────
-// One-off manual fix for a GRN line whose recorded unit doesn't match the
-// item's base unit (rpc_post_rm_conversion's grn_direct guard blocks that
-// pairing outright, unconditionally, regardless of payload -- by design, left
-// untouched). This credits items.stock_free directly for the reconciled
-// quantity (manual_adjustment, incoming -> free) and records an allocation
-// row against the GRN line, so the caller then posts the RM conversion input
-// with source: 'store' instead of 'grn_direct' -- no guard involved at all.
-
-export interface ReconcileGrnUnitResult {
-  reconciliation_id: string;
-  qty_base: number;
-  new_stock_free: number;
-}
-
-export async function reconcileGrnUnitToStore(params: {
-  grnLineItemId: string;
-  itemId: string;
-  enteredQty: number;
-  fromUnit: string;
-  conversionFactor: number;
-  notes: string;
-}): Promise<ReconcileGrnUnitResult> {
-  const companyId = await getCompanyId();
-  if (!companyId) throw new Error("Not authenticated");
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
-
-  const { data, error } = await (supabase as any).rpc("rpc_reconcile_grn_unit_to_store", {
-    p_company_id: companyId,
-    p_grn_line_item_id: params.grnLineItemId,
-    p_item_id: params.itemId,
-    p_entered_qty: params.enteredQty,
-    p_from_unit: params.fromUnit,
-    p_conversion_factor: params.conversionFactor,
-    p_reconciled_by: user.id,
-    p_notes: params.notes,
-  });
-  // The RPC raises descriptive exceptions (over the GRN line's available_qty,
-  // invalid factor, etc.) -- surface verbatim, don't reword.
-  if (error) throw new Error(error.message);
-  const row = Array.isArray(data) ? data[0] : data;
-  return {
-    reconciliation_id: row.reconciliation_id,
-    qty_base: Number(row.qty_base),
-    new_stock_free: Number(row.new_stock_free),
-  };
-}
-
 // ── Register (list + expandable detail) ─────────────────────────────────────────
 
 export interface RmConversionRow {
