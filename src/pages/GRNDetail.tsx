@@ -1050,14 +1050,15 @@ function QCMeasurementEditor({
               </div>
             )}
 
-            {/* Per-line Final GRN checkbox — every PO line AND DC-return line gets
-                an editable box (default unticked unless auto-detect suggests it).
-                Auto-detect is a SUGGESTION (pre-tick + hint); the QC user can override. */}
+            {/* Per-line Final GRN checkbox — manual only, no auto-tick. Every PO
+                line AND DC-return line gets an editable box, unticked by default;
+                autoFinalLines only drives the "(suggested)" hint text, never the
+                checked state or what gets saved — the user must explicitly tick
+                it themselves. */}
             {!disabled && setFinalGrnPerLine && (() => {
               const lineId = item.id;
-              const isAuto = autoFinalLines.has(lineId) || !!item.final_grn_auto_detected;
-              // Explicit user choice wins; otherwise fall back to the auto suggestion.
-              const checked = finalGrnPerLine[lineId] ?? isAuto;
+              const isSuggested = autoFinalLines.has(lineId) || !!item.final_grn_auto_detected;
+              const checked = finalGrnPerLine[lineId] ?? false;
               return (
                 <label htmlFor={`final-grn-qc-${lineId}`} className="flex items-center gap-2.5 px-4 py-2.5 border-b border-slate-100 bg-slate-50/40 cursor-pointer">
                   <input
@@ -1067,7 +1068,7 @@ function QCMeasurementEditor({
                     disabled={isDeletedOrCancelled}
                     onChange={(e) => {
                       const newMap = { ...finalGrnPerLine, [lineId]: e.target.checked };
-                      const newAnyFinal = Object.values(newMap).some(v => v) || autoFinalLines.size > 0;
+                      const newAnyFinal = Object.values(newMap).some(v => v);
                       if (!e.target.checked && isSavedFinalGrn && !newAnyFinal) {
                         setPendingUntickLineId?.(lineId);
                         setShowUntickDialog?.(true);
@@ -1079,7 +1080,7 @@ function QCMeasurementEditor({
                   />
                   <span className="text-xs text-slate-600 flex items-center gap-1.5">
                     Final GRN — no further delivery expected
-                    {isAuto && (
+                    {isSuggested && (
                       <span className="text-[10px] text-slate-400 font-medium">
                         (suggested{item.final_grn_reason ? ` — ${item.final_grn_reason}` : ""})
                       </span>
@@ -2401,30 +2402,13 @@ export default function GRNDetail() {
           conforming_qty_2:     conf2Total > 0 ? conf2Total : null,
         };
       });
-      // PO-GRNs: all lines are final (goods always go to store after QC).
-      // DC-GRNs: only bought_out/consumable/service auto-mark (others may go back to job work).
-      const autoFinal = new Set<string>(
-        grn?.grn_type === 'po_grn'
-          ? (grn?.line_items ?? []).map((item) => item.id ?? "")
-          : (grn?.line_items ?? [])
-              .filter((item) => ["bought_out", "consumable", "service"].includes(lineItemTypes?.[(item as any).drawing_number ?? ""] ?? ""))
-              .map((item) => item.id ?? "")
-      );
-      // Build the per-line final map. Auto-detected lines default to final ONLY
-      // when the user hasn't explicitly set them — an explicit untick wins.
+      // Manual only, no auto-tick: exactly what the user checked is what saves.
+      // Nothing is silently forced true for an untouched line.
       const perLineForSave: Record<string, boolean> = { ...finalGrnPerLine };
-      autoFinal.forEach(lid => { if (!(lid in finalGrnPerLine)) perLineForSave[lid] = true; });
       const anyFinalGrn = Object.values(perLineForSave).some(v => v);
-      // Per-line reason: auto lines keep/explain the suggestion, manual ticks are tagged.
-      const lineById = new Map((grn?.line_items ?? []).map((li: any) => [li.id, li]));
       const finalReasonPerLine: Record<string, string | null> = {};
       for (const [lid, isFinal] of Object.entries(perLineForSave)) {
-        if (!isFinal) { finalReasonPerLine[lid] = null; continue; }
-        if (autoFinal.has(lid)) {
-          finalReasonPerLine[lid] = (lineById.get(lid) as any)?.final_grn_reason ?? "Auto-detected — final receipt";
-        } else {
-          finalReasonPerLine[lid] = "marked final by user";
-        }
+        finalReasonPerLine[lid] = isFinal ? "marked final by user" : null;
       }
       const qcResult = await saveQualityStage(
         id!, lines, s2InspectedBy, s2Remarks || null, s2Date,
@@ -2445,7 +2429,7 @@ export default function GRNDetail() {
         title: wasEdit ? "QC inspection updated" : "Quality inspection complete",
         description: wasEdit
           ? "Changes saved. Stock adjusted for any accepted-qty change."
-          : ((Object.values(finalGrnPerLine).some(v => v) || (grn?.line_items ?? []).some((item) => ["bought_out","consumable","service"].includes(lineItemTypes?.[(item as any).drawing_number ?? ""] ?? ""))) ? "GRN is awaiting store confirmation." : "GRN is now closed."),
+          : (Object.values(finalGrnPerLine).some(v => v) ? "GRN is awaiting store confirmation." : "GRN is now closed."),
       });
       const warnings = qcResult?.stockWarnings ?? [];
       if (warnings.length > 0) {
@@ -2724,8 +2708,10 @@ export default function GRNDetail() {
   const s2Done    = ["quality_done", "closed", "awaiting_store"].includes(stage);
   const pendingFinanceApproval = stage === "pending_finance_approval";
 
-  // ── Per-line Final GRN derived values ─────────────────────────────────────
-  // PO-GRNs: all lines auto-final (always go to store). DC-GRNs: only specific item types.
+  // ── Per-line Final GRN suggestion (hint text only — never gates checked
+  // state or what gets saved; see the checkbox render above) ────────────────
+  // PO-GRNs: every line is suggested (goods always go to store). DC-GRNs:
+  // only specific item types.
   const autoFinalLines = new Set<string>(
     grn.grn_type === 'po_grn'
       ? (grn.line_items ?? []).map((item) => item.id ?? "")
@@ -2733,10 +2719,6 @@ export default function GRNDetail() {
           .filter((item) => ["bought_out", "consumable", "service"].includes(lineItemTypes?.[(item as any).drawing_number ?? ""] ?? ""))
           .map((item) => item.id ?? "")
   );
-  const isFinalGrn = (grn.line_items ?? []).some((item) => {
-    const lineId = item.id ?? "";
-    return autoFinalLines.has(lineId) || (finalGrnPerLine[lineId] ?? false);
-  });
   const showStorePanel = stage === "awaiting_store" && !g.store_confirmed;
   const s1RoleAllowed = role === 'admin' || role === 'finance' || role === 'inward_team';
   const s2RoleAllowed = role === 'admin' || role === 'finance' || role === 'qc_team';
