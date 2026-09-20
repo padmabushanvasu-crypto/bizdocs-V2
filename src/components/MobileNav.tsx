@@ -26,7 +26,6 @@ import {
   AlertCircle,
   Wrench,
   Layers,
-  Puzzle,
   X,
   CheckCircle,
   MapPin,
@@ -54,7 +53,6 @@ const MORE_GROUPS = [
     items: [
       { label: "Sub-Assembly Work Orders", to: "/sub-assembly-work-orders", icon: Layers },
       { label: "Finished Good Work Orders", to: "/finished-good-work-orders", icon: Package },
-      { label: "Component Work Orders", to: "/component-work-orders", icon: Puzzle },
       { label: "Storekeeper Queue", to: "/storekeeper", icon: PackageCheck },
       { label: "RM Conversions", to: "/rm-conversions", icon: Recycle },
     ],

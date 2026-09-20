@@ -54,7 +54,6 @@ type StockAction = 'none' | 'return_all' | 'partial' | 'scrap_all';
 
 function awoListRoute(awoType: string | undefined): string {
   if (awoType === 'sub_assembly') return '/sub-assembly-work-orders';
-  if (awoType === 'component') return '/component-work-orders';
   return '/finished-good-work-orders';
 }
 
@@ -346,6 +345,21 @@ export default function AssemblyWorkOrderDetail() {
   if (!awo) {
     return (
       <div className="p-6 text-center text-muted-foreground">Work order not found.</div>
+    );
+  }
+
+  // Component Work Orders page was retired — this AWO type is historical
+  // only (create flow removed). Show a read-only notice instead of the full
+  // interactive detail view for any old link/bookmark that still points here.
+  if (awo.awo_type === 'component') {
+    return (
+      <div className="p-6 max-w-2xl mx-auto text-center space-y-3">
+        <p className="text-lg font-medium text-slate-800">{awo.awo_number}</p>
+        <p className="text-muted-foreground">
+          Component Work Orders has been retired. This work order is kept for historical record only.
+        </p>
+        <Button variant="outline" onClick={() => navigate("/")}>Back to Dashboard</Button>
+      </div>
     );
   }
 
