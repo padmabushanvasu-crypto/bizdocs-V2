@@ -1,23 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Archive, Search, Edit2, Plus, AlertCircle, ClipboardCheck } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Archive, Search, ClipboardCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId } from "@/lib/auth-helpers";
 import { fetchItems, type Item } from "@/lib/items-api";
-import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
-import { STOCK_STATE } from "@/lib/stock-states";
-import {
-  fetchNotificationSettings,
-  saveNotificationSettings,
-  type NotificationSettings,
-} from "@/lib/settings-api";
 import { format } from "date-fns";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
 import { formatNumber, formatCurrency } from "@/lib/gst-utils";
@@ -33,16 +23,6 @@ const ITEM_TYPE_LABELS: Record<string, { label: string; cls: string }> = {
   service:        { label: "Service",       cls: "bg-gray-100 text-gray-600" },
   asset:          { label: "Asset",         cls: "bg-red-100 text-red-700" },
 };
-
-// value is what's persisted into the ledger note (`Reason: <value>`) — keep
-// stable even when the label shown to users changes.
-const EDIT_REASONS: { value: string; label: string }[] = [
-  { value: "Initial stock entry", label: "Initial stock (new item only)" },
-  { value: "Physical stock count correction", label: "Physical stock count correction" },
-  { value: "Migration from previous system", label: "Migration from previous system" },
-  { value: "Audit adjustment", label: "Audit adjustment" },
-  { value: "Other", label: "Other" },
-];
 
 interface OpeningStockEntry {
   item_id: string;
@@ -75,54 +55,12 @@ async function fetchLatestOpeningStock(): Promise<Record<string, OpeningStockEnt
   return map;
 }
 
-// Any stock_ledger row at all (not just opening_stock) marks an item as
-// having history — mirrors the DB guard in rpc_post_stock_ledger_row.
-async function fetchItemIdsWithHistory(): Promise<Set<string>> {
-  const companyId = await getCompanyId();
-  const ids = new Set<string>();
-  if (!companyId) return ids;
-  const PAGE = 1000;
-  let offset = 0;
-  while (true) {
-    const { data, error } = await (supabase as any)
-      .from("stock_ledger")
-      .select("item_id")
-      .eq("company_id", companyId)
-      .range(offset, offset + PAGE - 1);
-    if (error) throw error;
-    const rows = (data ?? []) as any[];
-    for (const row of rows) {
-      if (row.item_id) ids.add(row.item_id);
-    }
-    if (rows.length < PAGE) break;
-    offset += PAGE;
-  }
-  return ids;
-}
-
-interface EditState {
-  item: Item;
-  editedBy: string;
-  newQty: string;
-  costPerUnit: string;
-  reason: string;
-  otherReason: string;
-}
-
 export default function OpeningStock() {
-  const { toast } = useToast();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const { hideCosts } = useRoleAccess();
 
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
-  const [editState, setEditState] = useState<EditState | null>(null);
-
-  // Inline "add your name" UI state
-  const [showAddName, setShowAddName] = useState(false);
-  const [addNameDraft, setAddNameDraft] = useState("");
-  const [addNameError, setAddNameError] = useState("");
 
   const { data: itemsData, isLoading: itemsLoading } = useQuery({
     queryKey: ["items-opening-stock"],
@@ -133,105 +71,6 @@ export default function OpeningStock() {
   const { data: openingMap = {}, isLoading: ledgerLoading } = useQuery({
     queryKey: ["opening-stock-entries"],
     queryFn: fetchLatestOpeningStock,
-  });
-
-  const { data: historyIds = new Set<string>(), isLoading: historyLoading } = useQuery({
-    queryKey: ["opening-stock-item-history"],
-    queryFn: fetchItemIdsWithHistory,
-  });
-
-  const { data: notifSettings } = useQuery({
-    queryKey: ["notification-settings-os"],
-    queryFn: fetchNotificationSettings,
-  });
-  const editorNames: string[] = notifSettings?.stock_editor_names ?? [];
-
-  // Mutation to add a name on-the-fly
-  const addNameMutation = useMutation({
-    mutationFn: async (name: string) => {
-      const current: NotificationSettings = await fetchNotificationSettings();
-      const existing = current.stock_editor_names ?? [];
-      if (existing.map(n => n.toLowerCase()).includes(name.toLowerCase())) {
-        throw new Error("Name already exists");
-      }
-      const updated: NotificationSettings = {
-        ...current,
-        stock_editor_names: [...existing, name],
-      };
-      await saveNotificationSettings(updated);
-      return name;
-    },
-    onSuccess: (name) => {
-      queryClient.invalidateQueries({ queryKey: ["notification-settings-os"] });
-      setEditState(s => s ? { ...s, editedBy: name } : s);
-      setShowAddName(false);
-      setAddNameDraft("");
-      setAddNameError("");
-    },
-    onError: (err: any) => {
-      setAddNameError(err.message ?? "Failed to add name");
-    },
-  });
-
-  const handleAddName = () => {
-    const name = addNameDraft.trim();
-    if (!name) { setAddNameError("Name cannot be blank"); return; }
-    addNameMutation.mutate(name);
-  };
-
-  const saveMutation = useMutation({
-    mutationFn: async (state: EditState) => {
-      const companyId = await getCompanyId();
-      if (!companyId) throw new Error("No company");
-      const newQty = parseFloat(state.newQty) || 0;
-      const costPerUnit = parseFloat(state.costPerUnit) || 0;
-      const reasonText = state.reason === "Other" ? state.otherReason.trim() || "Other" : state.reason;
-      const notesText = `Reason: ${reasonText} | Edited by: ${state.editedBy}`;
-
-      // Route through the ledger primitive (canonical states; computes running
-      // balance + stamps created_by). Opening stock enters from nowhere → FREE.
-      await addStockLedgerEntry({
-        item_id: state.item.id,
-        item_code: state.item.item_code ?? null,
-        item_description: state.item.description ?? null,
-        transaction_date: format(new Date(), "yyyy-MM-dd"),
-        transaction_type: "opening_stock",
-        qty_in: newQty,
-        qty_out: 0,
-        balance_qty: newQty,
-        unit_cost: costPerUnit,
-        total_value: newQty * costPerUnit,
-        reference_type: "manual",
-        reference_id: null,
-        reference_number: null,
-        notes: notesText,
-        created_by: null,
-        from_state: null,
-        to_state: STOCK_STATE.FREE,
-      });
-
-      // stock_free is ledger-owned (DB trigger) — no separate bucket write.
-      return { editorName: state.editedBy, itemDescription: state.item.description };
-    },
-    onSuccess: ({ editorName, itemDescription }) => {
-      toast({ title: `Opening stock updated by ${editorName} for ${itemDescription}` });
-      setEditState(null);
-      setShowAddName(false);
-      setAddNameDraft("");
-      queryClient.invalidateQueries({ queryKey: ["items-opening-stock"] });
-      queryClient.invalidateQueries({ queryKey: ["opening-stock-entries"] });
-      queryClient.invalidateQueries({ queryKey: ["opening-stock-item-history"] });
-      queryClient.invalidateQueries({ queryKey: ["items"] });
-    },
-    onError: (err: any) => {
-      const message = err?.message ?? "";
-      const isHistoryGuard = err?.code === "23514" || message.includes("already has stock history");
-      if (isHistoryGuard) {
-        toast({ title: message, description: "Use Physical Count to correct this item instead.", variant: "destructive" });
-      } else {
-        toast({ title: "Save failed", description: message, variant: "destructive" });
-      }
-    },
   });
 
   const filteredItems = items.filter(item => {
@@ -247,38 +86,7 @@ export default function OpeningStock() {
     return true;
   });
 
-  const isLoading = itemsLoading || ledgerLoading || historyLoading;
-
-  const openEdit = (item: Item) => {
-    const entry = openingMap[item.id];
-    setShowAddName(false);
-    setAddNameDraft("");
-    setAddNameError("");
-    setEditState({
-      item,
-      editedBy: "",
-      newQty: String(item.stock_free ?? 0),
-      costPerUnit: entry ? String(entry.unit_cost) : String(item.purchase_price ?? 0),
-      reason: "Initial stock entry",
-      otherReason: "",
-    });
-  };
-
-  const canSave =
-    editState !== null &&
-    editState.editedBy.trim() !== "" &&
-    editState.reason !== "" &&
-    !(editState.reason === "Other" && !editState.otherReason.trim());
-
-  const handleSave = () => {
-    if (!editState) return;
-    const qty = parseFloat(editState.newQty);
-    if (isNaN(qty) || qty < 0) {
-      toast({ title: "Invalid quantity", variant: "destructive" });
-      return;
-    }
-    saveMutation.mutate(editState);
-  };
+  const isLoading = itemsLoading || ledgerLoading;
 
   const uniqueTypes = Array.from(new Set(items.map(i => i.item_type))).sort();
 
@@ -289,7 +97,7 @@ export default function OpeningStock() {
         <Archive className="h-6 w-6 text-slate-600" />
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Opening Stock</h1>
-          <p className="text-sm text-slate-500">Set or update opening stock quantities for all items</p>
+          <p className="text-sm text-slate-500">Find an item and correct its stock via Physical Count</p>
         </div>
       </div>
 
@@ -349,7 +157,6 @@ export default function OpeningStock() {
               filteredItems.map(item => {
                 const entry = openingMap[item.id];
                 const typeInfo = ITEM_TYPE_LABELS[item.item_type] ?? { label: item.item_type, cls: "bg-gray-100 text-gray-600" };
-                const hasHistory = historyIds.has(item.id);
                 return (
                   <tr key={item.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3 font-mono text-xs text-slate-700">{item.item_code}</td>
@@ -391,27 +198,15 @@ export default function OpeningStock() {
                       </td>
                     )}
                     <td className="px-4 py-3 text-right">
-                      {hasHistory ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 px-2 text-blue-600 hover:text-blue-800"
-                          onClick={() => navigate(`/physical-count?item=${item.id}`)}
-                        >
-                          <ClipboardCheck className="h-3.5 w-3.5 mr-1" />
-                          Count
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 px-2 text-slate-500 hover:text-slate-800"
-                          onClick={() => openEdit(item)}
-                        >
-                          <Edit2 className="h-3.5 w-3.5 mr-1" />
-                          Edit
-                        </Button>
-                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-blue-600 hover:text-blue-800"
+                        onClick={() => navigate(`/physical-count?item=${item.id}`)}
+                      >
+                        <ClipboardCheck className="h-3.5 w-3.5 mr-1" />
+                        Count
+                      </Button>
                     </td>
                   </tr>
                 );
@@ -423,171 +218,6 @@ export default function OpeningStock() {
       {!isLoading && (
         <p className="text-xs text-slate-400 mt-2">{filteredItems.length} items</p>
       )}
-
-      {/* Edit Dialog */}
-      <Dialog open={!!editState} onOpenChange={open => { if (!open) { setEditState(null); setShowAddName(false); setAddNameDraft(""); setAddNameError(""); } }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit Opening Stock</DialogTitle>
-          </DialogHeader>
-          {editState && (
-            <div className="space-y-4 py-2">
-              <div className="text-sm">
-                <p className="font-medium text-slate-800">{editState.item.description}</p>
-                <p className="text-slate-500 font-mono text-xs">{editState.item.item_code}</p>
-              </div>
-
-              {/* Edited By — first and mandatory */}
-              <div className="space-y-1.5">
-                <Label htmlFor="os-editor">
-                  Edited By <span className="text-red-500">*</span>
-                </Label>
-                {editorNames.length === 0 ? (
-                  <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                    <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                    <span>
-                      No editor names configured. Please add names in{" "}
-                      <strong>Settings → Notifications → Stock Editors</strong>.
-                    </span>
-                  </div>
-                ) : (
-                  <Select
-                    value={editState.editedBy}
-                    onValueChange={v => setEditState(s => s ? { ...s, editedBy: v } : s)}
-                  >
-                    <SelectTrigger id="os-editor">
-                      <SelectValue placeholder="Select your name…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {editorNames.map(name => (
-                        <SelectItem key={name} value={name}>{name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-
-                {/* Inline add name */}
-                {!showAddName ? (
-                  <button
-                    type="button"
-                    className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 mt-1"
-                    onClick={() => { setShowAddName(true); setAddNameDraft(""); setAddNameError(""); }}
-                  >
-                    <Plus className="h-3 w-3" />
-                    Add your name
-                  </button>
-                ) : (
-                  <div className="space-y-1 mt-1">
-                    <div className="flex gap-2">
-                      <Input
-                        autoFocus
-                        value={addNameDraft}
-                        onChange={e => { setAddNameDraft(e.target.value); setAddNameError(""); }}
-                        onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleAddName(); } if (e.key === "Escape") { setShowAddName(false); } }}
-                        placeholder="Your name…"
-                        className="h-8 text-sm"
-                      />
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="h-8 shrink-0"
-                        onClick={handleAddName}
-                        disabled={addNameMutation.isPending}
-                      >
-                        {addNameMutation.isPending ? "…" : "Add"}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 shrink-0"
-                        onClick={() => { setShowAddName(false); setAddNameError(""); }}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                    {addNameError && <p className="text-xs text-red-500">{addNameError}</p>}
-                  </div>
-                )}
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="os-qty">
-                    New Quantity <span className="text-slate-400 font-normal">({editState.item.unit})</span>
-                  </Label>
-                  <Input
-                    id="os-qty"
-                    type="number"
-                    min="0"
-                    step="0.001"
-                    value={editState.newQty}
-                    onChange={e => setEditState(s => s ? { ...s, newQty: e.target.value } : s)}
-                    placeholder="0"
-                  />
-                  <p className="text-xs text-slate-400">
-                    Current free stock: {formatNumber(editState.item.stock_free ?? 0)}
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="os-cost">Cost Per Unit (₹)</Label>
-                  <Input
-                    id="os-cost"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={editState.costPerUnit}
-                    onChange={e => setEditState(s => s ? { ...s, costPerUnit: e.target.value } : s)}
-                    placeholder="0.00"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="os-reason">
-                  Reason <span className="text-red-500">*</span>
-                </Label>
-                <Select
-                  value={editState.reason}
-                  onValueChange={v => setEditState(s => s ? { ...s, reason: v } : s)}
-                >
-                  <SelectTrigger id="os-reason">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {EDIT_REASONS.map(r => (
-                      <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {editState.reason === "Other" && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="os-other">Specify reason</Label>
-                  <Input
-                    id="os-other"
-                    value={editState.otherReason}
-                    onChange={e => setEditState(s => s ? { ...s, otherReason: e.target.value } : s)}
-                    placeholder="Describe the reason…"
-                  />
-                </div>
-              )}
-
-              <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
-                This will update the free stock bucket and create an audit trail entry in the stock ledger.
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setEditState(null); setShowAddName(false); }}>Cancel</Button>
-            <Button onClick={handleSave} disabled={saveMutation.isPending || !canSave}>
-              {saveMutation.isPending ? "Saving…" : "Save"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
