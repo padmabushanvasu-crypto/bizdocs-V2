@@ -29,7 +29,6 @@ import {
   PanelLeft,
   PanelLeftClose,
   Wrench,
-  Puzzle,
   Search,
   Send,
   RotateCcw,
@@ -188,7 +187,7 @@ const GROUP_PATHS: Record<string, string[]> = {
   "DASHBOARD":             ["/"],
   "PROCUREMENT":           ["/purchase-orders", "/delivery-challans", "/follow-up-tracker", "/vendor-scorecards", "/parties", "/reorder-intelligence"],
   "INWARD & QC":           ["/grn", "/storekeeper-queue", "/ready-to-move", "/dc-grn"],
-  "PRODUCTION & JOB WORK": ["/job-works", "/wip-register", "/sub-assembly-work-orders", "/finished-good-work-orders", "/component-work-orders", "/rm-conversions"],
+  "PRODUCTION & JOB WORK": ["/job-works", "/wip-register", "/sub-assembly-work-orders", "/finished-good-work-orders", "/rm-conversions"],
   "INVENTORY & STORES":    ["/stock-register", "/inventory-ledger", "/opening-stock", "/storekeeper", "/store-locator", "/physical-count", "/physical-count/approvals", "/consumables", "/scrap-register"],
   "DISPATCH":              ["/ready-to-dispatch", "/dispatch-records", "/serial-numbers", "/fat-certificates"],
   "FINANCE & COMPLIANCE":  ["/gst-reports"],
@@ -500,18 +499,16 @@ export function AppSidebar() {
     queryKey: ["awo-stats-sidebar"],
     queryFn: async () => {
       try {
-        const [sa, fg, co] = await Promise.all([
+        const [sa, fg] = await Promise.all([
           fetchAwoStats("sub_assembly"),
           fetchAwoStats("finished_good"),
-          fetchAwoStats("component"),
         ]);
         return {
           sa_active: (sa.pending_materials ?? 0) + (sa.in_progress ?? 0),
           fg_active: (fg.pending_materials ?? 0) + (fg.in_progress ?? 0),
-          co_active: (co.pending_materials ?? 0) + (co.in_progress ?? 0),
         };
       } catch {
-        return { sa_active: 0, fg_active: 0, co_active: 0 };
+        return { sa_active: 0, fg_active: 0 };
       }
     },
     staleTime: 5 * 60 * 1000,
@@ -865,14 +862,6 @@ export function AppSidebar() {
       badge: awoStats?.fg_active && awoStats.fg_active > 0 ? awoStats.fg_active : undefined,
       badgeColor: "amber" as const,
       allowedRoles: ['admin', 'finance', 'qc_team', 'assembly_team'],
-    },
-    {
-      title: "Components",
-      url: "/component-work-orders",
-      icon: Puzzle,
-      badge: awoStats?.co_active && awoStats.co_active > 0 ? awoStats.co_active : undefined,
-      badgeColor: "amber" as const,
-      allowedRoles: ['admin', 'finance', 'assembly_team'],
     },
     {
       title: "RM Conversions",
