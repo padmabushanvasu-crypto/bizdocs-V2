@@ -3,7 +3,6 @@ import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
 import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
 import { getNextDocNumber } from "@/lib/doc-number-utils";
 import { updateStockBucket } from "@/lib/items-api";
-import { logAudit } from "@/lib/audit-api";
 import { STOCK_STATE } from "@/lib/stock-states";
 import { createNotification } from "@/lib/notifications-api";
 
@@ -1674,123 +1673,11 @@ export async function saveQualityStage(
     console.error('[GRN] DC status update failed (quality stage save succeeded):', dcStatusErr);
   }
 
-  // Update linked Job Card step if this GRN is linked to a DC
-  try {
-    const { data: grnHeader } = await (supabase as any)
-      .from("grns")
-      .select("linked_dc_id, grn_stage, overall_quality_verdict")
-      .eq("id", grnId)
-      .single();
-
-    if (grnHeader?.linked_dc_id) {
-      // Match step that was sent on this DC — could be in_progress or material_returned
-      const { data: linkedStep } = await (supabase as any)
-        .from("job_card_steps")
-        .select("id, job_card_id, step_number")
-        .eq("outward_dc_id", grnHeader.linked_dc_id)
-        .in("status", ["in_progress", "material_returned"])
-        .maybeSingle();
-
-      if (linkedStep) {
-        // Job-work charge = Σ over GRN lines of (paired DC-line rate × basis qty).
-        //  - Rate: LIVE per-line from dc_line_items (correctable if mis-typed).
-        //  - Basis: SNAPSHOT per-line from grn_line_items.rate_basis (drift-proof).
-        //  - Qty:  conforming_qty_2 when basis='alternate' (else conforming_qty).
-        // Fixes the prior single-rate multi-line bug (was dcLines2[0].rate ×
-        // totalConforming — one line's rate applied to every line's qty).
-        const { data: dcLines2 } = await (supabase as any)
-          .from("dc_line_items")
-          .select("id, rate")
-          .eq("dc_id", grnHeader.linked_dc_id);
-        // dc_line_item_id → rate (mirrors receivedByDCLine's flat-fetch → Record).
-        const rateByDCLine: Record<string, number> = {};
-        for (const dl of (dcLines2 ?? []) as any[]) {
-          if (dl.id) rateByDCLine[dl.id as string] = Number(dl.rate ?? 0) || 0;
-        }
-
-        const { data: billingLines } = await (supabase as any)
-          .from("grn_line_items")
-          .select("id, dc_line_item_id, rate_basis, conforming_qty, conforming_qty_2, description")
-          .eq("grn_id", grnId);
-
-        let refinedCharge = 0;
-        for (const row of (billingLines ?? []) as any[]) {
-          const dcLineId = row.dc_line_item_id as string | null;
-          if (!dcLineId) continue;                          // unpaired line — nothing to bill on
-          const pairedRate = rateByDCLine[dcLineId] ?? 0;
-          if (!(pairedRate > 0)) continue;                  // no/zero rate — contributes 0
-          let basisQty: number;
-          if (row.rate_basis === "alternate") {
-            const alt = Number(row.conforming_qty_2 ?? 0) || 0;
-            if (alt > 0) {
-              basisQty = alt;
-            } else {
-              // Null-fallback: alt-basis line with no alt conforming captured —
-              // bill on primary qty rather than silently zeroing the charge; warn.
-              basisQty = Number(row.conforming_qty ?? 0) || 0;
-              billingWarnings.push(`${row.description ?? row.id} — alt-basis line billed on primary qty (no alt conforming captured)`);
-            }
-          } else {
-            basisQty = Number(row.conforming_qty ?? 0) || 0;
-          }
-          refinedCharge += pairedRate * basisQty;
-        }
-        refinedCharge = Math.round(refinedCharge * 100) / 100;
-
-        // Mark this step as done (QC cleared) and record final confirmed qty + job work charge
-        const doneUpdate: Record<string, unknown> = {
-          status: "done",
-          completed_at: new Date().toISOString(),
-          actual_qty: totalConforming,
-        };
-        if (refinedCharge > 0) doneUpdate.job_work_charges = refinedCharge;
-        await (supabase as any)
-          .from("job_card_steps")
-          .update(doneUpdate)
-          .eq("id", linkedStep.id);
-
-        // Find all steps that are not yet finished (pending or in_progress, excluding pre_bizdocs)
-        const { data: remainingSteps } = await (supabase as any)
-          .from("job_card_steps")
-          .select("id, step_number, name, status")
-          .eq("job_card_id", linkedStep.job_card_id)
-          .not("status", "in", "(done,material_returned,pre_bizdocs)")
-          .order("step_number", { ascending: true });
-
-        if (remainingSteps && remainingSteps.length > 0) {
-          // Unfinished steps remain — advance current_stage pointer, stay in_progress
-          const next = remainingSteps[0];
-          await (supabase as any)
-            .from("job_cards")
-            .update({
-              current_stage: next.step_number,
-              current_stage_name: next.name,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", linkedStep.job_card_id);
-        } else {
-          // Every meaningful step is done or material_returned — close the job card
-          await (supabase as any)
-            .from("job_cards")
-            .update({
-              status: "completed",
-              completed_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", linkedStep.job_card_id);
-        }
-
-        await logAudit(
-          "job_card",
-          linkedStep.job_card_id,
-          "Job Card Step Completed via GRN",
-          { step_number: linkedStep.step_number, grn_id: grnId }
-        );
-      }
-    }
-  } catch (jcErr) {
-    console.error("Job Card step update failed (GRN save succeeded):", jcErr);
-  }
+  // Job-card step/stage state is DB-owned: job_card_steps.status and
+  // job_cards.current_stage are derived by trigger from job_card_stage_ledger.
+  // QC stage save no longer writes any of that (or job_work_charges) directly
+  // — stage advancement for a job-card-linked DC-return line now happens at
+  // store confirm, via rpc_confirm_grn_store (storeConfirmGRNItems).
 
   return { stockWarnings, billingWarnings };
 }
