@@ -1038,7 +1038,12 @@ export async function createJobWorkStep(
         additional_cost: data.additional_cost ?? 0,
         vendor_id: data.vendor_id ?? null,
         vendor_name: data.vendor_name ?? null,
-        outward_dc_id: data.outward_dc_id ?? null,
+        // outward_dc_id is no longer written here — it was a legacy way of
+        // "linking" a step to a DC. rpc_link_dc_line_to_job_card (writing
+        // dc_line_items.job_card_id/step_number) is now the sole linking
+        // path; job_card_step_dcs below is the separate, already-current
+        // source of truth for which DCs sent material for this step. The
+        // column stays readable for any existing rows/legacy display.
         expected_return_date: data.expected_return_date ?? null,
         qty_sent: data.qty_sent ?? null,
         unit: data.unit ?? "NOS",

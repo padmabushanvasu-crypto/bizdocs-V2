@@ -420,6 +420,11 @@ export async function createDeliveryChallan({ dc, lineItems }: CreateDCData) {
   }
 
   if (lineItems.length > 0) {
+    // job_card_id/step_number are NOT part of the insert — rpc_link_dc_line_to_job_card
+    // is the sole writer of those columns (see the linking loop below). Everything
+    // else, including the legacy job_work_id/stage_number/stage_name fields (still
+    // actively read by rpc_get_pending_job_card_links for the GRN-side confirmation
+    // dialog), is written as before.
     const itemsToInsert = lineItems.map((item) => ({
       company_id: companyId,
       dc_id: (newDC as any).id, serial_number: item.serial_number, description: item.description,
@@ -442,18 +447,64 @@ export async function createDeliveryChallan({ dc, lineItems }: CreateDCData) {
       is_rework: item.is_rework ?? false,
       rework_cycle: item.rework_cycle ?? 1,
       parent_dc_line_id: item.parent_dc_line_id ?? null,
-      job_card_id: item.job_card_id ?? null,
-      step_number: item.step_number ?? null,
     }));
-    const { error: itemsError } = await supabase.from("dc_line_items").insert(itemsToInsert as any);
+    const { data: insertedLines, error: itemsError } = await supabase
+      .from("dc_line_items")
+      .insert(itemsToInsert as any)
+      .select("id, serial_number");
     if (itemsError) throw itemsError;
+
+    await linkNewDcLinesToJobCards(lineItems, (insertedLines ?? []) as Array<{ id: string; serial_number: number }>);
   }
   return newDC as unknown as DeliveryChallan;
+}
+
+/**
+ * Resolves job-card linking for freshly-inserted dc_line_items rows via
+ * rpc_link_dc_line_to_job_card — the sole writer of job_card_id/step_number.
+ * Matches inserted rows back to the original line data by serial_number.
+ * Called once per line: with the chosen job card + step if the user picked
+ * one, else with p_job_card_id null (marks job_card_link_reviewed — the RPC's
+ * own no-op path for "not part of a job card").
+ */
+async function linkNewDcLinesToJobCards(
+  lineItems: DCLineItem[],
+  insertedLines: Array<{ id: string; serial_number: number }>,
+): Promise<void> {
+  const idBySerial = new Map(insertedLines.map((l) => [l.serial_number, l.id]));
+  for (const item of lineItems) {
+    const lineId = idBySerial.get(item.serial_number);
+    if (!lineId) continue;
+    await linkDcLineToJobCardWithStep(lineId, item.job_card_id ?? null, item.step_number ?? null);
+  }
 }
 
 // ============================================================
 // New stage-ledger model (DC_STAGE_FLOW_REDESIGN.md) — backward path
 // ============================================================
+
+/**
+ * Links a freshly-created dc_line_items row to a job card + explicit stage
+ * (the user picked both via JobCardLinePicker) via rpc_link_dc_line_to_job_card
+ * — the sole writer of job_card_id/step_number/job_card_link_reviewed.
+ * jobCardId null records "not part of a job card" (the RPC's own no-op path);
+ * stepNumber is only meaningful when jobCardId is set. Unlike
+ * grn-api.ts's linkDcLineToJobCard (GRN-side re-link, always server-resolved),
+ * this DC-creation path always has an explicit stage from the picker, so it's
+ * passed through rather than left for the RPC to auto-resolve.
+ */
+export async function linkDcLineToJobCardWithStep(
+  dcLineItemId: string,
+  jobCardId: string | null,
+  stepNumber: number | null,
+): Promise<void> {
+  const { error } = await (supabase as any).rpc('rpc_link_dc_line_to_job_card', {
+    p_dc_line_item_id: dcLineItemId,
+    p_job_card_id: jobCardId,
+    p_step_number: jobCardId ? stepNumber : null,
+  });
+  if (error) throw new Error(error.message);
+}
 
 /**
  * Changes an already-issued job-work DC line's quantity in place via
@@ -642,11 +693,14 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
       is_rework: item.is_rework ?? false,
       rework_cycle: item.rework_cycle ?? 1,
       parent_dc_line_id: item.parent_dc_line_id ?? null,
-      job_card_id: item.job_card_id ?? null,
-      step_number: item.step_number ?? null,
     }));
-    const { error: itemsError } = await supabase.from("dc_line_items").insert(itemsToInsert as any);
+    const { data: insertedLines, error: itemsError } = await supabase
+      .from("dc_line_items")
+      .insert(itemsToInsert as any)
+      .select("id, serial_number");
     if (itemsError) throw itemsError;
+
+    await linkNewDcLinesToJobCards(newLineItems, (insertedLines ?? []) as Array<{ id: string; serial_number: number }>);
   }
 
   // Preserved job-card lines: plain in-place UPDATE for every field except
