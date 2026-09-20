@@ -75,7 +75,8 @@ export function JobCardLinePicker({ itemId, jobCardId, stepNumber, onChange }: J
               <input
                 type="number"
                 className="w-20 border border-emerald-300 rounded px-2 py-1 text-sm"
-                value={stepNumber ?? eligibleStages[0].step_number}
+                placeholder={String(eligibleStages[0].step_number)}
+                value={stepNumber ?? ""}
                 onChange={(e) => onChange(jobCardId, e.target.value ? Number(e.target.value) : null)}
               />
               <span className="text-emerald-700">

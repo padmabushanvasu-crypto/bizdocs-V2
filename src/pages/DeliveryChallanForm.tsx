@@ -236,12 +236,13 @@ export default function DeliveryChallanForm() {
   const selectStage = (lineIndex: number, stage: ProcessingRoute) => {
     setLineSelectedStageId(prev => { const m = new Map(prev); m.set(lineIndex, stage.id); return m; });
     setLineStageSelection(prev => { const m = new Map(prev); m.set(lineIndex, stage.stage_number); return m; });
-    // Auto-select JC if exactly one non-cancelled candidate exists; carry stage info onto the line.
-    // Note: job_work_step_id is intentionally NOT written here — the column is
-    // null across all 314 existing dc_line_items rows in production and nothing
-    // downstream reads it from new DCs. GRN matching uses outward_dc_id.
+    // Carry stage info onto the line. No auto-linking: the user must explicitly
+    // pick a job card via the picker (pickJobCard) — nothing here writes
+    // job_work_id/job_work_number. Note: job_work_step_id is intentionally NOT
+    // written here — the column is null across all 314 existing dc_line_items
+    // rows in production and nothing downstream reads it from new DCs. GRN
+    // matching uses outward_dc_id.
     const jcs = lineJobCards.get(lineIndex) ?? [];
-    const autoJc = jcs.length === 1 ? jcs[0] : null;
     setLineItems(items => {
       const updated = [...items];
       (updated[lineIndex] as any).selectedStageId = stage.id;
@@ -252,9 +253,7 @@ export default function DeliveryChallanForm() {
         stage_name: stage.process_name,
       };
       const currentJcId = updated[lineIndex].job_work_id;
-      const linkedJc = currentJcId
-        ? jcs.find(j => j.id === currentJcId)
-        : autoJc;
+      const linkedJc = currentJcId ? jcs.find(j => j.id === currentJcId) : null;
       if (linkedJc) {
         updated[lineIndex] = {
           ...updated[lineIndex],

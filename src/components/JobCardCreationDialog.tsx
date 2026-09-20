@@ -79,7 +79,10 @@ export function JobCardCreationDialog({
           skip: false,
           existingMode: false,
           existingJCNumber: existingMatch?.jc_number ?? "",
-          useExisting: existingMatch != null,
+          // No auto-linking: even when a single existing job card resolves for
+          // this item, the user must explicitly choose "Yes, link existing JC"
+          // before handleCreateJC will take that path.
+          useExisting: false,
           existingJCs: existingMatch ? [existingMatch] : [],
         };
       });
