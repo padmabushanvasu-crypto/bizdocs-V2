@@ -420,6 +420,11 @@ export async function createDeliveryChallan({ dc, lineItems }: CreateDCData) {
   }
 
   if (lineItems.length > 0) {
+    // job_card_id/step_number are NOT part of the insert — rpc_link_dc_line_to_job_card
+    // is the sole writer of those columns (see the linking loop below). Everything
+    // else, including the legacy job_work_id/stage_number/stage_name fields (still
+    // actively read by rpc_get_pending_job_card_links for the GRN-side confirmation
+    // dialog), is written as before.
     const itemsToInsert = lineItems.map((item) => ({
       company_id: companyId,
       dc_id: (newDC as any).id, serial_number: item.serial_number, description: item.description,
@@ -442,18 +447,64 @@ export async function createDeliveryChallan({ dc, lineItems }: CreateDCData) {
       is_rework: item.is_rework ?? false,
       rework_cycle: item.rework_cycle ?? 1,
       parent_dc_line_id: item.parent_dc_line_id ?? null,
-      job_card_id: item.job_card_id ?? null,
-      step_number: item.step_number ?? null,
     }));
-    const { error: itemsError } = await supabase.from("dc_line_items").insert(itemsToInsert as any);
+    const { data: insertedLines, error: itemsError } = await supabase
+      .from("dc_line_items")
+      .insert(itemsToInsert as any)
+      .select("id, serial_number");
     if (itemsError) throw itemsError;
+
+    await linkNewDcLinesToJobCards(lineItems, (insertedLines ?? []) as Array<{ id: string; serial_number: number }>);
   }
   return newDC as unknown as DeliveryChallan;
+}
+
+/**
+ * Resolves job-card linking for freshly-inserted dc_line_items rows via
+ * rpc_link_dc_line_to_job_card — the sole writer of job_card_id/step_number.
+ * Matches inserted rows back to the original line data by serial_number.
+ * Called once per line: with the chosen job card + step if the user picked
+ * one, else with p_job_card_id null (marks job_card_link_reviewed — the RPC's
+ * own no-op path for "not part of a job card").
+ */
+async function linkNewDcLinesToJobCards(
+  lineItems: DCLineItem[],
+  insertedLines: Array<{ id: string; serial_number: number }>,
+): Promise<void> {
+  const idBySerial = new Map(insertedLines.map((l) => [l.serial_number, l.id]));
+  for (const item of lineItems) {
+    const lineId = idBySerial.get(item.serial_number);
+    if (!lineId) continue;
+    await linkDcLineToJobCardWithStep(lineId, item.job_card_id ?? null, item.step_number ?? null);
+  }
 }
 
 // ============================================================
 // New stage-ledger model (DC_STAGE_FLOW_REDESIGN.md) — backward path
 // ============================================================
+
+/**
+ * Links a freshly-created dc_line_items row to a job card + explicit stage
+ * (the user picked both via JobCardLinePicker) via rpc_link_dc_line_to_job_card
+ * — the sole writer of job_card_id/step_number/job_card_link_reviewed.
+ * jobCardId null records "not part of a job card" (the RPC's own no-op path);
+ * stepNumber is only meaningful when jobCardId is set. Unlike
+ * grn-api.ts's linkDcLineToJobCard (GRN-side re-link, always server-resolved),
+ * this DC-creation path always has an explicit stage from the picker, so it's
+ * passed through rather than left for the RPC to auto-resolve.
+ */
+export async function linkDcLineToJobCardWithStep(
+  dcLineItemId: string,
+  jobCardId: string | null,
+  stepNumber: number | null,
+): Promise<void> {
+  const { error } = await (supabase as any).rpc('rpc_link_dc_line_to_job_card', {
+    p_dc_line_item_id: dcLineItemId,
+    p_job_card_id: jobCardId,
+    p_step_number: jobCardId ? stepNumber : null,
+  });
+  if (error) throw new Error(error.message);
+}
 
 /**
  * Changes an already-issued job-work DC line's quantity in place via
@@ -642,11 +693,14 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
       is_rework: item.is_rework ?? false,
       rework_cycle: item.rework_cycle ?? 1,
       parent_dc_line_id: item.parent_dc_line_id ?? null,
-      job_card_id: item.job_card_id ?? null,
-      step_number: item.step_number ?? null,
     }));
-    const { error: itemsError } = await supabase.from("dc_line_items").insert(itemsToInsert as any);
+    const { data: insertedLines, error: itemsError } = await supabase
+      .from("dc_line_items")
+      .insert(itemsToInsert as any)
+      .select("id, serial_number");
     if (itemsError) throw itemsError;
+
+    await linkNewDcLinesToJobCards(newLineItems, (insertedLines ?? []) as Array<{ id: string; serial_number: number }>);
   }
 
   // Preserved job-card lines: plain in-place UPDATE for every field except
@@ -988,131 +1042,6 @@ export async function softDeleteDeliveryChallan(
   // Let RPC errors (e.g. the returned-material guard) propagate as-is so the UI
   // can surface them.
   if (error) throw error;
-}
-
-export async function recordLineItemReturn(
-  lineItemId: string,
-  data: {
-    qty_received: number;
-    qty_accepted: number;
-    qty_rejected: number;
-    rejection_reason?: string;
-    notes?: string;
-  }
-): Promise<void> {
-  const companyId = await getCompanyId();
-  const today = new Date().toISOString().split("T")[0];
-  const { data: { user } } = await supabase.auth.getUser();
-
-  // Fetch line item
-  const { data: lineItem, error: liErr } = await (supabase as any)
-    .from("dc_line_items")
-    .select("id, dc_id, job_work_id, job_work_step_id, item_code, description")
-    .eq("id", lineItemId)
-    .single();
-  if (liErr) throw liErr;
-  const li = lineItem as any;
-
-  // 1. Update dc_line_items
-  await (supabase as any).from("dc_line_items").update({
-    qty_received: data.qty_received,
-    qty_accepted: data.qty_accepted,
-    qty_rejected: data.qty_rejected,
-    return_status: "returned",
-    rejection_reason: data.rejection_reason || null,
-    returned_qty_nos: data.qty_accepted,
-  }).eq("id", lineItemId);
-
-  // 2. Update job_card_step if linked
-  if (li.job_work_step_id) {
-    const inspResult = data.qty_rejected === 0 ? "accepted" : data.qty_accepted === 0 ? "rejected" : "partially_accepted";
-    await (supabase as any).from("job_card_steps").update({
-      status: "done",
-      qty_returned: data.qty_received,
-      qty_accepted: data.qty_accepted,
-      qty_rejected: data.qty_rejected,
-      rejection_reason: data.rejection_reason || null,
-      inspection_result: inspResult,
-      inspected_at: new Date().toISOString(),
-      completed_at: new Date().toISOString(),
-    }).eq("id", li.job_work_step_id);
-
-    // Get job_card_id from step to check location
-    const { data: step } = await (supabase as any)
-      .from("job_card_steps")
-      .select("job_card_id")
-      .eq("id", li.job_work_step_id)
-      .single();
-    if (step) {
-      const jcId = (step as any).job_card_id;
-      // Update JC quantities
-      const { data: jcQty } = await (supabase as any)
-        .from("job_cards")
-        .select("quantity_accepted, quantity_rejected")
-        .eq("id", jcId)
-        .single();
-      if (jcQty) {
-        const newAccepted = Math.max(0, (jcQty as any).quantity_accepted - data.qty_rejected);
-        const newRejected = (jcQty as any).quantity_rejected + data.qty_rejected;
-        await (supabase as any).from("job_cards").update({ quantity_accepted: newAccepted, quantity_rejected: newRejected }).eq("id", jcId);
-      }
-      // Reset location if no more open external steps
-      const { data: openSteps } = await (supabase as any)
-        .from("job_card_steps")
-        .select("id")
-        .eq("job_card_id", jcId)
-        .eq("step_type", "external")
-        .neq("status", "done");
-      if (!openSteps?.length) {
-        await (supabase as any).from("job_cards").update({ current_location: "in_house", current_vendor_name: null, current_vendor_since: null }).eq("id", jcId);
-      }
-    }
-  }
-
-  // 3. Move stock: subassembly_wip → free
-  if (li.job_work_id && data.qty_accepted > 0) {
-    const { data: jc } = await (supabase as any)
-      .from("job_cards")
-      .select("item_id, item_code, item_description, jc_number")
-      .eq("id", li.job_work_id)
-      .single();
-    if (jc && (jc as any).item_id) {
-      const { data: item } = await (supabase as any)
-        .from("items")
-        .select("id, item_code, description, current_stock, standard_cost")
-        .eq("id", (jc as any).item_id)
-        .single();
-      if (item) {
-        const { data: dcHeader } = await supabase.from("delivery_challans").select("dc_number").eq("id", li.dc_id).single();
-        const dcNumber = (dcHeader as any)?.dc_number ?? "";
-        await addStockLedgerEntry({
-          item_id: (item as any).id,
-          item_code: (item as any).item_code,
-          item_description: (item as any).description ?? (jc as any).item_description ?? "",
-          transaction_date: today,
-          // 'job_work_return' was not in the stock_ledger CHECK constraint
-          // and silently failed under the prior swallow. Mapped to 'dc_return'
-          // (reference is a DC; flow is vendor-return on an outward DC).
-          transaction_type: "dc_return",
-          qty_in: data.qty_accepted,
-          qty_out: 0,
-          balance_qty: (item as any).current_stock ?? 0,
-          unit_cost: (item as any).standard_cost ?? 0,
-          total_value: data.qty_accepted * ((item as any).standard_cost ?? 0),
-          reference_type: "delivery_challan",
-          reference_id: li.dc_id,
-          reference_number: dcNumber,
-          notes: `Job work return (per line): ${dcNumber}`,
-          created_by: user?.id ?? null,
-          from_state: STOCK_STATE.SUBASSEMBLY_WIP,
-          to_state: STOCK_STATE.FREE,
-        });
-      }
-    }
-  }
-
-  // 4. Recalculate DC status
-  await recalculateDCStatus(li.dc_id);
 }
 
 export async function fetchProcessSuggestions(): Promise<string[]> {

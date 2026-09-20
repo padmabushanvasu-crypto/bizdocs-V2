@@ -1038,7 +1038,12 @@ export async function createJobWorkStep(
         additional_cost: data.additional_cost ?? 0,
         vendor_id: data.vendor_id ?? null,
         vendor_name: data.vendor_name ?? null,
-        outward_dc_id: data.outward_dc_id ?? null,
+        // outward_dc_id is no longer written here — it was a legacy way of
+        // "linking" a step to a DC. rpc_link_dc_line_to_job_card (writing
+        // dc_line_items.job_card_id/step_number) is now the sole linking
+        // path; job_card_step_dcs below is the separate, already-current
+        // source of truth for which DCs sent material for this step. The
+        // column stays readable for any existing rows/legacy display.
         expected_return_date: data.expected_return_date ?? null,
         qty_sent: data.qty_sent ?? null,
         unit: data.unit ?? "NOS",
@@ -1152,101 +1157,6 @@ export async function deleteJobWorkStep(id: string): Promise<void> {
       step_name: (step as any).name,
     }).catch(console.error);
   }
-}
-
-export interface RecordReturnData {
-  qty_returned: number;
-  inspection_result: "accepted" | "partially_accepted" | "rejected";
-  qty_accepted: number;
-  qty_rejected: number;
-  rejection_reason?: string;
-  inspected_by?: string;
-  notes?: string;
-  return_dc_id?: string;
-  return_grn_id?: string;
-}
-
-export async function recordStepReturn(
-  stepId: string,
-  returnData: RecordReturnData
-): Promise<JobWorkStep> {
-  // 1. Update the step
-  const { data: step, error: stepErr } = await (supabase as any)
-    .from("job_card_steps")
-    .update({
-      qty_returned: returnData.qty_returned,
-      inspection_result: returnData.inspection_result,
-      qty_accepted: returnData.qty_accepted,
-      qty_rejected: returnData.qty_rejected,
-      rejection_reason: returnData.rejection_reason ?? null,
-      inspected_by: returnData.inspected_by ?? null,
-      inspected_at: new Date().toISOString(),
-      notes: returnData.notes ?? null,
-      return_dc_id: returnData.return_dc_id ?? null,
-      return_grn_id: returnData.return_grn_id ?? null,
-      status: "done",
-      completed_at: new Date().toISOString(),
-    })
-    .eq("id", stepId)
-    .select()
-    .single();
-  if (stepErr) throw stepErr;
-
-  // 2. Update job card quantities and location
-  const jcId = (step as any).job_card_id;
-  const { data: jc } = await (supabase as any)
-    .from("job_cards")
-    .select("quantity_accepted, quantity_rejected")
-    .eq("id", jcId)
-    .single();
-
-  if (jc) {
-    const rejectedDelta = returnData.qty_rejected ?? 0;
-    const newAccepted = Math.max(0, (jc as any).quantity_accepted - rejectedDelta);
-    const newRejected = (jc as any).quantity_rejected + rejectedDelta;
-
-    await (supabase as any)
-      .from("job_cards")
-      .update({
-        quantity_accepted: newAccepted,
-        quantity_rejected: newRejected,
-        current_location: "in_house",
-        current_vendor_name: null,
-        current_vendor_since: null,
-      })
-      .eq("id", jcId);
-  }
-
-  const vendorName = (step as any).vendor_name ?? "vendor";
-  const result = returnData.inspection_result;
-  const returnAction =
-    result === "accepted"
-      ? "Return Recorded — Accepted"
-      : result === "partially_accepted"
-      ? "Return Recorded — Partial"
-      : "Return Recorded — Rejected";
-
-  let returnSummary: string;
-  if (result === "accepted") {
-    returnSummary = `${vendorName} returned ${returnData.qty_returned} units — all accepted`;
-  } else if (result === "partially_accepted") {
-    returnSummary = `${vendorName} returned ${returnData.qty_returned} units — ${returnData.qty_accepted} accepted, ${returnData.qty_rejected} rejected`;
-    if (returnData.rejection_reason) returnSummary += ` (${returnData.rejection_reason})`;
-  } else {
-    returnSummary = `${vendorName} returned ${returnData.qty_returned} units — all rejected`;
-    if (returnData.rejection_reason) returnSummary += ` (${returnData.rejection_reason})`;
-  }
-
-  logAudit("job_card", jcId, returnAction, {
-    summary: returnSummary,
-    vendor_name: vendorName,
-    qty_returned: returnData.qty_returned,
-    qty_accepted: returnData.qty_accepted,
-    qty_rejected: returnData.qty_rejected,
-    rejection_reason: returnData.rejection_reason ?? null,
-  }).catch(console.error);
-
-  return step as JobWorkStep;
 }
 
 // ============================================================

@@ -79,7 +79,10 @@ export function JobCardCreationDialog({
           skip: false,
           existingMode: false,
           existingJCNumber: existingMatch?.jc_number ?? "",
-          useExisting: existingMatch != null,
+          // No auto-linking: even when a single existing job card resolves for
+          // this item, the user must explicitly choose "Yes, link existing JC"
+          // before handleCreateJC will take that path.
+          useExisting: false,
           existingJCs: existingMatch ? [existingMatch] : [],
         };
       });
@@ -180,18 +183,12 @@ export function JobCardCreationDialog({
                 outward_dc_id: dcId || null,
               } as any);
             }
-            // Ensure JC is in_progress and track current stage
-            await (supabase as any)
-              .from("job_cards")
-              .update({
-                status: "in_progress",
-                current_stage: item.selectedStageNumber,
-                current_stage_name: selectedRoute?.process_name ?? null,
-                current_location: "at_vendor",
-                current_vendor_name: partyName ?? null,
-                current_vendor_since: new Date().toISOString(),
-              })
-              .eq("id", existingJCId);
+            // job_cards.status/current_stage/current_stage_name are DB-owned
+            // (derived by trigger from job_card_stage_ledger) — no longer
+            // written here. current_location/current_vendor_* tracking for
+            // this path is dropped along with it per the same instruction;
+            // rpc_link_dc_line_to_job_card is the state-updating path when a
+            // DC line is linked to a job card.
           }
 
           results.push({

@@ -3,7 +3,6 @@ import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
 import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
 import { getNextDocNumber } from "@/lib/doc-number-utils";
 import { updateStockBucket } from "@/lib/items-api";
-import { logAudit } from "@/lib/audit-api";
 import { STOCK_STATE } from "@/lib/stock-states";
 import { createNotification } from "@/lib/notifications-api";
 
@@ -1254,21 +1253,23 @@ export async function saveQuantitativeStage(
       await recalculateGRNStatusFromLines(grnId);
       if (grnMeta.linked_dc_id) {
         await recalculateDCStatusFromGRNReceipts(grnMeta.linked_dc_id);
-        // CHANGE 4: material received back from vendor — advance linked job card step
-        // to material_returned so the timeline shows an intermediate "returned" state.
-        // Also record job_work_charges from the DC line item total (provisional — refined at Stage 2).
+        // CHANGE 4: material received back from vendor — record a provisional
+        // job_work_charges from the DC line item total (refined at Stage 2).
+        // job_card_steps.status is ledger-derived now (never written here);
+        // the timeline's "material returned" state comes from
+        // job_card_stage_ledger, not this column.
         const { data: dcLines1 } = await (supabase as any)
           .from('dc_line_items')
           .select('amount')
           .eq('dc_id', grnMeta.linked_dc_id);
         const provisionalCharge = ((dcLines1 ?? []) as any[]).reduce((s: number, l: any) => s + (Number(l.amount) || 0), 0);
-        const stepUpdate: Record<string, unknown> = { status: 'material_returned' };
-        if (provisionalCharge > 0) stepUpdate.job_work_charges = provisionalCharge;
-        await (supabase as any)
-          .from('job_card_steps')
-          .update(stepUpdate)
-          .eq('outward_dc_id', grnMeta.linked_dc_id)
-          .eq('status', 'in_progress');
+        if (provisionalCharge > 0) {
+          await (supabase as any)
+            .from('job_card_steps')
+            .update({ job_work_charges: provisionalCharge })
+            .eq('outward_dc_id', grnMeta.linked_dc_id)
+            .eq('status', 'in_progress');
+        }
       }
     }
   } catch (dcStatusErr) {
@@ -1674,11 +1675,17 @@ export async function saveQualityStage(
     console.error('[GRN] DC status update failed (quality stage save succeeded):', dcStatusErr);
   }
 
-  // Update linked Job Card step if this GRN is linked to a DC
+  // Job-card step/stage state is DB-owned: job_card_steps.status and
+  // job_cards.current_stage are derived by trigger from job_card_stage_ledger
+  // — stage advancement for a job-card-linked DC-return line now happens at
+  // store confirm, via rpc_confirm_grn_store (storeConfirmGRNItems). Neither
+  // is written here. job_work_charges/actual_qty are NOT stage state, though
+  // — they're billing data the step carries, and this is the only place that
+  // computes the refined per-line-rate charge, so that part stays.
   try {
     const { data: grnHeader } = await (supabase as any)
       .from("grns")
-      .select("linked_dc_id, grn_stage, overall_quality_verdict")
+      .select("linked_dc_id")
       .eq("id", grnId)
       .single();
 
@@ -1686,7 +1693,7 @@ export async function saveQualityStage(
       // Match step that was sent on this DC — could be in_progress or material_returned
       const { data: linkedStep } = await (supabase as any)
         .from("job_card_steps")
-        .select("id, job_card_id, step_number")
+        .select("id")
         .eq("outward_dc_id", grnHeader.linked_dc_id)
         .in("status", ["in_progress", "material_returned"])
         .maybeSingle();
@@ -1737,59 +1744,18 @@ export async function saveQualityStage(
         }
         refinedCharge = Math.round(refinedCharge * 100) / 100;
 
-        // Mark this step as done (QC cleared) and record final confirmed qty + job work charge
-        const doneUpdate: Record<string, unknown> = {
-          status: "done",
-          completed_at: new Date().toISOString(),
-          actual_qty: totalConforming,
-        };
-        if (refinedCharge > 0) doneUpdate.job_work_charges = refinedCharge;
+        // Record final confirmed qty + job work charge only — status/completed_at
+        // are ledger-derived now, never written here.
+        const billingUpdate: Record<string, unknown> = { actual_qty: totalConforming };
+        if (refinedCharge > 0) billingUpdate.job_work_charges = refinedCharge;
         await (supabase as any)
           .from("job_card_steps")
-          .update(doneUpdate)
+          .update(billingUpdate)
           .eq("id", linkedStep.id);
-
-        // Find all steps that are not yet finished (pending or in_progress, excluding pre_bizdocs)
-        const { data: remainingSteps } = await (supabase as any)
-          .from("job_card_steps")
-          .select("id, step_number, name, status")
-          .eq("job_card_id", linkedStep.job_card_id)
-          .not("status", "in", "(done,material_returned,pre_bizdocs)")
-          .order("step_number", { ascending: true });
-
-        if (remainingSteps && remainingSteps.length > 0) {
-          // Unfinished steps remain — advance current_stage pointer, stay in_progress
-          const next = remainingSteps[0];
-          await (supabase as any)
-            .from("job_cards")
-            .update({
-              current_stage: next.step_number,
-              current_stage_name: next.name,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", linkedStep.job_card_id);
-        } else {
-          // Every meaningful step is done or material_returned — close the job card
-          await (supabase as any)
-            .from("job_cards")
-            .update({
-              status: "completed",
-              completed_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", linkedStep.job_card_id);
-        }
-
-        await logAudit(
-          "job_card",
-          linkedStep.job_card_id,
-          "Job Card Step Completed via GRN",
-          { step_number: linkedStep.step_number, grn_id: grnId }
-        );
       }
     }
   } catch (jcErr) {
-    console.error("Job Card step update failed (GRN save succeeded):", jcErr);
+    console.error("Job Card step billing update failed (GRN save succeeded):", jcErr);
   }
 
   return { stockWarnings, billingWarnings };

@@ -236,12 +236,13 @@ export default function DeliveryChallanForm() {
   const selectStage = (lineIndex: number, stage: ProcessingRoute) => {
     setLineSelectedStageId(prev => { const m = new Map(prev); m.set(lineIndex, stage.id); return m; });
     setLineStageSelection(prev => { const m = new Map(prev); m.set(lineIndex, stage.stage_number); return m; });
-    // Auto-select JC if exactly one non-cancelled candidate exists; carry stage info onto the line.
-    // Note: job_work_step_id is intentionally NOT written here — the column is
-    // null across all 314 existing dc_line_items rows in production and nothing
-    // downstream reads it from new DCs. GRN matching uses outward_dc_id.
+    // Carry stage info onto the line. No auto-linking: the user must explicitly
+    // pick a job card via the picker (pickJobCard) — nothing here writes
+    // job_work_id/job_work_number. Note: job_work_step_id is intentionally NOT
+    // written here — the column is null across all 314 existing dc_line_items
+    // rows in production and nothing downstream reads it from new DCs. GRN
+    // matching uses outward_dc_id.
     const jcs = lineJobCards.get(lineIndex) ?? [];
-    const autoJc = jcs.length === 1 ? jcs[0] : null;
     setLineItems(items => {
       const updated = [...items];
       (updated[lineIndex] as any).selectedStageId = stage.id;
@@ -252,9 +253,7 @@ export default function DeliveryChallanForm() {
         stage_name: stage.process_name,
       };
       const currentJcId = updated[lineIndex].job_work_id;
-      const linkedJc = currentJcId
-        ? jcs.find(j => j.id === currentJcId)
-        : autoJc;
+      const linkedJc = currentJcId ? jcs.find(j => j.id === currentJcId) : null;
       if (linkedJc) {
         updated[lineIndex] = {
           ...updated[lineIndex],
@@ -724,10 +723,16 @@ export default function DeliveryChallanForm() {
             parent_dc_line_id: (i as any).parent_dc_line_id ?? null,
             total_stages: selectedStage ? routeForLine.length : null,
             route_id: selectedStageId ?? null,
+            // Jig Master checklist (when the drawing has registered jigs) wins;
+            // otherwise fall back to whatever the operator typed manually in
+            // the free-text "Jigs sent" field — most drawings have no Jig
+            // Master record at all, so that manual field is the only way most
+            // job-work DCs ever get jigs_sent populated.
             jigs_sent: (() => {
               const selected = jigsForLine.filter(j => jigsChecked.includes(j.id));
-              if (selected.length === 0) return null;
-              return selected.map(j => j.jig_number || j.id).join(', ');
+              if (selected.length > 0) return selected.map(j => j.jig_number || j.id).join(', ');
+              const manual = typeof i.jigs_sent === "string" ? i.jigs_sent.trim() : "";
+              return manual || null;
             })(),
             // Dual-UOM: persist the shown alt unit when an alt qty is entered
             // (the Select displays `unit_2 || "NOS"` but only commits on manual
@@ -1926,6 +1931,26 @@ export default function DeliveryChallanForm() {
                     </>
                   );
                 })()}
+                {/* Manual "Jigs sent" note — independent of the Jig Master checklist
+                    above (which only appears when the drawing has a registered jig).
+                    Most drawings don't, so this free-text field is the only way most
+                    job-work DC lines ever get dc_line_items.jigs_sent populated. */}
+                {isJobWorkDC && (
+                  <tr key={`jigs-manual-${index}`}>
+                    <td />
+                    <td colSpan={12} className="px-3 py-1.5">
+                      <label className="flex items-center gap-2 text-xs text-slate-500">
+                        <span className="shrink-0">Jigs sent (optional)</span>
+                        <Input
+                          value={typeof item.jigs_sent === "string" ? item.jigs_sent : ""}
+                          onChange={(e) => updateLineItem(index, "jigs_sent", e.target.value)}
+                          placeholder="e.g. JIG-12, JIG-14"
+                          className="h-7 text-xs max-w-xs"
+                        />
+                      </label>
+                    </td>
+                  </tr>
+                )}
                 {/* Mould alert */}
                 {(lineMouldItems.get(index)?.length ?? 0) > 0 && (
                   <tr key={`mould-${index}`} className="bg-amber-50/40 border-b border-amber-100">
