@@ -25,6 +25,11 @@ import {
   fetchDCReceiptSummary,
   fetchPOReceiptSummary,
   getDcLineReceipt,
+  fetchDcWeldmentCandidates,
+  receiveWeldmentFromDc,
+  removeWeldmentLine,
+  reverseWeldmentReceipt,
+  fetchGrnWeldmentConsumption,
   type QuantitativeLineData,
   type QualitativeLineData,
   type InspectionMethod,
@@ -148,7 +153,14 @@ interface S1Line {
 // edit-approval revert path can reset s1Lines to persisted values without
 // duplicating the mapping. Pure — depends only on the passed GRN.
 function deriveS1Lines(grn: any): S1Line[] {
-  const items = grn?.line_items ?? [];
+  // Weldment receipts (is_weldment_receipt) bypass the two-stage quantitative/QC
+  // pipeline entirely — rpc_receive_weldment_from_dc already sets their final
+  // accepted_qty/rejected_qty in one shot, with no dc_line_item_id and no
+  // conforming_qty. Feeding one through Stage 1/2 would corrupt those RPC-set
+  // values (Stage 2 save overwrites accepted_qty from conforming_qty) and trip
+  // quantity checks that assume a dc_line_item_id. They render in their own
+  // "Weldment Receipts" panel instead — see WeldmentLinesPanel below.
+  const items = (grn?.line_items ?? []).filter((item: any) => !item.is_weldment_receipt);
   return items.map((item: any) => {
     const a = item as any;
     // Pre-fill priority for "Received Now": persisted → mid-edit → GRNForm entry
@@ -933,6 +945,392 @@ function Stage1ReadOnly({
   );
 }
 
+// ── Weldment receipts (DC-return GRN) ──────────────────────────────────────────
+// A job-work DC returning a welded sub-assembly: components shipped on the DC
+// are consumed and the W-item comes back as one line, added via
+// rpc_receive_weldment_from_dc. This panel is fully self-contained — it never
+// touches s1Lines/ncSummaries/qcRows, and the store-confirm/print wiring for
+// these lines lives in grn-api.ts (storeConfirmGRNItems) and GRNPrintView.
+
+function WeldmentConsumptionRows({ grnLineItemId }: { grnLineItemId: string }) {
+  const { data: rows = [], isLoading } = useQuery({
+    queryKey: ["grn-weldment-consumption", grnLineItemId],
+    queryFn: () => fetchGrnWeldmentConsumption(grnLineItemId),
+  });
+  if (isLoading) return <p className="text-xs text-slate-400 px-4 py-2">Loading components…</p>;
+  if (rows.length === 0) return <p className="text-xs text-slate-400 px-4 py-2">No component consumption recorded.</p>;
+  return (
+    <table className="w-full text-xs border-collapse">
+      <thead>
+        <tr className="text-left text-[10px] uppercase tracking-wide text-indigo-800/70 bg-indigo-100/50">
+          <th className="px-3 py-1.5 font-semibold">Component</th>
+          <th className="px-3 py-1.5 font-semibold text-right">BOM Qty / unit</th>
+          <th className="px-3 py-1.5 font-semibold text-right">Qty Consumed</th>
+          <th className="px-3 py-1.5 font-semibold">Source DC Line</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.id} className={`border-t border-indigo-100 ${r.reversed_at ? "opacity-50 line-through" : ""}`}>
+            <td className="px-3 py-1.5 font-mono text-slate-700">{r.component_item_code || r.component_description || "—"}</td>
+            <td className="px-3 py-1.5 text-right font-mono">{formatNumber(r.bom_qty_per_unit)}</td>
+            <td className="px-3 py-1.5 text-right font-mono font-medium">{formatNumber(r.qty_consumed)}</td>
+            <td className="px-3 py-1.5 text-slate-600">
+              {r.dc_line_serial != null ? `Line ${r.dc_line_serial}` : "—"}
+              {r.dc_line_description ? ` — ${r.dc_line_description}` : ""}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function ReceiveWeldmentDialog({
+  open,
+  onOpenChange,
+  grnId,
+  dcId,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  grnId: string;
+  dcId: string;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [selectedWItemId, setSelectedWItemId] = useState("");
+  const [qtyAccepted, setQtyAccepted] = useState<string>("");
+  const [qtyRejected, setQtyRejected] = useState<string>("0");
+  const [notes, setNotes] = useState("");
+
+  const { data: candidates = [], isLoading } = useQuery({
+    queryKey: ["dc-weldment-candidates", dcId],
+    queryFn: () => fetchDcWeldmentCandidates(dcId),
+    enabled: open && !!dcId,
+  });
+  const selectedCandidate = candidates.find((c) => c.w_item_id === selectedWItemId);
+
+  useEffect(() => {
+    if (!open) {
+      setSelectedWItemId("");
+      setQtyAccepted("");
+      setQtyRejected("0");
+      setNotes("");
+    }
+  }, [open]);
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      receiveWeldmentFromDc({
+        grnId,
+        wItemId: selectedWItemId,
+        qtyAccepted: Number(qtyAccepted) || 0,
+        qtyRejected: Number(qtyRejected) || 0,
+        notes: notes.trim() || null,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["grn-stages", grnId] });
+      toast({ title: "Weldment received", description: `${selectedCandidate?.w_item_code ?? "Item"} added to the GRN.` });
+      onOpenChange(false);
+    },
+    onError: (err: any) => {
+      // Surfaced verbatim — the RPC's message names exactly which component and
+      // by how much the DC falls short.
+      toast({ title: "Could not receive weldment", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const total = (Number(qtyAccepted) || 0) + (Number(qtyRejected) || 0);
+  const canSubmit = !!selectedWItemId && total > 0 && !mutation.isPending;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Receive as Weldment</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          {isLoading ? (
+            <p className="text-sm text-slate-400 animate-pulse">Loading candidates…</p>
+          ) : candidates.length === 0 ? (
+            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-3">
+              No weldment can be built from this DC — no sub-assembly has all of its BOM components still out on it.
+            </p>
+          ) : (
+            <>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Weldment (W-item)</Label>
+                <select
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                  value={selectedWItemId}
+                  onChange={(e) => {
+                    setSelectedWItemId(e.target.value);
+                    const c = candidates.find((x) => x.w_item_id === e.target.value);
+                    setQtyAccepted(c ? String(c.max_buildable) : "");
+                    setQtyRejected("0");
+                  }}
+                >
+                  <option value="">Select…</option>
+                  {candidates.map((c) => (
+                    <option key={c.w_item_id} value={c.w_item_id}>
+                      {c.w_item_code} — {c.w_description} (max {formatNumber(c.max_buildable)})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {selectedCandidate && (
+                <div className="rounded border border-slate-200 overflow-hidden">
+                  <table className="w-full text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 text-slate-500 uppercase tracking-wide">
+                        <th className="text-left px-3 py-1.5 font-semibold">Component</th>
+                        <th className="text-right px-3 py-1.5 font-semibold">BOM Qty</th>
+                        <th className="text-right px-3 py-1.5 font-semibold">Pending on DC</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedCandidate.components.map((c) => (
+                        <tr key={c.item_id} className="border-t border-slate-100">
+                          <td className="px-3 py-1.5 font-mono">{c.item_code}</td>
+                          <td className="px-3 py-1.5 text-right font-mono">{formatNumber(c.bom_qty)}</td>
+                          <td className="px-3 py-1.5 text-right font-mono">{formatNumber(c.pending_on_dc)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Accepted Qty</Label>
+                  <Input
+                    type="number" min={0}
+                    value={qtyAccepted}
+                    onChange={(e) => setQtyAccepted(e.target.value)}
+                    disabled={!selectedWItemId}
+                    className="h-9"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Rejected Qty</Label>
+                  <Input
+                    type="number" min={0}
+                    value={qtyRejected}
+                    onChange={(e) => setQtyRejected(e.target.value)}
+                    disabled={!selectedWItemId}
+                    className="h-9"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Notes</Label>
+                <Textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  disabled={!selectedWItemId}
+                  placeholder="Optional…"
+                  rows={2}
+                />
+              </div>
+            </>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>Cancel</Button>
+          <Button onClick={() => mutation.mutate()} disabled={!canSubmit}>
+            {mutation.isPending ? "Receiving…" : "Receive Weldment"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function WeldmentLinesPanel({
+  grnId,
+  dcId,
+  lines,
+  canManage,
+  allowAdd,
+}: {
+  grnId: string;
+  dcId: string;
+  lines: GRNLineItem[];
+  canManage: boolean;
+  allowAdd: boolean;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [reverseTarget, setReverseTarget] = useState<GRNLineItem | null>(null);
+  const [reverseReason, setReverseReason] = useState("");
+
+  const { data: candidateCount } = useQuery({
+    queryKey: ["dc-weldment-candidates", dcId],
+    queryFn: async () => (await fetchDcWeldmentCandidates(dcId)).length,
+    enabled: !!dcId && allowAdd,
+    staleTime: 30_000,
+  });
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["grn-stages", grnId] });
+
+  const removeMutation = useMutation({
+    mutationFn: (lineId: string) => removeWeldmentLine(lineId),
+    onSuccess: () => { invalidate(); toast({ title: "Weldment line removed" }); },
+    onError: (err: any) => toast({ title: "Could not remove line", description: err.message, variant: "destructive" }),
+  });
+
+  const reverseMutation = useMutation({
+    mutationFn: () => reverseWeldmentReceipt(reverseTarget!.id!, reverseReason.trim()),
+    onSuccess: () => {
+      invalidate();
+      toast({ title: "Weldment receipt reversed" });
+      setReverseTarget(null);
+      setReverseReason("");
+    },
+    onError: (err: any) => toast({ title: "Could not reverse receipt", description: err.message, variant: "destructive" }),
+  });
+
+  const toggleExpanded = (id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  return (
+    <div className="rounded-lg border border-indigo-200 bg-indigo-50/30 overflow-hidden">
+      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-indigo-100">
+        <div>
+          <h3 className="text-sm font-semibold text-indigo-900">Weldment Receipts</h3>
+          <p className="text-xs text-indigo-700/80 mt-0.5">Welded sub-assemblies built from components shipped on this DC.</p>
+        </div>
+        {allowAdd && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-indigo-300 text-indigo-800 hover:bg-indigo-100 shrink-0"
+            disabled={candidateCount === 0}
+            title={candidateCount === 0 ? "No sub-assembly can be built from what's still out on this DC" : undefined}
+            onClick={() => setDialogOpen(true)}
+          >
+            <Plus className="h-3.5 w-3.5 mr-1" /> Receive as Weldment
+          </Button>
+        )}
+      </div>
+
+      {lines.length === 0 ? (
+        <p className="text-xs text-slate-500 px-4 py-3">No weldment lines on this GRN yet.</p>
+      ) : (
+        <div className="divide-y divide-indigo-100">
+          {lines.map((li) => {
+            const isExpanded = expanded.has(li.id ?? "");
+            const storeConfirmed = (li as any).store_confirmed === true;
+            return (
+              <div key={li.id}>
+                <div className="flex items-center gap-3 px-4 py-2.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => toggleExpanded(li.id ?? "")}
+                    className="text-slate-400 hover:text-slate-700 text-xs w-4 shrink-0"
+                    title="Show component consumption"
+                  >
+                    {isExpanded ? "▾" : "▸"}
+                  </button>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-indigo-100 text-indigo-800 border border-indigo-200 shrink-0">
+                    Weldment
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-slate-800 truncate">{li.description}</p>
+                    <p className="text-xs text-muted-foreground font-mono">{li.drawing_number || "—"}</p>
+                  </div>
+                  <div className="text-xs text-right shrink-0">
+                    <p className="font-mono font-semibold text-slate-800">
+                      {formatNumber((li as any).accepted_qty ?? 0)} accepted
+                      {Number((li as any).rejected_qty ?? 0) > 0 && (
+                        <span className="text-red-600"> · {formatNumber((li as any).rejected_qty)} rejected</span>
+                      )}
+                    </p>
+                    {storeConfirmed ? (
+                      <p className="text-green-700 font-medium">✓ Store confirmed</p>
+                    ) : (
+                      <p className="text-amber-600 font-medium">⏳ Awaiting store confirm</p>
+                    )}
+                  </div>
+                  {canManage && !storeConfirmed && (
+                    <Button
+                      size="sm" variant="ghost"
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50 shrink-0"
+                      disabled={removeMutation.isPending}
+                      onClick={() => removeMutation.mutate(li.id!)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
+                    </Button>
+                  )}
+                  {canManage && storeConfirmed && (
+                    <Button
+                      size="sm" variant="ghost"
+                      className="text-amber-700 hover:text-amber-800 hover:bg-amber-50 shrink-0"
+                      onClick={() => { setReverseTarget(li); setReverseReason(""); }}
+                    >
+                      <RotateCcw className="h-3.5 w-3.5 mr-1" /> Reverse
+                    </Button>
+                  )}
+                </div>
+                {isExpanded && (
+                  <div className="bg-indigo-50/50 border-t border-indigo-100">
+                    <WeldmentConsumptionRows grnLineItemId={li.id!} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <ReceiveWeldmentDialog open={dialogOpen} onOpenChange={setDialogOpen} grnId={grnId} dcId={dcId} />
+
+      <Dialog open={!!reverseTarget} onOpenChange={(v) => { if (!v) setReverseTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reverse Weldment Receipt</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600">
+              This reverses the stock credited for <strong>{reverseTarget?.description}</strong> and restores the
+              consumed components to in-process. Requires a reason.
+            </p>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Reason <span className="text-destructive">*</span></Label>
+              <Textarea
+                value={reverseReason}
+                onChange={(e) => setReverseReason(e.target.value)}
+                placeholder="Why is this receipt being reversed?"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReverseTarget(null)} disabled={reverseMutation.isPending}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={!reverseReason.trim() || reverseMutation.isPending}
+              onClick={() => reverseMutation.mutate()}
+            >
+              {reverseMutation.isPending ? "Reversing…" : "Reverse Receipt"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 // ── QC Measurement — editable rows per item ────────────────────────────────────
 
 function QCMeasurementEditor({
@@ -1513,6 +1911,24 @@ function GRNPrintView({
               )}
               </React.Fragment>
             ))}
+            {lineItems.filter((li: any) => li.is_weldment_receipt).map((li: any, wIdx: number) => (
+              <tr key={`weldment-${li.id ?? wIdx}`} style={{ background: "#EEF2FF" }}>
+                <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0" }}>{s1Lines.length + wIdx + 1}</td>
+                <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", fontFamily: "Courier New, monospace" }}>{li.drawing_number || "—"}</td>
+                <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0" }}>
+                  {li.description}
+                  <div style={{ fontSize: "6.5pt", color: "#4338CA", fontWeight: "bold" }}>
+                    Weldment from DC {grn.linked_dc_number || linkedDC?.dc_number || "—"}
+                  </div>
+                </td>
+                <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "right" }}>{formatNumber((li.accepted_qty ?? 0) + (li.rejected_qty ?? 0))}</td>
+                <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "right", fontWeight: "bold" }}>{formatNumber(li.received_qty ?? 0)}</td>
+                <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "right" }}>{formatNumber(li.accepted_qty ?? 0)}</td>
+                <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "right" }}>{(li.rejected_qty ?? 0) > 0 ? formatNumber(li.rejected_qty) : "—"}</td>
+                <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0" }}>—</td>
+                <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "center" }}>—</td>
+              </tr>
+            ))}
           </tbody>
         </table>
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: "4pt", fontSize: "7.5pt", fontFamily: "Arial" }}>
@@ -1884,7 +2300,8 @@ export default function GRNDetail() {
   useEffect(() => {
     if (!grn) return;
     const g = grn as any;
-    const items = grn.line_items ?? [];
+    // Weldment lines never enter Stage 1/2 state — see deriveS1Lines.
+    const items = (grn.line_items ?? []).filter((item: any) => !(item as any).is_weldment_receipt);
 
     // Stage 1
     setS1Lines(deriveS1Lines(grn));
@@ -2143,7 +2560,7 @@ export default function GRNDetail() {
 
   useEffect(() => {
     if (!grn?.line_items) return;
-    const items = grn.line_items;
+    const items = grn.line_items.filter((item) => !(item as any).is_weldment_receipt);
     setNcSummaries((prev) =>
       items.map((item) => {
         const existing = prev.find((s) => s.lineItemId === item.id);
@@ -2763,6 +3180,10 @@ export default function GRNDetail() {
   const overQtyLines = beyondToleranceItems.map((t) => t.line);
   const ncItemsWithData = ncSummaries.filter((s) => s.non_conforming_qty > 0);
 
+  // Weldment receipts — excluded from s1Lines/ncSummaries (see deriveS1Lines);
+  // read straight off the loaded GRN for their own panel + print rendering.
+  const weldmentLines = (grn.line_items ?? []).filter((li) => (li as any).is_weldment_receipt === true);
+
   // For QCMeasurementEditor lineItems
   const editorLineItems = s1Lines.map((l) => {
     const gl = (grn.line_items ?? []).find((li) => li.id === l.id) as any;
@@ -3098,6 +3519,17 @@ export default function GRNDetail() {
                 </div>
               )}
             </div>
+          )}
+          {/* Weldment receipts — dc_grn only. Fully independent of the Stage 1/2
+              tables above: these lines never enter s1Lines/ncSummaries. */}
+          {g.grn_type === 'dc_grn' && g.linked_dc_id && (weldmentLines.length > 0 || !g.store_confirmed) && (
+            <WeldmentLinesPanel
+              grnId={id!}
+              dcId={g.linked_dc_id}
+              lines={weldmentLines}
+              canManage={s1RoleAllowed && !isDeletedOrCancelled}
+              allowAdd={s1RoleAllowed && !isDeletedOrCancelled && !g.store_confirmed}
+            />
           )}
           {s1Editable ? (
             <Stage1Table

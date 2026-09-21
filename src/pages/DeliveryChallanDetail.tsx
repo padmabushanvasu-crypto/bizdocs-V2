@@ -24,6 +24,7 @@ import {
   issueDeliveryChallan,
   resolveLineItemLoud,
   findLinesMissingJobCardStage,
+  fetchDcLineReturnPositions,
   type EnhancedReturnData,
   type DcDeleteStockAction,
   type DcCancelStockAction,
@@ -145,6 +146,16 @@ export default function DeliveryChallanDetail() {
     queryKey: ["delivery-challan", id],
     queryFn: () => fetchDeliveryChallan(id!),
     enabled: !!id,
+  });
+
+  // Per-line return position (sent / returned direct / consumed into a
+  // weldment / pending) from v_dc_line_return_position — replaces a plain sum
+  // of grn_line_items.received_qty for lines that can also be "accounted for"
+  // by being welded into a sub-assembly. Read-only display only.
+  const { data: dcLineReturnPositions = {} } = useQuery({
+    queryKey: ["dc-line-return-positions", id],
+    queryFn: () => fetchDcLineReturnPositions(id!),
+    enabled: !!id && RETURNABLE_DC_TYPES.includes(dc?.dc_type ?? ""),
   });
 
   const { data: companySettings } = useQuery({
@@ -399,6 +410,10 @@ export default function DeliveryChallanDetail() {
   // (#, Description, Unit, Delivery Date, Qty, Rate, Amount) plus the optional
   // ones that are actually rendered.
   const printColCount = 7 + (hasDrawingNumber ? 1 : 0) + (hasNatureOfProcess ? 1 : 0) + (hasAltQty ? 2 : 0) + (hasQtyKgs ? 1 : 0) + (hasQtySft ? 1 : 0);
+  const showActionsCol = isReturnable && ["issued", "partially_returned"].includes(dc.status);
+  // Column count for the on-screen return-position sub-row (# / Drawing / Description
+  // / [Process] / Unit / Qty / [Alt Qty x2] / [KGS] / [SFT] / [Rate] / [Amount] / Remarks / [Actions]).
+  const screenColCount = 3 + (hasNatureOfProcess ? 1 : 0) + 1 + 1 + (hasAltQty ? 2 : 0) + (hasQtyKgs ? 1 : 0) + (hasQtySft ? 1 : 0) + (!hideCosts ? 2 : 0) + 1 + (showActionsCol ? 1 : 0);
   const today = new Date().toISOString().split("T")[0];
   const isOverdue = dc.return_due_date && dc.return_due_date < today && !["fully_returned", "cancelled"].includes(dc.status);
 
@@ -1058,8 +1073,11 @@ export default function DeliveryChallanDetail() {
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
-                <tr key={item.serial_number}>
+              {items.map((item) => {
+                const pos = dcLineReturnPositions[item.id ?? ""];
+                return (
+                <Fragment key={item.serial_number}>
+                <tr>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-muted-foreground">{item.serial_number}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-semibold text-blue-700">
                     {item.drawing_number || item.item_code || "—"}
@@ -1084,7 +1102,27 @@ export default function DeliveryChallanDetail() {
                     </td>
                   )}
                 </tr>
-              ))}
+                {pos && (pos.consumed_in_weldment_qty > 0 || pos.pending_qty !== pos.sent_qty) && (
+                  <tr className="bg-slate-50/60">
+                    <td colSpan={screenColCount} className="px-4 py-1.5 text-xs text-slate-500 border-b border-slate-100">
+                      Sent: <span className="font-mono font-medium text-slate-700">{formatNumber(pos.sent_qty)}</span>
+                      {" · "}Returned: <span className="font-mono font-medium text-slate-700">{formatNumber(pos.returned_direct_qty)}</span>
+                      {pos.consumed_in_weldment_qty > 0 && (
+                        <>
+                          {" · "}
+                          <span className="text-indigo-700 font-medium">
+                            Consumed into weldment
+                            {pos.weldment_grn_numbers.length > 0 && <> (GRN {pos.weldment_grn_numbers.join(", ")})</>}: {formatNumber(pos.consumed_in_weldment_qty)}
+                          </span>
+                        </>
+                      )}
+                      {" · "}Pending: <span className={`font-mono font-medium ${pos.pending_qty > 0 ? "text-amber-700" : "text-emerald-700"}`}>{formatNumber(pos.pending_qty)}</span>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
