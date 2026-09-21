@@ -136,6 +136,12 @@ interface S1Line {
   prev_accepted_live: number;
   // Alt-measure prior received (summary.received_2), for basis='alt' pending.
   prev_received_2: number;
+  // Live po_line_items.quantity/quantity_2 (PO-GRN only), patched in by the
+  // same refetch effect as prev_received_live. Undefined until that fetch
+  // resolves, and always undefined for DC-GRN lines — read sites fall back
+  // to the frozen po_quantity/ordered_qty_2 snapshot with `??`.
+  ordered_live?: number;
+  ordered_2_live?: number | null;
 }
 
 // Derive the Stage 1 editable row buffer from a loaded GRN. Extracted so the
@@ -274,13 +280,23 @@ function parseJigsSent(val: string | string[] | null | undefined): string | null
   return val;
 }
 
-// Is the current receipt closing out this line? pending_quantity is the
-// remaining qty on the DC line at the moment this GRN was created; received_qty
-// is the operator's live input. Reuses the DC-receipt utility — single source
-// of truth shared with GRNForm.
+// Pending against CURRENT truth: live ordered qty (refreshed on mount for
+// PO-GRN lines; falls back to the frozen snapshot for DC-GRN lines, which
+// have no PO to refresh from) minus what prior GRNs already received. Every
+// "how much is left on this line" check uses this instead of the frozen
+// grn_line_items.pending_quantity snapshot, which never moves after a PO edit.
+function s1LivePending(l: S1Line): number {
+  return (l.ordered_live ?? l.po_quantity) - l.prev_received_live;
+}
+
+// Is the current receipt closing out this line? Uses live pending (see
+// s1LivePending) rather than the frozen pending_quantity, so a PO qty raised
+// after this GRN was created doesn't stick with a stale close-out point.
+// received_qty is the operator's live input. Reuses the DC-receipt utility —
+// single source of truth shared with GRNForm.
 function isS1LineFinalBatch(l: S1Line): boolean {
   return isFinalBatch(
-    { po_quantity: l.pending_quantity, previously_received: 0 },
+    { po_quantity: s1LivePending(l), previously_received: 0 },
     l.received_qty,
     l.stage1_rejected_qty ?? 0,
   );
@@ -435,12 +451,13 @@ function Stage1Table({
             // Reactive Pending = Ordered − Prev Received − Receiving Now.
             // Allowed to go negative; over-receipt warning row surfaces it.
             // Rejected Now does NOT subtract — rejected units were physically received.
-            const pending = line.po_quantity - line.prev_received_live - line.received_qty;
+            const livePending = s1LivePending(line);
+            const pending = livePending - line.received_qty;
             const overReceipt = pending < 0;
             const overReceiptBy = overReceipt ? Math.abs(pending) : 0;
             const nonMatching = Math.max(0, line.received_qty - line.matching_units);
             const showSubRow = line.received_qty > 0 && nonMatching > 0;
-            const altOrdered = Number(line.ordered_qty_2 ?? 0);
+            const altOrdered = Number(line.ordered_2_live ?? line.ordered_qty_2 ?? 0);
             const altUnit = line.unit_2 || "";
             // Only surface the alt-qty row when it carries a unit. ordered_qty_2
             // is often set with a NULL unit_2 (PO alt-unit not captured), which
@@ -500,7 +517,7 @@ function Stage1Table({
 
                   {/* Ordered — with muted unit suffix */}
                   <td className="px-3 py-2 text-right tabular-nums text-slate-500">
-                    <span className="font-mono">{formatNumber(line.po_quantity)}</span>
+                    <span className="font-mono">{formatNumber(line.ordered_live ?? line.po_quantity)}</span>
                     <span className="text-xs text-muted-foreground ml-1">{unit}</span>
                   </td>
 
@@ -540,12 +557,12 @@ function Stage1Table({
                     </div>
                     {isOverQty && (
                       <p className="text-xs text-red-600 mt-0.5 text-right font-medium">
-                        Exceeds max {tolerancePct > 0 ? `(${formatNumber((line.pending_quantity ?? 0) + Math.floor((line.pending_quantity ?? 0) * tolerancePct / 100))} ${unit})` : `(${formatNumber(line.pending_quantity ?? 0)} ${unit})`}
+                        Exceeds max {tolerancePct > 0 ? `(${formatNumber(livePending + Math.floor(livePending * tolerancePct / 100))} ${unit})` : `(${formatNumber(livePending)} ${unit})`}
                       </p>
                     )}
                     {isWithinTolerance && !isOverQty && (
                       <p className="text-xs text-amber-700 mt-0.5 text-right">
-                        +{formatNumber((line.received_qty ?? 0) - (line.pending_quantity ?? 0))} over PO · within {tolerancePct}% tolerance
+                        +{formatNumber((line.received_qty ?? 0) - livePending)} over PO · within {tolerancePct}% tolerance
                       </p>
                     )}
                   </td>
@@ -805,7 +822,7 @@ function Stage1ReadOnly({
             const hasMismatch = l.non_matching_units > 0;
             return (
               <React.Fragment key={l.id}>
-                <tr className={l.received_qty !== l.po_quantity ? "bg-yellow-50/40" : "bg-white"}>
+                <tr className={l.received_qty !== (l.ordered_live ?? l.po_quantity) ? "bg-yellow-50/40" : "bg-white"}>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{idx + 1}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-xs text-slate-500">{l.item_code || "—"}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium text-slate-800">
@@ -814,7 +831,7 @@ function Stage1ReadOnly({
                       <p className="text-xs text-muted-foreground mt-0.5">Process: {l.nature_of_process}</p>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-slate-500">{formatNumber(l.po_quantity ?? 0)}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono text-slate-500">{formatNumber(l.ordered_live ?? l.po_quantity ?? 0)}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-semibold text-slate-800">{formatNumber(l.received_qty ?? 0)}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">
                     {formatNumber(l.qty_matched ?? 0)}
@@ -865,13 +882,13 @@ function Stage1ReadOnly({
                     </td>
                   )}
                 </tr>
-                {Number(l.ordered_qty_2 ?? 0) > 0 && (l.unit_2 ?? "").trim() !== "" && (
+                {Number(l.ordered_2_live ?? l.ordered_qty_2 ?? 0) > 0 && (l.unit_2 ?? "").trim() !== "" && (
                   <tr className="bg-indigo-50/40 dark:bg-indigo-950/20">
                     <td colSpan={10 + (hasStoreTracking ? 1 : 0) + (hasJigData ? 1 : 0)} className="px-4 py-2 text-xs">
                       <div className="flex flex-wrap gap-x-6 gap-y-1 items-baseline text-slate-600 dark:text-slate-300">
                         <div>
                           <span className="font-semibold uppercase tracking-wide text-[11px] text-indigo-600 dark:text-indigo-400 mr-2">Alt. Qty Ordered</span>
-                          <span className="font-mono text-sm font-semibold">{formatNumber(l.ordered_qty_2)}</span>
+                          <span className="font-mono text-sm font-semibold">{formatNumber(l.ordered_2_live ?? l.ordered_qty_2)}</span>
                           {l.unit_2 && <span className="text-muted-foreground ml-1">{l.unit_2}</span>}
                         </div>
                         <div>
@@ -1468,11 +1485,11 @@ function GRNPrintView({
           <tbody>
             {s1Lines.map((l, idx) => (
               <React.Fragment key={idx}>
-              <tr style={{ background: l.received_qty !== l.po_quantity ? "#FEF3C7" : idx % 2 === 0 ? "#F8FAFC" : "white" }}>
+              <tr style={{ background: l.received_qty !== (l.ordered_live ?? l.po_quantity) ? "#FEF3C7" : idx % 2 === 0 ? "#F8FAFC" : "white" }}>
                 <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0" }}>{idx + 1}</td>
                 <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", fontFamily: "Courier New, monospace" }}>{l.item_code || "—"}</td>
                 <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0" }}>{l.description}</td>
-                <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "right" }}>{formatNumber(l.po_quantity ?? 0)}</td>
+                <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "right" }}>{formatNumber(l.ordered_live ?? l.po_quantity ?? 0)}</td>
                 <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "right", fontWeight: "bold" }}>{formatNumber(l.received_qty ?? 0)}</td>
                 <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "right" }}>{formatNumber(l.qty_matched ?? 0)}{l.qty_matched >= l.received_qty ? " ✓" : ""}</td>
                 <td style={{ padding: "2.5pt 4pt", borderBottom: "0.5pt solid #E2E8F0", textAlign: "right" }}>{(l.received_qty ?? 0) - (l.qty_matched ?? 0) > 0 ? formatNumber((l.received_qty ?? 0) - (l.qty_matched ?? 0)) : "—"}</td>
@@ -1486,10 +1503,10 @@ function GRNPrintView({
                   </td>
                 </tr>
               )}
-              {Number(l.ordered_qty_2 ?? 0) > 0 && (l.unit_2 ?? "").trim() !== "" && (
+              {Number(l.ordered_2_live ?? l.ordered_qty_2 ?? 0) > 0 && (l.unit_2 ?? "").trim() !== "" && (
                 <tr style={{ background: "#F8FAFC" }}>
                   <td colSpan={9} style={{ padding: "2pt 4pt 2pt 16pt", borderBottom: "0.5pt solid #E2E8F0", fontSize: "7.5pt", color: "#475569" }}>
-                    Alt. Qty — Ordered: <strong>{formatNumber(l.ordered_qty_2 ?? 0)} {l.unit_2 ?? ""}</strong>
+                    Alt. Qty — Ordered: <strong>{formatNumber(l.ordered_2_live ?? l.ordered_qty_2 ?? 0)} {l.unit_2 ?? ""}</strong>
                     {l.received_now_2 != null && <> · Received: <strong>{formatNumber(l.received_now_2)} {l.unit_2 ?? ""}</strong></>}
                   </td>
                 </tr>
@@ -1967,7 +1984,14 @@ export default function GRNDetail() {
             if (!key) return l;
             const e = summary[key];
             if (!e) return l;
-            return { ...l, prev_received_live: e.received, prev_accepted_live: e.accepted, prev_received_2: e.received_2 };
+            return {
+              ...l,
+              prev_received_live: e.received,
+              prev_accepted_live: e.accepted,
+              prev_received_2: e.received_2,
+              ordered_live: e.ordered ?? l.po_quantity,
+              ordered_2_live: e.ordered_2 ?? null,
+            };
           }));
         } else if ((g.grn_type === 'dc_grn') && g.linked_dc_id) {
           const summary = await fetchDCReceiptSummary(g.linked_dc_id, id);
@@ -2160,12 +2184,17 @@ export default function GRNDetail() {
 
   // ── Over-receipt tolerance tiers ─────────────────────────────────────────
   // For each line that is over the PO quantity, determine if it falls within
-  // the configured tolerance (requires finance approval) or beyond it (hard block).
+  // the configured tolerance (requires finance approval) or beyond it (hard
+  // block). Uses live pending (current PO qty − prior receipts), not the
+  // frozen pending_quantity snapshot — a receipt within the CURRENT PO qty
+  // must not be flagged as over-receipt just because the PO was raised after
+  // this GRN was created.
   const overReceiptTiers = s1Lines.map((l) => {
-    if (l.received_qty <= l.pending_quantity || l.pending_quantity <= 0) return { line: l, tier: "ok" as const };
-    const tolerance_qty = Math.floor(l.pending_quantity * (tolerancePct / 100));
-    const max_allowed   = l.pending_quantity + tolerance_qty;
-    if (l.received_qty <= max_allowed) return { line: l, tier: "within_tolerance" as const, excess: l.received_qty - l.pending_quantity, max_allowed };
+    const pending = s1LivePending(l);
+    if (l.received_qty <= pending || pending <= 0) return { line: l, tier: "ok" as const };
+    const tolerance_qty = Math.floor(pending * (tolerancePct / 100));
+    const max_allowed   = pending + tolerance_qty;
+    if (l.received_qty <= max_allowed) return { line: l, tier: "within_tolerance" as const, excess: l.received_qty - pending, max_allowed };
     return { line: l, tier: "beyond_tolerance" as const, max_allowed };
   });
   const withinToleranceItems = overReceiptTiers.filter((t) => t.tier === "within_tolerance");
@@ -2747,7 +2776,7 @@ export default function GRNDetail() {
       unit: gl?.unit ?? "",
       // Alt. Qty (secondary UOM) — static info for label + read-only display.
       unit_2: gl?.unit_2 ?? l.unit_2 ?? null,
-      ordered_qty_2: gl?.ordered_qty_2 ?? l.ordered_qty_2 ?? null,
+      ordered_qty_2: l.ordered_2_live ?? gl?.ordered_qty_2 ?? l.ordered_qty_2 ?? null,
       received_now_2: gl?.received_now_2 ?? null,
       accepted_qty_2: gl?.accepted_qty_2 ?? null,
       // PART B: snapshotted rate basis from the raw DB line (carries the real
@@ -3292,7 +3321,7 @@ export default function GRNDetail() {
             id: t.line.id,
             item_code: t.line.item_code,
             description: t.line.description,
-            pending_quantity: t.line.pending_quantity,
+            pending_quantity: s1LivePending(t.line),
             received_qty: t.line.received_qty,
             unit: t.line.unit,
           }))}
@@ -3358,7 +3387,7 @@ export default function GRNDetail() {
                       const item = s1Lines.find((l) => l.id === nc.lineItemId);
                       const unit = (grn.line_items ?? []).find((li) => li.id === nc.lineItemId)?.unit ?? "";
                       if (!item) return null;
-                      const ordered = item.po_quantity;
+                      const ordered = item.ordered_live ?? item.po_quantity;
                       const prevRcvd = item.prev_received_live;
                       const prevAcc = item.prev_accepted_live;
                       const thisReceived = item.received_qty;

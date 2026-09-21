@@ -816,104 +816,6 @@ export async function updateGrnLineStage2(lineId: string, data: Stage2Data): Pro
   if (error) throw error;
 }
 
-export interface CreateGrnFromPOData {
-  po_id: string;
-  date: string;
-  vehicle_number?: string | null;
-  driver_name?: string | null;
-  driver_contact?: string | null;
-  vendor_invoice_number?: string | null;
-  notes?: string | null;
-}
-
-export async function createGrnFromPO(data: CreateGrnFromPOData): Promise<GRN> {
-  const companyId = await getCompanyId();
-
-  // Fetch PO info
-  const { data: po, error: poErr } = await supabase.from("purchase_orders").select("*").eq("id", data.po_id).single();
-  if (poErr) throw poErr;
-  const poAny = po as any;
-
-  // Fetch PO line items
-  const { data: poItems, error: liErr } = await supabase.from("po_line_items").select("*").eq("po_id", data.po_id).order("serial_number", { ascending: true });
-  if (liErr) throw liErr;
-
-  // Build pending items — filter out fully-received lines
-  const pendingItems = (poItems ?? []).map((item: any) => {
-    const prevReceived = item.received_quantity ?? 0;
-    const pendingQty = Math.max(0, (item.quantity ?? 0) - prevReceived);
-    return { item, prevReceived, pendingQty };
-  }).filter(({ pendingQty }) => pendingQty > 0);
-
-  if (pendingItems.length === 0) {
-    throw new Error("This PO has been fully received. No pending quantity remaining.");
-  }
-
-  // Create GRN header — grn_number is assigned by trg_grns_assign_number.
-  const { data: newGRN, error: grnErr } = await (supabase as any).from("grns").insert({
-    company_id: companyId,
-    grn_number: "",
-    grn_date: data.date,
-    grn_type: 'po_grn',
-    grn_stage: 'quantitative_pending',
-    po_id: data.po_id,
-    po_number: poAny.po_number,
-    vendor_id: poAny.vendor_id,
-    vendor_name: poAny.vendor_name,
-    vendor_invoice_number: data.vendor_invoice_number ?? null,
-    vehicle_number: data.vehicle_number ?? null,
-    driver_name: data.driver_name ?? null,
-    driver_contact: data.driver_contact ?? null,
-    notes: data.notes ?? null,
-    total_received: 0, total_accepted: 0, total_rejected: 0,
-    status: 'draft',
-  }).select().single();
-  if (grnErr) throw grnErr;
-
-  // Create line items from pending PO lines only
-  const grnId = (newGRN as any).id;
-  const lineItemsToInsert = pendingItems.map(({ item, prevReceived, pendingQty }, idx) => ({
-    company_id: companyId,
-    grn_id: grnId,
-    serial_number: idx + 1,
-    po_line_item_id: item.id,
-    item_id: item.item_id ?? null,
-    description: item.description,
-    drawing_number: item.drawing_number ?? null,
-    unit: item.unit ?? 'NOS',
-    po_quantity: item.quantity ?? 0,
-    ordered_qty: item.quantity ?? 0,
-    ordered_qty_2: item.quantity_2 ?? null,
-    unit_2: item.unit_2 ?? null,
-    previously_received: prevReceived,
-    previously_received_qty: prevReceived,
-    pending_quantity: pendingQty,
-    receiving_now: 0,
-    received_now: 0,
-    received_now_2: null,
-    accepted_quantity: 0,
-    accepted_qty: 0,
-    accepted_qty_2: null,
-    rejected_quantity: 0,
-    rejected_qty: 0,
-    stage1_complete: false,
-    stage2_complete: false,
-  }));
-  const { error: liInsertErr } = await (supabase as any).from("grn_line_items").insert(lineItemsToInsert);
-  if (liInsertErr) throw liInsertErr;
-
-  // Assign the per-company, per-FY Inward Sl. No. Idempotent RPC — a no-op if
-  // already set. Non-fatal: never block GRN creation on it (the unique index +
-  // backfill protect integrity), just log.
-  try {
-    await (supabase as any).rpc('assign_inward_sl_no', { p_grn_id: grnId });
-  } catch (e) {
-    console.error('[grn] assign_inward_sl_no failed (non-fatal):', e);
-  }
-
-  return newGRN as unknown as GRN;
-}
-
 export interface CreateGrnFromDCData {
   dc_id: string;
   date: string;
@@ -1006,8 +908,7 @@ export async function createGrnFromDC(data: CreateGrnFromDCData): Promise<GRN> {
     nature_of_process: item.nature_of_process ?? null,
     unit_rate: item.rate ?? null,
     // PART A: snapshot the DC line's rate_basis onto the GRN line once at
-    // creation (default 'primary' if absent). Never re-synced. DC-GRN only —
-    // NOT added to createGrnFromPO.
+    // creation (default 'primary' if absent). Never re-synced. DC-GRN only.
     rate_basis: (item as any).rate_basis ?? 'primary',
   }));
 
@@ -1770,6 +1671,11 @@ export interface ReceiptSummaryEntry {
   received_2: number;
   // Alt-measure prior accepted (sum of prior GRNs' accepted_qty_2). Additive.
   accepted_2: number;
+  // Live PO ordered qty (po_line_items.quantity/quantity_2 as of right now),
+  // not the frozen grn_line_items snapshot. PO-only — fetchPOReceiptSummary
+  // populates these; fetchDCReceiptSummary leaves them undefined.
+  ordered?: number;
+  ordered_2?: number | null;
 }
 
 /**
@@ -2035,26 +1941,40 @@ export async function fetchPOReceiptSummary(
     .not('status', 'in', '("deleted","cancelled")');
   if (excludeGrnId) grnsQuery = grnsQuery.neq('id', excludeGrnId);
   const { data: grns } = await grnsQuery;
-  if (!grns?.length) return {};
-  const grnIds = (grns as any[]).map((g: any) => g.id);
-  const { data: items } = await (supabase as any)
-    .from('grn_line_items')
-    .select('po_line_item_id, received_qty, received_now, receiving_now, accepted_qty, accepted_quantity, received_now_2, accepted_qty_2')
-    .in('grn_id', grnIds);
+  const grnIds = (grns ?? []).map((g: any) => g.id);
   const summary: Record<string, ReceiptSummaryEntry> = {};
-  for (const item of (items ?? []) as any[]) {
-    const key: string | null = item.po_line_item_id;
-    if (!key) continue;
-    const received = Number(item.received_qty ?? item.received_now ?? item.receiving_now ?? 0) || 0;
-    const accepted = Number(item.accepted_qty ?? item.accepted_quantity ?? 0) || 0;
-    const received_2 = Number(item.received_now_2 ?? 0) || 0;
-    const accepted_2 = Number(item.accepted_qty_2 ?? 0) || 0;
-    if (!summary[key]) summary[key] = { received: 0, accepted: 0, received_2: 0, accepted_2: 0 };
-    summary[key].received += received;
-    summary[key].accepted += accepted;
-    summary[key].received_2 += received_2;
-    summary[key].accepted_2 += accepted_2;
+  if (grnIds.length > 0) {
+    const { data: items } = await (supabase as any)
+      .from('grn_line_items')
+      .select('po_line_item_id, received_qty, received_now, receiving_now, accepted_qty, accepted_quantity, received_now_2, accepted_qty_2')
+      .in('grn_id', grnIds);
+    for (const item of (items ?? []) as any[]) {
+      const key: string | null = item.po_line_item_id;
+      if (!key) continue;
+      const received = Number(item.received_qty ?? item.received_now ?? item.receiving_now ?? 0) || 0;
+      const accepted = Number(item.accepted_qty ?? item.accepted_quantity ?? 0) || 0;
+      const received_2 = Number(item.received_now_2 ?? 0) || 0;
+      const accepted_2 = Number(item.accepted_qty_2 ?? 0) || 0;
+      if (!summary[key]) summary[key] = { received: 0, accepted: 0, received_2: 0, accepted_2: 0 };
+      summary[key].received += received;
+      summary[key].accepted += accepted;
+      summary[key].received_2 += received_2;
+      summary[key].accepted_2 += accepted_2;
+    }
   }
+
+  // Live ordered qty — current po_line_items truth, independent of receipt
+  // history, so every line on the PO carries it even if this is the only GRN.
+  const { data: poLines } = await (supabase as any)
+    .from('po_line_items')
+    .select('id, quantity, quantity_2')
+    .eq('po_id', poId);
+  for (const line of (poLines ?? []) as any[]) {
+    if (!summary[line.id]) summary[line.id] = { received: 0, accepted: 0, received_2: 0, accepted_2: 0 };
+    summary[line.id].ordered = Number(line.quantity ?? 0) || 0;
+    summary[line.id].ordered_2 = line.quantity_2 != null ? (Number(line.quantity_2) || 0) : null;
+  }
+
   return summary;
 }
 
