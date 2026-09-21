@@ -1770,6 +1770,11 @@ export interface ReceiptSummaryEntry {
   received_2: number;
   // Alt-measure prior accepted (sum of prior GRNs' accepted_qty_2). Additive.
   accepted_2: number;
+  // Live PO ordered qty (po_line_items.quantity/quantity_2 as of right now),
+  // not the frozen grn_line_items snapshot. PO-only — fetchPOReceiptSummary
+  // populates these; fetchDCReceiptSummary leaves them undefined.
+  ordered?: number;
+  ordered_2?: number | null;
 }
 
 /**
@@ -2035,26 +2040,40 @@ export async function fetchPOReceiptSummary(
     .not('status', 'in', '("deleted","cancelled")');
   if (excludeGrnId) grnsQuery = grnsQuery.neq('id', excludeGrnId);
   const { data: grns } = await grnsQuery;
-  if (!grns?.length) return {};
-  const grnIds = (grns as any[]).map((g: any) => g.id);
-  const { data: items } = await (supabase as any)
-    .from('grn_line_items')
-    .select('po_line_item_id, received_qty, received_now, receiving_now, accepted_qty, accepted_quantity, received_now_2, accepted_qty_2')
-    .in('grn_id', grnIds);
+  const grnIds = (grns ?? []).map((g: any) => g.id);
   const summary: Record<string, ReceiptSummaryEntry> = {};
-  for (const item of (items ?? []) as any[]) {
-    const key: string | null = item.po_line_item_id;
-    if (!key) continue;
-    const received = Number(item.received_qty ?? item.received_now ?? item.receiving_now ?? 0) || 0;
-    const accepted = Number(item.accepted_qty ?? item.accepted_quantity ?? 0) || 0;
-    const received_2 = Number(item.received_now_2 ?? 0) || 0;
-    const accepted_2 = Number(item.accepted_qty_2 ?? 0) || 0;
-    if (!summary[key]) summary[key] = { received: 0, accepted: 0, received_2: 0, accepted_2: 0 };
-    summary[key].received += received;
-    summary[key].accepted += accepted;
-    summary[key].received_2 += received_2;
-    summary[key].accepted_2 += accepted_2;
+  if (grnIds.length > 0) {
+    const { data: items } = await (supabase as any)
+      .from('grn_line_items')
+      .select('po_line_item_id, received_qty, received_now, receiving_now, accepted_qty, accepted_quantity, received_now_2, accepted_qty_2')
+      .in('grn_id', grnIds);
+    for (const item of (items ?? []) as any[]) {
+      const key: string | null = item.po_line_item_id;
+      if (!key) continue;
+      const received = Number(item.received_qty ?? item.received_now ?? item.receiving_now ?? 0) || 0;
+      const accepted = Number(item.accepted_qty ?? item.accepted_quantity ?? 0) || 0;
+      const received_2 = Number(item.received_now_2 ?? 0) || 0;
+      const accepted_2 = Number(item.accepted_qty_2 ?? 0) || 0;
+      if (!summary[key]) summary[key] = { received: 0, accepted: 0, received_2: 0, accepted_2: 0 };
+      summary[key].received += received;
+      summary[key].accepted += accepted;
+      summary[key].received_2 += received_2;
+      summary[key].accepted_2 += accepted_2;
+    }
   }
+
+  // Live ordered qty — current po_line_items truth, independent of receipt
+  // history, so every line on the PO carries it even if this is the only GRN.
+  const { data: poLines } = await (supabase as any)
+    .from('po_line_items')
+    .select('id, quantity, quantity_2')
+    .eq('po_id', poId);
+  for (const line of (poLines ?? []) as any[]) {
+    if (!summary[line.id]) summary[line.id] = { received: 0, accepted: 0, received_2: 0, accepted_2: 0 };
+    summary[line.id].ordered = Number(line.quantity ?? 0) || 0;
+    summary[line.id].ordered_2 = line.quantity_2 != null ? (Number(line.quantity_2) || 0) : null;
+  }
+
   return summary;
 }
 
