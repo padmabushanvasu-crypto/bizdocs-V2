@@ -366,6 +366,64 @@ export async function fetchDeliveryChallan(id: string): Promise<DeliveryChallan>
   return { ...(dc as unknown as DeliveryChallan), line_items: items as unknown as DCLineItem[] };
 }
 
+export interface DcLineReturnPosition {
+  dc_line_item_id: string;
+  sent_qty: number;
+  returned_direct_qty: number;
+  consumed_in_weldment_qty: number;
+  pending_qty: number;
+  // GRN number(s) that received a weldment consuming this line, for the
+  // "consumed into weldment via GRN X" note. Empty when nothing was consumed.
+  weldment_grn_numbers: string[];
+}
+
+/**
+ * Per-line return position for a DC — sent vs. returned directly vs. consumed
+ * into a weldment vs. still pending, from v_dc_line_return_position. This
+ * accounts for job-work weldment receiving (a component can be "accounted
+ * for" by being welded into a sub-assembly, not just returned as itself),
+ * which a plain sum of grn_line_items.received_qty by dc_line_item_id cannot
+ * see. Read-only — never used to gate GRN creation or any write path.
+ */
+export async function fetchDcLineReturnPositions(dcId: string): Promise<Record<string, DcLineReturnPosition>> {
+  const { data, error } = await (supabase as any)
+    .from('v_dc_line_return_position')
+    .select('dc_line_item_id, sent_qty, returned_direct_qty, consumed_in_weldment_qty, pending_qty')
+    .eq('dc_id', dcId);
+  if (error) throw error;
+  const rows = (data ?? []) as any[];
+
+  const dcLineIds = rows.filter((r) => Number(r.consumed_in_weldment_qty ?? 0) > 0).map((r) => r.dc_line_item_id as string);
+  const grnNumbersByDcLine: Record<string, string[]> = {};
+  if (dcLineIds.length > 0) {
+    const { data: consumption } = await (supabase as any)
+      .from('grn_weldment_consumption')
+      .select('dc_line_item_id, grn_line_items:grn_line_item_id(grns:grn_id(grn_number))')
+      .in('dc_line_item_id', dcLineIds)
+      .is('reversed_at', null);
+    for (const c of (consumption ?? []) as any[]) {
+      const grnNumber = c.grn_line_items?.grns?.grn_number as string | undefined;
+      if (!grnNumber) continue;
+      const key = c.dc_line_item_id as string;
+      if (!grnNumbersByDcLine[key]) grnNumbersByDcLine[key] = [];
+      if (!grnNumbersByDcLine[key].includes(grnNumber)) grnNumbersByDcLine[key].push(grnNumber);
+    }
+  }
+
+  const result: Record<string, DcLineReturnPosition> = {};
+  for (const r of rows) {
+    result[r.dc_line_item_id] = {
+      dc_line_item_id: r.dc_line_item_id,
+      sent_qty: Number(r.sent_qty ?? 0),
+      returned_direct_qty: Number(r.returned_direct_qty ?? 0),
+      consumed_in_weldment_qty: Number(r.consumed_in_weldment_qty ?? 0),
+      pending_qty: Number(r.pending_qty ?? 0),
+      weldment_grn_numbers: grnNumbersByDcLine[r.dc_line_item_id] ?? [],
+    };
+  }
+  return result;
+}
+
 /**
  * @deprecated The DB trigger trg_delivery_challans_assign_number assigns
  *   dc_number on insert. Pass `dc_number: ''` to createDeliveryChallan and

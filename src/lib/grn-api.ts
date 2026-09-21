@@ -111,6 +111,13 @@ export interface GRNLineItem {
   // Stage 1 visual rejection (Inward Team) — independent of Stage 2 rejected_qty
   // which is derived from QC measurements + disposition. NULL if not recorded.
   stage1_rejected_qty?: number | null;
+  // Weldment receipt (job-work DC return) — this line is a welded sub-assembly
+  // built from component items shipped on the same DC, inserted in one shot by
+  // rpc_receive_weldment_from_dc. Bypasses the two-stage quantitative/QC flow
+  // entirely (accepted_qty/rejected_qty are already final). weldment_dc_id is
+  // the source DC (mirrors the GRN's own linked_dc_id).
+  is_weldment_receipt?: boolean;
+  weldment_dc_id?: string | null;
 }
 
 export interface GRN {
@@ -488,37 +495,29 @@ async function recalculateGRNStatusFromLines(grnId: string): Promise<void> {
 // delivery-challans-api but uses grn_line_items.received_qty (the GRN-based return flow)
 // rather than dc_line_items.returned_qty_nos (the legacy direct-return flow).
 async function recalculateDCStatusFromGRNReceipts(dcId: string): Promise<void> {
-  // Gather all non-deleted GRNs linked to this DC
+  // Gather all non-deleted GRNs linked to this DC — an early exit here leaves
+  // a DC with no GRN activity untouched.
   const { data: grns } = await (supabase as any)
     .from('grns').select('id').eq('linked_dc_id', dcId).neq('status', 'deleted');
   if (!grns?.length) return;
 
-  const grnIds = (grns as any[]).map((g: any) => g.id as string);
-
-  // Sum received_qty per dc_line_item_id across all linked GRNs
-  const { data: grnLines } = await (supabase as any)
-    .from('grn_line_items')
-    .select('dc_line_item_id, received_qty, received_now')
-    .in('grn_id', grnIds);
-
-  const receivedByDCLine: Record<string, number> = {};
-  for (const item of (grnLines ?? []) as any[]) {
-    const key = item.dc_line_item_id as string | null;
-    if (!key) continue;
-    receivedByDCLine[key] = (receivedByDCLine[key] ?? 0) + ((item.received_qty ?? item.received_now ?? 0) as number);
-  }
-
-  // Compare against original DC line quantities
-  const { data: dcLines } = await (supabase as any)
-    .from('dc_line_items').select('id, quantity').eq('dc_id', dcId);
-  if (!dcLines?.length) return;
+  // Per-line pending, from v_dc_line_return_position rather than a hand-rolled
+  // sum of grn_line_items.received_qty by dc_line_item_id — a component sent
+  // out can also be "accounted for" by being welded into a sub-assembly
+  // (grn_weldment_consumption), not just returned as itself, and the view
+  // nets both against sent_qty in one place.
+  const { data: positions } = await (supabase as any)
+    .from('v_dc_line_return_position')
+    .select('sent_qty, pending_qty')
+    .eq('dc_id', dcId);
+  if (!positions?.length) return;
 
   let allReturned = true, anyReturned = false;
-  for (const dcLine of (dcLines as any[])) {
-    const received = receivedByDCLine[dcLine.id as string] ?? 0;
-    const qty = (dcLine.quantity ?? 0) as number;
-    if (received < qty) allReturned = false;
-    if (received > 0) anyReturned = true;
+  for (const pos of (positions as any[])) {
+    const sent = Number(pos.sent_qty ?? 0);
+    const pending = Number(pos.pending_qty ?? 0);
+    if (pending > 0) allReturned = false;
+    if (pending < sent) anyReturned = true;
   }
 
   const newStatus = allReturned ? 'fully_returned' : anyReturned ? 'partially_returned' : 'issued';
@@ -927,6 +926,116 @@ export async function createGrnFromDC(data: CreateGrnFromDCData): Promise<GRN> {
   }
 
   return newGRN as unknown as GRN;
+}
+
+// ── Weldment receipts (DC-return GRN) ────────────────────────────────────────
+// Components go out on a job-work DC (nature WELDING); the welded sub-assembly
+// (W-item) comes back as ONE grn_line_item, built from whatever components are
+// still "out" on that DC. All quantity math and stock movement is owned by the
+// RPCs below (rpc_dc_weldment_candidates / rpc_receive_weldment_from_dc /
+// rpc_remove_weldment_line / rpc_reverse_weldment_receipt) — this layer only
+// shapes their input/output for the UI.
+
+export interface WeldmentComponent {
+  item_id: string;
+  item_code: string;
+  bom_qty: number;
+  pending_on_dc: number;
+}
+
+export interface WeldmentCandidate {
+  w_item_id: string;
+  w_item_code: string;
+  w_description: string;
+  max_buildable: number;
+  components: WeldmentComponent[];
+}
+
+export async function fetchDcWeldmentCandidates(dcId: string): Promise<WeldmentCandidate[]> {
+  const { data, error } = await (supabase as any).rpc('rpc_dc_weldment_candidates', { p_dc_id: dcId });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as any[]).map((r) => ({
+    w_item_id: r.w_item_id,
+    w_item_code: r.w_item_code,
+    w_description: r.w_description,
+    max_buildable: Number(r.max_buildable ?? 0),
+    components: ((r.components ?? []) as any[]).map((c) => ({
+      item_id: c.item_id,
+      item_code: c.item_code,
+      bom_qty: Number(c.bom_qty ?? 0),
+      pending_on_dc: Number(c.pending_on_dc ?? 0),
+    })),
+  }));
+}
+
+export async function receiveWeldmentFromDc(params: {
+  grnId: string;
+  wItemId: string;
+  qtyAccepted: number;
+  qtyRejected: number;
+  notes?: string | null;
+}): Promise<string> {
+  const { data, error } = await (supabase as any).rpc('rpc_receive_weldment_from_dc', {
+    p_grn_id: params.grnId,
+    p_w_item_id: params.wItemId,
+    p_qty_accepted: params.qtyAccepted,
+    p_qty_rejected: params.qtyRejected,
+    p_notes: params.notes ?? null,
+  });
+  if (error) throw new Error(error.message);
+  return data as string;
+}
+
+export async function removeWeldmentLine(grnLineItemId: string): Promise<void> {
+  const { error } = await (supabase as any).rpc('rpc_remove_weldment_line', {
+    p_grn_line_item_id: grnLineItemId,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function reverseWeldmentReceipt(grnLineItemId: string, reason: string): Promise<void> {
+  const { error } = await (supabase as any).rpc('rpc_reverse_weldment_receipt', {
+    p_grn_line_item_id: grnLineItemId,
+    p_reason: reason,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export interface GrnWeldmentConsumptionRow {
+  id: string;
+  component_item_id: string;
+  component_item_code: string | null;
+  component_description: string | null;
+  bom_qty_per_unit: number;
+  qty_consumed: number;
+  dc_line_item_id: string;
+  dc_line_serial: number | null;
+  dc_line_description: string | null;
+  reversed_at: string | null;
+}
+
+export async function fetchGrnWeldmentConsumption(grnLineItemId: string): Promise<GrnWeldmentConsumptionRow[]> {
+  const { data, error } = await (supabase as any)
+    .from('grn_weldment_consumption')
+    .select(
+      'id, component_item_id, bom_qty_per_unit, qty_consumed, dc_line_item_id, reversed_at, ' +
+      'items:component_item_id(item_code, description), dc_line_items:dc_line_item_id(serial_number, description)'
+    )
+    .eq('grn_line_item_id', grnLineItemId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return ((data ?? []) as any[]).map((r) => ({
+    id: r.id,
+    component_item_id: r.component_item_id,
+    component_item_code: r.items?.item_code ?? null,
+    component_description: r.items?.description ?? null,
+    bom_qty_per_unit: Number(r.bom_qty_per_unit ?? 0),
+    qty_consumed: Number(r.qty_consumed ?? 0),
+    dc_line_item_id: r.dc_line_item_id,
+    dc_line_serial: r.dc_line_items?.serial_number ?? null,
+    dc_line_description: r.dc_line_items?.description ?? null,
+    reversed_at: r.reversed_at ?? null,
+  }));
 }
 
 // ── QC Inspection Lines ───────────────────────────────────────────────────────
@@ -2560,7 +2669,7 @@ export async function storeConfirmGRNItems(
   const lineIds = items.map((i) => i.id);
   const { data: currentLines, error: fetchErr } = await (supabase as any)
     .from('grn_line_items')
-    .select('id, grn_id, item_id, description, drawing_number, conforming_qty, store_confirmed_qty, damaged_qty, store_confirmed, dc_line_item_id, stock_posted_at')
+    .select('id, grn_id, item_id, description, drawing_number, conforming_qty, store_confirmed_qty, damaged_qty, store_confirmed, dc_line_item_id, stock_posted_at, is_weldment_receipt')
     .in('id', lineIds);
   if (fetchErr) throw fetchErr;
 
@@ -2610,6 +2719,11 @@ export async function storeConfirmGRNItems(
     if (line.grn_id !== grnId) {
       throw new Error(`Line item ${input.id} does not belong to GRN ${grnId}.`);
     }
+    // Weldment lines (is_weldment_receipt) are posted entirely by
+    // rpc_confirm_grn_store / _grn_post_weldment_lines below — they carry no
+    // conforming_qty and never go through this store/damage bookkeeping, so
+    // skip both the quantity check and the item-link check for them here.
+    if (line.is_weldment_receipt) continue;
     const conforming = Number(line.conforming_qty ?? 0);
     const curStore = Number(line.store_confirmed_qty ?? 0);
     const curDmg = Number(line.damaged_qty ?? 0);
@@ -2645,10 +2759,13 @@ export async function storeConfirmGRNItems(
     qty: number;
     reason: string | null;
   }> = [];
-  let newlyConfirmedJobCardLines = false;
-
   for (const input of items) {
     const line = lineMap.get(input.id);
+    // Weldment lines never post through here — rpc_confirm_grn_store (called
+    // unconditionally below for every dc_grn) posts their stock via
+    // _grn_post_weldment_lines and stamps store_confirmed itself. Touching
+    // store_confirmed_qty/store_confirmed here too would just race the RPC.
+    if (line.is_weldment_receipt) continue;
     // Captured BEFORE any write this call — the true pre-existing state, set by
     // whichever path (single-stage receipt-time credit, the QC-edit pass, or a
     // prior Store Confirm call) posted this line's stock first, if any.
@@ -2691,12 +2808,6 @@ export async function storeConfirmGRNItems(
     else stillPending.push(input.id);
 
     const jobCardLine = isJobCardLine(line);
-    if (jobCardLine && isFullyConfirmed && !line.store_confirmed) {
-      // Newly reaching full confirmation this call — rpc_confirm_grn_store
-      // will pick this line up (it reads accepted_quantity directly, not a
-      // partial delta). Collected and called once after this loop.
-      newlyConfirmedJobCardLines = true;
-    }
 
     // Credit stock_free per partial increment (storeQty only, damaged units excluded).
     // Safe to call repeatedly across partials — updateStockBucket is additive.
@@ -2769,17 +2880,21 @@ export async function storeConfirmGRNItems(
     }
   }
 
-  // New stage-ledger model — at least one job-card-linked line newly reached
-  // full store-confirmation this call. One RPC call covers every dc-linked
-  // line on this GRN; it posts returned_accepted/returned_rejected itself
-  // and credits stock_free only when a line's stage is that job card's own
-  // final stage (_jcsl_credit_if_final_stage) — no client-side stock or
-  // ledger writes here. Known, documented, deliberately-unimplemented gap:
-  // a conversion line (received item differs from the shipped item) makes
-  // the RPC raise rather than guess at cross-item stock mechanics — that
-  // exception is allowed to propagate verbatim, not caught or worked around
-  // here (see DC_STAGE_FLOW_REDESIGN.md §10.1 item 5).
-  if (newlyConfirmedJobCardLines) {
+  // New stage-ledger model — one RPC call covers every dc-linked line on this
+  // GRN; it posts returned_accepted/returned_rejected for job-card lines
+  // (crediting stock_free only when a line's stage is that job card's own
+  // final stage — _jcsl_credit_if_final_stage) AND posts any weldment lines
+  // (_grn_post_weldment_lines: components in_process→consumed, W-item→free).
+  // Both legs are idempotent (re-running is a no-op for anything already
+  // posted), so call it unconditionally for every dc_grn store confirm rather
+  // than only when newlyConfirmedJobCardLines — that guard never covers
+  // weldment lines, which carry no dc_line_item_id and so never set it.
+  // Known, documented, deliberately-unimplemented gap: a conversion line
+  // (received item differs from the shipped item) makes the RPC raise rather
+  // than guess at cross-item stock mechanics — that exception is allowed to
+  // propagate verbatim, not caught or worked around here (see
+  // DC_STAGE_FLOW_REDESIGN.md §10.1 item 5).
+  if (grnHeader?.grn_type === 'dc_grn') {
     const { error: confirmStoreErr } = await (supabase as any).rpc('rpc_confirm_grn_store', { p_grn_id: grnId });
     if (confirmStoreErr) throw new Error(confirmStoreErr.message);
   }
