@@ -2720,9 +2720,9 @@ export async function storeConfirmGRNItems(
       throw new Error(`Line item ${input.id} does not belong to GRN ${grnId}.`);
     }
     // Weldment lines (is_weldment_receipt) are posted entirely by
-    // rpc_confirm_grn_store / _grn_post_weldment_lines below — they carry no
-    // conforming_qty and never go through this store/damage bookkeeping, so
-    // skip both the quantity check and the item-link check for them here.
+    // rpc_post_weldment_lines below — they carry no conforming_qty and never
+    // go through this store/damage bookkeeping, so skip both the quantity
+    // check and the item-link check for them here.
     if (line.is_weldment_receipt) continue;
     const conforming = Number(line.conforming_qty ?? 0);
     const curStore = Number(line.store_confirmed_qty ?? 0);
@@ -2759,13 +2759,19 @@ export async function storeConfirmGRNItems(
     qty: number;
     reason: string | null;
   }> = [];
+  let newlyConfirmedJobCardLines = false;
+  // True when this call's batch includes any weldment line — store confirm is
+  // per line, so this is scoped to what the store is actually confirming
+  // right now, not "does this GRN have a weldment line somewhere".
+  let hasWeldmentLines = false;
   for (const input of items) {
     const line = lineMap.get(input.id);
-    // Weldment lines never post through here — rpc_confirm_grn_store (called
-    // unconditionally below for every dc_grn) posts their stock via
-    // _grn_post_weldment_lines and stamps store_confirmed itself. Touching
-    // store_confirmed_qty/store_confirmed here too would just race the RPC.
-    if (line.is_weldment_receipt) continue;
+    // Weldment lines never post through the per-line bookkeeping below —
+    // rpc_post_weldment_lines (called below whenever this batch includes one)
+    // posts their stock via _grn_post_weldment_lines and stamps
+    // store_confirmed itself. Touching store_confirmed_qty/store_confirmed
+    // here too would just race the RPC.
+    if (line.is_weldment_receipt) { hasWeldmentLines = true; continue; }
     // Captured BEFORE any write this call — the true pre-existing state, set by
     // whichever path (single-stage receipt-time credit, the QC-edit pass, or a
     // prior Store Confirm call) posted this line's stock first, if any.
@@ -2808,6 +2814,12 @@ export async function storeConfirmGRNItems(
     else stillPending.push(input.id);
 
     const jobCardLine = isJobCardLine(line);
+    if (jobCardLine && isFullyConfirmed && !line.store_confirmed) {
+      // Newly reaching full confirmation this call — rpc_confirm_grn_store
+      // will pick this line up (it reads accepted_quantity directly, not a
+      // partial delta). Collected and called once after this loop.
+      newlyConfirmedJobCardLines = true;
+    }
 
     // Credit stock_free per partial increment (storeQty only, damaged units excluded).
     // Safe to call repeatedly across partials — updateStockBucket is additive.
@@ -2880,23 +2892,32 @@ export async function storeConfirmGRNItems(
     }
   }
 
-  // New stage-ledger model — one RPC call covers every dc-linked line on this
-  // GRN; it posts returned_accepted/returned_rejected for job-card lines
-  // (crediting stock_free only when a line's stage is that job card's own
-  // final stage — _jcsl_credit_if_final_stage) AND posts any weldment lines
-  // (_grn_post_weldment_lines: components in_process→consumed, W-item→free).
-  // Both legs are idempotent (re-running is a no-op for anything already
-  // posted), so call it unconditionally for every dc_grn store confirm rather
-  // than only when newlyConfirmedJobCardLines — that guard never covers
-  // weldment lines, which carry no dc_line_item_id and so never set it.
-  // Known, documented, deliberately-unimplemented gap: a conversion line
-  // (received item differs from the shipped item) makes the RPC raise rather
-  // than guess at cross-item stock mechanics — that exception is allowed to
+  // New stage-ledger model — at least one job-card-linked line newly reached
+  // full store-confirmation this call. One RPC call covers every dc-linked
+  // line on this GRN; it posts returned_accepted/returned_rejected itself
+  // and credits stock_free only when a line's stage is that job card's own
+  // final stage (_jcsl_credit_if_final_stage) — no client-side stock or
+  // ledger writes here. Gated on newlyConfirmedJobCardLines, not called
+  // unconditionally: store confirm is per line, and this RPC would post stage
+  // returns for job-card lines the store has not confirmed yet. Known,
+  // documented, deliberately-unimplemented gap: a conversion line (received
+  // item differs from the shipped item) makes the RPC raise rather than
+  // guess at cross-item stock mechanics — that exception is allowed to
   // propagate verbatim, not caught or worked around here (see
   // DC_STAGE_FLOW_REDESIGN.md §10.1 item 5).
-  if (grnHeader?.grn_type === 'dc_grn') {
+  if (newlyConfirmedJobCardLines) {
     const { error: confirmStoreErr } = await (supabase as any).rpc('rpc_confirm_grn_store', { p_grn_id: grnId });
     if (confirmStoreErr) throw new Error(confirmStoreErr.message);
+  }
+
+  // Weldment lines in this batch: posted via the dedicated, idempotent
+  // rpc_post_weldment_lines rather than rpc_confirm_grn_store — narrower than
+  // the job-card RPC (it only ever touches is_weldment_receipt lines) and
+  // scoped to "this batch confirmed a weldment line", matching per-line store
+  // confirm semantics the same way the job-card branch above does.
+  if (hasWeldmentLines) {
+    const { error: weldmentErr } = await (supabase as any).rpc('rpc_post_weldment_lines', { p_grn_id: grnId });
+    if (weldmentErr) throw new Error(weldmentErr.message);
   }
 
   // Recompute parent-GRN state from the authoritative line set. A GRN is fully
