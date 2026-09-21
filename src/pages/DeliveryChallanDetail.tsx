@@ -136,28 +136,8 @@ export default function DeliveryChallanDetail() {
   const [retReworkVendorName, setRetReworkVendorName] = useState('');
   const [retSaving, setRetSaving] = useState(false);
   const [jcDialogOpen, setJcDialogOpen] = useState(false);
-  const [existingJobCards, setExistingJobCards] = useState<Record<string, { id: string; jc_number: string; current_stage: number; status: string }[]>>({});
 
-  const handleOpenJCDialog = async () => {
-    const lineItems = dc?.line_items ?? [];
-    const companyId = await getCompanyId();
-    const byItemId: Record<string, { id: string; jc_number: string; current_stage: number; status: string }[]> = {};
-    await Promise.all(
-      lineItems
-        .filter(li => (li as any).item_id)
-        .map(async (li) => {
-          const itemId = (li as any).item_id as string;
-          const { data } = await (supabase as any)
-            .from("job_cards")
-            .select("id, jc_number, current_stage, status")
-            .eq("item_id", itemId)
-            .eq("status", "in_progress")
-            .eq("company_id", companyId)
-            .limit(1);
-          if (data?.length) byItemId[itemId] = data;
-        })
-    );
-    setExistingJobCards(byItemId);
+  const handleOpenJCDialog = () => {
     setJcDialogOpen(true);
   };
 
@@ -1720,9 +1700,6 @@ export default function DeliveryChallanDetail() {
           ...li,
           item_id: (li as any).item_id ?? null,
         }))}
-        partyId={dc.party_id}
-        partyName={dc.party_name}
-        existingJobCards={existingJobCards}
       />
 
       {/* ── DC Deletion Dialog ── */}

@@ -560,6 +560,105 @@ export async function fetchEligibleExternalStagesForJobCard(jobCardId: string): 
     .sort((a, b) => a.step_number - b.step_number);
 }
 
+/** Candidate for the "link to an existing job card" path of the DC-issue
+ *  Job Card Creation dialog: only live (non-legacy, in_progress, entry_stage
+ *  set) job cards for the item are candidates — a card that never got a real
+ *  entry_stage, or any legacy/pre-cutover card, must never be offered here.
+ *  See DC_STAGE_FLOW_REDESIGN.md — legacy job cards keep using the old
+ *  job_work_id picker untouched. */
+export interface LiveJobCardCandidate {
+  id: string;
+  jc_number: string;
+  quantity_original: number;
+  entry_stage: number;
+  unit: string | null;
+}
+
+export async function fetchLiveJobCardsForItem(itemId: string): Promise<LiveJobCardCandidate[]> {
+  const { data, error } = await (supabase as any)
+    .from("job_cards")
+    .select("id, jc_number, quantity_original, entry_stage, unit")
+    .eq("item_id", itemId)
+    .eq("legacy", false)
+    .eq("status", "in_progress")
+    .not("entry_stage", "is", null)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as LiveJobCardCandidate[];
+}
+
+/** ALL external stages for a job card, unlike fetchEligibleExternalStagesForJobCard
+ *  (which drops anything at eligible_qty = 0) — the DC-issue JC Creation
+ *  dialog needs to show every stage with its eligible_qty so a stage that's
+ *  ineligible for the DC line's quantity renders disabled rather than
+ *  disappearing. Selectability is a UI concern (eligible_qty >= the line's
+ *  qty); this just reports the raw numbers straight from
+ *  v_job_card_stage_position. */
+export async function fetchExternalStageAvailability(jobCardId: string): Promise<EligibleExternalStage[]> {
+  const [{ data: positions, error: posErr }, { data: steps, error: stepErr }] = await Promise.all([
+    (supabase as any)
+      .from("v_job_card_stage_position")
+      .select("step_number, eligible_qty")
+      .eq("job_card_id", jobCardId),
+    (supabase as any)
+      .from("job_card_steps")
+      .select("step_number, name, step_type")
+      .eq("job_card_id", jobCardId)
+      .eq("step_type", "external"),
+  ]);
+  if (posErr) throw posErr;
+  if (stepErr) throw stepErr;
+  const nameByStep = new Map((steps ?? []).map((s: any) => [s.step_number, s.name]));
+  return ((positions ?? []) as any[])
+    .filter((p) => nameByStep.has(p.step_number))
+    .map((p) => ({
+      step_number: p.step_number,
+      process_name: nameByStep.get(p.step_number) ?? `Stage ${p.step_number}`,
+      eligible_qty: Number(p.eligible_qty) || 0,
+    }))
+    .sort((a, b) => a.step_number - b.step_number);
+}
+
+/** Lowest eligible_qty > 0 external stage per job card — used to show a
+ *  "current stage" column when the DC-issue JC Creation dialog's card picker
+ *  has more than one live candidate for the same item. Cards with nothing
+ *  currently eligible (fully consumed / blocked) are omitted; the caller
+ *  falls back to displaying the card's entry_stage in that case. */
+export interface JobCardCurrentStage {
+  job_card_id: string;
+  step_number: number;
+  process_name: string;
+}
+
+export async function fetchCurrentExternalStages(jobCardIds: string[]): Promise<JobCardCurrentStage[]> {
+  if (jobCardIds.length === 0) return [];
+  const [{ data: positions, error: posErr }, { data: steps, error: stepErr }] = await Promise.all([
+    (supabase as any)
+      .from("v_job_card_stage_position")
+      .select("job_card_id, step_number, eligible_qty")
+      .in("job_card_id", jobCardIds)
+      .gt("eligible_qty", 0),
+    (supabase as any)
+      .from("job_card_steps")
+      .select("job_card_id, step_number, name, step_type")
+      .in("job_card_id", jobCardIds)
+      .eq("step_type", "external"),
+  ]);
+  if (posErr) throw posErr;
+  if (stepErr) throw stepErr;
+  const nameByKey = new Map((steps ?? []).map((s: any) => [`${s.job_card_id}:${s.step_number}`, s.name]));
+  const bestByCard = new Map<string, JobCardCurrentStage>();
+  for (const p of (positions ?? []) as any[]) {
+    const name = nameByKey.get(`${p.job_card_id}:${p.step_number}`);
+    if (name === undefined) continue;
+    const existing = bestByCard.get(p.job_card_id);
+    if (!existing || p.step_number < existing.step_number) {
+      bestByCard.set(p.job_card_id, { job_card_id: p.job_card_id, step_number: p.step_number, process_name: name });
+    }
+  }
+  return Array.from(bestByCard.values());
+}
+
 export async function fetchJobCardStagePositions(jobCardId: string): Promise<JobCardStagePosition[]> {
   const { data, error } = await (supabase as any)
     .from("v_job_card_stage_position")
@@ -1379,51 +1478,6 @@ export async function fetchWipSummary(): Promise<WipSummary> {
     overdueReturns: all.filter((r) => r.is_overdue === true).length,
     inHouse: all.filter((r) => r.current_location === "in_house").length,
   };
-}
-
-// ── Stage progress for a specific job card (used by JC creation dialog) ──────
-
-/**
- * Reads the real step statuses for ONE job card (by id) and derives:
- *  - completedStageNumbers: stage numbers with status 'done' — 'material_returned'
- *    means material is physically back from the vendor but not yet
- *    accepted/QC'd (qty_accepted and completed_at still null), so it is NOT
- *    complete; it renders the same as 'in_progress' — open/current.
- *  - lastCompletedStage: the highest completed ('done') stage number (null if none)
- *  - nextOpenStage: the lowest stage number that is not yet done and not a
- *    'pre_bizdocs' placeholder (mirrors the "remaining steps" logic in
- *    grn-api.ts's return-confirmation flow — the stage the job card is
- *    actually open at, whether 'pending', 'in_progress', or 'material_returned')
- *
- * Callers must resolve the job_card_id themselves (e.g. via the specific
- * in-progress job card already matched for an item) rather than guessing
- * "the most recent job card for this item" — that approximation leaks an
- * unrelated, older job card's completed steps onto a different job card.
- */
-export async function fetchJobCardStepProgress(jobCardId: string): Promise<{
-  completedStageNumbers: Set<number>;
-  lastCompletedStage: number | null;
-  nextOpenStage: number | null;
-}> {
-  const { data: steps } = await (supabase as any)
-    .from("job_card_steps")
-    .select("step_number, status")
-    .eq("job_card_id", jobCardId)
-    .order("step_number", { ascending: true });
-
-  const completedStageNumbers = new Set<number>();
-  let lastCompletedStage: number | null = null;
-  let nextOpenStage: number | null = null;
-  for (const s of steps ?? []) {
-    if (s.step_number == null) continue;
-    if (s.status === "done") {
-      completedStageNumbers.add(s.step_number);
-      lastCompletedStage = s.step_number;
-    } else if (nextOpenStage === null && s.status !== "pre_bizdocs") {
-      nextOpenStage = s.step_number;
-    }
-  }
-  return { completedStageNumbers, lastCompletedStage, nextOpenStage };
 }
 
 // ── JC picker for DC creation form ──────────────────────────────────────────
