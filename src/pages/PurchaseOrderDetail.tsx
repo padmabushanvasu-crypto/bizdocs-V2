@@ -22,7 +22,7 @@ import {
   markRejectionNoted,
   type PurchaseOrder,
 } from "@/lib/purchase-orders-api";
-import { fetchGRNsForPO, createGrnFromPO } from "@/lib/grn-api";
+import { fetchGRNsForPO } from "@/lib/grn-api";
 import { formatCurrency, formatNumber, amountInWords } from "@/lib/gst-utils";
 import { AuditTimeline } from "@/components/AuditTimeline";
 import { logAudit } from "@/lib/audit-api";
