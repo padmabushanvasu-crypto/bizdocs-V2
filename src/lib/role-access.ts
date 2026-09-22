@@ -47,6 +47,7 @@ const PURCHASE_TEAM_MAP: Record<string, PageAccess> = {
   'reorder-rules':        { canView: true,  canEdit: false, canExport: false, hideCosts: false },
   'rm-conversions':       { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
   'storekeeper-queue':    { canView: true, canEdit: true,  canExport: true,  hideCosts: true },
+  'count-approvals':      { canView: true,  canEdit: true,  canExport: false, hideCosts: false },
 };
 
 const INWARD_TEAM_MAP: Record<string, PageAccess> = {
@@ -62,6 +63,7 @@ const INWARD_TEAM_MAP: Record<string, PageAccess> = {
   'items':              { canView: true,  canEdit: false, canExport: false, hideCosts: true },
   'rm-conversions':     { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
   'storekeeper-queue':  { canView: true, canEdit: true,  canExport: true,  hideCosts: true },
+  'count-approvals':    { canView: true,  canEdit: true,  canExport: false, hideCosts: false },
 };
 
 const QC_TEAM_MAP: Record<string, PageAccess> = {

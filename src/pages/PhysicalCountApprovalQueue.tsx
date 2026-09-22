@@ -15,8 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { formatNumber } from "@/lib/gst-utils";
 import { format, parseISO } from "date-fns";
 
-// Role-gated the same way production-api.ts gates the damage-disposition
-// concession picker (profiles.role IN ('qc_team','admin')) — NOT the
+// Role-gated to match is_stock_count_approver() on the DB — NOT the
 // hardcoded id list EditApprovalQueue uses for a different domain.
 // is_stock_count_approver() on the DB is the real, authoritative gate;
 // rpc_approve_physical_count / rpc_reject_physical_count re-verify it
@@ -29,7 +28,8 @@ export default function PhysicalCountApprovalQueue() {
   const queryClient = useQueryClient();
   const [notes, setNotes] = useState<Record<string, string>>({});
 
-  const canApprove = role === "qc_team" || role === "admin";
+  const canApprove = role === "qc_team" || role === "admin"
+    || role === "purchase_team" || role === "inward_team";
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ["physical-count-approvals"],
