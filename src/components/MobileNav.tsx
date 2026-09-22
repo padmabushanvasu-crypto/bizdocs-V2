@@ -46,6 +46,7 @@ const MORE_GROUPS = [
       { label: "Stock Register", to: "/stock-register", icon: BarChart3 },
       { label: "Store Locator", to: "/store-locator", icon: MapPin },
       { label: "Physical Count", to: "/physical-count", icon: ClipboardCheck },
+      { label: "Count Approvals", to: "/physical-count/approvals", icon: CheckCircle },
     ],
   },
   {
