@@ -915,7 +915,7 @@ export function AppSidebar() {
       title: "Count Approvals",
       url: "/physical-count/approvals",
       icon: CheckCircle,
-      allowedRoles: ['admin', 'qc_team'],
+      allowedRoles: ['admin', 'qc_team', 'purchase_team', 'inward_team'],
     },
     {
       title: "Consumables Issue",
