@@ -1169,9 +1169,9 @@ function WeldmentLinesPanel({
   const [reverseTarget, setReverseTarget] = useState<GRNLineItem | null>(null);
   const [reverseReason, setReverseReason] = useState("");
 
-  const { data: candidateCount } = useQuery({
+  const { data: candidates = [] } = useQuery({
     queryKey: ["dc-weldment-candidates", dcId],
-    queryFn: async () => (await fetchDcWeldmentCandidates(dcId)).length,
+    queryFn: () => fetchDcWeldmentCandidates(dcId),
     enabled: !!dcId && allowAdd,
     staleTime: 30_000,
   });
@@ -1215,8 +1215,8 @@ function WeldmentLinesPanel({
             size="sm"
             variant="outline"
             className="border-indigo-300 text-indigo-800 hover:bg-indigo-100 shrink-0"
-            disabled={candidateCount === 0}
-            title={candidateCount === 0 ? "No sub-assembly can be built from what's still out on this DC" : undefined}
+            disabled={candidates.length === 0}
+            title={candidates.length === 0 ? "No sub-assembly can be built from what's still out on this DC" : undefined}
             onClick={() => setDialogOpen(true)}
           >
             <Plus className="h-3.5 w-3.5 mr-1" /> Receive as Weldment
