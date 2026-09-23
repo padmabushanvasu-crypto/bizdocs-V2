@@ -29,7 +29,7 @@ export default function PhysicalCountApprovalQueue() {
   const [notes, setNotes] = useState<Record<string, string>>({});
 
   const canApprove = role === "qc_team" || role === "admin"
-    || role === "purchase_team" || role === "inward_team";
+    || role === "purchase_team" || role === "inward_team" || role === "finance";
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ["physical-count-approvals"],
