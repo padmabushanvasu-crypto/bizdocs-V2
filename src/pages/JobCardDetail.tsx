@@ -194,16 +194,16 @@ function TimelineStep({
                   </div>
                 ) : step.dc_number ? (
                   <div className="text-[11px] font-mono text-slate-500">{step.dc_number}</div>
-                ) : (
+                ) : done || preBizdocs ? null : (
                   <div className="text-[11px] text-slate-400">No outward DC</div>
                 )}
-                {canEdit && (
+                {canEdit && !done && !preBizdocs && eligibleQty != null && eligibleQty > 0 && (
                   <button
                     type="button"
                     onClick={() => onSendMore?.(step)}
                     className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
                   >
-                    <Send className="h-3 w-3" /> Send more material out
+                    <Send className="h-3 w-3" /> Create DC for this stage
                   </button>
                 )}
                 {/* Backward path — new stage-ledger model only. Legacy cards
