@@ -50,6 +50,7 @@ const DELETION_REASONS_DC_DETAIL = [
 import { createGrnFromDC } from "@/lib/grn-api";
 import { JobCardCreationDialog } from "@/components/JobCardCreationDialog";
 import { DcSourceLink } from "@/components/DcSourceLink";
+import { DcSourceDialog } from "@/components/DcSourceDialog";
 import { fetchItemTrackSourceByIds } from "@/lib/items-api";
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId } from "@/lib/auth-helpers";
@@ -145,6 +146,10 @@ export default function DeliveryChallanDetail() {
   const [retReworkVendorName, setRetReworkVendorName] = useState('');
   const [retSaving, setRetSaving] = useState(false);
   const [jcDialogOpen, setJcDialogOpen] = useState(false);
+  // Opens DcSourceDialog for the line named in a rpc_issue_dc_plain_lines
+  // "chosen GRN source no longer available" / "not enough in Store" error —
+  // see issueMutation's onError below.
+  const [sourceChangeLine, setSourceChangeLine] = useState<{ dcLineId: string; itemLabel: string; lineQty: number; unit: string | null } | null>(null);
 
   const handleOpenJCDialog = () => {
     setJcDialogOpen(true);
@@ -448,6 +453,39 @@ export default function DeliveryChallanDetail() {
           return;
         }
       }
+
+      // rpc_issue_dc_plain_lines' two source-related failures — a chosen GRN
+      // source drawn dry, or not enough left in Store once the chosen GRN
+      // sources are applied. Shown verbatim (the RPC already names the item
+      // and the shortfall) with a "Change source" action for the line.
+      const sourceErrorMatch =
+        typeof err?.message === "string" ? err.message.match(/for item ([^:]+?)(?: no longer has|:)/) : null;
+      if (sourceErrorMatch) {
+        const itemCode = sourceErrorMatch[1];
+        const line = (dc?.line_items ?? []).find((li: any) => li.item_code === itemCode && !li.job_card_id);
+        toast({
+          title: "Cannot issue DC",
+          description: err.message,
+          variant: "destructive",
+          action: line?.id ? (
+            <ToastAction
+              altText="Change source"
+              onClick={() =>
+                setSourceChangeLine({
+                  dcLineId: line.id as string,
+                  itemLabel: line.description,
+                  lineQty: line.quantity ?? (line as any).qty_nos ?? 0,
+                  unit: line.unit ?? null,
+                })
+              }
+            >
+              Change source
+            </ToastAction>
+          ) : undefined,
+        });
+        return;
+      }
+
       toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });
@@ -1876,6 +1914,17 @@ export default function DeliveryChallanDetail() {
           item_id: (li as any).item_id ?? null,
         }))}
       />
+
+      {sourceChangeLine && (
+        <DcSourceDialog
+          open={true}
+          onOpenChange={(v) => { if (!v) setSourceChangeLine(null); }}
+          dcLineId={sourceChangeLine.dcLineId}
+          itemLabel={sourceChangeLine.itemLabel}
+          lineQty={sourceChangeLine.lineQty}
+          unit={sourceChangeLine.unit}
+        />
+      )}
 
       {/* ── DC Deletion Dialog ── */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
