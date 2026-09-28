@@ -62,6 +62,7 @@ function TimelineStep({
   onSendMore,
   eligibleQty,
   onConfirmInternal,
+  isFinalStep = false,
   undispositionedRejectedQty,
   onDisposeRejected,
 }: {
@@ -72,6 +73,10 @@ function TimelineStep({
   // New stage-ledger model only (non-legacy job cards) — undefined for legacy.
   eligibleQty?: number;
   onConfirmInternal?: (step: JobWorkStep) => void;
+  // rpc_confirm_internal_step credits stock_free (posts to Store) only when
+  // this is the job card's last step — confirmed against the live function
+  // body, not assumed.
+  isFinalStep?: boolean;
   undispositionedRejectedQty?: number;
   onDisposeRejected?: (step: JobWorkStep) => void;
 }) {
@@ -230,7 +235,7 @@ function TimelineStep({
                   onClick={() => onConfirmInternal?.(step)}
                   className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
                 >
-                  <CheckCircle2 className="h-3 w-3" /> Confirm units done
+                  <CheckCircle2 className="h-3 w-3" /> {isFinalStep ? "Post to Store" : "Confirm Operation"}
                 </button>
               </div>
             )}
@@ -564,6 +569,12 @@ export default function JobCardDetail() {
   for (const s of steps) {
     if (s.step_number != null) stepByStage.set(s.step_number, s);
   }
+  // Matches rpc_confirm_internal_step's own MAX(step_number) check — that's
+  // the only step where confirming it credits stock_free (posts to Store).
+  const finalStepNumber = steps.reduce<number | null>(
+    (max, s) => (s.step_number != null && (max == null || s.step_number > max) ? s.step_number : max),
+    null,
+  );
   const doneCount = steps.filter((s) => s.status === "done" || s.status === "pre_bizdocs").length;
   const activeStep = steps.find((s) => s.status === "in_progress" || s.status === "material_returned");
   const totalSteps = steps.filter((s) => s.status !== "pre_bizdocs").length;
@@ -719,6 +730,7 @@ export default function JobCardDetail() {
                     : eligibleByStep.get(step.step_number)?.eligible_qty
                 }
                 onConfirmInternal={setConfirmStep}
+                isFinalStep={step.step_number != null && step.step_number === finalStepNumber}
                 undispositionedRejectedQty={
                   isLegacy || step.step_number == null ? undefined : undispositionedByStep.get(step.step_number)
                 }
