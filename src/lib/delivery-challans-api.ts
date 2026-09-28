@@ -1061,6 +1061,78 @@ export async function findDcLineStageShortfalls(
   return shortfalls;
 }
 
+// ── DC line source tracking (items.track_source) ────────────────────────────
+// Lets a storekeeper pick which GRN a plain (non job-card) DC line's material
+// comes from, for items with track_source = true. Reads/writes go entirely
+// through the RPCs/view below — dc_line_source_choices itself is read-only
+// from the client.
+
+export interface DcSourceOption {
+  source_type: "grn" | "store";
+  grn_line_item_id: string | null;
+  grn_number: string | null;
+  vendor_name: string | null;
+  grn_date: string | null;
+  available: number;
+  chosen_qty: number;
+  track_source: boolean;
+}
+
+/** Every GRN a DC line's item could draw from, plus the Store option — see rpc_dc_source_options. */
+export async function fetchDcSourceOptions(dcLineId: string): Promise<DcSourceOption[]> {
+  const { data, error } = await (supabase as any).rpc("rpc_dc_source_options", {
+    p_dc_line_id: dcLineId,
+  });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as DcSourceOption[];
+}
+
+export interface SetDcLineSourcesResult {
+  mode: "automatic" | "custom";
+  from_grn?: number;
+  from_store?: number;
+}
+
+/**
+ * Sets (or clears) explicit GRN sources for a DC line. Pass [] to reset to
+ * automatic — the RPC itself fills whatever isn't covered by a GRN line from
+ * Store, so callers never send a "store" entry here. Only works pre-issue,
+ * for plain lines of track_source items — rpc_set_dc_line_sources enforces
+ * both.
+ */
+export async function setDcLineSources(
+  dcLineId: string,
+  sources: Array<{ grn_line_item_id: string; qty: number }>,
+): Promise<SetDcLineSourcesResult> {
+  const { data, error } = await (supabase as any).rpc("rpc_set_dc_line_sources", {
+    p_dc_line_id: dcLineId,
+    p_sources: sources.length > 0 ? sources : null,
+  });
+  if (error) throw new Error(error.message);
+  return data as SetDcLineSourcesResult;
+}
+
+export interface DcItemSource {
+  company_id: string;
+  dc_id: string;
+  item_id: string;
+  source_type: "grn" | "store";
+  source_label: string;
+  vendor_name: string | null;
+  qty: number;
+}
+
+/** Post-issue, read-only "sourced from" breakdown per item on a DC — v_dc_item_sources, explicit company filter. */
+export async function fetchDcItemSources(dcId: string, companyId: string): Promise<DcItemSource[]> {
+  const { data, error } = await (supabase as any)
+    .from("v_dc_item_sources")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("dc_id", dcId);
+  if (error) throw error;
+  return (data ?? []) as DcItemSource[];
+}
+
 export async function issueDeliveryChallan(id: string) {
   const { data: dcCheck, error: fetchErr } = await supabase
     .from('delivery_challans')
