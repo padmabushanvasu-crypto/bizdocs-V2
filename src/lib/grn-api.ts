@@ -2672,28 +2672,40 @@ export async function fetchAwaitingStoreLineItems(): Promise<AwaitingStoreLineIt
   const grnMap: Record<string, any> = {};
   for (const g of (grns ?? []) as any[]) grnMap[g.id] = g;
 
-  return (lineItems as any[]).map((l: any) => {
-    const conforming = Number(l.conforming_qty ?? 0);
-    const alreadyConfirmed = Number(l.store_confirmed_qty ?? 0);
-    const alreadyDamaged = Number(l.damaged_qty ?? 0);
-    const remaining = Math.max(0, conforming - alreadyConfirmed - alreadyDamaged);
-    return {
-      id: l.id,
-      grn_id: l.grn_id,
-      grn_number: grnMap[l.grn_id]?.grn_number ?? '—',
-      grn_date: grnMap[l.grn_id]?.grn_date ?? '',
-      vendor_name: grnMap[l.grn_id]?.vendor_name ?? null,
-      description: l.description,
-      drawing_number: l.drawing_number ?? null,
-      conforming_qty: l.conforming_qty ?? null,
-      unit: l.unit ?? null,
-      store_confirmed_qty: l.store_confirmed_qty ?? null,
-      damaged_qty: l.damaged_qty ?? null,
-      remaining_qty: remaining,
-      damaged_reason: l.damaged_reason ?? null,
-      store_confirmation_notes: l.store_confirmation_notes ?? null,
-    };
-  });
+  // held_available (from the view) accounts for DC/RM-conversion/AWO/job-card
+  // allocations that conforming - store_confirmed - damaged alone can't see —
+  // a line already fully drawn off elsewhere (next_action = 'issued_on_dc')
+  // has nothing left to move to store, so it's dropped from this queue
+  // entirely rather than shown as still-pending.
+  const lineIds = (lineItems as any[]).map((l: any) => l.id as string);
+  const nextActions = await fetchGrnLineNextActions(lineIds, companyId);
+  const nextActionMap = new Map(nextActions.map((a) => [a.grn_line_item_id, a]));
+
+  return (lineItems as any[])
+    .filter((l: any) => nextActionMap.get(l.id)?.next_action !== "issued_on_dc")
+    .map((l: any) => {
+      const conforming = Number(l.conforming_qty ?? 0);
+      const alreadyConfirmed = Number(l.store_confirmed_qty ?? 0);
+      const alreadyDamaged = Number(l.damaged_qty ?? 0);
+      const fallbackRemaining = Math.max(0, conforming - alreadyConfirmed - alreadyDamaged);
+      const heldAvailable = nextActionMap.get(l.id)?.held_available;
+      return {
+        id: l.id,
+        grn_id: l.grn_id,
+        grn_number: grnMap[l.grn_id]?.grn_number ?? '—',
+        grn_date: grnMap[l.grn_id]?.grn_date ?? '',
+        vendor_name: grnMap[l.grn_id]?.vendor_name ?? null,
+        description: l.description,
+        drawing_number: l.drawing_number ?? null,
+        conforming_qty: l.conforming_qty ?? null,
+        unit: l.unit ?? null,
+        store_confirmed_qty: l.store_confirmed_qty ?? null,
+        damaged_qty: l.damaged_qty ?? null,
+        remaining_qty: heldAvailable != null ? Math.max(0, Number(heldAvailable)) : fallbackRemaining,
+        damaged_reason: l.damaged_reason ?? null,
+        store_confirmation_notes: l.store_confirmation_notes ?? null,
+      };
+    });
 }
 
 export async function storeConfirmGRNItems(
@@ -3185,6 +3197,13 @@ export interface GrnStoreReceiptCardLine {
   received_now_2: number | null;
   accepted_qty_2: number | null;
   unit_2: string | null;
+  // From v_grn_line_next_action — null only if the view had no row for this
+  // line (shouldn't happen for a line reachable by this query; the mapper
+  // falls back to the old conforming/confirmed/damaged math in that case).
+  next_action: GrnLineNextAction["next_action"] | null;
+  action_label: string | null;
+  issued_on_dcs: string | null;
+  after_message: string | null;
 }
 
 export interface GrnStoreReceiptCard {
@@ -3197,8 +3216,8 @@ export interface GrnStoreReceiptCard {
   acceptance_basis: 'original' | 'alt';
   line_items: GrnStoreReceiptCardLine[];
   total_lines: number;
-  pending_lines: number;          // store_confirmed = false
-  fully_confirmed_lines: number;  // store_confirmed = true
+  pending_lines: number;          // store_confirmed = false AND not issued_on_dc (i.e. actually actionable)
+  fully_confirmed_lines: number;  // total_lines - pending_lines (store_confirmed OR issued_on_dc)
   has_damaged_qty: boolean;       // any line with damaged_qty > 0
   card_status: 'pending' | 'confirmed' | 'partial';
 }
@@ -3301,6 +3320,19 @@ export async function fetchGrnStoreReceiptQueue(
   }
   if (!lineItems.length) return [];
 
+  // held_available/next_action/issued_on_dcs/after_message all come from
+  // v_grn_line_next_action — chunked the same way as the grn_id fetch above,
+  // for the same reason (PostgREST .in() row/URL-length limits).
+  const allLineIds = (lineItems as any[]).map((l) => l.id as string);
+  const lineIdChunks: string[][] = [];
+  for (let i = 0; i < allLineIds.length; i += LINE_ID_CHUNK) {
+    lineIdChunks.push(allLineIds.slice(i, i + LINE_ID_CHUNK));
+  }
+  const nextActionChunks = await Promise.all(
+    lineIdChunks.map((chunk) => fetchGrnLineNextActions(chunk, companyId))
+  );
+  const nextActionMap = new Map(nextActionChunks.flat().map((a) => [a.grn_line_item_id, a]));
+
   // Step 3 — group lines by grn_id, dropping any whose parent GRN isn't in
   // our month/status-filtered set.
   const groups: Record<string, any[]> = {};
@@ -3318,6 +3350,8 @@ export async function fetchGrnStoreReceiptQueue(
       const conforming = Number(l.conforming_qty ?? 0);
       const sConfirmed = Number(l.store_confirmed_qty ?? 0);
       const dmg = Number(l.damaged_qty ?? 0);
+      const fallbackRemaining = Math.max(0, conforming - sConfirmed - dmg);
+      const nextAction = nextActionMap.get(l.id) ?? null;
       return {
         id: l.id,
         item_id: l.item_id ?? null,
@@ -3328,7 +3362,11 @@ export async function fetchGrnStoreReceiptQueue(
         conforming_qty: conforming,
         store_confirmed_qty: sConfirmed,
         damaged_qty: dmg,
-        remaining_qty: Math.max(0, conforming - sConfirmed - dmg),
+        remaining_qty: nextAction ? Math.max(0, Number(nextAction.held_available)) : fallbackRemaining,
+        next_action: nextAction?.next_action ?? null,
+        action_label: nextAction?.action_label ?? null,
+        issued_on_dcs: nextAction?.issued_on_dcs ?? null,
+        after_message: nextAction?.after_message ?? null,
         store_confirmed: Boolean(l.store_confirmed),
         store_confirmed_at: l.store_confirmed_at ?? null,
         store_confirmed_by: l.store_confirmed_by ?? null,
@@ -3342,7 +3380,12 @@ export async function fetchGrnStoreReceiptQueue(
       };
     });
 
-    const pendingLines = mappedLines.filter((l) => !l.store_confirmed).length;
+    // A line already drawn off by a DC (next_action = 'issued_on_dc') has
+    // nothing left for the storekeeper to do — it doesn't count as "pending"
+    // just because it was never store-confirmed.
+    const pendingLines = mappedLines.filter(
+      (l) => !l.store_confirmed && l.next_action !== "issued_on_dc"
+    ).length;
     const fullyConfirmedLines = mappedLines.length - pendingLines;
     const hasDamaged = mappedLines.some((l) => l.damaged_qty > 0);
 

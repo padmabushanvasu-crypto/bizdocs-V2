@@ -83,6 +83,7 @@ function buildInitialFormForCard(card: GrnStoreReceiptCard): GrnFormState {
   const items: Record<string, ItemState> = {};
   for (const li of card.line_items) {
     if (li.store_confirmed) continue; // already-confirmed lines aren't editable
+    if (li.next_action === "issued_on_dc") continue; // nothing left here to post to store
     items[li.id] = {
       storeQty: li.remaining_qty > 0 ? String(li.remaining_qty) : "",
       location: li.store_location ?? "",
@@ -733,6 +734,29 @@ export default function GrnStoreQueue() {
                                     <> · {item.store_confirmed_by}</>
                                   )}
                                 </div>
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        // Already drawn off by a DC (or RM conversion) — nothing
+                        // left here for the storekeeper to post to store. No
+                        // checkbox, no input, just the status text.
+                        if (item.next_action === "issued_on_dc") {
+                          return (
+                            <tr
+                              key={item.id}
+                              className="border-b border-slate-100 dark:border-white/5 last:border-0 bg-slate-50/60 dark:bg-white/5"
+                            >
+                              {showFooter && <td className="px-3 py-2.5" />}
+                              <td className="px-3 py-2.5 text-slate-700 dark:text-slate-200">
+                                <p className="font-medium leading-snug">{item.description}</p>
+                              </td>
+                              <td className="px-3 py-2.5 text-slate-500 dark:text-slate-400 font-mono text-xs">
+                                {item.drawing_number || "—"}
+                              </td>
+                              <td colSpan={6} className="px-3 py-2.5 text-xs text-slate-500 dark:text-slate-400 italic">
+                                {item.issued_on_dcs ? `Issued on ${item.issued_on_dcs}` : "Issued on a DC"}
                               </td>
                             </tr>
                           );
