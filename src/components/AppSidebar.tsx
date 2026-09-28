@@ -814,7 +814,7 @@ export function AppSidebar() {
       allowedRoles: ['admin', 'finance', 'storekeeper', 'purchase_team', 'inward_team'],
     },
     {
-      title: "Ready to Move to Store",
+      title: "Awaiting Goods Receipt",
       url: "/ready-to-move",
       icon: PackageCheck,
       badge: awaitingStoreCount > 0 ? awaitingStoreCount : undefined,

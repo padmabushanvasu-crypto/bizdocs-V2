@@ -20,10 +20,12 @@ import {
   fetchStoreAcceptedByDate,
   storeConfirmGRNItems,
   getPendingJobCardLinks,
+  fetchGrnLineNextActions,
   type GrnStoreReceiptCard,
   type GrnStoreReceiptCardLine,
   type PendingJobCardLink,
 } from "@/lib/grn-api";
+import { getCompanyId } from "@/lib/auth-helpers";
 import { logAudit } from "@/lib/audit-api";
 import { formatNumber } from "@/lib/gst-utils";
 import { fetchCompanySettings } from "@/lib/settings-api";
@@ -360,10 +362,30 @@ export default function GrnStoreQueue() {
       queryClient.invalidateQueries({ queryKey: ["grn-store-queue"] });
       queryClient.invalidateQueries({ queryKey: ["awaiting-store-count"] });
       queryClient.invalidateQueries({ queryKey: ["grns"] });
-      toast({
-        title: "Store receipt confirmed",
-        description: `${checkedItems.length} item${checkedItems.length !== 1 ? "s" : ""} received in store.`,
-      });
+
+      const fallbackDescription = `${checkedItems.length} item${checkedItems.length !== 1 ? "s" : ""} received in store.`;
+      let description = fallbackDescription;
+      try {
+        // The ledger has just advanced (a job-work line's stage moved on),
+        // so re-read the view rather than reuse the pre-write snapshot —
+        // after_message describes the NEXT stage, which only exists now.
+        const companyId = await getCompanyId();
+        const freshActions = companyId
+          ? await fetchGrnLineNextActions(checkedItems.map((i) => i.id), companyId)
+          : [];
+        const freshById = new Map(freshActions.map((a) => [a.grn_line_item_id, a]));
+        const messages = checkedItems.map((item) =>
+          item.next_action === "post_goods_receipt"
+            ? freshById.get(item.id)?.after_message ?? "Received — ready for the next stage."
+            : "Posted to Store."
+        );
+        description = [...new Set(messages)].join(" ");
+      } catch {
+        // Non-fatal — the confirm itself already succeeded above; the
+        // generic fallback description still tells the storekeeper it worked.
+      }
+
+      toast({ title: "Store receipt confirmed", description });
     } catch (err: any) {
       // trg_guard_grn_line_conversion_invariant raises this when the line
       // was already drawn off by a DC (or RM conversion) — translate its
@@ -596,9 +618,17 @@ export default function GrnStoreQueue() {
         <div className="space-y-6">
           {cards.map((card) => {
             const form = grnForms[card.grn_id];
-            const checkedCount = form
-              ? Object.values(form.items).filter((s) => s.checked).length
-              : 0;
+            const checkedLines = form
+              ? card.line_items.filter((l) => form.items[l.id]?.checked)
+              : [];
+            const checkedCount = checkedLines.length;
+            const checkedActions = new Set(checkedLines.map((l) => l.next_action));
+            const confirmLabel =
+              checkedActions.size === 1 && checkedActions.has("post_goods_receipt")
+                ? "Post Goods Receipt"
+                : checkedActions.size === 1 && checkedActions.has("post_to_store")
+                ? "Post to Store"
+                : `Post ${checkedCount} Item${checkedCount !== 1 ? "s" : ""}`;
             const isSubmitting = confirming[card.grn_id] ?? false;
             const showFooter = card.pending_lines > 0;
 
@@ -913,9 +943,7 @@ export default function GrnStoreQueue() {
                       disabled={isSubmitting || checkedCount === 0 || !form?.confirmedBy.trim()}
                       onClick={() => handleConfirmGRN(card)}
                     >
-                      {isSubmitting
-                        ? "Saving…"
-                        : `Confirm ${checkedCount} Item${checkedCount !== 1 ? "s" : ""}`}
+                      {isSubmitting ? "Saving…" : confirmLabel}
                     </Button>
                   </div>
                 )}

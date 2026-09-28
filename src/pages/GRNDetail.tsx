@@ -4104,14 +4104,14 @@ export default function GRNDetail() {
         </div>
       )}
 
-      {/* ── Store Confirmation Panel (read-only — confirm from queue) ── */}
+      {/* ── Goods Receipt Panel (read-only — confirm from queue) ── */}
       {showStorePanel && (
         <div className="border border-amber-200 bg-amber-50/30 rounded-xl overflow-hidden no-print">
           <div className="px-5 py-4 flex items-start gap-3">
             <PackageCheck className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
             <div className="flex-1">
-              <h3 className="text-sm font-bold text-amber-900">Awaiting Store Receipt Confirmation</h3>
-              <p className="text-xs text-amber-700 mt-0.5">QC has cleared these items. Confirm physical receipt from the Store Receipt Queue.</p>
+              <h3 className="text-sm font-bold text-amber-900">Awaiting Goods Receipt</h3>
+              <p className="text-xs text-amber-700 mt-0.5">QC has cleared these items. Confirm physical receipt from the Inward Receipt Queue.</p>
             </div>
             <Button
               size="sm"
