@@ -250,7 +250,7 @@ export default function GrnQueue() {
           GRN Receiving Queue
         </h1>
         <p className="text-sm text-muted-foreground">
-          Track GRNs from QC to store confirmation
+          Track GRNs from QC to goods receipt
         </p>
       </div>
 
@@ -356,7 +356,7 @@ export default function GrnQueue() {
         <div className="text-center py-16 text-muted-foreground">
           <CheckCircle2 className="h-10 w-10 mx-auto mb-3 text-green-500/70" />
           <p className="font-medium text-slate-700 dark:text-slate-200">All received!</p>
-          <p className="text-sm mt-1">No GRNs awaiting store confirmation</p>
+          <p className="text-sm mt-1">No GRNs awaiting goods receipt</p>
         </div>
       )}
 

@@ -664,7 +664,7 @@ export default function PurchaseOrderDetail() {
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">
                       {item.description}
                       {!item.item_id && (
-                        <span className="ml-2 inline-flex items-center text-amber-600 text-xs font-medium print:hidden align-middle" title="This line has no linked item — Store Confirm will be blocked until the PO line is re-linked.">
+                        <span className="ml-2 inline-flex items-center text-amber-600 text-xs font-medium print:hidden align-middle" title="This line has no linked item — goods receipt will be blocked until the PO line is re-linked.">
                           <AlertTriangle className="w-3 h-3 mr-1" /> No item
                         </span>
                       )}

@@ -553,7 +553,7 @@ const GRN_REPORT_LINE_COLS: ExportColumn[] = [
   { key: "received_now", label: "Received", type: "number" },
   { key: "accepted_qty", label: "Accepted", type: "number" },
   { key: "rejected_qty", label: "Rejected", type: "number" },
-  { key: "store_confirmed_qty", label: "Store Confirmed", type: "number" },
+  { key: "store_confirmed_qty", label: "Goods Received", type: "number" },
   { key: "unit", label: "Unit" },
   { key: "ordered_qty_2", label: "Alt Ordered", type: "number" },
   { key: "received_now_2", label: "Alt Received", type: "number" },
@@ -1028,7 +1028,7 @@ export function buildStoreReceiptWorkbook(
 ): { workbook: XLSX.WorkBook; filename: string } {
   const headers = [
     "GRN #", "GRN Date", "Vendor", "Drawing #", "Item / Description", "UOM",
-    "QC Accepted", "Store Confirmed", "Damaged", "Remaining", "Status", "Location",
+    "QC Accepted", "Goods Received", "Damaged", "Remaining", "Status", "Location",
   ];
   const dataRows: (string | number)[][] = [];
   let tAcc = 0, tConf = 0, tDmg = 0, tRem = 0;

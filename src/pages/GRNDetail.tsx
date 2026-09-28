@@ -1257,9 +1257,9 @@ function WeldmentLinesPanel({
                       )}
                     </p>
                     {storeConfirmed ? (
-                      <p className="text-green-700 font-medium">✓ Store confirmed</p>
+                      <p className="text-green-700 font-medium">✓ Goods received</p>
                     ) : (
-                      <p className="text-amber-600 font-medium">⏳ Awaiting store confirm</p>
+                      <p className="text-amber-600 font-medium">⏳ Awaiting goods receipt</p>
                     )}
                   </div>
                   {canManage && !storeConfirmed && (
@@ -2875,7 +2875,7 @@ export default function GRNDetail() {
         title: wasEdit ? "QC inspection updated" : "Quality inspection complete",
         description: wasEdit
           ? "Changes saved. Stock adjusted for any accepted-qty change."
-          : (Object.values(finalGrnPerLine).some(v => v) ? "GRN is awaiting store confirmation." : "GRN is now closed."),
+          : (Object.values(finalGrnPerLine).some(v => v) ? "GRN is awaiting goods receipt." : "GRN is now closed."),
       });
       const warnings = qcResult?.stockWarnings ?? [];
       if (warnings.length > 0) {

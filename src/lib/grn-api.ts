@@ -1482,7 +1482,7 @@ export async function saveQualityStage(
         await createNotification({
           company_id: grnHeader.company_id,
           type: 'grn_ready_to_move',
-          title: 'GRN Ready to Move to Store',
+          title: 'GRN awaiting goods receipt',
           message: `GRN ${grnHeader.grn_number}${grnHeader.vendor_name ? ` (${grnHeader.vendor_name})` : ''} has passed QC. Items are ready to be physically moved to store.`,
           category: 'action_required',
           link: `/ready-to-move`,
@@ -2819,7 +2819,7 @@ export async function storeConfirmGRNItems(
   if (blockedLines.length > 0) {
     const bullets = blockedLines.map((b) => `  • ${b.description ?? `(line ${b.id})`}`).join("\n");
     throw new Error(
-      `Cannot Store Confirm. The following line(s) have no item linked to the master:\n${bullets}\n\n` +
+      `Cannot record goods receipt. The following line(s) have no item linked to the master:\n${bullets}\n\n` +
       `Fix: open the original Purchase Order, type the item name on each blocked line, and select the matching suggestion. Then re-generate the GRN and try again.`
     );
   }
