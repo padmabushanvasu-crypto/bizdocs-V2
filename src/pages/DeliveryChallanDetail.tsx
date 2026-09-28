@@ -1552,7 +1552,7 @@ export default function DeliveryChallanDetail() {
 
       {/* Cancel Dialog */}
       <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           {(() => {
             const cancelIsIssued = !!(dc as any)?.issued_at;
             const stepBlockers = (cancelSteps ?? []).filter(
