@@ -632,13 +632,13 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
     .single();
   const isIssued = (currentDC as any)?.status === 'issued';
 
-  type OrigLine = { id: string; serial_number: number | null; item_id: string | null; qty_nos: number | null; quantity: number | null; job_card_id: string | null; step_number: number | null };
+  type OrigLine = { id: string; serial_number: number | null; item_id: string | null; description: string | null; qty_nos: number | null; quantity: number | null; job_card_id: string | null; step_number: number | null };
   // Fetched for every status, not just 'issued' — protection against the
   // delete+reinsert below is decided by what actually references a line
   // (a GRN receipt), not by the DC's current status field.
   const { data: origLines } = await supabase
     .from('dc_line_items')
-    .select('id, serial_number, item_id, qty_nos, quantity, job_card_id, step_number')
+    .select('id, serial_number, item_id, description, qty_nos, quantity, job_card_id, step_number')
     .eq('dc_id', id);
   const originalLines: OrigLine[] = (origLines ?? []) as OrigLine[];
 
@@ -734,6 +734,31 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
     console.error("[DC] update error:", error);
     throw error;
   }
+
+  // dc_line_source_choices.dc_line_item_id is ON DELETE CASCADE — a plain
+  // line about to be deleted+reinserted below would silently lose any
+  // explicit GRN source choice (items.track_source) and revert to
+  // automatic. Read what it has now, before the delete, so it can be
+  // re-applied to the new line id after the reinsert. Job-card lines never
+  // have choices (rpc_set_dc_line_sources refuses them) and are protected
+  // anyway, so only plain, about-to-be-deleted lines are worth reading.
+  const linesLosingSourceChoices = originalLines.filter(
+    (l) => !protectedLineIds.has(l.id) && !l.job_card_id && l.item_id
+  );
+  const priorSourcesByOldLineId = new Map<string, Array<{ grn_line_item_id: string; qty: number }>>();
+  for (const l of linesLosingSourceChoices) {
+    try {
+      const options = await fetchDcSourceOptions(l.id);
+      const grnChoices = options
+        .filter((o) => o.source_type === "grn" && o.grn_line_item_id && o.chosen_qty > 0)
+        .map((o) => ({ grn_line_item_id: o.grn_line_item_id as string, qty: o.chosen_qty }));
+      if (grnChoices.length > 0) priorSourcesByOldLineId.set(l.id, grnChoices);
+    } catch {
+      // Best-effort read — nothing to re-apply if this fails, same as a line
+      // that genuinely had no choice set.
+    }
+  }
+
   // Preserved lines (job-card-linked, or plain with a GRN receipt) are
   // excluded from BOTH the delete and the reinsert below — their id must
   // survive untouched.
@@ -746,6 +771,9 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
     console.error("[DC] line delete error:", deleteErr);
     throw deleteErr;
   }
+
+  const sourceWarnings: string[] = [];
+  const oldIdToNewId = new Map<string, string>();
 
   const newLineItems = lineItems.filter((item) => !(item.id && protectedLineIds.has(item.id)));
   if (newLineItems.length > 0) {
@@ -779,6 +807,28 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
     if (itemsError) throw itemsError;
 
     await linkNewDcLinesToJobCards(newLineItems, (insertedLines ?? []) as Array<{ id: string; serial_number: number }>);
+
+    for (const item of newLineItems) {
+      if (!item.id) continue;
+      const newId = (insertedLines ?? []).find((l: any) => l.serial_number === item.serial_number)?.id;
+      if (newId) oldIdToNewId.set(item.id, newId);
+    }
+  }
+
+  // Re-apply source choices captured before the delete (see above) onto the
+  // freshly-reinserted line's new id.
+  for (const [oldId, sources] of priorSourcesByOldLineId) {
+    const itemLabel = linesLosingSourceChoices.find((l) => l.id === oldId)?.description ?? "this line";
+    const newId = oldIdToNewId.get(oldId);
+    if (!newId) {
+      sourceWarnings.push(`Source choice for ${itemLabel} was reset to automatic`);
+      continue;
+    }
+    try {
+      await setDcLineSources(newId, sources);
+    } catch {
+      sourceWarnings.push(`Source choice for ${itemLabel} was reset to automatic`);
+    }
   }
 
   // Preserved job-card lines: plain in-place UPDATE for every field except
@@ -914,6 +964,8 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
       }
     }
   }
+
+  return { warnings: sourceWarnings };
 }
 
 /**

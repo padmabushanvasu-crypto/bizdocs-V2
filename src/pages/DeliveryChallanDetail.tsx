@@ -47,6 +47,8 @@ const DELETION_REASONS_DC_DETAIL = [
 ];
 import { createGrnFromDC } from "@/lib/grn-api";
 import { JobCardCreationDialog } from "@/components/JobCardCreationDialog";
+import { DcSourceLink } from "@/components/DcSourceLink";
+import { fetchItemTrackSourceByIds } from "@/lib/items-api";
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId } from "@/lib/auth-helpers";
 import { formatCurrency, formatNumber, amountInWords } from "@/lib/gst-utils";
@@ -166,6 +168,15 @@ export default function DeliveryChallanDetail() {
     queryKey: ["company-settings"],
     queryFn: fetchCompanySettings,
     staleTime: 60_000,
+  });
+
+  // items.track_source per line item — drives whether a plain line shows the
+  // "Source: ..." link (DcSourceLink), pre-issue only.
+  const dcLineItemIds = [...new Set((dc?.line_items ?? []).map((li: any) => li.item_id).filter(Boolean))] as string[];
+  const { data: itemTrackSourceById } = useQuery({
+    queryKey: ["dc-item-track-source", id, dcLineItemIds.join(",")],
+    queryFn: () => fetchItemTrackSourceByIds(dcLineItemIds),
+    enabled: dcLineItemIds.length > 0,
   });
 
   const { data: processorPartiesData } = useQuery({
@@ -475,6 +486,9 @@ export default function DeliveryChallanDetail() {
   const items = dc.line_items || [];
   const isReturnable = RETURNABLE_DC_TYPES.includes(dc.dc_type);
   const isDeleted = dc.status === "deleted";
+  // Matches rpc_set_dc_line_sources' own gate — the Source link only shows
+  // while it would actually be allowed to save.
+  const canEditSource = ["draft", "pending_approval", "rejected"].includes(dc.status) && !dc.issued_at;
   const isJobWorkDC = ["job_work_out", "job_work_143", "returnable"].includes(dc.dc_type ?? "");
   const hasNatureOfProcess = items.some((i) => i.nature_of_process);
   const hasDrawingNumber = items.some((i) => i.drawing_number);
@@ -1177,6 +1191,18 @@ export default function DeliveryChallanDetail() {
                     </td>
                   )}
                 </tr>
+                {canEditSource && item.id && !(item as any).job_card_id && itemTrackSourceById?.get(item.item_id ?? "") && (
+                  <tr className="bg-slate-50/60 print:hidden">
+                    <td colSpan={screenColCount} className="px-4 py-1.5 border-b border-slate-100">
+                      <DcSourceLink
+                        dcLineId={item.id}
+                        itemLabel={item.description}
+                        lineQty={item.quantity ?? (item as any).qty_nos ?? 0}
+                        unit={item.unit}
+                      />
+                    </td>
+                  </tr>
+                )}
                 {pos && (pos.consumed_in_weldment_qty > 0 || pos.pending_qty !== pos.sent_qty) && (
                   <tr className="bg-slate-50/60">
                     <td colSpan={screenColCount} className="px-4 py-1.5 text-xs text-slate-500 border-b border-slate-100">

@@ -246,6 +246,19 @@ export async function fetchItem(id: string) {
   return data as Item;
 }
 
+/** item_id -> track_source, for a batch of items — e.g. deciding which of a DC's already-saved lines show the source-picker link. */
+export async function fetchItemTrackSourceByIds(itemIds: string[]): Promise<Map<string, boolean>> {
+  const map = new Map<string, boolean>();
+  if (!itemIds.length) return map;
+  const { data, error } = await (supabase as any)
+    .from("items")
+    .select("id, track_source")
+    .in("id", itemIds);
+  if (error) throw error;
+  for (const row of (data ?? []) as any[]) map.set(row.id, !!row.track_source);
+  return map;
+}
+
 async function generateItemCode(companyId: string, drawingNumber: string | null | undefined): Promise<string> {
   if (drawingNumber?.trim()) {
     const base = drawingNumber

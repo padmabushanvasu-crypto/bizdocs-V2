@@ -30,7 +30,9 @@ import {
   type DCLineItem,
 } from "@/lib/delivery-challans-api";
 import { fetchJobCardsForItem, type JobCardForLink } from "@/lib/job-works-api";
+import { fetchItemTrackSourceByIds } from "@/lib/items-api";
 import { JobCardLinePicker } from "@/components/JobCardLinePicker";
+import { DcSourceLink } from "@/components/DcSourceLink";
 import { getCompanyId } from "@/lib/auth-helpers";
 import { fetchFreeStock } from "@/lib/stock-free-api";
 import { UNITS } from "@/lib/constants";
@@ -232,6 +234,11 @@ export default function DeliveryChallanForm() {
   // require a reason for it. Only ever populated on edit-load.
   const [lineOriginalJobCardQty, setLineOriginalJobCardQty] = useState<Map<number, number>>(new Map());
   const [lineQtyChangeReason, setLineQtyChangeReason] = useState<Map<number, string>>(new Map());
+  // items.track_source, keyed by item_id — drives whether a plain line shows
+  // the "Source: ..." link (DcSourceLink). Populated on edit-load (batch
+  // query) and merged in as each item is picked via ItemSuggest, which
+  // already returns the full Item row.
+  const [itemTrackSourceById, setItemTrackSourceById] = useState<Map<string, boolean>>(new Map());
 
   const selectStage = (lineIndex: number, stage: ProcessingRoute) => {
     setLineSelectedStageId(prev => { const m = new Map(prev); m.set(lineIndex, stage.id); return m; });
@@ -340,6 +347,9 @@ export default function DeliveryChallanForm() {
     queryFn: () => fetchDeliveryChallan(id!),
     enabled: isEdit,
   });
+  // rpc_set_dc_line_sources refuses once issued — gates the Source link the
+  // same way, so the link only ever shows while it would actually work.
+  const dcIsIssued = existingDC?.status === "issued" || !!existingDC?.issued_at;
 
   // Block roles where canEdit = false (e.g. storekeeper).
   // Wait until profile loads so we don't redirect on the 'admin' default.
@@ -385,6 +395,10 @@ export default function DeliveryChallanForm() {
       if (existingDC.return_due_date) setReturnDueDate(new Date(existingDC.return_due_date));
       if (existingDC.line_items?.length) {
         setLineItems(existingDC.line_items);
+        const lineItemIds = [...new Set(existingDC.line_items.map((li: any) => li.item_id).filter(Boolean))] as string[];
+        fetchItemTrackSourceByIds(lineItemIds)
+          .then((m) => setItemTrackSourceById((prev) => new Map([...prev, ...m])))
+          .catch(() => {/* non-fatal — Source link just won't show */});
         const newJcIds = new Map<number, string>();
         const newStepNums = new Map<number, number>();
         const origQtys = new Map<number, number>();
@@ -747,7 +761,7 @@ export default function DeliveryChallanForm() {
 
       if (isEdit) {
         const prevStatus = (existingDC as any)?.status;
-        await updateDeliveryChallan(id!, { dc: dcData as any, lineItems: items });
+        const { warnings: sourceWarnings } = await updateDeliveryChallan(id!, { dc: dcData as any, lineItems: items });
         // Only issue when transitioning INTO issued. If the DC was already issued
         // before this edit, updateDeliveryChallan has already posted the
         // manual_adjustment delta for the qty change — re-issuing would double-count
@@ -760,15 +774,19 @@ export default function DeliveryChallanForm() {
           details: `DC edited by ${userName}. Previous status: ${prevStatus}. New status: ${status}.`,
           performed_by: userName,
         });
-        return { id: id!, dcNumber };
+        return { id: id!, dcNumber, sourceWarnings };
       } else {
         const result = await createDeliveryChallan({ dc: dcData as any, lineItems: items });
         if (status === "issued") await issueDeliveryChallan(result.id);
         // dc_number was assigned by trg_delivery_challans_assign_number; read it back.
-        return { id: result.id, dcNumber: (result as any).dc_number ?? "" };
+        // A brand-new DC has no prior lines, so there's never a source choice to lose.
+        return { id: result.id, dcNumber: (result as any).dc_number ?? "", sourceWarnings: [] as string[] };
       }
     },
     onSuccess: (data, status) => {
+      for (const w of data.sourceWarnings ?? []) {
+        toast({ title: "Source reset to automatic", description: w, variant: "destructive" });
+      }
       const assignedNumber = data.dcNumber || dcNumber;
       if (assignedNumber && assignedNumber !== dcNumber) {
         setDcNumber(assignedNumber);
@@ -1337,6 +1355,7 @@ export default function DeliveryChallanForm() {
                         // Track item_id; availability for the over-issue warning comes
                         // from v_stock_free (free/on-shelf), not the legacy bucket.
                         setItemIdByIndex(prev => { const m = new Map(prev); m.set(index, selectedItem.id); return m; });
+                        setItemTrackSourceById(prev => { const m = new Map(prev); m.set(selectedItem.id, !!(selectedItem as any).track_source); return m; });
                         setLineItemStock(prev => { const m = new Map(prev); m.set(index, selectedItem.current_stock ?? 0); return m; });
                         fetchFreeStock(selectedItem.id).then(free => {
                           setLineItemStock(prev => { const m = new Map(prev); m.set(index, free); return m; });
@@ -1612,6 +1631,19 @@ export default function DeliveryChallanForm() {
                     )}
                   </td>
                 </tr>
+                {item.id && !item.job_card_id && !dcIsIssued && itemTrackSourceById.get(item.item_id ?? "") && (
+                  <tr key={`source-${index}`} className="bg-slate-50/60 border-b border-slate-100">
+                    <td />
+                    <td colSpan={12} className="px-3 py-1.5">
+                      <DcSourceLink
+                        dcLineId={item.id}
+                        itemLabel={item.description}
+                        lineQty={item.qty_nos ?? item.quantity ?? 0}
+                        unit={item.unit}
+                      />
+                    </td>
+                  </tr>
+                )}
                 {(lineBomStages.get(index)?.length ?? 0) > 0 && (
                   <tr key={`stage-${index}`} className="bg-blue-50/40 border-b border-blue-100">
                     <td />
