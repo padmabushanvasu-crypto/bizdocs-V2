@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { Fragment, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,11 +25,14 @@ import {
   issueDeliveryChallan,
   resolveLineItemLoud,
   findLinesMissingJobCardStage,
+  findDcLineStageShortfalls,
+  linkDcLineToJobCardWithStep,
   fetchDcLineReturnPositions,
   type EnhancedReturnData,
   type DcDeleteStockAction,
   type DcCancelStockAction,
   type DcCancelStepHandling,
+  type DcLineStageShortfall,
 } from "@/lib/delivery-challans-api";
 import { logAudit } from "@/lib/audit-api";
 import { useAuth } from "@/hooks/useAuth";
@@ -347,6 +351,48 @@ export default function DeliveryChallanDetail() {
     },
   });
 
+  // Shared by the pre-issue check and the RPC's own onError fallback, so a
+  // shortfall reads the same way whichever path caught it. Offers "Link to
+  // <stage>" only when another stage on the same card could actually take
+  // the line's full quantity — calls the existing rpc_link_dc_line_to_job_card
+  // wrapper for that stage, then re-checks rather than issuing automatically
+  // (issuing moves stock; that stays an explicit second click).
+  const showStageShortfallToast = (shortfall: DcLineStageShortfall) => {
+    const stageLabel = shortfall.stageName ?? `stage ${shortfall.stepNumber}`;
+    const alt = shortfall.alternateStage;
+    const altLabel = alt ? alt.stageName ?? `stage ${alt.stepNumber}` : null;
+    toast({
+      title: "Cannot issue DC",
+      description: `${shortfall.requestedQty} units cannot go to ${stageLabel}. ${shortfall.eligibleQty} ready there.`,
+      variant: "destructive",
+      action: alt ? (
+        <ToastAction
+          altText={`Link to ${altLabel}`}
+          onClick={async () => {
+            try {
+              await linkDcLineToJobCardWithStep(shortfall.lineId, shortfall.jobCardId, alt.stepNumber);
+              queryClient.invalidateQueries({ queryKey: ["delivery-challan", id] });
+              const companyId = await getCompanyId();
+              const fresh = await fetchDeliveryChallan(id!);
+              const stillShort = companyId
+                ? await findDcLineStageShortfalls(fresh?.line_items ?? [], companyId)
+                : [];
+              if (stillShort.length > 0) {
+                showStageShortfallToast(stillShort[0]);
+              } else {
+                toast({ title: "Line re-linked", description: `Now linked to ${altLabel} — click Issue DC to continue.` });
+              }
+            } catch (e: any) {
+              toast({ title: "Could not re-link", description: e.message, variant: "destructive" });
+            }
+          }}
+        >
+          Link to {altLabel}
+        </ToastAction>
+      ) : undefined,
+    });
+  };
+
   const issueMutation = useMutation({
     mutationFn: () => issueDeliveryChallan(id!),
     onSuccess: () => {
@@ -354,7 +400,24 @@ export default function DeliveryChallanDetail() {
       queryClient.invalidateQueries({ queryKey: ["delivery-challans"] });
       toast({ title: "DC Issued", description: "The DC has been issued." });
     },
-    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: async (err: any) => {
+      // The eligibility pre-check in handleIssue should normally catch this
+      // before the RPC ever runs — but if the server still raises it (a
+      // stage's eligible_qty moved between the check and the call), show the
+      // same structured message and recovery button rather than the raw
+      // RPC text.
+      if (typeof err?.message === "string" && err.message.toLowerCase().includes("eligible")) {
+        const companyId = await getCompanyId();
+        const shortfalls = companyId
+          ? await findDcLineStageShortfalls(dc?.line_items ?? [], companyId)
+          : [];
+        if (shortfalls.length > 0) {
+          showStageShortfallToast(shortfalls[0]);
+          return;
+        }
+      }
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
   });
 
   // Mirrors DeliveryChallanForm's submit-as-issued guard: a line linked to a
@@ -362,7 +425,7 @@ export default function DeliveryChallanDetail() {
   // rpc_issue_dc / rpc_issue_dc_plain_lines anyway — blocking here gives a
   // clear, line-specific message pointing back to the edit form instead of
   // a raw RPC exception.
-  const handleIssue = () => {
+  const handleIssue = async () => {
     const missing = findLinesMissingJobCardStage(dc?.line_items ?? []);
     if (missing.length > 0) {
       const first = missing[0];
@@ -373,6 +436,18 @@ export default function DeliveryChallanDetail() {
       });
       return;
     }
+
+    // Same idea, one level deeper: a stage is picked, but doesn't have
+    // enough eligible material for what this line asks to send.
+    const companyId = await getCompanyId();
+    if (companyId) {
+      const shortfalls = await findDcLineStageShortfalls(dc?.line_items ?? [], companyId);
+      if (shortfalls.length > 0) {
+        showStageShortfallToast(shortfalls[0]);
+        return;
+      }
+    }
+
     issueMutation.mutate();
   };
 
