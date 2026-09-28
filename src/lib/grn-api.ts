@@ -1897,11 +1897,15 @@ export async function linkDcLineToJobCard(dcLineItemId: string, jobCardId: strin
  * Key for matching a grn_line_items row back to its dc_line_items row by
  * (item_id, drawing_number) instead of the raw dc_line_item_id FK.
  *
- * dc_line_item_id can't be trusted for this: DC edits DELETE + re-INSERT
- * dc_line_items (STOCK_LIFECYCLE_GOVERNANCE.md §3.1), which assigns new ids
- * and — because grn_line_items.dc_line_item_id carries no FK constraint —
- * leaves every prior GRN pointing at a dangling id instead of erroring or
- * nulling out. item_id survives that regeneration (it's a real FK to
+ * dc_line_item_id can't always be trusted for this: grn_line_items.dc_line_item_id
+ * carries a real FK (fk_grn_line_items_dc_line_item, ON DELETE RESTRICT).
+ * Historically (before updateDeliveryChallan started protecting every
+ * GRN-referenced line from its delete+reinsert edit path — STOCK_LIFECYCLE_
+ * GOVERNANCE.md §3.1), editing a DC could trip that FK, the delete's error
+ * was swallowed, and the reinsert still ran — leaving a duplicate line whose
+ * new id no old GRN points at, rather than erroring or nulling out. DCs
+ * edited before that fix can still carry that legacy duplicate-line/orphaned-
+ * receipt shape. item_id survives regeneration either way (it's a real FK to
  * `items`), so pairing it with drawing_number reconnects orphaned rows
  * while keeping legitimately distinct lines apart: some DCs carry two
  * dc_line_items rows sharing an item_id with different drawing numbers
