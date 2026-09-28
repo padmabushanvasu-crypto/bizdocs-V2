@@ -17,6 +17,42 @@ import { DisposeRejectedDialog } from "@/components/DisposeRejectedDialog";
 import { CancelOrCloseJobCardDialog } from "@/components/CancelOrCloseJobCardDialog";
 import { Button } from "@/components/ui/button";
 
+// ── Step status label ─────────────────────────────────────────────────────────
+// Single source of truth for what a job_card_step's ledger-derived `status`
+// means as user-facing text — shared by TimelineStep (per step) and RouteRow
+// (per BOM route, via its linked step), which previously computed this
+// independently and had drifted (differing capitalization on the same
+// "material returned" label).
+function stepStatusLabel(
+  status: JobWorkStep["status"] | undefined,
+  opts: { stepType?: string; vendorName?: string | null; completedAt?: string | null } = {},
+): { label: string; color: string; sublabel: string | null } {
+  if (status === "done") {
+    return {
+      label: "Completed",
+      color: "text-emerald-700",
+      sublabel: opts.completedAt ? format(new Date(opts.completedAt), "dd MMM yyyy") : null,
+    };
+  }
+  if (status === "material_returned") {
+    return { label: "Material Returned — Awaiting QC", color: "text-blue-700", sublabel: null };
+  }
+  if (status === "in_progress") {
+    if (opts.stepType === "external") {
+      return {
+        label: opts.vendorName ? `At Vendor — ${opts.vendorName}` : "At Vendor",
+        color: "text-amber-700",
+        sublabel: null,
+      };
+    }
+    return { label: "In Progress", color: "text-amber-700", sublabel: null };
+  }
+  if (status === "pre_bizdocs") {
+    return { label: "Pre-system (completed)", color: "text-slate-400", sublabel: null };
+  }
+  return { label: "Pending", color: "text-slate-400", sublabel: null };
+}
+
 // ── Vertical timeline step ────────────────────────────────────────────────────
 
 function TimelineStep({
@@ -78,35 +114,11 @@ function TimelineStep({
     lineDash = true;
   }
 
-  let statusLabel: string;
-  let statusColor: string;
-  let sublabel: string | null = null;
-
-  if (done) {
-    statusLabel = "Completed";
-    statusColor = "text-emerald-700";
-    sublabel = step.completed_at
-      ? format(new Date(step.completed_at), "dd MMM yyyy")
-      : null;
-  } else if (matReturned) {
-    statusLabel = "Material Returned — Awaiting QC";
-    statusColor = "text-blue-700";
-  } else if (active) {
-    if (step.step_type === "external") {
-      statusLabel = step.vendor_name ? `At Vendor — ${step.vendor_name}` : "At Vendor";
-      statusColor = "text-amber-700";
-      // Outward DCs are listed below (multi-DC), not in the sublabel.
-    } else {
-      statusLabel = "In Progress";
-      statusColor = "text-amber-700";
-    }
-  } else if (preBizdocs) {
-    statusLabel = "Pre-system (completed)";
-    statusColor = "text-slate-400";
-  } else {
-    statusLabel = "Pending";
-    statusColor = "text-slate-400";
-  }
+  const { label: statusLabel, color: statusColor, sublabel } = stepStatusLabel(step.status, {
+    stepType: step.step_type,
+    vendorName: step.vendor_name,
+    completedAt: step.completed_at,
+  });
 
   return (
     <div className="flex gap-3">
@@ -247,7 +259,6 @@ function RouteRow({
   const matRet    = step?.status === "material_returned";
   const active    = step?.status === "in_progress";
   const preBiz    = step?.status === "pre_bizdocs";
-  const pending   = step?.status === "pending";
   const tracked   = !!step;
 
   let iconBg: string;
@@ -291,23 +302,14 @@ function RouteRow({
   } else if (!tracked) {
     statusText = "Not yet started";
     statusColor = "text-slate-400";
-  } else if (done) {
-    statusText = step?.completed_at
-      ? `Completed · ${format(new Date(step.completed_at), "dd MMM yyyy")}`
-      : "Completed";
-    statusColor = "text-emerald-700";
-  } else if (matRet) {
-    statusText = "Material returned — awaiting QC";
-    statusColor = "text-blue-700";
-  } else if (active) {
-    statusText = step?.vendor_name ? `At Vendor — ${step.vendor_name}` : "At Vendor";
-    statusColor = "text-amber-700";
-  } else if (preBiz) {
-    statusText = "Pre-system (completed)";
-    statusColor = "text-slate-400";
-  } else if (pending) {
-    statusText = "Pending";
-    statusColor = "text-slate-400";
+  } else {
+    const { label, color, sublabel } = stepStatusLabel(step?.status, {
+      stepType: "external",
+      vendorName: step?.vendor_name,
+      completedAt: step?.completed_at,
+    });
+    statusText = sublabel ? `${label} · ${sublabel}` : label;
+    statusColor = color;
   }
 
   return (
