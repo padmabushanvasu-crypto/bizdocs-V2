@@ -2588,6 +2588,50 @@ export async function fetchAwaitingStoreCount(): Promise<number> {
   }
 }
 
+export interface GrnLineNextAction {
+  grn_line_item_id: string;
+  grn_id: string;
+  company_id: string;
+  grn_number: string;
+  item_id: string | null;
+  dc_line_item_id: string | null;
+  job_card_id: string | null;
+  stage_number: number | null;
+  stage_name: string | null;
+  accepted_qty: number;
+  store_confirmed_qty: number;
+  damaged_qty: number;
+  held_available: number;
+  issued_on_dcs: string | null;
+  next_stage_number: number | null;
+  next_stage_name: string | null;
+  next_stage_type: string | null;
+  next_action: "done" | "issued_on_dc" | "post_goods_receipt" | "post_to_store";
+  action_label: string;
+  after_message: string | null;
+}
+
+/**
+ * Reads v_grn_line_next_action (live view — held_available, issued_on_dcs,
+ * next_action/action_label/after_message are all computed there, never
+ * re-derived client-side) for a batch of GRN lines in one query per screen.
+ * Explicit company_id filter on every call per CLAUDE.md §3.2, even though
+ * the view is security_invoker and already scopes through grns.company_id.
+ */
+export async function fetchGrnLineNextActions(
+  lineIds: string[],
+  companyId: string,
+): Promise<GrnLineNextAction[]> {
+  if (!lineIds.length) return [];
+  const { data, error } = await (supabase as any)
+    .from("v_grn_line_next_action")
+    .select("*")
+    .eq("company_id", companyId)
+    .in("grn_line_item_id", lineIds);
+  if (error) throw error;
+  return (data ?? []) as GrnLineNextAction[];
+}
+
 export interface AwaitingStoreLineItem {
   id: string;
   grn_id: string;
