@@ -28,11 +28,13 @@ import {
   findDcLineStageShortfalls,
   linkDcLineToJobCardWithStep,
   fetchDcLineReturnPositions,
+  fetchDcItemSources,
   type EnhancedReturnData,
   type DcDeleteStockAction,
   type DcCancelStockAction,
   type DcCancelStepHandling,
   type DcLineStageShortfall,
+  type DcItemSource,
 } from "@/lib/delivery-challans-api";
 import { logAudit } from "@/lib/audit-api";
 import { useAuth } from "@/hooks/useAuth";
@@ -178,6 +180,25 @@ export default function DeliveryChallanDetail() {
     queryFn: () => fetchItemTrackSourceByIds(dcLineItemIds),
     enabled: dcLineItemIds.length > 0,
   });
+
+  // v_dc_item_sources — read-only "Sourced from" breakdown per item, once
+  // issued. Shown for every issued DC's plain lines, not only track_source
+  // items: this is the read-back of whatever actually got drawn (explicit
+  // choice or automatic), not a re-run of the picker above.
+  const { data: dcItemSources } = useQuery({
+    queryKey: ["dc-item-sources", id],
+    queryFn: async () => {
+      const companyId = await getCompanyId();
+      if (!companyId) return [] as DcItemSource[];
+      return fetchDcItemSources(id!, companyId);
+    },
+    enabled: !!id && dc?.status === "issued",
+  });
+  const dcSourcesByItemId = new Map<string, DcItemSource[]>();
+  for (const s of dcItemSources ?? []) {
+    if (!dcSourcesByItemId.has(s.item_id)) dcSourcesByItemId.set(s.item_id, []);
+    dcSourcesByItemId.get(s.item_id)!.push(s);
+  }
 
   const { data: processorPartiesData } = useQuery({
     queryKey: ['parties-processors'],
@@ -1200,6 +1221,21 @@ export default function DeliveryChallanDetail() {
                         lineQty={item.quantity ?? (item as any).qty_nos ?? 0}
                         unit={item.unit}
                       />
+                    </td>
+                  </tr>
+                )}
+                {dc.status === "issued" && !(item as any).job_card_id && (dcSourcesByItemId.get(item.item_id ?? "")?.length ?? 0) > 0 && (
+                  <tr className="bg-slate-50/60">
+                    <td colSpan={screenColCount} className="px-4 py-1.5 text-xs text-slate-500 border-b border-slate-100">
+                      Sourced from:{" "}
+                      {dcSourcesByItemId
+                        .get(item.item_id ?? "")!
+                        .map((s) =>
+                          s.source_type === "grn"
+                            ? `${s.source_label}${s.vendor_name ? ` (${s.vendor_name})` : ""} ${formatNumber(s.qty)}`
+                            : `${s.source_label} ${formatNumber(s.qty)}`
+                        )
+                        .join(", ")}
                     </td>
                   </tr>
                 )}
