@@ -78,6 +78,9 @@ export interface Item {
   alt_unit?: string | null;
   alt_factor?: number | null;
   alt_factor_mode?: 'fixed' | 'variable' | null;
+  // GRN/vendor traceability on DC issue — see rpc_dc_source_options /
+  // rpc_set_dc_line_sources. Off (default) = automatic sourcing, unchanged.
+  track_source?: boolean;
 }
 
 export type StockBucket = 'free' | 'in_process' | 'in_subassembly_wip' | 'in_fg_wip' | 'in_fg_ready';
