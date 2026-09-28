@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -54,6 +55,7 @@ const emptyItem = {
   // all-or-nothing client-side in saveMutation (items_alt_uom_consistency
   // CHECK constraint would otherwise reject a partial set with a raw error).
   alt_unit: "", alt_factor: 0, alt_factor_mode: "" as "" | "fixed" | "variable",
+  track_source: false,
 };
 
 export default function Items() {
@@ -286,6 +288,7 @@ export default function Items() {
       alt_unit: item.alt_unit ?? "",
       alt_factor: item.alt_factor ?? 0,
       alt_factor_mode: (item.alt_factor_mode ?? "") as "" | "fixed" | "variable",
+      track_source: (item as any).track_source ?? false,
     });
     setFormOpen(true);
   };
@@ -606,6 +609,18 @@ export default function Items() {
               <div className="space-y-1.5">
                 <Label>Notes</Label>
                 <Textarea value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} rows={2} />
+              </div>
+              <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+                <div>
+                  <Label className="text-sm font-medium text-slate-700">Track source (GRN/vendor traceability)</Label>
+                  <p className="text-xs text-muted-foreground">
+                    When on, the DC lets you choose which GRN the material comes from. Off = automatic.
+                  </p>
+                </div>
+                <Switch
+                  checked={form.track_source}
+                  onCheckedChange={(v) => setForm((f) => ({ ...f, track_source: v }))}
+                />
               </div>
             </TabsContent>
 

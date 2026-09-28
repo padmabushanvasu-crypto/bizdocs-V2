@@ -632,13 +632,13 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
     .single();
   const isIssued = (currentDC as any)?.status === 'issued';
 
-  type OrigLine = { id: string; serial_number: number | null; item_id: string | null; qty_nos: number | null; quantity: number | null; job_card_id: string | null; step_number: number | null };
+  type OrigLine = { id: string; serial_number: number | null; item_id: string | null; description: string | null; qty_nos: number | null; quantity: number | null; job_card_id: string | null; step_number: number | null };
   // Fetched for every status, not just 'issued' — protection against the
   // delete+reinsert below is decided by what actually references a line
   // (a GRN receipt), not by the DC's current status field.
   const { data: origLines } = await supabase
     .from('dc_line_items')
-    .select('id, serial_number, item_id, qty_nos, quantity, job_card_id, step_number')
+    .select('id, serial_number, item_id, description, qty_nos, quantity, job_card_id, step_number')
     .eq('dc_id', id);
   const originalLines: OrigLine[] = (origLines ?? []) as OrigLine[];
 
@@ -734,6 +734,31 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
     console.error("[DC] update error:", error);
     throw error;
   }
+
+  // dc_line_source_choices.dc_line_item_id is ON DELETE CASCADE — a plain
+  // line about to be deleted+reinserted below would silently lose any
+  // explicit GRN source choice (items.track_source) and revert to
+  // automatic. Read what it has now, before the delete, so it can be
+  // re-applied to the new line id after the reinsert. Job-card lines never
+  // have choices (rpc_set_dc_line_sources refuses them) and are protected
+  // anyway, so only plain, about-to-be-deleted lines are worth reading.
+  const linesLosingSourceChoices = originalLines.filter(
+    (l) => !protectedLineIds.has(l.id) && !l.job_card_id && l.item_id
+  );
+  const priorSourcesByOldLineId = new Map<string, Array<{ grn_line_item_id: string; qty: number }>>();
+  for (const l of linesLosingSourceChoices) {
+    try {
+      const options = await fetchDcSourceOptions(l.id);
+      const grnChoices = options
+        .filter((o) => o.source_type === "grn" && o.grn_line_item_id && o.chosen_qty > 0)
+        .map((o) => ({ grn_line_item_id: o.grn_line_item_id as string, qty: o.chosen_qty }));
+      if (grnChoices.length > 0) priorSourcesByOldLineId.set(l.id, grnChoices);
+    } catch {
+      // Best-effort read — nothing to re-apply if this fails, same as a line
+      // that genuinely had no choice set.
+    }
+  }
+
   // Preserved lines (job-card-linked, or plain with a GRN receipt) are
   // excluded from BOTH the delete and the reinsert below — their id must
   // survive untouched.
@@ -746,6 +771,9 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
     console.error("[DC] line delete error:", deleteErr);
     throw deleteErr;
   }
+
+  const sourceWarnings: string[] = [];
+  const oldIdToNewId = new Map<string, string>();
 
   const newLineItems = lineItems.filter((item) => !(item.id && protectedLineIds.has(item.id)));
   if (newLineItems.length > 0) {
@@ -779,6 +807,28 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
     if (itemsError) throw itemsError;
 
     await linkNewDcLinesToJobCards(newLineItems, (insertedLines ?? []) as Array<{ id: string; serial_number: number }>);
+
+    for (const item of newLineItems) {
+      if (!item.id) continue;
+      const newId = (insertedLines ?? []).find((l: any) => l.serial_number === item.serial_number)?.id;
+      if (newId) oldIdToNewId.set(item.id, newId);
+    }
+  }
+
+  // Re-apply source choices captured before the delete (see above) onto the
+  // freshly-reinserted line's new id.
+  for (const [oldId, sources] of priorSourcesByOldLineId) {
+    const itemLabel = linesLosingSourceChoices.find((l) => l.id === oldId)?.description ?? "this line";
+    const newId = oldIdToNewId.get(oldId);
+    if (!newId) {
+      sourceWarnings.push(`Source choice for ${itemLabel} was reset to automatic`);
+      continue;
+    }
+    try {
+      await setDcLineSources(newId, sources);
+    } catch {
+      sourceWarnings.push(`Source choice for ${itemLabel} was reset to automatic`);
+    }
   }
 
   // Preserved job-card lines: plain in-place UPDATE for every field except
@@ -914,6 +964,8 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
       }
     }
   }
+
+  return { warnings: sourceWarnings };
 }
 
 /**
@@ -1059,6 +1111,78 @@ export async function findDcLineStageShortfalls(
     });
   }
   return shortfalls;
+}
+
+// ── DC line source tracking (items.track_source) ────────────────────────────
+// Lets a storekeeper pick which GRN a plain (non job-card) DC line's material
+// comes from, for items with track_source = true. Reads/writes go entirely
+// through the RPCs/view below — dc_line_source_choices itself is read-only
+// from the client.
+
+export interface DcSourceOption {
+  source_type: "grn" | "store";
+  grn_line_item_id: string | null;
+  grn_number: string | null;
+  vendor_name: string | null;
+  grn_date: string | null;
+  available: number;
+  chosen_qty: number;
+  track_source: boolean;
+}
+
+/** Every GRN a DC line's item could draw from, plus the Store option — see rpc_dc_source_options. */
+export async function fetchDcSourceOptions(dcLineId: string): Promise<DcSourceOption[]> {
+  const { data, error } = await (supabase as any).rpc("rpc_dc_source_options", {
+    p_dc_line_id: dcLineId,
+  });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as DcSourceOption[];
+}
+
+export interface SetDcLineSourcesResult {
+  mode: "automatic" | "custom";
+  from_grn?: number;
+  from_store?: number;
+}
+
+/**
+ * Sets (or clears) explicit GRN sources for a DC line. Pass [] to reset to
+ * automatic — the RPC itself fills whatever isn't covered by a GRN line from
+ * Store, so callers never send a "store" entry here. Only works pre-issue,
+ * for plain lines of track_source items — rpc_set_dc_line_sources enforces
+ * both.
+ */
+export async function setDcLineSources(
+  dcLineId: string,
+  sources: Array<{ grn_line_item_id: string; qty: number }>,
+): Promise<SetDcLineSourcesResult> {
+  const { data, error } = await (supabase as any).rpc("rpc_set_dc_line_sources", {
+    p_dc_line_id: dcLineId,
+    p_sources: sources.length > 0 ? sources : null,
+  });
+  if (error) throw new Error(error.message);
+  return data as SetDcLineSourcesResult;
+}
+
+export interface DcItemSource {
+  company_id: string;
+  dc_id: string;
+  item_id: string;
+  source_type: "grn" | "store";
+  source_label: string;
+  vendor_name: string | null;
+  qty: number;
+}
+
+/** Post-issue, read-only "sourced from" breakdown per item on a DC — v_dc_item_sources, explicit company filter. */
+export async function fetchDcItemSources(dcId: string, companyId: string): Promise<DcItemSource[]> {
+  const { data, error } = await (supabase as any)
+    .from("v_dc_item_sources")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("dc_id", dcId);
+  if (error) throw error;
+  return (data ?? []) as DcItemSource[];
 }
 
 export async function issueDeliveryChallan(id: string) {

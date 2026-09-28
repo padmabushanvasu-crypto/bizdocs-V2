@@ -78,6 +78,9 @@ export interface Item {
   alt_unit?: string | null;
   alt_factor?: number | null;
   alt_factor_mode?: 'fixed' | 'variable' | null;
+  // GRN/vendor traceability on DC issue — see rpc_dc_source_options /
+  // rpc_set_dc_line_sources. Off (default) = automatic sourcing, unchanged.
+  track_source?: boolean;
 }
 
 export type StockBucket = 'free' | 'in_process' | 'in_subassembly_wip' | 'in_fg_wip' | 'in_fg_ready';
@@ -241,6 +244,19 @@ export async function fetchItem(id: string) {
   const { data, error } = await supabase.from("items").select("*").eq("id", id).single();
   if (error) throw error;
   return data as Item;
+}
+
+/** item_id -> track_source, for a batch of items — e.g. deciding which of a DC's already-saved lines show the source-picker link. */
+export async function fetchItemTrackSourceByIds(itemIds: string[]): Promise<Map<string, boolean>> {
+  const map = new Map<string, boolean>();
+  if (!itemIds.length) return map;
+  const { data, error } = await (supabase as any)
+    .from("items")
+    .select("id, track_source")
+    .in("id", itemIds);
+  if (error) throw error;
+  for (const row of (data ?? []) as any[]) map.set(row.id, !!row.track_source);
+  return map;
 }
 
 async function generateItemCode(companyId: string, drawingNumber: string | null | undefined): Promise<string> {

@@ -28,11 +28,13 @@ import {
   findDcLineStageShortfalls,
   linkDcLineToJobCardWithStep,
   fetchDcLineReturnPositions,
+  fetchDcItemSources,
   type EnhancedReturnData,
   type DcDeleteStockAction,
   type DcCancelStockAction,
   type DcCancelStepHandling,
   type DcLineStageShortfall,
+  type DcItemSource,
 } from "@/lib/delivery-challans-api";
 import { logAudit } from "@/lib/audit-api";
 import { useAuth } from "@/hooks/useAuth";
@@ -47,6 +49,9 @@ const DELETION_REASONS_DC_DETAIL = [
 ];
 import { createGrnFromDC } from "@/lib/grn-api";
 import { JobCardCreationDialog } from "@/components/JobCardCreationDialog";
+import { DcSourceLink } from "@/components/DcSourceLink";
+import { DcSourceDialog } from "@/components/DcSourceDialog";
+import { fetchItemTrackSourceByIds } from "@/lib/items-api";
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId } from "@/lib/auth-helpers";
 import { formatCurrency, formatNumber, amountInWords } from "@/lib/gst-utils";
@@ -141,6 +146,10 @@ export default function DeliveryChallanDetail() {
   const [retReworkVendorName, setRetReworkVendorName] = useState('');
   const [retSaving, setRetSaving] = useState(false);
   const [jcDialogOpen, setJcDialogOpen] = useState(false);
+  // Opens DcSourceDialog for the line named in a rpc_issue_dc_plain_lines
+  // "chosen GRN source no longer available" / "not enough in Store" error —
+  // see issueMutation's onError below.
+  const [sourceChangeLine, setSourceChangeLine] = useState<{ dcLineId: string; itemLabel: string; lineQty: number; unit: string | null } | null>(null);
 
   const handleOpenJCDialog = () => {
     setJcDialogOpen(true);
@@ -167,6 +176,34 @@ export default function DeliveryChallanDetail() {
     queryFn: fetchCompanySettings,
     staleTime: 60_000,
   });
+
+  // items.track_source per line item — drives whether a plain line shows the
+  // "Source: ..." link (DcSourceLink), pre-issue only.
+  const dcLineItemIds = [...new Set((dc?.line_items ?? []).map((li: any) => li.item_id).filter(Boolean))] as string[];
+  const { data: itemTrackSourceById } = useQuery({
+    queryKey: ["dc-item-track-source", id, dcLineItemIds.join(",")],
+    queryFn: () => fetchItemTrackSourceByIds(dcLineItemIds),
+    enabled: dcLineItemIds.length > 0,
+  });
+
+  // v_dc_item_sources — read-only "Sourced from" breakdown per item, once
+  // issued. Shown for every issued DC's plain lines, not only track_source
+  // items: this is the read-back of whatever actually got drawn (explicit
+  // choice or automatic), not a re-run of the picker above.
+  const { data: dcItemSources } = useQuery({
+    queryKey: ["dc-item-sources", id],
+    queryFn: async () => {
+      const companyId = await getCompanyId();
+      if (!companyId) return [] as DcItemSource[];
+      return fetchDcItemSources(id!, companyId);
+    },
+    enabled: !!id && dc?.status === "issued",
+  });
+  const dcSourcesByItemId = new Map<string, DcItemSource[]>();
+  for (const s of dcItemSources ?? []) {
+    if (!dcSourcesByItemId.has(s.item_id)) dcSourcesByItemId.set(s.item_id, []);
+    dcSourcesByItemId.get(s.item_id)!.push(s);
+  }
 
   const { data: processorPartiesData } = useQuery({
     queryKey: ['parties-processors'],
@@ -416,6 +453,39 @@ export default function DeliveryChallanDetail() {
           return;
         }
       }
+
+      // rpc_issue_dc_plain_lines' two source-related failures — a chosen GRN
+      // source drawn dry, or not enough left in Store once the chosen GRN
+      // sources are applied. Shown verbatim (the RPC already names the item
+      // and the shortfall) with a "Change source" action for the line.
+      const sourceErrorMatch =
+        typeof err?.message === "string" ? err.message.match(/for item ([^:]+?)(?: no longer has|:)/) : null;
+      if (sourceErrorMatch) {
+        const itemCode = sourceErrorMatch[1];
+        const line = (dc?.line_items ?? []).find((li: any) => li.item_code === itemCode && !li.job_card_id);
+        toast({
+          title: "Cannot issue DC",
+          description: err.message,
+          variant: "destructive",
+          action: line?.id ? (
+            <ToastAction
+              altText="Change source"
+              onClick={() =>
+                setSourceChangeLine({
+                  dcLineId: line.id as string,
+                  itemLabel: line.description,
+                  lineQty: line.quantity ?? (line as any).qty_nos ?? 0,
+                  unit: line.unit ?? null,
+                })
+              }
+            >
+              Change source
+            </ToastAction>
+          ) : undefined,
+        });
+        return;
+      }
+
       toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });
@@ -475,6 +545,9 @@ export default function DeliveryChallanDetail() {
   const items = dc.line_items || [];
   const isReturnable = RETURNABLE_DC_TYPES.includes(dc.dc_type);
   const isDeleted = dc.status === "deleted";
+  // Matches rpc_set_dc_line_sources' own gate — the Source link only shows
+  // while it would actually be allowed to save.
+  const canEditSource = ["draft", "pending_approval", "rejected"].includes(dc.status) && !dc.issued_at;
   const isJobWorkDC = ["job_work_out", "job_work_143", "returnable"].includes(dc.dc_type ?? "");
   const hasNatureOfProcess = items.some((i) => i.nature_of_process);
   const hasDrawingNumber = items.some((i) => i.drawing_number);
@@ -1177,6 +1250,33 @@ export default function DeliveryChallanDetail() {
                     </td>
                   )}
                 </tr>
+                {canEditSource && item.id && !(item as any).job_card_id && itemTrackSourceById?.get(item.item_id ?? "") && (
+                  <tr className="bg-slate-50/60 print:hidden">
+                    <td colSpan={screenColCount} className="px-4 py-1.5 border-b border-slate-100">
+                      <DcSourceLink
+                        dcLineId={item.id}
+                        itemLabel={item.description}
+                        lineQty={item.quantity ?? (item as any).qty_nos ?? 0}
+                        unit={item.unit}
+                      />
+                    </td>
+                  </tr>
+                )}
+                {dc.status === "issued" && !(item as any).job_card_id && (dcSourcesByItemId.get(item.item_id ?? "")?.length ?? 0) > 0 && (
+                  <tr className="bg-slate-50/60">
+                    <td colSpan={screenColCount} className="px-4 py-1.5 text-xs text-slate-500 border-b border-slate-100">
+                      Sourced from:{" "}
+                      {dcSourcesByItemId
+                        .get(item.item_id ?? "")!
+                        .map((s) =>
+                          s.source_type === "grn"
+                            ? `${s.source_label}${s.vendor_name ? ` (${s.vendor_name})` : ""} ${formatNumber(s.qty)}`
+                            : `${s.source_label} ${formatNumber(s.qty)}`
+                        )
+                        .join(", ")}
+                    </td>
+                  </tr>
+                )}
                 {pos && (pos.consumed_in_weldment_qty > 0 || pos.pending_qty !== pos.sent_qty) && (
                   <tr className="bg-slate-50/60">
                     <td colSpan={screenColCount} className="px-4 py-1.5 text-xs text-slate-500 border-b border-slate-100">
@@ -1814,6 +1914,17 @@ export default function DeliveryChallanDetail() {
           item_id: (li as any).item_id ?? null,
         }))}
       />
+
+      {sourceChangeLine && (
+        <DcSourceDialog
+          open={true}
+          onOpenChange={(v) => { if (!v) setSourceChangeLine(null); }}
+          dcLineId={sourceChangeLine.dcLineId}
+          itemLabel={sourceChangeLine.itemLabel}
+          lineQty={sourceChangeLine.lineQty}
+          unit={sourceChangeLine.unit}
+        />
+      )}
 
       {/* ── DC Deletion Dialog ── */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
