@@ -632,15 +632,15 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
     .single();
   const isIssued = (currentDC as any)?.status === 'issued';
 
-  type OrigLine = { id: string; item_id: string | null; qty_nos: number | null; quantity: number | null; job_card_id: string | null; step_number: number | null };
-  let originalLines: OrigLine[] = [];
-  if (isIssued) {
-    const { data: origLines } = await supabase
-      .from('dc_line_items')
-      .select('id, item_id, qty_nos, quantity, job_card_id, step_number')
-      .eq('dc_id', id);
-    originalLines = (origLines ?? []) as OrigLine[];
-  }
+  type OrigLine = { id: string; serial_number: number | null; item_id: string | null; qty_nos: number | null; quantity: number | null; job_card_id: string | null; step_number: number | null };
+  // Fetched for every status, not just 'issued' — protection against the
+  // delete+reinsert below is decided by what actually references a line
+  // (a GRN receipt), not by the DC's current status field.
+  const { data: origLines } = await supabase
+    .from('dc_line_items')
+    .select('id, serial_number, item_id, qty_nos, quantity, job_card_id, step_number')
+    .eq('dc_id', id);
+  const originalLines: OrigLine[] = (origLines ?? []) as OrigLine[];
 
   // New stage-ledger model — a job-card-linked line on an ALREADY-issued DC is
   // never deleted+reinserted below (that would sever the id
@@ -649,26 +649,42 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
   // of qty_nos for these rows — nothing else may also set it); other field
   // edits apply as a plain UPDATE keyed on id. See DC_STAGE_FLOW_REDESIGN.md
   // §10.2, "DC line qty reduced/increased after issue".
-  const existingJobCardLines = originalLines.filter((l) => l.job_card_id);
+  const existingJobCardLines = isIssued ? originalLines.filter((l) => l.job_card_id) : [];
   const existingJobCardLineIds = new Set(existingJobCardLines.map((l) => l.id));
 
-  // Plain lines with an existing GRN receipt hit grn_line_items' real
-  // ON DELETE RESTRICT FK if the delete-and-reinsert below tries to touch
-  // them — confirmed live risk, 820 DCs / 1,650 lines. Preserved in place
-  // exactly like job-card lines, just via a different RPC
-  // (rpc_update_dc_line_qty_plain) since they have no job-card ledger.
-  let receiptedPlainLineIds = new Set<string>();
-  if (isIssued && originalLines.length > 0) {
-    const plainLineIds = originalLines.filter((l) => !l.job_card_id).map((l) => l.id);
-    if (plainLineIds.length > 0) {
-      const { data: receiptedRows } = await (supabase as any)
-        .from('grn_line_items')
-        .select('dc_line_item_id')
-        .in('dc_line_item_id', plainLineIds);
-      receiptedPlainLineIds = new Set((receiptedRows ?? []).map((r: any) => r.dc_line_item_id));
+  // Any line already referenced by a GRN (fk_grn_line_items_dc_line_item — a
+  // real ON DELETE RESTRICT FK, confirmed live) is protected regardless of
+  // the DC's status: what matters is whether a GRN actually points at the
+  // row, not what the status field happens to say. Checked for every status
+  // (not gated on isIssued) — a blind delete+reinsert against a GRN-
+  // referenced line fails the FK, and if that failure is ever swallowed the
+  // reinsert still runs, producing a duplicate line every save
+  // (DC-26-27/1081 ended with 5 copies of the same line).
+  let grnReferencedLineIds = new Set<string>();
+  if (originalLines.length > 0) {
+    const { data: receiptedRows } = await (supabase as any)
+      .from('grn_line_items')
+      .select('dc_line_item_id')
+      .in('dc_line_item_id', originalLines.map((l) => l.id));
+    grnReferencedLineIds = new Set((receiptedRows ?? []).map((r: any) => r.dc_line_item_id));
+  }
+  // The subset of GRN-referenced lines not already covered by the job-card
+  // track above — these get the plain in-place-update path via
+  // rpc_update_dc_line_qty_plain (no job-card ledger to route through).
+  const receiptedPlainLineIds = new Set<string>(
+    [...grnReferencedLineIds].filter((lineId) => !existingJobCardLineIds.has(lineId)),
+  );
+  const protectedLineIds = new Set<string>([...existingJobCardLineIds, ...grnReferencedLineIds]);
+
+  // Fail loud, before any write: a line already receipted on a GRN can't be
+  // silently dropped just because the form no longer lists it.
+  for (const lineId of grnReferencedLineIds) {
+    if (!lineItems.some((li) => li.id === lineId)) {
+      const orig = originalLines.find((l) => l.id === lineId);
+      const label = orig?.serial_number != null ? `Line ${orig.serial_number}` : 'This line';
+      throw new Error(`${label} already has a GRN against it and cannot be removed.`);
     }
   }
-  const protectedLineIds = new Set<string>([...existingJobCardLineIds, ...receiptedPlainLineIds]);
 
   if (isIssued) {
     // Validate everything BEFORE any write — fail loud, never half-edit.
@@ -725,7 +741,11 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
   if (protectedLineIds.size > 0) {
     deleteQuery = deleteQuery.not("id", "in", `(${[...protectedLineIds].join(",")})`);
   }
-  await deleteQuery;
+  const { error: deleteErr } = await deleteQuery;
+  if (deleteErr) {
+    console.error("[DC] line delete error:", deleteErr);
+    throw deleteErr;
+  }
 
   const newLineItems = lineItems.filter((item) => !(item.id && protectedLineIds.has(item.id)));
   if (newLineItems.length > 0) {
@@ -766,7 +786,9 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
   // then the RPC call if the desired qty actually changed. A line missing
   // from the new lineItems array (removed in the form) is treated as
   // reduced to zero — never physically deleted, matching the RPC's own
-  // "line row soft-flagged, never deleted" contract.
+  // "line row soft-flagged, never deleted" contract. (A GRN-referenced line
+  // can't reach the "missing" branch here — the loop above already throws
+  // before any write if one was removed from the form.)
   for (const orig of existingJobCardLines) {
     const incoming = lineItems.find((li) => li.id === orig.id);
     if (incoming) {
@@ -794,9 +816,9 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
 
   // Preserved receipted plain lines: same in-place-UPDATE-plus-qty-RPC
   // treatment as job-card lines above, via rpc_update_dc_line_qty_plain
-  // instead (these have no job-card ledger). A line missing from the new
-  // lineItems array (removed in the form) is treated as reduced to zero —
-  // never physically deleted, matching the job-card line's own contract.
+  // instead (these have no job-card ledger). Every line here is guaranteed
+  // present in lineItems — the earlier GRN-referenced-line check already
+  // throws before any write if one was removed from the form.
   const receiptedPlainLines = originalLines.filter((l) => receiptedPlainLineIds.has(l.id));
   for (const orig of receiptedPlainLines) {
     const incoming = lineItems.find((li) => li.id === orig.id);

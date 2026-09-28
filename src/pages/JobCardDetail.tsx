@@ -17,6 +17,42 @@ import { DisposeRejectedDialog } from "@/components/DisposeRejectedDialog";
 import { CancelOrCloseJobCardDialog } from "@/components/CancelOrCloseJobCardDialog";
 import { Button } from "@/components/ui/button";
 
+// ── Step status label ─────────────────────────────────────────────────────────
+// Single source of truth for what a job_card_step's ledger-derived `status`
+// means as user-facing text — shared by TimelineStep (per step) and RouteRow
+// (per BOM route, via its linked step). Deliberately just four buckets: QC is
+// part of the GRN, not a separate job-card step, so there is no "awaiting QC"
+// state here — a returned step reads "Ready for next stage" and moves on.
+function stepStatusLabel(
+  status: JobWorkStep["status"] | undefined,
+  opts: { stepType?: string; vendorName?: string | null; completedAt?: string | null } = {},
+): { label: string; color: string; sublabel: string | null } {
+  if (status === "done") {
+    return {
+      label: "Done",
+      color: "text-emerald-700",
+      sublabel: opts.completedAt ? format(new Date(opts.completedAt), "dd MMM yyyy") : null,
+    };
+  }
+  if (status === "pre_bizdocs") {
+    return { label: "Done", color: "text-emerald-700", sublabel: null };
+  }
+  if (status === "material_returned") {
+    return { label: "Ready for next stage", color: "text-blue-700", sublabel: null };
+  }
+  if (status === "in_progress") {
+    if (opts.stepType === "external") {
+      return {
+        label: opts.vendorName ? `At vendor — ${opts.vendorName}` : "At vendor",
+        color: "text-amber-700",
+        sublabel: null,
+      };
+    }
+    return { label: "In-house", color: "text-amber-700", sublabel: null };
+  }
+  return { label: "Pending", color: "text-slate-400", sublabel: null };
+}
+
 // ── Vertical timeline step ────────────────────────────────────────────────────
 
 function TimelineStep({
@@ -26,6 +62,7 @@ function TimelineStep({
   onSendMore,
   eligibleQty,
   onConfirmInternal,
+  isFinalStep = false,
   undispositionedRejectedQty,
   onDisposeRejected,
 }: {
@@ -36,6 +73,10 @@ function TimelineStep({
   // New stage-ledger model only (non-legacy job cards) — undefined for legacy.
   eligibleQty?: number;
   onConfirmInternal?: (step: JobWorkStep) => void;
+  // rpc_confirm_internal_step credits stock_free (posts to Store) only when
+  // this is the job card's last step — confirmed against the live function
+  // body, not assumed.
+  isFinalStep?: boolean;
   undispositionedRejectedQty?: number;
   onDisposeRejected?: (step: JobWorkStep) => void;
 }) {
@@ -78,35 +119,11 @@ function TimelineStep({
     lineDash = true;
   }
 
-  let statusLabel: string;
-  let statusColor: string;
-  let sublabel: string | null = null;
-
-  if (done) {
-    statusLabel = "Completed";
-    statusColor = "text-emerald-700";
-    sublabel = step.completed_at
-      ? format(new Date(step.completed_at), "dd MMM yyyy")
-      : null;
-  } else if (matReturned) {
-    statusLabel = "Material Returned — Awaiting QC";
-    statusColor = "text-blue-700";
-  } else if (active) {
-    if (step.step_type === "external") {
-      statusLabel = step.vendor_name ? `At Vendor — ${step.vendor_name}` : "At Vendor";
-      statusColor = "text-amber-700";
-      // Outward DCs are listed below (multi-DC), not in the sublabel.
-    } else {
-      statusLabel = "In Progress";
-      statusColor = "text-amber-700";
-    }
-  } else if (preBizdocs) {
-    statusLabel = "Pre-system (completed)";
-    statusColor = "text-slate-400";
-  } else {
-    statusLabel = "Pending";
-    statusColor = "text-slate-400";
-  }
+  const { label: statusLabel, color: statusColor, sublabel } = stepStatusLabel(step.status, {
+    stepType: step.step_type,
+    vendorName: step.vendor_name,
+    completedAt: step.completed_at,
+  });
 
   return (
     <div className="flex gap-3">
@@ -218,7 +235,7 @@ function TimelineStep({
                   onClick={() => onConfirmInternal?.(step)}
                   className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
                 >
-                  <CheckCircle2 className="h-3 w-3" /> Confirm units done
+                  <CheckCircle2 className="h-3 w-3" /> {isFinalStep ? "Post to Store" : "Confirm Operation"}
                 </button>
               </div>
             )}
@@ -247,7 +264,6 @@ function RouteRow({
   const matRet    = step?.status === "material_returned";
   const active    = step?.status === "in_progress";
   const preBiz    = step?.status === "pre_bizdocs";
-  const pending   = step?.status === "pending";
   const tracked   = !!step;
 
   let iconBg: string;
@@ -291,23 +307,14 @@ function RouteRow({
   } else if (!tracked) {
     statusText = "Not yet started";
     statusColor = "text-slate-400";
-  } else if (done) {
-    statusText = step?.completed_at
-      ? `Completed · ${format(new Date(step.completed_at), "dd MMM yyyy")}`
-      : "Completed";
-    statusColor = "text-emerald-700";
-  } else if (matRet) {
-    statusText = "Material returned — awaiting QC";
-    statusColor = "text-blue-700";
-  } else if (active) {
-    statusText = step?.vendor_name ? `At Vendor — ${step.vendor_name}` : "At Vendor";
-    statusColor = "text-amber-700";
-  } else if (preBiz) {
-    statusText = "Pre-system (completed)";
-    statusColor = "text-slate-400";
-  } else if (pending) {
-    statusText = "Pending";
-    statusColor = "text-slate-400";
+  } else {
+    const { label, color, sublabel } = stepStatusLabel(step?.status, {
+      stepType: "external",
+      vendorName: step?.vendor_name,
+      completedAt: step?.completed_at,
+    });
+    statusText = sublabel ? `${label} · ${sublabel}` : label;
+    statusColor = color;
   }
 
   return (
@@ -562,10 +569,19 @@ export default function JobCardDetail() {
   for (const s of steps) {
     if (s.step_number != null) stepByStage.set(s.step_number, s);
   }
+  // Matches rpc_confirm_internal_step's own MAX(step_number) check — that's
+  // the only step where confirming it credits stock_free (posts to Store).
+  const finalStepNumber = steps.reduce<number | null>(
+    (max, s) => (s.step_number != null && (max == null || s.step_number > max) ? s.step_number : max),
+    null,
+  );
   const doneCount = steps.filter((s) => s.status === "done" || s.status === "pre_bizdocs").length;
   const activeStep = steps.find((s) => s.status === "in_progress" || s.status === "material_returned");
   const totalSteps = steps.filter((s) => s.status !== "pre_bizdocs").length;
-  const completedSteps = steps.filter((s) => s.status === "done" || s.status === "material_returned").length;
+  // "material_returned" is its own "Ready for next stage" bucket now, not
+  // "Done" — a step still awaiting its next stage shouldn't count toward the
+  // "stages complete" tally.
+  const completedSteps = steps.filter((s) => s.status === "done").length;
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-4xl mx-auto">
@@ -714,6 +730,7 @@ export default function JobCardDetail() {
                     : eligibleByStep.get(step.step_number)?.eligible_qty
                 }
                 onConfirmInternal={setConfirmStep}
+                isFinalStep={step.step_number != null && step.step_number === finalStepNumber}
                 undispositionedRejectedQty={
                   isLegacy || step.step_number == null ? undefined : undispositionedByStep.get(step.step_number)
                 }
