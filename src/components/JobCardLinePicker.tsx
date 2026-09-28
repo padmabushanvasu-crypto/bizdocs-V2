@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   fetchOpenJobCardsForItem,
@@ -35,6 +36,15 @@ export function JobCardLinePicker({ itemId, jobCardId, stepNumber, onChange }: J
     queryFn: () => fetchEligibleExternalStagesForJobCard(jobCardId!),
     enabled: !!jobCardId,
   });
+
+  // When exactly one stage is eligible, default the line to it — the user
+  // can still change it via the input below.
+  useEffect(() => {
+    if (jobCardId && eligibleStages && eligibleStages.length === 1 && stepNumber == null) {
+      onChange(jobCardId, eligibleStages[0].step_number);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobCardId, eligibleStages, stepNumber]);
 
   if (!itemId || openJobCards.length === 0) return null;
 
