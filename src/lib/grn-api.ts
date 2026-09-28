@@ -3218,6 +3218,9 @@ export interface GrnStoreReceiptCardLine {
   action_label: string | null;
   issued_on_dcs: string | null;
   after_message: string | null;
+  // v_grn_line_next_action.accepted_qty — for the read-only "Received N |
+  // Posted N | Available N" line. Null when the view had no row.
+  next_action_accepted_qty: number | null;
 }
 
 export interface GrnStoreReceiptCard {
@@ -3381,6 +3384,7 @@ export async function fetchGrnStoreReceiptQueue(
         action_label: nextAction?.action_label ?? null,
         issued_on_dcs: nextAction?.issued_on_dcs ?? null,
         after_message: nextAction?.after_message ?? null,
+        next_action_accepted_qty: nextAction ? Number(nextAction.accepted_qty) : null,
         store_confirmed: Boolean(l.store_confirmed),
         store_confirmed_at: l.store_confirmed_at ?? null,
         store_confirmed_by: l.store_confirmed_by ?? null,

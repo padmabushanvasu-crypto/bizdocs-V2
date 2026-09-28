@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { Fragment, useState, useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { PackageCheck, ArrowRight, CheckCircle2, Search, Download } from "lucide-react";
@@ -711,8 +711,8 @@ export default function GrnStoreQueue() {
                         // Read-only row — line has been fully confirmed.
                         if (item.store_confirmed) {
                           return (
+                            <Fragment key={item.id}>
                             <tr
-                              key={item.id}
                               className="border-b border-slate-100 dark:border-white/5 last:border-0 bg-emerald-50/30 dark:bg-emerald-900/10"
                             >
                               {showFooter && (
@@ -766,6 +766,16 @@ export default function GrnStoreQueue() {
                                 </div>
                               </td>
                             </tr>
+                            {item.next_action_accepted_qty != null && (
+                              <tr className="bg-slate-50/40 dark:bg-white/5">
+                                <td colSpan={showFooter ? 9 : 8} className="px-3 py-1 text-[11px] text-slate-500 dark:text-slate-400">
+                                  Received <span className="font-mono font-medium text-slate-700 dark:text-slate-200">{formatNumber(item.next_action_accepted_qty)}</span>
+                                  {" | "}Posted <span className="font-mono font-medium text-slate-700 dark:text-slate-200">{formatNumber(item.store_confirmed_qty)}</span>
+                                  {" | "}Available <span className="font-mono font-medium text-slate-700 dark:text-slate-200">{formatNumber(item.remaining_qty)}</span>
+                                </td>
+                              </tr>
+                            )}
+                            </Fragment>
                           );
                         }
 
@@ -774,8 +784,8 @@ export default function GrnStoreQueue() {
                         // checkbox, no input, just the status text.
                         if (item.next_action === "issued_on_dc") {
                           return (
+                            <Fragment key={item.id}>
                             <tr
-                              key={item.id}
                               className="border-b border-slate-100 dark:border-white/5 last:border-0 bg-slate-50/60 dark:bg-white/5"
                             >
                               {showFooter && <td className="px-3 py-2.5" />}
@@ -789,14 +799,24 @@ export default function GrnStoreQueue() {
                                 {item.issued_on_dcs ? `Issued on ${item.issued_on_dcs}` : "Issued on a DC"}
                               </td>
                             </tr>
+                            {item.next_action_accepted_qty != null && (
+                              <tr className="bg-slate-50/40 dark:bg-white/5">
+                                <td colSpan={showFooter ? 9 : 8} className="px-3 py-1 text-[11px] text-slate-500 dark:text-slate-400">
+                                  Received <span className="font-mono font-medium text-slate-700 dark:text-slate-200">{formatNumber(item.next_action_accepted_qty)}</span>
+                                  {" | "}Posted <span className="font-mono font-medium text-slate-700 dark:text-slate-200">{formatNumber(item.store_confirmed_qty)}</span>
+                                  {" | "}Available <span className="font-mono font-medium text-slate-700 dark:text-slate-200">{formatNumber(item.remaining_qty)}</span>
+                                </td>
+                              </tr>
+                            )}
+                            </Fragment>
                           );
                         }
 
                         // Editable pending row.
                         const itemState = form?.items[item.id];
                         return (
+                          <Fragment key={item.id}>
                           <tr
-                            key={item.id}
                             className={`border-b border-slate-100 dark:border-white/5 last:border-0 transition-colors ${
                               itemState?.checked
                                 ? "bg-white dark:bg-[#0f1525]"
@@ -907,6 +927,16 @@ export default function GrnStoreQueue() {
                               />
                             </td>
                           </tr>
+                          {item.next_action_accepted_qty != null && (
+                            <tr className="bg-slate-50/40 dark:bg-white/5">
+                              <td colSpan={showFooter ? 9 : 8} className="px-3 py-1 text-[11px] text-slate-500 dark:text-slate-400">
+                                Received <span className="font-mono font-medium text-slate-700 dark:text-slate-200">{formatNumber(item.next_action_accepted_qty)}</span>
+                                {" | "}Posted <span className="font-mono font-medium text-slate-700 dark:text-slate-200">{formatNumber(item.store_confirmed_qty)}</span>
+                                {" | "}Available <span className="font-mono font-medium text-slate-700 dark:text-slate-200">{formatNumber(item.remaining_qty)}</span>
+                              </td>
+                            </tr>
+                          )}
+                          </Fragment>
                         );
                       })}
                     </tbody>

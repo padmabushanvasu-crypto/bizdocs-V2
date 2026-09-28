@@ -61,6 +61,7 @@ function TimelineStep({
   canEdit = false,
   onSendMore,
   eligibleQty,
+  stagePosition,
   onConfirmInternal,
   isFinalStep = false,
   undispositionedRejectedQty,
@@ -72,6 +73,9 @@ function TimelineStep({
   onSendMore?: (step: JobWorkStep) => void;
   // New stage-ledger model only (non-legacy job cards) — undefined for legacy.
   eligibleQty?: number;
+  // Same source (v_job_card_stage_position) as eligibleQty, kept as the full
+  // row so the read-only quantity line below can use its other columns too.
+  stagePosition?: JobCardStagePosition;
   onConfirmInternal?: (step: JobWorkStep) => void;
   // rpc_confirm_internal_step credits stock_free (posts to Store) only when
   // this is the job card's last step — confirmed against the live function
@@ -169,6 +173,42 @@ function TimelineStep({
             {done && step.actual_qty != null && (
               <p className="text-[11px] text-slate-400 mt-0.5">
                 Confirmed qty: {step.actual_qty} {step.unit ?? ""}
+              </p>
+            )}
+
+            {/* Read-only remaining-quantity line — new stage-ledger model only.
+                Nothing renders when stagePosition is undefined (legacy cards,
+                or a step the view has no row for), per the "show nothing
+                rather than zeros" rule. */}
+            {stagePosition && (
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                {step.step_type === "external" ? (
+                  <>
+                    Ready to send{" "}
+                    <span className="font-mono font-medium text-slate-700">
+                      {stagePosition.eligible_qty} {step.unit ?? ""}
+                    </span>
+                    {" | "}At vendor{" "}
+                    <span className="font-mono font-medium text-slate-700">
+                      {Math.max(0, stagePosition.issued_qty - stagePosition.returned_accepted_qty)} {step.unit ?? ""}
+                    </span>
+                    {" | "}Returned{" "}
+                    <span className="font-mono font-medium text-slate-700">
+                      {stagePosition.returned_accepted_qty} {step.unit ?? ""}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    Ready{" "}
+                    <span className="font-mono font-medium text-slate-700">
+                      {stagePosition.eligible_qty} {step.unit ?? ""}
+                    </span>
+                    {" | "}Done{" "}
+                    <span className="font-mono font-medium text-slate-700">
+                      {stagePosition.internal_done_qty} {step.unit ?? ""}
+                    </span>
+                  </>
+                )}
               </p>
             )}
 
@@ -732,6 +772,11 @@ export default function JobCardDetail() {
                   isLegacy || step.step_number == null
                     ? undefined
                     : eligibleByStep.get(step.step_number)?.eligible_qty
+                }
+                stagePosition={
+                  isLegacy || step.step_number == null
+                    ? undefined
+                    : eligibleByStep.get(step.step_number)
                 }
                 onConfirmInternal={setConfirmStep}
                 isFinalStep={step.step_number != null && step.step_number === finalStepNumber}

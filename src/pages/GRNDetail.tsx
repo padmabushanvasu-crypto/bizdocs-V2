@@ -30,6 +30,7 @@ import {
   removeWeldmentLine,
   reverseWeldmentReceipt,
   fetchGrnWeldmentConsumption,
+  fetchGrnLineNextActions,
   type QuantitativeLineData,
   type QualitativeLineData,
   type InspectionMethod,
@@ -39,6 +40,7 @@ import {
   type GRNLineItem,
   type GRNScrapItem,
   type GrnDeleteStockAction,
+  type GrnLineNextAction,
 } from "@/lib/grn-api";
 
 const DELETION_REASONS_GRN = [
@@ -798,12 +800,15 @@ function Stage1Table({
 // ── Stage 1 — read-only table ──────────────────────────────────────────────────
 
 function Stage1ReadOnly({
-  lines, isDcGrn, jobCardIdByDcLine, onReverse,
+  lines, isDcGrn, jobCardIdByDcLine, onReverse, nextActionById,
 }: {
   lines: S1Line[];
   isDcGrn?: boolean;
   jobCardIdByDcLine?: Map<string, string>;
   onReverse?: (line: S1Line) => void;
+  // v_grn_line_next_action per line, for the read-only "Received | Posted |
+  // Available" row below. Missing entry (no row in the view) → show nothing.
+  nextActionById?: Map<string, GrnLineNextAction>;
 }) {
   const isJobCardLine = (l: S1Line) => !!(l.dc_line_item_id && jobCardIdByDcLine?.has(l.dc_line_item_id));
   // Target rule (Sep 2026): every line routes through store confirmation now,
@@ -933,6 +938,22 @@ function Stage1ReadOnly({
                           </span>
                         </div>
                       </div>
+                    </td>
+                  </tr>
+                )}
+                {nextActionById?.get(l.id) && (
+                  <tr className="bg-slate-50/60">
+                    <td colSpan={10 + (hasStoreTracking ? 1 : 0) + (hasJigData ? 1 : 0)} className="px-4 py-1.5 text-xs text-slate-500">
+                      {(() => {
+                        const a = nextActionById.get(l.id)!;
+                        return (
+                          <>
+                            Received <span className="font-mono font-medium text-slate-700">{formatNumber(a.accepted_qty)}</span>
+                            {" | "}Posted <span className="font-mono font-medium text-slate-700">{formatNumber(a.store_confirmed_qty)}</span>
+                            {" | "}Available <span className="font-mono font-medium text-slate-700">{formatNumber(Math.max(0, a.held_available))}</span>
+                          </>
+                        );
+                      })()}
                     </td>
                   </tr>
                 )}
@@ -2158,6 +2179,22 @@ export default function GRNDetail() {
     queryFn: () => fetchGRNWithStages(id!),
     enabled: !!id,
   });
+
+  // held_available/accepted_qty for the read-only "Received | Posted |
+  // Available" line on Stage1ReadOnly — one batched call per screen, same
+  // view GrnStoreQueue already uses. Weldment lines have their own panel and
+  // aren't part of this view's inputs, so they're excluded here too.
+  const nonWeldmentLineIds: string[] = ((grn as any)?.line_items ?? [])
+    .filter((li: any) => !li.is_weldment_receipt)
+    .map((li: any) => li.id as string);
+  const { data: grnLineNextActions = [] } = useQuery({
+    queryKey: ["grn-line-next-actions", id],
+    queryFn: () => fetchGrnLineNextActions(nonWeldmentLineIds, (grn as any).company_id),
+    enabled: !!grn && !!(grn as any)?.company_id && nonWeldmentLineIds.length > 0,
+  });
+  const grnLineNextActionById = new Map<string, GrnLineNextAction>(
+    grnLineNextActions.map((a) => [a.grn_line_item_id, a])
+  );
 
   // Allowed item options per DC-linked line (own item + approved conversions).
   // Non-fatal: on error the picker simply doesn't appear and receiving proceeds
@@ -3548,6 +3585,7 @@ export default function GRNDetail() {
               isDcGrn={!!g.linked_dc_id}
               jobCardIdByDcLine={jobCardIdByDcLine}
               onReverse={setReverseGrnLine}
+              nextActionById={grnLineNextActionById}
             />
           )}
 

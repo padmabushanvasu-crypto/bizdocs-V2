@@ -1277,21 +1277,18 @@ export default function DeliveryChallanDetail() {
                     </td>
                   </tr>
                 )}
-                {pos && (pos.consumed_in_weldment_qty > 0 || pos.pending_qty !== pos.sent_qty) && (
+                {pos && (
                   <tr className="bg-slate-50/60">
                     <td colSpan={screenColCount} className="px-4 py-1.5 text-xs text-slate-500 border-b border-slate-100">
-                      Sent: <span className="font-mono font-medium text-slate-700">{formatNumber(pos.sent_qty)}</span>
-                      {" · "}Returned: <span className="font-mono font-medium text-slate-700">{formatNumber(pos.returned_direct_qty)}</span>
+                      Sent <span className="font-mono font-medium text-slate-700">{formatNumber(pos.sent_qty)}</span>
+                      {" | "}Received <span className="font-mono font-medium text-slate-700">{formatNumber(pos.returned_direct_qty + pos.consumed_in_weldment_qty)}</span>
                       {pos.consumed_in_weldment_qty > 0 && (
-                        <>
-                          {" · "}
-                          <span className="text-indigo-700 font-medium">
-                            Consumed into weldment
-                            {pos.weldment_grn_numbers.length > 0 && <> (GRN {pos.weldment_grn_numbers.join(", ")})</>}: {formatNumber(pos.consumed_in_weldment_qty)}
-                          </span>
-                        </>
+                        <span className="text-indigo-700 font-medium">
+                          {" "}(incl. consumed into weldment
+                          {pos.weldment_grn_numbers.length > 0 && <> — GRN {pos.weldment_grn_numbers.join(", ")}</>}: {formatNumber(pos.consumed_in_weldment_qty)})
+                        </span>
                       )}
-                      {" · "}Pending: <span className={`font-mono font-medium ${pos.pending_qty > 0 ? "text-amber-700" : "text-emerald-700"}`}>{formatNumber(pos.pending_qty)}</span>
+                      {" | "}Pending <span className={`font-mono font-medium ${pos.pending_qty > 0 ? "text-amber-700" : "text-emerald-700"}`}>{formatNumber(pos.pending_qty)}</span>
                     </td>
                   </tr>
                 )}
