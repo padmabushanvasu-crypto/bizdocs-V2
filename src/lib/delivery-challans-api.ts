@@ -938,6 +938,129 @@ export function findLinesMissingJobCardStage<T extends { job_card_id?: string | 
   return lineItems.filter((li) => isJobCardLineMissingStage(li.job_card_id, li.step_number));
 }
 
+export interface JobCardStageEligibility {
+  step_number: number;
+  stage_name: string | null;
+  eligible_qty: number;
+}
+
+/**
+ * Every stage's eligible_qty for one job card, from v_job_card_stage_position
+ * joined against job_card_steps for the stage name (the view itself carries
+ * neither a company_id column nor a stage name). Explicit company filter via
+ * job_cards first — CLAUDE.md §3.2, every query is company_id-scoped — since
+ * the view can't be scoped directly. Returns [] for a job card that doesn't
+ * belong to companyId (or doesn't exist) rather than trusting the caller.
+ */
+export async function fetchJobCardStageEligibility(
+  jobCardId: string,
+  companyId: string,
+): Promise<JobCardStageEligibility[]> {
+  const { data: card, error: cardErr } = await (supabase as any)
+    .from("job_cards")
+    .select("id")
+    .eq("id", jobCardId)
+    .eq("company_id", companyId)
+    .maybeSingle();
+  if (cardErr) throw cardErr;
+  if (!card) return [];
+
+  const [{ data: positions, error: posErr }, { data: steps, error: stepErr }] = await Promise.all([
+    (supabase as any)
+      .from("v_job_card_stage_position")
+      .select("step_number, eligible_qty")
+      .eq("job_card_id", jobCardId),
+    (supabase as any)
+      .from("job_card_steps")
+      .select("step_number, name")
+      .eq("job_card_id", jobCardId),
+  ]);
+  if (posErr) throw posErr;
+  if (stepErr) throw stepErr;
+
+  const nameByStep = new Map(((steps ?? []) as any[]).map((s) => [s.step_number as number, s.name as string]));
+  return ((positions ?? []) as any[]).map((p) => ({
+    step_number: p.step_number as number,
+    stage_name: nameByStep.get(p.step_number) ?? null,
+    eligible_qty: Number(p.eligible_qty ?? 0),
+  }));
+}
+
+export interface DcLineStageShortfall {
+  lineId: string;
+  serialNumber: number;
+  description: string | null;
+  jobCardId: string;
+  stepNumber: number;
+  stageName: string | null;
+  requestedQty: number;
+  eligibleQty: number;
+  // Another stage on the same card that could actually take this line's
+  // full quantity, if one exists — the "Link to <stage>" recovery path.
+  alternateStage: { stepNumber: number; stageName: string | null; eligibleQty: number } | null;
+}
+
+/**
+ * Compares each job-card-linked line's quantity against eligible_qty at its
+ * chosen stage, before rpc_issue_dc / rpc_issue_dc_plain_lines ever run —
+ * gives the operator a clear, actionable message (and, where one exists, a
+ * stage that could actually take the material) instead of a raw RPC
+ * exception. One eligibility fetch per distinct job card on the DC, not per
+ * line.
+ */
+export async function findDcLineStageShortfalls(
+  lineItems: Array<{
+    id?: string;
+    serial_number: number;
+    description?: string | null;
+    job_card_id?: string | null;
+    step_number?: number | null;
+    qty_nos?: number | null;
+    quantity?: number | null;
+  }>,
+  companyId: string,
+): Promise<DcLineStageShortfall[]> {
+  const jobCardLines = lineItems.filter(
+    (li): li is typeof li & { id: string; job_card_id: string; step_number: number } =>
+      !!li.id && !!li.job_card_id && li.step_number != null
+  );
+  if (!jobCardLines.length) return [];
+
+  const jobCardIds = [...new Set(jobCardLines.map((li) => li.job_card_id))];
+  const eligibilityByCard = new Map<string, JobCardStageEligibility[]>();
+  await Promise.all(
+    jobCardIds.map(async (jobCardId) => {
+      eligibilityByCard.set(jobCardId, await fetchJobCardStageEligibility(jobCardId, companyId));
+    })
+  );
+
+  const EPS = 0.0005;
+  const shortfalls: DcLineStageShortfall[] = [];
+  for (const li of jobCardLines) {
+    const stages = eligibilityByCard.get(li.job_card_id) ?? [];
+    const current = stages.find((s) => s.step_number === li.step_number);
+    const eligibleQty = current?.eligible_qty ?? 0;
+    const requestedQty = Number(li.qty_nos ?? li.quantity ?? 0);
+    if (requestedQty <= eligibleQty + EPS) continue;
+
+    const alt = stages.find((s) => s.step_number !== li.step_number && s.eligible_qty >= requestedQty - EPS);
+    shortfalls.push({
+      lineId: li.id,
+      serialNumber: li.serial_number,
+      description: li.description ?? null,
+      jobCardId: li.job_card_id,
+      stepNumber: li.step_number,
+      stageName: current?.stage_name ?? null,
+      requestedQty,
+      eligibleQty,
+      alternateStage: alt
+        ? { stepNumber: alt.step_number, stageName: alt.stage_name, eligibleQty: alt.eligible_qty }
+        : null,
+    });
+  }
+  return shortfalls;
+}
+
 export async function issueDeliveryChallan(id: string) {
   const { data: dcCheck, error: fetchErr } = await supabase
     .from('delivery_challans')

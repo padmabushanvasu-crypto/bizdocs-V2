@@ -15,13 +15,16 @@ interface ConfirmInternalStepDialogProps {
   stepName: string;
   eligibleQty: number;
   unit?: string | null;
+  // rpc_confirm_internal_step credits stock_free (posts to Store) only when
+  // this is the job card's last step — same rule as the timeline button.
+  isFinalStep?: boolean;
 }
 
 // Piece 4 (DC_STAGE_FLOW_REDESIGN.md §4.4) — internal stages never get a DC;
 // this is their only forward action. Thin call to rpc_confirm_internal_step,
 // no client-side ledger or stock math.
 export function ConfirmInternalStepDialog({
-  open, onOpenChange, jobCardId, stepNumber, stepName, eligibleQty, unit,
+  open, onOpenChange, jobCardId, stepNumber, stepName, eligibleQty, unit, isFinalStep = false,
 }: ConfirmInternalStepDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -52,7 +55,7 @@ export function ConfirmInternalStepDialog({
       queryClient.invalidateQueries({ queryKey: ["job-card-stage-positions", jobCardId] });
       queryClient.invalidateQueries({ queryKey: ["job-work", jobCardId] });
       toast({
-        title: "Confirmed",
+        title: result.final_stage_credited ? "Posted to Store" : "Operation confirmed",
         description: result.final_stage_credited
           ? `${result.qty_confirmed} ${unit ?? ""} confirmed — final stage, credited to free stock.`
           : `${result.qty_confirmed} ${unit ?? ""} confirmed.`,
@@ -66,7 +69,7 @@ export function ConfirmInternalStepDialog({
     <Dialog open={open} onOpenChange={(v) => { if (!mutation.isPending) onOpenChange(v); }}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Confirm units done</DialogTitle>
+          <DialogTitle>{isFinalStep ? "Post to Store" : "Confirm Operation"}</DialogTitle>
           <DialogDescription>
             Stage {stepNumber} — {stepName}
           </DialogDescription>

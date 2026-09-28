@@ -69,12 +69,24 @@ function makeLineItemsChain() {
   return chain;
 }
 
+function makeEmptyChain() {
+  // Generic fully-chainable stub resolving to an empty result — used for
+  // v_grn_line_next_action here, since this test only cares about the
+  // grn_line_items/grn_stage filtering, not held_available/next_action.
+  const chain: any = {};
+  for (const m of ["select", "eq", "in", "not", "gte", "lte", "order", "limit"]) {
+    chain[m] = () => chain;
+  }
+  chain.then = (onF: any, onR: any) => Promise.resolve({ data: [], error: null }).then(onF, onR);
+  return chain;
+}
+
 vi.mock("@/integrations/supabase/client", () => {
   const supabase = {
     from: (table: string) => {
       if (table === "grns") return { select: (_cols: string) => makeGrnsChain() };
       if (table === "grn_line_items") return { select: (_cols: string) => makeLineItemsChain() };
-      return { select: () => ({ eq: () => ({ then: (onF: any) => Promise.resolve({ data: [], error: null }).then(onF) }) }) };
+      return makeEmptyChain();
     },
   };
   return { supabase };

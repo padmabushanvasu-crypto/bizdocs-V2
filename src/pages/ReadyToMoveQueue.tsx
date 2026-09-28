@@ -36,7 +36,7 @@ export default function ReadyToMoveQueue() {
       <div className="flex items-center gap-3">
         <PackageCheck className="h-6 w-6 text-emerald-600" />
         <div>
-          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Ready to Move to Store</h1>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Awaiting Goods Receipt</h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">
             GRNs cleared by QC — move these to the store and notify the storekeeper
           </p>

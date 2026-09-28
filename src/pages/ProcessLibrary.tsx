@@ -633,6 +633,12 @@ export default function ProcessLibrary() {
               </div>
             </div>
 
+            {stageType === "internal" && /qc/i.test(pcName) && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                QC is done in the GRN and is not a job-card step.
+              </p>
+            )}
+
             {/* Stage Type */}
             <div className="space-y-1.5">
               <Label>Stage Type</Label>

@@ -1914,7 +1914,7 @@ function ProcessingRoutesImportTab({ companyId }: { companyId: string | null }) 
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
-  const [result, setResult] = useState<{ imported: number; skipped: number; errors: string[]; collisions: number; ambiguities: number } | null>(null);
+  const [result, setResult] = useState<{ imported: number; skipped: number; errors: string[]; collisions: number; ambiguities: number; qcSteps: number } | null>(null);
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState(0);
 
@@ -1969,6 +1969,7 @@ function ProcessingRoutesImportTab({ companyId }: { companyId: string | null }) 
       const skipErrors: string[] = [];
       const collisionMessages: string[] = [];
       const ambiguityMessages: string[] = [];
+      const qcStepWarnings: string[] = [];
       const ambiguousDrawingsSeen = new Set<string>(); // dedupe per-drawing ambiguity warnings
 
       rows.forEach((row, idx) => {
@@ -1981,6 +1982,14 @@ function ProcessingRoutesImportTab({ companyId }: { companyId: string | null }) 
         if (!drawingNum) { skipped++; skipErrors.push(`Row ${excelRow}: Drawing Number is required`); return; }
         if (!stageNum) { skipped++; skipErrors.push(`Row ${excelRow} (${drawingNum}): Stage No is required or invalid`); return; }
         if (!processName) { skipped++; skipErrors.push(`Row ${excelRow} (${drawingNum}): Process Name is required`); return; }
+
+        // Soft warning only — the row still imports. QC is captured on the
+        // GRN, not as its own job-card step (a new job card must not get one).
+        if (stageType === "internal" && /qc/i.test(processName)) {
+          qcStepWarnings.push(
+            `Row ${excelRow} (${drawingNum}): "${processName}" — QC is done in the GRN and is not a job-card step.`
+          );
+        }
 
         const lookup = findItemByCodeWithDiagnostics(itemsRaw ?? [], drawingNum);
         if (!lookup.id) { skipped++; skipErrors.push(`Row ${excelRow}: Drawing/Item "${drawingNum}" not found in items master`); return; }
@@ -2097,9 +2106,10 @@ function ProcessingRoutesImportTab({ companyId }: { companyId: string | null }) 
       setResult({
         imported,
         skipped,
-        errors: [...skipErrors, ...dbErrors, ...collisionMessages, ...ambiguityMessages],
+        errors: [...skipErrors, ...dbErrors, ...collisionMessages, ...ambiguityMessages, ...qcStepWarnings],
         collisions: collisionMessages.length,
         ambiguities: ambiguityMessages.length,
+        qcSteps: qcStepWarnings.length,
       });
       setRows([]);
     } catch (err: any) {
@@ -2120,6 +2130,7 @@ function ProcessingRoutesImportTab({ companyId }: { companyId: string | null }) 
               {result.imported} stages imported · {result.skipped} skipped
               {result.collisions > 0 && ` · ${result.collisions} collision${result.collisions !== 1 ? "s" : ""}`}
               {result.ambiguities > 0 && ` · ${result.ambiguities} ambiguous lookup${result.ambiguities !== 1 ? "s" : ""}`}
+              {result.qcSteps > 0 && ` · ${result.qcSteps} QC step${result.qcSteps !== 1 ? "s" : ""} flagged`}
             </span>
           </div>
           {result.errors.length > 0 && (

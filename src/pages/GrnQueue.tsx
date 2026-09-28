@@ -223,7 +223,7 @@ export default function GrnQueue() {
   // freshly QC'd GRN now advances straight to awaiting_store, so a quality_done
   // GRN can only be one QC'd before that fix, whose non-final lines were
   // credited at QC and never routed to a storekeeper. Kept as its own section
-  // (never merged into "Awaiting Store Confirmation") so it stays visible for
+  // (never merged into "Awaiting Goods Receipt") so it stays visible for
   // cleanup without reading as active store work. Presentation only — same
   // underlying list.
   const pendingAwaitingStore = useMemo(
@@ -373,7 +373,7 @@ export default function GrnQueue() {
           {pendingAwaitingStore.length > 0 && (
             <section className="space-y-3">
               <h2 className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
-                Awaiting Store Confirmation
+                Awaiting Goods Receipt
               </h2>
               {pendingAwaitingStore.map((grn) => (
                 <GrnCard key={grn.id} grn={grn} variant="pending" onClick={() => navigate(`/grn/${grn.id}`)} />

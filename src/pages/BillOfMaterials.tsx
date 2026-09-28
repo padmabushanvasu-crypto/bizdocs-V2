@@ -3870,9 +3870,14 @@ function BillOfMaterialsInner() {
               <Input
                 value={stepForm.process_name}
                 onChange={(e) => setStepForm((f) => ({ ...f, process_name: e.target.value }))}
-                placeholder="e.g. CNC Machining, Nickel Plating, QC Inspection"
+                placeholder="e.g. CNC Machining, Nickel Plating"
                 autoFocus
               />
+              {stepForm.step_type === "internal" && /qc/i.test(stepForm.process_name) && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                  QC is done in the GRN and is not a job-card step.
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5">

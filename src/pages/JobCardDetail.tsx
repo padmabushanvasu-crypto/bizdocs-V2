@@ -779,6 +779,7 @@ export default function JobCardDetail() {
           stepName={confirmStep.name}
           eligibleQty={eligibleByStep.get(confirmStep.step_number)?.eligible_qty ?? 0}
           unit={confirmStep.unit}
+          isFinalStep={confirmStep.step_number === finalStepNumber}
         />
       )}
 
