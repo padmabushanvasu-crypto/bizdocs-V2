@@ -364,7 +364,13 @@ export default function GrnStoreQueue() {
         description: `${checkedItems.length} item${checkedItems.length !== 1 ? "s" : ""} received in store.`,
       });
     } catch (err: any) {
-      toast({ title: "Error confirming receipt", description: err.message, variant: "destructive" });
+      // trg_guard_grn_line_conversion_invariant raises this when the line
+      // was already drawn off by a DC (or RM conversion) — translate its
+      // raw Postgres wording into something the storekeeper can act on.
+      const description = typeof err?.message === "string" && err.message.includes("already drawn by DC/RM conversion")
+        ? "This material was already sent out on a DC, so it cannot be posted to Store. Nothing to do."
+        : err.message;
+      toast({ title: "Error confirming receipt", description, variant: "destructive" });
     } finally {
       setConfirming((prev) => ({ ...prev, [grnId]: false }));
     }
