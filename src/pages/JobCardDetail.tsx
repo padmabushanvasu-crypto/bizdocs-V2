@@ -86,6 +86,10 @@ function TimelineStep({
   const matReturned = step.status === "material_returned";
   const active = step.status === "in_progress";
   const preBizdocs = step.status === "pre_bizdocs";
+  // Old job cards created before GRN absorbed QC still carry a standalone
+  // internal "QC" step. It stays in the timeline for history, but QC is now
+  // part of GRN receiving — relabel it and never offer a Confirm button on it.
+  const isQcStep = step.step_type === "internal" && /qc/i.test(step.name);
 
   let icon: React.ReactNode;
   let iconBg: string;
@@ -150,7 +154,7 @@ function TimelineStep({
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-sm font-semibold text-slate-900">
-                {step.step_number}. {step.name}
+                {step.step_number}. {isQcStep ? "Inward QC (part of GRN)" : step.name}
               </span>
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium uppercase tracking-wide">
                 {step.step_type === "external" ? "External" : "Internal"}
@@ -227,7 +231,7 @@ function TimelineStep({
 
             {/* Internal stage — new stage-ledger model only. Legacy cards never
                 pass eligibleQty, so this never renders for them. */}
-            {step.step_type === "internal" && eligibleQty != null && eligibleQty > 0 && (
+            {step.step_type === "internal" && !isQcStep && eligibleQty != null && eligibleQty > 0 && (
               <div className="mt-1.5">
                 <p className="text-[11px] text-slate-500">{eligibleQty} {step.unit ?? ""} eligible to confirm</p>
                 <button
