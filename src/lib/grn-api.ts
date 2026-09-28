@@ -2769,6 +2769,14 @@ export async function storeConfirmGRNItems(
     .single();
   if (headerErr) throw headerErr;
 
+  // held_available (from v_grn_line_next_action) accounts for DC/RM-
+  // conversion/AWO/job-card allocations that conforming - store_confirmed -
+  // damaged alone can't see. Reading it here means a line already drawn off
+  // elsewhere is rejected with a clear message before ever reaching
+  // trg_guard_grn_line_conversion_invariant's raw Postgres wording.
+  const nextActions = await fetchGrnLineNextActions(lineIds, grnHeader.company_id);
+  const nextActionMap = new Map(nextActions.map((a) => [a.grn_line_item_id, a]));
+
   // Validate ownership and quantities up front, before any UPDATE.
   // Lines missing item_id are collected and reported as one error so the
   // operator sees every blocked description in a single shot.
@@ -2792,7 +2800,13 @@ export async function storeConfirmGRNItems(
     if (inStore < 0 || inDmg < 0) {
       throw new Error(`Quantities cannot be negative (line ${line.description ?? input.id}).`);
     }
-    const remaining = conforming - curStore - curDmg;
+    const nextAction = nextActionMap.get(input.id);
+    if (nextAction?.next_action === "issued_on_dc") {
+      throw new Error(
+        `This material was already sent out on ${nextAction.issued_on_dcs ?? "a DC"}. Nothing to post.`
+      );
+    }
+    const remaining = nextAction ? Number(nextAction.held_available) : conforming - curStore - curDmg;
     if (inStore + inDmg > remaining + EPS) {
       throw new Error(
         `Confirmed (${inStore}) + damaged (${inDmg}) exceeds remaining (${remaining.toFixed(2)}) for line ${line.description ?? input.id}.`
