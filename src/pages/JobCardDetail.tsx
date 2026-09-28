@@ -20,35 +20,35 @@ import { Button } from "@/components/ui/button";
 // ── Step status label ─────────────────────────────────────────────────────────
 // Single source of truth for what a job_card_step's ledger-derived `status`
 // means as user-facing text — shared by TimelineStep (per step) and RouteRow
-// (per BOM route, via its linked step), which previously computed this
-// independently and had drifted (differing capitalization on the same
-// "material returned" label).
+// (per BOM route, via its linked step). Deliberately just four buckets: QC is
+// part of the GRN, not a separate job-card step, so there is no "awaiting QC"
+// state here — a returned step reads "Ready for next stage" and moves on.
 function stepStatusLabel(
   status: JobWorkStep["status"] | undefined,
   opts: { stepType?: string; vendorName?: string | null; completedAt?: string | null } = {},
 ): { label: string; color: string; sublabel: string | null } {
   if (status === "done") {
     return {
-      label: "Completed",
+      label: "Done",
       color: "text-emerald-700",
       sublabel: opts.completedAt ? format(new Date(opts.completedAt), "dd MMM yyyy") : null,
     };
   }
+  if (status === "pre_bizdocs") {
+    return { label: "Done", color: "text-emerald-700", sublabel: null };
+  }
   if (status === "material_returned") {
-    return { label: "Material Returned — Awaiting QC", color: "text-blue-700", sublabel: null };
+    return { label: "Ready for next stage", color: "text-blue-700", sublabel: null };
   }
   if (status === "in_progress") {
     if (opts.stepType === "external") {
       return {
-        label: opts.vendorName ? `At Vendor — ${opts.vendorName}` : "At Vendor",
+        label: opts.vendorName ? `At vendor — ${opts.vendorName}` : "At vendor",
         color: "text-amber-700",
         sublabel: null,
       };
     }
-    return { label: "In Progress", color: "text-amber-700", sublabel: null };
-  }
-  if (status === "pre_bizdocs") {
-    return { label: "Pre-system (completed)", color: "text-slate-400", sublabel: null };
+    return { label: "In-house", color: "text-amber-700", sublabel: null };
   }
   return { label: "Pending", color: "text-slate-400", sublabel: null };
 }
@@ -567,7 +567,10 @@ export default function JobCardDetail() {
   const doneCount = steps.filter((s) => s.status === "done" || s.status === "pre_bizdocs").length;
   const activeStep = steps.find((s) => s.status === "in_progress" || s.status === "material_returned");
   const totalSteps = steps.filter((s) => s.status !== "pre_bizdocs").length;
-  const completedSteps = steps.filter((s) => s.status === "done" || s.status === "material_returned").length;
+  // "material_returned" is its own "Ready for next stage" bucket now, not
+  // "Done" — a step still awaiting its next stage shouldn't count toward the
+  // "stages complete" tally.
+  const completedSteps = steps.filter((s) => s.status === "done").length;
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-4xl mx-auto">
