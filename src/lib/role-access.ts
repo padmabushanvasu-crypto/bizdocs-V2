@@ -124,6 +124,7 @@ const ROLE_MAPS: Record<Exclude<AppRole, 'admin' | 'finance'>, Record<string, Pa
 
 export function getRoleAccess(role: AppRole, page: string): PageAccess {
   // Admin and Finance have full access to everything
+  // 'processor-invoices' is intentionally in NO role map: admin/finance only.
   if (role === 'admin' || role === 'finance') return FULL_ACCESS;
 
   const map = ROLE_MAPS[role as Exclude<AppRole, 'admin' | 'finance'>];

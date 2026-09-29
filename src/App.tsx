@@ -38,6 +38,8 @@ import MoreMenu from "@/pages/MoreMenu";
 import CompanySettings from "@/pages/CompanySettings";
 import SettingsPage from "@/pages/SettingsPage";
 import JobWorks from "@/pages/JobWorks";
+import ProcessorInvoices from "@/pages/ProcessorInvoices";
+import ProcessorInvoiceForm from "@/pages/ProcessorInvoiceForm";
 import JobWorkDetail from "@/pages/JobWorkDetail";
 import StageTemplates from "@/pages/StageTemplates";
 import WipRegister from "@/pages/WipRegister";
@@ -193,6 +195,9 @@ const App = () => (
 
               <Route path="/job-works" element={<PageGuard page="job-works"><JobWorks /></PageGuard>} />
               <Route path="/job-works/:id" element={<PageGuard page="job-works"><JobWorkDetail /></PageGuard>} />
+
+              <Route path="/processor-invoices" element={<PageGuard page="processor-invoices"><ProcessorInvoices /></PageGuard>} />
+              <Route path="/processor-invoices/new" element={<PageGuard page="processor-invoices"><ProcessorInvoiceForm /></PageGuard>} />
 
               <Route path="/wip-register" element={<PageGuard page="wip-register"><WipRegister /></PageGuard>} />
 
