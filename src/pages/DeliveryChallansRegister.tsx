@@ -30,6 +30,8 @@ import { logAudit } from "@/lib/audit-api";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
+import { fetchDcInvoiceStatuses } from "@/lib/processor-invoices-api";
+import { DcInvoiceStatusBadge } from "@/components/DcInvoiceStatusBadge";
 
 const DELETION_REASONS_DC = [
   { value: 'data_entry_error',        label: 'Data entry error' },
@@ -421,6 +423,17 @@ function DeliveryChallansRegisterInner() {
     queryFn: () => fetchDeliveryChallans(filters),
   });
 
+  // Processor invoice status for the visible page — ONE batched view query.
+  // DCs absent from the view (drafts, cancelled, deleted, non job-work) get no
+  // badge. Cost-hidden roles never fetch or see it.
+  const visibleDcIds = (data?.data ?? []).map((d) => d.id);
+  const { data: invoiceStatuses = [], error: invoiceStatusError } = useQuery({
+    queryKey: ["dc-invoice-statuses", visibleDcIds],
+    queryFn: () => fetchDcInvoiceStatuses(visibleDcIds),
+    enabled: !access.hideCosts && visibleDcIds.length > 0,
+  });
+  const invoiceStatusByDc = new Map(invoiceStatuses.map((r) => [r.dc_id, r.invoice_status]));
+
   // Pending count for the tab badge (approvers only)
   const { data: pendingApprovalCount = 0 } = useQuery({
     queryKey: ["dc-pending-approval-count"],
@@ -604,6 +617,12 @@ function DeliveryChallansRegisterInner() {
         />
       </div>
 
+      {!access.hideCosts && invoiceStatusError && (
+        <p className="text-xs text-red-600">
+          Could not load invoice status: {(invoiceStatusError as Error).message}
+        </p>
+      )}
+
       {/* Table */}
       <div className="paper-card !p-0">
         <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
@@ -681,6 +700,11 @@ function DeliveryChallansRegisterInner() {
                           <span className={statusClass[dc.status] || "status-draft"}>
                             {overdue && dc.status !== "cancelled" ? "Overdue" : statusLabels[dc.status] || dc.status}
                           </span>
+                        )}
+                        {!access.hideCosts && invoiceStatusByDc.has(dc.id) && (
+                          <div className="mt-1">
+                            <DcInvoiceStatusBadge status={invoiceStatusByDc.get(dc.id)} />
+                          </div>
                         )}
                         {isInwardTeam && dc.status === "rejected" && (dc as any).rejection_reason && !(dc as any).rejection_noted && (
                           <span className="block text-[10px] text-red-600 font-medium mt-0.5">New rejection</span>
