@@ -7,6 +7,7 @@ import {
   type JobWork, type JobWorkStep, type JobCardStagePosition, type JobCardStageLedgerTotals,
 } from "@/lib/job-works-api";
 import { fetchProcessingRouteAll, type ProcessingRoute } from "@/lib/dc-intelligence-api";
+import { fetchJobCardProcessingCost, type JobCardProcessingCostRow } from "@/lib/processor-invoices-api";
 import { format } from "date-fns";
 import { formatPercent } from "@/lib/gst-utils";
 import { useAuth } from "@/hooks/useAuth";
@@ -65,6 +66,7 @@ function TimelineStep({
   isFinalStep = false,
   undispositionedRejectedQty,
   onDisposeRejected,
+  processingCost,
 }: {
   step: JobWorkStep;
   isLast: boolean;
@@ -79,6 +81,9 @@ function TimelineStep({
   isFinalStep?: boolean;
   undispositionedRejectedQty?: number;
   onDisposeRejected?: (step: JobWorkStep) => void;
+  // Processor-invoice estimate vs actual (reporting only). Passed only when
+  // costs are visible and the step has a row in v_job_card_processing_cost.
+  processingCost?: JobCardProcessingCostRow;
 }) {
   const outwardDcs = step.outward_dcs ?? [];
   const totalSent = outwardDcs.reduce((s, d) => s + (d.qty ?? 0), 0);
@@ -196,6 +201,29 @@ function TimelineStep({
                   <div className="text-[11px] font-mono text-slate-500">{step.dc_number}</div>
                 ) : (
                   <div className="text-[11px] text-slate-400">No outward DC</div>
+                )}
+                {processingCost && (
+                  <div className="mt-1.5 text-[11px] text-slate-500 space-y-0.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Processing cost</p>
+                    <div className="flex items-center gap-1.5 flex-wrap tabular-nums">
+                      <span>Estimate {fmt(processingCost.estimate_amount)}</span>
+                      <span className="text-slate-300">·</span>
+                      <span>Actual {processingCost.lines_invoice_pending > 0 && processingCost.actual_taxable === 0 ? "—" : fmt(processingCost.actual_taxable)}</span>
+                      {processingCost.lines_invoice_pending < 1 || processingCost.actual_taxable !== 0 ? (
+                        <>
+                          <span className="text-slate-300">·</span>
+                          <span className={processingCost.variance_amount > 0 ? "text-red-600 font-medium" : processingCost.variance_amount < 0 ? "text-emerald-600 font-medium" : ""}>
+                            Variance {processingCost.variance_amount >= 0 ? "+" : ""}{fmt(processingCost.variance_amount)}
+                          </span>
+                        </>
+                      ) : null}
+                    </div>
+                    {processingCost.lines_invoice_pending > 0 && (
+                      <p className="text-amber-600 font-medium">
+                        {processingCost.lines_invoice_pending} line{processingCost.lines_invoice_pending !== 1 ? "s" : ""} invoice pending
+                      </p>
+                    )}
+                  </div>
                 )}
                 {canEdit && (
                   <button
@@ -499,6 +527,17 @@ export default function JobCardDetail() {
     enabled: !!id,
   });
 
+  // Processor-invoice estimate vs actual per step. Read-only; costs are hidden
+  // for the same roles as CostSummaryPanel, so don't even fetch for them.
+  const { data: processingCosts = [], error: processingCostError } = useQuery({
+    queryKey: ["job-card-processing-cost", id],
+    queryFn: () => fetchJobCardProcessingCost(id!),
+    enabled: !!id && !hideCosts,
+  });
+  const processingCostByStep = new Map<number, JobCardProcessingCostRow>(
+    processingCosts.map((r) => [r.step_number, r])
+  );
+
   const { data: routes } = useQuery({
     queryKey: ["processing-routes", data?.item_id],
     queryFn: () => fetchProcessingRouteAll(data!.item_id!),
@@ -712,6 +751,11 @@ export default function JobCardDetail() {
       {/* ── Vertical timeline ── */}
       <div className="paper-card space-y-0">
         <h2 className="text-sm font-semibold text-slate-700 mb-4">Processing Stages</h2>
+        {!hideCosts && processingCostError && (
+          <p className="text-xs text-red-600 mb-3">
+            Could not load processing cost: {(processingCostError as Error).message}
+          </p>
+        )}
 
         {steps.length === 0 ? (
           <p className="text-sm text-muted-foreground">No stages added yet.</p>
@@ -735,6 +779,9 @@ export default function JobCardDetail() {
                   isLegacy || step.step_number == null ? undefined : undispositionedByStep.get(step.step_number)
                 }
                 onDisposeRejected={setDisposeStep}
+                processingCost={
+                  hideCosts || step.step_number == null ? undefined : processingCostByStep.get(step.step_number)
+                }
               />
             ))}
           </div>
