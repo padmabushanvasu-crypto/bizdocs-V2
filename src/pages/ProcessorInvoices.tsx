@@ -160,7 +160,7 @@ export default function ProcessorInvoices() {
           <DialogHeader>
             <DialogTitle className="text-destructive">Cancel invoice {cancelTarget?.invoice_number}</DialogTitle>
             <DialogDescription>
-              Its lines go back to pending against their DCs. A reason is required.
+              This cannot be undone. A reason is required.
             </DialogDescription>
           </DialogHeader>
           <Textarea
