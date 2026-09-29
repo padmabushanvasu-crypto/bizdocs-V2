@@ -381,3 +381,136 @@ export async function fetchInvoicedLines(): Promise<DcLineEstimateVsActualRow[]>
   }
   return rows;
 }
+
+// ── Price movement (v_processor_rate_monthly / v_processor_rate_history) ─────
+// Columns verified against the live DB. Rates are per `unit` — callers must
+// group by unit and never average across units.
+
+export interface ProcessorRateMonthlyRow {
+  company_id: string;
+  party_id: string;
+  party_name: string | null;
+  item_id: string | null;
+  item_code: string | null;
+  description: string | null;
+  nature_of_process: string | null;
+  unit: string | null;
+  rate_basis: string | null;
+  invoice_month: string; // date, first of month
+  qty_billed: number;
+  taxable_amount: number;
+  avg_actual_rate: number;
+  avg_estimate_rate: number | null;
+  min_rate: number;
+  max_rate: number;
+  invoice_lines: number;
+}
+
+export interface ProcessorRateHistoryRow {
+  company_id: string;
+  party_id: string;
+  party_name: string | null;
+  item_id: string | null;
+  item_code: string | null;
+  description: string | null;
+  nature_of_process: string | null;
+  rate_basis: string | null;
+  unit: string | null;
+  invoice_id: string;
+  invoice_number: string;
+  invoice_date: string;
+  invoice_month: string;
+  dc_id: string;
+  dc_number: string;
+  dc_date: string;
+  dc_line_item_id: string;
+  qty_billed: number;
+  actual_rate: number;
+  estimate_rate: number | null;
+  taxable_amount: number;
+  gst_amount: number;
+  variance_amount: number;
+}
+
+const nullableNum = (v: any) => (v == null ? null : Number(v));
+
+/** Every monthly rate row for the company (pages past the 1000-row cap). */
+export async function fetchProcessorRateMonthly(): Promise<ProcessorRateMonthlyRow[]> {
+  const companyId = await requireCompanyId();
+  const rows: ProcessorRateMonthlyRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await (supabase as any)
+      .from("v_processor_rate_monthly")
+      .select("*")
+      .eq("company_id", companyId)
+      .order("invoice_month", { ascending: true })
+      .order("party_id", { ascending: true })
+      .order("item_id", { ascending: true })
+      .order("nature_of_process", { ascending: true })
+      .order("unit", { ascending: true })
+      .order("rate_basis", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    const batch = (data ?? []).map((r: any) => ({
+      ...r,
+      qty_billed: Number(r.qty_billed ?? 0),
+      taxable_amount: Number(r.taxable_amount ?? 0),
+      avg_actual_rate: Number(r.avg_actual_rate ?? 0),
+      avg_estimate_rate: nullableNum(r.avg_estimate_rate),
+      min_rate: Number(r.min_rate ?? 0),
+      max_rate: Number(r.max_rate ?? 0),
+      invoice_lines: Number(r.invoice_lines ?? 0),
+    })) as ProcessorRateMonthlyRow[];
+    rows.push(...batch);
+    if (batch.length < PAGE) break;
+  }
+  return rows;
+}
+
+export interface ProcessorRateHistoryParams {
+  partyId: string;
+  itemId: string | null;
+  natureOfProcess: string | null;
+  unit: string | null;
+  rateBasis: string | null;
+  /** Inclusive invoice_month bounds, yyyy-MM-dd; optional. */
+  monthFrom?: string;
+  monthTo?: string;
+}
+
+/** Invoice-line history for one processor + item + process + unit (+ basis). */
+export async function fetchProcessorRateHistory(p: ProcessorRateHistoryParams): Promise<ProcessorRateHistoryRow[]> {
+  const companyId = await requireCompanyId();
+  const rows: ProcessorRateHistoryRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    let q = (supabase as any)
+      .from("v_processor_rate_history")
+      .select("*")
+      .eq("company_id", companyId)
+      .eq("party_id", p.partyId);
+    q = p.itemId == null ? q.is("item_id", null) : q.eq("item_id", p.itemId);
+    q = p.natureOfProcess == null ? q.is("nature_of_process", null) : q.eq("nature_of_process", p.natureOfProcess);
+    q = p.unit == null ? q.is("unit", null) : q.eq("unit", p.unit);
+    q = p.rateBasis == null ? q.is("rate_basis", null) : q.eq("rate_basis", p.rateBasis);
+    if (p.monthFrom) q = q.gte("invoice_month", p.monthFrom);
+    if (p.monthTo) q = q.lte("invoice_month", p.monthTo);
+    const { data, error } = await q
+      .order("invoice_date", { ascending: false })
+      .order("invoice_id", { ascending: false })
+      .order("dc_line_item_id", { ascending: false })
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    const batch = (data ?? []).map((r: any) => ({
+      ...r,
+      qty_billed: Number(r.qty_billed ?? 0),
+      actual_rate: Number(r.actual_rate ?? 0),
+      estimate_rate: nullableNum(r.estimate_rate),
+      taxable_amount: Number(r.taxable_amount ?? 0),
+      gst_amount: Number(r.gst_amount ?? 0),
+      variance_amount: Number(r.variance_amount ?? 0),
+    })) as ProcessorRateHistoryRow[];
+    rows.push(...batch);
+    if (batch.length < PAGE) break;
+  }
+  return rows;
+}
