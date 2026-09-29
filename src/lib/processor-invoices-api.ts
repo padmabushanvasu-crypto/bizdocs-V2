@@ -335,3 +335,49 @@ export async function fetchProcessorInvoices(filters: ProcessorInvoiceFilters = 
     } as ProcessorInvoiceRow;
   });
 }
+
+// ── Report reads (full result sets; filtering + totals happen client-side) ───
+
+/** DCs whose processor invoice is not fully received, oldest first. Pages past the 1000-row cap. */
+export async function fetchDcsInvoicePending(): Promise<DcInvoiceStatusRow[]> {
+  const companyId = await requireCompanyId();
+  const rows: DcInvoiceStatusRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await (supabase as any)
+      .from("v_dc_invoice_status")
+      .select("*")
+      .eq("company_id", companyId)
+      .neq("invoice_status", "Invoice received")
+      .order("dc_date", { ascending: true })
+      .order("dc_id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    const batch = (data ?? []).map((r: any) => coerce<DcInvoiceStatusRow>(r, NUMERIC_KEYS_DC));
+    rows.push(...batch);
+    if (batch.length < PAGE) break;
+  }
+  return rows;
+}
+
+/** All invoiced DC lines (estimate vs actual). Pages past the 1000-row cap. */
+export async function fetchInvoicedLines(): Promise<DcLineEstimateVsActualRow[]> {
+  const companyId = await requireCompanyId();
+  const rows: DcLineEstimateVsActualRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await (supabase as any)
+      .from("v_dc_line_estimate_vs_actual")
+      .select("*")
+      .eq("company_id", companyId)
+      .eq("line_invoice_status", "invoiced")
+      .order("dc_date", { ascending: true })
+      .order("dc_id", { ascending: true })
+      .order("serial_number", { ascending: true })
+      .order("dc_line_item_id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    const batch = (data ?? []).map((r: any) => coerce<DcLineEstimateVsActualRow>(r, NUMERIC_KEYS_LINE));
+    rows.push(...batch);
+    if (batch.length < PAGE) break;
+  }
+  return rows;
+}
