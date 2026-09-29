@@ -62,27 +62,27 @@ export default function ProcessorInvoices() {
   return (
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold text-slate-900">Processor Invoices</h1>
           <p className="text-sm text-slate-500 mt-1">Invoices received from job-work processors, against DC lines</p>
         </div>
         {canEdit && (
-          <Button onClick={() => navigate("/processor-invoices/new")}>
+          <Button className="shrink-0" onClick={() => navigate("/processor-invoices/new")}>
             <Plus className="h-4 w-4 mr-1" /> New Invoice
           </Button>
         )}
       </div>
 
-      <div className="flex flex-wrap gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:flex sm:flex-wrap">
         <Select value={partyId} onValueChange={setPartyId}>
-          <SelectTrigger className="w-64"><SelectValue placeholder="All processors" /></SelectTrigger>
+          <SelectTrigger className="w-full sm:w-64"><SelectValue placeholder="All processors" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All processors</SelectItem>
             {parties.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={status} onValueChange={(v) => setStatus(v as typeof status)}>
-          <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-full sm:w-40"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All statuses</SelectItem>
             <SelectItem value="active">Active</SelectItem>
@@ -96,7 +96,7 @@ export default function ProcessorInvoices() {
 
       <div className="paper-card !p-0">
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-sm">
+          <table className="w-full min-w-[820px] border-collapse text-sm">
             <thead>
               <tr>
                 <th className={`${TH} text-left`}>Invoice #</th>

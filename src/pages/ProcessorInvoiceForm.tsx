@@ -178,7 +178,7 @@ export default function ProcessorInvoiceForm() {
         <div className="md:col-span-2">
           <label className="text-xs font-semibold text-slate-500 uppercase">Processor *</label>
           <Select value={partyId} onValueChange={changeParty}>
-            <SelectTrigger className="mt-1"><SelectValue placeholder="Select processor" /></SelectTrigger>
+            <SelectTrigger className="mt-1 h-11 md:h-10"><SelectValue placeholder="Select processor" /></SelectTrigger>
             <SelectContent>
               {parties.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
             </SelectContent>
@@ -187,11 +187,11 @@ export default function ProcessorInvoiceForm() {
         </div>
         <div>
           <label className="text-xs font-semibold text-slate-500 uppercase">Invoice No. *</label>
-          <Input className="mt-1" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
+          <Input className="mt-1 h-11 md:h-10" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
         </div>
         <div>
           <label className="text-xs font-semibold text-slate-500 uppercase">Invoice Date *</label>
-          <Input className="mt-1" type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
+          <Input className="mt-1 h-11 md:h-10" type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
         </div>
         <div className="md:col-span-4">
           <label className="text-xs font-semibold text-slate-500 uppercase">Remarks</label>
@@ -212,7 +212,15 @@ export default function ProcessorInvoiceForm() {
           ) : groups.length === 0 && !linesError ? (
             <p className="p-6 text-center text-sm text-slate-400">No DC lines pending invoice for this processor</p>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+            {/* Phone: stacked cards (no sideways scrolling). */}
+            <div className="md:hidden">
+              {groups.map((g) => (
+                <GroupCards key={g[0].dc_id} group={g} picks={picks} rows={rows} onToggle={toggle} onPatch={patch} />
+              ))}
+            </div>
+            {/* md and up: the table. */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full border-collapse text-sm">
                 <thead>
                   <tr>
@@ -235,6 +243,7 @@ export default function ProcessorInvoiceForm() {
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </div>
       )}
@@ -242,7 +251,7 @@ export default function ProcessorInvoiceForm() {
       {/* Totals + save */}
       {rows.length > 0 && (
         <div className="paper-card space-y-2">
-          <div className="grid gap-2 md:grid-cols-4 text-sm">
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-4 text-sm">
             <div><span className="text-slate-500">Lines</span><div className="font-mono font-semibold">{rows.length}</div></div>
             <div><span className="text-slate-500">Taxable</span><div className="font-mono font-semibold">{formatCurrency(totals.taxable)}</div></div>
             <div><span className="text-slate-500">GST</span><div className="font-mono font-semibold">{formatCurrency(totals.gst)}</div></div>
@@ -256,11 +265,20 @@ export default function ProcessorInvoiceForm() {
         </div>
       )}
 
-      <div className="flex gap-2 justify-end">
-        <Button variant="outline" disabled={saveMutation.isPending} onClick={() => navigate("/processor-invoices")}>Cancel</Button>
-        <Button disabled={!headerOk || !linesOk || saveMutation.isPending} onClick={save}>
+      {/* Sticky on phones so Save stays reachable (sits above the bottom tab bar). */}
+      <div className="sticky bottom-14 md:bottom-0 z-10 -mx-4 md:mx-0 px-4 md:px-0 py-2 bg-white border-t md:border-0 border-slate-200 space-y-2">
+        {rows.length > 0 && (
+          <div className="md:hidden flex justify-between text-xs">
+            <span>Total <span className="font-mono font-semibold">{formatCurrency(totals.taxable + totals.gst)}</span></span>
+            <span className={`font-mono ${varianceClass(round2(totals.variance))}`}>Var {signed(round2(totals.variance))}</span>
+          </div>
+        )}
+        <div className="flex gap-2 justify-end">
+        <Button className="h-11 md:h-10 flex-1 md:flex-none" variant="outline" disabled={saveMutation.isPending} onClick={() => navigate("/processor-invoices")}>Cancel</Button>
+        <Button className="h-11 md:h-10 flex-1 md:flex-none" disabled={!headerOk || !linesOk || saveMutation.isPending} onClick={save}>
           {saveMutation.isPending ? "Saving…" : "Save Invoice"}
         </Button>
+        </div>
       </div>
     </div>
   );
@@ -333,5 +351,86 @@ function GroupRows({
         );
       })}
     </>
+  );
+}
+
+// Phone layout: one card per DC line — DC info, then inputs (qty, rate, GST, taxable),
+// with the line variance visible in the card. Shares state with the table view.
+function GroupCards({
+  group, picks, rows, onToggle, onPatch,
+}: {
+  group: DcLineEstimateVsActualRow[];
+  picks: Record<string, Pick>;
+  rows: { l: DcLineEstimateVsActualRow; taxable: number; variance: number; errors: string[]; overBilled: boolean }[];
+  onToggle: (l: DcLineEstimateVsActualRow, on: boolean) => void;
+  onPatch: (id: string, change: Partial<Pick>) => void;
+}) {
+  const head = group[0];
+  const field = "h-11 text-base text-right";
+  const lbl = "text-[10px] font-semibold text-slate-500 uppercase";
+  return (
+    <div>
+      <div className="px-3 py-1.5 bg-slate-100 border-b border-slate-200 text-xs font-semibold text-slate-600">
+        <span className="font-mono">{head.dc_number}</span>
+        <span className="text-slate-400 font-normal ml-2">
+          {new Date(head.dc_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+        </span>
+      </div>
+      {group.map((l) => {
+        const id = l.dc_line_item_id;
+        const pk = picks[id];
+        const r = rows.find((x) => x.l.dc_line_item_id === id);
+        return (
+          <div key={id} className={`px-3 py-3 border-b border-slate-100 ${pk ? "bg-blue-50/40" : ""}`}>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <Checkbox className="mt-0.5 h-5 w-5" checked={!!pk} onCheckedChange={(v) => onToggle(l, v === true)} />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium break-words">{l.description || l.item_code || "—"}</div>
+                <div className="mt-1 grid grid-cols-3 gap-x-2 text-[11px] text-slate-500">
+                  <span>DC qty <span className="font-mono text-slate-700">{l.dc_qty} {l.unit ?? ""}</span></span>
+                  <span>Billed <span className="font-mono text-slate-700">{l.billed_qty}</span></span>
+                  <span>Est. <span className="font-mono text-slate-700">{formatCurrency(l.estimate_rate)}</span></span>
+                </div>
+              </div>
+            </label>
+            {pk && (
+              <div className="mt-3 space-y-2">
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <div className={lbl}>Qty billed</div>
+                    <Input className={field} inputMode="decimal" value={pk.qty}
+                      onChange={(e) => onPatch(id, { qty: e.target.value, taxableOverride: null })} />
+                  </div>
+                  <div>
+                    <div className={lbl}>Actual rate</div>
+                    <Input className={field} inputMode="decimal" value={pk.rate}
+                      onChange={(e) => onPatch(id, { rate: e.target.value, taxableOverride: null })} />
+                  </div>
+                  <div>
+                    <div className={lbl}>GST %</div>
+                    <Input className={field} inputMode="decimal" value={pk.gst}
+                      onChange={(e) => onPatch(id, { gst: e.target.value })} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 items-end">
+                  <div>
+                    <div className={lbl}>Taxable</div>
+                    <Input className={field} inputMode="decimal"
+                      value={pk.taxableOverride ?? (r && !Number.isNaN(r.taxable) ? String(r.taxable) : "")}
+                      onChange={(e) => onPatch(id, { taxableOverride: e.target.value })} />
+                  </div>
+                  <div className="text-right">
+                    <div className={lbl}>Variance</div>
+                    <div className={`font-mono text-sm ${r ? varianceClass(r.variance) : ""}`}>{r ? signed(r.variance) : "—"}</div>
+                  </div>
+                </div>
+                {r && r.errors.length > 0 && <div className="text-[11px] text-red-600">{r.errors.join(" · ")}</div>}
+                {r?.overBilled && <div className="text-[11px] text-amber-600">Exceeds unbilled qty ({remainingQty(l)})</div>}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }

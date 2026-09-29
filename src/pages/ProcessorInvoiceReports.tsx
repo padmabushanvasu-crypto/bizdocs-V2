@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Download } from "lucide-react";
+import { ChevronDown, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -53,6 +53,21 @@ function inRange(date: string, f: Filters, partyId: string | null) {
   return true;
 }
 
+// Phone: filters collapse behind a toggle and stack two per row; md+: inline row (unchanged).
+function FilterBox({ children }: { children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="w-full md:w-auto">
+      <Button variant="outline" className="md:hidden w-full justify-between h-10" onClick={() => setOpen((o) => !o)}>
+        Filters <ChevronDown className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} />
+      </Button>
+      <div className={`${open ? "grid" : "hidden"} mt-3 grid-cols-2 gap-3 md:mt-0 md:flex md:flex-wrap md:items-end`}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function FilterBar({
   filters, onChange, parties, children,
 }: {
@@ -62,9 +77,9 @@ function FilterBar({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-end gap-3">
+    <FilterBox>
       <Select value={filters.party} onValueChange={(v) => onChange({ ...filters, party: v })}>
-        <SelectTrigger className="w-64"><SelectValue placeholder="All processors" /></SelectTrigger>
+        <SelectTrigger className="col-span-2 w-full md:w-64"><SelectValue placeholder="All processors" /></SelectTrigger>
         <SelectContent>
           <SelectItem value="all">All processors</SelectItem>
           {parties.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
@@ -73,13 +88,13 @@ function FilterBar({
       {children}
       <div>
         <label className="text-[10px] font-semibold text-slate-500 uppercase block">DC date from</label>
-        <Input type="date" className="w-40 h-9" value={filters.from} onChange={(e) => onChange({ ...filters, from: e.target.value })} />
+        <Input type="date" className="w-full md:w-40 h-10 md:h-9" value={filters.from} onChange={(e) => onChange({ ...filters, from: e.target.value })} />
       </div>
       <div>
         <label className="text-[10px] font-semibold text-slate-500 uppercase block">to</label>
-        <Input type="date" className="w-40 h-9" value={filters.to} onChange={(e) => onChange({ ...filters, to: e.target.value })} />
+        <Input type="date" className="w-full md:w-40 h-10 md:h-9" value={filters.to} onChange={(e) => onChange({ ...filters, to: e.target.value })} />
       </div>
-    </div>
+    </FilterBox>
   );
 }
 
@@ -139,7 +154,7 @@ function PendingTab() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <FilterBar filters={filters} onChange={setFilters} parties={parties}>
           <Select value={status} onValueChange={(v) => setStatus(v as typeof status)}>
-            <SelectTrigger className="w-52"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="col-span-2 w-full md:w-52"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Pending + partly</SelectItem>
               <SelectItem value="Invoice pending">Invoice pending</SelectItem>
@@ -153,7 +168,7 @@ function PendingTab() {
       </div>
       {error && <p className="text-sm text-red-600">Could not load report: {(error as Error).message}</p>}
       <div className="paper-card !p-0 overflow-x-auto">
-        <table className="w-full border-collapse text-sm">
+        <table className="w-full min-w-[640px] border-collapse text-sm">
           <thead>
             <tr>
               <th className={`${TH} text-left`}>DC No</th>
@@ -275,7 +290,7 @@ function EstimateVsActualTab() {
 
       {showSummary && byParty.length > 0 && (
         <div className="paper-card !p-0 overflow-x-auto">
-          <table className="w-full border-collapse text-sm">
+          <table className="w-full min-w-[640px] border-collapse text-sm">
             <thead>
               <tr>
                 <th className={`${TH} text-left`}>Processor (summary)</th>
@@ -301,7 +316,7 @@ function EstimateVsActualTab() {
       )}
 
       <div className="paper-card !p-0 overflow-x-auto">
-        <table className="w-full border-collapse text-sm">
+        <table className="w-full min-w-[640px] border-collapse text-sm">
           <thead>
             <tr>
               <th className={`${TH} text-left`}>DC No</th>
@@ -579,10 +594,11 @@ function PriceMovementTab() {
   return (
     <div className="space-y-4">
       {/* Filters */}
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <FilterBox>
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="outline" className="w-56 justify-start font-normal">
+            <Button variant="outline" className="col-span-2 w-full md:w-56 justify-start font-normal">
               {parties.length === 0 ? "All processors" : `${parties.length} processor${parties.length > 1 ? "s" : ""} selected`}
             </Button>
           </PopoverTrigger>
@@ -601,16 +617,16 @@ function PriceMovementTab() {
             ))}
           </PopoverContent>
         </Popover>
-        <Input className="w-56 h-9" placeholder="Search item code / description" value={itemSearch} onChange={(e) => setItemSearch(e.target.value)} />
+        <Input className="col-span-2 w-full md:w-56 h-10 md:h-9" placeholder="Search item code / description" value={itemSearch} onChange={(e) => setItemSearch(e.target.value)} />
         <Select value={process} onValueChange={setProcess}>
-          <SelectTrigger className="w-48"><SelectValue placeholder="All processes" /></SelectTrigger>
+          <SelectTrigger className="w-full md:w-48"><SelectValue placeholder="All processes" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All processes</SelectItem>
             {processOpts.map((p) => <SelectItem key={p} value={p}>{p === NONE ? "(no process)" : p}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={unit} onValueChange={setUnit}>
-          <SelectTrigger className="w-36"><SelectValue placeholder="All units" /></SelectTrigger>
+          <SelectTrigger className="w-full md:w-36"><SelectValue placeholder="All units" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All units</SelectItem>
             {unitOpts.map((u) => <SelectItem key={u} value={u}>{u === NONE ? "(no unit)" : u}</SelectItem>)}
@@ -618,13 +634,14 @@ function PriceMovementTab() {
         </Select>
         <div>
           <label className="text-[10px] font-semibold text-slate-500 uppercase block">Invoice month from</label>
-          <Input type="month" className="w-40 h-9" value={from} onChange={(e) => setFrom(e.target.value)} />
+          <Input type="month" className="w-full md:w-40 h-10 md:h-9" value={from} onChange={(e) => setFrom(e.target.value)} />
         </div>
         <div>
           <label className="text-[10px] font-semibold text-slate-500 uppercase block">to</label>
-          <Input type="month" className="w-40 h-9" value={to} onChange={(e) => setTo(e.target.value)} />
+          <Input type="month" className="w-full md:w-40 h-10 md:h-9" value={to} onChange={(e) => setTo(e.target.value)} />
         </div>
-        <Button variant="outline" className="ml-auto" disabled={groups.length === 0} onClick={exportXlsx}>
+        </FilterBox>
+        <Button variant="outline" className="w-full md:w-auto" disabled={groups.length === 0} onClick={exportXlsx}>
           <Download className="h-4 w-4 mr-1" /> Export
         </Button>
       </div>
@@ -633,7 +650,7 @@ function PriceMovementTab() {
 
       {/* Main table */}
       <div className="paper-card !p-0 overflow-x-auto">
-        <table className="w-full border-collapse text-sm">
+        <table className="w-full min-w-[640px] border-collapse text-sm">
           <thead>
             <tr>
               <th className={`${TH} text-left`}>Processor</th>
@@ -717,7 +734,7 @@ function PriceMovementTab() {
         <div className="flex flex-wrap items-center gap-3">
           <h3 className="text-sm font-semibold text-slate-700">Same item across processors</h3>
           <Select value={compareItem} onValueChange={setCompareItem}>
-            <SelectTrigger className="w-80"><SelectValue placeholder="Choose an item" /></SelectTrigger>
+            <SelectTrigger className="w-full sm:w-80"><SelectValue placeholder="Choose an item" /></SelectTrigger>
             <SelectContent>
               {itemOpts.map((i) => <SelectItem key={i.id} value={i.id}>{i.label}</SelectItem>)}
             </SelectContent>
@@ -728,7 +745,8 @@ function PriceMovementTab() {
         {comparison.map((s) => (
           <div key={s.title}>
             <p className="text-xs font-semibold text-slate-500 uppercase mb-1">{s.title}</p>
-            <table className="w-full border-collapse text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] border-collapse text-sm">
               <thead>
                 <tr>
                   <th className={`${TH} text-left`}>Processor</th>
@@ -757,6 +775,7 @@ function PriceMovementTab() {
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         ))}
       </div>
@@ -787,7 +806,7 @@ function RateHistoryDialog({
 
   return (
     <Dialog open={!!group} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle>Invoice-line history</DialogTitle>
           <DialogDescription>
@@ -796,7 +815,7 @@ function RateHistoryDialog({
         </DialogHeader>
         {error && <p className="text-sm text-red-600">Could not load history: {(error as Error).message}</p>}
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-sm">
+          <table className="w-full min-w-[640px] border-collapse text-sm">
             <thead>
               <tr>
                 <th className={`${TH} text-left`}>Invoice</th>
@@ -854,10 +873,10 @@ export default function ProcessorInvoiceReports() {
         <p className="text-sm text-slate-500">You don't have access to cost reports.</p>
       ) : (
         <Tabs defaultValue="pending">
-          <TabsList>
-            <TabsTrigger value="pending">Invoice pending</TabsTrigger>
-            <TabsTrigger value="eva">Estimate vs actual</TabsTrigger>
-            <TabsTrigger value="price">Price movement</TabsTrigger>
+          <TabsList className="w-full h-auto grid grid-cols-3 md:inline-flex md:w-auto">
+            <TabsTrigger value="pending" className="whitespace-normal text-xs md:text-sm px-1 md:px-3">Invoice pending</TabsTrigger>
+            <TabsTrigger value="eva" className="whitespace-normal text-xs md:text-sm px-1 md:px-3">Estimate vs actual</TabsTrigger>
+            <TabsTrigger value="price" className="whitespace-normal text-xs md:text-sm px-1 md:px-3">Price movement</TabsTrigger>
           </TabsList>
           <TabsContent value="pending" className="mt-3"><PendingTab /></TabsContent>
           <TabsContent value="eva" className="mt-3"><EstimateVsActualTab /></TabsContent>

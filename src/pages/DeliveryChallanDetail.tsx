@@ -1268,7 +1268,7 @@ export default function DeliveryChallanDetail() {
                 {showBilling && (
                   <>
                     {["Billed Qty", "Actual Rate (₹)", "Actual Amount (₹)", "Variance (₹)", "Invoice No"].map((h, i) => (
-                      <th key={h} className={`px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 print:hidden ${i === 4 ? "text-left" : "text-right"}`}>{h}</th>
+                      <th key={h} className={`px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 print:hidden whitespace-nowrap ${i === 4 ? "text-left" : "text-right"}`}>{h}</th>
                     ))}
                   </>
                 )}
@@ -2108,7 +2108,7 @@ function BillingCells({ row, invoiceNos }: { row?: DcLineEstimateVsActualRow; in
   const vClass = v > 0 ? "text-red-600 font-medium" : v < 0 ? "text-emerald-600 font-medium" : "text-slate-500";
   return (
     <>
-      <td className={num}>
+      <td className={`${num} min-w-[110px]`}>
         {pending ? (
           <span className="bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap font-sans">Invoice pending</span>
         ) : fully ? (
@@ -2123,7 +2123,7 @@ function BillingCells({ row, invoiceNos }: { row?: DcLineEstimateVsActualRow; in
       <td className={num}>{pending || row.actual_rate_avg == null ? "—" : money(row.actual_rate_avg)}</td>
       <td className={num}>{pending ? "—" : money(row.actual_taxable)}</td>
       <td className={`${num} ${pending ? "" : vClass}`}>{pending ? "—" : `${v > 0 ? "+" : ""}${money(v)}`}</td>
-      <td className={`${base} text-left`}>
+      <td className={`${base} text-left min-w-[110px]`}>
         {invoiceNos && invoiceNos.length > 0 ? (
           <Link to="/processor-invoices" className="text-primary hover:underline font-mono text-xs" onClick={(e) => e.stopPropagation()}>
             {invoiceNos.join(", ")}
