@@ -201,3 +201,137 @@ export async function cancelProcessorInvoice(invoiceId: string, reason: string):
   });
   if (error) throw error;
 }
+
+// ── Invoice register + entry-form reads ──────────────────────────────────────
+
+export interface ProcessorPartyOption {
+  id: string;
+  name: string;
+}
+
+/** Active parties with vendor_type processor / both (same rule as DeliveryChallanDetail). */
+export async function fetchProcessorParties(): Promise<ProcessorPartyOption[]> {
+  const companyId = await requireCompanyId();
+  const { data, error } = await (supabase as any)
+    .from("parties")
+    .select("id, name")
+    .eq("company_id", companyId)
+    .eq("status", "active")
+    .in("vendor_type", ["processor", "both"])
+    .order("name", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as ProcessorPartyOption[];
+}
+
+const PAGE = 1000; // PostgREST default max rows per request
+
+/**
+ * DC lines for one processor that can still be billed: pending OR partly billed
+ * (billed_qty < dc_qty). The view only exposes 'pending' | 'invoiced', so the
+ * remaining-qty filter is applied here. Pages through the view so a busy
+ * processor never silently truncates at the 1000-row API cap.
+ */
+export async function fetchInvoiceableLines(partyId: string): Promise<DcLineEstimateVsActualRow[]> {
+  const companyId = await requireCompanyId();
+  const rows: DcLineEstimateVsActualRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await (supabase as any)
+      .from("v_dc_line_estimate_vs_actual")
+      .select("*")
+      .eq("company_id", companyId)
+      .eq("party_id", partyId)
+      .order("dc_date", { ascending: true })
+      .order("dc_id", { ascending: true })
+      .order("serial_number", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    const batch = (data ?? []).map((r: any) => coerce<DcLineEstimateVsActualRow>(r, NUMERIC_KEYS_LINE));
+    rows.push(...batch);
+    if (batch.length < PAGE) break;
+  }
+  return rows.filter((r) => remainingQty(r) > 0);
+}
+
+/** Qty still unbilled on a DC line (rounded to kill float dust). */
+export function remainingQty(r: Pick<DcLineEstimateVsActualRow, "dc_qty" | "billed_qty">): number {
+  return Math.max(0, Math.round((r.dc_qty - r.billed_qty) * 1000) / 1000);
+}
+
+export interface ProcessorInvoiceRow {
+  id: string;
+  company_id: string;
+  party_id: string;
+  party_name: string | null;
+  invoice_number: string;
+  invoice_date: string;
+  status: "active" | "cancelled";
+  remarks: string | null;
+  cancelled_at: string | null;
+  cancelled_reason: string | null;
+  created_at: string;
+  line_count: number;
+  taxable_total: number;
+  gst_total: number;
+}
+
+export interface ProcessorInvoiceFilters {
+  partyId?: string;
+  status?: "active" | "cancelled";
+}
+
+/** Invoice register: invoices + party name + totals summed from their lines. */
+export async function fetchProcessorInvoices(filters: ProcessorInvoiceFilters = {}): Promise<ProcessorInvoiceRow[]> {
+  const companyId = await requireCompanyId();
+  let q = (supabase as any).from("processor_invoices").select("*").eq("company_id", companyId);
+  if (filters.partyId) q = q.eq("party_id", filters.partyId);
+  if (filters.status) q = q.eq("status", filters.status);
+  const { data: invoices, error } = await q
+    .order("invoice_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(PAGE);
+  if (error) throw error;
+  const list = (invoices ?? []) as any[];
+  if (list.length === 0) return [];
+
+  const partyIds = [...new Set(list.map((i) => i.party_id).filter(Boolean))] as string[];
+  const { data: parties, error: pErr } = await (supabase as any)
+    .from("parties").select("id, name").eq("company_id", companyId).in("id", partyIds);
+  if (pErr) throw pErr;
+  const nameById = new Map<string, string>((parties ?? []).map((p: any) => [p.id, p.name]));
+
+  // Chunk the id list so the request URL stays short.
+  const totals = new Map<string, { n: number; taxable: number; gst: number }>();
+  const ids = list.map((i) => i.id as string);
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    for (let from = 0; ; from += PAGE) {
+      const { data: lines, error: lErr } = await (supabase as any)
+        .from("processor_invoice_lines")
+        .select("id, invoice_id, taxable_amount, gst_amount")
+        .eq("company_id", companyId)
+        .in("invoice_id", chunk)
+        .order("id", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (lErr) throw lErr;
+      for (const l of lines ?? []) {
+        const t = totals.get(l.invoice_id) ?? { n: 0, taxable: 0, gst: 0 };
+        t.n += 1;
+        t.taxable += Number(l.taxable_amount ?? 0);
+        t.gst += Number(l.gst_amount ?? 0);
+        totals.set(l.invoice_id, t);
+      }
+      if ((lines ?? []).length < PAGE) break;
+    }
+  }
+
+  return list.map((i) => {
+    const t = totals.get(i.id) ?? { n: 0, taxable: 0, gst: 0 };
+    return {
+      ...i,
+      party_name: nameById.get(i.party_id) ?? null,
+      line_count: t.n,
+      taxable_total: Math.round(t.taxable * 100) / 100,
+      gst_total: Math.round(t.gst * 100) / 100,
+    } as ProcessorInvoiceRow;
+  });
+}
