@@ -120,6 +120,10 @@ const TOOLTIP_TEXT: Record<string, string> = {
     "Factory Acceptance Test records. Every unit must pass FAT before it can be invoiced. 12 IEC standard tests per unit.",
   "GST Reports":
     "Download GSTR-1, GSTR-2 and GSTR-3B for filing. One click per report.",
+  "Processor Invoices":
+    "Record invoices received from job-work processors against DC lines, and compare billed rates with the DC estimate.",
+  "Processor Invoice Reports":
+    "DCs still awaiting a processor invoice, estimate vs actual billing, and processor price movement over time.",
   "Vendor Scorecards":
     "Automatic performance report per vendor — rejection rate, on-time delivery, turnaround time. Use in vendor review meetings.",
   "Parties":
@@ -168,6 +172,8 @@ const ALL_SEARCH_ITEMS: { title: string; url: string }[] = [
   { title: "Serial Numbers", url: "/serial-numbers" },
   { title: "FAT Certificates", url: "/fat-certificates" },
   { title: "GST Reports", url: "/gst-reports" },
+  { title: "Processor Invoices", url: "/processor-invoices" },
+  { title: "Processor Invoice Reports", url: "/processor-invoice-reports" },
   { title: "Vendor Scorecards", url: "/vendor-scorecards" },
   { title: "Parties", url: "/parties" },
   { title: "Items", url: "/items" },
@@ -190,7 +196,7 @@ const GROUP_PATHS: Record<string, string[]> = {
   "PRODUCTION & JOB WORK": ["/job-works", "/wip-register", "/sub-assembly-work-orders", "/finished-good-work-orders", "/rm-conversions"],
   "INVENTORY & STORES":    ["/stock-register", "/inventory-ledger", "/opening-stock", "/storekeeper", "/store-locator", "/physical-count", "/physical-count/approvals", "/consumables", "/scrap-register"],
   "DISPATCH":              ["/ready-to-dispatch", "/dispatch-records", "/serial-numbers", "/fat-certificates"],
-  "FINANCE & COMPLIANCE":  ["/gst-reports"],
+  "FINANCE & COMPLIANCE":  ["/gst-reports", "/processor-invoices", "/processor-invoice-reports"],
   "MASTERS & SETUP":       ["/items", "/bill-of-materials", "/jig-master", "/assets-register", "/settings"],
 };
 
@@ -969,6 +975,18 @@ export function AppSidebar() {
       title: "GST Reports",
       url: "/gst-reports",
       icon: FileSpreadsheet,
+      allowedRoles: ['admin', 'finance'],
+    },
+    {
+      title: "Processor Invoices",
+      url: "/processor-invoices",
+      icon: FileText,
+      allowedRoles: ['admin', 'finance'],
+    },
+    {
+      title: "Processor Invoice Reports",
+      url: "/processor-invoice-reports",
+      icon: BarChart3,
       allowedRoles: ['admin', 'finance'],
     },
   ];
