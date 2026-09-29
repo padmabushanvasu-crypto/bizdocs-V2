@@ -36,6 +36,8 @@ import {
   type DcLineStageShortfall,
   type DcItemSource,
 } from "@/lib/delivery-challans-api";
+import { fetchDcInvoiceStatuses } from "@/lib/processor-invoices-api";
+import { DcInvoiceStatusBadge } from "@/components/DcInvoiceStatusBadge";
 import { logAudit } from "@/lib/audit-api";
 import { useAuth } from "@/hooks/useAuth";
 import { useCanEdit } from "@/hooks/useCanEdit";
@@ -204,6 +206,15 @@ export default function DeliveryChallanDetail() {
     if (!dcSourcesByItemId.has(s.item_id)) dcSourcesByItemId.set(s.item_id, []);
     dcSourcesByItemId.get(s.item_id)!.push(s);
   }
+
+  // Processor invoice status (job-work DCs only appear in the view). Hidden for
+  // cost-hidden roles, which therefore never fetch it.
+  const { data: invoiceStatusRows = [], error: invoiceStatusError } = useQuery({
+    queryKey: ["dc-invoice-statuses", [id]],
+    queryFn: () => fetchDcInvoiceStatuses([id!]),
+    enabled: !!id && !hideCosts,
+  });
+  const invoiceStatus = invoiceStatusRows[0]?.invoice_status;
 
   const { data: processorPartiesData } = useQuery({
     queryKey: ['parties-processors'],
@@ -964,6 +975,12 @@ export default function DeliveryChallanDetail() {
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-display font-bold font-mono text-foreground">{dc.dc_number.replace('/-', '-')}</h1>
           <span className={statusClass[dc.status] || "status-draft"}>{statusLabels[dc.status] || dc.status}</span>
+          {!hideCosts && <DcInvoiceStatusBadge status={invoiceStatus} />}
+          {!hideCosts && invoiceStatusError && (
+            <span className="text-xs text-red-600">
+              Could not load invoice status: {(invoiceStatusError as Error).message}
+            </span>
+          )}
           {(dc as any).currency && (dc as any).currency !== "INR" && (
             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/30">
               {(dc as any).currency}
