@@ -53,6 +53,8 @@ export interface DcLineEstimateVsActualRow {
   actual_rate_avg: number | null;
   variance_amount: number;
   line_invoice_status: DcLineInvoiceStatus;
+  /** billed_qty >= dc_qty. 'invoiced' status alone means "has any billing". */
+  line_fully_billed: boolean;
 }
 
 /** v_job_card_processing_cost — one row per job card step. */
@@ -513,4 +515,31 @@ export async function fetchProcessorRateHistory(p: ProcessorRateHistoryParams): 
     if (batch.length < PAGE) break;
   }
   return rows;
+}
+
+/**
+ * Invoice numbers per DC line (one batched read per DC), oldest invoice first,
+ * de-duplicated. Keyed by dc_line_item_id; lines with no billing are absent.
+ */
+export async function fetchDcLineInvoiceNumbers(dcId: string): Promise<Record<string, string[]>> {
+  const companyId = await requireCompanyId();
+  const out: Record<string, string[]> = {};
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await (supabase as any)
+      .from("v_processor_rate_history")
+      .select("dc_line_item_id, invoice_id, invoice_number, invoice_date")
+      .eq("company_id", companyId)
+      .eq("dc_id", dcId)
+      .order("invoice_date", { ascending: true })
+      .order("invoice_id", { ascending: true })
+      .order("dc_line_item_id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    for (const r of data ?? []) {
+      const list = (out[r.dc_line_item_id] ??= []);
+      if (!list.includes(r.invoice_number)) list.push(r.invoice_number);
+    }
+    if ((data ?? []).length < PAGE) break;
+  }
+  return out;
 }
