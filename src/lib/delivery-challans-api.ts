@@ -99,6 +99,8 @@ export interface DCLineItem {
   is_rework?: boolean;
   rework_cycle?: number;
   parent_dc_line_id?: string | null;
+  // Set by rpc_create_nc_rework_dc — must survive the delete+reinsert on draft edit.
+  rework_source_grn_line_id?: string | null;
   rejection_action?: string | null;
   // New stage-ledger model (DC_STAGE_FLOW_REDESIGN.md) — separate from the
   // legacy job_work_id / job_work_step_id pair above. Set only for lines
@@ -505,6 +507,7 @@ export async function createDeliveryChallan({ dc, lineItems }: CreateDCData) {
       is_rework: item.is_rework ?? false,
       rework_cycle: item.rework_cycle ?? 1,
       parent_dc_line_id: item.parent_dc_line_id ?? null,
+      rework_source_grn_line_id: item.rework_source_grn_line_id ?? null,
     }));
     const { data: insertedLines, error: itemsError } = await supabase
       .from("dc_line_items")
@@ -799,6 +802,7 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
       is_rework: item.is_rework ?? false,
       rework_cycle: item.rework_cycle ?? 1,
       parent_dc_line_id: item.parent_dc_line_id ?? null,
+      rework_source_grn_line_id: item.rework_source_grn_line_id ?? null,
     }));
     const { data: insertedLines, error: itemsError } = await supabase
       .from("dc_line_items")
