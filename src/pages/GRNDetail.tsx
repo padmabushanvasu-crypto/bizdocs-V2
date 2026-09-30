@@ -67,6 +67,7 @@ import { fetchCompanySettings } from "@/lib/settings-api";
 import { isFinalBatch } from "@/lib/dc-receipt-utils";
 import { GRNFinanceApproval } from "@/components/GRNFinanceApproval";
 import { ReverseGrnReturnDialog } from "@/components/ReverseGrnReturnDialog";
+import { GrnNcPendingPanel } from "@/components/GrnNcPendingPanel";
 
 // ── Lookup tables ──────────────────────────────────────────────────────────────
 
@@ -2870,6 +2871,7 @@ export default function GRNDetail() {
       queryClient.invalidateQueries({ queryKey: ["grn-stages", id] });
       queryClient.invalidateQueries({ queryKey: ["grns"] });
       queryClient.invalidateQueries({ queryKey: ["pending-qc-grns"] });
+      queryClient.invalidateQueries({ queryKey: ["grn-nc-pending", id] });
       clearGrnDraft(id);
       toast({
         title: wasEdit ? "QC inspection updated" : "Quality inspection complete",
@@ -4103,6 +4105,9 @@ export default function GRNDetail() {
           </div>
         </div>
       )}
+
+      {/* ── Rejected units pending action (v_grn_nc_pending) ── */}
+      {s2Done && id && <GrnNcPendingPanel grnId={id} role={role} />}
 
       {/* ── Goods Receipt Panel (read-only — confirm from queue) ── */}
       {showStorePanel && (

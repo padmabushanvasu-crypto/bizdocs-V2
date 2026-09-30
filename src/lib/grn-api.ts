@@ -3609,3 +3609,80 @@ export async function fetchConfirmedGRNs(
   if (error) throw error;
   return (data ?? []) as unknown as QueueGRN[];
 }
+
+// ── Rejected-hold (NC pending) ──────────────────────────────────────────────
+// Reads v_grn_nc_pending and calls the DB-owned rework / scrap RPCs. No stock
+// or ledger writes happen client-side — the RPCs own every movement.
+
+export interface GrnNcPendingRow {
+  company_id: string;
+  grn_number: string | null;
+  grn_line_item_id: string;
+  item_id: string | null;
+  rejected_qty: number;
+  held_now: number;
+  planned_on_draft_dc: number;
+  sent_to_processor: number;
+  received_back: number;
+  scrapped: number;
+  description: string | null;
+}
+
+/** v_grn_nc_pending rows for this GRN's lines, explicitly scoped to the company. */
+export async function fetchGrnNcPending(grnId: string): Promise<GrnNcPendingRow[]> {
+  const companyId = await getCompanyId();
+  if (!companyId) throw new Error('fetchGrnNcPending: no company_id for the current user');
+  const { data: lines, error: lineErr } = await (supabase as any)
+    .from('grn_line_items')
+    .select('id, description')
+    .eq('grn_id', grnId);
+  if (lineErr) throw lineErr;
+  const descById = new Map<string, string | null>(
+    ((lines ?? []) as any[]).map((l) => [l.id as string, (l.description ?? null) as string | null]),
+  );
+  if (descById.size === 0) return [];
+  const { data, error } = await (supabase as any)
+    .from('v_grn_nc_pending')
+    .select('company_id, grn_number, grn_line_item_id, item_id, rejected_qty, held_now, planned_on_draft_dc, sent_to_processor, received_back, scrapped')
+    .eq('company_id', companyId)
+    .in('grn_line_item_id', [...descById.keys()]);
+  if (error) throw error;
+  return ((data ?? []) as any[]).map((r) => ({
+    company_id: r.company_id,
+    grn_number: r.grn_number ?? null,
+    grn_line_item_id: r.grn_line_item_id,
+    item_id: r.item_id ?? null,
+    rejected_qty: Number(r.rejected_qty ?? 0),
+    held_now: Number(r.held_now ?? 0),
+    planned_on_draft_dc: Number(r.planned_on_draft_dc ?? 0),
+    sent_to_processor: Number(r.sent_to_processor ?? 0),
+    received_back: Number(r.received_back ?? 0),
+    scrapped: Number(r.scrapped ?? 0),
+    description: descById.get(r.grn_line_item_id) ?? null,
+  }));
+}
+
+/** Creates (or appends to) a draft rework DC for held rejected units. Throws the DB message verbatim. */
+export async function createNcReworkDc(
+  grnLineId: string,
+  qty: number,
+): Promise<{ dc_id: string; dc_line_item_id: string; dc_number: string; rework_cycle: number }> {
+  const { data, error } = await (supabase as any).rpc('rpc_create_nc_rework_dc', {
+    p_grn_line_id: grnLineId,
+    p_qty: qty,
+  });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.dc_id) throw new Error('rpc_create_nc_rework_dc returned no dc_id');
+  return row;
+}
+
+/** Scraps held rejected units. Throws the DB message verbatim. */
+export async function scrapNcHold(grnLineId: string, qty: number, reason: string): Promise<void> {
+  const { error } = await (supabase as any).rpc('rpc_scrap_nc_hold', {
+    p_grn_line_id: grnLineId,
+    p_qty: qty,
+    p_reason: reason,
+  });
+  if (error) throw error;
+}
