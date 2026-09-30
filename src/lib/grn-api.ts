@@ -1388,11 +1388,11 @@ export async function saveQualityStage(
     .eq('id', grnId)
     .single();
   const rejectIsDc = (rejectHdr?.grn_type === 'dc_grn') || !!rejectHdr?.linked_dc_id;
-  const lineMetaMap = new Map<string, { item_id: string | null; drawing_number: string | null; description: string | null; old_rejected: number; old_disposition: string | null }>();
+  const lineMetaMap = new Map<string, { item_id: string | null; drawing_number: string | null; description: string | null; old_rejected: number; old_disposition: string | null; nc_hold_managed: boolean }>();
   {
     const { data: meta } = await (supabase as any)
       .from('grn_line_items')
-      .select('id, item_id, drawing_number, description, rejected_qty, disposition')
+      .select('id, item_id, drawing_number, description, rejected_qty, disposition, nc_hold_managed')
       .in('id', lines.map((l) => l.id));
     for (const m of (meta ?? []) as any[]) {
       lineMetaMap.set(m.id, {
@@ -1401,6 +1401,7 @@ export async function saveQualityStage(
         description: m.description ?? null,
         old_rejected: Number(m.rejected_qty ?? 0),
         old_disposition: m.disposition ?? null,
+        nc_hold_managed: m.nc_hold_managed === true,
       });
     }
   }
@@ -1470,7 +1471,11 @@ export async function saveQualityStage(
       // The QC line UPDATE cascades to the DB-owned received_quantity recompute,
       // which can trip the PO/DC over-receipt guards. Surface a friendly message.
       const blob = `${error.message ?? ''} ${error.details ?? ''} ${error.hint ?? ''}`;
-      if (error.code === '23514' || /over.?receipt/i.test(blob)) {
+      // A hold-managed line's UPDATE can also be rejected by the rejected-hold
+      // trigger (rejected_qty reduced below units already sent/scrapped) — that
+      // message must reach the user verbatim, so 23514 is not rewritten for
+      // hold-managed lines. Legacy lines keep the original rewrite.
+      if ((error.code === '23514' && !lineMetaMap.get(line.id)?.nc_hold_managed) || /over.?receipt/i.test(blob)) {
         throw new Error('This change exceeds the ordered quantity for one or more lines. Reduce the accepted / conforming quantity, or ask Purchasing to increase the PO/DC.');
       }
       throw error;
@@ -1623,37 +1628,73 @@ export async function saveQualityStage(
       const oldDisp = opts?.isEdit ? (meta?.old_disposition ?? null) : null;
       const oldRejected = opts?.isEdit ? Number(meta?.old_rejected ?? 0) : 0;
 
-      // (a) scrap_register — always replace this line's GRN-rejection rows.
-      try {
-        await (supabase as any).from('scrap_register')
-          .delete().eq('source', 'grn_rejection').eq('source_ref', line.id);
-        if (newDisp === 'scrap' && newRejected > 0 && itemId) {
-          await (supabase as any).from('scrap_register').insert({
-            company_id: rejectCompanyId,
-            item_id: itemId,
-            drawing_number: meta?.drawing_number ?? null,
-            quantity: newRejected,
-            reason: line.deviation_description || line.non_conformance_type || 'QC reject — scrap',
-            source: 'grn_rejection',
-            source_ref: line.id,
-            scrapped_at: today,
-            created_by: null,
-          });
+      // Hold-managed (grn_line_items.nc_hold_managed) return_to_vendor: the
+      // rejected-hold DB trigger owns the stock movement (rejected_hold bucket), so
+      // no ledger leg and no reversal of a prior return_to_vendor leg here — only
+      // the notification (c). Legacy lines (nc_hold_managed=false) keep the original
+      // client legs. A managed line re-saved as scrap/other: the trigger releases
+      // the hold and the normal legs below run unchanged.
+      const managed = meta?.nc_hold_managed === true;
+      const holdRtvNew = managed && newDisp === 'return_to_vendor';
+      const holdRtvOld = managed && oldDisp === 'return_to_vendor';
+
+      // No-op resave guard, shared by the scrap_register write (a) and the ledger
+      // legs (b): disposition AND rejected qty unchanged → neither is rewritten.
+      const rejectChanged = !opts?.isEdit || oldDisp !== newDisp || oldRejected !== newRejected;
+
+      // (a) scrap_register — QC scrap only (a hold-managed return_to_vendor line never
+      // writes here). scrap_register has no source/source_ref, so this line's row is
+      // identified by the `GRN line <id>` token in remarks: delete it, then insert the
+      // new one when the line is still scrap with a rejected qty. Register qty ==
+      // the ledger qty posted in (b) (both newRejected).
+      if (rejectChanged) {
+        try {
+          if (!rejectCompanyId) throw new Error('no company_id for the current user');
+          const { error: delErr } = await (supabase as any).from('scrap_register')
+            .delete()
+            .eq('company_id', rejectCompanyId)
+            .ilike('remarks', `%GRN line ${line.id}%`);
+          if (delErr) throw delErr;
+          if (newDisp === 'scrap' && newRejected > 0 && itemId) {
+            const { data: scrapItem, error: itemErr } = await (supabase as any).from('items')
+              .select('item_code, description, unit, drawing_number, standard_cost')
+              .eq('id', itemId)
+              .single();
+            if (itemErr) throw itemErr;
+            const cost = Number(scrapItem?.standard_cost ?? 0) || 0;
+            const { error: insErr } = await (supabase as any).from('scrap_register').insert({
+              company_id: rejectCompanyId,
+              scrap_date: today,
+              item_id: itemId,
+              item_code: scrapItem?.item_code ?? null,
+              item_description: scrapItem?.description ?? desc,
+              drawing_number: scrapItem?.drawing_number ?? meta?.drawing_number ?? null,
+              qty_scrapped: newRejected,
+              unit: scrapItem?.unit ?? null,
+              scrap_reason: line.deviation_description || line.non_conformance_type || 'QC reject — scrap',
+              scrap_category: 'process_rejection',
+              cost_per_unit: cost,
+              total_scrap_value: newRejected * cost,
+              disposal_method: 'write_off',
+              remarks: `QC reject scrap — GRN line ${line.id} — ${rejectHdr?.grn_number ?? ''}`.trim(),
+              recorded_by: inspectedBy || null,
+            });
+            if (insErr) throw insErr;
+          }
+        } catch (srErr) {
+          const msg = (srErr as { message?: string })?.message ?? String(srErr);
+          console.error('[GRN] scrap_register sync failed (non-fatal):', srErr);
+          stockWarnings.push(`${desc ?? line.id} — scrap register not updated: ${msg}`);
         }
-      } catch (srErr) {
-        console.error('[GRN] scrap_register sync failed (non-fatal):', srErr);
-        stockWarnings.push(`${desc ?? line.id} — scrap register not updated`);
       }
 
       if (!itemId) continue; // ledger legs need an item
 
       // (b) ledger — reverse the prior reject leg (edit only), then post the new one.
       // Skip entirely on a no-op resave (disposition AND rejected qty unchanged) —
-      // mirrors the accepted side's "no leg when Δ=0". scrap_register replace above
-      // stays unconditional (harmless).
-      const rejectChanged = !opts?.isEdit || oldDisp !== newDisp || oldRejected !== newRejected;
+      // mirrors the accepted side's "no leg when Δ=0" (rejectChanged, above).
       try {
-        if (rejectChanged && opts?.isEdit && oldRejected > 0 && (oldDisp === 'scrap' || oldDisp === 'return_to_vendor')) {
+        if (rejectChanged && opts?.isEdit && oldRejected > 0 && (oldDisp === 'scrap' || (oldDisp === 'return_to_vendor' && !holdRtvOld))) {
           await addStockLedgerEntry({
             item_id: itemId, item_code: null, item_description: desc,
             transaction_date: today,
@@ -1666,7 +1707,7 @@ export async function saveQualityStage(
             to_state: rejectSource,
           });
         }
-        if (rejectChanged && newRejected > 0 && (newDisp === 'scrap' || newDisp === 'return_to_vendor')) {
+        if (rejectChanged && newRejected > 0 && (newDisp === 'scrap' || (newDisp === 'return_to_vendor' && !holdRtvNew))) {
           await addStockLedgerEntry({
             item_id: itemId, item_code: null, item_description: desc,
             transaction_date: today,
@@ -3595,4 +3636,81 @@ export async function fetchConfirmedGRNs(
   const { data, error } = await query;
   if (error) throw error;
   return (data ?? []) as unknown as QueueGRN[];
+}
+
+// ── Rejected-hold (NC pending) ──────────────────────────────────────────────
+// Reads v_grn_nc_pending and calls the DB-owned rework / scrap RPCs. No stock
+// or ledger writes happen client-side — the RPCs own every movement.
+
+export interface GrnNcPendingRow {
+  company_id: string;
+  grn_number: string | null;
+  grn_line_item_id: string;
+  item_id: string | null;
+  rejected_qty: number;
+  held_now: number;
+  planned_on_draft_dc: number;
+  sent_to_processor: number;
+  received_back: number;
+  scrapped: number;
+  description: string | null;
+}
+
+/** v_grn_nc_pending rows for this GRN's lines, explicitly scoped to the company. */
+export async function fetchGrnNcPending(grnId: string): Promise<GrnNcPendingRow[]> {
+  const companyId = await getCompanyId();
+  if (!companyId) throw new Error('fetchGrnNcPending: no company_id for the current user');
+  const { data: lines, error: lineErr } = await (supabase as any)
+    .from('grn_line_items')
+    .select('id, description')
+    .eq('grn_id', grnId);
+  if (lineErr) throw lineErr;
+  const descById = new Map<string, string | null>(
+    ((lines ?? []) as any[]).map((l) => [l.id as string, (l.description ?? null) as string | null]),
+  );
+  if (descById.size === 0) return [];
+  const { data, error } = await (supabase as any)
+    .from('v_grn_nc_pending')
+    .select('company_id, grn_number, grn_line_item_id, item_id, rejected_qty, held_now, planned_on_draft_dc, sent_to_processor, received_back, scrapped')
+    .eq('company_id', companyId)
+    .in('grn_line_item_id', [...descById.keys()]);
+  if (error) throw error;
+  return ((data ?? []) as any[]).map((r) => ({
+    company_id: r.company_id,
+    grn_number: r.grn_number ?? null,
+    grn_line_item_id: r.grn_line_item_id,
+    item_id: r.item_id ?? null,
+    rejected_qty: Number(r.rejected_qty ?? 0),
+    held_now: Number(r.held_now ?? 0),
+    planned_on_draft_dc: Number(r.planned_on_draft_dc ?? 0),
+    sent_to_processor: Number(r.sent_to_processor ?? 0),
+    received_back: Number(r.received_back ?? 0),
+    scrapped: Number(r.scrapped ?? 0),
+    description: descById.get(r.grn_line_item_id) ?? null,
+  }));
+}
+
+/** Creates (or appends to) a draft rework DC for held rejected units. Throws the DB message verbatim. */
+export async function createNcReworkDc(
+  grnLineId: string,
+  qty: number,
+): Promise<{ dc_id: string; dc_line_item_id: string; dc_number: string; rework_cycle: number }> {
+  const { data, error } = await (supabase as any).rpc('rpc_create_nc_rework_dc', {
+    p_grn_line_id: grnLineId,
+    p_qty: qty,
+  });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.dc_id) throw new Error('rpc_create_nc_rework_dc returned no dc_id');
+  return row;
+}
+
+/** Scraps held rejected units. Throws the DB message verbatim. */
+export async function scrapNcHold(grnLineId: string, qty: number, reason: string): Promise<void> {
+  const { error } = await (supabase as any).rpc('rpc_scrap_nc_hold', {
+    p_grn_line_id: grnLineId,
+    p_qty: qty,
+    p_reason: reason,
+  });
+  if (error) throw error;
 }

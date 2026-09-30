@@ -735,6 +735,7 @@ export default function DeliveryChallanForm() {
             is_rework: (i as any).is_rework ?? false,
             rework_cycle: (i as any).rework_cycle ?? 1,
             parent_dc_line_id: (i as any).parent_dc_line_id ?? null,
+            rework_source_grn_line_id: i.rework_source_grn_line_id ?? null,
             total_stages: selectedStage ? routeForLine.length : null,
             route_id: selectedStageId ?? null,
             // Jig Master checklist (when the drawing has registered jigs) wins;

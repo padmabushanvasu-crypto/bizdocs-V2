@@ -99,6 +99,8 @@ export interface DCLineItem {
   is_rework?: boolean;
   rework_cycle?: number;
   parent_dc_line_id?: string | null;
+  // Set by rpc_create_nc_rework_dc — must survive the delete+reinsert on draft edit.
+  rework_source_grn_line_id?: string | null;
   rejection_action?: string | null;
   // New stage-ledger model (DC_STAGE_FLOW_REDESIGN.md) — separate from the
   // legacy job_work_id / job_work_step_id pair above. Set only for lines
@@ -226,6 +228,8 @@ export interface EnhancedReturnData {
 }
 
 export interface EnhancedReturnResult {
+  /** Non-fatal problems (e.g. scrap register not written) — surface to the user. */
+  warnings?: string[];
   nextDCPrefill: null | {
     dc_type: string;
     party_id: string | null;
@@ -505,6 +509,7 @@ export async function createDeliveryChallan({ dc, lineItems }: CreateDCData) {
       is_rework: item.is_rework ?? false,
       rework_cycle: item.rework_cycle ?? 1,
       parent_dc_line_id: item.parent_dc_line_id ?? null,
+      rework_source_grn_line_id: item.rework_source_grn_line_id ?? null,
     }));
     const { data: insertedLines, error: itemsError } = await supabase
       .from("dc_line_items")
@@ -799,6 +804,7 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
       is_rework: item.is_rework ?? false,
       rework_cycle: item.rework_cycle ?? 1,
       parent_dc_line_id: item.parent_dc_line_id ?? null,
+      rework_source_grn_line_id: item.rework_source_grn_line_id ?? null,
     }));
     const { data: insertedLines, error: itemsError } = await supabase
       .from("dc_line_items")
@@ -1440,6 +1446,7 @@ export async function recordEnhancedReturn(
   const companyId = await getCompanyId();
   const today = new Date().toISOString().split('T')[0];
   const { data: { user } } = await supabase.auth.getUser();
+  const warnings: string[] = [];
 
   // Fetch line item
   const { data: lineItem, error: liErr } = await (supabase as any)
@@ -1509,25 +1516,44 @@ export async function recordEnhancedReturn(
   if (returnData.rejected_action === 'scrap' && returnData.qty_rejected > 0 && returnData.item_id) {
     const { data: item } = await (supabase as any)
       .from('items')
-      .select('id, item_code, description, current_stock, standard_cost')
+      .select('id, item_code, description, unit, drawing_number, current_stock, standard_cost')
       .eq('id', returnData.item_id)
       .single();
     if (item) {
       const rec = item as any;
+      // scrap_register row — real columns only. Failure is a warning, never a throw,
+      // and does not change when the ledger call below runs. Register qty == the
+      // ledger qty posted below (both qty_rejected).
       try {
-        await (supabase as any).from('scrap_register').insert({
+        let recordedBy: string | null = null;
+        if (user?.id) {
+          const { data: prof } = await (supabase as any)
+            .from('profiles').select('display_name, full_name, email').eq('id', user.id).maybeSingle();
+          recordedBy = prof?.display_name || prof?.full_name || prof?.email || null;
+        }
+        const cost = Number(rec.standard_cost ?? 0) || 0;
+        const { error: srErr } = await (supabase as any).from('scrap_register').insert({
           company_id: companyId,
+          scrap_date: today,
           item_id: returnData.item_id,
-          drawing_number: returnData.drawing_number,
-          quantity: returnData.qty_rejected,
-          reason: returnData.rejection_reason ?? 'Processing rejection',
-          source: 'dc_return',
-          source_ref: returnData.dc_number,
-          scrapped_at: today,
-          created_by: user?.id ?? null,
-        }).select().single();
-      } catch (_e) {
-        // scrap_register may not exist; ignore
+          item_code: rec.item_code ?? null,
+          item_description: rec.description ?? null,
+          drawing_number: rec.drawing_number ?? returnData.drawing_number ?? null,
+          qty_scrapped: returnData.qty_rejected,
+          unit: rec.unit ?? null,
+          scrap_reason: returnData.rejection_reason?.trim() || 'Processing rejection',
+          scrap_category: 'process_rejection',
+          cost_per_unit: cost,
+          total_scrap_value: returnData.qty_rejected * cost,
+          disposal_method: 'write_off',
+          remarks: `DC return rejection — ${returnData.dc_number}`,
+          recorded_by: recordedBy,
+        });
+        if (srErr) throw srErr;
+      } catch (srErr) {
+        const msg = (srErr as { message?: string })?.message ?? String(srErr);
+        console.error('[DC] scrap_register insert failed (non-fatal):', srErr);
+        warnings.push(`scrap register not updated: ${msg}`);
       }
       await addStockLedgerEntry({
         item_id: rec.id,
@@ -1594,7 +1620,7 @@ export async function recordEnhancedReturn(
   await recalculateDCStatus(returnData.dc_id);
 
   // Step 6: Build prefill data for next DC or rework DC
-  const result: EnhancedReturnResult = { nextDCPrefill: null, reworkDCPrefill: null };
+  const result: EnhancedReturnResult = { nextDCPrefill: null, reworkDCPrefill: null, warnings };
 
   const baseLineItem = {
     item_code: li.item_code ?? '',

@@ -1746,6 +1746,9 @@ export default function DeliveryChallanDetail() {
                   queryClient.invalidateQueries({ queryKey: ['dc-stats'] });
                   setReturnDialogOpen(false);
                   toast({ title: 'Return recorded', description: `${retQtyAccepted} accepted, ${retQtyRejected} rejected. Stock updated.` });
+                  if (result.warnings?.length) {
+                    toast({ title: 'Return recorded with warnings', description: result.warnings.join('; '), variant: 'destructive' });
+                  }
 
                   if (result.nextDCPrefill) {
                     navigate('/delivery-challans/new', { state: { prefill: result.nextDCPrefill } });

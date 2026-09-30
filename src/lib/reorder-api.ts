@@ -393,6 +393,24 @@ export async function fetchScrapEntries(filters: ScrapFilters = {}) {
   return { data: (data ?? []) as ScrapEntry[], count: count ?? 0 };
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** uuid columns reject "" and non-uuid strings — anything that isn't a uuid becomes null. */
+const uuidOrNull = (v: unknown): string | null =>
+  typeof v === "string" && UUID_RE.test(v.trim()) ? v.trim() : null;
+/** varchar columns: blank/whitespace → null. */
+const textOrNull = (v: unknown): string | null =>
+  typeof v === "string" && v.trim() !== "" ? v.trim() : null;
+
+// The only scrap_register columns updateScrapEntry may write (no id / company_id /
+// scrap_number / created_at, and no unknown form keys).
+const SCRAP_UPDATABLE_COLUMNS = [
+  "scrap_date", "item_id", "item_code", "item_description", "drawing_number",
+  "linked_dc_id", "linked_dc_number", "assembly_order_id", "assembly_order_number",
+  "qty_scrapped", "unit", "scrap_reason", "scrap_category", "cost_per_unit",
+  "total_scrap_value", "disposal_method", "scrap_sale_value", "vendor_id",
+  "vendor_name", "remarks", "recorded_by",
+] as const;
+
 export async function createScrapEntry(data: Partial<ScrapEntry>): Promise<ScrapEntry> {
   const companyId = await getCompanyId();
   const { data: { user } } = await supabase.auth.getUser();
@@ -408,9 +426,9 @@ export async function createScrapEntry(data: Partial<ScrapEntry>): Promise<Scrap
       item_code: data.item_code ?? null,
       item_description: data.item_description ?? null,
       drawing_number: data.drawing_number ?? null,
-      linked_dc_id: data.linked_dc_id ?? null,
-      linked_dc_number: data.linked_dc_number ?? null,
-      assembly_order_id: data.assembly_order_id ?? null,
+      linked_dc_id: uuidOrNull(data.linked_dc_id),
+      linked_dc_number: textOrNull(data.linked_dc_number),
+      assembly_order_id: uuidOrNull(data.assembly_order_id),
       assembly_order_number: data.assembly_order_number ?? null,
       qty_scrapped: data.qty_scrapped ?? 0,
       unit: data.unit ?? "NOS",
@@ -491,9 +509,18 @@ export async function updateScrapEntry(id: string, data: Partial<ScrapEntry>): P
     data.total_scrap_value = Math.round(data.qty_scrapped * data.cost_per_unit * 100) / 100;
   }
 
+  const payload: Record<string, unknown> = {};
+  for (const col of SCRAP_UPDATABLE_COLUMNS) {
+    if (col in data) payload[col] = (data as Record<string, unknown>)[col];
+  }
+  for (const col of ["linked_dc_id", "assembly_order_id"]) {
+    if (col in payload) payload[col] = uuidOrNull(payload[col]);
+  }
+  if ("linked_dc_number" in payload) payload.linked_dc_number = textOrNull(payload.linked_dc_number);
+
   const { data: updated, error } = await (supabase as any)
     .from("scrap_register")
-    .update({ ...data, updated_at: new Date().toISOString() })
+    .update({ ...payload, updated_at: new Date().toISOString() })
     .eq("id", id)
     .eq("company_id", companyId)
     .select()
