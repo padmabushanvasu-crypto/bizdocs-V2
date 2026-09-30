@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/gst-utils";
 import {
   fetchProcessorParties,
+  fetchDcInvoiceStatuses,
   fetchInvoiceableLines,
   remainingQty,
   computeLineVariance,
@@ -34,6 +35,15 @@ interface Pick {
   taxableOverride: string | null;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const defaultPick = (l: DcLineEstimateVsActualRow): Pick => ({
+  qty: String(remainingQty(l)),
+  rate: String(l.estimate_rate),
+  gst: DEFAULT_GST,
+  taxableOverride: null,
+});
+
 const varianceClass = (v: number) =>
   v > 0 ? "text-red-600 font-medium" : v < 0 ? "text-emerald-600 font-medium" : "text-slate-500";
 const signed = (v: number) => `${v > 0 ? "+" : ""}${formatCurrency(v)}`;
@@ -42,6 +52,20 @@ export default function ProcessorInvoiceForm() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+
+  // Entry from the DC screens: /processor-invoices/new?party=<id>&dc=<id1>,<id2>.
+  // Invalid (non-UUID) ids are dropped. Nothing is guessed: a party/DC mismatch
+  // is shown as an error and nothing is preselected.
+  const urlParty = searchParams.get("party");
+  const urlDcRaw = searchParams.get("dc");
+  const urlDcIds = useMemo(
+    () => [...new Set((urlDcRaw ?? "").split(",").map((x) => x.trim()).filter((x) => UUID_RE.test(x)))],
+    [urlDcRaw],
+  );
+  const hasPrefill = !!urlDcRaw;
+  const partyParamValid = !!urlParty && UUID_RE.test(urlParty);
+  const prefillApplied = useRef(false);
 
   const [partyId, setPartyId] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
@@ -60,6 +84,53 @@ export default function ProcessorInvoiceForm() {
     queryFn: () => fetchInvoiceableLines(partyId),
     enabled: !!partyId,
   });
+
+  // Which processor do the linked DCs actually belong to? (company-scoped view read)
+  const { data: linkedDcs, error: linkedDcsError } = useQuery({
+    queryKey: ["dc-invoice-statuses", "prefill", urlDcIds],
+    queryFn: () => fetchDcInvoiceStatuses(urlDcIds),
+    enabled: hasPrefill && partyParamValid && urlDcIds.length > 0,
+  });
+
+  const prefillError = useMemo(() => {
+    if (!hasPrefill) return null;
+    if (!partyParamValid) return "This link is missing a valid processor, so nothing was preselected.";
+    if (urlDcIds.length === 0) return "This link has no valid DC ids, so nothing was preselected.";
+    if (linkedDcsError) return `Could not check the linked DCs: ${(linkedDcsError as Error).message}`;
+    if (parties.length > 0 && !parties.some((p) => p.id === urlParty))
+      return "The processor in this link is not an active processor, so nothing was preselected.";
+    if (linkedDcs) {
+      const wrong = linkedDcs.filter((d) => d.party_id !== urlParty);
+      if (wrong.length > 0)
+        return `${wrong.map((d) => d.dc_number).join(", ")} ${wrong.length > 1 ? "belong" : "belongs"} to a different processor than the one in the link, so nothing was preselected.`;
+      if (linkedDcs.length === 0)
+        return "None of the linked DCs were found (they may not be issued job-work DCs), so nothing was preselected.";
+    }
+    return null;
+  }, [hasPrefill, partyParamValid, urlDcIds, linkedDcsError, parties, urlParty, linkedDcs]);
+
+  // Preselect the processor once the link has been validated.
+  useEffect(() => {
+    if (!hasPrefill || prefillApplied.current || prefillError || !linkedDcs || parties.length === 0) return;
+    if (partyId !== urlParty) setPartyId(urlParty!);
+  }, [hasPrefill, prefillError, linkedDcs, parties, partyId, urlParty]);
+
+  // Pre-tick every unbilled line of the linked DCs, once, after the lines load.
+  useEffect(() => {
+    if (!hasPrefill || prefillApplied.current || prefillError || !linkedDcs) return;
+    if (partyId !== urlParty || linesLoading) return;
+    const wanted = new Set(linkedDcs.map((d) => d.dc_id));
+    const next: Record<string, Pick> = {};
+    for (const l of lines) if (wanted.has(l.dc_id)) next[l.dc_line_item_id] = defaultPick(l);
+    setPicks(next);
+    prefillApplied.current = true;
+  }, [hasPrefill, prefillError, linkedDcs, partyId, urlParty, linesLoading, lines]);
+
+  const linkedDcsWithoutLines = useMemo(() => {
+    if (!hasPrefill || !linkedDcs || prefillError || partyId !== urlParty || linesLoading) return [];
+    const have = new Set(lines.map((l) => l.dc_id));
+    return linkedDcs.filter((d) => !have.has(d.dc_id)).map((d) => d.dc_number);
+  }, [hasPrefill, linkedDcs, prefillError, partyId, urlParty, linesLoading, lines]);
 
   const groups = useMemo(() => {
     const m = new Map<string, DcLineEstimateVsActualRow[]>();
@@ -80,12 +151,7 @@ export default function ProcessorInvoiceForm() {
     setPicks((p) => {
       const next = { ...p };
       if (!on) delete next[l.dc_line_item_id];
-      else next[l.dc_line_item_id] = {
-        qty: String(remainingQty(l)),
-        rate: String(l.estimate_rate),
-        gst: DEFAULT_GST,
-        taxableOverride: null,
-      };
+      else next[l.dc_line_item_id] = defaultPick(l);
       return next;
     });
 
@@ -149,7 +215,12 @@ export default function ProcessorInvoiceForm() {
       queryClient.invalidateQueries({ queryKey: ["processor-invoice-lines"] });
       queryClient.invalidateQueries({ queryKey: ["dc-invoice-statuses"] });
       queryClient.invalidateQueries({ queryKey: ["job-card-processing-cost"] });
-      navigate("/processor-invoices");
+      // Came from a DC screen: go back there (single DC) or to the register (several).
+      if (hasPrefill && !prefillError) {
+        navigate(urlDcIds.length === 1 ? `/delivery-challans/${urlDcIds[0]}` : "/delivery-challans");
+      } else {
+        navigate("/processor-invoices");
+      }
     },
     // RPC check_violation messages are readable — surface verbatim.
     onError: (e: Error) => {
@@ -172,6 +243,15 @@ export default function ProcessorInvoiceForm() {
         </Button>
         <h1 className="text-2xl font-bold text-slate-900">New Processor Invoice</h1>
       </div>
+
+      {prefillError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{prefillError}</div>
+      )}
+      {linkedDcsWithoutLines.length > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          No unbilled lines left on: {linkedDcsWithoutLines.join(", ")}.
+        </div>
+      )}
 
       {/* Header */}
       <div className="paper-card grid gap-4 md:grid-cols-4">
