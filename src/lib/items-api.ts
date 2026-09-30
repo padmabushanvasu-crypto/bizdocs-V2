@@ -144,6 +144,9 @@ export interface ItemFilters {
   search?: string;
   type?: string;
   types?: string[];
+  // Opt-in: only items rpc_complete_sale accepts — finished_good OR
+  // (bought_out AND is_resale). ANDed with `types`/`search`; off by default.
+  sellable?: boolean;
   status?: string;
   page?: number;
   pageSize?: number;
@@ -152,7 +155,7 @@ export interface ItemFilters {
 export async function fetchItems(filters: ItemFilters = {}) {
   const companyId = await getCompanyId();
   if (!companyId) return { data: [], count: 0 };
-  const { search, type = "all", types, status = "active" } = filters;
+  const { search, type = "all", types, sellable = false, status = "active" } = filters;
 
   // Build a fresh, identically-filtered query per page — Supabase query builders
   // are single-use, so filters must be re-applied every iteration.
@@ -167,6 +170,11 @@ export async function fetchItems(filters: ItemFilters = {}) {
       query = query.in("item_type", types);
     } else if (type && type !== "all") {
       query = query.eq("item_type", type);
+    }
+
+    // Separate .or() calls are ANDed by PostgREST, so this composes with `search`.
+    if (sellable) {
+      query = query.or("item_type.eq.finished_good,and(item_type.eq.bought_out,is_resale.eq.true)");
     }
 
     if (search?.trim()) {
@@ -195,6 +203,25 @@ export async function fetchItems(filters: ItemFilters = {}) {
   }
 
   return { data: all, count: all.length };
+}
+
+/** Subset of `ids` that are resale bought-out items (company-scoped). */
+export async function fetchResaleItemIds(ids: string[]): Promise<Set<string>> {
+  const out = new Set<string>();
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (unique.length === 0) return out;
+  const companyId = await getCompanyId();
+  if (!companyId) return out;
+  const { data, error } = await (supabase as any)
+    .from("items")
+    .select("id")
+    .eq("company_id", companyId)
+    .eq("item_type", "bought_out")
+    .eq("is_resale", true)
+    .in("id", unique);
+  if (error) throw error;
+  for (const r of (data ?? []) as { id: string }[]) out.add(r.id);
+  return out;
 }
 
 // Fetch EVERY items row for a company, paging past PostgREST's ~1000-row cap

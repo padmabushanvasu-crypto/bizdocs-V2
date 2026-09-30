@@ -26,10 +26,12 @@ import {
 import { formatCurrency, formatNumber, amountInWords } from "@/lib/gst-utils";
 import { getGSTType, calculateLineTax, round2, resolveStateCode, getStateName, type GSTType } from "@/lib/tax-utils";
 import { UNITS } from "@/lib/constants";
+import { cn } from "@/lib/utils";
+import { fetchResaleItemIds } from "@/lib/items-api";
+import { fetchFreeStockMap } from "@/lib/stock-free-api";
 
 const PAYMENT_TERMS = ["Immediate", "7 Days", "15 Days", "30 Days", "45 Days", "60 Days"];
 const GST_RATES = [0, 5, 12, 18, 28];
-const FINISHED_GOOD_TYPES = ["finished_good"];
 
 function emptyLineItem(serial: number): InvoiceLineItem {
   return {
@@ -235,6 +237,24 @@ export default function InvoiceForm() {
   }, [gstType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Line item updates
+  // Resale bought-out lines draw from Free stock. Show it beside the item as a
+  // soft hint only — rpc_complete_sale is authoritative and never blocked here.
+  const lineItemIds = useMemo(
+    () => [...new Set(lineItems.map((li) => li.item_id).filter((x): x is string => !!x))].sort(),
+    [lineItems],
+  );
+  const { data: resaleIds } = useQuery({
+    queryKey: ["invoice-resale-items", lineItemIds],
+    queryFn: () => fetchResaleItemIds(lineItemIds),
+    enabled: lineItemIds.length > 0,
+  });
+  const resaleIdList = useMemo(() => [...(resaleIds ?? [])].sort(), [resaleIds]);
+  const { data: freeStock } = useQuery({
+    queryKey: ["invoice-resale-free", resaleIdList],
+    queryFn: () => fetchFreeStockMap(resaleIdList),
+    enabled: resaleIdList.length > 0,
+  });
+
   const updateLineItem = useCallback((index: number, field: keyof InvoiceLineItem, value: any) => {
     setLineItems((prev) => {
       const updated = [...prev];
@@ -530,7 +550,7 @@ export default function InvoiceForm() {
                   <td className="px-1 py-1">
                     <ItemSuggest
                       value={li.description}
-                      itemTypes={FINISHED_GOOD_TYPES}
+                      sellableOnly
                       onChange={(v) => updateLineItem(i, "description", v)}
                       onSelect={(item) => {
                         updateLineItem(i, "item_id", item.id);
@@ -541,9 +561,19 @@ export default function InvoiceForm() {
                         updateLineItem(i, "gst_rate", item.gst_rate || 18);
                         updateLineItem(i, "drawing_number", item.drawing_revision || "");
                       }}
-                      placeholder="Type to search finished goods..."
+                      placeholder="Type to search finished goods / resale items..."
                       className="h-8 text-sm w-full"
                     />
+                    {li.item_id && resaleIds?.has(li.item_id) && freeStock && (() => {
+                      const free = freeStock.get(li.item_id!) ?? 0;
+                      const short = li.quantity > free;
+                      return (
+                        <p className={cn("px-1 pt-0.5 text-xs", short ? "text-amber-600 font-medium" : "text-muted-foreground")}>
+                          Free stock: {formatNumber(free)}
+                          {short && ` — qty ${formatNumber(li.quantity)} exceeds Free; Sale complete may be rejected`}
+                        </p>
+                      );
+                    })()}
                   </td>
                   <td className="p-0 w-32">
                     <input

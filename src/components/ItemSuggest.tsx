@@ -10,8 +10,8 @@ interface ItemSuggestProps {
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
-  /** Restrict suggestions to these item_type values (default: no restriction). */
-  itemTypes?: string[];
+  /** Opt-in: only finished goods and resale bought-out items (default: off, no restriction). */
+  sellableOnly?: boolean;
 }
 
 const TYPE_SHORT: Record<string, string> = {
@@ -31,7 +31,7 @@ export function ItemSuggest({
   onChange,
   placeholder = "Type to search items...",
   className,
-  itemTypes,
+  sellableOnly = false,
 }: ItemSuggestProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -43,8 +43,8 @@ export function ItemSuggest({
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const { data } = useQuery({
-    queryKey: ["items-suggest", search, itemTypes],
-    queryFn: () => fetchItems({ search, status: "active", types: itemTypes, pageSize: 10 }),
+    queryKey: ["items-suggest", search, sellableOnly],
+    queryFn: () => fetchItems({ search, status: "active", sellable: sellableOnly, pageSize: 10 }),
     enabled: search.length >= 2,
     staleTime: 30_000,
   });
