@@ -1638,35 +1638,61 @@ export async function saveQualityStage(
       const holdRtvNew = managed && newDisp === 'return_to_vendor';
       const holdRtvOld = managed && oldDisp === 'return_to_vendor';
 
-      // (a) scrap_register — always replace this line's GRN-rejection rows.
-      try {
-        await (supabase as any).from('scrap_register')
-          .delete().eq('source', 'grn_rejection').eq('source_ref', line.id);
-        if (newDisp === 'scrap' && newRejected > 0 && itemId) {
-          await (supabase as any).from('scrap_register').insert({
-            company_id: rejectCompanyId,
-            item_id: itemId,
-            drawing_number: meta?.drawing_number ?? null,
-            quantity: newRejected,
-            reason: line.deviation_description || line.non_conformance_type || 'QC reject — scrap',
-            source: 'grn_rejection',
-            source_ref: line.id,
-            scrapped_at: today,
-            created_by: null,
-          });
+      // No-op resave guard, shared by the scrap_register write (a) and the ledger
+      // legs (b): disposition AND rejected qty unchanged → neither is rewritten.
+      const rejectChanged = !opts?.isEdit || oldDisp !== newDisp || oldRejected !== newRejected;
+
+      // (a) scrap_register — QC scrap only (a hold-managed return_to_vendor line never
+      // writes here). scrap_register has no source/source_ref, so this line's row is
+      // identified by the `GRN line <id>` token in remarks: delete it, then insert the
+      // new one when the line is still scrap with a rejected qty. Register qty ==
+      // the ledger qty posted in (b) (both newRejected).
+      if (rejectChanged) {
+        try {
+          if (!rejectCompanyId) throw new Error('no company_id for the current user');
+          const { error: delErr } = await (supabase as any).from('scrap_register')
+            .delete()
+            .eq('company_id', rejectCompanyId)
+            .ilike('remarks', `%GRN line ${line.id}%`);
+          if (delErr) throw delErr;
+          if (newDisp === 'scrap' && newRejected > 0 && itemId) {
+            const { data: scrapItem, error: itemErr } = await (supabase as any).from('items')
+              .select('item_code, description, unit, drawing_number, standard_cost')
+              .eq('id', itemId)
+              .single();
+            if (itemErr) throw itemErr;
+            const cost = Number(scrapItem?.standard_cost ?? 0) || 0;
+            const { error: insErr } = await (supabase as any).from('scrap_register').insert({
+              company_id: rejectCompanyId,
+              scrap_date: today,
+              item_id: itemId,
+              item_code: scrapItem?.item_code ?? null,
+              item_description: scrapItem?.description ?? desc,
+              drawing_number: scrapItem?.drawing_number ?? meta?.drawing_number ?? null,
+              qty_scrapped: newRejected,
+              unit: scrapItem?.unit ?? null,
+              scrap_reason: line.deviation_description || line.non_conformance_type || 'QC reject — scrap',
+              scrap_category: 'process_rejection',
+              cost_per_unit: cost,
+              total_scrap_value: newRejected * cost,
+              disposal_method: 'write_off',
+              remarks: `QC reject scrap — GRN line ${line.id} — ${rejectHdr?.grn_number ?? ''}`.trim(),
+              recorded_by: inspectedBy || null,
+            });
+            if (insErr) throw insErr;
+          }
+        } catch (srErr) {
+          const msg = (srErr as { message?: string })?.message ?? String(srErr);
+          console.error('[GRN] scrap_register sync failed (non-fatal):', srErr);
+          stockWarnings.push(`${desc ?? line.id} — scrap register not updated: ${msg}`);
         }
-      } catch (srErr) {
-        console.error('[GRN] scrap_register sync failed (non-fatal):', srErr);
-        stockWarnings.push(`${desc ?? line.id} — scrap register not updated`);
       }
 
       if (!itemId) continue; // ledger legs need an item
 
       // (b) ledger — reverse the prior reject leg (edit only), then post the new one.
       // Skip entirely on a no-op resave (disposition AND rejected qty unchanged) —
-      // mirrors the accepted side's "no leg when Δ=0". scrap_register replace above
-      // stays unconditional (harmless).
-      const rejectChanged = !opts?.isEdit || oldDisp !== newDisp || oldRejected !== newRejected;
+      // mirrors the accepted side's "no leg when Δ=0" (rejectChanged, above).
       try {
         if (rejectChanged && opts?.isEdit && oldRejected > 0 && (oldDisp === 'scrap' || (oldDisp === 'return_to_vendor' && !holdRtvOld))) {
           await addStockLedgerEntry({
