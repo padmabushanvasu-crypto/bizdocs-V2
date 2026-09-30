@@ -1,7 +1,7 @@
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { printWithLightMode } from "@/lib/print-utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Edit, X, Truck, CheckCircle2, RotateCcw, AlertTriangle, Printer, ChevronLeft, Trash2, Plus, Lock, CheckCircle, XCircle } from "lucide-react";
+import { Edit, X, Truck, CheckCircle2, RotateCcw, AlertTriangle, Printer, ChevronLeft, Trash2, Plus, Lock, CheckCircle, XCircle, FileText } from "lucide-react";
 import { EditableSection } from "@/components/EditableSection";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -1017,6 +1017,17 @@ export default function DeliveryChallanDetail() {
           )}
         </div>
         <div className="flex flex-wrap gap-2">
+          {/* Record the processor's invoice against this DC (admin/finance, costs visible). */}
+          {isFinanceOrAdmin && !hideCosts && invoiceStatusRows[0]?.party_id &&
+            (invoiceStatus === "Invoice pending" || invoiceStatus === "Invoice partly received") && (
+            <Button
+              size="sm"
+              className="h-9 sm:h-8"
+              onClick={() => navigate(`/processor-invoices/new?party=${invoiceStatusRows[0].party_id}&dc=${dc.id}`)}
+            >
+              <FileText className="h-3.5 w-3.5 mr-1" /> Record invoice
+            </Button>
+          )}
           {/* Print locked until issued */}
           {["issued", "fully_returned", "partially_returned"].includes(dc.status) ? (
             <>
