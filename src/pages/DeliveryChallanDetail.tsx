@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { printWithLightMode } from "@/lib/print-utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Edit, X, Truck, CheckCircle2, RotateCcw, AlertTriangle, Printer, ChevronLeft, Trash2, Plus, Lock, CheckCircle, XCircle } from "lucide-react";
@@ -36,6 +36,13 @@ import {
   type DcLineStageShortfall,
   type DcItemSource,
 } from "@/lib/delivery-challans-api";
+import {
+  fetchDcInvoiceStatuses,
+  fetchDcLineEstimateVsActual,
+  fetchDcLineInvoiceNumbers,
+  type DcLineEstimateVsActualRow,
+} from "@/lib/processor-invoices-api";
+import { DcInvoiceStatusBadge } from "@/components/DcInvoiceStatusBadge";
 import { logAudit } from "@/lib/audit-api";
 import { useAuth } from "@/hooks/useAuth";
 import { useCanEdit } from "@/hooks/useCanEdit";
@@ -204,6 +211,36 @@ export default function DeliveryChallanDetail() {
     if (!dcSourcesByItemId.has(s.item_id)) dcSourcesByItemId.set(s.item_id, []);
     dcSourcesByItemId.get(s.item_id)!.push(s);
   }
+
+  // Processor invoice status (job-work DCs only appear in the view). Hidden for
+  // cost-hidden roles, which therefore never fetch it.
+  const { data: invoiceStatusRows = [], error: invoiceStatusError } = useQuery({
+    queryKey: ["dc-invoice-statuses", [id]],
+    queryFn: () => fetchDcInvoiceStatuses([id!]),
+    enabled: !!id && !hideCosts,
+  });
+  const invoiceStatus = invoiceStatusRows[0]?.invoice_status;
+
+  // Actual billing per DC line (read-only; the DC itself stays the estimate).
+  // One batched read of each view per DC. The key starts with "dc-invoice-statuses"
+  // so saving/cancelling a processor invoice (which invalidates that key) refreshes it.
+  const { data: lineBilling, error: lineBillingError } = useQuery({
+    queryKey: ["dc-invoice-statuses", "lines", id],
+    queryFn: async () => {
+      const [lines, invoiceNos] = await Promise.all([
+        fetchDcLineEstimateVsActual(id!),
+        fetchDcLineInvoiceNumbers(id!),
+      ]);
+      return { lines, invoiceNos };
+    },
+    enabled: !!id && !hideCosts,
+  });
+  const billingByLine = new Map<string, DcLineEstimateVsActualRow>(
+    (lineBilling?.lines ?? []).map((r) => [r.dc_line_item_id, r]),
+  );
+  // DCs absent from the view (draft/cancelled, non job-work) get nothing extra.
+  const showBilling = !hideCosts && billingByLine.size > 0;
+  const BILLING_COLS = 5;
 
   const { data: processorPartiesData } = useQuery({
     queryKey: ['parties-processors'],
@@ -964,6 +1001,12 @@ export default function DeliveryChallanDetail() {
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-display font-bold font-mono text-foreground">{dc.dc_number.replace('/-', '-')}</h1>
           <span className={statusClass[dc.status] || "status-draft"}>{statusLabels[dc.status] || dc.status}</span>
+          {!hideCosts && <DcInvoiceStatusBadge status={invoiceStatus} />}
+          {!hideCosts && invoiceStatusError && (
+            <span className="text-xs text-red-600">
+              Could not load invoice status: {(invoiceStatusError as Error).message}
+            </span>
+          )}
           {(dc as any).currency && (dc as any).currency !== "INR" && (
             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/30">
               {(dc as any).currency}
@@ -1199,6 +1242,12 @@ export default function DeliveryChallanDetail() {
           </div>
         </div>
 
+        {!hideCosts && lineBillingError && (
+          <p className="text-xs text-red-600 print:hidden">
+            Could not load invoice billing for lines: {(lineBillingError as Error).message}
+          </p>
+        )}
+
         {/* Line Items Table */}
         <div className="overflow-x-auto rounded-lg border border-slate-200 po-section">
           <table className="w-full border-collapse text-sm po-line-items-table">
@@ -1214,8 +1263,15 @@ export default function DeliveryChallanDetail() {
                 {hasAltQty && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Alt. Unit</th>}
                 {hasQtyKgs && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty (KGS)</th>}
                 {hasQtySft && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty (SFT)</th>}
-                {!hideCosts && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Rate (₹)</th>}
-                {!hideCosts && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Amount (₹)</th>}
+                {!hideCosts && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">{showBilling ? <><span className="print:hidden">Est. Rate (₹)</span><span className="hidden print:inline">Rate (₹)</span></> : "Rate (₹)"}</th>}
+                {!hideCosts && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">{showBilling ? <><span className="print:hidden">Est. Amount (₹)</span><span className="hidden print:inline">Amount (₹)</span></> : "Amount (₹)"}</th>}
+                {showBilling && (
+                  <>
+                    {["Billed Qty", "Actual Rate (₹)", "Actual Amount (₹)", "Variance (₹)", "Invoice No"].map((h, i) => (
+                      <th key={h} className={`px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 print:hidden whitespace-nowrap ${i === 4 ? "text-left" : "text-right"}`}>{h}</th>
+                    ))}
+                  </>
+                )}
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Remarks</th>
                 {isReturnable && ["issued", "partially_returned"].includes(dc.status) && <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center print:hidden">Actions</th>}
               </tr>
@@ -1240,6 +1296,7 @@ export default function DeliveryChallanDetail() {
                   {hasQtySft && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{(item as any).qty_sft != null ? formatNumber((item as any).qty_sft) : "—"}</td>}
                   {!hideCosts && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatCurrency(item.rate || 0)}</td>}
                   {!hideCosts && <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-medium">{formatCurrency(item.amount || 0)}</td>}
+                  {showBilling && <BillingCells row={item.id ? billingByLine.get(item.id) : undefined} invoiceNos={item.id ? lineBilling?.invoiceNos[item.id] : undefined} />}
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left text-muted-foreground">{item.remarks || "—"}</td>
                   {isReturnable && ["issued", "partially_returned"].includes(dc.status) && (
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center print:hidden">
@@ -1252,7 +1309,7 @@ export default function DeliveryChallanDetail() {
                 </tr>
                 {canEditSource && item.id && !(item as any).job_card_id && itemTrackSourceById?.get(item.item_id ?? "") && (
                   <tr className="bg-slate-50/60 print:hidden">
-                    <td colSpan={screenColCount} className="px-4 py-1.5 border-b border-slate-100">
+                    <td colSpan={screenColCount + (showBilling ? BILLING_COLS : 0)} className="px-4 py-1.5 border-b border-slate-100">
                       <DcSourceLink
                         dcLineId={item.id}
                         itemLabel={item.description}
@@ -1275,6 +1332,7 @@ export default function DeliveryChallanDetail() {
                         )
                         .join(", ")}
                     </td>
+                    {showBilling && <td colSpan={BILLING_COLS} className="border-b border-slate-100 print:hidden" />}
                   </tr>
                 )}
                 {pos && (pos.consumed_in_weldment_qty > 0 || pos.pending_qty !== pos.sent_qty) && (
@@ -1293,6 +1351,7 @@ export default function DeliveryChallanDetail() {
                       )}
                       {" · "}Pending: <span className={`font-mono font-medium ${pos.pending_qty > 0 ? "text-amber-700" : "text-emerald-700"}`}>{formatNumber(pos.pending_qty)}</span>
                     </td>
+                    {showBilling && <td colSpan={BILLING_COLS} className="border-b border-slate-100 print:hidden" />}
                   </tr>
                 )}
                 </Fragment>
@@ -2029,5 +2088,48 @@ export default function DeliveryChallanDetail() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+const money = (n: number) => formatCurrency(n);
+
+// Screen-only cells (print:hidden) showing what processors actually billed for a
+// DC line. Never alters the DC's own rate/amount.
+function BillingCells({ row, invoiceNos }: { row?: DcLineEstimateVsActualRow; invoiceNos?: string[] }) {
+  const base = "px-3 py-2 text-sm text-slate-700 border-b border-slate-100 print:hidden";
+  const num = `${base} text-right tabular-nums font-mono`;
+  if (!row) {
+    return <>{[0, 1, 2, 3, 4].map((i) => <td key={i} className={base} />)}</>;
+  }
+  const billed = row.billed_qty;
+  const pending = billed <= 0;
+  const fully = !pending && (row.line_fully_billed ?? billed >= row.dc_qty);
+  const v = row.variance_amount;
+  const vClass = v > 0 ? "text-red-600 font-medium" : v < 0 ? "text-emerald-600 font-medium" : "text-slate-500";
+  return (
+    <>
+      <td className={`${num} min-w-[110px]`}>
+        {pending ? (
+          <span className="bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap font-sans">Invoice pending</span>
+        ) : fully ? (
+          formatNumber(billed)
+        ) : (
+          <div>
+            <div>{formatNumber(billed)} of {formatNumber(row.dc_qty)}</div>
+            <span className="bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap font-sans">Partly billed</span>
+          </div>
+        )}
+      </td>
+      <td className={num}>{pending || row.actual_rate_avg == null ? "—" : money(row.actual_rate_avg)}</td>
+      <td className={num}>{pending ? "—" : money(row.actual_taxable)}</td>
+      <td className={`${num} ${pending ? "" : vClass}`}>{pending ? "—" : `${v > 0 ? "+" : ""}${money(v)}`}</td>
+      <td className={`${base} text-left min-w-[110px]`}>
+        {invoiceNos && invoiceNos.length > 0 ? (
+          <Link to="/processor-invoices" className="text-primary hover:underline font-mono text-xs" onClick={(e) => e.stopPropagation()}>
+            {invoiceNos.join(", ")}
+          </Link>
+        ) : "—"}
+      </td>
+    </>
   );
 }

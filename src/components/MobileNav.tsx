@@ -34,11 +34,18 @@ import {
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { useCurrentRole } from "@/hooks/useRoleAccess";
+import type { AppRole } from "@/lib/role-access";
 
 // TODO: Add badge query for critical alerts (e.g. from reorder-api)
 // const criticalCount = 0;
 
-const MORE_GROUPS = [
+// Items with `allowedRoles` are shown only to those roles (same semantics as the
+// sidebar's NavItem.allowedRoles); items without it are shown to everyone.
+type MoreItem = { label: string; to: string; icon: typeof FileText; allowedRoles?: AppRole[] };
+type MoreGroup = { label: string; items: MoreItem[] };
+
+const MORE_GROUPS: MoreGroup[] = [
   {
     label: "DAILY WORK",
     items: [
@@ -103,6 +110,8 @@ const MORE_GROUPS = [
     items: [
       { label: "Vendor Scorecards", to: "/vendor-scorecards", icon: Star },
       { label: "GST Reports", to: "/gst-reports", icon: FileSpreadsheet },
+      { label: "Processor Invoices", to: "/processor-invoices", icon: FileText, allowedRoles: ['admin', 'finance'] },
+      { label: "Processor Invoice Reports", to: "/processor-invoice-reports", icon: BarChart3, allowedRoles: ['admin', 'finance'] },
       { label: "Open Items", to: "/open-items", icon: FileText },
       { label: "Reorder Alerts", to: "/reorder-intelligence", icon: TrendingDown },
       { label: "Reorder Rules", to: "/reorder-rules", icon: RotateCcw },
@@ -127,6 +136,7 @@ const MAIN_TABS = [
 export function MobileNav() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const location = useLocation();
+  const currentRole = useCurrentRole();
 
   const isActive = (to: string, end: boolean) => {
     if (end) return location.pathname === to;
@@ -186,7 +196,10 @@ export function MobileNav() {
           </SheetHeader>
 
           <div className="px-4 py-3 space-y-5">
-            {MORE_GROUPS.map((group) => (
+            {MORE_GROUPS.map((group) => ({
+              ...group,
+              items: group.items.filter((i) => !i.allowedRoles || i.allowedRoles.includes(currentRole)),
+            })).filter((group) => group.items.length > 0).map((group) => (
               <div key={group.label}>
                 <p className="text-[10px] uppercase tracking-widest font-semibold text-muted-foreground px-1 mb-1.5">
                   {group.label}
