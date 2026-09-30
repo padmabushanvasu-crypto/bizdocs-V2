@@ -1,13 +1,14 @@
-import { useState, Component, type ReactNode } from "react";
+import { useState, useEffect, Component, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { Truck, Plus, Search, Eye, Package, Clock, AlertTriangle, Download, Trash2, Lock, CheckCircle, XCircle } from "lucide-react";
+import { Truck, Plus, Search, Eye, Package, Clock, AlertTriangle, Download, Trash2, Lock, CheckCircle, XCircle, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { MetricCard } from "@/components/MetricCard";
 import {
   fetchDeliveryChallans,
@@ -433,6 +434,26 @@ function DeliveryChallansRegisterInner() {
     enabled: !access.hideCosts && visibleDcIds.length > 0,
   });
   const invoiceStatusByDc = new Map(invoiceStatuses.map((r) => [r.dc_id, r.invoice_status]));
+  const invoiceRowByDc = new Map(invoiceStatuses.map((r) => [r.dc_id, r]));
+
+  // "Record invoice" multi-select: admin/finance only, DCs still awaiting an invoice.
+  const canRecordInvoice = (role === "admin" || role === "finance") && !access.hideCosts;
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const isSelectable = (dcId: string) => {
+    const st = invoiceStatusByDc.get(dcId);
+    return st === "Invoice pending" || st === "Invoice partly received";
+  };
+  // The visible page/filter changed: drop the selection (party info is per page).
+  useEffect(() => { setSelected(new Set()); }, [filters]);
+  const selectedRows = [...selected].map((id) => invoiceRowByDc.get(id)).filter((r): r is NonNullable<typeof r> => !!r);
+  const selectedPartyIds = [...new Set(selectedRows.map((r) => r.party_id))];
+  const mixedProcessors = selectedPartyIds.length > 1;
+  const toggleSelected = (dcId: string, on: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(dcId); else next.delete(dcId);
+      return next;
+    });
 
   // Pending count for the tab badge (approvers only)
   const { data: pendingApprovalCount = 0 } = useQuery({
@@ -617,6 +638,27 @@ function DeliveryChallansRegisterInner() {
         />
       </div>
 
+      {canRecordInvoice && selected.size > 0 && (
+        <div className="sticky bottom-14 md:bottom-2 z-10 rounded-lg border border-slate-200 bg-white shadow-md px-4 py-3 flex flex-wrap items-center gap-3">
+          <span className="text-sm font-medium">{selected.size} DC{selected.size > 1 ? "s" : ""} selected</span>
+          {mixedProcessors && (
+            <span className="text-sm text-red-600">
+              Selected DCs belong to different processors ({[...new Set(selectedRows.map((r) => r.party_name ?? "—"))].join(", ")}). Select DCs of one processor to record an invoice.
+            </span>
+          )}
+          <div className="ml-auto flex gap-2">
+            <Button variant="outline" className="h-10 md:h-9" onClick={() => setSelected(new Set())}>Clear</Button>
+            <Button
+              className="h-10 md:h-9"
+              disabled={mixedProcessors || selectedPartyIds.length !== 1 || !selectedPartyIds[0]}
+              onClick={() => navigate(`/processor-invoices/new?party=${selectedPartyIds[0]}&dc=${[...selected].join(",")}`)}
+            >
+              <FileText className="h-4 w-4 mr-1" /> Record invoice
+            </Button>
+          </div>
+        </div>
+      )}
+
       {!access.hideCosts && invoiceStatusError && (
         <p className="text-xs text-red-600">
           Could not load invoice status: {(invoiceStatusError as Error).message}
@@ -629,6 +671,7 @@ function DeliveryChallansRegisterInner() {
           <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10">
               <tr>
+                {canRecordInvoice && <th className="px-3 py-2 bg-slate-50 border-b border-slate-200 w-10" />}
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">DC #</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Date</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Party</th>
@@ -643,11 +686,11 @@ function DeliveryChallansRegisterInner() {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={9} className="px-3 py-8 text-center text-sm text-slate-400">Loading...</td>
+                  <td colSpan={canRecordInvoice ? 10 : 9} className="px-3 py-8 text-center text-sm text-slate-400">Loading...</td>
                 </tr>
               ) : dcs.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-3 py-8 text-center text-sm text-slate-400">
+                  <td colSpan={canRecordInvoice ? 10 : 9} className="px-3 py-8 text-center text-sm text-slate-400">
                     <Truck className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
                     <p className="text-muted-foreground font-medium">No delivery challans yet</p>
                     <p className="text-sm text-muted-foreground">Create your first DC to get started</p>
@@ -668,6 +711,18 @@ function DeliveryChallansRegisterInner() {
                       className={`hover:bg-muted/50 cursor-pointer transition-colors ${overdue || rule45Status === "overdue" ? "bg-destructive/5" : ""} ${isDeleted ? "opacity-50" : ""}`}
                       onClick={() => !isDeleted && navigate(`/delivery-challans/${dc.id}`)}
                     >
+                      {canRecordInvoice && (
+                        <td className="px-3 py-2 border-b border-slate-100 text-center" onClick={(e) => e.stopPropagation()}>
+                          {isSelectable(dc.id) && (
+                            <Checkbox
+                              className="h-5 w-5"
+                              aria-label={`Select ${dc.dc_number}`}
+                              checked={selected.has(dc.id)}
+                              onCheckedChange={(v) => toggleSelected(dc.id, v === true)}
+                            />
+                          )}
+                        </td>
+                      )}
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium">{dc.dc_number}</td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                         {new Date(dc.dc_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
