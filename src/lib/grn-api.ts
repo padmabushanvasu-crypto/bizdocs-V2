@@ -1470,7 +1470,11 @@ export async function saveQualityStage(
       // The QC line UPDATE cascades to the DB-owned received_quantity recompute,
       // which can trip the PO/DC over-receipt guards. Surface a friendly message.
       const blob = `${error.message ?? ''} ${error.details ?? ''} ${error.hint ?? ''}`;
-      if (error.code === '23514' || /over.?receipt/i.test(blob)) {
+      // A return_to_vendor line's UPDATE can also be rejected by the rejected-hold
+      // trigger (rejected_qty reduced below units already sent/scrapped) — that
+      // message must reach the user verbatim, so 23514 is only rewritten for
+      // non-return_to_vendor lines.
+      if ((error.code === '23514' && line.disposition !== 'return_to_vendor') || /over.?receipt/i.test(blob)) {
         throw new Error('This change exceeds the ordered quantity for one or more lines. Reduce the accepted / conforming quantity, or ask Purchasing to increase the PO/DC.');
       }
       throw error;
@@ -1623,10 +1627,18 @@ export async function saveQualityStage(
       const oldDisp = opts?.isEdit ? (meta?.old_disposition ?? null) : null;
       const oldRejected = opts?.isEdit ? Number(meta?.old_rejected ?? 0) : 0;
 
-      // (a) scrap_register — always replace this line's GRN-rejection rows.
+      // return_to_vendor: the rejected-hold DB trigger owns the stock movement
+      // (rejected_hold bucket). No scrap_register row, no ledger leg, and no
+      // reversal of a prior return_to_vendor leg here — only the notification (c).
+
+      // (a) scrap_register — replace this line's GRN-rejection rows, but only when
+      // QC itself could have written one (scrap now or before). Otherwise leave the
+      // table alone so rows posted by rpc_scrap_nc_hold are never touched.
       try {
-        await (supabase as any).from('scrap_register')
-          .delete().eq('source', 'grn_rejection').eq('source_ref', line.id);
+        if (newDisp === 'scrap' || (meta?.old_disposition ?? null) === 'scrap') {
+          await (supabase as any).from('scrap_register')
+            .delete().eq('source', 'grn_rejection').eq('source_ref', line.id);
+        }
         if (newDisp === 'scrap' && newRejected > 0 && itemId) {
           await (supabase as any).from('scrap_register').insert({
             company_id: rejectCompanyId,
@@ -1649,37 +1661,38 @@ export async function saveQualityStage(
 
       // (b) ledger — reverse the prior reject leg (edit only), then post the new one.
       // Skip entirely on a no-op resave (disposition AND rejected qty unchanged) —
-      // mirrors the accepted side's "no leg when Δ=0". scrap_register replace above
-      // stays unconditional (harmless).
+      // mirrors the accepted side's "no leg when Δ=0".
       const rejectChanged = !opts?.isEdit || oldDisp !== newDisp || oldRejected !== newRejected;
       try {
-        if (rejectChanged && opts?.isEdit && oldRejected > 0 && (oldDisp === 'scrap' || oldDisp === 'return_to_vendor')) {
+        if (rejectChanged && opts?.isEdit && oldRejected > 0 && oldDisp === 'scrap') {
           await addStockLedgerEntry({
             item_id: itemId, item_code: null, item_description: desc,
             transaction_date: today,
-            transaction_type: oldDisp === 'scrap' ? 'rejection_writeoff' : 'vendor_return',
+            transaction_type: 'rejection_writeoff',
             qty_in: oldRejected, qty_out: 0, balance_qty: 0, unit_cost: 0, total_value: 0,
             reference_type: 'grn', reference_id: grnId, reference_number: rejectHdr?.grn_number ?? null,
-            notes: `QC edit — reverse prior ${oldDisp === 'scrap' ? 'scrap' : 'vendor return'} (${oldRejected})`,
+            notes: `QC edit — reverse prior scrap (${oldRejected})`,
             created_by: inspectedBy,
-            from_state: oldDisp === 'scrap' ? STOCK_STATE.SCRAPPED : STOCK_STATE.RETURNED_TO_VENDOR,
+            from_state: STOCK_STATE.SCRAPPED,
             to_state: rejectSource,
           });
         }
-        if (rejectChanged && newRejected > 0 && (newDisp === 'scrap' || newDisp === 'return_to_vendor')) {
+        if (rejectChanged && newRejected > 0 && newDisp === 'scrap') {
           await addStockLedgerEntry({
             item_id: itemId, item_code: null, item_description: desc,
             transaction_date: today,
-            transaction_type: newDisp === 'scrap' ? 'rejection_writeoff' : 'vendor_return',
+            transaction_type: 'rejection_writeoff',
             qty_in: 0, qty_out: newRejected, balance_qty: 0, unit_cost: 0, total_value: 0,
             reference_type: 'grn', reference_id: grnId, reference_number: rejectHdr?.grn_number ?? null,
-            notes: newDisp === 'scrap' ? `QC reject — scrap (${newRejected})` : `QC reject — return to vendor (${newRejected})`,
+            notes: `QC reject — scrap (${newRejected})`,
             created_by: inspectedBy,
             from_state: rejectSource,
-            to_state: newDisp === 'scrap' ? STOCK_STATE.SCRAPPED : STOCK_STATE.RETURNED_TO_VENDOR,
+            to_state: STOCK_STATE.SCRAPPED,
           });
         }
         // rework_our_scope → tracked via rejection_action only; no ledger leg (A1 stub).
+        // return_to_vendor → no leg here (and no reversal of a prior one): the
+        // rejected-hold DB trigger owns that stock movement.
       } catch (legErr) {
         console.error(`[GRN] reject ledger leg failed for line ${line.id} (non-fatal):`, legErr);
         stockWarnings.push(`${desc ?? line.id} — reject not ledgered`);
