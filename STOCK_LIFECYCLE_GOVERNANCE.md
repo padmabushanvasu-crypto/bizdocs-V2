@@ -117,8 +117,8 @@ Both live in `assembly_work_orders`, discriminated by `awo_type`. The type decid
 2. **Material issue** via MIR (`rpc_confirm_material_issue` / `rpc_confirm_mir`): `assembly_issue`, `free → subassembly_wip` (or `in_fg_wip` per `awo_type`), advisory-locked per item, ledger-first, idempotent under re-submit, **cumulative-target contract** (partial issues accrue toward BOM requirement; the storekeeper's "amount to issue now" field converts to a cumulative target internally).
 3. BOM is the requirement source (`bom_lines`, fully populated quantities). **Open question, never verified: whether MIR snapshots the BOM at creation or reads it live** — treat any change touching this as requiring that discovery first.
 4. **Return / scrap** via `rpc_return_or_scrap_wip` / `returnAssemblyComponents`: capped at `issued − returned − damage`, tracks `returned_qty`, posts `assembly_return` (WIP → free) or `scrap_write_off` (WIP → scrap), bucket chosen by `awo_type`, ledger-first, idempotent.
-5. **Acceptance** via `rpc_accept_awo_and_produce`: consumes components (`assembly_consumption`, WIP → `consumed`) and produces output (`assembly_output`, `null → free` for sub-assemblies, `null → in_fg_ready` for FGs). Known parked hardening: it still contains `GREATEST(0,...)` clamping that must become `RAISE EXCEPTION`.
-6. **Deletion** via `rpc_delete_awo`: state-machine-aware soft delete (`deleted_at`). Draft = simple delete; in-progress/awaiting-store = WIP return per disposition; **completed = component reversal via `assembly_return` with `consumed → free`** and output reversal. Known frontend gap: the delete dialog only renders the disposition radio for `in_progress`/`awaiting_store` and sends `p_wip_disposition = null` for completed WOs, bypassing the corrected RPC path. All AWO list/stat queries must filter `deleted_at IS NULL`.
+5. **Acceptance** via `rpc_accept_awo_and_produce`: consumes components (`assembly_consumption`, WIP → `consumed`) and produces output (`assembly_output`, `null → free` for sub-assemblies, `null → in_fg_ready` for FGs). Verified live 2026-10-03: no silent clamping — it raises if the WIP bucket is short of the consumable quantity (WIP/ledger drift).
+6. **Deletion** via `rpc_delete_awo`: state-machine-aware soft delete (`deleted_at`). Draft = simple delete; in-progress/awaiting-store = WIP return per disposition; **completed = component reversal via `assembly_return` with `consumed → free`** and output reversal. The delete dialog sends `reverseOutput=true` for completed WOs and offers a Keep/Return choice for the consumed components (default Keep = components stay consumed; Return posts `consumed → free`). All AWO list/stat queries must filter `deleted_at IS NULL`.
 
 ### Stage E — Finished Goods, Invoice, Dispatch (the least-built stage)
 
@@ -128,7 +128,7 @@ Confirmed decisions:
 
 1. Completed FGs sit in `in_fg_ready` on the floor (serialization, FAT certificates, Ready-to-Dispatch queue are tracking layers).
 2. **The invoice is the consumption event.** `invoice_dispatch`, `in_fg_ready → dispatched`. Backflush — the automatic downward consumption of the model's BOM — triggers **on invoice only**, never on DC-out, never on dispatch-record creation.
-3. **Double-deduction landmine (unresolved):** discovery found both the invoice path and `dispatch-api`'s `recordDispatch` deducting the model under `invoice_dispatch` on different buckets. Before any dispatch/backflush work, confirm which is the real "model leaves" event and that both never fire for one shipment.
+3. **Double-deduction landmine (resolved 2026-10-03):** the invoice path and `dispatch-api`'s `confirmDispatch` both deducted under `invoice_dispatch`. Decision (Vasu): the **Dispatch Record is the single "goods leave" event** for finished goods (`in_fg_ready → dispatched`) and resale items (`free → dispatched`, `items.is_resale`). `issueInvoice` no longer touches stock. Backflush design below is still open and must hang off the Dispatch Record, not the invoice.
 4. **Build-to-stock vs assemble-to-order decides backflush depth.** If the model was built via an FG AWO, its sub-assemblies were already consumed at acceptance — backflushing them again at invoice is double consumption. The staged-movement model Vasu described (free → sub-WIP → sub-assembly → FG-WIP → FG-ready → dispatched) implies consumption happens at each build step, and the invoice moves only the finished model out. Backflush must **complement** that movement, never re-run it.
 
 ---
@@ -233,7 +233,7 @@ Each of these is known, parked, and awaiting its own dedicated session. Encounte
 - **GRN-1 / GRN-245 (MS Bright Bar, 54 KGS)**: store-confirmed but never posted; backfill teed up, not executed.
 - **V-item family** (V869, V876, V904, V907 A, V923 A) and parked dedup clusters (E98, E277, E106, E119, E309, E310, ~23 others): duplicate rows with conflicting stock.
 - **INS-3 sheet**: 71 items absent from items master.
-- **`rpc_accept_awo_and_produce`** silent clamping; **`updateStockBucket` → `rpc_increment_stock_bucket`** uncommitted; **unique `item_code` index** unapplied; **stock-alerts pagination** unpatched; **`min_stock` vs `min_stock_override`** mapping; **multi-batch DC**; **weldment pool** (designed in `SUBSTORE_ARCHITECTURE.md`, blocked on client mapping sheet); **invoice-vs-dispatch double deduction** (§2 Stage E).
+- **`updateStockBucket` → `rpc_increment_stock_bucket`** uncommitted; **unique `item_code` index** unapplied; **stock-alerts pagination** unpatched; **`min_stock` vs `min_stock_override`** mapping; **multi-batch DC**; **weldment pool** (designed in `SUBSTORE_ARCHITECTURE.md`, blocked on client mapping sheet).
 
 ---
 
