@@ -8,7 +8,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { LogOut, Settings, User, LayoutDashboard, KeyRound, Sun, Moon } from "lucide-react";
+import { LogOut, Settings, User, LayoutDashboard, KeyRound, Sun, Moon, Search } from "lucide-react";
+import { GlobalSearch, OPEN_GLOBAL_SEARCH_EVENT } from "@/components/GlobalSearch";
 import { useTheme } from "@/hooks/useTheme";
 import { ChangePasswordDialog } from "@/components/ChangePasswordDialog";
 import { FOCUSED_ROLES, FOCUSED_ROLE_REDIRECT, ROLE_LABELS } from "@/lib/roles";
@@ -64,6 +65,7 @@ export function AppLayout() {
 
   return (
     <SidebarProvider>
+      <GlobalSearch />
       <div className="h-screen flex w-full overflow-hidden">
         {!isFocused && (
           <div className="hidden md:block print:hidden">
@@ -87,6 +89,16 @@ export function AppLayout() {
                 </div>
                 <span className="font-bold text-foreground" style={{ letterSpacing: '-0.3px' }}>BizDocs</span>
               </div>
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new Event(OPEN_GLOBAL_SEARCH_EVENT))}
+                className="flex items-center gap-2 h-8 rounded-md border border-border bg-background px-2.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                title="Search everything (Ctrl K)"
+              >
+                <Search className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Search…</span>
+                <kbd className="hidden md:inline rounded border border-border px-1 text-[10px] font-mono">Ctrl K</kbd>
+              </button>
               {isFocused && (
                 <span className="text-xs text-muted-foreground border border-border rounded px-1.5 py-0.5 hidden md:inline">
                   {ROLE_LABELS[role as AppRole] ?? role}
