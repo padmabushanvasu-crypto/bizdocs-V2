@@ -1,8 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
-import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
-import { updateStockBucket } from "@/lib/items-api";
-import { STOCK_STATE } from "@/lib/stock-states";
 
 export interface InvoiceLineItem {
   id?: string;
@@ -118,81 +115,11 @@ export async function issueInvoice(id: string): Promise<{ unresolvedWarnings: st
   const { error } = await supabase.from("invoices").update({ status: "sent", issued_at: new Date().toISOString() }).eq("id", id);
   if (error) throw error;
 
-  // Stock dispatch: deduct each line item from inventory
-  const companyId = await getCompanyId();
-  const today = new Date().toISOString().split("T")[0];
-  const { invoice, lineItems } = await fetchInvoice(id);
-
-  // Lines that carry a real quantity but cannot be relieved (no drawing number,
-  // or no item matches the drawing) are collected and surfaced — never skipped
-  // silently, which previously let an invoiced unit leave no stock trail.
-  const unresolvedWarnings: string[] = [];
-
-  for (const li of lineItems) {
-    const line = li as any;
-    const qty: number = line.quantity ?? 0;
-    // Zero-qty lines relieve nothing — a legitimate no-op, not an unresolved line.
-    if (qty <= 0) continue;
-    const lineLabel = line.description || `Line ${line.serial_number ?? "?"}`;
-    // drawing_number is the reliable item lookup key; a line without one cannot
-    // be relieved from stock.
-    if (!line.drawing_number) {
-      unresolvedWarnings.push(`${lineLabel} — no drawing number; stock NOT relieved`);
-      continue;
-    }
-
-    const { data: itemRecord } = await supabase
-      .from("items")
-      .select("id, item_code, description, current_stock, item_type")
-      .eq("drawing_revision", line.drawing_number)
-      .eq("company_id", companyId)
-      .maybeSingle();
-
-    if (!itemRecord) {
-      unresolvedWarnings.push(`${lineLabel} (drawing ${line.drawing_number}) — no matching item; stock NOT relieved`);
-      continue;
-    }
-    const rec = itemRecord as any;
-    // Route relief by item type: a finished good was produced into stock_in_fg_ready
-    // (production-api acceptAssemblyWorkOrder) and is relieved from there, mirroring
-    // dispatch-api. Everything else relieves stock_free as before. 'product' is
-    // treated as a finished good to match dispatch's FG set (dispatch-api.ts).
-    const isFinishedGood = rec.item_type === "finished_good" || rec.item_type === "product";
-    const bucket = isFinishedGood ? "in_fg_ready" : "free";
-    const fromState = isFinishedGood ? STOCK_STATE.FG_READY : STOCK_STATE.FREE;
-    const newStock = Math.max(0, (rec.current_stock ?? 0) - qty);
-    // Ledger-first per iteration (Scope 1). If a downstream line's ledger
-    // insert fails, earlier lines stay committed and the operator sees the
-    // error mid-loop; transactional all-or-nothing is Scope 2.
-    await addStockLedgerEntry({
-      item_id: rec.id,
-      item_code: rec.item_code,
-      item_description: rec.description,
-      transaction_date: today,
-      transaction_type: "invoice_dispatch",
-      qty_in: 0,
-      qty_out: qty,
-      balance_qty: newStock,
-      unit_cost: line.unit_price ?? 0,
-      total_value: qty * (line.unit_price ?? 0),
-      reference_type: "invoice",
-      reference_id: id,
-      reference_number: (invoice as any).invoice_number,
-      notes: `Invoice dispatch: ${(invoice as any).invoice_number}`,
-      created_by: null,
-      from_state: fromState,
-      to_state: STOCK_STATE.DISPATCHED,
-    });
-    // current_stock mirrors stock_free only. Keep the legacy sync for free-relieved
-    // items; for finished goods, updateStockBucket re-syncs current_stock=stock_free
-    // itself, so touching it here would wrongly decrement it.
-    if (!isFinishedGood) {
-      await supabase.from("items").update({ current_stock: newStock } as any).eq("id", rec.id);
-    }
-    await updateStockBucket(rec.id, bucket, -qty);
-  }
-
-  return { unresolvedWarnings };
+  // Stock is NOT relieved here. The Dispatch Record (dispatch-api confirmDispatch)
+  // is the single "goods leave" event for finished goods and resale items; relieving
+  // stock on invoice as well double-deducted one shipment (STOCK_LIFECYCLE_GOVERNANCE.md,
+  // Stage E). Return shape is kept so callers are unchanged.
+  return { unresolvedWarnings: [] };
 }
 
 export async function cancelInvoice(id: string, reason: string) {
