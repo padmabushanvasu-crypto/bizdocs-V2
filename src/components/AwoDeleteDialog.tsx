@@ -41,6 +41,9 @@ export function AwoDeleteDialog({ awoId, open, onOpenChange, onDeleted }: Props)
   const [wipDisposition, setWipDisposition] = useState<"" | "return" | "scrap">("");
   const [notes, setNotes] = useState("");
   const [confirmReverse, setConfirmReverse] = useState(false);
+  // Completed WO only: what happens to the components that were consumed.
+  // Default "keep" preserves the previous behaviour (components stay consumed).
+  const [componentDisposition, setComponentDisposition] = useState<"keep" | "return">("keep");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const { data: awo, isLoading } = useQuery({
@@ -55,6 +58,7 @@ export function AwoDeleteDialog({ awoId, open, onOpenChange, onDeleted }: Props)
       setWipDisposition("");
       setNotes("");
       setConfirmReverse(false);
+      setComponentDisposition("keep");
       setErrorMsg(null);
     }
   }, [open, awoId]);
@@ -77,7 +81,11 @@ export function AwoDeleteDialog({ awoId, open, onOpenChange, onDeleted }: Props)
   const mutation = useMutation({
     mutationFn: () =>
       deleteAssemblyWorkOrder(awoId!, {
-        wipDisposition: needsWipChoice ? (wipDisposition as "return" | "scrap") : undefined,
+        wipDisposition: needsWipChoice
+          ? (wipDisposition as "return" | "scrap")
+          : isComplete && componentDisposition === "return"
+          ? "return"
+          : undefined,
         reverseOutput: isComplete ? true : undefined,
         notes: notes.trim() || undefined,
       }),
@@ -89,6 +97,10 @@ export function AwoDeleteDialog({ awoId, open, onOpenChange, onDeleted }: Props)
             ? "Outstanding components returned to store."
             : res.disposition === "scrap"
             ? "Outstanding components scrapped."
+            : res.disposition === "reversed_output+returned_components"
+            ? "Produced stock reversed and components returned to store."
+            : res.disposition === "reversed_output"
+            ? "Produced stock reversed. Components stay consumed."
             : undefined,
       });
       onOpenChange(false);
@@ -177,6 +189,23 @@ export function AwoDeleteDialog({ awoId, open, onOpenChange, onDeleted }: Props)
                     stock has already moved on, the delete is blocked and nothing changes.
                   </span>
                 </div>
+                <RadioGroup
+                  value={componentDisposition}
+                  onValueChange={(v) => setComponentDisposition(v as "keep" | "return")}
+                >
+                  <div className="flex items-center gap-2">
+                    <RadioGroupItem value="keep" id="comp-keep" />
+                    <Label htmlFor="comp-keep" className="text-sm">
+                      Components stay consumed (the unit was really built)
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <RadioGroupItem value="return" id="comp-return" />
+                    <Label htmlFor="comp-return" className="text-sm">
+                      Return components to store (accepted by mistake)
+                    </Label>
+                  </div>
+                </RadioGroup>
                 <div className="flex items-center gap-2">
                   <Checkbox
                     id="confirm-reverse"
