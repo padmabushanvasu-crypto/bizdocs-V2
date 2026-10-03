@@ -226,7 +226,7 @@ function StockRegisterInner() {
   const urlFilter = urlParams.get("filter");
   const urlType = urlParams.get("type");
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => new URLSearchParams(location.search).get("q") ?? "");
   const [availability, setAvailability] = useState<AvailabilityFilter>("all");
   const [alertFilter, setAlertFilter] = useState<AlertFilter>(() => {
     if (
