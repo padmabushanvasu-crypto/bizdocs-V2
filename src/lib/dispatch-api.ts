@@ -61,6 +61,7 @@ export interface ReadyToDispatchUnit {
   item_id: string | null;
   item_code: string | null;
   item_description: string | null;
+  drawing_number: string | null;
   assembly_wo_ref: string | null;
   fat_completed_at: string | null;
   days_since_fat: number;
@@ -72,6 +73,7 @@ export interface FinishedGoodItem {
   item_code: string;
   description: string;
   unit: string;
+  drawing_number?: string | null;
   /** Sellable quantity: stock_in_fg_ready for finished goods, stock_free for resale items. */
   stock_in_fg_ready: number;
   /** Bought-out item received, QC'd and sold as-is (items.is_resale). Relieved from stock_free. */
@@ -319,7 +321,7 @@ export async function fetchFinishedGoodItems(): Promise<FinishedGoodItem[]> {
 
   const { data, error } = await (supabase as any)
     .from("items")
-    .select("id, item_code, description, unit, stock_in_fg_ready")
+    .select("id, item_code, description, unit, drawing_number, stock_in_fg_ready")
     .eq("company_id", companyId)
     .in("item_type", ["finished_good", "product"])
     .gt("stock_in_fg_ready", 0)
@@ -331,13 +333,14 @@ export async function fetchFinishedGoodItems(): Promise<FinishedGoodItem[]> {
     item_code: i.item_code ?? "",
     description: i.description ?? "",
     unit: i.unit ?? "NOS",
+    drawing_number: i.drawing_number ?? null,
     stock_in_fg_ready: Number(i.stock_in_fg_ready ?? 0),
   }));
 
   // Resale items: bought out, QC'd, sold as-is. Available = stock_free.
   const { data: resaleData, error: resaleError } = await (supabase as any)
     .from("items")
-    .select("id, item_code, description, unit, stock_free")
+    .select("id, item_code, description, unit, drawing_number, stock_free")
     .eq("company_id", companyId)
     .eq("is_resale", true)
     .eq("status", "active")
@@ -350,6 +353,7 @@ export async function fetchFinishedGoodItems(): Promise<FinishedGoodItem[]> {
     item_code: i.item_code ?? "",
     description: i.description ?? "",
     unit: i.unit ?? "NOS",
+    drawing_number: i.drawing_number ?? null,
     stock_in_fg_ready: Number(i.stock_free ?? 0),
     is_resale: true,
   }));
@@ -433,16 +437,20 @@ export async function fetchReadyToDispatch(): Promise<ReadyToDispatchUnit[]> {
 
   // Fetch item descriptions for all unique item_ids
   const itemIds = [...new Set((serials as any[]).map((s: any) => s.item_id).filter(Boolean))] as string[];
-  const itemMap: Record<string, { item_code: string; description: string }> = {};
+  const itemMap: Record<string, { item_code: string; description: string; drawing_number: string | null }> = {};
 
   if (itemIds.length > 0) {
     const { data: itemData } = await supabase
       .from("items")
-      .select("id, item_code, description")
+      .select("id, item_code, description, drawing_number, drawing_revision")
       .in("id", itemIds);
 
     for (const item of itemData ?? []) {
-      itemMap[(item as any).id] = { item_code: (item as any).item_code, description: (item as any).description };
+      itemMap[(item as any).id] = {
+        item_code: (item as any).item_code,
+        description: (item as any).description,
+        drawing_number: (item as any).drawing_number ?? (item as any).drawing_revision ?? null,
+      };
     }
   }
 
@@ -459,6 +467,7 @@ export async function fetchReadyToDispatch(): Promise<ReadyToDispatchUnit[]> {
       item_id: s.item_id ?? null,
       item_code: s.item_code ?? itemInfo?.item_code ?? null,
       item_description: s.item_description ?? itemInfo?.description ?? null,
+      drawing_number: itemInfo?.drawing_number ?? null,
       assembly_wo_ref: s.assembly_order_id ?? null,
       fat_completed_at: s.fat_completed_at ?? null,
       days_since_fat: daysSinceFat,

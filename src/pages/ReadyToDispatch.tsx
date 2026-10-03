@@ -1,6 +1,8 @@
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { CheckCircle, Package } from "lucide-react";
+import { CheckCircle, Package, Search } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { fetchReadyToDispatch } from "@/lib/dispatch-api";
@@ -15,11 +17,25 @@ function daysBadge(days: number) {
 export default function ReadyToDispatch() {
   const navigate = useNavigate();
 
-  const { data: units = [], isLoading } = useQuery({
+  const [search, setSearch] = useState("");
+
+  const { data: allUnits = [], isLoading } = useQuery({
     queryKey: ["ready-to-dispatch"],
     queryFn: fetchReadyToDispatch,
     staleTime: 30_000,
   });
+
+  // Every word must match somewhere (serial, item code, description, drawing no.),
+  // case-insensitive and ignoring punctuation, so "11kv 17 5918" narrows as you type.
+  const units = useMemo(() => {
+    const norm = (v: string | null | undefined) => (v ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ");
+    const tokens = norm(search).split(" ").filter(Boolean);
+    if (tokens.length === 0) return allUnits;
+    return allUnits.filter((u) => {
+      const hay = norm(`${u.serial_number} ${u.item_code} ${u.item_description} ${u.drawing_number}`);
+      return tokens.every((t) => hay.includes(t));
+    });
+  }, [allUnits, search]);
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-6xl mx-auto">
@@ -38,9 +54,22 @@ export default function ReadyToDispatch() {
       {!isLoading && (
         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-50 border border-green-200">
           <Package className="h-4 w-4 text-green-600" />
-          <span className="text-sm font-medium text-green-700">{units.length} units ready</span>
+          <span className="text-sm font-medium text-green-700">
+            {units.length === allUnits.length ? `${units.length} units ready` : `${units.length} of ${allUnits.length} units`}
+          </span>
         </div>
       )}
+
+      {/* Search */}
+      <div className="relative max-w-sm">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+        <Input
+          className="pl-8"
+          placeholder="Search serial, item, drawing no..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
 
       {/* Table */}
       {isLoading ? (
@@ -48,9 +77,11 @@ export default function ReadyToDispatch() {
       ) : units.length === 0 ? (
         <div className="text-center py-16 text-slate-400">
           <CheckCircle className="h-10 w-10 mx-auto mb-3 opacity-30" />
-          <p className="font-medium">No units ready to dispatch</p>
+          <p className="font-medium">{allUnits.length > 0 ? "No units match your search" : "No units ready to dispatch"}</p>
           <p className="text-sm mt-1 max-w-sm mx-auto">
-            Complete Assembly Work Orders and FAT to see units here.
+            {allUnits.length > 0
+              ? "Try fewer words or a different drawing number."
+              : "Complete Assembly Work Orders and FAT to see units here."}
           </p>
         </div>
       ) : (
@@ -59,6 +90,7 @@ export default function ReadyToDispatch() {
             <thead className="sticky top-0 z-10">
               <tr>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Serial Number</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Drawing No.</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">FAT Date</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Days Since FAT</th>
@@ -69,6 +101,7 @@ export default function ReadyToDispatch() {
               {units.map((unit) => (
                 <tr key={unit.id} className="hover:bg-slate-50 transition-colors">
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium">{unit.serial_number}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{unit.drawing_number ?? "—"}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                     <div className="font-medium text-slate-700">{unit.item_code ?? "—"}</div>
                     {unit.item_description && (

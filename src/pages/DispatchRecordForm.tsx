@@ -574,13 +574,16 @@ export default function DispatchRecordForm() {
                           {fgItems.map((fg) => (
                             <CommandItem
                               key={fg.id}
-                              value={`${fg.item_code} ${fg.description}`}
+                              value={`${fg.item_code} ${fg.description} ${fg.drawing_number ?? ""}`}
                               onSelect={() => selectItemForLine(index, fg.id)}
                             >
                               <div className="flex flex-col">
                                 <span className="text-sm">
                                   <span className="font-mono font-medium">{fg.item_code}</span>
                                   <span className="text-muted-foreground"> — {fg.description}</span>
+                                  {fg.drawing_number && (
+                                    <span className="ml-2 font-mono text-xs text-muted-foreground">Dwg {fg.drawing_number}</span>
+                                  )}
                                   {fg.is_resale && (
                                     <span className="ml-2 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">Resale</span>
                                   )}
