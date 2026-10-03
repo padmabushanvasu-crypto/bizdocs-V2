@@ -55,18 +55,6 @@ export interface DispatchRecordItem {
   created_at: string;
 }
 
-export interface ReadyToDispatchUnit {
-  id: string; // serial_number table id
-  serial_number: string;
-  item_id: string | null;
-  item_code: string | null;
-  item_description: string | null;
-  drawing_number: string | null;
-  assembly_wo_ref: string | null;
-  fat_completed_at: string | null;
-  days_since_fat: number;
-  status: string;
-}
 
 export interface FinishedGoodItem {
   id: string;
@@ -327,7 +315,7 @@ export async function fetchFinishedGoodItems(): Promise<FinishedGoodItem[]> {
     .gt("stock_in_fg_ready", 0)
     .order("item_code");
 
-  if (error) return [];
+  if (error) throw error;
   const finished: FinishedGoodItem[] = ((data ?? []) as any[]).map((i) => ({
     id: i.id,
     item_code: i.item_code ?? "",
@@ -408,70 +396,24 @@ export async function fetchDispatchStats(): Promise<{
       .eq("status", "delivered")
       .gte("delivered_at", startOfMonth),
     (supabase as any)
-      .from("serial_numbers")
-      .select("id", { count: "exact", head: true })
+      .from("items")
+      .select("stock_in_fg_ready")
       .eq("company_id", companyId)
-      .eq("status", "in_stock"),
+      .in("item_type", ["finished_good", "product"])
+      .gt("stock_in_fg_ready", 0),
   ]);
+  if (readyRes.error) throw readyRes.error;
+  // Ready to dispatch = finished-good units in stock (stock_in_fg_ready), the same
+  // bucket Dispatch Record confirm deducts — not serial_numbers rows.
+  const readyUnits = ((readyRes.data ?? []) as any[]).reduce(
+    (sum, r) => sum + Number(r.stock_in_fg_ready ?? 0),
+    0
+  );
 
   return {
     draft: draftRes.count ?? 0,
     dispatched: dispatchedRes.count ?? 0,
     delivered_this_month: deliveredRes.count ?? 0,
-    ready_to_dispatch: readyRes.count ?? 0,
+    ready_to_dispatch: readyUnits,
   };
-}
-
-export async function fetchReadyToDispatch(): Promise<ReadyToDispatchUnit[]> {
-  const companyId = await getCompanyId();
-  if (!companyId) return [];
-
-  const { data: serials, error } = await (supabase as any)
-    .from("serial_numbers")
-    .select("*")
-    .eq("company_id", companyId)
-    .eq("status", "in_stock")
-    .order("fat_completed_at", { ascending: true });
-
-  if (error || !serials) return [];
-
-  // Fetch item descriptions for all unique item_ids
-  const itemIds = [...new Set((serials as any[]).map((s: any) => s.item_id).filter(Boolean))] as string[];
-  const itemMap: Record<string, { item_code: string; description: string; drawing_number: string | null }> = {};
-
-  if (itemIds.length > 0) {
-    const { data: itemData } = await supabase
-      .from("items")
-      .select("id, item_code, description, drawing_number, drawing_revision")
-      .in("id", itemIds);
-
-    for (const item of itemData ?? []) {
-      itemMap[(item as any).id] = {
-        item_code: (item as any).item_code,
-        description: (item as any).description,
-        drawing_number: (item as any).drawing_number ?? (item as any).drawing_revision ?? null,
-      };
-    }
-  }
-
-  const now = new Date();
-
-  return (serials as any[]).map((s: any) => {
-    const fatAt = s.fat_completed_at ? new Date(s.fat_completed_at) : null;
-    const daysSinceFat = fatAt ? Math.floor((now.getTime() - fatAt.getTime()) / (1000 * 60 * 60 * 24)) : 0;
-    const itemInfo = s.item_id ? itemMap[s.item_id] : null;
-
-    return {
-      id: s.id,
-      serial_number: s.serial_number,
-      item_id: s.item_id ?? null,
-      item_code: s.item_code ?? itemInfo?.item_code ?? null,
-      item_description: s.item_description ?? itemInfo?.description ?? null,
-      drawing_number: itemInfo?.drawing_number ?? null,
-      assembly_wo_ref: s.assembly_order_id ?? null,
-      fat_completed_at: s.fat_completed_at ?? null,
-      days_since_fat: daysSinceFat,
-      status: s.status,
-    } as ReadyToDispatchUnit;
-  });
 }
