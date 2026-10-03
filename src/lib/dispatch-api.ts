@@ -313,6 +313,36 @@ export async function confirmDispatch(id: string): Promise<void> {
   if (error) throw error;
 }
 
+/**
+ * Reopen a confirmed (dispatched/delivered) record back to draft, reversing its
+ * stock movement atomically (rpc_reverse_dispatch_record). Returns how many item
+ * lines had stock returned; 0 means no ledger entries existed to reverse.
+ */
+export async function reopenDispatchRecord(id: string): Promise<{ reversedLines: number }> {
+  return callReverseDispatch(id, false);
+}
+
+/**
+ * Delete a dispatch record. Drafts are simply removed; confirmed records have
+ * their stock movement reversed first, in the same database transaction.
+ */
+export async function deleteDispatchRecord(id: string): Promise<{ reversedLines: number }> {
+  return callReverseDispatch(id, true);
+}
+
+async function callReverseDispatch(id: string, del: boolean): Promise<{ reversedLines: number }> {
+  const companyId = await getCompanyId();
+  if (!companyId) throw new Error("Not authenticated");
+  const { data, error } = await (supabase as any).rpc("rpc_reverse_dispatch_record", {
+    p_company_id: companyId,
+    p_dr_id: id,
+    p_delete: del,
+  });
+  if (error) throw new Error(error.message);
+  const row = Array.isArray(data) ? (data[0] ?? {}) : (data ?? {});
+  return { reversedLines: Number((row as any).reversed_lines ?? 0) };
+}
+
 export async function fetchFinishedGoodItems(): Promise<FinishedGoodItem[]> {
   const companyId = await getCompanyId();
   if (!companyId) return [];

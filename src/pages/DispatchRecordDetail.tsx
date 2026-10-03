@@ -1,3 +1,4 @@
+import { DispatchRecordActions } from "@/components/DispatchRecordActions";
 import { useParams, useNavigate } from "react-router-dom";
 import { printWithLightMode } from "@/lib/print-utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -95,11 +96,14 @@ export default function DispatchRecordDetail() {
 
         {/* Action buttons */}
         <div className="flex items-center gap-2 flex-wrap">
+          <DispatchRecordActions
+            id={dr.id}
+            drNumber={dr.dr_number}
+            status={dr.status}
+            onDeleted={() => navigate("/dispatch-records")}
+          />
           {dr.status === "draft" && (
             <>
-              <Button variant="outline" onClick={() => navigate(`/dispatch-records/${dr.id}/edit`)}>
-                Edit
-              </Button>
               <Button
                 disabled={confirmMutation.isPending}
                 onClick={() => confirmMutation.mutate()}
