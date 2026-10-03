@@ -581,6 +581,9 @@ export default function DispatchRecordForm() {
                                 <span className="text-sm">
                                   <span className="font-mono font-medium">{fg.item_code}</span>
                                   <span className="text-muted-foreground"> — {fg.description}</span>
+                                  {fg.is_resale && (
+                                    <span className="ml-2 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">Resale</span>
+                                  )}
                                 </span>
                                 <span className="text-xs text-emerald-600 dark:text-emerald-400">
                                   Available: {fg.stock_in_fg_ready} {fg.unit}

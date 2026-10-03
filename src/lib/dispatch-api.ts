@@ -72,7 +72,10 @@ export interface FinishedGoodItem {
   item_code: string;
   description: string;
   unit: string;
+  /** Sellable quantity: stock_in_fg_ready for finished goods, stock_free for resale items. */
   stock_in_fg_ready: number;
+  /** Bought-out item received, QC'd and sold as-is (items.is_resale). Relieved from stock_free. */
+  is_resale?: boolean;
 }
 
 // ── Functions ──────────────────────────────────────────────────────────────────
@@ -241,8 +244,24 @@ export async function confirmDispatch(id: string): Promise<void> {
 
   const today = new Date().toISOString().split('T')[0];
 
+  // Resale items (bought out, QC'd, sold as-is) live in stock_free, not
+  // stock_in_fg_ready. Everything else keeps the existing finished-good path.
+  const itemIds = (dr.items ?? []).map((i: any) => i.item_id).filter(Boolean) as string[];
+  const resaleIds = new Set<string>();
+  if (itemIds.length > 0) {
+    const { data: resaleRows, error: resaleErr } = await (supabase as any)
+      .from("items")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("is_resale", true)
+      .in("id", itemIds);
+    if (resaleErr) throw resaleErr;
+    for (const r of resaleRows ?? []) resaleIds.add(r.id);
+  }
+
   for (const item of dr.items ?? []) {
     if (!item.item_id) continue;
+    const isResale = resaleIds.has(item.item_id);
 
     // Ledger-first per iteration (Scope 1).
     await addStockLedgerEntry({
@@ -261,10 +280,10 @@ export async function confirmDispatch(id: string): Promise<void> {
       reference_number: dr.dr_number,
       notes: `Dispatched to ${dr.customer_name ?? 'Customer'} — DR ${dr.dr_number}`,
       created_by: null,
-      from_state: STOCK_STATE.FG_READY,
+      from_state: isResale ? STOCK_STATE.FREE : STOCK_STATE.FG_READY,
       to_state: STOCK_STATE.DISPATCHED,
     });
-    await updateStockBucket(item.item_id, 'in_fg_ready', -item.quantity);
+    await updateStockBucket(item.item_id, isResale ? 'free' : 'in_fg_ready', -item.quantity);
 
     // Update serial number status — only if a serial is linked to this line
     if (item.serial_number_id) {
@@ -307,13 +326,35 @@ export async function fetchFinishedGoodItems(): Promise<FinishedGoodItem[]> {
     .order("item_code");
 
   if (error) return [];
-  return ((data ?? []) as any[]).map((i) => ({
+  const finished: FinishedGoodItem[] = ((data ?? []) as any[]).map((i) => ({
     id: i.id,
     item_code: i.item_code ?? "",
     description: i.description ?? "",
     unit: i.unit ?? "NOS",
     stock_in_fg_ready: Number(i.stock_in_fg_ready ?? 0),
   }));
+
+  // Resale items: bought out, QC'd, sold as-is. Available = stock_free.
+  const { data: resaleData, error: resaleError } = await (supabase as any)
+    .from("items")
+    .select("id, item_code, description, unit, stock_free")
+    .eq("company_id", companyId)
+    .eq("is_resale", true)
+    .eq("status", "active")
+    .gt("stock_free", 0)
+    .order("item_code");
+
+  if (resaleError) throw resaleError;
+  const resale: FinishedGoodItem[] = ((resaleData ?? []) as any[]).map((i) => ({
+    id: i.id,
+    item_code: i.item_code ?? "",
+    description: i.description ?? "",
+    unit: i.unit ?? "NOS",
+    stock_in_fg_ready: Number(i.stock_free ?? 0),
+    is_resale: true,
+  }));
+
+  return [...finished, ...resale];
 }
 
 export async function markDelivered(id: string): Promise<void> {
