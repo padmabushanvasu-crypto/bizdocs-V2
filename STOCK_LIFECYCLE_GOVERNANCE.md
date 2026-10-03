@@ -56,7 +56,7 @@ Canonical transitions (verified against live ledger data):
 | WIP scrapped | `scrap_write_off` | `subassembly_wip → scrap` |
 | QC rejection, scrap disposition | `rejection_writeoff` | source → `scrapped` (ledger-only leg; FREE untouched) |
 | QC rejection, return-to-vendor | `vendor_return` leg pattern | source → `returned_to_vendor` (ledger-only leg) |
-| Invoice/dispatch | `invoice_dispatch` | `in_fg_ready → dispatched` |
+| Dispatch Record confirmed | `invoice_dispatch` | `in_fg_ready → dispatched` (resale: `free → dispatched`) |
 | Consumables | `consumable_issue` / `consumable_return` | `free → consumed` / `consumed → free` |
 | Opening stock | `opening_stock` | `null → free` |
 | Corrections, merges, reconciliations | `manual_adjustment` | any → any, with explicit states |
@@ -127,7 +127,7 @@ Both live in `assembly_work_orders`, discriminated by `awo_type`. The type decid
 Confirmed decisions:
 
 1. Completed FGs sit in `in_fg_ready` on the floor (serialization, FAT certificates, Ready-to-Dispatch queue are tracking layers).
-2. **The invoice is the consumption event.** `invoice_dispatch`, `in_fg_ready → dispatched`. Backflush — the automatic downward consumption of the model's BOM — triggers **on invoice only**, never on DC-out, never on dispatch-record creation.
+2. **The Dispatch Record confirmation is the consumption event** (amended 2026-10-03; previously the invoice). `invoice_dispatch`, `in_fg_ready → dispatched` (resale: `free → dispatched`). Backflush — the automatic downward consumption of the model's BOM — if built, triggers **on dispatch confirmation only**, never on DC-out, never on dispatch-record creation, never on invoice.
 3. **Double-deduction landmine (resolved 2026-10-03):** the invoice path and `dispatch-api`'s `confirmDispatch` both deducted under `invoice_dispatch`. Decision (Vasu): the **Dispatch Record is the single "goods leave" event** for finished goods (`in_fg_ready → dispatched`) and resale items (`free → dispatched`, `items.is_resale`). `issueInvoice` no longer touches stock. Backflush design below is still open and must hang off the Dispatch Record, not the invoice.
 4. **Build-to-stock vs assemble-to-order decides backflush depth.** If the model was built via an FG AWO, its sub-assemblies were already consumed at acceptance — backflushing them again at invoice is double consumption. The staged-movement model Vasu described (free → sub-WIP → sub-assembly → FG-WIP → FG-ready → dispatched) implies consumption happens at each build step, and the invoice moves only the finished model out. Backflush must **complement** that movement, never re-run it.
 
