@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { fetchDispatchRecords, fetchDispatchStats } from "@/lib/dispatch-api";
+import { DispatchRecordActions } from "@/components/DispatchRecordActions";
 import { format, parseISO } from "date-fns";
 
 function statusBadge(status: string) {
@@ -102,16 +103,19 @@ export default function DispatchRecords() {
                     {dr.dispatch_date ? format(parseISO(dr.dispatch_date), "dd MMM yyyy") : "—"}
                   </td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigate(`/dispatch-records/${dr.id}`);
-                      }}
-                    >
-                      View
-                    </Button>
+                    <div className="inline-flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/dispatch-records/${dr.id}`);
+                        }}
+                      >
+                        View
+                      </Button>
+                      <DispatchRecordActions id={dr.id} drNumber={dr.dr_number} status={dr.status} />
+                    </div>
                   </td>
                 </tr>
               ))}
