@@ -62,7 +62,7 @@ import { UNITS } from "@/lib/constants";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { isEditApprover, friendlyEditRequestError } from "@/lib/permissions";
-import { fetchGrnConversionOptions, type GrnConversionOption } from "@/lib/item-conversions-api";
+import { fetchGrnConversionOptions, isTransformSelection, type GrnConversionOption } from "@/lib/item-conversions-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { isFinalBatch } from "@/lib/dc-receipt-utils";
 import { GRNFinanceApproval } from "@/components/GRNFinanceApproval";
@@ -425,6 +425,7 @@ function Stage1Table({
   tolerancePct = 0,
   conversionOptions = {},
   onConvertItem,
+  transformLineIds = [],
 }: {
   lines: S1Line[];
   onChange: (idx: number, field: keyof S1Line, value: unknown) => void;
@@ -434,6 +435,9 @@ function Stage1Table({
   tolerancePct?: number;
   conversionOptions?: Record<string, GrnConversionOption[]>;
   onConvertItem?: (idx: number, opt: GrnConversionOption) => void;
+  // Lines whose current item is a 'transform' target of their DC line — received
+  // qty is an output count, so pending/over-receipt vs the DC qty does not apply.
+  transformLineIds?: string[];
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200">
@@ -466,7 +470,8 @@ function Stage1Table({
             // Rejected Now does NOT subtract — rejected units were physically received.
             const livePending = s1LivePending(line);
             const pending = livePending - line.received_qty;
-            const overReceipt = pending < 0;
+            const isTransform = transformLineIds.includes(line.id);
+            const overReceipt = !isTransform && pending < 0;
             const overReceiptBy = overReceipt ? Math.abs(pending) : 0;
             const nonMatching = Math.max(0, line.received_qty - line.matching_units);
             const showSubRow = line.received_qty > 0 && nonMatching > 0;
@@ -526,6 +531,11 @@ function Stage1Table({
                         </select>
                       );
                     })()}
+                    {isTransform && (
+                      <p className="mt-1 text-[11px] text-indigo-700">
+                        Converted at job worker — sent qty will be marked consumed on store confirm.
+                      </p>
+                    )}
                   </td>
 
                   {/* Ordered — with muted unit suffix */}
@@ -597,8 +607,14 @@ function Stage1Table({
 
                   {/* Pending — reactive Ordered − Prev Rcvd − Receiving Now */}
                   <td className={`px-3 py-2 text-right tabular-nums font-mono font-medium ${overReceipt ? "text-red-600" : "text-slate-400"}`}>
-                    <span>{formatNumber(pending)}</span>
-                    <span className="text-xs text-muted-foreground ml-1 font-sans font-normal">{unit}</span>
+                    {isTransform ? (
+                      <span title="Output of a conversion — not bounded by the DC qty">—</span>
+                    ) : (
+                      <>
+                        <span>{formatNumber(pending)}</span>
+                        <span className="text-xs text-muted-foreground ml-1 font-sans font-normal">{unit}</span>
+                      </>
+                    )}
                   </td>
 
                   {/* Match / Not Matched — collapsed cell with inline edit + breakdown */}
@@ -2607,7 +2623,13 @@ export default function GRNDetail() {
   // frozen pending_quantity snapshot — a receipt within the CURRENT PO qty
   // must not be flagged as over-receipt just because the PO was raised after
   // this GRN was created.
+  // Transform lines (current item is a 'transform' target of the DC line) are
+  // exempt: their received qty is an output count, not bounded by the DC qty.
+  const transformLineIds = s1Lines
+    .filter((l) => !!l.dc_line_item_id && isTransformSelection(conversionOptions[l.dc_line_item_id!], l.item_id))
+    .map((l) => l.id);
   const overReceiptTiers = s1Lines.map((l) => {
+    if (transformLineIds.includes(l.id)) return { line: l, tier: "ok" as const };
     const pending = s1LivePending(l);
     if (l.received_qty <= pending || pending <= 0) return { line: l, tier: "ok" as const };
     const tolerance_qty = Math.floor(pending * (tolerancePct / 100));
@@ -3037,12 +3059,34 @@ export default function GRNDetail() {
   const convertS1LineItem = (idx: number, opt: GrnConversionOption) => {
     setS1Lines((prev) => {
       const next = [...prev];
+      const cur = next[idx];
+      // Quantities entered under the old item don't carry over when the line
+      // moves to or from a transform target (coil count vs piece count): clear
+      // them so the user enters the actual received count.
+      const wasTransform = isTransformSelection(
+        cur.dc_line_item_id ? conversionOptions[cur.dc_line_item_id] : undefined,
+        cur.item_id,
+      );
+      const resetQty = opt.conversion_mode === "transform" || wasTransform
+        ? {
+            received_qty: 0,
+            qty_matched: 0,
+            matching_units: 0,
+            non_matching_units: 0,
+            product_match: "yes" as const,
+            mismatch_reason: "",
+            mismatch_disposition: "",
+            stage1_rejected_qty: 0,
+            received_now_2: null,
+          }
+        : {};
       next[idx] = {
-        ...next[idx],
+        ...cur,
         item_id: opt.item_id,
-        item_code: opt.item_code ?? next[idx].item_code,
-        description: opt.description ?? next[idx].description,
-        unit: opt.unit ?? next[idx].unit,
+        item_code: opt.item_code ?? cur.item_code,
+        description: opt.description ?? cur.description,
+        unit: opt.unit ?? cur.unit,
+        ...resetQty,
       };
       return next;
     });
@@ -3543,6 +3587,7 @@ export default function GRNDetail() {
               tolerancePct={tolerancePct}
               conversionOptions={conversionOptions}
               onConvertItem={convertS1LineItem}
+              transformLineIds={transformLineIds}
             />
           ) : (
             <Stage1ReadOnly
