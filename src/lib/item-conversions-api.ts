@@ -10,6 +10,25 @@ export interface GrnConversionOption {
   unit: string | null;
   label: string;
   isOriginal: boolean;
+  // 'like_for_like' = same material, qty bounded by the DC line (default).
+  // 'transform' = job worker changes the form (e.g. coil -> pieces); received
+  // qty is a fresh output count, not bounded by the DC qty. The DC-issued item
+  // itself is always 'like_for_like'.
+  conversion_mode: ConversionMode;
+}
+
+export type ConversionMode = "like_for_like" | "transform";
+
+// True when the line's CURRENT item is a transform target of its DC line item.
+// Pure: reads only the options already fetched by fetchGrnConversionOptions.
+export function isTransformSelection(
+  options: GrnConversionOption[] | undefined,
+  currentItemId: string | null | undefined,
+): boolean {
+  if (!options || !currentItemId) return false;
+  return options.some(
+    (o) => !o.isOriginal && o.item_id === currentItemId && o.conversion_mode === "transform",
+  );
 }
 
 // Prefer item_conversions.label; fall back to composing from posn/has_vac/is_sgb
@@ -59,7 +78,7 @@ export async function fetchGrnConversionOptions(
   const today = new Date().toISOString().slice(0, 10);
   const { data: convs, error: convErr } = await (supabase as any)
     .from("item_conversions")
-    .select("from_item_id, to_item_id, label, posn, has_vac, is_sgb, valid_from, valid_until")
+    .select("from_item_id, to_item_id, label, posn, has_vac, is_sgb, valid_from, valid_until, conversion_mode")
     .eq("company_id", companyId)
     .in("from_item_id", fromItemIds);
   if (convErr) throw convErr;
@@ -99,6 +118,7 @@ export async function fetchGrnConversionOptions(
         unit: own?.unit ?? null,
         label: own?.description || own?.item_code || "As issued",
         isOriginal: true,
+        conversion_mode: "like_for_like",
       },
     ];
     for (const c of convsByFrom.get(fromItemId) ?? []) {
@@ -110,6 +130,7 @@ export async function fetchGrnConversionOptions(
         unit: to?.unit ?? null,
         label: composeConversionLabel(c),
         isOriginal: false,
+        conversion_mode: c.conversion_mode === "transform" ? "transform" : "like_for_like",
       });
     }
     result[dcLineId] = options;
