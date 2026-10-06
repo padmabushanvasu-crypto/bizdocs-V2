@@ -84,7 +84,7 @@ export default function SerialNumbers() {
   const { canEdit } = useRoleAccess();
   const queryClient = useQueryClient();
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("q") ?? "");
   const [statusFilter, setStatusFilter] = useState("all");
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedSerial, setSelectedSerial] = useState<SerialNumberRecord | null>(null);
