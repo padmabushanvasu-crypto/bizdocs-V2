@@ -11,6 +11,7 @@ import { formatNumber } from "@/lib/gst-utils";
 import { fetchGRNs, fetchGRNStats, softDeleteGRN, fetchPendingQCGRNs, fetchAllGRNsForExport, type GRNFilters, type GrnDeleteStockAction } from "@/lib/grn-api";
 import { logAudit } from "@/lib/audit-api";
 import { exportGRNReport } from "@/lib/export-utils";
+import { getGrnLinkedDoc } from "@/lib/grn-linked-doc";
 import { ExportModal } from "@/components/ExportModal";
 import { TablePageSize } from "@/components/TablePageSize";
 import { useToast } from "@/hooks/use-toast";
@@ -356,7 +357,7 @@ function GRNRegisterInner() {
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">GRN #</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Date</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Vendor</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Linked PO</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Linked PO / DC</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Accepted</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Non-Conforming</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Stage</th>
@@ -383,11 +384,25 @@ function GRNRegisterInner() {
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{new Date(grn.grn_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">{grn.vendor_name || "—"}</td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
-                        {grn.po_number ? (
-                          <button className="font-mono text-xs text-primary hover:underline" onClick={(e) => { e.stopPropagation(); navigate(`/purchase-orders/${grn.po_id}`); }}>
-                            {grn.po_number}
-                          </button>
-                        ) : "—"}
+                        {(() => {
+                          const doc = getGrnLinkedDoc(grn as any);
+                          if (!doc) return "—";
+                          const tag = (
+                            <span className={`mr-1.5 inline-block rounded px-1 py-px text-[10px] font-semibold align-middle ${doc.kind === "DC" ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-blue-50 text-blue-700 border border-blue-200"}`}>
+                              {doc.kind}
+                            </span>
+                          );
+                          return doc.href ? (
+                            <>
+                              {tag}
+                              <button className="font-mono text-xs text-primary hover:underline" onClick={(e) => { e.stopPropagation(); navigate(doc.href!); }}>
+                                {doc.number}
+                              </button>
+                            </>
+                          ) : (
+                            <>{tag}<span className="font-mono text-xs">{doc.number}</span></>
+                          );
+                        })()}
                       </td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">{formatNumber(grn.total_accepted)}</td>
                       <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono">

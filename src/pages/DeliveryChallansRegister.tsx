@@ -33,6 +33,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
 import { fetchDcInvoiceStatuses } from "@/lib/processor-invoices-api";
 import { DcInvoiceStatusBadge } from "@/components/DcInvoiceStatusBadge";
+import { DcBalanceView } from "@/components/DcBalanceView";
 
 const DELETION_REASONS_DC = [
   { value: 'data_entry_error',        label: 'Data entry error' },
@@ -397,6 +398,8 @@ function DeliveryChallansRegisterInner() {
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [returnsExportModalOpen, setReturnsExportModalOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  // "list" is the existing register (default); "balance" is the plan-vs-received view.
+  const [view, setView] = useState<"list" | "balance">("list");
 
   const [filters, setFilters] = useState<DCFilters>({
     search: "",
@@ -545,7 +548,7 @@ function DeliveryChallansRegisterInner() {
         <p className="text-sm text-slate-500 mt-1">Track outgoing material and returns</p>
       </div>
       <div className="flex flex-wrap gap-2 flex-shrink-0">
-        {canExport && (
+        {canExport && view === "list" && (
           <>
             <Button variant="outline" onClick={() => setExportModalOpen(true)}>
               <Download className="h-4 w-4 mr-1" /> Export
@@ -816,6 +819,26 @@ function DeliveryChallansRegisterInner() {
   return (
     <div className="p-4 md:p-6 space-y-4">
       {pageHeader}
+
+      <div className="inline-flex rounded-md border border-slate-200 bg-slate-50 p-0.5 text-sm" role="tablist" aria-label="DC view">
+        {([["list", "DC List"], ["balance", "Balance"]] as const).map(([v, label]) => (
+          <button
+            key={v}
+            type="button"
+            role="tab"
+            aria-selected={view === v}
+            onClick={() => setView(v)}
+            className={`px-3 py-1 rounded font-medium transition-colors ${view === v ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {view === "balance" ? (
+        <DcBalanceView />
+      ) : (
+      <>
       {summaryCards}
 
       {isApprover ? (
@@ -850,6 +873,8 @@ function DeliveryChallansRegisterInner() {
         </Tabs>
       ) : (
         allDCsContent
+      )}
+      </>
       )}
 
       {/* ── DC Deletion Dialog ── */}
