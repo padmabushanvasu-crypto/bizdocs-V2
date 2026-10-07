@@ -1155,3 +1155,86 @@ export async function updateStockBucket(
   if (error) throw error;
 }
 
+
+// ── Stock Register — period report (opening / inward / outward / adjustment / closing) ──
+// Backed by rpc_stock_register_range (whole IST days, ordered by item_code, item_id;
+// raises invalid_parameter_value when from > to). The RPC derives the figures from
+// the ledger — this layer only pages, coerces and filters, it never recomputes.
+
+export type StockPeriodBucket = "free" | "in_process";
+
+export interface StockPeriodRow {
+  item_id: string;
+  item_code: string;
+  drawing_number: string | null;
+  description: string;
+  item_type: string;
+  unit: string;
+  item_status: string;
+  opening: number;
+  inward: number;
+  outward: number;
+  adjustment: number;
+  closing: number;
+}
+
+const STOCK_PERIOD_PAGE = 1000;
+const STOCK_PERIOD_MAX_PAGES = 20;
+
+function periodNum(v: unknown, col: string, itemCode: string): number {
+  const n = Number(v);
+  if (v === null || v === undefined || !Number.isFinite(n)) {
+    throw new Error(`rpc_stock_register_range returned a non-numeric ${col} for item ${itemCode}`);
+  }
+  return n;
+}
+
+export const isZeroPeriodRow = (r: StockPeriodRow) =>
+  r.opening === 0 && r.inward === 0 && r.outward === 0 && r.adjustment === 0 && r.closing === 0;
+
+export async function fetchStockRegisterPeriod(
+  from: string,
+  to: string,
+  bucket: StockPeriodBucket,
+  opts: { includeZeroRows?: boolean } = {},
+): Promise<StockPeriodRow[]> {
+  const all: StockPeriodRow[] = [];
+  for (let page = 0; ; page++) {
+    if (page >= STOCK_PERIOD_MAX_PAGES) {
+      throw new Error(
+        `Stock register (${bucket}) exceeds ${STOCK_PERIOD_MAX_PAGES * STOCK_PERIOD_PAGE} rows — export aborted to avoid a truncated report.`,
+      );
+    }
+    const start = page * STOCK_PERIOD_PAGE;
+    const { data, error } = await (supabase as any)
+      .rpc("rpc_stock_register_range", { p_from: from, p_to: to, p_bucket: bucket })
+      .range(start, start + STOCK_PERIOD_PAGE - 1);
+    if (error) throw new Error(error.message ?? "rpc_stock_register_range failed");
+    const rows = (data ?? []) as any[];
+    for (const r of rows) {
+      const code = String(r.item_code ?? r.item_id);
+      all.push({
+        item_id: r.item_id,
+        item_code: r.item_code ?? "",
+        drawing_number: r.drawing_number ?? null,
+        description: r.description ?? "",
+        item_type: r.item_type ?? "",
+        unit: r.unit ?? "",
+        item_status: r.item_status ?? "",
+        opening: periodNum(r.opening, "opening", code),
+        inward: periodNum(r.inward, "inward", code),
+        outward: periodNum(r.outward, "outward", code),
+        adjustment: periodNum(r.adjustment, "adjustment", code),
+        closing: periodNum(r.closing, "closing", code),
+      });
+    }
+    if (rows.length < STOCK_PERIOD_PAGE) break;
+  }
+  // Keep active items, plus any inactive item that still shows a figure. Unless the
+  // caller asks for them, rows with no stock and no movement are dropped.
+  return all.filter((r) => {
+    const zero = isZeroPeriodRow(r);
+    if (r.item_status !== "active" && zero) return false;
+    return opts.includeZeroRows ? true : !zero;
+  });
+}
