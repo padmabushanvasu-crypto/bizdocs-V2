@@ -904,7 +904,8 @@ interface ReportSheetSpec {
   filters: string;
   headers: string[];
   dataRows: (string | number)[][];
-  totalsRow: (string | number)[];
+  /** Omit to write no totals row. */
+  totalsRow?: (string | number)[];
   colWidths: number[];
   numFmtByCol: Record<number, string>; // 0-based col index -> Excel numFmt
 }
@@ -919,13 +920,13 @@ function buildReportWorkbook(spec: ReportSheetSpec): XLSX.WorkBook {
     [],
     spec.headers,
     ...spec.dataRows,
-    spec.totalsRow,
+    ...(spec.totalsRow ? [spec.totalsRow] : []),
   ];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
 
   const headerRow = REPORT_HEADER_ROWS; // 0-based row index of the column headers
   const firstDataRow = headerRow + 1;
-  const totalsRow = aoa.length - 1;
+  const totalsRow = spec.totalsRow ? aoa.length - 1 : -1;
 
   // Merge each report-header line across the full table width.
   ws["!merges"] = [0, 1, 2, 3].map((r) => ({ s: { r, c: 0 }, e: { r, c: ncols - 1 } }));
@@ -1360,6 +1361,136 @@ export function buildDcReturnsWorkbook(
     headers, dataRows, totalsRow, colWidths, numFmtByCol,
   });
   const filename = `DC-Returns_${slugifyCompanyName(opts.companyName)}_${f.month ?? "All"}_${opts.todayIST}.xlsx`;
+  return { workbook, filename };
+}
+
+// ── DC Balance — Plan vs Received (one row per DC line, from v_dc_line_balance) ──
+
+interface DcBalanceRowLike {
+  dc_number: string;
+  dc_date: string;
+  vendor_name: string | null;
+  item_code: string | null;
+  drawing_number: string | null;
+  description: string | null;
+  nature_of_process: string | null;
+  unit: string | null;
+  plan_qty: number;
+  plan_qty_2: number | null;
+  unit_2: string | null;
+  received_qty: number;
+  balance_qty: number;
+  accepted_qty: number;
+  rejected_qty: number;
+  store_confirmed_qty: number;
+  grn_numbers: string | null;
+  return_due_date: string | null;
+  days_overdue: number | null;
+  line_status: string;
+}
+
+export const DC_BALANCE_STATUS_LABEL: Record<string, string> = {
+  pending: "Pending",
+  partially_received: "Partial",
+  fully_received: "Complete",
+};
+
+/**
+ * Plan / Received / Balance totals — only meaningful when every row shares one
+ * unit; with mixed units a sum would add NOS to KGS, so no totals are returned.
+ */
+export function dcBalanceTotals(
+  rows: Array<Pick<DcBalanceRowLike, "unit" | "plan_qty" | "received_qty" | "balance_qty">>,
+): { unit: string; plan: number; received: number; balance: number } | null {
+  if (rows.length === 0) return null;
+  const unit = rows[0].unit ?? "";
+  if (rows.some((r) => (r.unit ?? "") !== unit)) return null;
+  let plan = 0, received = 0, balance = 0;
+  for (const r of rows) {
+    plan += r.plan_qty;
+    received += r.received_qty;
+    balance += r.balance_qty;
+  }
+  return { unit, plan, received, balance };
+}
+
+export function buildDcBalanceWorkbook(
+  rows: DcBalanceRowLike[],
+  opts: {
+    companyName: string;
+    generatedAt: string;
+    todayIST: string;
+    filters: { search?: string; status?: string; vendor?: string; overdueOnly?: boolean; month?: string };
+  },
+): { workbook: XLSX.WorkBook; filename: string } {
+  const f = opts.filters;
+  const status = f.status ?? "open";
+  const statusLabel = status === "open" ? "Pending + Partial" : status === "all" ? "All" : DC_BALANCE_STATUS_LABEL[status] ?? status;
+  const monthLabel = f.month ? formatPlainDateIN(`${f.month}-01`).slice(3).replace("-", " ") : "All months";
+  const filtersText =
+    `Status: ${statusLabel} · Month: ${monthLabel} · Vendor: ${f.vendor || "All"}` +
+    ` · Overdue only: ${f.overdueOnly ? "Yes" : "No"} · Search: ${f.search?.trim() ? `"${f.search.trim()}"` : "—"}`;
+
+  const headers = [
+    "S.No", "DC No", "DC Date", "Vendor", "Item Code", "Drawing No", "Description", "Process", "Unit",
+    "Plan Qty", "Plan Qty 2", "Unit 2", "Received Qty", "Balance Qty", "Accepted", "Rejected", "Store Confirmed",
+    "GRN Nos", "Due Date", "Overdue (days)", "Status",
+  ];
+  const dataRows: (string | number)[][] = rows.map((r, i) => [
+    i + 1,
+    r.dc_number,
+    r.dc_date ? formatPlainDateIN(r.dc_date) : "",
+    r.vendor_name ?? "",
+    r.item_code ?? "",
+    r.drawing_number ?? "",
+    r.description ?? "",
+    r.nature_of_process ?? "",
+    r.unit ?? "",
+    r.plan_qty,
+    r.plan_qty_2 ?? "",
+    r.unit_2 ?? "",
+    r.received_qty,
+    r.balance_qty,
+    r.accepted_qty,
+    r.rejected_qty,
+    r.store_confirmed_qty,
+    r.grn_numbers ?? "",
+    r.return_due_date ? formatPlainDateIN(r.return_due_date) : "",
+    r.days_overdue ?? "",
+    DC_BALANCE_STATUS_LABEL[r.line_status] ?? r.line_status,
+  ]);
+
+  const t = dcBalanceTotals(rows);
+  let totalsRow: (string | number)[] | undefined;
+  if (t) {
+    totalsRow = headers.map(() => "");
+    totalsRow[1] = "TOTAL";
+    totalsRow[8] = t.unit;
+    totalsRow[9] = t.plan;
+    totalsRow[12] = t.received;
+    totalsRow[13] = t.balance;
+  }
+
+  const numFmtByCol: Record<number, string> = {};
+  for (const c of [9, 10, 12, 13, 14, 15, 16]) numFmtByCol[c] = PERIOD_QTY_FMT;
+  const colWidths = [6, 16, 13, 24, 16, 16, 36, 22, 8, 11, 11, 8, 12, 12, 11, 11, 14, 24, 13, 13, 11];
+
+  const workbook = buildReportWorkbook({
+    sheetName: "DC Balance",
+    title: "DC Balance — Plan vs Received",
+    companyName: opts.companyName,
+    generatedAt: opts.generatedAt,
+    filters: filtersText,
+    headers, dataRows, totalsRow, colWidths, numFmtByCol,
+  });
+
+  const statusToken = status === "open" ? "Pending-Partial" : status === "all" ? "All" : DC_BALANCE_STATUS_LABEL[status] ?? status;
+  const token = [
+    f.month ?? statusToken,
+    f.overdueOnly ? "Overdue" : "",
+    f.search?.trim() || f.vendor ? "Filtered" : "",
+  ].filter(Boolean).join("-");
+  const filename = `DC-Balance_${slugifyCompanyName(opts.companyName)}_${token}_${opts.todayIST}.xlsx`;
   return { workbook, filename };
 }
 
