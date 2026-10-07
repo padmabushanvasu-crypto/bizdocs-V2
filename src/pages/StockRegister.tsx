@@ -17,11 +17,13 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
 import { StockStatusBadge } from "@/components/StockStatusBadge";
-import { fetchStockStatus, fetchStockMovements, type StockStatusRow, type StockMovement } from "@/lib/items-api";
+import { fetchStockStatus, fetchStockMovements, fetchStockRegisterPeriod, type StockStatusRow, type StockMovement } from "@/lib/items-api";
 import { fetchPendingQCGRNs } from "@/lib/grn-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
 import { formatCurrency, formatNumber } from "@/lib/gst-utils";
-import { buildStockRegisterWorkbook, downloadWorkbook } from "@/lib/export-utils";
+import { buildStockRegisterWorkbook, buildStockPeriodWorkbook, downloadWorkbook } from "@/lib/export-utils";
+import { nowStampIST } from "@/lib/date-ist";
+import { StockPeriodExportModal, type StockPeriodExportOptions } from "@/components/StockPeriodExportModal";
 import { useToast } from "@/hooks/use-toast";
 
 // ── Error boundary ─────────────────────────────────────────────────────────────
@@ -264,6 +266,7 @@ function StockRegisterInner() {
   const [selectedItem, setSelectedItem] = useState<StockStatusRow | null>(null);
   const [ledgerOpen, setLedgerOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [periodModalOpen, setPeriodModalOpen] = useState(false);
   const { toast } = useToast();
 
   const { data: rows = [], isLoading } = useQuery({
@@ -289,6 +292,34 @@ function StockRegisterInner() {
     } catch (err) {
       console.error("[StockRegister] export failed:", err);
       toast({ title: "Export failed", description: "See console for details.", variant: "destructive" });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handlePeriodExport = async (opts: StockPeriodExportOptions) => {
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      const { from, to, includeAtVendor, includeZeroRows } = opts;
+      const free = await fetchStockRegisterPeriod(from, to, "free", { includeZeroRows });
+      const sheets = [{ sheetName: "In Store", title: "Stock Register — In Store", rows: free }];
+      if (includeAtVendor) {
+        const inProcess = await fetchStockRegisterPeriod(from, to, "in_process", { includeZeroRows });
+        sheets.push({ sheetName: "At Vendor", title: "Stock Register — At Vendor", rows: inProcess });
+      }
+      const { workbook, filename } = buildStockPeriodWorkbook(sheets, {
+        companyName,
+        from,
+        to,
+        generatedAt: nowStampIST(),
+      });
+      downloadWorkbook(workbook, filename);
+      setPeriodModalOpen(false);
+      toast({ title: `Exported ${sheets.map((s) => `${s.rows.length} ${s.sheetName}`).join(" + ")} rows to ${filename}` });
+    } catch (err: any) {
+      console.error("[StockRegister] period export failed:", err);
+      toast({ title: "Export failed", description: err?.message ?? "Unknown error", variant: "destructive" });
     } finally {
       setIsExporting(false);
     }
@@ -662,6 +693,18 @@ function StockRegisterInner() {
               {isExporting ? "Exporting…" : "Export all items"}
             </Button>
           )}
+          {canExport && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9"
+              disabled={isExporting}
+              onClick={() => setPeriodModalOpen(true)}
+            >
+              <Download className="h-4 w-4 mr-1.5" />
+              Export period
+            </Button>
+          )}
         </div>
       </div>
 
@@ -1028,6 +1071,13 @@ function StockRegisterInner() {
           Showing {filtered.length} of {rows.length} items
         </p>
       )}
+
+      <StockPeriodExportModal
+        open={periodModalOpen}
+        onClose={() => setPeriodModalOpen(false)}
+        isExporting={isExporting}
+        onExport={handlePeriodExport}
+      />
 
       {/* Overlay */}
       {ledgerOpen && (

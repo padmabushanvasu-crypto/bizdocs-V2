@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx-js-style";
+import { formatDateIN as formatPlainDateIN } from "@/lib/date-ist";
 
 const GST_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
@@ -1109,6 +1110,147 @@ export function buildStoreAcceptanceWorkbook(
     headers, dataRows, totalsRow, colWidths, numFmtByCol,
   });
   const filename = `store-acceptance_${slugifyCompanyName(opts.companyName)}_${nowStampLocal()}.xlsx`;
+  return { workbook: wb, filename };
+}
+
+// ── Stock Register — period export (multi-sheet) ──────────────────────────────
+// Own sheet builder (not buildReportWorkbook): needs several sheets, free-form
+// header lines and a footnote. Quantities are written at full precision with
+// a display-only format, and totals sum the full-precision values (never rounded
+// ones) per STOCK_REGISTER_STANDARDS §2.
+
+const PERIOD_QTY_FMT = "#,##0.###";
+
+export interface StockPeriodSheetInput {
+  sheetName: string;
+  title: string;
+  rows: Array<{
+    item_code: string;
+    drawing_number: string | null;
+    description: string;
+    item_type: string;
+    unit: string;
+    opening: number;
+    inward: number;
+    outward: number;
+    adjustment: number;
+    closing: number;
+  }>;
+}
+
+const PERIOD_FOOTNOTE =
+  "Adjustment = physical counts / opening-stock resets in the period. Opening + Inward − Outward + Adjustment = Closing.";
+
+function buildStockPeriodSheet(
+  input: StockPeriodSheetInput,
+  opts: { companyName: string; periodLabel: string; generatedAt: string },
+): XLSX.WorkSheet {
+  const headers = [
+    "S.No", "Item Code", "Drawing No", "Description", "Type", "UOM",
+    "Opening", "Inward", "Outward", "Adjustment", "Closing",
+  ];
+  const ncols = headers.length;
+  const typeLabel = (t: string) => t.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+  const tot = { opening: 0, inward: 0, outward: 0, adjustment: 0, closing: 0 };
+  const dataRows = input.rows.map((r, i) => {
+    tot.opening += r.opening;
+    tot.inward += r.inward;
+    tot.outward += r.outward;
+    tot.adjustment += r.adjustment;
+    tot.closing += r.closing;
+    return [
+      i + 1, r.item_code, r.drawing_number ?? "", r.description, typeLabel(r.item_type), r.unit,
+      r.opening, r.inward, r.outward, r.adjustment, r.closing,
+    ];
+  });
+  const totalsRow = ["", "TOTAL", "", "", "", "", tot.opening, tot.inward, tot.outward, tot.adjustment, tot.closing];
+
+  const aoa: any[][] = [
+    [opts.companyName],
+    [input.title],
+    [`Period: ${opts.periodLabel}`],
+    [`Generated: ${opts.generatedAt}`],
+    [],
+    headers,
+    ...dataRows,
+    totalsRow,
+    [],
+    [PERIOD_FOOTNOTE],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  const headerRow = 5;
+  const totalsIdx = headerRow + 1 + dataRows.length;
+  const footnoteIdx = totalsIdx + 2;
+  ws["!merges"] = [0, 1, 2, 3, footnoteIdx].map((r) => ({ s: { r, c: 0 }, e: { r, c: ncols - 1 } }));
+
+  const blockStyles: Record<number, any> = {
+    0: { font: { bold: true, sz: 14, color: { rgb: "2D3282" } } },
+    1: { font: { bold: true, sz: 12 } },
+    2: { font: { italic: true, sz: 10, color: { rgb: "64748B" } } },
+    3: { font: { italic: true, sz: 10, color: { rgb: "64748B" } } },
+    [footnoteIdx]: { font: { italic: true, sz: 9, color: { rgb: "64748B" } } },
+  };
+  for (const [r, s] of Object.entries(blockStyles)) {
+    const ref = XLSX.utils.encode_cell({ r: Number(r), c: 0 });
+    if (ws[ref]) ws[ref].s = s;
+  }
+
+  for (let r = headerRow; r <= totalsIdx; r++) {
+    for (let c = 0; c < ncols; c++) {
+      const cell: any = ws[XLSX.utils.encode_cell({ r, c })];
+      if (!cell) continue;
+      if (r === headerRow) {
+        cell.s = {
+          font: { bold: true, color: { rgb: "FFFFFF" }, sz: 11 },
+          fill: { fgColor: { rgb: "2D3282" } },
+          alignment: { horizontal: "center", vertical: "center" },
+        };
+        continue;
+      }
+      const isQty = c >= 6;
+      if (isQty && typeof cell.v === "number") {
+        cell.t = "n";
+        cell.z = PERIOD_QTY_FMT;
+      }
+      const isTotals = r === totalsIdx;
+      const zebra = !isTotals && (r - headerRow - 1) % 2 === 1 ? { fill: { fgColor: { rgb: "F8FAFC" } } } : {};
+      cell.s = {
+        ...zebra,
+        alignment: { horizontal: isQty ? "right" : c === 0 ? "center" : "left", vertical: "center" },
+        ...(isQty ? { numFmt: PERIOD_QTY_FMT } : {}),
+        ...(isTotals
+          ? { font: { bold: true, sz: 11 }, border: { top: { style: "medium", color: { rgb: "94A3B8" } } } }
+          : {}),
+      };
+    }
+  }
+
+  ws["!cols"] = [6, 18, 18, 42, 14, 8, 14, 14, 14, 14, 14].map((wch) => ({ wch }));
+  // Freeze below the column-header row. NOTE: the pinned xlsx-js-style (1.2.0) has
+  // no frozen-pane writer and silently drops this on write (same limitation as
+  // buildStockRegisterWorkbook); it is set so it takes effect if the library is upgraded.
+  ws["!freeze"] = { xSplit: 0, ySplit: headerRow + 1 };
+  ws["!margins"] = { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.3, footer: 0.3 };
+  (ws as any)["!pageSetup"] = { orientation: "landscape", fitToWidth: 1, fitToHeight: 0, scale: 100 };
+  return ws;
+}
+
+export function buildStockPeriodWorkbook(
+  sheets: StockPeriodSheetInput[],
+  opts: { companyName: string; from: string; to: string; generatedAt: string },
+): { workbook: XLSX.WorkBook; filename: string } {
+  const periodLabel = `${formatPlainDateIN(opts.from)} to ${formatPlainDateIN(opts.to)}`;
+  const wb = XLSX.utils.book_new();
+  for (const s of sheets) {
+    XLSX.utils.book_append_sheet(
+      wb,
+      buildStockPeriodSheet(s, { companyName: opts.companyName, periodLabel, generatedAt: opts.generatedAt }),
+      s.sheetName,
+    );
+  }
+  const filename = `Stock-Register_${slugifyCompanyName(opts.companyName)}_${opts.from}_to_${opts.to}.xlsx`;
   return { workbook: wb, filename };
 }
 
