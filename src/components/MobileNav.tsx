@@ -113,6 +113,7 @@ const MORE_GROUPS: MoreGroup[] = [
       { label: "GST Reports", to: "/gst-reports", icon: FileSpreadsheet },
       { label: "Processor Invoices", to: "/processor-invoices", icon: FileText, allowedRoles: ['admin', 'finance'] },
       { label: "Processor Invoice Reports", to: "/processor-invoice-reports", icon: BarChart3, allowedRoles: ['admin', 'finance'] },
+      { label: "Jig Approvals", to: "/jig-approvals", icon: CheckCircle, allowedRoles: ['admin', 'finance'] },
       { label: "Open Items", to: "/open-items", icon: FileText },
       { label: "Reorder Alerts", to: "/reorder-intelligence", icon: TrendingDown },
       { label: "Reorder Rules", to: "/reorder-rules", icon: RotateCcw },

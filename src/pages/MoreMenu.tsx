@@ -1,4 +1,4 @@
-import { ShoppingCart, Truck, PackageCheck, Receipt, Building2, Settings, FileText, BarChart3 } from "lucide-react";
+import { ShoppingCart, Truck, PackageCheck, Receipt, Building2, Settings, FileText, BarChart3, CheckCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useCurrentRole } from "@/hooks/useRoleAccess";
 import type { AppRole } from "@/lib/role-access";
@@ -12,6 +12,7 @@ const menuItems: { label: string; icon: typeof Truck; to: string; desc: string; 
   { label: "Receipts", icon: Receipt, to: "/receipts", desc: "Payment records" },
   { label: "Processor Invoices", icon: FileText, to: "/processor-invoices", desc: "Job-work billing", allowedRoles: ['admin', 'finance'] },
   { label: "Processor Reports", icon: BarChart3, to: "/processor-invoice-reports", desc: "Pending, variance, prices", allowedRoles: ['admin', 'finance'] },
+  { label: "Jig Approvals", icon: CheckCircle, to: "/jig-approvals", desc: "Write-offs, invoices with jigs out", allowedRoles: ['admin', 'finance'] },
   { label: "Company", icon: Building2, to: "/settings/company", desc: "Company details" },
   { label: "Settings", icon: Settings, to: "/settings", desc: "App preferences" },
 ];

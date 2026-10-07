@@ -124,6 +124,8 @@ const TOOLTIP_TEXT: Record<string, string> = {
     "Every jig sent to a vendor on a DC — where it is now, how long it has been out, and what is still outstanding.",
   "Processor Invoices":
     "Record invoices received from job-work processors against DC lines, and compare billed rates with the DC estimate.",
+  "Jig Approvals":
+    "Finance review: write-off requests for jigs vendors have not returned, and processor invoices from vendors still holding jigs.",
   "Processor Invoice Reports":
     "DCs still awaiting a processor invoice, estimate vs actual billing, and processor price movement over time.",
   "Vendor Scorecards":
@@ -177,6 +179,7 @@ const ALL_SEARCH_ITEMS: { title: string; url: string }[] = [
   { title: "GST Reports", url: "/gst-reports" },
   { title: "Processor Invoices", url: "/processor-invoices" },
   { title: "Processor Invoice Reports", url: "/processor-invoice-reports" },
+  { title: "Jig Approvals", url: "/jig-approvals" },
   { title: "Vendor Scorecards", url: "/vendor-scorecards" },
   { title: "Parties", url: "/parties" },
   { title: "Items", url: "/items" },
@@ -199,7 +202,7 @@ const GROUP_PATHS: Record<string, string[]> = {
   "PRODUCTION & JOB WORK": ["/job-works", "/wip-register", "/sub-assembly-work-orders", "/finished-good-work-orders", "/rm-conversions"],
   "INVENTORY & STORES":    ["/stock-register", "/inventory-ledger", "/opening-stock", "/storekeeper", "/store-locator", "/physical-count", "/physical-count/approvals", "/consumables", "/scrap-register"],
   "DISPATCH":              ["/ready-to-dispatch", "/dispatch-records", "/serial-numbers", "/fat-certificates"],
-  "FINANCE & COMPLIANCE":  ["/gst-reports", "/processor-invoices", "/processor-invoice-reports"],
+  "FINANCE & COMPLIANCE":  ["/gst-reports", "/processor-invoices", "/processor-invoice-reports", "/jig-approvals"],
   "MASTERS & SETUP":       ["/items", "/bill-of-materials", "/jig-master", "/assets-register", "/settings"],
 };
 
@@ -996,6 +999,12 @@ export function AppSidebar() {
       title: "Processor Invoice Reports",
       url: "/processor-invoice-reports",
       icon: BarChart3,
+      allowedRoles: ['admin', 'finance'],
+    },
+    {
+      title: "Jig Approvals",
+      url: "/jig-approvals",
+      icon: CheckCircle,
       allowedRoles: ['admin', 'finance'],
     },
   ];

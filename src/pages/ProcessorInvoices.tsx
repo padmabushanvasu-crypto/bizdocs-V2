@@ -15,6 +15,7 @@ import {
   cancelProcessorInvoice,
   type ProcessorInvoiceRow,
 } from "@/lib/processor-invoices-api";
+import { fetchJigHoldStatusByInvoice } from "@/lib/jig-approvals-api";
 
 const TH = "px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200";
 const TD = "px-3 py-2 text-sm text-slate-700 border-b border-slate-100";
@@ -42,6 +43,14 @@ export default function ProcessorInvoices() {
         partyId: partyId === "all" ? undefined : partyId,
         status: status === "all" ? undefined : status,
       }),
+  });
+
+  // Jig approval state per invoice (processor_invoice_jig_holds), for the badge.
+  const invoiceIds = invoices.map((i) => i.id);
+  const { data: jigHoldByInvoice = new Map(), error: jigHoldError } = useQuery({
+    queryKey: ["processor-invoice-jig-holds", invoiceIds],
+    queryFn: () => fetchJigHoldStatusByInvoice(invoiceIds),
+    enabled: invoiceIds.length > 0,
   });
 
   const cancelMutation = useMutation({
@@ -93,6 +102,7 @@ export default function ProcessorInvoices() {
 
       {partiesError && <p className="text-xs text-red-600">Could not load processors: {(partiesError as Error).message}</p>}
       {error && <p className="text-sm text-red-600">Could not load invoices: {(error as Error).message}</p>}
+      {jigHoldError && <p className="text-sm text-red-600">Could not load jig approvals: {(jigHoldError as Error).message}</p>}
 
       <div className="paper-card !p-0">
         <div className="overflow-x-auto">
@@ -120,7 +130,14 @@ export default function ProcessorInvoices() {
                   const cancelled = inv.status === "cancelled";
                   return (
                     <tr key={inv.id} className={cancelled ? "opacity-60 bg-slate-50" : ""}>
-                      <td className={`${TD} font-mono font-medium ${cancelled ? "line-through" : ""}`}>{inv.invoice_number}</td>
+                      <td className={`${TD} font-mono font-medium ${cancelled ? "line-through" : ""}`}>{inv.invoice_number}
+                        {jigHoldByInvoice.get(inv.id) === "pending" && (
+                          <span className="ml-2 align-middle bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-sans font-medium px-1.5 py-0.5 rounded-full no-underline">Jig approval pending</span>
+                        )}
+                        {jigHoldByInvoice.get(inv.id) === "rejected" && (
+                          <span className="ml-2 align-middle bg-red-50 text-red-700 border border-red-200 text-[10px] font-sans font-medium px-1.5 py-0.5 rounded-full no-underline">Jig approval rejected</span>
+                        )}
+                      </td>
                       <td className={TD}>{new Date(inv.invoice_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</td>
                       <td className={`${TD} font-medium`}>{inv.party_name ?? "—"}</td>
                       <td className={`${TD} text-right tabular-nums font-mono`}>{inv.line_count}</td>
