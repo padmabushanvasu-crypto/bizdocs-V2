@@ -27,7 +27,7 @@ vi.mock("@/integrations/supabase/client", () => {
 vi.mock("@/lib/auth-helpers", () => ({ getCompanyId: vi.fn().mockResolvedValue("company-1") }));
 
 import {
-  buildJigAnswer, emptyJigDraft, submitPendingJigAnswers, type JigAnswerDraft,
+  buildJigAnswer, emptyJigDraft, submitPendingJigAnswers, describeJigAnswer, type JigAnswerDraft,
 } from "@/lib/grn-jigs-api";
 
 const row = (over: any = {}) => ({
@@ -104,5 +104,40 @@ describe("submitPendingJigAnswers", () => {
     ]);
     await expect(submitPendingJigAnswers("g-1", drafts)).rejects.toThrow("Gate: jig not answered");
     expect(rpcCalls).toHaveLength(2); // first one went through and stands
+  });
+});
+
+describe("describeJigAnswer (answered-row breakdown)", () => {
+  const base = {
+    answer_returned_qty: 0, answer_held_qty: 0, answer_write_off_qty: 0,
+    answer_type: null, linked_dc_number: null, linked_dc_pending_qty: null,
+  } as any;
+
+  it("shows only the non-zero parts, with the linked DC on the held part", () => {
+    expect(
+      describeJigAnswer({ ...base, answer_returned_qty: 1, answer_held_qty: 1, linked_dc_number: "DC-26-27/1101", linked_dc_pending_qty: 5 }),
+    ).toBe("Returned 1 · Held 1 (linked DC-26-27/1101, pending 5)");
+  });
+
+  it("write-off only", () => {
+    expect(describeJigAnswer({ ...base, answer_write_off_qty: 2, answer_type: "write_off_requested" })).toBe(
+      "Not returned — sent to Finance 2",
+    );
+  });
+
+  it("fully returned, and an approved write-off", () => {
+    expect(describeJigAnswer({ ...base, answer_returned_qty: 3 })).toBe("Returned 3");
+    expect(describeJigAnswer({ ...base, answer_write_off_qty: 1, answer_type: "write_off_approved" })).toBe("Write-off approved 1");
+  });
+
+  it("held without a linked DC, null counts, and no breakdown", () => {
+    expect(describeJigAnswer({ ...base, answer_held_qty: 2 })).toBe("Held 2");
+    expect(describeJigAnswer({ ...base, answer_returned_qty: null, answer_held_qty: null, answer_write_off_qty: null })).toBe("Answered");
+  });
+
+  it("combines all three parts", () => {
+    expect(
+      describeJigAnswer({ ...base, answer_returned_qty: 1, answer_held_qty: 1, answer_write_off_qty: 1, linked_dc_number: "DC-1", linked_dc_pending_qty: 2 }),
+    ).toBe("Returned 1 · Held 1 (linked DC-1, pending 2) · Not returned — sent to Finance 1");
   });
 });

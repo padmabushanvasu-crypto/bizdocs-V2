@@ -36,7 +36,41 @@ export interface GrnJigQuestion {
   answer_event_id: string | null;
   answer_type: string | null;
   answer_qty: number | null;
+  /** This GRN's live answer, broken down (0 / null when that part is absent). */
+  answer_returned_qty: number | null;
+  answer_held_qty: number | null;
+  answer_write_off_qty: number | null;
   needs_answer: boolean;
+}
+
+/**
+ * Human text for an answered row: only the non-zero parts of this GRN's live
+ * answer, e.g. "Returned 1 · Held 1 (linked DC-26-27/1101, pending 5)" or
+ * "Not returned — sent to Finance 2". Falls back to "Answered" when the view
+ * reports no breakdown at all.
+ */
+export function describeJigAnswer(
+  r: Pick<
+    GrnJigQuestion,
+    "answer_returned_qty" | "answer_held_qty" | "answer_write_off_qty" | "answer_type" | "linked_dc_number" | "linked_dc_pending_qty"
+  >,
+): string {
+  const parts: string[] = [];
+  if ((r.answer_returned_qty ?? 0) > 0) parts.push(`Returned ${r.answer_returned_qty}`);
+  if ((r.answer_held_qty ?? 0) > 0) {
+    const link = r.linked_dc_number
+      ? ` (linked ${r.linked_dc_number}${r.linked_dc_pending_qty != null ? `, pending ${r.linked_dc_pending_qty}` : ""})`
+      : "";
+    parts.push(`Held ${r.answer_held_qty}${link}`);
+  }
+  if ((r.answer_write_off_qty ?? 0) > 0) {
+    parts.push(
+      r.answer_type === "write_off_approved"
+        ? `Write-off approved ${r.answer_write_off_qty}`
+        : `Not returned — sent to Finance ${r.answer_write_off_qty}`,
+    );
+  }
+  return parts.length > 0 ? parts.join(" · ") : "Answered";
 }
 
 export interface JigLinkCandidate {

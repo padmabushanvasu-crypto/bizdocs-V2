@@ -6,13 +6,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import {
   fetchJigLinkCandidates,
   reverseJigEvent,
   submitPendingJigAnswers,
   buildJigAnswer,
+  describeJigAnswer,
   draftAllReturned,
   draftReturnedQty,
   emptyJigDraft,
@@ -22,14 +23,6 @@ import {
 } from "@/lib/grn-jigs-api";
 
 export const GRN_JIGS_QUERY_KEY = (grnId: string) => ["grn-jig-questions", grnId] as const;
-
-const ANSWER_LABEL: Record<string, string> = {
-  returned: "Returned",
-  held_pending: "Held — items pending with vendor",
-  write_off_requested: "Not returned — sent to Finance for write-off",
-  write_off_approved: "Write-off approved",
-  write_off_rejected: "Write-off rejected",
-};
 
 interface Props {
   grnId: string;
@@ -271,16 +264,7 @@ export function GrnJigsCard({ grnId, rows, drafts, onDraftChange, submitWithStag
           <div key={r.dc_jig_id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1">
             <JigHeader row={r} />
             <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span className="font-medium text-slate-800">
-                {ANSWER_LABEL[r.answer_type ?? ""] ?? r.answer_type ?? "Answered"}
-                {r.answer_qty != null ? ` · qty ${r.answer_qty}` : ""}
-              </span>
-              {r.linked_dc_number && (
-                <span className="text-slate-600">
-                  Linked DC <strong>{r.linked_dc_number}</strong>
-                  {r.linked_dc_pending_qty != null ? ` (pending ${r.linked_dc_pending_qty})` : ""}
-                </span>
-              )}
+              <span className="font-medium text-slate-800">{describeJigAnswer(r)}</span>
               {r.answer_event_id && !disabled && (
                 <Button
                   type="button" variant="outline" size="sm" className="h-6 px-2 text-xs ml-auto"
@@ -298,6 +282,7 @@ export function GrnJigsCard({ grnId, rows, drafts, onDraftChange, submitWithStag
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Undo jig answer — {undoRow?.jig_number}</DialogTitle>
+            <DialogDescription>This undoes the whole answer for this jig on this GRN.</DialogDescription>
           </DialogHeader>
           <Textarea
             value={undoReason}
