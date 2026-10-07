@@ -319,8 +319,87 @@ export async function fetchDeliveryChallans(filters: DCFilters = {}) {
   return { data: dcs, count: count ?? 0 };
 }
 
+// GRN receipt status per DC line, read from v_dc_line_balance (the single
+// source of truth shared with the DC Balance screen). Not re-derived here.
+export interface DcLineGrnStatus {
+  grn_numbers: string | null;
+  plan_qty: number;
+  received_qty: number;
+  accepted_qty: number;
+  rejected_qty: number;
+  balance_qty: number;
+  line_status: "pending" | "partially_received" | "fully_received";
+}
+
+export type DcExportLine = DCLineItem & { grn: DcLineGrnStatus | null };
+
+type DcLineGrnStatusRow = { dc_line_item_id: string; grn_numbers: string | null } & Record<
+  "plan_qty" | "received_qty" | "accepted_qty" | "rejected_qty" | "balance_qty",
+  number | string | null
+> & { line_status: DcLineGrnStatus["line_status"] };
+
+const GRN_STATUS_CHUNK = 200; // DC ids per .in() call
+const GRN_STATUS_PAGE = 1000; // PostgREST default row cap — page past it
+
+async function fetchDcLineGrnStatus(
+  companyId: string,
+  dcIds: string[]
+): Promise<Map<string, DcLineGrnStatus>> {
+  const out = new Map<string, DcLineGrnStatus>();
+  for (let i = 0; i < dcIds.length; i += GRN_STATUS_CHUNK) {
+    const ids = dcIds.slice(i, i + GRN_STATUS_CHUNK);
+    for (let from = 0; ; from += GRN_STATUS_PAGE) {
+      const { data, error } = await supabase
+        .from("v_dc_line_balance" as never)
+        .select("dc_line_item_id, grn_numbers, plan_qty, received_qty, accepted_qty, rejected_qty, balance_qty, line_status")
+        .eq("company_id", companyId)
+        .in("dc_id", ids)
+        .order("dc_line_item_id", { ascending: true })
+        .range(from, from + GRN_STATUS_PAGE - 1);
+      if (error) throw error;
+      const rows = (data ?? []) as unknown as DcLineGrnStatusRow[];
+      for (const r of rows) {
+        out.set(r.dc_line_item_id, {
+          grn_numbers: r.grn_numbers ?? null,
+          plan_qty: Number(r.plan_qty ?? 0),
+          received_qty: Number(r.received_qty ?? 0),
+          accepted_qty: Number(r.accepted_qty ?? 0),
+          rejected_qty: Number(r.rejected_qty ?? 0),
+          balance_qty: Number(r.balance_qty ?? 0),
+          line_status: r.line_status,
+        });
+      }
+      if (rows.length < GRN_STATUS_PAGE) break;
+    }
+  }
+  return out;
+}
+
+/**
+ * Attaches `grn` (view row) to every DC line. Draft / cancelled DCs are not in
+ * the view → `grn` stays null and the export labels them. Any other line with
+ * no view row is a data problem → throw (never export silently blank GRN cols).
+ */
+export function mergeGrnStatusOntoDCs(
+  dcs: DeliveryChallan[],
+  status: Map<string, DcLineGrnStatus>
+): DeliveryChallan[] {
+  return dcs.map((dc) => ({
+    ...dc,
+    line_items: (dc.line_items ?? []).map((li): DcExportLine => {
+      const grn = (li.id && status.get(li.id)) || null;
+      if (!grn && dc.status !== "draft" && dc.status !== "cancelled") {
+        throw new Error(
+          `GRN status missing for ${dc.dc_number} line ${li.serial_number} (not in v_dc_line_balance)`
+        );
+      }
+      return { ...li, grn };
+    }),
+  })) as DeliveryChallan[];
+}
+
 // Fetch all DCs in a date range (no pagination) for the Export modal —
-// embeds full line items.
+// embeds full line items plus per-line GRN receipt status.
 export async function fetchAllDCsForExport(
   dateFrom: string,
   dateTo: string,
@@ -329,7 +408,7 @@ export async function fetchAllDCsForExport(
   const { data, error } = await supabase
     .from("delivery_challans")
     .select(
-      `*, line_items:dc_line_items(serial_number, description, drawing_number, quantity, unit, rate, amount, nature_of_process, jigs_sent, qty_nos, qty_kg, qty_sft, returned_qty_nos, returned_qty_kg, returned_qty_sft)`
+      `*, line_items:dc_line_items(id, serial_number, description, drawing_number, quantity, unit, rate, amount, nature_of_process, jigs_sent, qty_nos, qty_kg, qty_sft, returned_qty_nos, returned_qty_kg, returned_qty_sft)`
     )
     .eq("company_id", companyId)
     .neq("status", "deleted")
@@ -337,7 +416,9 @@ export async function fetchAllDCsForExport(
     .lte("dc_date", dateTo)
     .order("dc_date", { ascending: true });
   if (error) throw error;
-  return (data ?? []) as unknown as DeliveryChallan[];
+  const dcs = (data ?? []) as unknown as DeliveryChallan[];
+  const status = await fetchDcLineGrnStatus(companyId, dcs.map((d) => d.id));
+  return mergeGrnStatusOntoDCs(dcs, status);
 }
 
 // Fetch DCs that have at least one return — i.e. status partially_returned or
