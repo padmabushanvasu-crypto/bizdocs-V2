@@ -84,6 +84,7 @@ const MORE_GROUPS: MoreGroup[] = [
     items: [
       { label: "Sales Orders", to: "/sales-orders", icon: ShoppingBag },
       { label: "DC / Job Work Order", to: "/delivery-challans", icon: Truck },
+      { label: "Jig Tracker", to: "/jig-tracker", icon: Wrench },
       { label: "DC Returns", to: "/dc-grn", icon: RotateCcw },
       { label: "Dispatch Notes", to: "/dispatch-notes", icon: Send },
       { label: "Receipts", to: "/receipts", icon: Receipt },

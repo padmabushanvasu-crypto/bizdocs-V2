@@ -75,6 +75,7 @@ import HowToUse from "@/pages/HowToUse";
 import NotFound from "@/pages/NotFound";
 import ComponentJourney from "@/pages/ComponentJourney";
 import JigMaster from "@/pages/JigMaster";
+import JigTracker from "@/pages/JigTracker";
 import SubAssemblyWorkOrders from "@/pages/SubAssemblyWorkOrders";
 import FinishedGoodWorkOrders from "@/pages/FinishedGoodWorkOrders";
 import RmConversionNew from "@/pages/RmConversionNew";
@@ -226,6 +227,7 @@ const App = () => (
               <Route path="/scrap-register" element={<PageGuard page="scrap-register"><ScrapRegister /></PageGuard>} />
 
               <Route path="/jig-master" element={<PageGuard page="jig-master"><JigMaster /></PageGuard>} />
+              <Route path="/jig-tracker" element={<PageGuard page="jig-tracker"><JigTracker /></PageGuard>} />
 
               <Route path="/sub-assembly-work-orders" element={<PageGuard page="sub-assembly-work-orders"><SubAssemblyWorkOrders /></PageGuard>} />
               <Route path="/finished-good-work-orders" element={<PageGuard page="finished-good-work-orders"><FinishedGoodWorkOrders /></PageGuard>} />

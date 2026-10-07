@@ -120,6 +120,8 @@ const TOOLTIP_TEXT: Record<string, string> = {
     "Factory Acceptance Test records. Every unit must pass FAT before it can be invoiced. 12 IEC standard tests per unit.",
   "GST Reports":
     "Download GSTR-1, GSTR-2 and GSTR-3B for filing. One click per report.",
+  "Jig Tracker":
+    "Every jig sent to a vendor on a DC — where it is now, how long it has been out, and what is still outstanding.",
   "Processor Invoices":
     "Record invoices received from job-work processors against DC lines, and compare billed rates with the DC estimate.",
   "Processor Invoice Reports":
@@ -156,6 +158,7 @@ const ALL_SEARCH_ITEMS: { title: string; url: string }[] = [
   { title: "WIP Register", url: "/wip-register" },
   { title: "Job Cards", url: "/job-works" },
   { title: "DC / Job Work Order", url: "/delivery-challans" },
+  { title: "Jig Tracker", url: "/jig-tracker" },
   { title: "Purchase Orders", url: "/purchase-orders" },
   { title: "GRN", url: "/grn" },
   { title: "DC Returns", url: "/dc-grn" },
@@ -191,7 +194,7 @@ const RAIL_MODE_KEY = "bizdocs_sidebar_mode";
 
 const GROUP_PATHS: Record<string, string[]> = {
   "DASHBOARD":             ["/"],
-  "PROCUREMENT":           ["/purchase-orders", "/delivery-challans", "/follow-up-tracker", "/vendor-scorecards", "/parties", "/reorder-intelligence"],
+  "PROCUREMENT":           ["/purchase-orders", "/delivery-challans", "/jig-tracker", "/follow-up-tracker", "/vendor-scorecards", "/parties", "/reorder-intelligence"],
   "INWARD & QC":           ["/grn", "/storekeeper-queue", "/ready-to-move", "/dc-grn"],
   "PRODUCTION & JOB WORK": ["/job-works", "/wip-register", "/sub-assembly-work-orders", "/finished-good-work-orders", "/rm-conversions"],
   "INVENTORY & STORES":    ["/stock-register", "/inventory-ledger", "/opening-stock", "/storekeeper", "/store-locator", "/physical-count", "/physical-count/approvals", "/consumables", "/scrap-register"],
@@ -773,6 +776,12 @@ export function AppSidebar() {
         ? ("red" as const)
         : ("amber" as const),
       allowedRoles: ['admin', 'finance', 'purchase_team', 'inward_team', 'assembly_team'],
+    },
+    {
+      // View-only for every role — no allowedRoles restriction.
+      title: "Jig Tracker",
+      url: "/jig-tracker",
+      icon: Wrench,
     },
     {
       title: "Follow-Up Tracker",

@@ -27,6 +27,7 @@ const FULL_ACCESS: PageAccess = { canView: true,  canEdit: true,  canExport: tru
 // ── Per-role access maps ───────────────────────────────────────────────────────
 
 const PURCHASE_TEAM_MAP: Record<string, PageAccess> = {
+  'jig-tracker':       { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
   'dashboard':            { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
   'reorder-intelligence': { canView: true,  canEdit: true,  canExport: false, hideCosts: true  },
   'purchase-orders':      { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
@@ -51,6 +52,7 @@ const PURCHASE_TEAM_MAP: Record<string, PageAccess> = {
 };
 
 const INWARD_TEAM_MAP: Record<string, PageAccess> = {
+  'jig-tracker':       { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
   'dashboard':          { canView: true,  canEdit: false, canExport: false, hideCosts: true },
   'follow-up-tracker':  { canView: true,  canEdit: true,  canExport: true,  hideCosts: true },
   'delivery-challans':  { canView: true,  canEdit: true,  canExport: true,  hideCosts: false },
@@ -67,6 +69,7 @@ const INWARD_TEAM_MAP: Record<string, PageAccess> = {
 };
 
 const QC_TEAM_MAP: Record<string, PageAccess> = {
+  'jig-tracker':       { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
   'dashboard':                  { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
   'grn':                        { canView: true,  canEdit: true,  canExport: false, hideCosts: true  },
   'job-works':                  { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
@@ -81,6 +84,7 @@ const QC_TEAM_MAP: Record<string, PageAccess> = {
 };
 
 const STOREKEEPER_MAP: Record<string, PageAccess> = {
+  'jig-tracker':       { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
   // ── Pages storekeeper can access — all with hideCosts: true ──────────────
   'dashboard':         { canView: true, canEdit: false, canExport: false, hideCosts: true },
   'storekeeper':       { canView: true, canEdit: true,  canExport: true,  hideCosts: true },
@@ -94,6 +98,7 @@ const STOREKEEPER_MAP: Record<string, PageAccess> = {
 };
 
 const ASSEMBLY_TEAM_MAP: Record<string, PageAccess> = {
+  'jig-tracker':       { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
   'dashboard':                  { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
   'reorder-intelligence':       { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
   'delivery-challans':          { canView: true,  canEdit: false, canExport: false, hideCosts: true  },
