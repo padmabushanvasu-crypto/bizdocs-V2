@@ -1254,6 +1254,113 @@ export function buildStockPeriodWorkbook(
   return { workbook: wb, filename };
 }
 
+// ── DC Returns — Goods Returned from Vendors (one row per GRN line) ────────────
+
+interface DcReturnsExportRowLike {
+  dc_number: string;
+  dc_date: string | null;
+  grn_number: string;
+  grn_date: string;
+  inward_sl_no: number | null;
+  vendor_name: string;
+  item_code: string;
+  drawing_number: string;
+  description: string;
+  nature_of_process: string;
+  unit: string;
+  qty_sent: number | null;
+  received: number | null;
+  accepted: number | null;
+  rejected: number | null;
+  store_confirmed: number | null;
+  grn_stage: string;
+  status: string;
+}
+
+const DC_RETURN_STATUS_LABEL: Record<string, string> = {
+  draft: "Open",
+  recorded: "Partially Complete",
+  verified: "Complete",
+  deleted: "Deleted",
+};
+
+export function buildDcReturnsWorkbook(
+  rows: DcReturnsExportRowLike[],
+  opts: {
+    companyName: string;
+    generatedAt: string;
+    todayIST: string;
+    filters: { search?: string; status?: string; month?: string; showDeleted?: boolean };
+    /** Days a GRN has been open (same formula as the screen). */
+    daysOpen: (grnDate: string) => number;
+  },
+): { workbook: XLSX.WorkBook; filename: string } {
+  const f = opts.filters;
+  const monthLabel = f.month ? formatPlainDateIN(`${f.month}-01`).slice(3).replace("-", " ") : "All months";
+  const statusLabel = f.status && f.status !== "all" ? DC_RETURN_STATUS_LABEL[f.status] ?? f.status : "All statuses";
+  const filtersText =
+    `Month: ${monthLabel} · Status: ${statusLabel} · Search: ${f.search?.trim() ? `"${f.search.trim()}"` : "—"}` +
+    ` · Deleted: ${f.showDeleted ? "shown" : "hidden"}`;
+
+  const headers = [
+    "S.No", "DC No", "DC Date", "DC Return No", "GRN Date", "Inward Sl No", "Vendor", "Item Code",
+    "Drawing No", "Description", "Nature of Process", "UOM", "Qty Sent", "Received", "Accepted",
+    "Rejected", "Store Confirmed", "GRN Stage", "Status", "Days Open",
+  ];
+  let tRecv = 0, tAcc = 0, tRej = 0, tConf = 0;
+  const dataRows: (string | number)[][] = rows.map((r, i) => {
+    tRecv += r.received ?? 0;
+    tAcc += r.accepted ?? 0;
+    tRej += r.rejected ?? 0;
+    tConf += r.store_confirmed ?? 0;
+    return [
+      i + 1,
+      r.dc_number,
+      r.dc_date ? formatPlainDateIN(r.dc_date) : "",
+      r.grn_number,
+      r.grn_date ? formatPlainDateIN(r.grn_date) : "",
+      r.inward_sl_no ?? "",
+      r.vendor_name,
+      r.item_code,
+      r.drawing_number,
+      r.description,
+      r.nature_of_process,
+      r.unit,
+      r.qty_sent ?? "",
+      r.received ?? "",
+      r.accepted ?? "",
+      r.rejected ?? "",
+      r.store_confirmed ?? "",
+      r.grn_stage,
+      DC_RETURN_STATUS_LABEL[r.status] ?? r.status,
+      r.status === "verified" ? "Done" : r.grn_date ? opts.daysOpen(r.grn_date) : "",
+    ];
+  });
+  // Qty Sent is not totalled: one DC line can appear on several GRN lines (partial
+  // returns), so a column sum would double-count what was sent.
+  const totalsRow: (string | number)[] = headers.map(() => "");
+  totalsRow[1] = "TOTAL";
+  totalsRow[13] = tRecv;
+  totalsRow[14] = tAcc;
+  totalsRow[15] = tRej;
+  totalsRow[16] = tConf;
+
+  const numFmtByCol: Record<number, string> = {};
+  for (const c of [12, 13, 14, 15, 16]) numFmtByCol[c] = PERIOD_QTY_FMT;
+  const colWidths = [6, 16, 13, 16, 13, 12, 24, 16, 16, 36, 22, 8, 11, 11, 11, 11, 14, 18, 18, 10];
+
+  const workbook = buildReportWorkbook({
+    sheetName: "DC Returns",
+    title: "DC Returns — Goods Returned from Vendors",
+    companyName: opts.companyName,
+    generatedAt: opts.generatedAt,
+    filters: filtersText,
+    headers, dataRows, totalsRow, colWidths, numFmtByCol,
+  });
+  const filename = `DC-Returns_${slugifyCompanyName(opts.companyName)}_${f.month ?? "All"}_${opts.todayIST}.xlsx`;
+  return { workbook, filename };
+}
+
 export function downloadWorkbook(workbook: XLSX.WorkBook, filename: string): void {
   XLSX.writeFile(workbook, filename);
 }

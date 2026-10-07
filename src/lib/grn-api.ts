@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
+import { monthRange } from "@/lib/date-ist";
 import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
 import { getNextDocNumber } from "@/lib/doc-number-utils";
 import { updateStockBucket } from "@/lib/items-api";
@@ -245,18 +246,16 @@ export interface GrnReceiptEvent {
   created_at: string;
 }
 
-export async function fetchGRNs(filters: GRNFilters = {}) {
-  const companyId = await getCompanyId();
-  if (!companyId) {
-    return { data: [], count: 0 };
-  }
-  const { search, status = "all", grn_type, month, drawingNumber, inwardSlNo, page = 1, pageSize = 20 } = filters;
-  const from = (page - 1) * pageSize;
-  const to = from + pageSize - 1;
-
+// Pre-queries behind the drawing-number and Non-Conforming filters: both narrow
+// the list to a set of grn ids via grn_line_items. Returns `empty: true` when a
+// filter is active but matches no GRN (the list is then empty by definition).
+async function resolveGrnLineFilterIds(
+  companyId: string,
+  filters: GRNFilters,
+): Promise<{ empty: boolean; drawingGrnIds: string[] | null; nonConformingGrnIds: string[] | null }> {
   let drawingGrnIds: string[] | null = null;
-  if (drawingNumber?.trim()) {
-    const term = sanitizeSearchTerm(drawingNumber);
+  if (filters.drawingNumber?.trim()) {
+    const term = sanitizeSearchTerm(filters.drawingNumber);
     if (term) {
       const { data: lineMatches } = await (supabase as any)
         .from("grn_line_items")
@@ -264,7 +263,7 @@ export async function fetchGRNs(filters: GRNFilters = {}) {
         .eq("company_id", companyId)
         .ilike("drawing_number", `%${term}%`);
       drawingGrnIds = [...new Set(((lineMatches ?? []) as any[]).map((r) => r.grn_id).filter(Boolean))] as string[];
-      if (drawingGrnIds.length === 0) return { data: [], count: 0 };
+      if (drawingGrnIds.length === 0) return { empty: true, drawingGrnIds, nonConformingGrnIds: null };
     }
   }
 
@@ -278,10 +277,19 @@ export async function fetchGRNs(filters: GRNFilters = {}) {
       .eq("company_id", companyId)
       .gt("non_conforming_qty", 0);
     nonConformingGrnIds = [...new Set(((ncMatches ?? []) as any[]).map((r) => r.grn_id).filter(Boolean))] as string[];
-    if (nonConformingGrnIds.length === 0) return { data: [], count: 0 };
+    if (nonConformingGrnIds.length === 0) return { empty: true, drawingGrnIds, nonConformingGrnIds };
   }
+  return { empty: false, drawingGrnIds, nonConformingGrnIds };
+}
 
-  let query = (supabase as any).from("grns").select("*", { count: "exact" }).order("created_at", { ascending: false });
+// The list filters shared by fetchGRNs (paged screen) and fetchDcGrnsForExport
+// (full export), so an export can never drift from what the screen shows.
+function applyGrnListFilters(
+  query: any,
+  filters: GRNFilters,
+  ids: { drawingGrnIds: string[] | null; nonConformingGrnIds: string[] | null },
+) {
+  const { search, status = "all", grn_type, month, inwardSlNo } = filters;
   if (!filters.showDeleted) query = query.neq("status", "deleted");
   if (status && status !== "all") query = query.eq("status", status);
   if (grn_type && grn_type !== "all") query = query.eq("grn_type", grn_type);
@@ -293,8 +301,8 @@ export async function fetchGRNs(filters: GRNFilters = {}) {
   else if (filters.qcInspected === false) query = query.is('quality_completed_by', null);
   if (inwardSlNo != null && Number.isFinite(inwardSlNo)) query = query.eq('inward_sl_no', inwardSlNo);
   if (month) {
-    const start = `${month}-01`;
-    const end = new Date(new Date(start).getFullYear(), new Date(start).getMonth() + 1, 0).toISOString().split('T')[0];
+    // String/day math (monthRange) — toISOString() would shift IST dates by a day.
+    const { from: start, to: end } = monthRange(month);
     query = query.gte("grn_date", start).lte("grn_date", end);
   }
   if (search?.trim()) {
@@ -302,16 +310,35 @@ export async function fetchGRNs(filters: GRNFilters = {}) {
     if (sanitized) {
       const term = `%${sanitized}%`;
       const orParts = [`grn_number.ilike.${term}`, `vendor_name.ilike.${term}`, `po_number.ilike.${term}`];
+      // DC-return GRNs show the DC number in the list; make it searchable there.
+      if (grn_type === "dc_grn") orParts.push(`linked_dc_number.ilike.${term}`);
       // Fold a purely-numeric search into an exact inward_sl_no match (numeric
       // column — ilike won't apply), so typing the serial finds the GRN.
       if (/^\d+$/.test(search.trim())) orParts.push(`inward_sl_no.eq.${Number(search.trim())}`);
       query = query.or(orParts.join(","));
     }
   }
-  if (drawingGrnIds) query = query.in("id", drawingGrnIds);
+  if (ids.drawingGrnIds) query = query.in("id", ids.drawingGrnIds);
   // Multiple .in on the same column AND together, so this intersects with any
   // drawing-number restriction above.
-  if (nonConformingGrnIds) query = query.in("id", nonConformingGrnIds);
+  if (ids.nonConformingGrnIds) query = query.in("id", ids.nonConformingGrnIds);
+  return query;
+}
+
+export async function fetchGRNs(filters: GRNFilters = {}) {
+  const companyId = await getCompanyId();
+  if (!companyId) {
+    return { data: [], count: 0 };
+  }
+  const { page = 1, pageSize = 20 } = filters;
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  const ids = await resolveGrnLineFilterIds(companyId, filters);
+  if (ids.empty) return { data: [], count: 0 };
+
+  let query = (supabase as any).from("grns").select("*", { count: "exact" }).order("created_at", { ascending: false });
+  query = applyGrnListFilters(query, filters, ids);
   query = query.range(from, to);
   const { data, error, count } = await query;
   if (error) throw error;
@@ -320,6 +347,200 @@ export async function fetchGRNs(filters: GRNFilters = {}) {
 
 export async function fetchDcGrns(filters: GRNFilters = {}) {
   return fetchGRNs({ ...filters, grn_type: 'dc_grn' });
+}
+
+// Days a DC-return GRN has been open — the formula the DC Returns screen shows.
+export function daysOpen(dateStr: string): number {
+  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+}
+
+export interface DcGrnExportRow {
+  grn_id: string;
+  dc_number: string;
+  dc_date: string | null;
+  grn_number: string;
+  grn_date: string;
+  inward_sl_no: number | null;
+  vendor_name: string;
+  item_code: string;
+  drawing_number: string;
+  description: string;
+  nature_of_process: string;
+  unit: string;
+  qty_sent: number | null;
+  received: number | null;
+  accepted: number | null;
+  rejected: number | null;
+  store_confirmed: number | null;
+  grn_stage: string;
+  status: string;
+}
+
+const EXPORT_PAGE = 1000;
+const EXPORT_MAX_PAGES = 20;
+const EXPORT_CHUNK = 200;
+
+function chunkIds<T>(ids: T[], size = EXPORT_CHUNK): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < ids.length; i += size) out.push(ids.slice(i, i + size));
+  return out;
+}
+
+// Pages one query to completion (1000 per page); throws instead of truncating.
+async function fetchAllPages(build: () => any, what: string): Promise<any[]> {
+  const all: any[] = [];
+  for (let page = 0; ; page++) {
+    if (page >= EXPORT_MAX_PAGES) {
+      throw new Error(`${what} exceeds ${EXPORT_MAX_PAGES * EXPORT_PAGE} rows — export aborted to avoid a truncated report.`);
+    }
+    const start = page * EXPORT_PAGE;
+    const { data, error } = await build().range(start, start + EXPORT_PAGE - 1);
+    if (error) throw new Error(error.message);
+    const rows = (data ?? []) as any[];
+    all.push(...rows);
+    if (rows.length < EXPORT_PAGE) break;
+  }
+  return all;
+}
+
+/**
+ * Every DC-return GRN matching the screen's filters (all pages), one row per GRN
+ * line, enriched with the linked DC line (qty sent, process, drawing) and the
+ * DC's own date. A GRN with no lines still yields one row so it cannot vanish.
+ */
+export async function fetchDcGrnsForExport(filters: GRNFilters = {}): Promise<DcGrnExportRow[]> {
+  const companyId = await getCompanyId();
+  if (!companyId) throw new Error("Cannot export: account not linked to a company.");
+
+  const f: GRNFilters = { ...filters, grn_type: "dc_grn" };
+  const ids = await resolveGrnLineFilterIds(companyId, f);
+  if (ids.empty) return [];
+
+  const grns = await fetchAllPages(
+    () =>
+      applyGrnListFilters(
+        (supabase as any).from("grns").select("*").eq("company_id", companyId).eq("grn_type", "dc_grn"),
+        f,
+        ids,
+      )
+        .order("grn_date", { ascending: true })
+        .order("id", { ascending: true }),
+    "DC Returns list",
+  );
+  if (grns.length === 0) return [];
+
+  const grnIds = grns.map((g) => g.id as string);
+  const lines: any[] = [];
+  for (const chunk of chunkIds(grnIds)) {
+    lines.push(
+      ...(await fetchAllPages(
+        () =>
+          (supabase as any)
+            .from("grn_line_items")
+            .select("id, grn_id, serial_number, item_id, dc_line_item_id, description, drawing_number, unit, received_now, receiving_now, accepted_qty, accepted_quantity, rejected_qty, rejected_quantity, store_confirmed_qty")
+            .eq("company_id", companyId)
+            .in("grn_id", chunk)
+            .order("grn_id", { ascending: true })
+            .order("serial_number", { ascending: true })
+            .order("id", { ascending: true }),
+        "DC Returns line items",
+      )),
+    );
+  }
+
+  const dcLineIds = [...new Set(lines.map((l) => l.dc_line_item_id).filter(Boolean))] as string[];
+  const dcLineById = new Map<string, any>();
+  for (const chunk of chunkIds(dcLineIds)) {
+    const { data, error } = await (supabase as any)
+      .from("dc_line_items")
+      .select("id, dc_id, item_code, drawing_number, description, nature_of_process, unit, qty_nos, quantity")
+      .eq("company_id", companyId)
+      .in("id", chunk);
+    if (error) throw new Error(error.message);
+    for (const r of (data ?? []) as any[]) dcLineById.set(r.id, r);
+  }
+
+  const dcIds = [
+    ...new Set([
+      ...grns.map((g) => g.linked_dc_id).filter(Boolean),
+      ...[...dcLineById.values()].map((d) => d.dc_id).filter(Boolean),
+    ]),
+  ] as string[];
+  const dcById = new Map<string, any>();
+  for (const chunk of chunkIds(dcIds)) {
+    const { data, error } = await (supabase as any)
+      .from("delivery_challans")
+      .select("id, dc_number, dc_date")
+      .eq("company_id", companyId)
+      .in("id", chunk);
+    if (error) throw new Error(error.message);
+    for (const r of (data ?? []) as any[]) dcById.set(r.id, r);
+  }
+
+  const itemIds = [...new Set(lines.map((l) => l.item_id).filter(Boolean))] as string[];
+  const itemCodeById = new Map<string, string>();
+  for (const chunk of chunkIds(itemIds)) {
+    const { data, error } = await (supabase as any)
+      .from("items")
+      .select("id, item_code")
+      .eq("company_id", companyId)
+      .in("id", chunk);
+    if (error) throw new Error(error.message);
+    for (const r of (data ?? []) as any[]) itemCodeById.set(r.id, r.item_code ?? "");
+  }
+
+  const linesByGrn = new Map<string, any[]>();
+  for (const l of lines) {
+    const arr = linesByGrn.get(l.grn_id);
+    if (arr) arr.push(l);
+    else linesByGrn.set(l.grn_id, [l]);
+  }
+
+  const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
+  const rows: DcGrnExportRow[] = [];
+  for (const g of grns) {
+    const base = {
+      grn_id: g.id as string,
+      grn_number: g.grn_number ?? "",
+      grn_date: g.grn_date ?? "",
+      inward_sl_no: g.inward_sl_no ?? null,
+      vendor_name: g.vendor_name ?? "",
+      grn_stage: g.grn_stage ?? "",
+      status: g.status ?? "",
+    };
+    const grnLines = linesByGrn.get(g.id) ?? [];
+    if (grnLines.length === 0) {
+      const dc = g.linked_dc_id ? dcById.get(g.linked_dc_id) : undefined;
+      rows.push({
+        ...base,
+        dc_number: g.linked_dc_number ?? dc?.dc_number ?? "",
+        dc_date: dc?.dc_date ?? null,
+        item_code: "", drawing_number: "", description: "", nature_of_process: "", unit: "",
+        qty_sent: null, received: null, accepted: null, rejected: null, store_confirmed: null,
+      });
+      continue;
+    }
+    for (const l of grnLines) {
+      const dcl = l.dc_line_item_id ? dcLineById.get(l.dc_line_item_id) : undefined;
+      const dc = dcById.get(g.linked_dc_id ?? dcl?.dc_id);
+      rows.push({
+        ...base,
+        dc_number: g.linked_dc_number ?? dc?.dc_number ?? "",
+        dc_date: dc?.dc_date ?? null,
+        item_code: (l.item_id ? itemCodeById.get(l.item_id) : "") || dcl?.item_code || "",
+        drawing_number: l.drawing_number ?? dcl?.drawing_number ?? "",
+        description: l.description ?? dcl?.description ?? "",
+        nature_of_process: dcl?.nature_of_process ?? "",
+        unit: dcl?.unit ?? l.unit ?? "",
+        qty_sent: dcl ? num(dcl.qty_nos ?? dcl.quantity) : null,
+        received: num(l.received_now ?? l.receiving_now),
+        accepted: num(l.accepted_qty ?? l.accepted_quantity),
+        rejected: num(l.rejected_qty ?? l.rejected_quantity),
+        store_confirmed: num(l.store_confirmed_qty),
+      });
+    }
+  }
+  return rows;
 }
 
 // Fetch all GRNs in a date range (no pagination) for the Export modal —

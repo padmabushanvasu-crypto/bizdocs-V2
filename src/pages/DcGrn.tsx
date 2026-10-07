@@ -1,11 +1,15 @@
 import { useState, useMemo, Component, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { PackageCheck, Plus, Search, Eye, Trash2, RotateCcw } from "lucide-react";
+import { PackageCheck, Plus, Search, Eye, Trash2, RotateCcw, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { fetchDcGrns, softDeleteGRN, type GRNFilters } from "@/lib/grn-api";
+import { fetchDcGrns, fetchDcGrnsForExport, softDeleteGRN, daysOpen, type GRNFilters } from "@/lib/grn-api";
+import { fetchCompanySettings } from "@/lib/settings-api";
+import { buildDcReturnsWorkbook, downloadWorkbook } from "@/lib/export-utils";
+import { nowStampIST, todayIST } from "@/lib/date-ist";
+import { useRoleAccess } from "@/hooks/useRoleAccess";
 import { TablePageSize } from "@/components/TablePageSize";
 import { useToast } from "@/hooks/use-toast";
 
@@ -45,14 +49,12 @@ const STATUS_CLASS: Record<string, string> = {
   verified: "bg-green-50 text-green-700 border border-green-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
 };
 
-function daysOpen(dateStr: string): number {
-  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
-}
-
 function DcGrnInner() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { canExport } = useRoleAccess();
+  const [isExporting, setIsExporting] = useState(false);
 
   const monthOptions = useMemo(() => {
     const opts: { value: string; label: string }[] = [];
@@ -84,6 +86,41 @@ function DcGrnInner() {
   });
 
   const grns = data?.data ?? [];
+
+  const { data: companySettings } = useQuery({
+    queryKey: ["company-settings"],
+    queryFn: fetchCompanySettings,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Exports exactly what the list is filtered to (search, month, status, deleted),
+  // across all pages — not just the visible one.
+  const handleExport = async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      const rows = await fetchDcGrnsForExport({
+        search: filters.search,
+        status: filters.status,
+        month: filters.month,
+        showDeleted,
+      });
+      const { workbook, filename } = buildDcReturnsWorkbook(rows, {
+        companyName: companySettings?.company_name ?? "client",
+        generatedAt: nowStampIST(),
+        todayIST: todayIST(),
+        filters: { search: filters.search, status: filters.status, month: filters.month, showDeleted },
+        daysOpen,
+      });
+      downloadWorkbook(workbook, filename);
+      toast({ title: `Exported ${rows.length} row${rows.length === 1 ? "" : "s"} to ${filename}` });
+    } catch (err: any) {
+      console.error("[DcGrn] export failed:", err);
+      toast({ title: "Export failed", description: err?.message ?? "Unknown error", variant: "destructive" });
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -120,6 +157,12 @@ function DcGrnInner() {
             <Trash2 className="h-3.5 w-3.5 mr-1.5" />
             {showDeleted ? "Hide Deleted" : "Show Deleted"}
           </Button>
+          {canExport && (
+            <Button variant="outline" size="sm" disabled={isExporting} onClick={handleExport}>
+              <Download className="h-3.5 w-3.5 mr-1.5" />
+              {isExporting ? "Exporting…" : "Export"}
+            </Button>
+          )}
           <Button onClick={() => navigate("/dc-grn/new")} className="active:scale-[0.98] transition-transform flex-shrink-0">
             <Plus className="h-4 w-4 mr-1" /> New DC-GRN
           </Button>
