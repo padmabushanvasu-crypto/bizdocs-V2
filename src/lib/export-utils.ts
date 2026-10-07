@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx-js-style";
 import { formatDateIN as formatPlainDateIN } from "@/lib/date-ist";
+import { formatGrnLinkedDoc } from "@/lib/grn-linked-doc";
 
 const GST_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
@@ -288,7 +289,7 @@ export const GRN_EXPORT_COLS: ExportColumn[] = [
   { key: "grn_number", label: "GRN Number" },
   { key: "grn_date", label: "Date", type: "date" },
   { key: "vendor_name", label: "Vendor", width: 24 },
-  { key: "po_number", label: "Linked PO" },
+  { key: "linked_doc", label: "Linked PO / DC", width: 18 },
   { key: "vendor_invoice_number", label: "Vendor Invoice" },
   { key: "total_received", label: "Received", type: "number" },
   { key: "total_accepted", label: "Accepted", type: "number" },
@@ -569,8 +570,9 @@ export function exportGRNReport(
   dateTo: string
 ): void {
   const filename = `GRN_Report_${dateFrom}_to_${dateTo}.xlsx`;
+  const summaryRows = grns.map((g) => ({ ...g, linked_doc: formatGrnLinkedDoc(g) }));
   if (!includeLineItems) {
-    exportToExcel(grns, GRN_REPORT_SUMMARY_COLS, filename, "GRN Summary");
+    exportToExcel(summaryRows, GRN_REPORT_SUMMARY_COLS, filename, "GRN Summary");
     return;
   }
   const lineRows = grns.flatMap((g) =>
@@ -594,7 +596,7 @@ export function exportGRNReport(
   );
   exportMultiSheet(
     [
-      { sheetName: "GRN Summary", columns: GRN_REPORT_SUMMARY_COLS, data: grns },
+      { sheetName: "GRN Summary", columns: GRN_REPORT_SUMMARY_COLS, data: summaryRows },
       { sheetName: "GRN Line Items", columns: GRN_REPORT_LINE_COLS, data: lineRows },
     ],
     filename
