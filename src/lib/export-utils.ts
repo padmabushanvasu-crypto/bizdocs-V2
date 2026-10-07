@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx-js-style";
 import { formatDateIN as formatPlainDateIN } from "@/lib/date-ist";
 import { formatGrnLinkedDoc } from "@/lib/grn-linked-doc";
+import type { DeliveryChallan, DcLineGrnStatus, DcExportLine } from "@/lib/delivery-challans-api";
 
 const GST_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
@@ -439,7 +440,57 @@ const DC_REPORT_LINE_COLS: ExportColumn[] = [
   { key: "unit", label: "Unit" },
   { key: "rate", label: "Rate", type: "currency" },
   { key: "amount", label: "Amount", type: "currency" },
+  { key: "grn_numbers", label: "GRN No(s)", width: 22 },
+  { key: "grn_received", label: "Received", type: "number" },
+  { key: "grn_accepted", label: "Accepted", type: "number" },
+  { key: "grn_rejected", label: "Rejected", type: "number" },
+  { key: "grn_pending", label: "Pending", type: "number" },
+  { key: "grn_over_received", label: "Over-received", type: "number" },
+  { key: "grn_status", label: "GRN Status" },
 ];
+
+const DC_GRN_STATUS_LABEL: Record<string, string> = {
+  pending: "Pending",
+  partially_received: "Partially Received",
+  fully_received: "Fully Received",
+};
+
+/** GRN columns for one DC line. `grn` is the v_dc_line_balance row (null for draft/cancelled DCs). */
+export function dcLineGrnColumns(dcStatus: string | null | undefined, grn: DcLineGrnStatus | null) {
+  if (!grn) {
+    return {
+      grn_numbers: null, grn_received: null, grn_accepted: null, grn_rejected: null, grn_pending: null, grn_over_received: null,
+      grn_status: dcStatus === "draft" ? "Draft" : dcStatus === "cancelled" ? "Cancelled" : "",
+    };
+  }
+  const over = Number(grn.received_qty) - Number(grn.plan_qty);
+  return {
+    grn_numbers: grn.grn_numbers ?? null,
+    grn_received: grn.received_qty,
+    grn_accepted: grn.accepted_qty,
+    grn_rejected: grn.rejected_qty,
+    grn_pending: grn.balance_qty,
+    grn_over_received: over > 0 ? over : null,
+    grn_status: DC_GRN_STATUS_LABEL[grn.line_status] ?? grn.line_status,
+  };
+}
+
+export function buildDcReportLineRows(dcs: DeliveryChallan[]): Record<string, unknown>[] {
+  return dcs.flatMap((dc) =>
+    ((dc.line_items ?? []) as DcExportLine[]).map((li) => ({
+      dc_number: dc.dc_number,
+      party_name: dc.party_name,
+      drawing_number: li.drawing_number,
+      description: li.description,
+      nature_of_process: li.nature_of_process,
+      quantity: li.quantity ?? li.qty_nos,
+      unit: li.unit,
+      rate: li.rate,
+      amount: li.amount,
+      ...dcLineGrnColumns(dc.status, li.grn),
+    }))
+  );
+}
 
 export function exportDCReport(
   dcs: any[],
@@ -452,19 +503,7 @@ export function exportDCReport(
     exportToExcel(dcs, DC_REPORT_SUMMARY_COLS, filename, "DC Summary");
     return;
   }
-  const lineRows = dcs.flatMap((dc) =>
-    (dc.line_items ?? []).map((li: any) => ({
-      dc_number: dc.dc_number,
-      party_name: dc.party_name,
-      drawing_number: li.drawing_number,
-      description: li.description,
-      nature_of_process: li.nature_of_process,
-      quantity: li.quantity ?? li.qty_nos,
-      unit: li.unit,
-      rate: li.rate,
-      amount: li.amount,
-    }))
-  );
+  const lineRows = buildDcReportLineRows(dcs);
   exportMultiSheet(
     [
       { sheetName: "DC Summary", columns: DC_REPORT_SUMMARY_COLS, data: dcs },
