@@ -1418,7 +1418,10 @@ export async function saveQuantitativeStage(
       mismatch_disposition: line.mismatch_disposition ?? null,
       over_receipt_qty: line.over_receipt_qty ?? null,
       received_now_2: line.received_now_2 ?? null,
-      jig_confirmed: jigReturnConfirmed ? jigReturnConfirmed.has(line.id) : false,
+      // jig_confirmed is only written when the caller supplies a set (legacy
+      // callers). dc_grn jig custody goes through rpc_record_grn_jig_answer, so
+      // GRN Detail passes none and the column is left untouched.
+      ...(jigReturnConfirmed ? { jig_confirmed: jigReturnConfirmed.has(line.id) } : {}),
       stage1_rejected_qty: line.stage1_rejected_qty ?? null,
     };
     // Approved item conversion — only present when the receiver picked a

@@ -64,7 +64,11 @@ import { useAuth } from "@/hooks/useAuth";
 import { isEditApprover, friendlyEditRequestError } from "@/lib/permissions";
 import { fetchGrnConversionOptions, isTransformSelection, type GrnConversionOption } from "@/lib/item-conversions-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
-import { isFinalBatch } from "@/lib/dc-receipt-utils";
+import { GrnJigsCard, GRN_JIGS_QUERY_KEY } from "@/components/GrnJigsCard";
+import {
+  fetchGrnJigQuestions, submitPendingJigAnswers, buildJigAnswer, emptyJigDraft,
+  type JigAnswerDraft,
+} from "@/lib/grn-jigs-api";
 import { GRNFinanceApproval } from "@/components/GRNFinanceApproval";
 import { ReverseGrnReturnDialog } from "@/components/ReverseGrnReturnDialog";
 import { GrnNcPendingPanel } from "@/components/GrnNcPendingPanel";
@@ -237,7 +241,6 @@ function eqApprovalVal(a: unknown, b: unknown): boolean {
 function diffStage1LineForApproval(
   ln: QuantitativeLineData,
   prev: any,
-  jigConfirmed: boolean,
 ): Record<string, unknown> {
   const wouldBe: Record<string, unknown> = {
     received_qty:         ln.received_qty,
@@ -256,10 +259,6 @@ function diffStage1LineForApproval(
     over_receipt_qty:     ln.over_receipt_qty ?? null,
     received_now_2:       ln.received_now_2 ?? null,
     stage1_rejected_qty:  ln.stage1_rejected_qty ?? null,
-    // Jig-return confirm is driven by the jigReturnConfirmed Set, not the line —
-    // mirror how saveQuantitativeStage writes it (grn-api.ts:1224) so a toggle is
-    // captured in the request instead of being silently dropped.
-    jig_confirmed:        jigConfirmed,
   };
   // Item conversion (Stage 1 picker): ln carries item_id only when the receiver
   // changed it. Include it + its display columns so a non-approver's conversion
@@ -286,13 +285,6 @@ function diffStage1LineForApproval(
   return changed;
 }
 
-// Normalise jigs_sent which may be a string or a JSON array (JSONB column)
-function parseJigsSent(val: string | string[] | null | undefined): string | null {
-  if (!val) return null;
-  if (Array.isArray(val)) return val.join(', ');
-  return val;
-}
-
 // Pending against CURRENT truth: live ordered qty (refreshed on mount for
 // PO-GRN lines; falls back to the frozen snapshot for DC-GRN lines, which
 // have no PO to refresh from) minus what prior GRNs already received. Every
@@ -300,19 +292,6 @@ function parseJigsSent(val: string | string[] | null | undefined): string | null
 // grn_line_items.pending_quantity snapshot, which never moves after a PO edit.
 function s1LivePending(l: S1Line): number {
   return (l.ordered_live ?? l.po_quantity) - l.prev_received_live;
-}
-
-// Is the current receipt closing out this line? Uses live pending (see
-// s1LivePending) rather than the frozen pending_quantity, so a PO qty raised
-// after this GRN was created doesn't stick with a stale close-out point.
-// received_qty is the operator's live input. Reuses the DC-receipt utility —
-// single source of truth shared with GRNForm.
-function isS1LineFinalBatch(l: S1Line): boolean {
-  return isFinalBatch(
-    { po_quantity: s1LivePending(l), previously_received: 0 },
-    l.received_qty,
-    l.stage1_rejected_qty ?? 0,
-  );
 }
 
 // ── QC Measurement row state ───────────────────────────────────────────────────
@@ -2302,7 +2281,8 @@ export default function GRNDetail() {
   // ── Scrap return state (Stage 1 — DC-GRN only) ────────────────────────────
   const [scrapReturned, setScrapReturned] = useState(false);
   const [scrapNotes,    setScrapNotes]    = useState("");
-  const [jigReturnConfirmed, setJigReturnConfirmed] = useState<Set<string>>(new Set());
+  // Jig custody answers (dc_grn): per dc_jig draft, submitted just before the Stage 1 stage save.
+  const [jigDrafts, setJigDrafts] = useState<Map<string, JigAnswerDraft>>(new Map());
   const [scrapItems,    setScrapItems]    = useState<{material_type:string; quantity:string; unit:string; notes:string}[]>([]);
 
   // ── Final GRN / store confirmation state ──────────────────────────────────
@@ -2322,15 +2302,6 @@ export default function GRNDetail() {
 
     // Stage 1
     setS1Lines(deriveS1Lines(grn));
-
-    // Initialise jigReturnConfirmed from persisted jig_confirmed values
-    setJigReturnConfirmed(
-      new Set<string>(
-        items
-          .filter((item) => (item as any).jig_confirmed === true && item.id)
-          .map((item) => item.id as string)
-      )
-    );
 
     // Stage 2 — QC rows from loaded measurements
     const existingMeasurements = grn.qc_measurements ?? [];
@@ -2484,7 +2455,6 @@ export default function GRNDetail() {
           s1InvoiceDate?: string;
           inwardSlNo?: string;
           s1Notes?: string;
-          jigReturnConfirmed?: string[];
         };
         stage2?: {
           qcRows?: QCRow[];
@@ -2507,9 +2477,6 @@ export default function GRNDetail() {
         if (typeof s1.s1InvoiceDate === "string") setS1InvoiceDate(s1.s1InvoiceDate);
         if (typeof s1.inwardSlNo === "string") setInwardSlNo(s1.inwardSlNo);
         if (typeof s1.s1Notes === "string") setS1Notes(s1.s1Notes);
-        if (Array.isArray(s1.jigReturnConfirmed)) {
-          setJigReturnConfirmed(new Set(s1.jigReturnConfirmed));
-        }
       }
       if (draft.stage2) {
         const s2 = draft.stage2;
@@ -2547,7 +2514,6 @@ export default function GRNDetail() {
               s1InvoiceDate,
               inwardSlNo,
               s1Notes,
-              jigReturnConfirmed: [...jigReturnConfirmed],
             },
             stage2: {
               qcRows,
@@ -2568,7 +2534,6 @@ export default function GRNDetail() {
   }, [
     id, grn,
     s1Lines, s1VerifiedBy, s1Date, s1InvoiceNumber, s1InvoiceDate, inwardSlNo, s1Notes,
-    jigReturnConfirmed,
     qcRows, ncSummaries, s2InspectedBy, s2ApprovedBy, s2Date, s2Remarks,
     scrapReturned, scrapNotes, finalGrnPerLine,
   ]);
@@ -2644,6 +2609,19 @@ export default function GRNDetail() {
 
   const needsFinanceApproval = withinToleranceItems.length > 0 && beyondToleranceItems.length === 0;
 
+  // Jig custody questions for this GRN (dc_grn only). Shown at any stage when
+  // rows exist; open ones gate Stage 1 (answered client-side, enforced by the DB).
+  const isDcGrnForJigs = (grn as any)?.grn_type === "dc_grn";
+  const { data: jigRows = [], error: jigRowsError } = useQuery({
+    queryKey: GRN_JIGS_QUERY_KEY(id ?? ""),
+    queryFn: () => fetchGrnJigQuestions(id!),
+    enabled: !!id && isDcGrnForJigs,
+    staleTime: 0,
+  });
+  const jigIncomplete = jigRows.filter(
+    (r) => r.needs_answer && "error" in buildJigAnswer(r, jigDrafts.get(r.dc_jig_id) ?? emptyJigDraft(r)),
+  );
+
   const s1Mutation = useMutation({
     mutationFn: async () => {
       const persistedById = new Map<string, any>(
@@ -2692,7 +2670,7 @@ export default function GRNDetail() {
         for (const ln of lines) {
           const prev = persistedById.get(ln.id);
           if (!prev) continue;
-          const proposed = diffStage1LineForApproval(ln, prev, jigReturnConfirmed.has(ln.id));
+          const proposed = diffStage1LineForApproval(ln, prev);
           if (Object.keys(proposed).length === 0) continue;
           const { error } = await (supabase as any).rpc("rpc_submit_edit_request", {
             p_entity_type: "grn",
@@ -2715,7 +2693,16 @@ export default function GRNDetail() {
         inwardSlNo.trim() !== "" && Number.isFinite(Number(inwardSlNo)) && Number(inwardSlNo) > 0
           ? Math.trunc(Number(inwardSlNo))
           : null;
-      await saveQuantitativeStage(id!, lines, s1VerifiedBy, s1InvoiceNumber || null, s1InvoiceDate || null, overrideStage, jigReturnConfirmed, inwardSlNoParsed);
+      // Jig custody (dc_grn): record answers for rows that still need one just
+      // before the stage moves. The DB gate (trg_grn_jig_gate) is the backstop;
+      // its message surfaces verbatim via onError. If the stage save below
+      // fails, the answers stand and the next save skips them (no longer
+      // needs_answer).
+      if (isDcGrnForJigs && jigRows.some((r) => r.needs_answer)) {
+        await submitPendingJigAnswers(id!, jigDrafts);
+        queryClient.invalidateQueries({ queryKey: GRN_JIGS_QUERY_KEY(id!) });
+      }
+      await saveQuantitativeStage(id!, lines, s1VerifiedBy, s1InvoiceNumber || null, s1InvoiceDate || null, overrideStage, undefined, inwardSlNoParsed);
 
       // Save scrap data for DC-GRNs
       await saveGRNScrapItems(id!, scrapReturned, scrapNotes || null,
@@ -2978,17 +2965,11 @@ export default function GRNDetail() {
       toast({ title: "Verification Date is required", variant: "destructive" });
       return;
     }
-    // Jig confirmation is only required on the final batch — partial receipts
-    // bypass the gate (jig return is logged when the receipt closes out the line).
-    const unconfirmedJigLines = s1Lines.filter(l =>
-      !!parseJigsSent(l.jigs_sent) &&
-      isS1LineFinalBatch(l) &&
-      !jigReturnConfirmed.has(l.id)
-    );
-    if (unconfirmedJigLines.length > 0) {
+    // Jig custody: every open jig question must be answered before Stage 1.
+    if (jigIncomplete.length > 0) {
       toast({
-        title: "Jig return confirmation required",
-        description: "Please confirm return of all jigs before completing the final batch.",
+        title: "Jig questions need an answer",
+        description: `Answer the Jigs / moulds questions for: ${jigIncomplete.map((r) => r.jig_number).join(", ")}.`,
         variant: "destructive",
       });
       return;
@@ -3395,6 +3376,23 @@ export default function GRNDetail() {
         </div>
       )}
 
+      {/* Jigs / moulds — dc_grn only; renders whenever the GRN has jig rows, at any stage. */}
+      {isDcGrnForJigs && jigRowsError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 no-print">
+          Could not load jig questions: {(jigRowsError as Error).message}
+        </div>
+      )}
+      {isDcGrnForJigs && jigRows.length > 0 && (
+        <GrnJigsCard
+          grnId={id!}
+          rows={jigRows}
+          drafts={jigDrafts}
+          onDraftChange={(dcJigId, next) => setJigDrafts((prev) => { const m = new Map(prev); m.set(dcJigId, next); return m; })}
+          submitWithStage1={s1Editable && !s1Done}
+          disabled={isDeletedOrCancelled}
+        />
+      )}
+
       {/* ═══════════════════════════════════════════════════════════════════
           STAGE 1 — GOODS RECEIPT
       ═══════════════════════════════════════════════════════════════════ */}
@@ -3436,79 +3434,6 @@ export default function GRNDetail() {
         </div>
 
         <div className="px-5 py-4 space-y-4">
-          {/* Jig/Mould return alert — shown when DC included tooling.
-              Confirmation is only required on the final batch (the receipt
-              that closes out the line). Partial batches show an info note. */}
-          {(() => {
-            const jigLines = s1Lines.filter(l => !!parseJigsSent(l.jigs_sent));
-            if (jigLines.length === 0) return null;
-            const finalJigLines = jigLines.filter(isS1LineFinalBatch);
-            const allFinalConfirmed = finalJigLines.length > 0 &&
-              finalJigLines.every(l => jigReturnConfirmed.has(l.id));
-            const headerTone = finalJigLines.length === 0
-              ? "bg-slate-50 border-slate-200"
-              : allFinalConfirmed
-                ? "bg-emerald-50 border-emerald-300"
-                : "bg-amber-50 border-amber-300";
-            const headerIcon = finalJigLines.length === 0
-              ? "ℹ️"
-              : allFinalConfirmed ? "✅" : "⚠️";
-            const headerTextCls = finalJigLines.length === 0
-              ? "text-slate-700"
-              : allFinalConfirmed ? "text-emerald-800" : "text-amber-800";
-            return (
-              <div className={`border rounded-lg p-3 ${headerTone}`}>
-                <div className="flex items-start gap-2">
-                  <span className="text-base">{headerIcon}</span>
-                  <div className="flex-1 space-y-2">
-                    <p className={`font-medium text-sm ${headerTextCls}`}>
-                      Jig/Mould sent with this DC — confirm return on final batch
-                    </p>
-                    {jigLines.map((line) => {
-                      const isFinal = isS1LineFinalBatch(line);
-                      if (!isFinal) {
-                        return (
-                          <p key={line.id} className="flex items-start gap-2 text-xs text-slate-600">
-                            <Info className="h-3.5 w-3.5 mt-0.5 shrink-0 text-slate-400" />
-                            <span>
-                              <span className="font-mono text-slate-700">{parseJigsSent(line.jigs_sent)}</span>
-                              {" "}— Partial receipt — jig return confirmation will be required on the final batch.
-                            </span>
-                          </p>
-                        );
-                      }
-                      const confirmed = jigReturnConfirmed.has(line.id);
-                      return (
-                        <label key={line.id} className="flex items-start gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={confirmed}
-                            onChange={(e) => {
-                              setJigReturnConfirmed(prev => {
-                                const next = new Set(prev);
-                                if (e.target.checked) next.add(line.id);
-                                else next.delete(line.id);
-                                return next;
-                              });
-                            }}
-                            className="h-4 w-4 mt-0.5 accent-amber-600 cursor-pointer shrink-0"
-                          />
-                          <span className={`text-sm ${confirmed ? "line-through text-slate-400" : "text-amber-700"}`}>
-                            Confirm jig has been returned by vendor (final batch) — {parseJigsSent(line.jigs_sent)}
-                          </span>
-                        </label>
-                      );
-                    })}
-                    {finalJigLines.length > 0 && !allFinalConfirmed && (
-                      <p className="text-xs text-amber-600 font-medium">
-                        All jig/mould returns must be confirmed before Stage 1 can be saved.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
           {/* DC job-work context — only for dc_grn with a linked DC */}
           {g.grn_type === 'dc_grn' && g.linked_dc_id && linkedDC && (
             <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 p-4 mb-4">
@@ -3755,8 +3680,7 @@ export default function GRNDetail() {
                   s1Mutation.isPending ||
                   isDeletedOrCancelled ||
                   overQtyLines.length > 0 ||
-                  s1Lines.filter(l => !!parseJigsSent(l.jigs_sent) && isS1LineFinalBatch(l))
-                         .some(l => !jigReturnConfirmed.has(l.id))
+                  jigIncomplete.length > 0
                 }
                 className={`w-full text-white ${needsFinanceApproval ? "bg-amber-600 hover:bg-amber-700" : "bg-primary hover:bg-primary/90 text-primary-foreground"}`}
               >
