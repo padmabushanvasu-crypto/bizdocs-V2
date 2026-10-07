@@ -1,4 +1,5 @@
 import { useParams, useNavigate, Link } from "react-router-dom";
+import { fetchDcJigs, formatJigList } from "@/lib/dc-jigs-api";
 import { printWithLightMode } from "@/lib/print-utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Edit, X, Truck, CheckCircle2, RotateCcw, AlertTriangle, Printer, ChevronLeft, Trash2, Plus, Lock, CheckCircle, XCircle, FileText } from "lucide-react";
@@ -165,6 +166,13 @@ export default function DeliveryChallanDetail() {
   const { data: dc, isLoading } = useQuery({
     queryKey: ["delivery-challan", id],
     queryFn: () => fetchDeliveryChallan(id!),
+    enabled: !!id,
+  });
+
+  // Jig custody: jigs sent are per item (dc_jigs keyed on DC + item).
+  const { data: dcJigRows = [], error: dcJigsError } = useQuery({
+    queryKey: ["dc-jigs", id],
+    queryFn: () => fetchDcJigs(id!),
     enabled: !!id,
   });
 
@@ -580,6 +588,18 @@ export default function DeliveryChallanDetail() {
   if (!dc) return <div className="p-6 text-muted-foreground">Delivery challan not found.</div>;
 
   const items = dc.line_items || [];
+  // "DJ 17 × 2, G25 × 1" for an item, shown once under its first line. Legacy
+  // jigs_sent text is only a fallback when the DC has no dc_jigs rows at all.
+  const jigsTextFor = (item: any, idx: number): string | null => {
+    if (dcJigRows.length > 0) {
+      if (!item.item_id) return null;
+      const firstIdx = items.findIndex((li: any) => li.item_id === item.item_id);
+      if (firstIdx !== idx) return null;
+      const rows = dcJigRows.filter((r) => r.item_id === item.item_id);
+      return rows.length > 0 ? formatJigList(rows) : null;
+    }
+    return parseJigsSent(item.jigs_sent);
+  };
   const isReturnable = RETURNABLE_DC_TYPES.includes(dc.dc_type);
   const isDeleted = dc.status === "deleted";
   // Matches rpc_set_dc_line_sources' own gate — the Source link only shows
@@ -714,10 +734,7 @@ export default function DeliveryChallanDetail() {
           </thead>
           <tbody>
             {items.map((item, idx) => {
-              const jigs = parseJigsSent((item as any).jigs_sent);
-              // Distinct physical jigs, not a per-jig quantity — jig_master has no
-              // quantity column and jig_number is unique per row.
-              const jigCount = jigs ? jigs.split(',').length : 0;
+              const jigs = jigsTextFor(item, idx);
               return (
               <Fragment key={item.serial_number}>
               <tr style={{ background: idx % 2 === 0 ? '#F8FAFC' : '#fff', borderBottom: '1pt solid #E2E8F0' }}>
@@ -738,7 +755,7 @@ export default function DeliveryChallanDetail() {
               {jigs && (
                 <tr style={{ background: idx % 2 === 0 ? '#F8FAFC' : '#fff' }}>
                   <td colSpan={printColCount} style={{ padding: rowPadding, paddingLeft: '16pt', color: '#475569', fontSize: rowFontSize, borderBottom: '1pt solid #E2E8F0' }}>
-                    Jig(s) ({jigCount}): <strong>{jigs}</strong>
+                    Jigs: <strong>{jigs}</strong>
                   </td>
                 </tr>
               )}
@@ -1005,6 +1022,11 @@ export default function DeliveryChallanDetail() {
           {!hideCosts && invoiceStatusError && (
             <span className="text-xs text-red-600">
               Could not load invoice status: {(invoiceStatusError as Error).message}
+            </span>
+          )}
+          {dcJigsError && (
+            <span className="text-xs text-red-600">
+              Could not load jigs: {(dcJigsError as Error).message}
             </span>
           )}
           {(dc as any).currency && (dc as any).currency !== "INR" && (
@@ -1288,8 +1310,9 @@ export default function DeliveryChallanDetail() {
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => {
+              {items.map((item, itemIdx) => {
                 const pos = dcLineReturnPositions[item.id ?? ""];
+                const jigsText = jigsTextFor(item, itemIdx);
                 return (
                 <Fragment key={item.serial_number}>
                 <tr>
@@ -1318,6 +1341,13 @@ export default function DeliveryChallanDetail() {
                     </td>
                   )}
                 </tr>
+                {jigsText && (
+                  <tr className="bg-slate-50/60">
+                    <td colSpan={screenColCount + (showBilling ? BILLING_COLS : 0)} className="px-4 py-1.5 text-xs text-slate-600 border-b border-slate-100">
+                      Jigs: <span className="font-medium text-slate-800">{jigsText}</span>
+                    </td>
+                  </tr>
+                )}
                 {canEditSource && item.id && !(item as any).job_card_id && itemTrackSourceById?.get(item.item_id ?? "") && (
                   <tr className="bg-slate-50/60 print:hidden">
                     <td colSpan={screenColCount + (showBilling ? BILLING_COLS : 0)} className="px-4 py-1.5 border-b border-slate-100">

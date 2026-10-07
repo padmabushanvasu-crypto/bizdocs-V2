@@ -37,7 +37,9 @@ import { getCompanyId } from "@/lib/auth-helpers";
 import { fetchFreeStock } from "@/lib/stock-free-api";
 import { UNITS } from "@/lib/constants";
 import { JobCardCreationDialog } from "@/components/JobCardCreationDialog";
-import { fetchProcessingRoute, fetchProcessingRouteAll, fetchJigsForDrawing, fetchStageVendors, fetchMouldItemsForDrawing, fetchItemIdByDrawingNumber, type ProcessingRoute, type JigMasterRecord, type MouldItem } from "@/lib/dc-intelligence-api";
+import { fetchProcessingRoute, fetchProcessingRouteAll, fetchStageVendors, fetchMouldItemsForDrawing, fetchItemIdByDrawingNumber, type ProcessingRoute, type MouldItem } from "@/lib/dc-intelligence-api";
+import { DcJigPicker } from "@/components/DcJigPicker";
+import { fetchDcJigs, syncDcJigs, type DcJigRow, type PickedJig } from "@/lib/dc-jigs-api";
 import { formatCurrency, amountInWords } from "@/lib/gst-utils";
 import { getGSTType, calculateLineTax, round2, resolveStateCode, type GSTType } from "@/lib/tax-utils";
 
@@ -211,9 +213,11 @@ export default function DeliveryChallanForm() {
   const [itemIdByIndex, setItemIdByIndex] = useState<Map<number, string>>(new Map());
   // Phase 15: processing routes and jigs per line
   const [lineRoutes, setLineRoutes] = useState<Map<number, ProcessingRoute[]>>(new Map());
-  const [lineJigs, setLineJigs] = useState<Map<number, JigMasterRecord[]>>(new Map());
   const [lineSelectedStageId, setLineSelectedStageId] = useState<Map<number, string>>(new Map());
-  const [lineJigsChecked, setLineJigsChecked] = useState<Map<number, string[]>>(new Map());
+  // Jig custody: jigs are picked per ITEM (dc_jigs is keyed on DC + item + jig,
+  // not on lines). originalDcJigs is the persisted state the save diffs against.
+  const [pickedJigs, setPickedJigs] = useState<Map<string, PickedJig[]>>(new Map());
+  const [originalDcJigs, setOriginalDcJigs] = useState<DcJigRow[]>([]);
   const [lineAutoFilledRate, setLineAutoFilledRate] = useState<Map<number, boolean>>(new Map());
   const [lineMouldItems, setLineMouldItems] = useState<Map<number, MouldItem[]>>(new Map());
   const [lineMouldAcknowledged, setLineMouldAcknowledged] = useState<Map<number, boolean>>(new Map());
@@ -312,18 +316,30 @@ export default function DeliveryChallanForm() {
     });
   };
 
-  const toggleJigCheck = (lineIndex: number, jigId: string, checked: boolean) => {
-    setLineJigsChecked(prev => {
-      const m = new Map(prev);
-      const current = m.get(lineIndex) ?? [];
-      if (checked) {
-        m.set(lineIndex, [...current.filter(id => id !== jigId), jigId]);
-      } else {
-        m.set(lineIndex, current.filter(id => id !== jigId));
-      }
-      return m;
-    });
-  };
+  // Edit mode: load the DC's persisted dc_jigs into the picker state (and keep
+  // the rows as the baseline the save diffs against). A load failure is shown,
+  // never swallowed — saving with an empty baseline would re-insert duplicates.
+  useEffect(() => {
+    if (!isEdit || !id) return;
+    let cancelled = false;
+    fetchDcJigs(id)
+      .then((rows) => {
+        if (cancelled) return;
+        setOriginalDcJigs(rows);
+        const m = new Map<string, PickedJig[]>();
+        for (const r of rows) {
+          const list = m.get(r.item_id) ?? [];
+          list.push({ jig_id: r.jig_id, jig_number: r.jig_number, qty: r.qty });
+          m.set(r.item_id, list);
+        }
+        setPickedJigs(m);
+      })
+      .catch((e: any) => {
+        toast({ title: "Could not load jigs for this DC", description: e.message, variant: "destructive" });
+      });
+    return () => { cancelled = true; };
+  }, [isEdit, id]);
+
   // Fetch data
   const { data: partiesData } = useQuery({
     queryKey: ["parties-all"],
@@ -717,14 +733,24 @@ export default function DeliveryChallanForm() {
         checked_by: checkedBy || null,
       };
 
+      // Desired dc_jigs, keyed by item_id. Only items still on a saved line
+      // count: an item whose last line was removed has no entry, so its
+      // persisted dc_jigs are deleted by the diff. Non-job-work DCs carry none.
+      const desiredJigs = new Map<string, PickedJig[]>();
+      if (isJobWorkDC) {
+        lineItems.forEach((li, idx) => {
+          if (!li.description.trim()) return;
+          const itemId = li.item_id ?? itemIdByIndex.get(idx) ?? null;
+          if (itemId) desiredJigs.set(itemId, pickedJigs.get(itemId) ?? []);
+        });
+      }
+
       const items = lineItems
         .filter((i) => i.description.trim())
         .map((i, idx) => {
           const routeForLine = lineRoutes.get(idx) ?? [];
           const selectedStageId = lineSelectedStageId.get(idx) ?? null;
           const selectedStage = routeForLine.find(s => s.id === selectedStageId) ?? null;
-          const jigsForLine = lineJigs.get(idx) ?? [];
-          const jigsChecked = lineJigsChecked.get(idx) ?? [];
           return {
             ...i,
             serial_number: idx + 1,
@@ -738,17 +764,10 @@ export default function DeliveryChallanForm() {
             rework_source_grn_line_id: i.rework_source_grn_line_id ?? null,
             total_stages: selectedStage ? routeForLine.length : null,
             route_id: selectedStageId ?? null,
-            // Jig Master checklist (when the drawing has registered jigs) wins;
-            // otherwise fall back to whatever the operator typed manually in
-            // the free-text "Jigs sent" field — most drawings have no Jig
-            // Master record at all, so that manual field is the only way most
-            // job-work DCs ever get jigs_sent populated.
-            jigs_sent: (() => {
-              const selected = jigsForLine.filter(j => jigsChecked.includes(j.id));
-              if (selected.length > 0) return selected.map(j => j.jig_number || j.id).join(', ');
-              const manual = typeof i.jigs_sent === "string" ? i.jigs_sent.trim() : "";
-              return manual || null;
-            })(),
+            // Jigs are no longer written per line (they live in dc_jigs, keyed on
+            // DC + item). Pass through whatever legacy jigs_sent the loaded line
+            // carried so the line re-insert never nulls historical values.
+            jigs_sent: i.jigs_sent ?? null,
             // Dual-UOM: persist the shown alt unit when an alt qty is entered
             // (the Select displays `unit_2 || "NOS"` but only commits on manual
             // change, so the default was silently dropped). No alt qty -> null,
@@ -763,6 +782,9 @@ export default function DeliveryChallanForm() {
       if (isEdit) {
         const prevStatus = (existingDC as any)?.status;
         const { warnings: sourceWarnings } = await updateDeliveryChallan(id!, { dc: dcData as any, lineItems: items });
+        // Lines are saved — now diff dc_jigs (a DB trigger needs the item on a line).
+        await syncDcJigs(id!, originalDcJigs, desiredJigs);
+        setOriginalDcJigs(await fetchDcJigs(id!));
         // Only issue when transitioning INTO issued. If the DC was already issued
         // before this edit, updateDeliveryChallan has already posted the
         // manual_adjustment delta for the qty change — re-issuing would double-count
@@ -778,6 +800,8 @@ export default function DeliveryChallanForm() {
         return { id: id!, dcNumber, sourceWarnings };
       } else {
         const result = await createDeliveryChallan({ dc: dcData as any, lineItems: items });
+        await syncDcJigs(result.id, [], desiredJigs);
+        setOriginalDcJigs(await fetchDcJigs(result.id));
         if (status === "issued") await issueDeliveryChallan(result.id);
         // dc_number was assigned by trg_delivery_challans_assign_number; read it back.
         // A brand-new DC has no prior lines, so there's never a source choice to lose.
@@ -881,37 +905,7 @@ export default function DeliveryChallanForm() {
       });
       return;
     }
-    // Change 3: block save if any line has a 'to_be_made' jig
-    for (let idx = 0; idx < lineItems.length; idx++) {
-      if (!lineItems[idx].description.trim()) continue;
-      const jigs = lineJigs.get(idx) ?? [];
-      const notReadyJig = jigs.find(j => j.status === "to_be_made");
-      if (notReadyJig) {
-        toast({
-          title: "Jig not ready — cannot dispatch",
-          description: `Jig "${notReadyJig.jig_number}" for line item ${idx + 1} is NOT YET READY. Do not dispatch until jig is available.`,
-          variant: "destructive",
-        });
-        return;
-      }
-    }
     if (status === "issued") {
-      // Require acknowledgement for 'ok' jigs (all must be ticked before issuing)
-      for (let idx = 0; idx < lineItems.length; idx++) {
-        if (!lineItems[idx].description.trim()) continue;
-        const jigs = lineJigs.get(idx) ?? [];
-        const okJigs = jigs.filter(j => j.status === "ok" || j.status === "in_progress");
-        const checked = lineJigsChecked.get(idx) ?? [];
-        const firstUnchecked = okJigs.find(j => !checked.includes(j.id));
-        if (firstUnchecked) {
-          toast({
-            title: "Jig acknowledgement required",
-            description: `Confirm jig "${firstUnchecked.jig_number}" is included with line item ${idx + 1} before issuing.`,
-            variant: "destructive",
-          });
-          return;
-        }
-      }
       // Require processing stage selection for any line with BOM routes
       for (let idx = 0; idx < lineItems.length; idx++) {
         if (!lineItems[idx].description.trim()) continue;
@@ -1395,22 +1389,9 @@ export default function DeliveryChallanForm() {
                           setLineAllRoutes(prev => { const m = new Map(prev); m.set(index, allRoutes); return m; });
                           setLineRouteExpanded(prev => { const m = new Map(prev); m.delete(index); return m; });
                         });
-                        // Load mould items and jigs by drawing number
+                        // Load mould items by drawing number
                         const drawingNum = selectedItem.drawing_revision || (selectedItem as any).drawing_number || '';
                         if (drawingNum.trim()) {
-                          fetchJigsForDrawing(drawingNum.trim()).then(jigs => {
-                            setLineJigs(prev => { const m = new Map(prev); m.set(index, jigs); return m; });
-                            // Default-check matched jigs on NEW DCs so "doing nothing" records the
-                            // jig (operator un-ticks to exclude). Never on edits — do not retroactively
-                            // assert jigs on historical DCs. Guard preserves any manual un-ticks.
-                            if (!isEdit) {
-                              const okIds = jigs.filter(j => j.status === 'ok' || j.status === 'in_progress').map(j => j.id);
-                              setLineJigsChecked(prev => {
-                                if (prev.has(index)) return prev;
-                                const m = new Map(prev); m.set(index, okIds); return m;
-                              });
-                            }
-                          });
                           fetchMouldItemsForDrawing(drawingNum.trim()).then(moulds => {
                             setLineMouldItems(prev => { const m = new Map(prev); m.set(index, moulds); return m; });
                             setLineMouldAcknowledged(prev => { const m = new Map(prev); m.delete(index); return m; });
@@ -1445,19 +1426,8 @@ export default function DeliveryChallanForm() {
                       value={item.drawing_number || ""}
                       onChange={(e) => {
                         updateLineItem(index, "drawing_number", e.target.value);
-                        // Phase 15: load jigs when drawing number changes
+                        // Phase 15: load mould items when drawing number changes
                         if (e.target.value.trim().length >= 3) {
-                          fetchJigsForDrawing(e.target.value.trim()).then(jigs => {
-                            setLineJigs(prev => { const m = new Map(prev); m.set(index, jigs); return m; });
-                            // Default-check matched jigs on NEW DCs only (see item-select handler above).
-                            if (!isEdit) {
-                              const okIds = jigs.filter(j => j.status === 'ok' || j.status === 'in_progress').map(j => j.id);
-                              setLineJigsChecked(prev => {
-                                if (prev.has(index)) return prev;
-                                const m = new Map(prev); m.set(index, okIds); return m;
-                              });
-                            }
-                          });
                           fetchMouldItemsForDrawing(e.target.value.trim()).then(moulds => {
                             setLineMouldItems(prev => { const m = new Map(prev); m.set(index, moulds); return m; });
                             setLineMouldAcknowledged(prev => { const m = new Map(prev); m.delete(index); return m; });
@@ -1882,108 +1852,37 @@ export default function DeliveryChallanForm() {
                     </td>
                   </tr>
                 )}
-                {/* Jig alerts — fire whenever the line's drawing matches a jig.
-                  *
-                  * The earlier `MACHINING_PROCESS_CODES` gate that suppressed alerts
-                  * unless a machining-type processing stage was selected has been
-                  * removed: jig_master.associated_process is unpopulated for every
-                  * jig in the live data, so we have no reliable way to narrow
-                  * "which jigs apply to which stage". A jig existing for a drawing
-                  * is itself the operator-relevant signal — show it.
-                  *
-                  * Save-time enforcement (lines 813-828) still requires every
-                  * amber checkbox to be ticked before status==='issued', so the
-                  * gate against accidental no-jig dispatch remains in place.
-                  */}
-                {(() => {
-                  const allJigs = lineJigs.get(index) ?? [];
-                  if (allJigs.length === 0) return null;
-
-                  const notReadyJigs = allJigs.filter(j => j.status === "to_be_made");
-                  const okJigs = allJigs.filter(j => j.status === "ok" || j.status === "in_progress");
-                  const checked = lineJigsChecked.get(index) ?? [];
-
+                {/* Jigs sent — picked from the Jig Master, never typed. Per ITEM (dc_jigs is
+                    keyed on DC + item), so it renders once, under the first line of each item. */}
+                {isJobWorkDC && (() => {
+                  const itemId = item.item_id ?? itemIdByIndex.get(index) ?? null;
+                  const firstIdx = itemId
+                    ? lineItems.findIndex((li, i2) => (li.item_id ?? itemIdByIndex.get(i2) ?? null) === itemId)
+                    : -1;
+                  if (!itemId) {
+                    return item.description?.trim() ? (
+                      <tr key={`jigs-${index}`}>
+                        <td />
+                        <td colSpan={12} className="px-3 py-1 text-[11px] text-slate-400">
+                          Link this line to an item to pick jigs.
+                        </td>
+                      </tr>
+                    ) : null;
+                  }
+                  if (firstIdx !== index) return null;
                   return (
-                    <>
-                      {notReadyJigs.length > 0 && (
-                        <tr key={`jigs-notready-${index}`} className="bg-red-50/30 border-b border-red-100">
-                          <td />
-                          <td colSpan={12} className="px-3 py-2">
-                            <div className="p-3 bg-red-50 border border-red-300 rounded-lg">
-                              <p className="text-xs font-semibold text-red-700 mb-1.5 flex items-center gap-1">
-                                <AlertTriangle className="h-3.5 w-3.5" /> Jig Not Ready — Do Not Dispatch
-                              </p>
-                              {notReadyJigs.map(jig => (
-                                <p key={jig.id} className="text-xs text-red-800">
-                                  ⚠ Jig <strong>{jig.jig_number}</strong>
-                                  {jig.associated_process ? ` for ${jig.associated_process}` : ""}
-                                  {" "}is NOT YET READY. Do not dispatch until jig is available.
-                                </p>
-                              ))}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                      {okJigs.length > 0 && (() => {
-                        const anyUnchecked = okJigs.some(j => !checked.includes(j.id));
-                        return (
-                        <tr key={`jigs-ok-${index}`} className={anyUnchecked ? "bg-red-50/40 border-b border-red-100" : "bg-amber-100/40 border-b border-amber-200"}>
-                          <td />
-                          <td colSpan={12} className="px-3 py-2">
-                            <div className={`mt-1 p-3 rounded-lg border-2 ring-1 ${anyUnchecked ? "bg-red-50 border-red-400 ring-red-300" : "bg-amber-100 border-amber-400 ring-amber-300"}`}>
-                              <p className={`text-sm font-bold mb-2 flex items-center gap-1.5 ${anyUnchecked ? "text-red-700" : "text-amber-800"}`}>
-                                <Wrench className="h-4 w-4" /> JIG REQUIRED — send with this component
-                              </p>
-                              <div className="space-y-1.5">
-                                {okJigs.map(jig => {
-                                  const isChecked = checked.includes(jig.id);
-                                  return (
-                                  <label key={jig.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={isChecked}
-                                      onChange={(e) => toggleJigCheck(index, jig.id, e.target.checked)}
-                                      className="h-4 w-4 rounded"
-                                    />
-                                    <span className={isChecked ? "font-medium text-amber-900" : "font-semibold text-red-700"}>
-                                      {jig.jig_number}
-                                      {jig.associated_process ? ` — ${jig.associated_process}` : ""}
-                                    </span>
-                                    <span className={`text-xs font-semibold ${isChecked ? "text-green-700" : "text-red-600"}`}>
-                                      {isChecked ? "✓ included" : "⚠ NOT included — confirm"}
-                                    </span>
-                                  </label>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                        );
-                      })()}
-                    </>
+                    <tr key={`jigs-${index}`}>
+                      <td />
+                      <td colSpan={12} className="px-3 py-1.5">
+                        <DcJigPicker
+                          itemId={itemId}
+                          value={pickedJigs.get(itemId) ?? []}
+                          onChange={(next) => setPickedJigs((prev) => { const m = new Map(prev); m.set(itemId, next); return m; })}
+                        />
+                      </td>
+                    </tr>
                   );
                 })()}
-                {/* Manual "Jigs sent" note — independent of the Jig Master checklist
-                    above (which only appears when the drawing has a registered jig).
-                    Most drawings don't, so this free-text field is the only way most
-                    job-work DC lines ever get dc_line_items.jigs_sent populated. */}
-                {isJobWorkDC && (
-                  <tr key={`jigs-manual-${index}`}>
-                    <td />
-                    <td colSpan={12} className="px-3 py-1.5">
-                      <label className="flex items-center gap-2 text-xs text-slate-500">
-                        <span className="shrink-0">Jigs sent (optional)</span>
-                        <Input
-                          value={typeof item.jigs_sent === "string" ? item.jigs_sent : ""}
-                          onChange={(e) => updateLineItem(index, "jigs_sent", e.target.value)}
-                          placeholder="e.g. JIG-12, JIG-14"
-                          className="h-7 text-xs max-w-xs"
-                        />
-                      </label>
-                    </td>
-                  </tr>
-                )}
                 {/* Mould alert */}
                 {(lineMouldItems.get(index)?.length ?? 0) > 0 && (
                   <tr key={`mould-${index}`} className="bg-amber-50/40 border-b border-amber-100">

@@ -1,17 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Regression test for: dc_line_items.jigs_sent was computed correctly by
-// DeliveryChallanForm.tsx (from the checked jig selections) but dropped by
-// every write site in delivery-challans-api.ts, so it was never persisted —
-// confirmed live: 1,953/1,953 dc_line_items rows have jigs_sent NULL.
+// Jig custody model: jigs are no longer typed per line. They live in
+// dc_jigs, keyed on DC + item + jig (NOT dc_line_items), so the DC line
+// delete/re-insert on edit cannot touch them.
 //
-// Covers all three write sites the bug report named:
-//   1. createDeliveryChallan's insert (itemsToInsert)
-//   2. updateDeliveryChallan's reinsert (itemsToInsert), for a fresh line
-//   3. updateDeliveryChallan's in-place UPDATE for a preserved job-card line
-// plus the fourth, structurally identical site found during the fix:
-//   4. updateDeliveryChallan's in-place UPDATE for a preserved receipted
-//      plain line (rpc_update_dc_line_qty_plain path)
+// Two concerns are covered here:
+//   A. dc_jigs sync (src/lib/dc-jigs-api.ts): the diff the form applies AFTER
+//      the lines are saved — insert / update qty / delete, removed-item
+//      cleanup, and DB errors surfacing verbatim.
+//   B. Legacy dc_line_items.jigs_sent: the form no longer writes it, but every
+//      write site in delivery-challans-api.ts must still pass an existing
+//      value through untouched, so historical text is never nulled on a
+//      line re-insert or in-place update (create, reinsert, job-card UPDATE,
+//      receipted-plain UPDATE).
 
 type Call = { method: string; args: any[] };
 
@@ -26,9 +27,11 @@ let fixture: {
   dcStatus: string;
   originalLines: any[];
   grnReceiptedLineIds: string[];
+  jigError: string | null;
 };
 let capturedInserts: Record<string, any[]> = {};
 let capturedUpdates: Record<string, any[]> = {};
+let capturedDeletes: Record<string, any[][]> = {};
 
 function makeSupabaseMock() {
   return {
@@ -57,6 +60,14 @@ function makeSupabaseMock() {
       };
       const resolve = () => {
         const op = opOf(calls);
+        if (table === "dc_jigs") {
+          if (op === "delete") {
+            (capturedDeletes[table] ??= []).push(calls.filter((c) => c.method === "eq").map((c) => c.args));
+          }
+          return fixture.jigError
+            ? { data: null, error: { message: fixture.jigError } }
+            : { data: [], error: null };
+        }
         if (table === "delivery_challans") {
           if (op === "insert") {
             return { data: { id: "dc-1", dc_number: "DC-1" }, error: null };
@@ -99,6 +110,7 @@ vi.mock("@/lib/auth-helpers", async () => {
 });
 
 import { createDeliveryChallan, updateDeliveryChallan, DCLineItem } from "@/lib/delivery-challans-api";
+import { diffDcJigs, syncDcJigs, formatJigList, type DcJigRow, type PickedJig } from "@/lib/dc-jigs-api";
 
 const baseDc = {
   dc_number: "", dc_date: "2026-09-15", dc_type: "job_work",
@@ -111,12 +123,71 @@ const baseDc = {
   cancelled_at: null, cancellation_reason: null,
 } as any;
 
-describe("dc_line_items.jigs_sent persistence", () => {
-  beforeEach(() => {
-    capturedInserts = {};
-    capturedUpdates = {};
-    fixture = { dcStatus: "draft", originalLines: [], grnReceiptedLineIds: [] };
+beforeEach(() => {
+  capturedInserts = {};
+  capturedUpdates = {};
+  capturedDeletes = {};
+  fixture = { dcStatus: "draft", originalLines: [], grnReceiptedLineIds: [], jigError: null };
+});
+
+const row = (id: string, item_id: string, jig_id: string, qty: number): DcJigRow => ({
+  id, dc_id: "dc-1", item_id, jig_id, jig_number: `J-${jig_id}`, qty,
+});
+const pick = (jig_id: string, qty: number): PickedJig => ({ jig_id, jig_number: `J-${jig_id}`, qty });
+
+describe("dc_jigs sync (jigs picked per item, saved after the lines)", () => {
+  it("new job-work DC with 2 jigs inserts 2 dc_jigs rows keyed on DC + item + jig", async () => {
+    await syncDcJigs("dc-1", [], new Map([["item-1", [pick("a", 2), pick("b", 1)]]]));
+
+    expect(capturedInserts["dc_jigs"]).toHaveLength(1);
+    expect(capturedInserts["dc_jigs"][0]).toEqual([
+      { company_id: "company-1", dc_id: "dc-1", item_id: "item-1", jig_id: "a", qty: 2 },
+      { company_id: "company-1", dc_id: "dc-1", item_id: "item-1", jig_id: "b", qty: 1 },
+    ]);
+    // jig_number is set by the DB trigger — never sent.
+    expect(capturedInserts["dc_jigs"][0][0]).not.toHaveProperty("jig_number");
+    expect(capturedInserts["dc_line_items"] ?? []).toHaveLength(0);
   });
+
+  it("editing the DC with unchanged picks writes nothing (line re-insert keeps dc_jigs)", async () => {
+    const original = [row("r1", "item-1", "a", 2), row("r2", "item-1", "b", 1)];
+    await syncDcJigs("dc-1", original, new Map([["item-1", [pick("a", 2), pick("b", 1)]]]));
+
+    expect(capturedInserts["dc_jigs"] ?? []).toHaveLength(0);
+    expect(capturedUpdates["dc_jigs"] ?? []).toHaveLength(0);
+    expect(capturedDeletes["dc_jigs"] ?? []).toHaveLength(0);
+  });
+
+  it("diffs insert / qty update / delete", () => {
+    const original = [row("r1", "item-1", "a", 2), row("r2", "item-1", "b", 1)];
+    const d = diffDcJigs(original, new Map([["item-1", [pick("a", 5), pick("c", 1)]]]));
+
+    expect(d.toUpdate).toEqual([{ row: original[0], qty: 5 }]);
+    expect(d.toDelete).toEqual([original[1]]);
+    expect(d.toInsert).toEqual([{ item_id: "item-1", jig_id: "c", qty: 1 }]);
+  });
+
+  it("deletes an item's dc_jigs when its last line is removed (item absent from desired)", async () => {
+    const original = [row("r1", "item-1", "a", 2), row("r9", "item-2", "z", 1)];
+    await syncDcJigs("dc-1", original, new Map([["item-1", [pick("a", 2)]]]));
+
+    expect(capturedDeletes["dc_jigs"]).toHaveLength(1);
+    expect(capturedDeletes["dc_jigs"][0]).toContainEqual(["id", "r9"]);
+  });
+
+  it("surfaces the DB error verbatim (e.g. delete refused: return history)", async () => {
+    fixture.jigError = "Cannot delete jig DJ 17: return history exists";
+    await expect(
+      syncDcJigs("dc-1", [row("r1", "item-1", "a", 2)], new Map()),
+    ).rejects.toThrow("Cannot delete jig DJ 17: return history exists");
+  });
+
+  it("formats the print/detail jig list", () => {
+    expect(formatJigList([{ jig_number: "DJ 17", qty: 2 }, { jig_number: "G25", qty: 1 }])).toBe("DJ 17 × 2, G25 × 1");
+  });
+});
+
+describe("legacy dc_line_items.jigs_sent passthrough (no longer written by the form)", () => {
 
   it("survives create (createDeliveryChallan's insert)", async () => {
     const lineItems: DCLineItem[] = [
