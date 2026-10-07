@@ -437,7 +437,7 @@ export async function fetchDcGrnsForExport(filters: GRNFilters = {}): Promise<Dc
         () =>
           (supabase as any)
             .from("grn_line_items")
-            .select("id, grn_id, serial_number, item_id, dc_line_item_id, description, drawing_number, unit, received_now, receiving_now, accepted_qty, accepted_quantity, rejected_qty, rejected_quantity, store_confirmed_qty")
+            .select("id, grn_id, serial_number, item_id, dc_line_item_id, description, drawing_number, unit, received_qty, accepted_qty, rejected_qty, store_confirmed_qty")
             .eq("company_id", companyId)
             .in("grn_id", chunk)
             .order("grn_id", { ascending: true })
@@ -533,9 +533,12 @@ export async function fetchDcGrnsForExport(filters: GRNFilters = {}): Promise<Dc
         nature_of_process: dcl?.nature_of_process ?? "",
         unit: dcl?.unit ?? l.unit ?? "",
         qty_sent: dcl ? num(dcl.qty_nos ?? dcl.quantity) : null,
-        received: num(l.received_now ?? l.receiving_now),
-        accepted: num(l.accepted_qty ?? l.accepted_quantity),
-        rejected: num(l.rejected_qty ?? l.rejected_quantity),
+        // Live-DB verified quantity sources (no legacy fallbacks): received_qty is what
+        // stock postings use (received_now is 0 on most dc_grn lines); accepted_qty is
+        // the balanced one (accepted_quantity disagrees on ~276 lines).
+        received: num(l.received_qty),
+        accepted: num(l.accepted_qty),
+        rejected: num(l.rejected_qty),
         store_confirmed: num(l.store_confirmed_qty),
       });
     }
