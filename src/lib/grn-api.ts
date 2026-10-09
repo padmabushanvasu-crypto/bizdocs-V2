@@ -2284,12 +2284,17 @@ export function getDcLineReceipt(
  * non-cancelled GRNs created against the given DC. Pass excludeGrnId to skip
  * the current GRN (edit-mode prevents double-counting).
  *
- * Keyed primarily by dcLineReceiptKey(dc_line_item_id) when that id resolves
- * to a dc_line_items row belonging to this DC — this is what lets two lines
- * sharing the same item + drawing number be tracked separately. Falls back
- * to dcReceiptKey(item_id, drawing_number) when dc_line_item_id is null or
- * stale (DC edit delete+reinsert, STOCK_LIFECYCLE_GOVERNANCE.md §3.1). Use
- * getDcLineReceipt to read from the returned map.
+ * Keyed ONLY by dcLineReceiptKey(dc_line_item_id), and only when that id
+ * resolves to a dc_line_items row belonging to this DC — the same rule
+ * v_dc_line_return_position (DC Detail's pending) uses, so the GRN form and
+ * the DC page can never disagree on what is pending. GRN rows whose
+ * dc_line_item_id is null or foreign are NOT attributed by item_id +
+ * drawing_number any more: after the 9 Oct 2026 relink
+ * (dc_grn_relink_log_20261009) the only such rows left are duplicates of
+ * receipts already counted on a linked line, or legacy rejects that went
+ * back to the vendor (e.g. GRN-26-27/294 on DC-26-27/323) — counting them
+ * falsely showed "All items fully received". Use getDcLineReceipt to read
+ * from the returned map.
  *
  * `received` sums Stage 1's received_qty (with fallback to received_now /
  * receiving_now for pre-Stage-1 rows). `accepted` sums Stage 2's accepted_qty.
@@ -2320,10 +2325,9 @@ export async function fetchDCReceiptSummary(
     .in('grn_id', grnIds);
   const summary: Record<string, ReceiptSummaryEntry> = {};
   for (const item of (items ?? []) as any[]) {
-    const key = (item.dc_line_item_id && validDcLineIds.has(item.dc_line_item_id))
-      ? dcLineReceiptKey(item.dc_line_item_id)
-      : dcReceiptKey(item.item_id, item.drawing_number);
-    if (!key) continue;
+    // FK-linked rows only — must match v_dc_line_return_position.
+    if (!item.dc_line_item_id || !validDcLineIds.has(item.dc_line_item_id)) continue;
+    const key = dcLineReceiptKey(item.dc_line_item_id);
     const received = Number(item.received_qty ?? item.received_now ?? item.receiving_now ?? 0) || 0;
     const accepted = Number(item.accepted_qty ?? item.accepted_quantity ?? 0) || 0;
     const received_2 = Number(item.received_now_2 ?? 0) || 0;
