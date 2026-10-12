@@ -19,7 +19,7 @@ export const STOCK_STATE = {
   FG_WIP: 'in_fg_wip',                  // -> stock_in_fg_wip
   FG_READY: 'in_fg_ready',              // -> stock_in_fg_ready
   CONSUMED: 'consumed',                 // terminal — no bucket
-  SCRAPPED: 'scrapped',                 // terminal — no bucket
+  SCRAPPED: 'scrap',                    // terminal — no bucket. Must be 'scrap': stock_ledger's bucket CHECK rejects 'scrapped'
   DISPATCHED: 'dispatched',             // terminal — no bucket
   RETURNED_TO_VENDOR: 'returned_to_vendor', // terminal — no bucket (QC return-to-vendor)
 } as const;
@@ -35,7 +35,7 @@ export const STATE_BUCKET: Record<StockState, string | null> = {
   in_fg_wip: 'stock_in_fg_wip',
   in_fg_ready: 'stock_in_fg_ready',
   consumed: null,
-  scrapped: null,
+  scrap: null,
   dispatched: null,
   returned_to_vendor: null,
 };

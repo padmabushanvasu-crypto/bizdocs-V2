@@ -3137,9 +3137,7 @@ export async function storeConfirmGRNItems(
         notes: `Damaged on arrival — ${entry.reason || 'no reason given'}`,
         created_by: null,
         from_state: STOCK_STATE.INCOMING,
-        // 'scrap' is the valid ledger bucket (chk_stock_ledger_to_bucket);
-        // STOCK_STATE.SCRAPPED ('scrapped') is rejected by the DB.
-        to_state: 'scrap' as any,
+        to_state: STOCK_STATE.SCRAPPED,
       });
     }
   }
