@@ -2672,151 +2672,10 @@ async function notifyAssemblyDemandRestock(args: {
 }
 
 /**
- * Credit stock_free for a single partial store confirmation increment.
- * Handles both PO-GRN (incoming -> free) and DC-return (in_process -> free) paths.
- * Writes the corresponding stock_ledger entry per increment.
- * After either free-credit leg, fires the assembly-demand restock alert if the
- * newly-credited stock matches open MIR shortage lines.
- *
- * Pre-conditions:
- *  - storeQty > 0 (caller must guard)
- *  - parent GRN's grn_type is known
- *  - if itemId is null, will attempt drawing_revision lookup before bailing
- */
-async function creditPartialStock(
-  grnId: string,
-  lineId: string,
-  itemId: string | null,
-  storeQty: number,
-  opts: {
-    grnType: 'po_grn' | 'dc_grn' | string;
-    grnNumber: string | null;
-    drawingNumber: string | null;
-    companyId: string;
-    confirmedBy: string;
-    linkedDcId?: string | null;
-    itemCode?: string | null;
-    itemDescription?: string | null;
-  },
-  alreadyPosted: boolean
-): Promise<void> {
-  if (!(storeQty > 0)) return;
-
-  // Idempotency backstop (double-post fix, 8 Sep 2026): grn_line_items.stock_posted_at
-  // is the single source of truth for "has this line's stock credit already been
-  // posted by ANY path" (the legacy single-stage receipt-time credit in
-  // recordGRNAndUpdatePO, the QC-edit pass in saveQualityStage, or this function
-  // itself on a prior call). Both current callers already check their own
-  // pre-fetched value before calling and should never reach here with
-  // alreadyPosted=true — if one does, that caller has a bug; fail loud rather
-  // than silently re-crediting (the exact live incident this guard exists for:
-  // 619 confirmed double-postings, "received (single-stage)" + "store confirmed
-  // (partial)", both incoming->free, same qty).
-  if (alreadyPosted) {
-    const msg = `[GRN] creditPartialStock: line ${lineId} (grn ${grnId}) already has stock_posted_at set — refusing to post again. Caller should have skipped this call.`;
-    console.error(msg);
-    throw new Error(msg);
-  }
-
-  // Second guard, for PARTIAL confirmations (double-post fix #2, 8 Sep 2026):
-  // stock_posted_at above only catches a re-post after FULL confirmation —
-  // it is never set on a partial call, so a partial confirmation re-submitted
-  // seconds later (double-click, a client retry after a network blip) sails
-  // straight past the check above and posts twice. Live incident: 36
-  // confirmed duplicate pairs since 26 May 2026, same GRN+item+qty, 2-8
-  // seconds apart, still recurring. Guard: refuse if an identical credit
-  // (same GRN, item, qty, movement type) already posted within the last
-  // DEDUP_WINDOW_MS. Deliberately narrow and qty-exact so a genuinely
-  // separate partial receipt of the same quantity — minutes, hours, or days
-  // later — is never blocked; only a near-simultaneous re-submission of the
-  // *same* confirmation is. Skips (does not throw): unlike the backstop
-  // above, this condition is an expected operational hazard, not a caller
-  // bug, and the original submission already succeeded — the caller
-  // (storeConfirmGRNItems) should complete normally, not surface an error
-  // for a redundant click that already worked.
-  const isDcReturn = opts.grnType === 'dc_grn' || !!opts.linkedDcId;
-  const dedupTransactionType = isDcReturn ? 'dc_return' : 'grn_receipt';
-  const dedupNotesPattern = isDcReturn ? '%storekeeper confirmed (partial)%' : '%store confirmed (partial)%';
-  const DEDUP_WINDOW_MS = 2 * 60 * 1000;
-  const dedupCutoff = new Date(Date.now() - DEDUP_WINDOW_MS).toISOString();
-  let recentDupQuery = (supabase as any)
-    .from('stock_ledger')
-    .select('id, created_at')
-    .eq('reference_type', 'grn')
-    .eq('reference_id', grnId)
-    .eq('transaction_type', dedupTransactionType)
-    .eq('qty_in', storeQty)
-    .ilike('notes', dedupNotesPattern)
-    .gte('created_at', dedupCutoff)
-    .order('created_at', { ascending: false })
-    .limit(1);
-  if (itemId) recentDupQuery = recentDupQuery.eq('item_id', itemId);
-  const { data: recentDup, error: recentDupErr } = await recentDupQuery;
-  if (recentDupErr) {
-    throw new Error(`creditPartialStock: could not check for a recent duplicate posting: ${recentDupErr.message}`);
-  }
-  if (recentDup && recentDup.length > 0) {
-    console.error(
-      `[GRN] creditPartialStock: an identical credit for grn ${grnId} item ${itemId ?? '(unresolved)'} qty ${storeQty} ` +
-      `was already posted at ${recentDup[0].created_at} (line ${lineId}) — refusing to post again within ` +
-      `${DEDUP_WINDOW_MS / 1000}s. Treating as a duplicate submission (double-click or retry), not an error.`
-    );
-    return;
-  }
-
-  // Atomic: resolves the item (id, or drawing_revision fallback with the
-  // same ambiguity guard), posts the ledger row, and updates the bucket(s)
-  // in one guarded transaction with a row lock. Replaces three separate
-  // non-atomic calls. New: a genuine over-return guard on the DC-return leg
-  // — RAISE if returning more than is in in_process — that did not exist
-  // before (the old code relied entirely on updateStockBucket's clamp).
-  // INVENTORY_CONTROL_BLUEPRINT.md Phase 3.
-  const { data, error } = await (supabase as any).rpc('rpc_credit_partial_stock', {
-    p_grn_id: grnId,
-    p_line_id: lineId,
-    p_item_id: itemId,
-    p_store_qty: storeQty,
-    p_grn_type: opts.grnType,
-    p_grn_number: opts.grnNumber,
-    p_drawing_number: opts.drawingNumber,
-    p_company_id: opts.companyId,
-    p_linked_dc_id: opts.linkedDcId ?? null,
-  });
-  if (error) throw new Error(error.message);
-
-  // Deliberately NOT stamping stock_posted_at here (an earlier version of this
-  // fix did, as "harmless" defense-in-depth — it was not harmless: stamping
-  // after every credit, including a PARTIAL one, made stock_posted_at look
-  // "fully credited" after the first partial call and silently blocked every
-  // legitimate later partial credit for the same line via the alreadyPosted
-  // guard above. stock_posted_at means "this line's crediting is complete,"
-  // which only each CALLER can know (full confirmation in storeConfirmGRNItems,
-  // or a one-shot credit in saveQualityStage/recordGRNAndUpdatePO) — they
-  // already stamp it themselves at the right moment. The near-simultaneous
-  // re-submit case (double-post bug #2) is caught by the recent-duplicate
-  // check above instead, which is qty- and time-window-scoped and does not
-  // have this problem.
-
-  const row = Array.isArray(data) ? data[0] : data;
-  if (!row) return; // storeQty <= 0 case, matches the old early return
-
-  // Notification only, not a financial write — stays client-side, after
-  // the RPC has committed, exactly as before.
-  await notifyAssemblyDemandRestock({
-    companyId: opts.companyId,
-    itemId: row.out_resolved_item_id,
-    itemCode: row.out_item_code,
-    itemDescription: opts.itemDescription ?? null,
-    grnNumber: opts.grnNumber,
-    confirmedBy: opts.confirmedBy,
-  });
-}
-
-/**
  * Internal close-ceremony helper. Called by storeConfirmGRNItems after all
  * lines on a GRN reach fully-confirmed state. Does NOT credit stock —
- * stock is credited per-partial via creditPartialStock during the line-update
- * loop in storeConfirmGRNItems. This function only updates the parent GRN
+ * stock is credited per-partial inside the confirm RPCs called by
+ * storeConfirmGRNItems. This function only updates the parent GRN
  * status row and recomputes DC-return status if applicable.
  *
  * DO NOT call this directly from new code paths. Use storeConfirmGRNItems
@@ -3129,6 +2988,7 @@ export async function storeConfirmGRNItems(
 
   const fullyConfirmed: string[] = [];
   const stillPending: string[] = [];
+  const failedLines: Array<{ description: string; error: string }> = [];
   const damagedLedgerEntries: Array<{
     item_id: string;
     item_code: string | null;
@@ -3141,18 +3001,36 @@ export async function storeConfirmGRNItems(
   // per line, so this is scoped to what the store is actually confirming
   // right now, not "does this GRN have a weldment line somewhere".
   let hasWeldmentLines = false;
+  // Plain lines (neither weldment nor job-card) are confirmed atomically in
+  // the database by rpc_store_confirm_plain_lines: stock credit, damaged
+  // write-off and the line flag commit together per line, or not at all.
+  // (Previously the flag + stock_posted_at were written first and the credit
+  // second, so a failed credit left a line "Confirmed" with no stock and
+  // blocked the retry.)
+  const plainItems: Array<Record<string, any>> = [];
+  const plainLineById = new Map<string, any>();
   for (const input of items) {
     const line = lineMap.get(input.id);
     // Weldment lines never post through the per-line bookkeeping below —
     // rpc_post_weldment_lines (called below whenever this batch includes one)
     // posts their stock via _grn_post_weldment_lines and stamps
-    // store_confirmed itself. Touching store_confirmed_qty/store_confirmed
-    // here too would just race the RPC.
+    // store_confirmed itself.
     if (line.is_weldment_receipt) { hasWeldmentLines = true; continue; }
-    // Captured BEFORE any write this call — the true pre-existing state, set by
-    // whichever path (single-stage receipt-time credit, the QC-edit pass, or a
-    // prior Store Confirm call) posted this line's stock first, if any.
-    const alreadyPosted = !!line.stock_posted_at;
+
+    if (!isJobCardLine(line)) {
+      plainItems.push({
+        id: input.id,
+        store_qty: Number(input.storeQty ?? 0),
+        damaged_qty: Number(input.damagedQty ?? 0),
+        location: input.location ?? null,
+        damaged_reason: input.damagedReason ?? null,
+        notes: input.notes ?? null,
+      });
+      plainLineById.set(input.id, line);
+      continue;
+    }
+
+    // ---- Job-card-linked lines: stock posts via rpc_confirm_grn_store below ----
     const conforming = Number(line.conforming_qty ?? 0);
     const curStore = Number(line.store_confirmed_qty ?? 0);
     const curDmg = Number(line.damaged_qty ?? 0);
@@ -3161,8 +3039,7 @@ export async function storeConfirmGRNItems(
 
     const newStore = curStore + inStore;
     const newDmg = curDmg + inDmg;
-    const totalAccounted = newStore + newDmg;
-    const isFullyConfirmed = totalAccounted + EPS >= conforming;
+    const isFullyConfirmed = newStore + newDmg + EPS >= conforming;
 
     const updatePayload: Record<string, any> = {
       store_confirmed_qty: newStore,
@@ -3176,8 +3053,6 @@ export async function storeConfirmGRNItems(
       updatePayload.store_confirmed = true;
       updatePayload.store_confirmed_by = data.confirmedBy;
       updatePayload.store_confirmed_at = confirmedAt;
-      // Marker completeness only — final lines are credited here as before; this
-      // just tags the line so the QC posting pass treats it as already posted.
       updatePayload.stock_posted_at = confirmedAt;
     }
 
@@ -3190,57 +3065,55 @@ export async function storeConfirmGRNItems(
     if (isFullyConfirmed) fullyConfirmed.push(input.id);
     else stillPending.push(input.id);
 
-    const jobCardLine = isJobCardLine(line);
-    if (jobCardLine && isFullyConfirmed && !line.store_confirmed) {
+    if (isFullyConfirmed && !line.store_confirmed) {
       // Newly reaching full confirmation this call — rpc_confirm_grn_store
-      // will pick this line up (it reads accepted_quantity directly, not a
-      // partial delta). Collected and called once after this loop.
+      // will pick this line up. Collected and called once after this loop.
       newlyConfirmedJobCardLines = true;
     }
 
-    // Credit stock_free per partial increment (storeQty only, damaged units excluded).
-    // Safe to call repeatedly across partials — updateStockBucket is additive.
-    // SKIPPED for job-card-linked lines: their crediting happens exclusively
-    // via rpc_confirm_grn_store below, which posts in_process -> free itself,
-    // only when this stage is the job card's own final stage. Crediting here
-    // too would double-count against stock_free.
-    //
-    // SKIPPED when alreadyPosted: fixes the live double-post bug (619 confirmed
-    // instances, 8 Jun-7 Sep 2026) where a single-stage GRN line gets credited
-    // once at receipt time (recordGRNAndUpdatePO's legacy "received
-    // (single-stage)" leg) and AGAIN here on Store Confirm ("store confirmed
-    // (partial)") — same qty, same incoming->free movement, twice. Store
-    // Confirm still updates all the confirmation metadata above (store_confirmed_qty,
-    // damaged_qty, store_confirmed, etc.) as normal; it only no-ops the stock
-    // side when the line was already credited by an earlier path.
-    if (inStore > 0 && !jobCardLine && !alreadyPosted) {
-      await creditPartialStock(grnId, input.id, line.item_id ?? null, inStore, {
-        grnType: grnHeader?.grn_type ?? 'po_grn',
-        grnNumber: grnHeader?.grn_number ?? null,
-        drawingNumber: line.drawing_number ?? null,
-        companyId: grnHeader?.company_id,
-        confirmedBy: data.confirmedBy,
-        linkedDcId: grnHeader?.linked_dc_id ?? null,
-        itemCode: null, // column doesn't exist on grn_line_items; could be looked up via items table by line.item_id if needed
-        itemDescription: line.description ?? null,
-      }, alreadyPosted);
-    } else if (inStore > 0 && !jobCardLine && alreadyPosted) {
-      console.warn(
-        `[GRN] storeConfirmGRNItems: line ${input.id} (grn ${grnId}) already has stock_posted_at set — ` +
-        `skipping stock credit (already posted, likely at single-stage receipt time). Confirmation metadata still updated.`
-      );
-    }
-
-    // Damaged write-off is keyed on the INCREMENT supplied this call, not the cumulative
-    // total — each partial confirmation that records new damage emits its own ledger entry.
     if (inDmg > 0 && line.item_id) {
       damagedLedgerEntries.push({
         item_id: line.item_id,
-        item_code: null, // column doesn't exist on grn_line_items; could be looked up via items table by line.item_id if needed
+        item_code: null,
         description: line.description ?? null,
         qty: inDmg,
         reason: input.damagedReason ?? null,
       });
+    }
+  }
+
+  if (plainItems.length > 0) {
+    const { data: plainRes, error: plainErr } = await (supabase as any).rpc('rpc_store_confirm_plain_lines', {
+      p_grn_id: grnId,
+      p_items: plainItems,
+      p_confirmed_by: data.confirmedBy,
+      p_confirmed_at: confirmedAt,
+    });
+    if (plainErr) throw new Error(plainErr.message);
+    for (const r of ((plainRes?.results ?? []) as any[])) {
+      const line = plainLineById.get(r.line_id);
+      if (r.status === 'confirmed') fullyConfirmed.push(r.line_id);
+      else if (r.status === 'partial') stillPending.push(r.line_id);
+      else if (r.status === 'failed') {
+        failedLines.push({
+          description: line?.description ?? r.line_id,
+          error: String(r.error ?? 'unknown error'),
+        });
+      } // 'duplicate_ignored': an identical credit landed moments ago — nothing to do
+      if (r.credited && Number(r.qty_credited) > 0 && r.item_id) {
+        try {
+          await notifyAssemblyDemandRestock({
+            companyId: grnHeader?.company_id,
+            itemId: r.item_id,
+            itemCode: r.item_code ?? null,
+            itemDescription: line?.description ?? null,
+            grnNumber: grnHeader?.grn_number ?? null,
+            confirmedBy: data.confirmedBy,
+          });
+        } catch (e) {
+          console.warn('[GRN] notifyAssemblyDemandRestock failed (non-fatal):', e);
+        }
+      }
     }
   }
 
@@ -3264,7 +3137,9 @@ export async function storeConfirmGRNItems(
         notes: `Damaged on arrival — ${entry.reason || 'no reason given'}`,
         created_by: null,
         from_state: STOCK_STATE.INCOMING,
-        to_state: STOCK_STATE.SCRAPPED,
+        // 'scrap' is the valid ledger bucket (chk_stock_ledger_to_bucket);
+        // STOCK_STATE.SCRAPPED ('scrapped') is rejected by the DB.
+        to_state: 'scrap' as any,
       });
     }
   }
@@ -3310,11 +3185,12 @@ export async function storeConfirmGRNItems(
     .eq('grn_id', grnId)
     .neq('store_confirmed', true);
 
+
   if (!remainingLines?.length) {
     // All lines on this GRN now fully confirmed — run the close ceremony only.
-    // Stock was already credited per partial via creditPartialStock above.
+    // Stock was already credited per line inside the confirm RPCs above.
     await storeConfirmGRN(grnId, { confirmedBy: data.confirmedBy, confirmedAt: data.confirmedAt });
-  } else {
+  } else if (fullyConfirmed.length + stillPending.length > 0) {
     // At least one line still open — mark partial without closing.
     await (supabase as any)
       .from('grns')
@@ -3322,24 +3198,21 @@ export async function storeConfirmGRNItems(
       .eq('id', grnId);
   }
 
+  // Fail loud: lines the database rejected are left completely unchanged
+  // (no flag, no stock) so they can simply be retried. Everything else in the
+  // batch was committed above, and the header state is already recomputed.
+  if (failedLines.length > 0) {
+    const bullets = failedLines.map((f) => `  • ${f.description}: ${f.error}`).join('\n');
+    const done = fullyConfirmed.length + stillPending.length;
+    throw new Error(
+      `${failedLines.length} line(s) could not be confirmed and were left unchanged:\n${bullets}` +
+      (done > 0 ? `\n\n${done} other line(s) were confirmed successfully.` : '')
+    );
+  }
+
   return { fullyConfirmed, stillPending };
 }
 
-export async function storeConfirmLineItem(
-  lineItemId: string,
-  data: { confirmedBy: string; confirmedAt: string; location?: string | null }
-): Promise<void> {
-  const { error } = await (supabase as any)
-    .from('grn_line_items')
-    .update({
-      store_confirmed:    true,
-      store_confirmed_by: data.confirmedBy,
-      store_confirmed_at: new Date(data.confirmedAt).toISOString(),
-      store_location:     data.location ?? null,
-    })
-    .eq('id', lineItemId);
-  if (error) throw error;
-}
 
 /** @deprecated Use fetchAwaitingStoreLineItems instead */
 export async function fetchAwaitingStoreGRNs(): Promise<any[]> {

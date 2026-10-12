@@ -77,9 +77,10 @@ vi.mock("@/integrations/supabase/client", () => {
       update: (payload: any) => makeUpdateChain(table, payload),
     }),
     rpc: (name: string, _args: any) => {
-      if (name === "rpc_credit_partial_stock") {
+      if (name === "rpc_store_confirm_plain_lines") {
+        const ids = (_args.p_items as any[]).map((i) => i.id);
         return Promise.resolve({
-          data: [{ out_resolved_item_id: "item-A", out_item_code: "CODE-A", out_is_dc_return: false, out_new_free: 10, out_new_in_process: 0 }],
+          data: { results: ids.map((id) => ({ line_id: id, status: "confirmed", credited: true, qty_credited: 10, item_id: "item-A", item_code: "CODE-A" })), failed: 0 },
           error: null,
         });
       }
