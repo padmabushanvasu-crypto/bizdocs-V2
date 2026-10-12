@@ -2989,97 +2989,33 @@ export async function storeConfirmGRNItems(
   const fullyConfirmed: string[] = [];
   const stillPending: string[] = [];
   const failedLines: Array<{ description: string; error: string }> = [];
-  const damagedLedgerEntries: Array<{
-    item_id: string;
-    item_code: string | null;
-    description: string | null;
-    qty: number;
-    reason: string | null;
-  }> = [];
-  let newlyConfirmedJobCardLines = false;
   // True when this call's batch includes any weldment line — store confirm is
   // per line, so this is scoped to what the store is actually confirming
   // right now, not "does this GRN have a weldment line somewhere".
   let hasWeldmentLines = false;
-  // Plain lines (neither weldment nor job-card) are confirmed atomically in
-  // the database by rpc_store_confirm_plain_lines: stock credit, damaged
-  // write-off and the line flag commit together per line, or not at all.
+  // Plain and job-card-linked lines confirm atomically in the database
+  // (rpc_store_confirm_plain_lines / rpc_store_confirm_job_card_lines): stock
+  // credit, damaged write-off and line flag commit together, or not at all.
   // (Previously the flag + stock_posted_at were written first and the credit
   // second, so a failed credit left a line "Confirmed" with no stock and
-  // blocked the retry.)
+  // blocked the retry.) Weldment lines post wholly inside
+  // rpc_post_weldment_lines, which stamps their flags itself.
+  const toPayload = (input: (typeof items)[number]) => ({
+    id: input.id,
+    store_qty: Number(input.storeQty ?? 0),
+    damaged_qty: Number(input.damagedQty ?? 0),
+    location: input.location ?? null,
+    damaged_reason: input.damagedReason ?? null,
+    notes: input.notes ?? null,
+  });
   const plainItems: Array<Record<string, any>> = [];
-  const plainLineById = new Map<string, any>();
+  const jobCardItems: Array<Record<string, any>> = [];
+  const lineById = new Map<string, any>();
   for (const input of items) {
     const line = lineMap.get(input.id);
-    // Weldment lines never post through the per-line bookkeeping below —
-    // rpc_post_weldment_lines (called below whenever this batch includes one)
-    // posts their stock via _grn_post_weldment_lines and stamps
-    // store_confirmed itself.
     if (line.is_weldment_receipt) { hasWeldmentLines = true; continue; }
-
-    if (!isJobCardLine(line)) {
-      plainItems.push({
-        id: input.id,
-        store_qty: Number(input.storeQty ?? 0),
-        damaged_qty: Number(input.damagedQty ?? 0),
-        location: input.location ?? null,
-        damaged_reason: input.damagedReason ?? null,
-        notes: input.notes ?? null,
-      });
-      plainLineById.set(input.id, line);
-      continue;
-    }
-
-    // ---- Job-card-linked lines: stock posts via rpc_confirm_grn_store below ----
-    const conforming = Number(line.conforming_qty ?? 0);
-    const curStore = Number(line.store_confirmed_qty ?? 0);
-    const curDmg = Number(line.damaged_qty ?? 0);
-    const inStore = Number(input.storeQty ?? 0);
-    const inDmg = Number(input.damagedQty ?? 0);
-
-    const newStore = curStore + inStore;
-    const newDmg = curDmg + inDmg;
-    const isFullyConfirmed = newStore + newDmg + EPS >= conforming;
-
-    const updatePayload: Record<string, any> = {
-      store_confirmed_qty: newStore,
-      damaged_qty: newDmg,
-      store_location: input.location ?? null,
-    };
-    // Append-only text fields: only overwrite if a new value was supplied this turn.
-    if (input.damagedReason) updatePayload.damaged_reason = input.damagedReason;
-    if (input.notes) updatePayload.store_confirmation_notes = input.notes;
-    if (isFullyConfirmed) {
-      updatePayload.store_confirmed = true;
-      updatePayload.store_confirmed_by = data.confirmedBy;
-      updatePayload.store_confirmed_at = confirmedAt;
-      updatePayload.stock_posted_at = confirmedAt;
-    }
-
-    const { error: updErr } = await (supabase as any)
-      .from('grn_line_items')
-      .update(updatePayload)
-      .eq('id', input.id);
-    if (updErr) throw updErr;
-
-    if (isFullyConfirmed) fullyConfirmed.push(input.id);
-    else stillPending.push(input.id);
-
-    if (isFullyConfirmed && !line.store_confirmed) {
-      // Newly reaching full confirmation this call — rpc_confirm_grn_store
-      // will pick this line up. Collected and called once after this loop.
-      newlyConfirmedJobCardLines = true;
-    }
-
-    if (inDmg > 0 && line.item_id) {
-      damagedLedgerEntries.push({
-        item_id: line.item_id,
-        item_code: null,
-        description: line.description ?? null,
-        qty: inDmg,
-        reason: input.damagedReason ?? null,
-      });
-    }
+    lineById.set(input.id, line);
+    (isJobCardLine(line) ? jobCardItems : plainItems).push(toPayload(input));
   }
 
   if (plainItems.length > 0) {
@@ -3091,7 +3027,7 @@ export async function storeConfirmGRNItems(
     });
     if (plainErr) throw new Error(plainErr.message);
     for (const r of ((plainRes?.results ?? []) as any[])) {
-      const line = plainLineById.get(r.line_id);
+      const line = lineById.get(r.line_id);
       if (r.status === 'confirmed') fullyConfirmed.push(r.line_id);
       else if (r.status === 'partial') stillPending.push(r.line_id);
       else if (r.status === 'failed') {
@@ -3117,47 +3053,30 @@ export async function storeConfirmGRNItems(
     }
   }
 
-  if (damagedLedgerEntries.length > 0) {
-    const today = new Date().toISOString().split('T')[0];
-    for (const entry of damagedLedgerEntries) {
-      await addStockLedgerEntry({
-        item_id: entry.item_id,
-        item_code: entry.item_code,
-        item_description: entry.description,
-        transaction_date: today,
-        transaction_type: 'rejection_writeoff',
-        qty_in: 0,
-        qty_out: entry.qty,
-        balance_qty: 0,
-        unit_cost: 0,
-        total_value: 0,
-        reference_type: 'grn',
-        reference_id: grnId,
-        reference_number: null,
-        notes: `Damaged on arrival — ${entry.reason || 'no reason given'}`,
-        created_by: null,
-        from_state: STOCK_STATE.INCOMING,
-        to_state: STOCK_STATE.SCRAPPED,
-      });
-    }
-  }
-
-  // New stage-ledger model — at least one job-card-linked line newly reached
-  // full store-confirmation this call. One RPC call covers every dc-linked
-  // line on this GRN; it posts returned_accepted/returned_rejected itself
-  // and credits stock_free only when a line's stage is that job card's own
-  // final stage (_jcsl_credit_if_final_stage) — no client-side stock or
-  // ledger writes here. Gated on newlyConfirmedJobCardLines, not called
-  // unconditionally: store confirm is per line, and this RPC would post stage
-  // returns for job-card lines the store has not confirmed yet. Known,
-  // documented, deliberately-unimplemented gap: a conversion line (received
-  // item differs from the shipped item) makes the RPC raise rather than
-  // guess at cross-item stock mechanics — that exception is allowed to
-  // propagate verbatim, not caught or worked around here (see
+  // Job-card-linked lines: the RPC updates the lines, writes off damage and
+  // runs rpc_confirm_grn_store (stage returns / final-stage credit) in ONE
+  // transaction, so a failure anywhere leaves every line in this group
+  // untouched. A conversion line (received item differs from the shipped
+  // item) makes rpc_confirm_grn_store raise rather than guess at cross-item
+  // stock mechanics — that message is surfaced verbatim (see
   // DC_STAGE_FLOW_REDESIGN.md §10.1 item 5).
-  if (newlyConfirmedJobCardLines) {
-    const { error: confirmStoreErr } = await (supabase as any).rpc('rpc_confirm_grn_store', { p_grn_id: grnId });
-    if (confirmStoreErr) throw new Error(confirmStoreErr.message);
+  if (jobCardItems.length > 0) {
+    const { data: jcRes, error: jcErr } = await (supabase as any).rpc('rpc_store_confirm_job_card_lines', {
+      p_grn_id: grnId,
+      p_items: jobCardItems,
+      p_confirmed_by: data.confirmedBy,
+      p_confirmed_at: confirmedAt,
+    });
+    if (jcErr) {
+      for (const it of jobCardItems) {
+        failedLines.push({ description: lineById.get(it.id)?.description ?? it.id, error: jcErr.message });
+      }
+    } else {
+      for (const r of ((jcRes?.results ?? []) as any[])) {
+        if (r.status === 'confirmed') fullyConfirmed.push(r.line_id);
+        else stillPending.push(r.line_id);
+      }
+    }
   }
 
   // Weldment lines in this batch: posted via the dedicated, idempotent
