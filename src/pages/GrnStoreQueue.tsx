@@ -394,6 +394,11 @@ export default function GrnStoreQueue() {
         ? "This material was already sent out on a DC, so it cannot be posted to Store. Nothing to do."
         : err.message;
       toast({ title: "Error confirming receipt", description, variant: "destructive" });
+      // A batch can be partly committed (the failed lines are left unchanged,
+      // the rest are confirmed) — refresh so the queue shows the true state.
+      queryClient.invalidateQueries({ queryKey: ["grn-store-queue"] });
+      queryClient.invalidateQueries({ queryKey: ["awaiting-store-count"] });
+      queryClient.invalidateQueries({ queryKey: ["grns"] });
     } finally {
       setConfirming((prev) => ({ ...prev, [grnId]: false }));
     }
