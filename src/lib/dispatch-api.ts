@@ -1,7 +1,4 @@
 import { supabase } from "@/integrations/supabase/client";
-import { updateStockBucket } from "@/lib/items-api";
-import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
-import { STOCK_STATE } from "@/lib/stock-states";
 
 async function getCompanyId(): Promise<string | null> {
   const { data: { user } } = await supabase.auth.getUser();
@@ -180,9 +177,13 @@ export async function updateDispatchRecord(
   const companyId = await getCompanyId();
   if (!companyId) throw new Error("Not authenticated");
 
-  const { error } = await (supabase as any)
-    .from("dispatch_records")
-    .update({
+  // Header update runs through the database function, which refuses anything
+  // but a draft when items are being replaced — so a posted record can never
+  // have its items swapped out from under its ledger postings.
+  const { error } = await (supabase as any).rpc("rpc_update_dispatch_record", {
+    p_company_id: companyId,
+    p_id: id,
+    p_header: {
       dispatch_date: data.dispatch_date,
       customer_id: data.customer_id ?? null,
       customer_name: data.customer_name ?? null,
@@ -191,19 +192,17 @@ export async function updateDispatchRecord(
       driver_name: data.driver_name ?? null,
       driver_contact: data.driver_contact ?? null,
       notes: data.notes ?? null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", id)
-    .eq("company_id", companyId)
-    .eq("status", "draft");
-
-  if (error) throw error;
+    },
+    p_replace_items: true,
+  });
+  if (error) throw new Error(error.message);
 
   // Delete and re-insert items
-  await (supabase as any)
+  const { error: delErr } = await (supabase as any)
     .from("dispatch_record_items")
     .delete()
     .eq("dispatch_record_id", id);
+  if (delErr) throw delErr;
 
   if (items.length > 0) {
     const itemRows = items.map((item) => ({
@@ -227,82 +226,69 @@ export async function updateDispatchRecord(
   }
 }
 
+/**
+ * Confirm a draft dispatch record. Everything — the invoice_dispatch ledger
+ * rows, the fg_ready bucket, serial numbers and the status flip — happens in
+ * ONE database transaction (rpc_confirm_dispatch_record): a failure anywhere
+ * (e.g. not enough ready stock for one line) leaves the record a draft with no
+ * stock movement, so it can simply be retried. A record that is not a draft is
+ * refused, so a double click cannot deduct twice.
+ */
 export async function confirmDispatch(id: string): Promise<void> {
   const companyId = await getCompanyId();
   if (!companyId) throw new Error("Not authenticated");
+  const currentUser = await getCurrentUser();
 
-  const dr = await fetchDispatchRecord(id);
-  if (!dr) throw new Error("Dispatch record not found");
+  const { error } = await (supabase as any).rpc("rpc_confirm_dispatch_record", {
+    p_company_id: companyId,
+    p_id: id,
+    p_confirmed_by: currentUser?.id ?? null,
+  });
+  if (error) throw new Error(error.message);
+}
 
-  const today = new Date().toISOString().split('T')[0];
+/**
+ * Revert a dispatched/delivered record to draft (reason required): the
+ * goods-leave postings are reversed with compensating ledger entries and the
+ * stock, serials and status are restored in one transaction. The record can
+ * then be edited and re-confirmed (reverse-then-repost).
+ */
+export async function revertDispatchRecord(
+  id: string,
+  reason: string
+): Promise<{ dr_number: string; prior_status: string; ledger_rows_reversed: number; serials_restored: number }> {
+  const companyId = await getCompanyId();
+  if (!companyId) throw new Error("Not authenticated");
+  const currentUser = await getCurrentUser();
 
-  // Resale items (bought out, QC'd, sold as-is) live in stock_free, not
-  // stock_in_fg_ready. Everything else keeps the existing finished-good path.
-  const itemIds = (dr.items ?? []).map((i: any) => i.item_id).filter(Boolean) as string[];
-  const resaleIds = new Set<string>();
-  if (itemIds.length > 0) {
-    const { data: resaleRows, error: resaleErr } = await (supabase as any)
-      .from("items")
-      .select("id")
-      .eq("company_id", companyId)
-      .eq("is_resale", true)
-      .in("id", itemIds);
-    if (resaleErr) throw resaleErr;
-    for (const r of resaleRows ?? []) resaleIds.add(r.id);
-  }
+  const { data, error } = await (supabase as any).rpc("rpc_revert_dispatch_record", {
+    p_company_id: companyId,
+    p_id: id,
+    p_by: currentUser?.id ?? null,
+    p_reason: reason.trim(),
+  });
+  if (error) throw new Error(error.message);
+  return data;
+}
 
-  for (const item of dr.items ?? []) {
-    if (!item.item_id) continue;
-    const isResale = resaleIds.has(item.item_id);
-
-    // Ledger-first per iteration (Scope 1).
-    await addStockLedgerEntry({
-      item_id: item.item_id,
-      item_code: item.item_code ?? null,
-      item_description: item.item_description ?? null,
-      transaction_date: today,
-      transaction_type: 'invoice_dispatch',
-      qty_in: 0,
-      qty_out: item.quantity,
-      balance_qty: 0,
-      unit_cost: 0,
-      total_value: 0,
-      reference_type: 'dispatch_record',
-      reference_id: dr.id,
-      reference_number: dr.dr_number,
-      notes: `Dispatched to ${dr.customer_name ?? 'Customer'} — DR ${dr.dr_number}`,
-      created_by: null,
-      from_state: isResale ? STOCK_STATE.FREE : STOCK_STATE.FG_READY,
-      to_state: STOCK_STATE.DISPATCHED,
-    });
-    await updateStockBucket(item.item_id, isResale ? 'free' : 'in_fg_ready', -item.quantity);
-
-    // Update serial number status — only if a serial is linked to this line
-    if (item.serial_number_id) {
-      await (supabase as any)
-        .from("serial_numbers")
-        .update({ status: 'dispatched', dispatch_date: today })
-        .eq("id", item.serial_number_id);
-    } else if (item.serial_number) {
-      await (supabase as any)
-        .from("serial_numbers")
-        .update({ status: 'dispatched', dispatch_date: today })
-        .eq("serial_number", item.serial_number)
-        .eq("company_id", companyId);
-    }
-  }
-
-  const { error } = await (supabase as any)
-    .from("dispatch_records")
-    .update({
-      status: 'dispatched',
-      dispatched_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", id)
-    .eq("company_id", companyId);
-
-  if (error) throw error;
+/**
+ * Edit the non-stock fields of a posted (dispatched/delivered) record. The
+ * database refuses anything else — customer, date and items are frozen until
+ * the record is reverted to draft.
+ */
+export async function updateDispatchRecordDetails(
+  id: string,
+  fields: { vehicle_number?: string | null; driver_name?: string | null; driver_contact?: string | null; customer_po_ref?: string | null; notes?: string | null }
+): Promise<void> {
+  const companyId = await getCompanyId();
+  if (!companyId) throw new Error("Not authenticated");
+  const { error } = await (supabase as any).rpc("rpc_update_dispatch_record", {
+    p_company_id: companyId,
+    p_id: id,
+    p_header: fields,
+    p_replace_items: false,
+  });
+  if (error) throw new Error(error.message);
 }
 
 export async function fetchFinishedGoodItems(): Promise<FinishedGoodItem[]> {
