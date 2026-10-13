@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { CheckCircle, Package, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { fetchFinishedGoodItems } from "@/lib/dispatch-api";
+import { fetchFinishedGoodItems, fetchInStockSerials } from "@/lib/dispatch-api";
 
 /**
  * Finished goods in stock and ready to ship, by item and quantity.
@@ -25,17 +25,24 @@ export default function ReadyToDispatch() {
     staleTime: 30_000,
   });
 
-  // Every word must match somewhere (item code, description, drawing no.),
+  const { data: serialsByItem = {} } = useQuery({
+    queryKey: ["ready-to-dispatch-serials", allItems.map((i) => i.id).join(",")],
+    queryFn: () => fetchInStockSerials(allItems.map((i) => i.id)),
+    enabled: allItems.length > 0,
+    staleTime: 30_000,
+  });
+
+  // Every word must match somewhere (item code, description, drawing no., serial no.),
   // case-insensitive and ignoring punctuation.
   const items = useMemo(() => {
     const norm = (v: string | null | undefined) => (v ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ");
     const tokens = norm(search).split(" ").filter(Boolean);
     if (tokens.length === 0) return allItems;
     return allItems.filter((i) => {
-      const hay = norm(`${i.item_code} ${i.description} ${i.drawing_number}`);
+      const hay = norm(`${i.item_code} ${i.description} ${i.drawing_number} ${(serialsByItem[i.id] ?? []).map((x) => x.serial_number).join(" ")}`);
       return tokens.every((t) => hay.includes(t));
     });
-  }, [allItems, search]);
+  }, [allItems, search, serialsByItem]);
 
   const totalUnits = allItems.reduce((s, i) => s + i.stock_in_fg_ready, 0);
   const shownUnits = items.reduce((s, i) => s + i.stock_in_fg_ready, 0);
@@ -73,7 +80,7 @@ export default function ReadyToDispatch() {
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
         <Input
           className="pl-8"
-          placeholder="Search item, description, drawing no..."
+          placeholder="Search item, description, serial no..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -102,7 +109,7 @@ export default function ReadyToDispatch() {
             <thead className="sticky top-0 z-10">
               <tr>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Drawing No.</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Serial No.</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Ready Qty</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center"></th>
               </tr>
@@ -114,8 +121,29 @@ export default function ReadyToDispatch() {
                     <div className="font-medium text-slate-700">{item.item_code || "—"}</div>
                     {item.description && <div className="text-xs text-slate-500 mt-0.5">{item.description}</div>}
                   </td>
-                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">
-                    {item.drawing_number ?? "—"}
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
+                    {(() => {
+                      const serials = serialsByItem[item.id] ?? [];
+                      if (serials.length === 0) return <span className="text-slate-400">—</span>;
+                      const shown = serials.slice(0, 6);
+                      return (
+                        <div className="flex flex-wrap gap-1 max-w-md">
+                          {shown.map((sn) => (
+                            <span key={sn.id} className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-xs text-slate-700">
+                              {sn.serial_number}
+                            </span>
+                          ))}
+                          {serials.length > shown.length && (
+                            <span
+                              className="px-1 py-0.5 text-xs text-slate-500"
+                              title={serials.map((x) => x.serial_number).join(", ")}
+                            >
+                              +{serials.length - shown.length} more
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-semibold">
                     {item.stock_in_fg_ready} <span className="font-normal text-slate-500">{item.unit}</span>
@@ -137,7 +165,7 @@ export default function ReadyToDispatch() {
       )}
 
       <p className="text-xs text-slate-400">
-        Serial numbers are tracked on the Serial Numbers page and are not used to count stock here.
+        Serial numbers listed are those on file as in-stock; they are not used to count stock here. Pick the serials when you create the Dispatch Record — they are marked dispatched when it is confirmed.
       </p>
     </div>
   );

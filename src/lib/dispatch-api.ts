@@ -434,3 +434,38 @@ export async function deleteDispatchRecord(
   if (error) throw new Error(error.message);
   return data;
 }
+
+export interface InStockSerial {
+  id: string;
+  serial_number: string;
+  item_id: string;
+}
+
+/**
+ * Serial numbers currently in stock, grouped by item id. Informational and a
+ * picker source only — stock quantities never come from serial rows (they come
+ * from the ledger / items buckets). A serial becomes `dispatched` when a
+ * Dispatch Record carrying it is confirmed, and returns to `in_stock` if that
+ * record is reverted or deleted.
+ */
+export async function fetchInStockSerials(itemIds: string[]): Promise<Record<string, InStockSerial[]>> {
+  const ids = [...new Set(itemIds.filter(Boolean))];
+  if (ids.length === 0) return {};
+  const companyId = await getCompanyId();
+  if (!companyId) return {};
+
+  const { data, error } = await (supabase as any)
+    .from("serial_numbers")
+    .select("id, serial_number, item_id, created_at")
+    .eq("company_id", companyId)
+    .eq("status", "in_stock")
+    .in("item_id", ids)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+
+  const out: Record<string, InStockSerial[]> = {};
+  for (const r of (data ?? []) as any[]) {
+    (out[r.item_id] ??= []).push({ id: r.id, serial_number: r.serial_number, item_id: r.item_id });
+  }
+  return out;
+}

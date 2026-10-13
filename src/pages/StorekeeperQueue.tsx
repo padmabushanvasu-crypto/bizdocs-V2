@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { formatNumber } from "@/lib/gst-utils";
 import { format, parseISO } from "date-fns";
+import { fetchInStockSerials } from "@/lib/dispatch-api";
 
 function mirStatusBadge(status: string) {
   const map: Record<string, { label: string; className: string }> = {
@@ -73,6 +74,17 @@ export default function StorekeeperQueue() {
     queryKey: ["mir-detail", selectedMirId],
     queryFn: () => fetchMaterialIssueRequest(selectedMirId!),
     enabled: !!selectedMirId,
+  });
+
+  // Finished goods carry serial numbers; show the in-stock ones next to the line
+  // so the storekeeper can see which units exist (display only — issuing is
+  // still by quantity).
+  const serialItemIds = (mirDetail?.line_items ?? []).map((li: MirLineItem) => li.item_id).filter(Boolean) as string[];
+  const { data: serialsByItem = {} } = useQuery({
+    queryKey: ["mir-line-serials", serialItemIds.join(",")],
+    queryFn: () => fetchInStockSerials(serialItemIds),
+    enabled: serialItemIds.length > 0,
+    staleTime: 30_000,
   });
 
   // Initialize lineEdits when mirDetail loads (replaces deprecated onSuccess)
@@ -326,6 +338,15 @@ export default function StorekeeperQueue() {
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-blue-700">{li.drawing_number ?? "—"}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                       <p className="text-sm font-medium">{li.item_description ?? li.item_code ?? "—"}</p>
+                      {li.item_id && (serialsByItem[li.item_id]?.length ?? 0) > 0 && (
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          <span className="font-medium">Serial No:</span>{" "}
+                          <span className="font-mono">
+                            {serialsByItem[li.item_id].slice(0, 8).map((x) => x.serial_number).join(", ")}
+                            {serialsByItem[li.item_id].length > 8 ? ` +${serialsByItem[li.item_id].length - 8} more` : ""}
+                          </span>
+                        </p>
+                      )}
                       {(li.issued_qty ?? 0) > 0 && (
                         <p className="text-xs text-green-600 mt-0.5">
                           Issued: {formatNumber(li.issued_qty ?? 0)} of {formatNumber(li.requested_qty)}
