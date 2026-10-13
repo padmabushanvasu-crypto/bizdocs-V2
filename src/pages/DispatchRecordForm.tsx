@@ -34,6 +34,7 @@ import {
   updateDispatchRecord,
   confirmDispatch,
   fetchFinishedGoodItems,
+  fetchInStockSerials,
 } from "@/lib/dispatch-api";
 import type { DispatchRecordItem } from "@/lib/dispatch-api";
 import { fetchParties } from "@/lib/parties-api";
@@ -45,6 +46,8 @@ interface LineItem {
   quantity: number;
   unit: string;
   notes?: string;
+  /** Serial numbers picked for this line (each becomes its own qty-1 row on save). */
+  serials?: { id: string; serial_number: string }[];
 }
 
 const inputDarkClasses =
@@ -142,18 +145,32 @@ export default function DispatchRecordForm() {
         notes: existingDR.notes ?? "",
       });
       if (existingDR.items && existingDR.items.length > 0) {
-        // Map legacy items (which may have serial-number fields) to the new
-        // item-only LineItem shape — serial info is dropped from the form.
-        setLineItems(
-          existingDR.items.map((item) => ({
-            item_id: item.item_id ?? "",
-            item_code: item.item_code ?? "",
-            item_description: item.item_description ?? "",
-            quantity: item.quantity,
-            unit: item.unit,
-            notes: item.notes ?? undefined,
-          }))
-        );
+        // Rows that carry a serial are saved one-per-unit; fold them (and any
+        // un-serialled remainder) back into one line per item for editing.
+        const grouped: LineItem[] = [];
+        const byItem = new Map<string, LineItem>();
+        for (const item of existingDR.items) {
+          const key = item.item_id ?? `row-${grouped.length}`;
+          let li = byItem.get(key);
+          if (!li) {
+            li = {
+              item_id: item.item_id ?? "",
+              item_code: item.item_code ?? "",
+              item_description: item.item_description ?? "",
+              quantity: 0,
+              unit: item.unit,
+              notes: item.notes ?? undefined,
+              serials: [],
+            };
+            byItem.set(key, li);
+            grouped.push(li);
+          }
+          li.quantity += Number(item.quantity ?? 0);
+          if (item.serial_number_id) {
+            li.serials!.push({ id: item.serial_number_id, serial_number: item.serial_number ?? "" });
+          }
+        }
+        setLineItems(grouped);
       }
     }
   }, [existingDR]);
@@ -188,6 +205,24 @@ export default function DispatchRecordForm() {
     return map;
   }, [fgItems]);
 
+  const lineItemIds = useMemo(() => [...new Set(lineItems.map((l) => l.item_id).filter(Boolean))], [lineItems]);
+  const { data: serialsByItem = {} } = useQuery({
+    queryKey: ["dispatch-form-serials", lineItemIds.join(",")],
+    queryFn: () => fetchInStockSerials(lineItemIds),
+    enabled: lineItemIds.length > 0,
+    staleTime: 15_000,
+  });
+
+  const toggleSerial = (index: number, sn: { id: string; serial_number: string }) =>
+    setLineItems((prev) =>
+      prev.map((l, i) => {
+        if (i !== index) return l;
+        const cur = l.serials ?? [];
+        const has = cur.some((x) => x.id === sn.id);
+        return { ...l, serials: has ? cur.filter((x) => x.id !== sn.id) : [...cur, sn] };
+      })
+    );
+
   // ── Validation ────────────────────────────────────────────────────────────
   const errors = useMemo(() => {
     const e: {
@@ -217,6 +252,10 @@ export default function DispatchRecordForm() {
           e.lineByIndex[i] = "Quantity must be 1 or more";
           continue;
         }
+        if ((li.serials?.length ?? 0) > li.quantity) {
+          e.lineByIndex[i] = `${li.serials!.length} serial numbers selected but quantity is ${li.quantity}`;
+          continue;
+        }
         const fg = fgById[li.item_id];
         const available = fg?.stock_in_fg_ready ?? 0;
         if (li.quantity > available) {
@@ -238,16 +277,28 @@ export default function DispatchRecordForm() {
   // ── Save / confirm ────────────────────────────────────────────────────────
   const saveMutation = useMutation({
     mutationFn: async (action: "draft" | "confirm") => {
-      const itemsPayload: Partial<DispatchRecordItem>[] = lineItems.map((li) => ({
-        serial_number_id: null,
-        serial_number: null,
-        item_id: li.item_id || null,
-        item_code: li.item_code || null,
-        item_description: li.item_description || null,
-        quantity: li.quantity,
-        unit: li.unit,
-        notes: li.notes ?? null,
-      }));
+      // One row per picked serial (qty 1, linked), plus one un-serialled row
+      // for whatever quantity is left — so a confirmed dispatch marks exactly
+      // the picked serials as dispatched.
+      const itemsPayload: Partial<DispatchRecordItem>[] = lineItems.flatMap((li) => {
+        const base = {
+          item_id: li.item_id || null,
+          item_code: li.item_code || null,
+          item_description: li.item_description || null,
+          unit: li.unit,
+          notes: li.notes ?? null,
+        };
+        const serials = li.serials ?? [];
+        const rows: Partial<DispatchRecordItem>[] = serials.map((sn) => ({
+          ...base,
+          serial_number_id: sn.id,
+          serial_number: sn.serial_number,
+          quantity: 1,
+        }));
+        const remainder = li.quantity - serials.length;
+        if (remainder > 0) rows.push({ ...base, serial_number_id: null, serial_number: null, quantity: remainder });
+        return rows;
+      });
 
       let drId: string;
       if (isEdit) {
@@ -341,6 +392,8 @@ export default function DispatchRecordForm() {
               item_description: fg.description,
               unit: fg.unit,
               quantity: li.quantity || 1,
+              // serials belong to the previously selected item
+              serials: li.item_id === fg.id ? li.serials : [],
             }
           : li
       )
@@ -655,6 +708,33 @@ export default function DispatchRecordForm() {
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
+
+              {li.item_id && (serialsByItem[li.item_id]?.length ?? 0) > 0 && (
+                <div className="col-span-12 space-y-1">
+                  <Label className="text-xs text-slate-500 dark:text-slate-400">
+                    Serial numbers <span className="font-normal">(optional — tap to select, {(li.serials ?? []).length} of {li.quantity || 0} picked)</span>
+                  </Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {serialsByItem[li.item_id].map((sn) => {
+                      const on = (li.serials ?? []).some((x) => x.id === sn.id);
+                      return (
+                        <button
+                          key={sn.id}
+                          type="button"
+                          onClick={() => toggleSerial(index, sn)}
+                          className={`rounded border px-2 py-0.5 font-mono text-xs transition-colors ${
+                            on
+                              ? "border-blue-600 bg-blue-600 text-white"
+                              : "border-slate-200 bg-slate-50 text-slate-700 hover:border-blue-400 dark:border-white/20 dark:bg-transparent dark:text-slate-200"
+                          }`}
+                        >
+                          {sn.serial_number}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {showLineErr && (
                 <div className="col-span-12 -mt-1">
