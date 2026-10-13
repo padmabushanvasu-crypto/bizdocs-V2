@@ -13,7 +13,7 @@ vi.mock("@/integrations/supabase/client", () => ({
     },
   },
 }));
-import { deleteDispatchRecord } from "@/lib/dispatch-api";
+import { deleteDispatchRecord, confirmDispatch, revertDispatchRecord, updateDispatchRecordDetails } from "@/lib/dispatch-api";
 
 describe("deleteDispatchRecord", () => {
   beforeEach(() => { rpcCalls.length = 0; });
@@ -30,5 +30,35 @@ describe("deleteDispatchRecord", () => {
   it("surfaces the database error message", async () => {
     rpcResult = { data: null, error: { message: "A reason is required" } };
     await expect(deleteDispatchRecord("dr-id")).rejects.toThrow("A reason is required");
+  });
+});
+
+describe("confirm / revert / details go through atomic RPCs only", () => {
+  beforeEach(() => { rpcCalls.length = 0; });
+
+  it("confirmDispatch makes exactly one RPC call and no client-side stock writes", async () => {
+    rpcResult = { data: { dr_number: "DR-1", lines_dispatched: 1 }, error: null };
+    await confirmDispatch("dr-id");
+    expect(rpcCalls.map((c) => c.name)).toEqual(["rpc_confirm_dispatch_record"]);
+    expect(rpcCalls[0].args).toMatchObject({ p_company_id: "c1", p_id: "dr-id" });
+  });
+
+  it("confirmDispatch surfaces insufficient-stock errors verbatim", async () => {
+    rpcResult = { data: null, error: { message: "Insufficient in_fg_ready stock for item X — 0 available, 1 requested" } };
+    await expect(confirmDispatch("dr-id")).rejects.toThrow(/Insufficient in_fg_ready stock/);
+  });
+
+  it("revertDispatchRecord sends the trimmed reason", async () => {
+    rpcResult = { data: { dr_number: "DR-1", prior_status: "dispatched", ledger_rows_reversed: 1, serials_restored: 0 }, error: null };
+    await revertDispatchRecord("dr-id", "  wrong qty ");
+    expect(rpcCalls[0].name).toBe("rpc_revert_dispatch_record");
+    expect(rpcCalls[0].args).toMatchObject({ p_id: "dr-id", p_reason: "wrong qty" });
+  });
+
+  it("updateDispatchRecordDetails never asks to replace items", async () => {
+    rpcResult = { data: { dr_number: "DR-1", status: "dispatched" }, error: null };
+    await updateDispatchRecordDetails("dr-id", { vehicle_number: "TN01" });
+    expect(rpcCalls[0].name).toBe("rpc_update_dispatch_record");
+    expect(rpcCalls[0].args).toMatchObject({ p_header: { vehicle_number: "TN01" }, p_replace_items: false });
   });
 });

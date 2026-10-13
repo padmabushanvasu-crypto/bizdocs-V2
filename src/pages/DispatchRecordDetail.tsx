@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { printWithLightMode } from "@/lib/print-utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Printer, Truck, CheckCircle, Trash2 } from "lucide-react";
+import { ArrowLeft, Printer, Truck, CheckCircle, Trash2, Pencil, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -14,6 +14,8 @@ import { formatNumber } from "@/lib/gst-utils";
 import { format, parseISO } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { DispatchRecordDeleteDialog } from "@/components/DispatchRecordDeleteDialog";
+import { DispatchRecordRevertDialog } from "@/components/DispatchRecordRevertDialog";
+import { DispatchRecordDetailsDialog } from "@/components/DispatchRecordDetailsDialog";
 
 function statusBadge(status: string) {
   if (status === "draft") return <Badge className="bg-slate-100 text-slate-700">Draft</Badge>;
@@ -28,6 +30,16 @@ export default function DispatchRecordDetail() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [revertOpen, setRevertOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const refreshAll = () => {
+    queryClient.invalidateQueries({ queryKey: ["dispatch-record", id] });
+    queryClient.invalidateQueries({ queryKey: ["dispatch-records"] });
+    queryClient.invalidateQueries({ queryKey: ["dispatch-stats"] });
+    queryClient.invalidateQueries({ queryKey: ["ready-to-dispatch"] });
+    queryClient.invalidateQueries({ queryKey: ["finished-good-items"] });
+    queryClient.invalidateQueries({ queryKey: ["stock-register"] });
+  };
 
   const { data: dr, isLoading } = useQuery({
     queryKey: ["dispatch-record", id],
@@ -133,6 +145,18 @@ export default function DispatchRecordDetail() {
               <Printer className="h-4 w-4 mr-1" />
               Print
             </Button>
+          )}
+          {dr.status !== "draft" && (
+            <>
+              <Button variant="outline" onClick={() => setDetailsOpen(true)}>
+                <Pencil className="h-4 w-4 mr-1" />
+                Edit Details
+              </Button>
+              <Button variant="outline" onClick={() => setRevertOpen(true)}>
+                <Undo2 className="h-4 w-4 mr-1" />
+                Revert to Draft
+              </Button>
+            </>
           )}
           <Button variant="outline" className="text-red-600 hover:text-red-700" onClick={() => setDeleteOpen(true)}>
             <Trash2 className="h-4 w-4 mr-1" />
@@ -246,6 +270,8 @@ export default function DispatchRecordDetail() {
           <div>Date: ___________________</div>
         </div>
       </div>
+      <DispatchRecordRevertDialog record={dr} open={revertOpen} onOpenChange={setRevertOpen} onReverted={refreshAll} />
+      <DispatchRecordDetailsDialog record={dr} open={detailsOpen} onOpenChange={setDetailsOpen} onSaved={refreshAll} />
       <DispatchRecordDeleteDialog
         record={dr}
         open={deleteOpen}
