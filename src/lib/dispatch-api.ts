@@ -78,6 +78,7 @@ export async function fetchDispatchRecords(filters?: { status?: string; search?:
     .from("dispatch_records")
     .select("*")
     .eq("company_id", companyId)
+    .is("deleted_at", null)
     .order("created_at", { ascending: false });
 
   if (filters?.status) {
@@ -103,6 +104,7 @@ export async function fetchDispatchRecord(id: string): Promise<DispatchRecord | 
     .select("*")
     .eq("id", id)
     .eq("company_id", companyId)
+    .is("deleted_at", null)
     .single();
 
   if (error || !dr) return null;
@@ -383,16 +385,19 @@ export async function fetchDispatchStats(): Promise<{
       .from("dispatch_records")
       .select("id", { count: "exact", head: true })
       .eq("company_id", companyId)
+      .is("deleted_at", null)
       .eq("status", "draft"),
     (supabase as any)
       .from("dispatch_records")
       .select("id", { count: "exact", head: true })
       .eq("company_id", companyId)
+      .is("deleted_at", null)
       .eq("status", "dispatched"),
     (supabase as any)
       .from("dispatch_records")
       .select("id", { count: "exact", head: true })
       .eq("company_id", companyId)
+      .is("deleted_at", null)
       .eq("status", "delivered")
       .gte("delivered_at", startOfMonth),
     (supabase as any)
@@ -416,4 +421,30 @@ export async function fetchDispatchStats(): Promise<{
     delivered_this_month: deliveredRes.count ?? 0,
     ready_to_dispatch: readyUnits,
   };
+}
+
+/**
+ * Delete a dispatch record (soft delete — the row is kept with deleted_at /
+ * deleted_by / delete_reason). A draft has no stock impact. A dispatched or
+ * delivered record is reversed first, inside the same database transaction:
+ * compensating ledger entries (dispatched -> in_fg_ready, or -> free for
+ * resale items), the fg_ready bucket restored, serial numbers back to
+ * in_stock. A reason is required for non-draft records.
+ */
+export async function deleteDispatchRecord(
+  id: string,
+  reason?: string | null
+): Promise<{ dr_number: string; prior_status: string; ledger_rows_reversed: number; serials_restored: number }> {
+  const companyId = await getCompanyId();
+  if (!companyId) throw new Error("Not authenticated");
+  const currentUser = await getCurrentUser();
+
+  const { data, error } = await (supabase as any).rpc("rpc_delete_dispatch_record", {
+    p_company_id: companyId,
+    p_id: id,
+    p_deleted_by: (currentUser as any)?.id ?? null,
+    p_reason: reason?.trim() || null,
+  });
+  if (error) throw new Error(error.message);
+  return data;
 }

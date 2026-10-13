@@ -1,12 +1,13 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { Truck, Plus } from "lucide-react";
+import { Truck, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { fetchDispatchRecords, fetchDispatchStats } from "@/lib/dispatch-api";
 import { format, parseISO } from "date-fns";
+import { DispatchRecordDeleteDialog } from "@/components/DispatchRecordDeleteDialog";
 
 function statusBadge(status: string) {
   if (status === "draft") return <Badge className="bg-slate-100 text-slate-700">Draft</Badge>;
@@ -18,6 +19,8 @@ function statusBadge(status: string) {
 export default function DispatchRecords() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
+  const queryClient = useQueryClient();
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; dr_number: string; status: string } | null>(null);
 
   const { data: stats } = useQuery({
     queryKey: ["dispatch-stats"],
@@ -112,6 +115,18 @@ export default function DispatchRecords() {
                     >
                       View
                     </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-600 hover:text-red-700"
+                      aria-label={`Delete ${dr.dr_number}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteTarget({ id: dr.id, dr_number: dr.dr_number, status: dr.status });
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </td>
                 </tr>
               ))}
@@ -119,6 +134,18 @@ export default function DispatchRecords() {
           </table>
         </div>
       )}
+
+      <DispatchRecordDeleteDialog
+        record={deleteTarget}
+        open={!!deleteTarget}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        onDeleted={() => {
+          queryClient.invalidateQueries({ queryKey: ["dispatch-records"] });
+          queryClient.invalidateQueries({ queryKey: ["dispatch-stats"] });
+          queryClient.invalidateQueries({ queryKey: ["ready-to-dispatch"] });
+          queryClient.invalidateQueries({ queryKey: ["stock-register"] });
+        }}
+      />
     </div>
   );
 }

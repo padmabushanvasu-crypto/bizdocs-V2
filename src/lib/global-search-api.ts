@@ -54,6 +54,7 @@ const SOURCES: Source[] = [
     table: "dispatch_records",
     select: "id, dr_number, customer_name, status",
     fields: ["dr_number", "customer_name", "vehicle_number"],
+    extra: (q) => q.is("deleted_at", null),
     map: (r) => ({ id: r.id, title: r.dr_number, subtitle: join(r.customer_name, r.status), url: `/dispatch-records/${r.id}` }),
   },
   {
