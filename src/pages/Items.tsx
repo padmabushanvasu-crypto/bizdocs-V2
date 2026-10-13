@@ -301,6 +301,7 @@ export default function Items() {
     saveMutation.mutate();
   };
 
+  const classifById = new Map(classifications.map((c) => [c.id, c]));
   const typeLabel = ITEM_TYPES.reduce((a, t) => ({ ...a, [t.value]: t.label }), {} as Record<string, string>);
   const allSelected = items.length > 0 && selected.size === items.length;
 
@@ -447,9 +448,25 @@ export default function Items() {
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{item.item_code}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium">{item.description}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center">
-                      <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${TYPE_BADGE[item.item_type] || "bg-slate-100 text-slate-600"}`}>
-                        {typeLabel[item.item_type] || item.item_type}
-                      </span>
+                      {(() => {
+                        // A custom classification (e.g. FURNITURES) overrides the base
+                        // item_type, which stays as its stock-behaviour fallback.
+                        const custom = (item as any).custom_classification_id
+                          ? classifById.get((item as any).custom_classification_id)
+                          : undefined;
+                        return custom ? (
+                          <span
+                            className="text-[10px] font-medium px-2 py-0.5 rounded-full"
+                            style={{ backgroundColor: `#${custom.color}22`, color: `#${custom.color}` }}
+                          >
+                            {custom.name}
+                          </span>
+                        ) : (
+                          <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${TYPE_BADGE[item.item_type] || "bg-slate-100 text-slate-600"}`}>
+                            {typeLabel[item.item_type] || item.item_type}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{item.unit}</td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">{item.hsn_sac_code || "—"}</td>
