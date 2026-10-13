@@ -130,7 +130,7 @@ export async function deleteParty(id: string): Promise<{ deleted: boolean; deact
     (supabase as any).from("invoices").select("id", { count: "exact", head: true }).eq("customer_id", id),
     (supabase as any).from("receipts").select("id", { count: "exact", head: true }).eq("party_id", id),
     (supabase as any).from("job_cards").select("id", { count: "exact", head: true }).eq("vendor_id", id),
-    (supabase as any).from("dispatch_records").select("id", { count: "exact", head: true }).eq("customer_id", id),
+    (supabase as any).from("dispatch_records").select("id", { count: "exact", head: true }).eq("customer_id", id).is("deleted_at", null),
     (supabase as any).from("scrap_register").select("id", { count: "exact", head: true }).eq("vendor_id", id),
     (supabase as any).from("fat_certificates").select("id", { count: "exact", head: true }).eq("customer_id", id),
   ]);
@@ -194,7 +194,7 @@ export async function safeDeleteAllParties(): Promise<{ deleted: number; skipped
       (supabase as any).from("invoices").select("id", { count: "exact", head: true }).eq("customer_id", id),
       (supabase as any).from("receipts").select("id", { count: "exact", head: true }).eq("party_id", id),
       (supabase as any).from("job_cards").select("id", { count: "exact", head: true }).eq("vendor_id", id),
-      (supabase as any).from("dispatch_records").select("id", { count: "exact", head: true }).eq("customer_id", id),
+      (supabase as any).from("dispatch_records").select("id", { count: "exact", head: true }).eq("customer_id", id).is("deleted_at", null),
       (supabase as any).from("scrap_register").select("id", { count: "exact", head: true }).eq("vendor_id", id),
       (supabase as any).from("fat_certificates").select("id", { count: "exact", head: true }).eq("customer_id", id),
     ]);
@@ -243,7 +243,7 @@ export async function bulkDeleteParties(ids: string[]): Promise<{ deleted: numbe
         (supabase as any).from("invoices").select("id", { count: "exact", head: true }).eq("customer_id", id),
         (supabase as any).from("receipts").select("id", { count: "exact", head: true }).eq("party_id", id),
         (supabase as any).from("job_cards").select("id", { count: "exact", head: true }).eq("vendor_id", id),
-        (supabase as any).from("dispatch_records").select("id", { count: "exact", head: true }).eq("customer_id", id),
+        (supabase as any).from("dispatch_records").select("id", { count: "exact", head: true }).eq("customer_id", id).is("deleted_at", null),
         (supabase as any).from("scrap_register").select("id", { count: "exact", head: true }).eq("vendor_id", id),
         (supabase as any).from("fat_certificates").select("id", { count: "exact", head: true }).eq("customer_id", id),
       ]);

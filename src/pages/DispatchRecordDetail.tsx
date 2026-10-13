@@ -1,7 +1,8 @@
+import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { printWithLightMode } from "@/lib/print-utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Printer, Truck, CheckCircle } from "lucide-react";
+import { ArrowLeft, Printer, Truck, CheckCircle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -12,6 +13,7 @@ import {
 import { formatNumber } from "@/lib/gst-utils";
 import { format, parseISO } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { DispatchRecordDeleteDialog } from "@/components/DispatchRecordDeleteDialog";
 
 function statusBadge(status: string) {
   if (status === "draft") return <Badge className="bg-slate-100 text-slate-700">Draft</Badge>;
@@ -25,6 +27,7 @@ export default function DispatchRecordDetail() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const { data: dr, isLoading } = useQuery({
     queryKey: ["dispatch-record", id],
@@ -131,6 +134,10 @@ export default function DispatchRecordDetail() {
               Print
             </Button>
           )}
+          <Button variant="outline" className="text-red-600 hover:text-red-700" onClick={() => setDeleteOpen(true)}>
+            <Trash2 className="h-4 w-4 mr-1" />
+            Delete
+          </Button>
         </div>
       </div>
 
@@ -239,6 +246,18 @@ export default function DispatchRecordDetail() {
           <div>Date: ___________________</div>
         </div>
       </div>
+      <DispatchRecordDeleteDialog
+        record={dr}
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        onDeleted={() => {
+          queryClient.invalidateQueries({ queryKey: ["dispatch-records"] });
+          queryClient.invalidateQueries({ queryKey: ["dispatch-stats"] });
+          queryClient.invalidateQueries({ queryKey: ["ready-to-dispatch"] });
+          queryClient.invalidateQueries({ queryKey: ["stock-register"] });
+          navigate("/dispatch-records");
+        }}
+      />
     </div>
   );
 }
