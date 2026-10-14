@@ -207,6 +207,8 @@ export async function createPurchaseOrder({ po, lineItems }: CreatePOData) {
       currency_symbol: po.currency_symbol ?? '₹',
       exchange_rate: po.exchange_rate ?? 1,
       status: po.status, issued_at: po.issued_at,
+      approval_requested_at: po.approval_requested_at ?? null,
+      approval_requested_by: po.approval_requested_by ?? null,
     } as any)
     .select().single();
   if (error) {
@@ -255,6 +257,11 @@ export async function updatePurchaseOrder(id: string, { po, lineItems }: CreateP
     currency_symbol: po.currency_symbol ?? '₹',
     exchange_rate: po.exchange_rate ?? 1,
     status: po.status, issued_at: po.issued_at,
+    // Stamp the request only when this save is a submit-for-approval; never
+    // wipe an existing stamp on unrelated edits.
+    ...(po.approval_requested_at
+      ? { approval_requested_at: po.approval_requested_at, approval_requested_by: po.approval_requested_by ?? null }
+      : {}),
   } as any).eq("id", id);
   if (error) throw error;
 
@@ -426,9 +433,13 @@ export async function fetchApprovalHistory(search?: string): Promise<PurchaseOrd
     .from("purchase_orders")
     .select("*")
     .eq("company_id", companyId)
-    .not("approval_requested_at", "is", null)
+    // In history once actioned: approved (approved_at set) or rejected.
+    // approval_requested_at was never persisted before Oct 2026, so it
+    // cannot be the filter.
+    .or("approved_at.not.is.null,status.eq.rejected")
+    .neq("status", "deleted")
     .neq("status", "pending_approval")
-    .order("approval_requested_at", { ascending: false });
+    .order("approved_at", { ascending: false, nullsFirst: true });
   if (search?.trim()) {
     const sanitized = sanitizeSearchTerm(search);
     if (sanitized) {
