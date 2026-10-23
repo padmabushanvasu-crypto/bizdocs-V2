@@ -5,7 +5,7 @@
 export function getDaysOpen(
   issuedAt: string | null,
   status: string,
-  terminalStatuses: string[] = ["fully_received", "fully_returned", "fully_paid", "closed", "cancelled", "deleted", "verified"]
+  terminalStatuses: string[] = ["fully_received", "fully_returned", "closed_unprocessed", "fully_paid", "closed", "cancelled", "deleted", "verified"]
 ): number | null {
   if (!issuedAt || terminalStatuses.includes(status)) return null;
   return Math.floor((Date.now() - new Date(issuedAt).getTime()) / 86400000);
