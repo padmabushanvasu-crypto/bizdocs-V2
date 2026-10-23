@@ -49,6 +49,7 @@ const STATUS_LABELS: Record<string, string> = {
   closed: "Closed",
   partially_returned: "Partially Returned",
   fully_returned: "Fully Returned",
+  closed_unprocessed: "Closed – Not Processed",
   sent: "Sent",
   partially_paid: "Partially Paid",
   fully_paid: "Paid",
@@ -453,6 +454,7 @@ const DC_GRN_STATUS_LABEL: Record<string, string> = {
   pending: "Pending",
   partially_received: "Partially Received",
   fully_received: "Fully Received",
+  closed_unprocessed: "Closed – Not Processed",
 };
 
 /** GRN columns for one DC line. `grn` is the v_dc_line_balance row (null for draft/cancelled DCs). */
@@ -1432,6 +1434,7 @@ export const DC_BALANCE_STATUS_LABEL: Record<string, string> = {
   pending: "Pending",
   partially_received: "Partial",
   fully_received: "Complete",
+  closed_unprocessed: "Closed – Not Processed",
 };
 
 /**

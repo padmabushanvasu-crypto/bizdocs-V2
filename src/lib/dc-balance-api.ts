@@ -7,7 +7,7 @@ import { monthRange } from "@/lib/date-ist";
 // quantities come straight from the view — never recomputed from
 // dc_line_items.returned_* or grn columns.
 
-export type DcBalanceStatusFilter = "open" | "all" | "pending" | "partially_received" | "fully_received";
+export type DcBalanceStatusFilter = "open" | "all" | "pending" | "partially_received" | "fully_received" | "closed_unprocessed";
 
 export interface DcBalanceFilters {
   search?: string;
@@ -48,7 +48,7 @@ export interface DcBalanceRow {
   grn_count: number;
   grn_numbers: string | null;
   last_grn_date: string | null;
-  line_status: "pending" | "partially_received" | "fully_received";
+  line_status: "pending" | "partially_received" | "fully_received" | "closed_unprocessed";
   days_overdue: number | null;
 }
 

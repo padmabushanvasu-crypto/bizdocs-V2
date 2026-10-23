@@ -40,6 +40,7 @@ const DC_STATUS_LABEL: Record<string, string> = {
   issued: "Issued",
   partially_returned: "Partially returned",
   fully_returned: "Fully returned",
+  closed_unprocessed: "Closed – not processed",
 };
 
 interface Filters { party: string; from: string; to: string }

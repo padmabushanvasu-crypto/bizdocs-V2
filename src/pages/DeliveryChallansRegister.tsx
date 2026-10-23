@@ -48,6 +48,7 @@ const statusLabels: Record<string, string> = {
   issued: "Issued",
   partially_returned: "Partial Return",
   fully_returned: "Returned",
+  closed_unprocessed: "Closed – Not Processed",
   cancelled: "Cancelled",
   deleted: "Deleted",
   pending_approval: "Awaiting Approval",
@@ -59,6 +60,7 @@ const statusClass: Record<string, string> = {
   issued: "bg-blue-50 text-blue-700 border border-blue-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
   partially_returned: "status-overdue",
   fully_returned: "status-paid",
+  closed_unprocessed: "bg-slate-100 text-slate-700 border border-slate-300 text-xs font-medium px-2.5 py-0.5 rounded-full",
   cancelled: "status-cancelled line-through",
   deleted: "bg-gray-100 text-gray-500 border border-gray-200 text-xs font-medium px-2.5 py-0.5 rounded-full line-through",
   pending_approval: "bg-amber-50 text-amber-700 border border-amber-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
@@ -524,11 +526,11 @@ function DeliveryChallansRegisterInner() {
   const isOverdue = (dc: any) =>
     dc.return_due_date &&
     dc.return_due_date < today &&
-    !["fully_returned", "cancelled", "deleted"].includes(dc.status);
+    !["fully_returned", "closed_unprocessed", "cancelled", "deleted"].includes(dc.status);
 
   // Rule 45: job_work_out must return within 365 days
   const getRule45Status = (dc: any): "overdue" | "warning" | null => {
-    if (dc.dc_type !== "job_work_out" || ["fully_returned", "cancelled", "deleted"].includes(dc.status)) return null;
+    if (dc.dc_type !== "job_work_out" || ["fully_returned", "closed_unprocessed", "cancelled", "deleted"].includes(dc.status)) return null;
     const dueDate = new Date(dc.dc_date);
     dueDate.setFullYear(dueDate.getFullYear() + 1);
     const dueDateStr = dueDate.toISOString().split("T")[0];
@@ -620,6 +622,7 @@ function DeliveryChallansRegisterInner() {
             <SelectItem value="issued">Issued</SelectItem>
             <SelectItem value="partially_returned">Partially Returned</SelectItem>
             <SelectItem value="fully_returned">Fully Returned</SelectItem>
+            <SelectItem value="closed_unprocessed">Closed – Not Processed</SelectItem>
             <SelectItem value="overdue">Overdue</SelectItem>
             <SelectItem value="cancelled">Cancelled</SelectItem>
           </SelectContent>
@@ -703,7 +706,7 @@ function DeliveryChallansRegisterInner() {
                 dcs.map((dc) => {
                   const overdue = isOverdue(dc);
                   const rule45Status = getRule45Status(dc);
-                  const days = getDaysOpen(dc.issued_at, dc.status, ["fully_returned", "cancelled", "deleted"]);
+                  const days = getDaysOpen(dc.issued_at, dc.status, ["fully_returned", "closed_unprocessed", "cancelled", "deleted"]);
                   const daysClass = getDaysOpenClass(days);
                   const isDeleted = dc.status === "deleted";
                   // Inward team: show "Approved — Ready to Issue" for approved drafts

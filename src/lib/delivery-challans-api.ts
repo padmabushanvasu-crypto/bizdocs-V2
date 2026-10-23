@@ -139,6 +139,8 @@ export interface DeliveryChallan {
   issued_at: string | null;
   cancelled_at: string | null;
   cancellation_reason: string | null;
+  closed_at?: string | null;
+  closure_reason?: string | null;
   created_at: string;
   updated_at: string;
   vehicle_number?: string | null;
@@ -314,7 +316,7 @@ export async function fetchDeliveryChallans(filters: DCFilters = {}) {
   let dcs = (data ?? []) as unknown as DeliveryChallan[];
   if (status === "overdue") {
     const today = new Date().toISOString().split("T")[0];
-    dcs = dcs.filter((dc) => dc.return_due_date && dc.return_due_date < today && !["fully_returned", "cancelled"].includes(dc.status));
+    dcs = dcs.filter((dc) => dc.return_due_date && dc.return_due_date < today && !["fully_returned", "closed_unprocessed", "cancelled"].includes(dc.status));
   }
   return { data: dcs, count: count ?? 0 };
 }
@@ -328,7 +330,7 @@ export interface DcLineGrnStatus {
   accepted_qty: number;
   rejected_qty: number;
   balance_qty: number;
-  line_status: "pending" | "partially_received" | "fully_received";
+  line_status: "pending" | "partially_received" | "fully_received" | "closed_unprocessed";
 }
 
 export type DcExportLine = DCLineItem & { grn: DcLineGrnStatus | null };
@@ -1391,7 +1393,8 @@ async function recalculateDCStatus(dcId: string) {
     if ((item.returned_qty_nos || 0) > 0 || (item.returned_qty_kg || 0) > 0 || (item.returned_qty_sft || 0) > 0) anyReturned = true;
   }
   const newStatus = allReturned ? "fully_returned" : anyReturned ? "partially_returned" : "issued";
-  await supabase.from("delivery_challans").update({ status: newStatus } as any).eq("id", dcId);
+  // closed_unprocessed is terminal (DB trigger refuses any move out of it) — never recompute it.
+  await supabase.from("delivery_challans").update({ status: newStatus } as any).eq("id", dcId).neq("status", "closed_unprocessed");
 }
 
 export async function fetchDCStats() {
@@ -1414,7 +1417,7 @@ export async function fetchDCStats() {
   const dcs = (allDCs ?? []) as any[];
   const thisMonth = dcs.filter((d) => d.dc_date >= monthStart);
   const open = dcs.filter((d) => ["issued", "partially_returned"].includes(d.status));
-  const overdue = dcs.filter((d) => d.return_due_date && d.return_due_date < today && !["fully_returned"].includes(d.status));
+  const overdue = dcs.filter((d) => d.return_due_date && d.return_due_date < today && !["fully_returned", "closed_unprocessed"].includes(d.status));
   const pendingReturns = dcs.filter((d) => d.status === "partially_returned");
   return { totalThisMonth: thisMonth.length, openDCs: open.length, overdueDCs: overdue.length, pendingReturns: pendingReturns.length };
 }

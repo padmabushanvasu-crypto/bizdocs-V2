@@ -745,7 +745,8 @@ async function recalculateDCStatusFromGRNReceipts(dcId: string): Promise<void> {
   }
 
   const newStatus = allReturned ? 'fully_returned' : anyReturned ? 'partially_returned' : 'issued';
-  await (supabase as any).from('delivery_challans').update({ status: newStatus }).eq('id', dcId);
+  // closed_unprocessed is terminal (DB trigger refuses any move out of it) — never recompute it.
+  await (supabase as any).from('delivery_challans').update({ status: newStatus }).eq('id', dcId).neq('status', 'closed_unprocessed');
 }
 
 export async function fetchGRNsForPO(poId: string): Promise<GRN[]> {

@@ -25,6 +25,7 @@ const STATUS_BADGE: Record<string, string> = {
   pending: "bg-amber-50 text-amber-700 border border-amber-200",
   partially_received: "bg-blue-50 text-blue-700 border border-blue-200",
   fully_received: "bg-green-50 text-green-700 border border-green-200",
+  closed_unprocessed: "bg-slate-100 text-slate-700 border border-slate-300",
 };
 
 const TH = "px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 whitespace-nowrap";
@@ -108,6 +109,7 @@ export function DcBalanceView() {
             <SelectItem value="pending">Pending</SelectItem>
             <SelectItem value="partially_received">Partial</SelectItem>
             <SelectItem value="fully_received">Complete</SelectItem>
+            <SelectItem value="closed_unprocessed">Closed – Not Processed</SelectItem>
           </SelectContent>
         </Select>
         <Select value={filters.vendor ?? "all"} onValueChange={(v) => patch({ vendor: v === "all" ? undefined : v })}>

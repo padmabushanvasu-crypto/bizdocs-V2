@@ -74,13 +74,14 @@ const statusClass: Record<string, string> = {
   issued: "bg-blue-50 text-blue-700 border border-blue-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
   partially_returned: "status-overdue",
   fully_returned: "status-paid",
+  closed_unprocessed: "bg-slate-100 text-slate-700 border border-slate-300 text-xs font-medium px-2.5 py-0.5 rounded-full",
   cancelled: "status-cancelled",
   pending_approval: "bg-amber-50 text-amber-700 border border-amber-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
   rejected: "bg-red-50 text-red-700 border border-red-200 text-xs font-medium px-2.5 py-0.5 rounded-full",
 };
 const statusLabels: Record<string, string> = {
   draft: "Draft", issued: "Issued", partially_returned: "Partially Returned",
-  fully_returned: "Fully Returned", cancelled: "Cancelled",
+  fully_returned: "Fully Returned", closed_unprocessed: "Closed – Not Processed", cancelled: "Cancelled",
   pending_approval: "Pending Approval", rejected: "Rejected",
 };
 const typeLabels: Record<string, string> = {
@@ -582,6 +583,8 @@ export default function DeliveryChallanDetail() {
   const items = dc.line_items || [];
   const isReturnable = RETURNABLE_DC_TYPES.includes(dc.dc_type);
   const isDeleted = dc.status === "deleted";
+  // Terminal: material came back without the job work being done. Read-only; DB refuses any status move out.
+  const isClosedUnprocessed = dc.status === "closed_unprocessed";
   // Matches rpc_set_dc_line_sources' own gate — the Source link only shows
   // while it would actually be allowed to save.
   const canEditSource = ["draft", "pending_approval", "rejected"].includes(dc.status) && !dc.issued_at;
@@ -600,7 +603,7 @@ export default function DeliveryChallanDetail() {
   // / [Process] / Unit / Qty / [Alt Qty x2] / [KGS] / [SFT] / [Rate] / [Amount] / Remarks / [Actions]).
   const screenColCount = 3 + (hasNatureOfProcess ? 1 : 0) + 1 + 1 + (hasAltQty ? 2 : 0) + (hasQtyKgs ? 1 : 0) + (hasQtySft ? 1 : 0) + (!hideCosts ? 2 : 0) + 1 + (showActionsCol ? 1 : 0);
   const today = new Date().toISOString().split("T")[0];
-  const isOverdue = dc.return_due_date && dc.return_due_date < today && !["fully_returned", "cancelled"].includes(dc.status);
+  const isOverdue = dc.return_due_date && dc.return_due_date < today && !["fully_returned", "closed_unprocessed", "cancelled"].includes(dc.status);
 
   const subTotal = dc.sub_total || items.reduce((s, i) => s + (i.amount || 0), 0);
   const grandTotal = dc.grand_total || subTotal;
@@ -884,6 +887,22 @@ export default function DeliveryChallanDetail() {
         </div>
       )}
 
+      {/* Closed — not processed banner */}
+      {isClosedUnprocessed && (
+        <div className="flex items-start gap-2 rounded-lg border border-slate-300 bg-slate-50 px-4 py-3 print:hidden">
+          <Lock className="h-4 w-4 text-slate-600 shrink-0 mt-0.5" />
+          <div className="text-sm text-slate-700">
+            <p className="font-medium">Closed – Not Processed. Material came back without the job work being done. This DC is read-only.</p>
+            {(dc as any).closure_reason && <p className="mt-0.5">{(dc as any).closure_reason}</p>}
+            {(dc as any).closed_at && (
+              <p className="mt-0.5 text-xs text-slate-500">
+                Closed on {new Date((dc as any).closed_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Approver banner — shown when DC is pending approval */}
       {isApprover && dc.status === "pending_approval" && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 print:hidden">
@@ -1029,7 +1048,7 @@ export default function DeliveryChallanDetail() {
             </Button>
           )}
           {/* Print locked until issued */}
-          {["issued", "fully_returned", "partially_returned"].includes(dc.status) ? (
+          {["issued", "fully_returned", "partially_returned", "closed_unprocessed"].includes(dc.status) ? (
             <>
               <Button variant="outline" size="sm" onClick={() => setPrintDialogOpen(true)}>
                 <Printer className="h-3.5 w-3.5 mr-1" /> Print Options
@@ -1042,7 +1061,7 @@ export default function DeliveryChallanDetail() {
             </span>
           )}
           {/* Edit — any user with canEdit access, except cancelled/deleted */}
-          {canEditDC && !["cancelled", "deleted"].includes(dc.status) && (
+          {canEditDC && !["cancelled", "deleted", "closed_unprocessed"].includes(dc.status) && (
             <Button variant="outline" size="sm" onClick={() => navigate(`/delivery-challans/${id}/edit`)}>
               <Edit className="h-3.5 w-3.5 mr-1" /> Edit
             </Button>
@@ -1058,12 +1077,12 @@ export default function DeliveryChallanDetail() {
               {createGrnMutation.isPending ? "Creating GRN…" : "Record Return"}
             </Button>
           )}
-          {!["cancelled", "fully_returned", "deleted", "pending_approval", "rejected"].includes(dc.status) && isApprover && (
+          {!["cancelled", "fully_returned", "closed_unprocessed", "deleted", "pending_approval", "rejected"].includes(dc.status) && isApprover && (
             <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => { setCancelReason(""); setCancelStockAction("return_to_free"); setCancelStepHandling("reset"); setCancelOpen(true); }}>
               <X className="h-3.5 w-3.5 mr-1" /> Cancel
             </Button>
           )}
-          {!isDeleted && (
+          {!isDeleted && !isClosedUnprocessed && (
             <Button
               variant="outline"
               size="sm"
