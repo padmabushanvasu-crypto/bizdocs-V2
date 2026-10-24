@@ -660,7 +660,7 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
 
   return (
     <>
-      <div className={`bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col${fullHeight ? " flex-1 min-h-0" : ""}`}>
+      <div className={`bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col${fullHeight ? " flex-1" : ""}`}>
 
         {/* ── Header — always visible ─────────────────────────────────────── */}
         <div className="flex items-center justify-between px-4 lg:px-5 py-3.5 border-b border-slate-100 shrink-0">
@@ -706,34 +706,34 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
 
         {/* ── Summary stat cards — always visible ─────────────────────────── */}
         <div className="grid grid-cols-4 gap-2 px-3 py-3 border-b border-slate-100 dark:border-white/10 shrink-0">
-          <div className="rounded-lg px-3 py-3 relative overflow-hidden" style={glowBox(239, 68, 68, isDark)}>
+          <div className="rounded-lg px-3 py-3 [@media(max-height:800px)]:py-1.5 relative overflow-hidden" style={glowBox(239, 68, 68, isDark)}>
             <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
             <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-0.5">Below Min Stock</p>
-            <p className={`text-2xl font-extrabold font-mono tabular-nums ${totalBelow > 0 ? "text-red-600" : "text-green-600"}`}>
+            <p className={`text-2xl [@media(max-height:800px)]:text-xl font-extrabold font-mono tabular-nums ${totalBelow > 0 ? "text-red-600" : "text-green-600"}`}>
               {isLoading ? "—" : totalBelow}
             </p>
             <p className="text-[10px] text-slate-400 mt-0.5">total items flagged</p>
           </div>
-          <div className="rounded-lg px-3 py-3 relative overflow-hidden" style={glowBox(249, 115, 22, isDark)}>
+          <div className="rounded-lg px-3 py-3 [@media(max-height:800px)]:py-1.5 relative overflow-hidden" style={glowBox(249, 115, 22, isDark)}>
             <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
             <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-0.5">Needs PO</p>
-            <p className={`text-2xl font-extrabold font-mono tabular-nums ${needsPOCount > 0 ? "text-orange-600" : "text-slate-400"}`}>
+            <p className={`text-2xl [@media(max-height:800px)]:text-xl font-extrabold font-mono tabular-nums ${needsPOCount > 0 ? "text-orange-600" : "text-slate-400"}`}>
               {isLoading ? "—" : needsPOCount}
             </p>
             <p className="text-[10px] text-slate-400 mt-0.5">raw / component / bought-out</p>
           </div>
-          <div className="rounded-lg px-3 py-3 relative overflow-hidden" style={glowBox(139, 92, 246, isDark)}>
+          <div className="rounded-lg px-3 py-3 [@media(max-height:800px)]:py-1.5 relative overflow-hidden" style={glowBox(139, 92, 246, isDark)}>
             <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
             <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-0.5">Needs Production</p>
-            <p className={`text-2xl font-extrabold font-mono tabular-nums ${needsProdCount > 0 ? "text-amber-600" : "text-slate-400"}`}>
+            <p className={`text-2xl [@media(max-height:800px)]:text-xl font-extrabold font-mono tabular-nums ${needsProdCount > 0 ? "text-amber-600" : "text-slate-400"}`}>
               {isLoading ? "—" : needsProdCount}
             </p>
             <p className="text-[10px] text-slate-400 mt-0.5">sub-assembly work orders</p>
           </div>
-          <div className="rounded-lg px-3 py-3 relative overflow-hidden" style={glowBox(34, 197, 94, isDark)}>
+          <div className="rounded-lg px-3 py-3 [@media(max-height:800px)]:py-1.5 relative overflow-hidden" style={glowBox(34, 197, 94, isDark)}>
             <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
             <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-0.5">At Max Stock</p>
-            <p className="text-2xl font-extrabold font-mono tabular-nums text-green-600">
+            <p className="text-2xl [@media(max-height:800px)]:text-xl font-extrabold font-mono tabular-nums text-green-600">
               {isLoading ? "—" : atMaxStockCount}
             </p>
             <p className="text-[10px] text-slate-400 mt-0.5">at or above aimed qty</p>
@@ -783,7 +783,7 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
             <p className="text-xs text-slate-400 mt-1">No items are below their minimum stock threshold</p>
           </div>
         ) : (
-          <div className={`relative overflow-x-auto ${fullHeight ? "flex-1 min-h-0 overflow-y-auto" : "max-h-80 overflow-y-auto"}`}>
+          <div className={`relative overflow-x-auto ${fullHeight ? "flex-1 min-h-[360px] overflow-y-auto" : "max-h-80 overflow-y-auto"}`}>
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr>
