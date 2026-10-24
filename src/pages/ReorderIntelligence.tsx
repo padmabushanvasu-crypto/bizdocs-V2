@@ -14,8 +14,8 @@ export default function ReorderIntelligence() {
   });
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
-      {/* Header — fixed, never scrolls */}
+    <div className="h-full flex flex-col overflow-y-auto">
+      {/* Header — scrolls away on short screens so the table keeps its height */}
       <div className="shrink-0 px-4 md:px-6 pt-4 md:pt-6 pb-4 space-y-3">
         <button
           onClick={() => navigate(-1)}
@@ -36,9 +36,9 @@ export default function ReorderIntelligence() {
         </div>
       </div>
 
-      {/* Board — fills remaining height, table scrolls internally */}
+      {/* Board — fills remaining height; never shrinks below the table's minimum, page scrolls instead */}
       {companyId && (
-        <div className="flex-1 min-h-0 flex flex-col px-4 md:px-6 pb-4 md:pb-6">
+        <div className="flex-1 flex flex-col px-4 md:px-6 pb-4 md:pb-6">
           <StockAlertsBoard companyId={companyId} fullHeight />
         </div>
       )}
