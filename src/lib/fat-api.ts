@@ -359,7 +359,7 @@ export async function fetchSerialNumbers(filters: SerialFilters = {}) {
     .from("serial_numbers")
     .select("*, assembly_work_orders(awo_number)", { count: "exact" })
     .eq("company_id", companyId)
-    .order("serial_number", { ascending: false })
+    .order("created_at", { ascending: false })
     .range(from, to);
 
   if (item_id) query = query.eq("item_id", item_id);

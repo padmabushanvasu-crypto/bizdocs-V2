@@ -29,6 +29,7 @@ export function AwoSerialsPanel({ awo }: { awo: AssemblyWorkOrder }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["fg-serials"] });
       queryClient.invalidateQueries({ queryKey: ["awo"] });
+      queryClient.invalidateQueries({ queryKey: ["awo-detail", awo.id] });
       toast({ title: "Serial numbers saved" });
       setOpen(false);
     },
@@ -100,7 +101,7 @@ export function AwoSerialsPanel({ awo }: { awo: AssemblyWorkOrder }) {
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
             <Button
               onClick={() => save.mutate()}
-              disabled={save.isPending || findDuplicateSerials(draft).length > 0}
+              disabled={save.isPending || findDuplicateSerials(fitSerials(draft, awo.quantity_to_build)).length > 0}
             >
               {save.isPending ? "Saving…" : "Save serials"}
             </Button>

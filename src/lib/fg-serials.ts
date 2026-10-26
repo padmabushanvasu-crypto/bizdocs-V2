@@ -24,17 +24,22 @@ export interface FgSerial {
 
 /**
  * Turn what the team types into one serial per unit.
- * Separators: comma, &, /, semicolon, new line ("5966,5967&5968").
+ * Separators: comma, &, /, semicolon, new line, tab ("5966,5967&5968"); plain
+ * spaces between all-digit serials too ("5912 5913").
  * Ranges with the same length are expanded ("5936-5937" → 5936, 5937).
  * A short tail borrows the previous serial's prefix ("5923 & 24" → 5923, 5924).
- * Anything else is kept as typed (trimmed), so non-numeric serials still work.
+ * Anything that looks like a range or short tail but can't be read safely
+ * ("5931-3932", "5999 & 01", a range over 100) is returned in `invalid` instead
+ * of being guessed — a wrong serial is worse than a blank one.
  */
-export function parseSerialList(text: string): string[] {
+export function parseSerialListDetailed(text: string): { serials: string[]; invalid: string[] } {
   const tokens = text
-    .split(/\s*(?:,|&|\/|;|\n|\r)\s*/)
+    .split(/\s*(?:,|&|\/|;|\n|\r|\t)\s*/)
     .map((t) => t.trim())
-    .filter(Boolean);
-  const out: string[] = [];
+    .filter(Boolean)
+    .flatMap((t) => (/^\d+(\s+\d+)+$/.test(t) ? t.split(/\s+/) : [t]));
+  const serials: string[] = [];
+  const invalid: string[] = [];
   for (const t of tokens) {
     const range = t.match(/^(\d+)\s*-\s*(\d+)$/);
     if (range) {
@@ -42,18 +47,27 @@ export function parseSerialList(text: string): string[] {
       const from = Number(a);
       const to = Number(b);
       if (a.length === b.length && to > from && to - from < 100) {
-        for (let i = from; i <= to; i++) out.push(String(i).padStart(a.length, "0"));
-        continue;
+        for (let i = from; i <= to; i++) serials.push(String(i).padStart(a.length, "0"));
+      } else {
+        invalid.push(t);
       }
-    }
-    const prev = out[out.length - 1];
-    if (prev && /^\d+$/.test(t) && /^\d+$/.test(prev) && t.length < prev.length) {
-      out.push(prev.slice(0, prev.length - t.length) + t);
       continue;
     }
-    out.push(t);
+    const prev = serials[serials.length - 1];
+    if (prev && /^\d+$/.test(t) && /^\d+$/.test(prev) && t.length < prev.length) {
+      const full = prev.slice(0, prev.length - t.length) + t;
+      if (Number(full) > Number(prev)) serials.push(full);
+      else invalid.push(t);
+      continue;
+    }
+    serials.push(t);
   }
-  return out;
+  return { serials, invalid };
+}
+
+/** parseSerialListDetailed without the invalid list (invalid tokens are dropped). */
+export function parseSerialList(text: string): string[] {
+  return parseSerialListDetailed(text).serials;
 }
 
 /** Serials typed more than once (case-insensitive), for inline errors before saving. */
@@ -113,12 +127,17 @@ export async function findSerialsInUse(
   if (list.length === 0) return [];
   const companyId = await getCompanyId();
   if (!companyId) throw new Error("Not authenticated");
+  // Same rule as the DB index: case-insensitive, trimmed. ilike with LIKE
+  // wildcards escaped is a case-insensitive equality test.
+  const esc = (v: string) => v.replace(/[\\%_]/g, (c) => `\\${c}`);
+  const safe = list.filter((v) => !/[,()"]/.test(v));
+  if (safe.length === 0) return [];
   const { data, error } = await db
     .from("serial_numbers")
     .select("serial_number, status, awo_id, assembly_work_orders(awo_number)")
     .eq("company_id", companyId)
     .neq("status", "cancelled")
-    .in("serial_number", list);
+    .or(safe.map((v) => `serial_number.ilike.${esc(v)}`).join(","));
   if (error) throw new Error(error.message);
   type InUseRow = { serial_number: string; status: string; awo_id: string | null; assembly_work_orders: { awo_number: string } | null };
   return ((data ?? []) as InUseRow[])

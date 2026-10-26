@@ -448,10 +448,7 @@ export default function FinishedGoodWorkOrders() {
                 type="number"
                 min={1}
                 value={form.quantity_to_build}
-                onChange={(e) => {
-                  const qty = Number(e.target.value);
-                  setForm((f) => ({ ...f, quantity_to_build: qty, serials: fitSerials(f.serials, qty) }));
-                }}
+                onChange={(e) => setForm((f) => ({ ...f, quantity_to_build: Number(e.target.value) }))}
               />
             </div>
 

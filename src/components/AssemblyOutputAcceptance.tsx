@@ -31,6 +31,9 @@ export function AssemblyOutputAcceptance() {
   const [locations, setLocations] = useState<Record<string, string>>({});
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [accepting, setAccepting] = useState<Record<string, boolean>>({});
+  // A finished good with fewer serials than planned units is a partial build —
+  // the storekeeper must confirm it explicitly (second click).
+  const [confirmPartial, setConfirmPartial] = useState<Record<string, boolean>>({});
 
   const { data: awos = [], isLoading } = useQuery({
     queryKey: ["awaiting-store-awos"],
@@ -40,11 +43,14 @@ export function AssemblyOutputAcceptance() {
   // Finished goods are accepted unit by unit: the serials entered on the work
   // order ARE the quantity (the DB rejects a mismatch).
   const fgIds = awos.filter((a) => a.awo_type === "finished_good").map((a) => a.id);
-  const { data: serialsByAwo = {} } = useQuery({
+  const { data: serialsByAwo = {}, isLoading: serialsLoading } = useQuery({
     queryKey: ["fg-serials", fgIds],
     queryFn: () => fetchSerialsForAwos(fgIds),
     enabled: fgIds.length > 0,
   });
+  // Only serials still being built are accepted (same count the DB checks).
+  const buildingSerials = (awoId: string) =>
+    (serialsByAwo[awoId] ?? []).filter((s) => s.status === "in_production");
 
   const acceptedBy =
     (profile as any)?.full_name ||
@@ -57,7 +63,7 @@ export function AssemblyOutputAcceptance() {
       const qtyStr = quantities[awo.id];
       const actualQty =
         awo.awo_type === "finished_good"
-          ? (serialsByAwo[awo.id] ?? []).length
+          ? buildingSerials(awo.id).length
           : qtyStr !== undefined && qtyStr.trim() !== "" ? Number(qtyStr) : awo.quantity_to_build;
       return acceptAssemblyWorkOrder(awo.id, locations[awo.id]?.trim() || null, acceptedBy, actualQty);
     },
@@ -110,8 +116,10 @@ export function AssemblyOutputAcceptance() {
           awos.map((awo) => {
             const isBusy = !!accepting[awo.id] || acceptMutation.isPending;
             const isFg = awo.awo_type === "finished_good";
-            const serials = serialsByAwo[awo.id] ?? [];
-            const fgBlocked = isFg && serials.length === 0;
+            const serials = buildingSerials(awo.id);
+            const fgBlocked = isFg && (serialsLoading || serials.length === 0);
+            const isPartial = isFg && serials.length > 0 && serials.length < awo.quantity_to_build;
+            const needsConfirm = isPartial && !confirmPartial[awo.id];
             return (
               <div key={awo.id} className="px-5 py-3 flex flex-wrap items-center gap-3">
                 <div className="min-w-0 flex-1">
@@ -172,14 +180,25 @@ export function AssemblyOutputAcceptance() {
                 <Button
                   size="sm"
                   disabled={isBusy || fgBlocked}
+                  variant={needsConfirm ? "outline" : "default"}
                   onClick={() => {
+                    if (needsConfirm) {
+                      setConfirmPartial((p) => ({ ...p, [awo.id]: true }));
+                      return;
+                    }
                     setAccepting((p) => ({ ...p, [awo.id]: true }));
                     acceptMutation.mutate(awo, {
                       onSettled: () => setAccepting((p) => ({ ...p, [awo.id]: false })),
                     });
                   }}
                 >
-                  {isBusy ? "Accepting…" : "Accept into stock"}
+                  {isBusy
+                    ? "Accepting…"
+                    : needsConfirm
+                      ? `Only ${serials.length} of ${formatNumber(awo.quantity_to_build)} built?`
+                      : isPartial
+                        ? `Yes — accept ${serials.length} unit(s)`
+                        : "Accept into stock"}
                 </Button>
               </div>
             );

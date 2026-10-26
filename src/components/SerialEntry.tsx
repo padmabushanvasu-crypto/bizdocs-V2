@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { parseSerialList, findDuplicateSerials } from "@/lib/fg-serials";
+import { parseSerialListDetailed, findDuplicateSerials } from "@/lib/fg-serials";
 
 interface SerialEntryProps {
   /** Units being built — one box per unit. */
@@ -28,16 +28,21 @@ export function SerialEntry({ quantity, value, onChange, conflicts = [], disable
   const dups = new Set(findDuplicateSerials(boxes));
   const clash = new Set(conflicts.map((c) => c.trim().toUpperCase()));
   const filled = boxes.filter((s) => s.trim()).length;
-  const pasted = paste.trim() ? parseSerialList(paste) : [];
+  const parsed = paste.trim() ? parseSerialListDetailed(paste) : { serials: [], invalid: [] };
+  const pasted = parsed.serials;
 
+  // Keep everything typed, even beyond the current unit count, so clearing or
+  // lowering the quantity and raising it again doesn't lose serials. Only the
+  // first `quantity` are shown and saved.
   const setAt = (i: number, v: string) => {
-    const next = [...boxes];
+    const next = [...value];
+    while (next.length <= i) next.push("");
     next[i] = v;
     onChange(next);
   };
 
   const applyPaste = () => {
-    if (pasted.length === 0) return;
+    if (pasted.length === 0 || parsed.invalid.length > 0) return;
     onChange(fitSerials(pasted, quantity));
     setPaste("");
   };
@@ -79,10 +84,15 @@ export function SerialEntry({ quantity, value, onChange, conflicts = [], disable
             onChange={(e) => setPaste(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); applyPaste(); } }}
           />
-          <Button type="button" variant="outline" size="sm" className="shrink-0 h-10" disabled={pasted.length === 0} onClick={applyPaste}>
+          <Button type="button" variant="outline" size="sm" className="shrink-0 h-10" disabled={pasted.length === 0 || parsed.invalid.length > 0} onClick={applyPaste}>
             Fill {pasted.length > 0 ? pasted.length : ""}
           </Button>
         </div>
+      )}
+      {parsed.invalid.length > 0 && (
+        <p className="text-xs text-destructive">
+          Can't read {parsed.invalid.map((t) => `"${t}"`).join(", ")} — type those serials out in full.
+        </p>
       )}
       {pasted.length > quantity && (
         <p className="text-xs text-amber-700">That list has {pasted.length} serials but only {quantity} unit(s) are being built — the extra ones will be dropped.</p>
