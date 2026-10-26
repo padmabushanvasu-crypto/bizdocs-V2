@@ -60,13 +60,16 @@ const SOURCES: Source[] = [
   {
     group: "Serial Numbers",
     table: "serial_numbers",
-    select: "id, serial_number, item_code, status, customer_name",
+    select: "id, serial_number, item_code, status, customer_name, awo_id",
     fields: ["serial_number", "item_code", "customer_name"],
+    // Released serials (from cancelled work orders) are not units — leave them out.
+    extra: (q) => q.neq("status", "cancelled"),
     map: (r) => ({
       id: r.id,
       title: r.serial_number,
       subtitle: join(r.item_code, r.status?.replace(/_/g, " "), r.customer_name),
-      url: `/serial-numbers?q=${encodeURIComponent(r.serial_number ?? "")}`,
+      // A unit opens on the work order that built it; older records fall back to the register.
+      url: r.awo_id ? `/assembly-work-orders/${r.awo_id}` : `/serial-numbers?q=${encodeURIComponent(r.serial_number ?? "")}`,
     }),
   },
   {
@@ -98,10 +101,15 @@ const SOURCES: Source[] = [
   {
     group: "Work Orders",
     table: "assembly_work_orders",
-    select: "id, awo_number, item_code, status",
-    fields: ["awo_number", "item_code"],
+    select: "id, awo_number, item_code, status, serial_number",
+    fields: ["awo_number", "item_code", "serial_number"],
     extra: (q) => q.is("deleted_at", null),
-    map: (r) => ({ id: r.id, title: r.awo_number, subtitle: join(r.item_code, r.status), url: `/assembly-work-orders/${r.id}` }),
+    map: (r) => ({
+      id: r.id,
+      title: r.awo_number,
+      subtitle: join(r.serial_number && `S/N ${r.serial_number}`, r.item_code, r.status),
+      url: `/assembly-work-orders/${r.id}`,
+    }),
   },
   {
     group: "Invoices",
