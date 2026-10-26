@@ -257,6 +257,15 @@ export default function DispatchRecordForm() {
           continue;
         }
         const fg = fgById[li.item_id];
+        // Finished goods leave unit by unit: one serial per unit (resale items have none).
+        if (fg && !fg.is_resale && (li.serials?.length ?? 0) !== li.quantity) {
+          const inStock = serialsByItem[li.item_id]?.length ?? 0;
+          e.lineByIndex[i] =
+            inStock === 0
+              ? "No serial numbers in stock for this item — enter them on its finished-good work order"
+              : `Pick a serial for each unit: ${li.serials?.length ?? 0} of ${li.quantity} picked`;
+          continue;
+        }
         const available = fg?.stock_in_fg_ready ?? 0;
         if (li.quantity > available) {
           e.lineByIndex[i] = `Only ${available} ${li.unit || "NOS"} available`;
@@ -264,7 +273,7 @@ export default function DispatchRecordForm() {
       }
     }
     return e;
-  }, [form, lineItems, fgById]);
+  }, [form, lineItems, fgById, serialsByItem]);
 
   const isValid =
     !errors.customer &&
@@ -712,7 +721,10 @@ export default function DispatchRecordForm() {
               {li.item_id && (serialsByItem[li.item_id]?.length ?? 0) > 0 && (
                 <div className="col-span-12 space-y-1">
                   <Label className="text-xs text-slate-500 dark:text-slate-400">
-                    Serial numbers <span className="font-normal">(optional — tap to select, {(li.serials ?? []).length} of {li.quantity || 0} picked)</span>
+                    Serial numbers{" "}
+                    <span className="font-normal">
+                      ({fgById[li.item_id]?.is_resale ? "optional" : "one per unit"} — tap to select, {(li.serials ?? []).length} of {li.quantity || 0} picked)
+                    </span>
                   </Label>
                   <div className="flex flex-wrap gap-1.5">
                     {serialsByItem[li.item_id].map((sn) => {

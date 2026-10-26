@@ -1054,30 +1054,9 @@ export async function acceptAssemblyWorkOrder(
   });
   if (rpcErr) throw new Error(rpcErr.message);
 
-  // Finished good: create/upsert the serial_numbers row. Not handled by the RPC.
-  if (awo.item_id && awo.awo_type === 'finished_good' && awo.serial_number) {
-    try {
-      const { data: existingSn } = await (supabase as any)
-        .from("serial_numbers")
-        .select("id")
-        .eq("serial_number", awo.serial_number)
-        .eq("company_id", companyId)
-        .maybeSingle();
-      if (existingSn?.id) {
-        await (supabase as any).from("serial_numbers").update({ status: 'in_stock' }).eq("id", existingSn.id);
-      } else {
-        const { error: snErr } = await (supabase as any).from("serial_numbers").insert({
-          serial_number: awo.serial_number,
-          company_id: companyId,
-          item_id: awo.item_id ?? null,
-          item_code: awo.item_code ?? null,
-          item_description: awo.item_description ?? null,
-          status: 'in_stock',
-        });
-        if (snErr) console.error('[production] serial_numbers insert failed:', snErr);
-      }
-    } catch (e) { console.error('[production] serial_numbers upsert failed:', e); }
-  }
+  // Finished-good serials: rpc_accept_awo_and_produce moves this work order's
+  // per-unit serials (serial_numbers.awo_id) to in_stock in the same transaction
+  // and rejects a count that doesn't match the quantity accepted. Nothing to do here.
 
   // Persist the fields the RPC does NOT own: the storekeeper's rack/location (no
   // RPC param) and completed_at (read by month stats). Deliberately NOT re-writing

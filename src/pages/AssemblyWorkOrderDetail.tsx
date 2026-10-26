@@ -48,6 +48,7 @@ import {
 import { ReportDamageDialog } from "@/components/ReportDamageDialog";
 import { DispositionDamageDialog } from "@/components/DispositionDamageDialog";
 import { AwoDeleteDialog } from "@/components/AwoDeleteDialog";
+import { AwoSerialsPanel } from "@/components/AwoSerialsPanel";
 import { format, differenceInDays, parseISO } from "date-fns";
 
 type StockAction = 'none' | 'return_all' | 'partial' | 'scrap_all';
@@ -412,7 +413,7 @@ export default function AssemblyWorkOrderDetail() {
       <div className="print-only hidden">
         <h2 className="text-xl font-bold">Work Order: {awo.awo_number}</h2>
         {awo.awo_type === 'finished_good' && awo.serial_number && (
-          <p>Serial Number: {awo.serial_number}</p>
+          <p style={{ fontSize: "18px", fontWeight: 700 }}>Serial No.: {awo.serial_number}</p>
         )}
         <p>Build: {awo.item_description} ({awo.item_code})</p>
         <p>Quantity: {formatNumber(awo.quantity_to_build)}</p>
@@ -464,13 +465,14 @@ export default function AssemblyWorkOrderDetail() {
             <p className="text-muted-foreground mt-1">
               {awo.item_description} <span className="text-sm font-mono">({awo.item_code})</span>
             </p>
+            {awo.awo_type === 'finished_good' && <AwoSerialsPanel awo={awo} />}
             <div className="flex flex-wrap gap-4 mt-2 text-sm text-muted-foreground">
               <span>Qty: <b className="text-foreground">{formatNumber(awo.quantity_to_build)}</b></span>
               <span>Raised by: <b className="text-foreground">{awo.raised_by ?? "—"}</b></span>
               {awo.planned_date && (
                 <span>Planned: <b className="text-foreground">{format(parseISO(awo.planned_date), "dd MMM yyyy")}</b></span>
               )}
-              {awo.serial_number && (
+              {awo.awo_type !== 'finished_good' && awo.serial_number && (
                 <span>Serial: <b className="text-foreground font-mono">{awo.serial_number}</b></span>
               )}
               <span className="text-slate-400">

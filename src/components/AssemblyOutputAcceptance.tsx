@@ -13,6 +13,7 @@ import {
   acceptAssemblyWorkOrder,
   type AssemblyWorkOrder,
 } from "@/lib/production-api";
+import { fetchSerialsForAwos } from "@/lib/fg-serials";
 
 /**
  * Store acceptance of finished assembly builds (A4). Lives in the Store Receipt
@@ -30,11 +31,26 @@ export function AssemblyOutputAcceptance() {
   const [locations, setLocations] = useState<Record<string, string>>({});
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [accepting, setAccepting] = useState<Record<string, boolean>>({});
+  // A finished good with fewer serials than planned units is a partial build —
+  // the storekeeper must confirm it explicitly (second click).
+  const [confirmPartial, setConfirmPartial] = useState<Record<string, boolean>>({});
 
   const { data: awos = [], isLoading } = useQuery({
     queryKey: ["awaiting-store-awos"],
     queryFn: () => fetchAssemblyWorkOrders({ status: "awaiting_store" }),
   });
+
+  // Finished goods are accepted unit by unit: the serials entered on the work
+  // order ARE the quantity (the DB rejects a mismatch).
+  const fgIds = awos.filter((a) => a.awo_type === "finished_good").map((a) => a.id);
+  const { data: serialsByAwo = {}, isLoading: serialsLoading } = useQuery({
+    queryKey: ["fg-serials", fgIds],
+    queryFn: () => fetchSerialsForAwos(fgIds),
+    enabled: fgIds.length > 0,
+  });
+  // Only serials still being built are accepted (same count the DB checks).
+  const buildingSerials = (awoId: string) =>
+    (serialsByAwo[awoId] ?? []).filter((s) => s.status === "in_production");
 
   const acceptedBy =
     (profile as any)?.full_name ||
@@ -45,7 +61,10 @@ export function AssemblyOutputAcceptance() {
   const acceptMutation = useMutation({
     mutationFn: (awo: AssemblyWorkOrder) => {
       const qtyStr = quantities[awo.id];
-      const actualQty = qtyStr !== undefined && qtyStr.trim() !== "" ? Number(qtyStr) : awo.quantity_to_build;
+      const actualQty =
+        awo.awo_type === "finished_good"
+          ? buildingSerials(awo.id).length
+          : qtyStr !== undefined && qtyStr.trim() !== "" ? Number(qtyStr) : awo.quantity_to_build;
       return acceptAssemblyWorkOrder(awo.id, locations[awo.id]?.trim() || null, acceptedBy, actualQty);
     },
     onSuccess: (res, awo) => {
@@ -67,6 +86,7 @@ export function AssemblyOutputAcceptance() {
       queryClient.invalidateQueries({ queryKey: ["sa-work-orders-wip"] });
       queryClient.invalidateQueries({ queryKey: ["fg-work-orders-wip"] });
       queryClient.invalidateQueries({ queryKey: ["awo-stats-dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["fg-serials"] });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -95,6 +115,11 @@ export function AssemblyOutputAcceptance() {
         ) : (
           awos.map((awo) => {
             const isBusy = !!accepting[awo.id] || acceptMutation.isPending;
+            const isFg = awo.awo_type === "finished_good";
+            const serials = buildingSerials(awo.id);
+            const fgBlocked = isFg && (serialsLoading || serials.length === 0);
+            const isPartial = isFg && serials.length > 0 && serials.length < awo.quantity_to_build;
+            const needsConfirm = isPartial && !confirmPartial[awo.id];
             return (
               <div key={awo.id} className="px-5 py-3 flex flex-wrap items-center gap-3">
                 <div className="min-w-0 flex-1">
@@ -111,15 +136,41 @@ export function AssemblyOutputAcceptance() {
                     {awo.item_description ?? awo.item_code ?? "—"}
                     <span className="text-slate-500"> · build {formatNumber(awo.quantity_to_build)}</span>
                   </p>
+                  {isFg && (
+                    <div className="flex flex-wrap items-center gap-1 mt-1">
+                      {serials.length > 0 ? (
+                        <>
+                          {serials.map((s) => (
+                            <span key={s.id} className="font-mono text-xs font-semibold px-1.5 py-0.5 rounded bg-white border border-slate-200">
+                              {s.serial_number}
+                            </span>
+                          ))}
+                          <span className="text-xs text-slate-500">
+                            → accepts {serials.length} unit(s)
+                            {serials.length < awo.quantity_to_build && ` of ${formatNumber(awo.quantity_to_build)} planned`}
+                          </span>
+                        </>
+                      ) : (
+                        <button
+                          className="text-xs text-amber-700 underline"
+                          onClick={() => navigate(`/assembly-work-orders/${awo.id}`)}
+                        >
+                          No serials yet — enter one per unit on the work order
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <Input
-                  type="number"
-                  min={0}
-                  placeholder="Qty produced"
-                  className="w-28"
-                  value={quantities[awo.id] ?? String(awo.quantity_to_build)}
-                  onChange={(e) => setQuantities((prev) => ({ ...prev, [awo.id]: e.target.value }))}
-                />
+                {!isFg && (
+                  <Input
+                    type="number"
+                    min={0}
+                    placeholder="Qty produced"
+                    className="w-28"
+                    value={quantities[awo.id] ?? String(awo.quantity_to_build)}
+                    onChange={(e) => setQuantities((prev) => ({ ...prev, [awo.id]: e.target.value }))}
+                  />
+                )}
                 <Input
                   placeholder="Rack / location"
                   className="w-40"
@@ -128,15 +179,26 @@ export function AssemblyOutputAcceptance() {
                 />
                 <Button
                   size="sm"
-                  disabled={isBusy}
+                  disabled={isBusy || fgBlocked}
+                  variant={needsConfirm ? "outline" : "default"}
                   onClick={() => {
+                    if (needsConfirm) {
+                      setConfirmPartial((p) => ({ ...p, [awo.id]: true }));
+                      return;
+                    }
                     setAccepting((p) => ({ ...p, [awo.id]: true }));
                     acceptMutation.mutate(awo, {
                       onSettled: () => setAccepting((p) => ({ ...p, [awo.id]: false })),
                     });
                   }}
                 >
-                  {isBusy ? "Accepting…" : "Accept into stock"}
+                  {isBusy
+                    ? "Accepting…"
+                    : needsConfirm
+                      ? `Only ${serials.length} of ${formatNumber(awo.quantity_to_build)} built?`
+                      : isPartial
+                        ? `Yes — accept ${serials.length} unit(s)`
+                        : "Accept into stock"}
                 </Button>
               </div>
             );

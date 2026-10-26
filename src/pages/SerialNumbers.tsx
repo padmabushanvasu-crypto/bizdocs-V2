@@ -20,6 +20,7 @@ import {
   fetchFatForSerial,
   type SerialNumberRecord,
 } from "@/lib/fat-api";
+import { verifySerial } from "@/lib/fg-serials";
 import { MetricCard } from "@/components/MetricCard";
 import { format } from "date-fns";
 
@@ -37,7 +38,7 @@ const statusLabels: Record<string, string> = {
   dispatched: "Dispatched",
   under_warranty: "Under Warranty",
   scrapped: "Scrapped",
-  cancelled: "Cancelled",
+  cancelled: "Released",
 };
 
 function FatBadge({ fatCompleted }: { fatCompleted: boolean }) {
@@ -86,6 +87,7 @@ export default function SerialNumbers() {
 
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("q") ?? "");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [onlyUnverified, setOnlyUnverified] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedSerial, setSelectedSerial] = useState<SerialNumberRecord | null>(null);
 
@@ -96,8 +98,8 @@ export default function SerialNumbers() {
   });
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["serial-numbers", statusFilter, search],
-    queryFn: () => fetchSerialNumbers({ status: statusFilter, search, pageSize: 200 }),
+    queryKey: ["serial-numbers", statusFilter, search, onlyUnverified],
+    queryFn: () => fetchSerialNumbers({ status: statusFilter, search, needsVerification: onlyUnverified, pageSize: 500 }),
     refetchInterval: 300000,
   });
 
@@ -111,7 +113,8 @@ export default function SerialNumbers() {
         r.serial_number.toLowerCase().includes(q) ||
         (r.item_code ?? "").toLowerCase().includes(q) ||
         (r.item_description ?? "").toLowerCase().includes(q) ||
-        (r.customer_name ?? "").toLowerCase().includes(q)
+        (r.customer_name ?? "").toLowerCase().includes(q) ||
+        (r.assembly_work_orders?.awo_number ?? "").toLowerCase().includes(q)
     );
   }, [rows, search]);
 
@@ -136,6 +139,17 @@ export default function SerialNumbers() {
     onError: (err: any) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     },
+  });
+
+  const verifyMutation = useMutation({
+    mutationFn: ({ id, stillHere }: { id: string; stillHere: boolean }) => verifySerial(id, stillHere),
+    onSuccess: (_d, v) => {
+      queryClient.invalidateQueries({ queryKey: ["serial-numbers"] });
+      queryClient.invalidateQueries({ queryKey: ["serial-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["fg-serials"] });
+      toast({ title: v.stillHere ? "Confirmed in factory" : "Marked as already dispatched" });
+    },
+    onError: (err: Error) => toast({ title: "Not saved", description: err.message, variant: "destructive" }),
   });
 
   const openCreateFat = (serial: SerialNumberRecord) => {
@@ -187,6 +201,18 @@ export default function SerialNumbers() {
         />
       </div>
 
+      {(stats?.notVerified ?? 0) > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+          <p className="text-sm text-amber-900 flex-1 min-w-[200px]">
+            <b>{stats?.notVerified}</b> older serials need checking: is the unit still in the factory, or already gone?
+          </p>
+          <Button size="sm" variant={onlyUnverified ? "secondary" : "outline"} onClick={() => setOnlyUnverified((v) => !v)}>
+            {onlyUnverified ? "Show all" : "Show only these"}
+          </Button>
+        </div>
+      )}
+
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
         <div className="relative flex-1 min-w-[200px]">
@@ -194,7 +220,7 @@ export default function SerialNumbers() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search serial number, item, customer..."
+            placeholder="Search serial number, work order, item, customer..."
             className="pl-9"
           />
         </div>
@@ -209,7 +235,7 @@ export default function SerialNumbers() {
             <SelectItem value="dispatched">Dispatched</SelectItem>
             <SelectItem value="under_warranty">Under Warranty</SelectItem>
             <SelectItem value="scrapped">Scrapped</SelectItem>
-            <SelectItem value="cancelled">Cancelled</SelectItem>
+            <SelectItem value="cancelled">Released</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -228,7 +254,7 @@ export default function SerialNumbers() {
           <div className="py-12 text-center">
             <Hash className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
             <p className="text-sm text-muted-foreground font-medium">No serial numbers found</p>
-            <p className="text-xs text-muted-foreground mt-1">Serial numbers are generated automatically when a Production Run is started.</p>
+            <p className="text-xs text-muted-foreground mt-1">Serial numbers are entered on each Finished Good Work Order, one per unit.</p>
           </div>
         ) : (
           <table className="w-full border-collapse text-sm">
@@ -236,7 +262,7 @@ export default function SerialNumbers() {
               <tr>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Serial Number</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Production Run</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Work Order</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">Status</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center">FAT</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Customer</th>
@@ -248,7 +274,12 @@ export default function SerialNumbers() {
             <tbody>
               {filtered.map((row) => (
                 <tr key={row.id}>
-                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-semibold text-primary">{row.serial_number}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
+                    <span className="font-mono text-base font-bold text-primary">{row.serial_number}</span>
+                    {row.needs_verification && row.status === "in_stock" && (
+                      <span className="ml-2 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">Not verified</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                     <p className="font-medium">{row.item_description ?? "—"}</p>
                     {row.item_code && (
@@ -256,7 +287,11 @@ export default function SerialNumbers() {
                     )}
                   </td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-muted-foreground">
-                    {row.assembly_order_id ? (
+                    {row.awo_id && row.assembly_work_orders?.awo_number ? (
+                      <button className="text-primary text-xs hover:underline" onClick={() => navigate(`/assembly-work-orders/${row.awo_id}`)}>
+                        {row.assembly_work_orders.awo_number}
+                      </button>
+                    ) : row.assembly_order_id ? (
                       <span className="text-primary text-xs">{row.assembly_order_id.slice(0, 8)}…</span>
                     ) : "—"}
                   </td>
@@ -278,7 +313,28 @@ export default function SerialNumbers() {
                     <WarrantyDate expiry={row.warranty_expiry} />
                   </td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-center print:hidden">
-                    <div className="flex gap-1.5 justify-center">
+                    <div className="flex gap-1.5 justify-center flex-wrap">
+                      {canEdit && row.needs_verification && row.status === "in_stock" && (
+                        <>
+                          <Button
+                            size="sm"
+                            className="h-7 text-xs"
+                            disabled={verifyMutation.isPending}
+                            onClick={() => verifyMutation.mutate({ id: row.id, stillHere: true })}
+                          >
+                            Still here
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs"
+                            disabled={verifyMutation.isPending}
+                            onClick={() => verifyMutation.mutate({ id: row.id, stillHere: false })}
+                          >
+                            Already gone
+                          </Button>
+                        </>
+                      )}
                       {row.fat_completed ? (
                         <Button
                           variant="outline"
