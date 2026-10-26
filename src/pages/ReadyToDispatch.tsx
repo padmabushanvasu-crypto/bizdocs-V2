@@ -108,8 +108,8 @@ export default function ReadyToDispatch() {
           <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10">
               <tr>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Serial No.</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Item</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Ready Qty</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-center"></th>
               </tr>
@@ -118,18 +118,14 @@ export default function ReadyToDispatch() {
               {items.map((item) => (
                 <tr key={item.id} className="hover:bg-slate-50 transition-colors">
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
-                    <div className="font-medium text-slate-700">{item.item_code || "—"}</div>
-                    {item.description && <div className="text-xs text-slate-500 mt-0.5">{item.description}</div>}
-                  </td>
-                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
                     {(() => {
                       const serials = serialsByItem[item.id] ?? [];
                       if (serials.length === 0) return <span className="text-slate-400">—</span>;
-                      const shown = serials.slice(0, 6);
+                      const shown = serials.slice(0, 12);
                       return (
                         <div className="flex flex-wrap gap-1 max-w-md">
                           {shown.map((sn) => (
-                            <span key={sn.id} className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-xs text-slate-700">
+                            <span key={sn.id} className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-sm font-semibold text-slate-800">
                               {sn.serial_number}
                             </span>
                           ))}
@@ -144,6 +140,10 @@ export default function ReadyToDispatch() {
                         </div>
                       );
                     })()}
+                  </td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">
+                    <div className="font-medium text-slate-700">{item.item_code || "—"}</div>
+                    {item.description && <div className="text-xs text-slate-500 mt-0.5">{item.description}</div>}
                   </td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right tabular-nums font-mono font-semibold">
                     {item.stock_in_fg_ready} <span className="font-normal text-slate-500">{item.unit}</span>
@@ -165,7 +165,7 @@ export default function ReadyToDispatch() {
       )}
 
       <p className="text-xs text-slate-400">
-        Serial numbers listed are those on file as in-stock; they are not used to count stock here. Pick the serials when you create the Dispatch Record — they are marked dispatched when it is confirmed.
+        Each finished unit is identified by its serial number. Pick one serial per unit when you create the Dispatch Record — they are marked dispatched when it is confirmed. If the serial count and ready qty differ, check the unverified serials on the Serial Numbers page.
       </p>
     </div>
   );

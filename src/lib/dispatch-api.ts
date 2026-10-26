@@ -460,7 +460,7 @@ export async function fetchInStockSerials(itemIds: string[]): Promise<Record<str
     .eq("company_id", companyId)
     .eq("status", "in_stock")
     .in("item_id", ids)
-    .order("created_at", { ascending: false });
+    .order("serial_number", { ascending: true });
   if (error) throw error;
 
   const out: Record<string, InStockSerial[]> = {};
