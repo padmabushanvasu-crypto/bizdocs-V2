@@ -96,6 +96,11 @@ export interface SerialNumberRecord {
   notes: string | null;
   created_at: string;
   updated_at: string;
+  /** Finished-good work order that built this unit. */
+  awo_id?: string | null;
+  /** Backfilled serial the team has not yet confirmed (still here / already gone). */
+  needs_verification?: boolean;
+  assembly_work_orders?: { awo_number: string } | null;
 }
 
 export interface SerialFilters {
@@ -105,6 +110,8 @@ export interface SerialFilters {
   fat_completed?: boolean;
   fatCompleted?: boolean;
   assemblyOrderId?: string;
+  /** true → only serials the team still has to verify. */
+  needsVerification?: boolean;
   page?: number;
   pageSize?: number;
 }
@@ -344,19 +351,22 @@ export async function bulkUpdateFatTestResults(
 export async function fetchSerialNumbers(filters: SerialFilters = {}) {
   const companyId = await getCompanyId();
   if (!companyId) return { data: [], count: 0 };
-  const { item_id, status, search, fat_completed, fatCompleted, assemblyOrderId, page = 1, pageSize = 50 } = filters;
+  const { item_id, status, search, fat_completed, fatCompleted, assemblyOrderId, needsVerification, page = 1, pageSize = 50 } = filters;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
   let query = (supabase as any)
     .from("serial_numbers")
-    .select("*", { count: "exact" })
+    .select("*, assembly_work_orders(awo_number)", { count: "exact" })
     .eq("company_id", companyId)
-    .order("created_at", { ascending: false })
+    .order("serial_number", { ascending: false })
     .range(from, to);
 
   if (item_id) query = query.eq("item_id", item_id);
+  // "All" hides released serials (from cancelled work orders); pick "Released" to see them.
   if (status && status !== "all") query = query.eq("status", status);
+  else query = query.neq("status", "cancelled");
+  if (needsVerification) query = query.eq("needs_verification", true);
   if (fat_completed !== undefined) query = query.eq("fat_completed", fat_completed);
   if (fatCompleted !== undefined) query = query.eq("fat_completed", fatCompleted);
   if (assemblyOrderId) query = query.eq("assembly_order_id", assemblyOrderId);
@@ -455,7 +465,7 @@ export async function fetchFatStats() {
 
 export async function fetchSerialStats() {
   const companyId = await getCompanyId();
-  if (!companyId) return { inProduction: 0, inStock: 0, dispatched: 0, underWarranty: 0, expiringSoon: 0, fatPending: 0 };
+  if (!companyId) return { inProduction: 0, inStock: 0, dispatched: 0, underWarranty: 0, expiringSoon: 0, fatPending: 0, notVerified: 0 };
   const today = new Date().toISOString().split("T")[0];
   const in30 = new Date();
   in30.setDate(in30.getDate() + 30);
@@ -463,9 +473,9 @@ export async function fetchSerialStats() {
 
   const { data, error } = await (supabase as any)
     .from("serial_numbers")
-    .select("id, status, fat_completed, warranty_expiry")
+    .select("id, status, fat_completed, warranty_expiry, needs_verification")
     .eq("company_id", companyId);
-  if (error) return { inProduction: 0, inStock: 0, dispatched: 0, underWarranty: 0, expiringSoon: 0, fatPending: 0 };
+  if (error) throw new Error(error.message);
   const all = (data ?? []) as any[];
   return {
     inProduction: all.filter((s) => s.status === "in_production").length,
@@ -480,6 +490,7 @@ export async function fetchSerialStats() {
       (s) => s.warranty_expiry && s.warranty_expiry >= today && s.warranty_expiry <= in30Str
     ).length,
     fatPending: all.filter((s) => s.status === "in_stock" && !s.fat_completed).length,
+    notVerified: all.filter((s) => s.needs_verification && s.status === "in_stock").length,
   };
 }
 
