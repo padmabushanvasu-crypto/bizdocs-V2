@@ -440,6 +440,8 @@ export interface InStockSerial {
   id: string;
   serial_number: string;
   item_id: string;
+  /** Backfilled unit not yet confirmed by the team. */
+  needs_verification?: boolean;
 }
 
 /**
@@ -457,7 +459,7 @@ export async function fetchInStockSerials(itemIds: string[]): Promise<Record<str
 
   const { data, error } = await (supabase as any)
     .from("serial_numbers")
-    .select("id, serial_number, item_id, created_at")
+    .select("id, serial_number, item_id, created_at, needs_verification")
     .eq("company_id", companyId)
     .eq("status", "in_stock")
     .in("item_id", ids)
@@ -466,7 +468,12 @@ export async function fetchInStockSerials(itemIds: string[]): Promise<Record<str
 
   const out: Record<string, InStockSerial[]> = {};
   for (const r of (data ?? []) as any[]) {
-    (out[r.item_id] ??= []).push({ id: r.id, serial_number: r.serial_number, item_id: r.item_id });
+    (out[r.item_id] ??= []).push({
+      id: r.id,
+      serial_number: r.serial_number,
+      item_id: r.item_id,
+      needs_verification: !!r.needs_verification,
+    });
   }
   return out;
 }

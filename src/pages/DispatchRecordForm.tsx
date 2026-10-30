@@ -38,6 +38,7 @@ import {
 } from "@/lib/dispatch-api";
 import type { DispatchRecordItem } from "@/lib/dispatch-api";
 import { fetchParties } from "@/lib/parties-api";
+import { fillLineSerials } from "@/lib/dispatch-serial-fill";
 
 interface LineItem {
   item_id: string;
@@ -213,13 +214,30 @@ export default function DispatchRecordForm() {
     staleTime: 15_000,
   });
 
+  // Serials carry over from the finished goods: each FG line is topped up to one
+  // serial per unit from that item's in-stock units (verified first, lowest serial).
+  useEffect(() => {
+    setLineItems((prev) => {
+      const { lines, changed } = fillLineSerials(prev, serialsByItem, (itemId) => !!fgById[itemId]?.is_resale);
+      return changed ? lines : prev;
+    });
+  }, [serialsByItem, fgById, lineItems]);
+
+  // Tap a different unit to send it instead: it replaces the last one carried
+  // over (a full line), or is added (resale / short line). Tapping a picked unit
+  // on a finished-good line keeps it — the line must keep one serial per unit.
   const toggleSerial = (index: number, sn: { id: string; serial_number: string }) =>
     setLineItems((prev) =>
       prev.map((l, i) => {
         if (i !== index) return l;
         const cur = l.serials ?? [];
         const has = cur.some((x) => x.id === sn.id);
-        return { ...l, serials: has ? cur.filter((x) => x.id !== sn.id) : [...cur, sn] };
+        const isFg = !!l.item_id && !fgById[l.item_id]?.is_resale;
+        if (has) return isFg ? l : { ...l, serials: cur.filter((x) => x.id !== sn.id) };
+        if (cur.length >= (l.quantity || 0) && cur.length > 0) {
+          return { ...l, serials: [...cur.slice(0, -1), sn] };
+        }
+        return { ...l, serials: [...cur, sn] };
       })
     );
 
@@ -723,7 +741,9 @@ export default function DispatchRecordForm() {
                   <Label className="text-xs text-slate-500 dark:text-slate-400">
                     Serial numbers{" "}
                     <span className="font-normal">
-                      ({fgById[li.item_id]?.is_resale ? "optional" : "one per unit"} — tap to select, {(li.serials ?? []).length} of {li.quantity || 0} picked)
+                      {fgById[li.item_id]?.is_resale
+                        ? `(optional — tap to select, ${(li.serials ?? []).length} of ${li.quantity || 0} picked)`
+                        : `(carried over from finished goods — ${(li.serials ?? []).length} of ${li.quantity || 0}; tap another unit to send it instead)`}
                     </span>
                   </Label>
                   <div className="flex flex-wrap gap-1.5">
