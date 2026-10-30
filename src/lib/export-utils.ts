@@ -1539,3 +1539,109 @@ export function buildDcBalanceWorkbook(
 export function downloadWorkbook(workbook: XLSX.WorkBook, filename: string): void {
   XLSX.writeFile(workbook, filename);
 }
+
+// ── Dispatch Records export — one row per unit (serial), plus a record summary ──
+
+export const DISPATCH_UNIT_EXPORT_COLS: ExportColumn[] = [
+  { key: "serial_number", label: "Serial No.", width: 16 },
+  { key: "dr_number", label: "DR Number", width: 16 },
+  { key: "dispatch_date", label: "Dispatch Date", type: "date", width: 14 },
+  { key: "status", label: "Status", width: 12 },
+  { key: "customer_name", label: "Customer", width: 32 },
+  { key: "customer_po_ref", label: "Customer PO", width: 16 },
+  { key: "item_code", label: "Item Code", width: 28 },
+  { key: "item_description", label: "Description", width: 32 },
+  { key: "quantity", label: "Qty", type: "number", width: 8 },
+  { key: "vehicle_number", label: "Vehicle", width: 14 },
+  { key: "driver_name", label: "Driver", width: 18 },
+  { key: "dispatched_by", label: "Dispatched By", width: 28 },
+];
+
+export const DISPATCH_RECORD_EXPORT_COLS: ExportColumn[] = [
+  { key: "dr_number", label: "DR Number", width: 16 },
+  { key: "dispatch_date", label: "Dispatch Date", type: "date", width: 14 },
+  { key: "status", label: "Status", width: 12 },
+  { key: "customer_name", label: "Customer", width: 32 },
+  { key: "customer_po_ref", label: "Customer PO", width: 16 },
+  { key: "serials", label: "Serial Nos.", width: 40 },
+  { key: "units", label: "Units", type: "number", width: 8 },
+  { key: "units_without_serial", label: "Units Without Serial", type: "number", width: 12 },
+  { key: "vehicle_number", label: "Vehicle", width: 14 },
+  { key: "driver_name", label: "Driver", width: 18 },
+  { key: "driver_contact", label: "Driver Contact", width: 16 },
+  { key: "dispatched_by", label: "Dispatched By", width: 28 },
+  { key: "delivered_at", label: "Delivered On", type: "date", width: 14 },
+];
+
+type DispatchExportRecord = {
+  dr_number: string;
+  dispatch_date: string | null;
+  status: string;
+  customer_name: string | null;
+  customer_po_ref: string | null;
+  vehicle_number: string | null;
+  driver_name: string | null;
+  driver_contact: string | null;
+  dispatched_by: string | null;
+  delivered_at: string | null;
+  items?: Array<{
+    item_code: string | null;
+    item_description: string | null;
+    quantity: number | string | null;
+    serial_number: string | null;
+  }>;
+};
+
+const DISPATCH_STATUS_LABEL: Record<string, string> = { draft: "Draft", dispatched: "Dispatched", delivered: "Delivered" };
+
+/** One row per line; lines carrying a serial are one unit each. */
+export function buildDispatchUnitRows(records: DispatchExportRecord[]): Record<string, unknown>[] {
+  return records.flatMap((dr) =>
+    (dr.items ?? []).map((li) => ({
+      serial_number: li.serial_number ?? "",
+      dr_number: dr.dr_number,
+      dispatch_date: dr.dispatch_date,
+      status: DISPATCH_STATUS_LABEL[dr.status] ?? dr.status,
+      customer_name: dr.customer_name ?? "",
+      customer_po_ref: dr.customer_po_ref ?? "",
+      item_code: li.item_code ?? "",
+      item_description: li.item_description ?? "",
+      quantity: Number(li.quantity ?? 0),
+      vehicle_number: dr.vehicle_number ?? "",
+      driver_name: dr.driver_name ?? "",
+      dispatched_by: dr.dispatched_by ?? "",
+    })),
+  );
+}
+
+export function buildDispatchRecordRows(records: DispatchExportRecord[]): Record<string, unknown>[] {
+  return records.map((dr) => {
+    const items = dr.items ?? [];
+    const serials = items.map((li) => li.serial_number).filter((s): s is string => !!s);
+    return {
+      dr_number: dr.dr_number,
+      dispatch_date: dr.dispatch_date,
+      status: DISPATCH_STATUS_LABEL[dr.status] ?? dr.status,
+      customer_name: dr.customer_name ?? "",
+      customer_po_ref: dr.customer_po_ref ?? "",
+      serials: serials.join(", "),
+      units: items.reduce((n, li) => n + Number(li.quantity ?? 0), 0),
+      units_without_serial: items.filter((li) => !li.serial_number).reduce((n, li) => n + Number(li.quantity ?? 0), 0),
+      vehicle_number: dr.vehicle_number ?? "",
+      driver_name: dr.driver_name ?? "",
+      driver_contact: dr.driver_contact ?? "",
+      dispatched_by: dr.dispatched_by ?? "",
+      delivered_at: dr.delivered_at,
+    };
+  });
+}
+
+export function exportDispatchRecords(records: DispatchExportRecord[], filename: string): void {
+  exportMultiSheet(
+    [
+      { sheetName: "Units", columns: DISPATCH_UNIT_EXPORT_COLS, data: buildDispatchUnitRows(records) },
+      { sheetName: "Dispatch Records", columns: DISPATCH_RECORD_EXPORT_COLS, data: buildDispatchRecordRows(records) },
+    ],
+    filename,
+  );
+}

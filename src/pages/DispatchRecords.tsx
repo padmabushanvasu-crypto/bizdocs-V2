@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { Truck, Plus, Trash2 } from "lucide-react";
+import { Truck, Plus, Trash2, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { fetchDispatchRecords, fetchDispatchStats, type DispatchRecord } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format, parseISO } from "date-fns";
 import { DispatchRecordDeleteDialog } from "@/components/DispatchRecordDeleteDialog";
+import { exportDispatchRecords } from "@/lib/export-utils";
 
 function statusBadge(status: string) {
   if (status === "draft") return <Badge className="bg-slate-100 text-slate-700">Draft</Badge>;
@@ -95,10 +96,22 @@ export default function DispatchRecords() {
             )}
           </div>
         </div>
-        <Button onClick={() => navigate("/dispatch-records/new")}>
-          <Plus className="h-4 w-4 mr-1" />
-          New Dispatch Record
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            disabled={filtered.length === 0}
+            onClick={() =>
+              exportDispatchRecords(filtered, `Dispatch_Records_${format(new Date(), "yyyy-MM-dd")}.xlsx`)
+            }
+          >
+            <Download className="h-4 w-4 mr-1" />
+            Export{search.trim() || serialFilter !== "all" ? ` (${filtered.length})` : ""}
+          </Button>
+          <Button onClick={() => navigate("/dispatch-records/new")}>
+            <Plus className="h-4 w-4 mr-1" />
+            New Dispatch Record
+          </Button>
+        </div>
       </div>
 
       {/* Search + serial filter */}
