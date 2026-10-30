@@ -105,6 +105,27 @@ export default function DispatchRecordDetail() {
             <p className="text-sm text-slate-500 mt-0.5">
               {dr.dispatch_date ? format(parseISO(dr.dispatch_date), "dd MMM yyyy") : "—"}
             </p>
+            {(() => {
+              const serials = (dr.items ?? []).map((li) => li.serial_number).filter((s): s is string => !!s);
+              const missing = (dr.items ?? [])
+                .filter((li) => !li.serial_number && !li.serial_number_id)
+                .reduce((n, li) => n + Number(li.quantity ?? 0), 0);
+              return (
+                <div className="flex flex-wrap items-center gap-2 mt-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Serial No.</span>
+                  {serials.map((s, i) => (
+                    <span key={`${s}-${i}`} className="font-mono text-base font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-900">
+                      {s}
+                    </span>
+                  ))}
+                  {missing > 0 && (
+                    <span className="text-sm text-amber-700">
+                      {serials.length > 0 ? `+${missing} unit(s) without serial` : `No serial recorded (${missing} unit${missing === 1 ? "" : "s"})`}
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
 
@@ -231,6 +252,11 @@ export default function DispatchRecordDetail() {
       <div className="print-only">
         <h2 style={{ fontSize: 18, fontWeight: "bold", marginBottom: 8 }}>DELIVERY CHALLAN — SUPPLY</h2>
         <p>DR Number: {dr.dr_number}</p>
+        {(dr.items ?? []).some((li) => li.serial_number) && (
+          <p style={{ fontWeight: "bold" }}>
+            Serial No.: {(dr.items ?? []).map((li) => li.serial_number).filter(Boolean).join(", ")}
+          </p>
+        )}
         <p>Date: {dr.dispatch_date ? format(parseISO(dr.dispatch_date), "dd MMM yyyy") : "—"}</p>
         <p>Customer: {dr.customer_name}</p>
         {dr.customer_po_ref && <p>Customer PO: {dr.customer_po_ref}</p>}

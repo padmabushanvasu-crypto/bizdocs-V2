@@ -71,9 +71,10 @@ export async function fetchDispatchRecords(filters?: { status?: string; search?:
   const companyId = await getCompanyId();
   if (!companyId) return [];
 
+  // Lines come along so the list can lead with each unit's serial number.
   let query = (supabase as any)
     .from("dispatch_records")
-    .select("*")
+    .select("*, items:dispatch_record_items(id, item_id, item_code, item_description, quantity, serial_number, serial_number_id)")
     .eq("company_id", companyId)
     .is("deleted_at", null)
     .order("created_at", { ascending: false });
