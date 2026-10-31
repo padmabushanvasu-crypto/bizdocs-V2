@@ -72,6 +72,7 @@ export default function DispatchRecords() {
       return (
         (dr.items ?? []).some((li) => (li.serial_number ?? "").toLowerCase().includes(q)) ||
         dr.dr_number?.toLowerCase().includes(q) ||
+        (dr.invoice_number ?? "").toLowerCase().includes(q) ||
         (dr.customer_name ?? "").toLowerCase().includes(q) ||
         (dr.vehicle_number ?? "").toLowerCase().includes(q) ||
         (dr.items ?? []).some((li) => (li.item_code ?? "").toLowerCase().includes(q))
@@ -118,7 +119,7 @@ export default function DispatchRecords() {
       <div className="flex flex-wrap gap-2">
         <Input
           className="max-w-sm"
-          placeholder="Search serial no., DR number, customer, item..."
+          placeholder="Search serial no., invoice no., DR number, customer..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -151,6 +152,7 @@ export default function DispatchRecords() {
               <tr>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Serial No.</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">DR Number</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Invoice No.</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Customer</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Vehicle</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Dispatched By</th>
@@ -170,6 +172,9 @@ export default function DispatchRecords() {
                     <SerialCell dr={dr} />
                   </td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono font-medium text-blue-700">{dr.dr_number}</td>
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono">
+                    {dr.invoice_number ?? <span className="text-slate-400">—</span>}
+                  </td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{dr.customer_name ?? "—"}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{dr.vehicle_number ?? "—"}</td>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{dr.dispatched_by ?? "—"}</td>

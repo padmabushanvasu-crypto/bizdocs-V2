@@ -69,6 +69,7 @@ export default function DispatchRecordForm() {
     customer_id: "",
     customer_name: "",
     customer_po_ref: "",
+    invoice_number: "",
     vehicle_number: "",
     driver_name: "",
     driver_contact: "",
@@ -140,6 +141,7 @@ export default function DispatchRecordForm() {
         customer_id: existingDR.customer_id ?? "",
         customer_name: existingDR.customer_name ?? "",
         customer_po_ref: existingDR.customer_po_ref ?? "",
+        invoice_number: existingDR.invoice_number ?? "",
         vehicle_number: existingDR.vehicle_number ?? "",
         driver_name: existingDR.driver_name ?? "",
         driver_contact: existingDR.driver_contact ?? "",
@@ -515,6 +517,16 @@ export default function DispatchRecordForm() {
           </div>
 
           <div className="space-y-1.5">
+            <Label>Invoice No.</Label>
+            <Input
+              placeholder="e.g. 131/26-27 (can be added later)"
+              value={form.invoice_number}
+              onChange={(e) => setForm((f) => ({ ...f, invoice_number: e.target.value }))}
+              className={inputDarkClasses}
+            />
+          </div>
+
+          <div className="space-y-1.5">
             <Label>
               Vehicle Number <span className="text-red-500">*</span>
             </Label>
@@ -654,16 +666,13 @@ export default function DispatchRecordForm() {
                           {fgItems.map((fg) => (
                             <CommandItem
                               key={fg.id}
-                              value={`${fg.item_code} ${fg.description} ${fg.drawing_number ?? ""}`}
+                              value={`${fg.item_code} ${fg.description}`}
                               onSelect={() => selectItemForLine(index, fg.id)}
                             >
                               <div className="flex flex-col">
                                 <span className="text-sm">
                                   <span className="font-mono font-medium">{fg.item_code}</span>
                                   <span className="text-muted-foreground"> — {fg.description}</span>
-                                  {fg.drawing_number && (
-                                    <span className="ml-2 font-mono text-xs text-muted-foreground">Dwg {fg.drawing_number}</span>
-                                  )}
                                   {fg.is_resale && (
                                     <span className="ml-2 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">Resale</span>
                                   )}

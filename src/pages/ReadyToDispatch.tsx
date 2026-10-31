@@ -32,14 +32,14 @@ export default function ReadyToDispatch() {
     staleTime: 30_000,
   });
 
-  // Every word must match somewhere (item code, description, drawing no., serial no.),
+  // Every word must match somewhere (item code, description, serial no.),
   // case-insensitive and ignoring punctuation.
   const items = useMemo(() => {
     const norm = (v: string | null | undefined) => (v ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ");
     const tokens = norm(search).split(" ").filter(Boolean);
     if (tokens.length === 0) return allItems;
     return allItems.filter((i) => {
-      const hay = norm(`${i.item_code} ${i.description} ${i.drawing_number} ${(serialsByItem[i.id] ?? []).map((x) => x.serial_number).join(" ")}`);
+      const hay = norm(`${i.item_code} ${i.description} ${(serialsByItem[i.id] ?? []).map((x) => x.serial_number).join(" ")}`);
       return tokens.every((t) => hay.includes(t));
     });
   }, [allItems, search, serialsByItem]);
@@ -99,7 +99,7 @@ export default function ReadyToDispatch() {
           <p className="font-medium">{allItems.length > 0 ? "No items match your search" : "No finished goods ready to dispatch"}</p>
           <p className="text-sm mt-1 max-w-sm mx-auto">
             {allItems.length > 0
-              ? "Try fewer words or a different drawing number."
+              ? "Try fewer words or a different serial number."
               : "Accept a Finished Good Work Order to add units here."}
           </p>
         </div>
