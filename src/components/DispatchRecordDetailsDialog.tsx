@@ -17,12 +17,12 @@ interface Props {
 
 /**
  * Edit the fields of a posted dispatch record that have no stock effect
- * (vehicle, driver, contact, customer PO ref, notes). Customer, date and items
+ * (vehicle, driver, contact, customer PO ref, invoice no., notes). Customer, date and items
  * need "Revert to Draft" first — the database enforces this.
  */
 export function DispatchRecordDetailsDialog({ record, open, onOpenChange, onSaved }: Props) {
   const { toast } = useToast();
-  const [f, setF] = useState({ vehicle_number: "", driver_name: "", driver_contact: "", customer_po_ref: "", notes: "" });
+  const [f, setF] = useState({ vehicle_number: "", driver_name: "", driver_contact: "", customer_po_ref: "", invoice_number: "", notes: "" });
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -33,6 +33,7 @@ export function DispatchRecordDetailsDialog({ record, open, onOpenChange, onSave
         driver_name: record.driver_name ?? "",
         driver_contact: record.driver_contact ?? "",
         customer_po_ref: record.customer_po_ref ?? "",
+        invoice_number: record.invoice_number ?? "",
         notes: record.notes ?? "",
       });
     }
@@ -45,6 +46,7 @@ export function DispatchRecordDetailsDialog({ record, open, onOpenChange, onSave
         driver_name: f.driver_name.trim() || null,
         driver_contact: f.driver_contact.trim() || null,
         customer_po_ref: f.customer_po_ref.trim() || null,
+        invoice_number: f.invoice_number.trim() || null,
         notes: f.notes.trim() || null,
       }),
     onSuccess: () => {
@@ -76,6 +78,7 @@ export function DispatchRecordDetailsDialog({ record, open, onOpenChange, onSave
           {field("vehicle_number", "Vehicle number")}
           {field("driver_name", "Driver name")}
           {field("driver_contact", "Driver contact")}
+          {field("invoice_number", "Invoice No.")}
           {field("customer_po_ref", "Customer PO ref")}
           <div className="space-y-1.5">
             <Label htmlFor="dr-d-notes">Notes</Label>

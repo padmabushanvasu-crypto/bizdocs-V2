@@ -192,6 +192,9 @@ export default function DispatchRecordDetail() {
           <h2 className="font-semibold text-slate-700 text-sm uppercase tracking-wide">Customer</h2>
           <div>
             <p className="font-medium text-slate-900">{dr.customer_name ?? "—"}</p>
+            <p className="text-sm text-slate-700 mt-0.5">
+              Invoice No.: {dr.invoice_number ? <span className="font-mono font-semibold">{dr.invoice_number}</span> : <span className="text-amber-700">not entered</span>}
+            </p>
             {dr.customer_po_ref && (
               <p className="text-sm text-slate-500 mt-0.5">PO Ref: {dr.customer_po_ref}</p>
             )}
@@ -259,6 +262,7 @@ export default function DispatchRecordDetail() {
         )}
         <p>Date: {dr.dispatch_date ? format(parseISO(dr.dispatch_date), "dd MMM yyyy") : "—"}</p>
         <p>Customer: {dr.customer_name}</p>
+        {dr.invoice_number && <p>Invoice No.: {dr.invoice_number}</p>}
         {dr.customer_po_ref && <p>Customer PO: {dr.customer_po_ref}</p>}
         <p>
           Vehicle: {dr.vehicle_number} | Driver: {dr.driver_name} | Contact: {dr.driver_contact}

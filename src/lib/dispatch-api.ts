@@ -24,6 +24,8 @@ export interface DispatchRecord {
   customer_id: string | null;
   customer_name: string | null;
   customer_po_ref: string | null;
+  /** Tally / GST tax invoice number raised for this dispatch, e.g. "131/26-27". */
+  invoice_number: string | null;
   vehicle_number: string | null;
   driver_name: string | null;
   driver_contact: string | null;
@@ -58,7 +60,6 @@ export interface FinishedGoodItem {
   item_code: string;
   description: string;
   unit: string;
-  drawing_number?: string | null;
   /** Sellable quantity: stock_in_fg_ready for finished goods, stock_free for resale items. */
   stock_in_fg_ready: number;
   /** Bought-out item received, QC'd and sold as-is (items.is_resale). Relieved from stock_free. */
@@ -134,6 +135,7 @@ export async function createDispatchRecord(
       customer_id: data.customer_id ?? null,
       customer_name: data.customer_name ?? null,
       customer_po_ref: data.customer_po_ref ?? null,
+      invoice_number: data.invoice_number?.trim() || null,
       vehicle_number: data.vehicle_number ?? null,
       driver_name: data.driver_name ?? null,
       driver_contact: data.driver_contact ?? null,
@@ -189,6 +191,7 @@ export async function updateDispatchRecord(
       customer_id: data.customer_id ?? null,
       customer_name: data.customer_name ?? null,
       customer_po_ref: data.customer_po_ref ?? null,
+      invoice_number: data.invoice_number?.trim() || null,
       vehicle_number: data.vehicle_number ?? null,
       driver_name: data.driver_name ?? null,
       driver_contact: data.driver_contact ?? null,
@@ -279,7 +282,7 @@ export async function revertDispatchRecord(
  */
 export async function updateDispatchRecordDetails(
   id: string,
-  fields: { vehicle_number?: string | null; driver_name?: string | null; driver_contact?: string | null; customer_po_ref?: string | null; notes?: string | null }
+  fields: { vehicle_number?: string | null; driver_name?: string | null; driver_contact?: string | null; customer_po_ref?: string | null; invoice_number?: string | null; notes?: string | null }
 ): Promise<void> {
   const companyId = await getCompanyId();
   if (!companyId) throw new Error("Not authenticated");
@@ -298,7 +301,7 @@ export async function fetchFinishedGoodItems(): Promise<FinishedGoodItem[]> {
 
   const { data, error } = await (supabase as any)
     .from("items")
-    .select("id, item_code, description, unit, drawing_number, stock_in_fg_ready")
+    .select("id, item_code, description, unit, stock_in_fg_ready")
     .eq("company_id", companyId)
     .in("item_type", ["finished_good", "product"])
     .gt("stock_in_fg_ready", 0)
@@ -310,14 +313,13 @@ export async function fetchFinishedGoodItems(): Promise<FinishedGoodItem[]> {
     item_code: i.item_code ?? "",
     description: i.description ?? "",
     unit: i.unit ?? "NOS",
-    drawing_number: i.drawing_number ?? null,
     stock_in_fg_ready: Number(i.stock_in_fg_ready ?? 0),
   }));
 
   // Resale items: bought out, QC'd, sold as-is. Available = stock_free.
   const { data: resaleData, error: resaleError } = await (supabase as any)
     .from("items")
-    .select("id, item_code, description, unit, drawing_number, stock_free")
+    .select("id, item_code, description, unit, stock_free")
     .eq("company_id", companyId)
     .eq("is_resale", true)
     .eq("status", "active")
@@ -330,7 +332,6 @@ export async function fetchFinishedGoodItems(): Promise<FinishedGoodItem[]> {
     item_code: i.item_code ?? "",
     description: i.description ?? "",
     unit: i.unit ?? "NOS",
-    drawing_number: i.drawing_number ?? null,
     stock_in_fg_ready: Number(i.stock_free ?? 0),
     is_resale: true,
   }));

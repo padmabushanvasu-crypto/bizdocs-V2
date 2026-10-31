@@ -1545,6 +1545,7 @@ export function downloadWorkbook(workbook: XLSX.WorkBook, filename: string): voi
 export const DISPATCH_UNIT_EXPORT_COLS: ExportColumn[] = [
   { key: "serial_number", label: "Serial No.", width: 16 },
   { key: "dr_number", label: "DR Number", width: 16 },
+  { key: "invoice_number", label: "Invoice No.", width: 14 },
   { key: "dispatch_date", label: "Dispatch Date", type: "date", width: 14 },
   { key: "status", label: "Status", width: 12 },
   { key: "customer_name", label: "Customer", width: 32 },
@@ -1559,6 +1560,7 @@ export const DISPATCH_UNIT_EXPORT_COLS: ExportColumn[] = [
 
 export const DISPATCH_RECORD_EXPORT_COLS: ExportColumn[] = [
   { key: "dr_number", label: "DR Number", width: 16 },
+  { key: "invoice_number", label: "Invoice No.", width: 14 },
   { key: "dispatch_date", label: "Dispatch Date", type: "date", width: 14 },
   { key: "status", label: "Status", width: 12 },
   { key: "customer_name", label: "Customer", width: 32 },
@@ -1575,6 +1577,7 @@ export const DISPATCH_RECORD_EXPORT_COLS: ExportColumn[] = [
 
 type DispatchExportRecord = {
   dr_number: string;
+  invoice_number?: string | null;
   dispatch_date: string | null;
   status: string;
   customer_name: string | null;
@@ -1600,6 +1603,7 @@ export function buildDispatchUnitRows(records: DispatchExportRecord[]): Record<s
     (dr.items ?? []).map((li) => ({
       serial_number: li.serial_number ?? "",
       dr_number: dr.dr_number,
+      invoice_number: dr.invoice_number ?? "",
       dispatch_date: dr.dispatch_date,
       status: DISPATCH_STATUS_LABEL[dr.status] ?? dr.status,
       customer_name: dr.customer_name ?? "",
@@ -1620,6 +1624,7 @@ export function buildDispatchRecordRows(records: DispatchExportRecord[]): Record
     const serials = items.map((li) => li.serial_number).filter((s): s is string => !!s);
     return {
       dr_number: dr.dr_number,
+      invoice_number: dr.invoice_number ?? "",
       dispatch_date: dr.dispatch_date,
       status: DISPATCH_STATUS_LABEL[dr.status] ?? dr.status,
       customer_name: dr.customer_name ?? "",
