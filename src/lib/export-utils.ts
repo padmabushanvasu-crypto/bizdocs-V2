@@ -709,7 +709,8 @@ export function buildStockRegisterWorkbook(
     "Stock — FG WIP",             // 9
     "Stock — FG Ready",           // 10
     "Stock — Closing Stock",      // 11
-    "Cost — In Store (₹)",        // 12
+    "Closing Stock Value (₹)",    // 12  (free stock × standard cost = cost_free)
+    "Cost — In Store (₹)",        // 13
     "Cost — At Vendor (₹)",       // 13
     "Cost — Sub-Assy WIP (₹)",    // 14
     "Cost — FG WIP (₹)",          // 15
@@ -796,14 +797,15 @@ export function buildStockRegisterWorkbook(
     8:  qtyFmt,    // Stock — FG WIP
     9:  qtyFmt,    // Stock — FG Ready
     10: qtyFmt,    // Stock — Closing Stock
-    11: RUPEE_FMT, // Cost — In Store
-    12: RUPEE_FMT, // Cost — At Vendor
-    13: RUPEE_FMT, // Cost — Sub-Assy WIP
-    14: RUPEE_FMT, // Cost — FG WIP
-    15: RUPEE_FMT, // Cost — FG Ready
-    16: RUPEE_FMT, // Cost — TOTAL
-    17: qtyFmt,    // Min Required
-    18: qtyFmt,    // Aimed Stock
+    11: RUPEE_FMT, // Closing Stock Value
+    12: RUPEE_FMT, // Cost — In Store
+    13: RUPEE_FMT, // Cost — At Vendor
+    14: RUPEE_FMT, // Cost — Sub-Assy WIP
+    15: RUPEE_FMT, // Cost — FG WIP
+    16: RUPEE_FMT, // Cost — FG Ready
+    17: RUPEE_FMT, // Cost — TOTAL
+    18: qtyFmt,    // Min Required
+    19: qtyFmt,    // Aimed Stock
   };
 
   // Build AOA: header + rows + totals
@@ -813,6 +815,7 @@ export function buildStockRegisterWorkbook(
       v.code, v.desc, v.type, v.uom,
       v.std,
       v.s_free, v.s_proc, v.s_sa, v.s_fgwip, v.s_fgr, v.s_total,
+      v.c_free, // Closing Stock Value = closing stock (free) valued at standard cost
       v.c_free, v.c_proc, v.c_sa, v.c_fgwip, v.c_fgr, v.c_total,
       v.minreq, v.aimed,
       humanize(v.alert),
@@ -827,6 +830,7 @@ export function buildStockRegisterWorkbook(
     "TOTAL", "", "", "",
     "",                    // standard cost — meaningless to sum
     sum("s_free"), sum("s_proc"), sum("s_sa"), sum("s_fgwip"), sum("s_fgr"), sum("s_total"),
+    sum("c_free"),
     sum("c_free"), sum("c_proc"), sum("c_sa"), sum("c_fgwip"), sum("c_fgr"), sum("c_total"),
     "", "", "",
   ];
@@ -900,6 +904,7 @@ export function buildStockRegisterWorkbook(
     { wch: 16 }, // Stock — FG WIP
     { wch: 16 }, // Stock — FG Ready
     { wch: 16 }, // Stock — Closing Stock
+    { wch: 20 }, // Closing Stock Value
     { wch: 18 }, // Cost — In Store
     { wch: 18 }, // Cost — At Vendor
     { wch: 20 }, // Cost — Sub-Assy WIP
