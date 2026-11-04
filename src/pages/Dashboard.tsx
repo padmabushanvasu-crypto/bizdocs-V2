@@ -10,6 +10,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { StockAlertsBoard } from "@/components/StockAlertsBoard";
 import { OutstandingPOsWidget } from "@/components/OutstandingPOsWidget";
 import { OutstandingDCsWidget } from "@/components/OutstandingDCsWidget";
+import { GrnAgeingWidget } from "@/components/GrnAgeingWidget";
 import { formatCurrency, formatNumber } from "@/lib/gst-utils";
 import { fetchFatStats } from "@/lib/fat-api";
 import { fetchCompanySettings } from "@/lib/settings-api";
@@ -753,6 +754,9 @@ export default function Dashboard() {
             </div>
           </div>
         )}
+
+        {/* ── Section 3c: GRN ageing alert — all roles ─────────────── */}
+        {companyId && <GrnAgeingWidget companyId={companyId} />}
 
         {/* ── Section 4: Two-column stats grid — hidden for storekeeper ── */}
         {!isStorekeeper && (
