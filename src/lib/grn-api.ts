@@ -2751,6 +2751,49 @@ export async function fetchAwaitingStoreCount(): Promise<number> {
   }
 }
 
+export interface GrnPendingAgeingRow {
+  grn_id: string;
+  grn_number: string;
+  grn_type: string | null;
+  grn_stage: string | null;
+  vendor_name: string | null;
+  received_by: string | null;
+  recorded_at: string;
+  age_days: number;
+  grn_line_item_id: string;
+  item_id: string | null;
+  description: string | null;
+  received_qty: number | null;
+  pending_step: "qc_pending" | "store_pending";
+  action_label: string;
+}
+
+/**
+ * Reads v_grn_pending_ageing (live view, Nov 2026): every GRN line still waiting
+ * for QC or for store confirmation, with its age in days. Pages through all rows
+ * (no silent truncation — STOCK_REGISTER_STANDARDS §1.4) and throws on error so
+ * the dashboard shows the failure instead of an empty "all clear".
+ */
+export async function fetchGrnPendingAgeing(companyId: string): Promise<GrnPendingAgeingRow[]> {
+  const PAGE = 1000;
+  const MAX_PAGES = 20;
+  const out: GrnPendingAgeingRow[] = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const { data, error } = await (supabase as any)
+      .from("v_grn_pending_ageing")
+      .select("grn_id, grn_number, grn_type, grn_stage, vendor_name, received_by, recorded_at, age_days, grn_line_item_id, item_id, description, received_qty, pending_step, action_label")
+      .eq("company_id", companyId)
+      .order("recorded_at", { ascending: true })
+      .order("grn_line_item_id", { ascending: true })
+      .range(page * PAGE, page * PAGE + PAGE - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as GrnPendingAgeingRow[];
+    out.push(...rows.map((r) => ({ ...r, age_days: Number(r.age_days ?? 0) })));
+    if (rows.length < PAGE) return out;
+  }
+  throw new Error(`GRN ageing: more than ${PAGE * MAX_PAGES} pending lines — refusing to show a truncated list.`);
+}
+
 export interface GrnLineNextAction {
   grn_line_item_id: string;
   grn_id: string;
