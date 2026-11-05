@@ -1176,6 +1176,8 @@ export interface StockPeriodRow {
   outward: number;
   adjustment: number;
   closing: number;
+  /** items.standard_cost — the same rate the live register values stock at. */
+  standard_cost: number;
 }
 
 const STOCK_PERIOD_PAGE = 1000;
@@ -1192,12 +1194,39 @@ function periodNum(v: unknown, col: string, itemCode: string): number {
 export const isZeroPeriodRow = (r: StockPeriodRow) =>
   r.opening === 0 && r.inward === 0 && r.outward === 0 && r.adjustment === 0 && r.closing === 0;
 
+// Standard cost per item (all statuses — an inactive item can still hold stock in
+// the period). Company-scoped and paged like fetchStockStatus. Fails loud: a missing
+// rate would silently under-value the register.
+async function fetchStandardCostMap(): Promise<Map<string, number>> {
+  const companyId = await getCompanyId();
+  if (!companyId) throw new Error("Stock register: no company in session — cannot value stock.");
+  const map = new Map<string, number>();
+  for (let page = 0; ; page++) {
+    if (page >= STOCK_PERIOD_MAX_PAGES) {
+      throw new Error("Stock register: item list too large to value — export aborted to avoid a partial valuation.");
+    }
+    const start = page * STOCK_PERIOD_PAGE;
+    const { data, error } = await (supabase as any)
+      .from("items")
+      .select("id, standard_cost")
+      .eq("company_id", companyId)
+      .order("id", { ascending: true })
+      .range(start, start + STOCK_PERIOD_PAGE - 1);
+    if (error) throw new Error(error.message ?? "Could not load standard costs");
+    const rows = (data ?? []) as any[];
+    for (const r of rows) map.set(r.id, Number(r.standard_cost ?? 0) || 0);
+    if (rows.length < STOCK_PERIOD_PAGE) break;
+  }
+  return map;
+}
+
 export async function fetchStockRegisterPeriod(
   from: string,
   to: string,
   bucket: StockPeriodBucket,
   opts: { includeZeroRows?: boolean } = {},
 ): Promise<StockPeriodRow[]> {
+  const costs = await fetchStandardCostMap();
   const all: StockPeriodRow[] = [];
   for (let page = 0; ; page++) {
     if (page >= STOCK_PERIOD_MAX_PAGES) {
@@ -1226,6 +1255,7 @@ export async function fetchStockRegisterPeriod(
         outward: periodNum(r.outward, "outward", code),
         adjustment: periodNum(r.adjustment, "adjustment", code),
         closing: periodNum(r.closing, "closing", code),
+        standard_cost: costs.get(r.item_id) ?? 0,
       });
     }
     if (rows.length < STOCK_PERIOD_PAGE) break;

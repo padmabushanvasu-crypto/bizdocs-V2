@@ -1184,7 +1184,11 @@ export interface StockPeriodSheetInput {
     outward: number;
     adjustment: number;
     closing: number;
+    /** items.standard_cost; only read when includeValues is true. */
+    standard_cost?: number;
   }>;
+  /** Add Standard Cost + Opening/Inward/Outward/Adjustment/Closing value columns. */
+  includeValues?: boolean;
 }
 
 const PERIOD_FOOTNOTE =
@@ -1194,26 +1198,52 @@ function buildStockPeriodSheet(
   input: StockPeriodSheetInput,
   opts: { companyName: string; periodLabel: string; generatedAt: string },
 ): XLSX.WorkSheet {
+  const withValues = !!input.includeValues;
   const headers = [
     "S.No", "Item Code", "Drawing No", "Description", "Type", "UOM",
     "Opening", "Inward", "Outward", "Adjustment", "Closing",
+    ...(withValues
+      ? ["Standard Cost (₹)", "Opening Value (₹)", "Inward Value (₹)", "Outward Value (₹)", "Adjustment Value (₹)", "Closing Value (₹)"]
+      : []),
   ];
   const ncols = headers.length;
   const typeLabel = (t: string) => t.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
   const tot = { opening: 0, inward: 0, outward: 0, adjustment: 0, closing: 0 };
+  const val = { opening: 0, inward: 0, outward: 0, adjustment: 0, closing: 0 };
+  let noCostWithStock = 0;
   const dataRows = input.rows.map((r, i) => {
     tot.opening += r.opening;
     tot.inward += r.inward;
     tot.outward += r.outward;
     tot.adjustment += r.adjustment;
     tot.closing += r.closing;
-    return [
+    const base = [
       i + 1, r.item_code, r.drawing_number ?? "", r.description, typeLabel(r.item_type), r.unit,
       r.opening, r.inward, r.outward, r.adjustment, r.closing,
     ];
+    if (!withValues) return base;
+    // Value = quantity × standard cost at full precision (same rule as the live
+    // register's Stock Value); totals sum these, never rounded figures.
+    const c = r.standard_cost ?? 0;
+    const v = {
+      opening: r.opening * c, inward: r.inward * c, outward: r.outward * c,
+      adjustment: r.adjustment * c, closing: r.closing * c,
+    };
+    val.opening += v.opening; val.inward += v.inward; val.outward += v.outward;
+    val.adjustment += v.adjustment; val.closing += v.closing;
+    if (c === 0 && (r.opening !== 0 || r.closing !== 0 || r.inward !== 0 || r.outward !== 0)) noCostWithStock++;
+    return [...base, c, v.opening, v.inward, v.outward, v.adjustment, v.closing];
   });
-  const totalsRow = ["", "TOTAL", "", "", "", "", tot.opening, tot.inward, tot.outward, tot.adjustment, tot.closing];
+  const totalsRow = [
+    "", "TOTAL", "", "", "", "", tot.opening, tot.inward, tot.outward, tot.adjustment, tot.closing,
+    ...(withValues ? ["", val.opening, val.inward, val.outward, val.adjustment, val.closing] : []),
+  ];
+  const valueNote = withValues
+    ? ` Value = quantity × standard cost (as on the Stock Register).${
+        noCostWithStock ? ` ${noCostWithStock} item(s) with stock/movement have no standard cost and are valued at ₹0.` : ""
+      }`
+    : "";
 
   const aoa: any[][] = [
     [opts.companyName],
@@ -1225,7 +1255,7 @@ function buildStockPeriodSheet(
     ...dataRows,
     totalsRow,
     [],
-    [PERIOD_FOOTNOTE],
+    [PERIOD_FOOTNOTE + valueNote],
   ];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
 
@@ -1259,16 +1289,17 @@ function buildStockPeriodSheet(
         continue;
       }
       const isQty = c >= 6;
+      const fmt = c >= 11 ? RUPEE_FMT : PERIOD_QTY_FMT;
       if (isQty && typeof cell.v === "number") {
         cell.t = "n";
-        cell.z = PERIOD_QTY_FMT;
+        cell.z = fmt;
       }
       const isTotals = r === totalsIdx;
       const zebra = !isTotals && (r - headerRow - 1) % 2 === 1 ? { fill: { fgColor: { rgb: "F8FAFC" } } } : {};
       cell.s = {
         ...zebra,
         alignment: { horizontal: isQty ? "right" : c === 0 ? "center" : "left", vertical: "center" },
-        ...(isQty ? { numFmt: PERIOD_QTY_FMT } : {}),
+        ...(isQty ? { numFmt: fmt } : {}),
         ...(isTotals
           ? { font: { bold: true, sz: 11 }, border: { top: { style: "medium", color: { rgb: "94A3B8" } } } }
           : {}),
@@ -1276,7 +1307,7 @@ function buildStockPeriodSheet(
     }
   }
 
-  ws["!cols"] = [6, 18, 18, 42, 14, 8, 14, 14, 14, 14, 14].map((wch) => ({ wch }));
+  ws["!cols"] = [6, 18, 18, 42, 14, 8, 14, 14, 14, 14, 14, ...(withValues ? [16, 18, 18, 18, 18, 18] : [])].map((wch) => ({ wch }));
   // Freeze below the column-header row. NOTE: the pinned xlsx-js-style (1.2.0) has
   // no frozen-pane writer and silently drops this on write (same limitation as
   // buildStockRegisterWorkbook); it is set so it takes effect if the library is upgraded.
