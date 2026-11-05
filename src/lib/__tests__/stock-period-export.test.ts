@@ -40,6 +40,35 @@ describe("buildStockPeriodWorkbook", () => {
   });
 });
 
+describe("buildStockPeriodWorkbook — values", () => {
+  const rows = [
+    row({ standard_cost: 12.5 }),
+    row({ item_code: "B-2", opening: 0.1, inward: 0.2, outward: 0, adjustment: 0, closing: 0.3, standard_cost: 100 }),
+    row({ item_code: "C-3", opening: 4, inward: 0, outward: 0, adjustment: 0, closing: 4, standard_cost: 0 }),
+  ];
+  const mk = (includeValues: boolean) =>
+    buildStockPeriodWorkbook([{ sheetName: "In Store", title: "T", rows, includeValues }], {
+      companyName: "Acme", from: "2026-10-01", to: "2026-10-07", generatedAt: "x",
+    }).workbook;
+  const aoa = XLSX.utils.sheet_to_json<any[]>(mk(true).Sheets["In Store"], { header: 1, blankrows: true });
+
+  it("adds cost and value columns", () => {
+    expect(aoa[5].slice(11)).toEqual(["Standard Cost (₹)", "Opening Value (₹)", "Inward Value (₹)", "Outward Value (₹)", "Adjustment Value (₹)", "Closing Value (₹)"]);
+    expect(aoa[6].slice(11)).toEqual([12.5, 125, 62.5, 37.5, -12.5, 137.5]);
+  });
+  it("totals sum full-precision values and flags unpriced items", () => {
+    const t = aoa[9];
+    expect(t[1]).toBe("TOTAL");
+    expect(t[12]).toBeCloseTo(125 + 10, 6);
+    expect(t[16]).toBeCloseTo(137.5 + 30, 6);
+    expect(aoa[11][0]).toContain("1 item(s)");
+  });
+  it("omits value columns when not requested (cost-hidden roles)", () => {
+    const plain = XLSX.utils.sheet_to_json<any[]>(mk(false).Sheets["In Store"], { header: 1, blankrows: true });
+    expect(plain[5]).toHaveLength(11);
+  });
+});
+
 describe("validatePeriod", () => {
   it("accepts a valid range", () => expect(validatePeriod("2026-10-01", "2026-10-07", "2026-10-07")).toBeNull());
   it("requires both dates", () => expect(validatePeriod("", "2026-10-07", "2026-10-07")).toMatch(/required/));

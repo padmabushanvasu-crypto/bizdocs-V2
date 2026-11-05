@@ -303,10 +303,11 @@ function StockRegisterInner() {
     try {
       const { from, to, includeAtVendor, includeZeroRows } = opts;
       const free = await fetchStockRegisterPeriod(from, to, "free", { includeZeroRows });
-      const sheets = [{ sheetName: "In Store", title: "Stock Register — In Store", rows: free }];
+      const includeValues = !hideCosts;
+      const sheets = [{ sheetName: "In Store", title: "Stock Register — In Store", rows: free, includeValues }];
       if (includeAtVendor) {
         const inProcess = await fetchStockRegisterPeriod(from, to, "in_process", { includeZeroRows });
-        sheets.push({ sheetName: "At Vendor", title: "Stock Register — At Vendor", rows: inProcess });
+        sheets.push({ sheetName: "At Vendor", title: "Stock Register — At Vendor", rows: inProcess, includeValues });
       }
       const { workbook, filename } = buildStockPeriodWorkbook(sheets, {
         companyName,
