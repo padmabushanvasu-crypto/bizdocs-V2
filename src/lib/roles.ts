@@ -65,3 +65,6 @@ export const ROLE_PERMISSIONS = {
     hidePricing: true,
   },
 } as const;
+
+// Roles allowed to see build cost. Mirrors the server check in rpc_awo_cost_breakdown.
+export const COST_VIEW_ROLES: string[] = ["admin", "finance", "purchase_team", "storekeeper"];

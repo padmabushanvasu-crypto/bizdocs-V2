@@ -49,6 +49,8 @@ import { ReportDamageDialog } from "@/components/ReportDamageDialog";
 import { DispositionDamageDialog } from "@/components/DispositionDamageDialog";
 import { AwoDeleteDialog } from "@/components/AwoDeleteDialog";
 import { AwoSerialsPanel } from "@/components/AwoSerialsPanel";
+import { AwoBuildCostPanel } from "@/components/AwoBuildCostPanel";
+import { COST_VIEW_ROLES } from "@/lib/roles";
 import { format, differenceInDays, parseISO } from "date-fns";
 
 type StockAction = 'none' | 'return_all' | 'partial' | 'scrap_all';
@@ -99,7 +101,7 @@ export default function AssemblyWorkOrderDetail() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user, role } = useAuth();
 
   const [confirmCompleteOpen, setConfirmCompleteOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -731,6 +733,11 @@ export default function AssemblyWorkOrderDetail() {
           </div>
         </div>
       </div>
+
+      {/* Build Cost — completed sub-assembly builds, cost-view roles only */}
+      {awo.awo_type === 'sub_assembly' && awo.status === 'complete' && COST_VIEW_ROLES.includes(role ?? '') && (
+        <AwoBuildCostPanel awo={awo} />
+      )}
 
       {/* Material Issue section */}
       {latestMir && (

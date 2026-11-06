@@ -33,6 +33,7 @@ export interface AssemblyWorkOrder {
   item_code: string | null;
   item_description: string | null;
   quantity_to_build: number;
+  actual_quantity_produced?: number | null;
   bom_variant_id: string | null;
   status: 'draft' | 'pending_materials' | 'in_progress' | 'awaiting_store' | 'complete' | 'cancelled';
   serial_number: string | null;
@@ -1379,4 +1380,35 @@ export async function fetchGrnAllocationsForAwoLines(
     map[lineId].push({ grn_number: grnNumber, qty_allocated: Number(row.qty_allocated ?? 0) });
   }
   return map;
+}
+
+// ── fetchAwoCostBreakdown ─────────────────────────────────────────────────────
+// Read-only build cost for a COMPLETED work order. Server enforces role
+// (admin / finance / purchase_team / storekeeper) and status = 'complete'.
+// Rate = items.standard_cost; nested sub-assemblies roll up their BOM.
+
+export interface AwoCostLine {
+  line_id: string;
+  item_id: string;
+  consumed_qty: number;
+  unit_rate: number;
+  rate_source: 'standard_cost' | 'bom_rollup' | 'unpriced';
+  line_cost: number;
+  unpriced_children: number;
+}
+
+export async function fetchAwoCostBreakdown(awoId: string): Promise<AwoCostLine[]> {
+  const { data, error } = await (supabase as any).rpc("rpc_awo_cost_breakdown", {
+    p_awo_id: awoId,
+  });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as any[]).map((r) => ({
+    line_id: r.line_id,
+    item_id: r.item_id,
+    consumed_qty: Number(r.consumed_qty ?? 0),
+    unit_rate: Number(r.unit_rate ?? 0),
+    rate_source: r.rate_source,
+    line_cost: Number(r.line_cost ?? 0),
+    unpriced_children: Number(r.unpriced_children ?? 0),
+  }));
 }
