@@ -500,8 +500,8 @@ function Stage1Table({
                 <tr className={`transition-colors border-l-4 ${rowAccent} ${rowBg}`}>
                   <td className="px-3 py-2 text-slate-400 text-xs">{idx + 1}</td>
                   <td className="px-3 py-2 font-mono text-xs text-slate-500">{line.item_code || "—"}</td>
-                  <td className="px-3 py-2 font-medium text-slate-800 dark:text-slate-100 max-w-[200px]">
-                    <span className="block truncate" title={line.description}>{line.description}</span>
+                  <td className="px-3 py-2 font-medium text-slate-800 dark:text-slate-100 min-w-[220px] max-w-[300px]">
+                    <span className="block line-clamp-2 leading-snug whitespace-normal break-words" title={line.description}>{line.description}</span>
                     {line.nature_of_process && (
                       <p className="text-xs text-muted-foreground mt-0.5 truncate" title={line.nature_of_process}>
                         Process: {line.nature_of_process}
