@@ -751,6 +751,38 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
       .in('dc_line_item_id', originalLines.map((l) => l.id));
     grnReferencedLineIds = new Set((receiptedRows ?? []).map((r: any) => r.dc_line_item_id));
   }
+  // Which of those lines have a LIVE GRN (not deleted/cancelled). A deleted
+  // GRN's lines still hold the FK (so the row can't be deleted+reinserted),
+  // but nothing was received on them — the line's item may still be changed.
+  // A live GRN pins the item: its own lines and postings are keyed to it.
+  const liveGrnLineIds = new Set<string>();
+  if (grnReferencedLineIds.size > 0) {
+    // Narrow structural view of the client for these two reads — the generated
+    // types make `.in()` on these tables blow TS's instantiation depth.
+    type InQuery<Row> = { select: (cols: string) => { in: (col: string, vals: string[]) => PromiseLike<{ data: Row[] | null; error: Error | null }> } };
+    const sb = supabase as unknown as { from: <Row>(table: string) => InQuery<Row> };
+    const { data: grnLineRows, error: grnLineErr } = await sb
+      .from<{ dc_line_item_id: string; grn_id: string | null }>('grn_line_items')
+      .select('dc_line_item_id, grn_id')
+      .in('dc_line_item_id', [...grnReferencedLineIds]);
+    if (grnLineErr) throw grnLineErr;
+    const grnLines = grnLineRows ?? [];
+    const grnIds = [...new Set(grnLines.map((r) => r.grn_id).filter((v): v is string => !!v))];
+    if (grnIds.length > 0) {
+      const { data: grnRows, error: grnErr } = await sb
+        .from<{ id: string; status: string | null }>('grns')
+        .select('id, status')
+        .in('id', grnIds);
+      if (grnErr) throw grnErr;
+      const liveGrnIds = new Set(
+        (grnRows ?? []).filter((g) => g.status !== 'deleted' && g.status !== 'cancelled').map((g) => g.id),
+      );
+      for (const r of grnLines) {
+        if (r.grn_id && liveGrnIds.has(r.grn_id)) liveGrnLineIds.add(r.dc_line_item_id);
+      }
+    }
+  }
+
   // The subset of GRN-referenced lines not already covered by the job-card
   // track above — these get the plain in-place-update path via
   // rpc_update_dc_line_qty_plain (no job-card ledger to route through).
@@ -769,26 +801,36 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
     }
   }
 
-  // Fail loud, before any write: the in-place UPDATE used for GRN-referenced
-  // lines (below) deliberately never writes item_id — existing GRN lines and
-  // their stock postings are keyed to the line's original item. Re-picking a
-  // different item on such a line used to save the new item_code/description
-  // while silently keeping the old item_id, so the DC's text and its stock
-  // link disagreed (DC-26-27/1349: GRN conversion options followed the old
-  // item, and the legacy delta below posted a one-sided return). Deleted GRNs
-  // still hold the reference, so they count. Only a genuine swap between two
-  // linked items is blocked — a line that was or becomes unlinked is left to
-  // the existing checks.
+  // Item changed on a GRN-referenced line. These lines are updated in place
+  // (never deleted+reinserted), and that update used to leave item_id alone
+  // while saving the new item_code/description — the DC's text and its stock
+  // link then disagreed silently (DC-26-27/1349). Now:
+  //   • only deleted/cancelled GRNs reference the line → the item change is
+  //     saved in place (see the receipted-plain-line update below); stock
+  //     follows when the DC is re-approved (rpc_issue_dc_plain_lines).
+  //   • a live GRN, or a job-card link, pins the item → refuse before any
+  //     write, with the way out spelled out.
+  // Only a genuine swap between two linked items counts — a line that was or
+  // becomes unlinked is left to the existing checks.
+  const itemSwapLineIds = new Set<string>();
   for (const lineId of grnReferencedLineIds) {
     const orig = originalLines.find((l) => l.id === lineId);
     const incoming = lineItems.find((li) => li.id === lineId);
-    if (orig?.item_id && incoming?.item_id && incoming.item_id !== orig.item_id) {
-      const label = orig.serial_number != null ? `Line ${orig.serial_number}` : 'This line';
+    if (!(orig?.item_id && incoming?.item_id && incoming.item_id !== orig.item_id)) continue;
+    const label = orig.serial_number != null ? `Line ${orig.serial_number}` : 'This line';
+    if (liveGrnLineIds.has(lineId)) {
       throw new Error(
-        `${label}: the item can't be changed because a GRN has already been raised against this line (deleted GRNs count too). ` +
-        `Nothing was saved. Put the original item back to save your other changes, and ask the admin to re-link the line to the new item.`
+        `${label}: a GRN has been raised against this line, so its item can't be changed. Nothing was saved. ` +
+        `Delete that GRN first, then change the item here — or put the original item back to save your other changes.`
       );
     }
+    if (orig.job_card_id) {
+      throw new Error(
+        `${label}: this line is linked to a job card, so its item can't be changed. Nothing was saved. ` +
+        `Put the original item back to save your other changes.`
+      );
+    }
+    itemSwapLineIds.add(lineId);
   }
 
   if (isIssued) {
@@ -980,6 +1022,9 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
     const incoming = lineItems.find((li) => li.id === orig.id);
     if (incoming) {
       const { error: lineUpdErr } = await supabase.from("dc_line_items").update({
+        // item_id is written only for a validated swap (no live GRN — see
+        // itemSwapLineIds above); otherwise the stored link is left alone.
+        ...(itemSwapLineIds.has(orig.id) ? { item_id: incoming.item_id } : {}),
         description: incoming.description,
         item_code: incoming.item_code || null,
         hsn_sac_code: incoming.hsn_sac_code || null,
