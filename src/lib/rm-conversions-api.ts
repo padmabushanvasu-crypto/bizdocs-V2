@@ -97,16 +97,12 @@ export interface RmConversionOutputPayload {
   notes?: string | null;
 }
 
-// Either `outputs` (one or more lines) or the older single-output fields.
-// The RPC accepts both; when `outputs` is present and non-empty it wins.
+// The RPC still accepts the older single-output fields (output_item_id,
+// output_qty_base, ...) for callers that predate `outputs`; this client
+// always sends `outputs`.
 export interface RmConversionPostPayload {
   awo_id?: string | null;
-  outputs?: RmConversionOutputPayload[];
-  output_item_id?: string;
-  output_qty_base?: number;
-  output_unit?: string;
-  output_qty_alt?: number | null;
-  output_alt_unit?: string | null;
+  outputs: RmConversionOutputPayload[];
   notes?: string | null;
   inputs: RmConversionInputPayload[];
 }

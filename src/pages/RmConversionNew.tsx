@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { ChevronLeft, Plus, Trash2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import {
   postRmConversion,
   fetchSuggestedComponents,
   type RmConversionInputPayload,
+  type RmConversionOutputPayload,
   type SuggestedComponent,
 } from "@/lib/rm-conversions-api";
 
@@ -55,6 +56,25 @@ function newInputRow(): InputRow {
   };
 }
 
+// One produced item. A conversion has one or more — e.g. a tube cut into
+// several drawing-number lengths, each with its own quantity. There is no
+// template: the office adds a row per item that actually came out.
+interface OutputRow {
+  key: string;
+  item: Item | null;
+  itemSearch: string;
+  qty: string; // in the item's own base unit
+  altQty: string;
+}
+
+function newOutputRow(): OutputRow {
+  return { key: crypto.randomUUID(), item: null, itemSearch: "", qty: "", altQty: "" };
+}
+
+function isBlankOutputRow(o: OutputRow): boolean {
+  return !o.item && o.itemSearch.trim() === "" && o.qty.trim() === "" && o.altQty.trim() === "";
+}
+
 // Mirrors rpc_post_rm_conversion's own tolerance math exactly (read from the
 // live function body, not guessed): implied_factor = qty_base / qty_alt,
 // warn when abs(implied - item.alt_factor) / item.alt_factor * 100 exceeds
@@ -75,12 +95,10 @@ function toleranceWarning(item: Item, qty: number, altQty: number, tolerancePct:
 export default function RmConversionNew() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const [rows, setRows] = useState<InputRow[]>([newInputRow()]);
-  const [outputItem, setOutputItem] = useState<Item | null>(null);
-  const [outputSearch, setOutputSearch] = useState("");
-  const [outputQty, setOutputQty] = useState("");
-  const [outputAltQty, setOutputAltQty] = useState("");
+  const [outputs, setOutputs] = useState<OutputRow[]>([newOutputRow()]);
   const [notes, setNotes] = useState("");
   const [suggestionLoadingId, setSuggestionLoadingId] = useState<string | null>(null);
 
@@ -94,13 +112,45 @@ export default function RmConversionNew() {
     enabled: !!firstInputItem,
   });
 
+  const updateOutput = (key: string, patch: Partial<OutputRow>) => {
+    setOutputs((prev) => prev.map((o) => (o.key === key ? { ...o, ...patch } : o)));
+  };
+  const removeOutput = (key: string) => {
+    setOutputs((prev) => (prev.length <= 1 ? prev : prev.filter((o) => o.key !== key)));
+  };
+  const addOutput = () => setOutputs((prev) => [...prev, newOutputRow()]);
+
+  // Items chosen on more than one output row. The RPC rejects this too
+  // ("listed more than once") — flagged inline so it is fixed before posting.
+  const duplicateOutputItemIds = useMemo(() => {
+    const seen = new Set<string>();
+    const dup = new Set<string>();
+    for (const o of outputs) {
+      if (!o.item) continue;
+      if (seen.has(o.item.id)) dup.add(o.item.id);
+      seen.add(o.item.id);
+    }
+    return dup;
+  }, [outputs]);
+
+  // Suggestions not yet on an output row.
+  const remainingSuggestions = useMemo(() => {
+    const chosen = new Set(outputs.map((o) => o.item?.id).filter(Boolean) as string[]);
+    return suggestedComponents.filter((s) => !chosen.has(s.item_id));
+  }, [suggestedComponents, outputs]);
+
+  // Adds a suggested item as an output row: fills the first blank row if
+  // there is one, otherwise appends. Never replaces a row already in use.
   const selectSuggestedComponent = async (s: SuggestedComponent) => {
     setSuggestionLoadingId(s.item_id);
     try {
       const item = await fetchItem(s.item_id);
-      setOutputItem(item);
-      setOutputSearch("");
-      setOutputAltQty("");
+      setOutputs((prev) => {
+        if (prev.some((o) => o.item?.id === item.id)) return prev;
+        const blankIdx = prev.findIndex(isBlankOutputRow);
+        if (blankIdx === -1) return [...prev, { ...newOutputRow(), item }];
+        return prev.map((o, i) => (i === blankIdx ? { ...o, item, itemSearch: "", altQty: "" } : o));
+      });
     } catch (err: any) {
       toast({ title: "Could not load item", description: err.message, variant: "destructive" });
     } finally {
@@ -131,20 +181,13 @@ export default function RmConversionNew() {
 
   const resetForm = () => {
     setRows([newInputRow()]);
-    setOutputItem(null);
-    setOutputSearch("");
-    setOutputQty("");
-    setOutputAltQty("");
+    setOutputs([newOutputRow()]);
     setNotes("");
     idempotencyKeyRef.current = crypto.randomUUID();
   };
 
   const postMutation = useMutation({
     mutationFn: async () => {
-      if (!outputItem) throw new Error("Select an output item.");
-      const outQty = Number(outputQty);
-      if (!(outQty > 0)) throw new Error("Output quantity must be positive.");
-
       const inputs: RmConversionInputPayload[] = [];
       for (const r of rows) {
         if (!r.item) continue; // skip fully-empty rows silently
@@ -176,27 +219,56 @@ export default function RmConversionNew() {
       }
       if (inputs.length === 0) throw new Error("Add at least one input line.");
 
-      const outAltQty = outputAltQty.trim() !== "" ? Number(outputAltQty) : null;
+      // Pre-flight checks only — the RPC is the real gate and re-checks all
+      // of this (positive qty, unit, no item twice). A row with something
+      // typed but no item picked is an error, never silently dropped: a
+      // quantity the office entered must not vanish from the posting.
+      const outputLines: RmConversionOutputPayload[] = [];
+      const summary: string[] = [];
+      const seenOutputItems = new Set<string>();
+      outputs.forEach((o, idx) => {
+        if (isBlankOutputRow(o)) return;
+        if (!o.item) throw new Error(`Output line ${idx + 1}: pick an item from the list.`);
+        const qty = Number(o.qty);
+        if (!(qty > 0)) throw new Error(`Enter a positive quantity for output ${o.item.item_code}.`);
+        if (seenOutputItems.has(o.item.id)) {
+          throw new Error(`Output ${o.item.item_code} is listed more than once — combine it into one line.`);
+        }
+        seenOutputItems.add(o.item.id);
+        const altQty = o.altQty.trim() !== "" ? Number(o.altQty) : null;
+        if (altQty != null && !(altQty > 0)) {
+          throw new Error(`Output ${o.item.item_code}: alt qty must be positive, or left blank.`);
+        }
+        outputLines.push({
+          item_id: o.item.id,
+          qty_base: qty,
+          unit: o.item.unit,
+          qty_alt: altQty,
+          alt_unit: altQty != null ? (o.item.alt_unit ?? null) : null,
+        });
+        summary.push(`${o.item.item_code} × ${formatNumber(qty)}`);
+      });
+      if (outputLines.length === 0) throw new Error("Add at least one output line.");
 
-      return postRmConversion(
+      const result = await postRmConversion(
         {
           awo_id: null,
-          output_item_id: outputItem.id,
-          output_qty_base: outQty,
-          output_unit: outputItem.unit,
-          output_qty_alt: outAltQty,
-          output_alt_unit: outAltQty != null ? (outputItem.alt_unit ?? null) : null,
+          outputs: outputLines,
           notes: notes.trim() || null,
           inputs,
         },
         idempotencyKeyRef.current
       );
+      return { result, summary };
     },
-    onSuccess: (result) => {
+    onSuccess: ({ summary }) => {
+      const shown = summary.slice(0, 3).join(", ");
+      const more = summary.length > 3 ? ` +${summary.length - 3} more` : "";
       toast({
         title: "RM conversion posted",
-        description: `${result.output_item_code}: ${formatNumber(result.output_qty_base)} produced.`,
+        description: `${summary.length} output ${summary.length === 1 ? "line" : "lines"}: ${shown}${more}.`,
       });
+      queryClient.invalidateQueries({ queryKey: ["rm-conversions"] });
       resetForm();
       navigate("/rm-conversions");
     },
@@ -232,7 +304,7 @@ export default function RmConversionNew() {
         <h1 className="text-2xl font-bold text-slate-900 tracking-tight">New RM Conversion</h1>
         <p className="text-sm text-slate-500 mt-1">
           Consume raw material inputs (from store or drawn directly off an un-stored GRN line) and
-          produce one output item.
+          produce one or more output items — add a line for each item that came out.
         </p>
       </div>
 
@@ -434,64 +506,101 @@ export default function RmConversionNew() {
         </div>
       </div>
 
-      {/* ── Output ───────────────────────────────────────────────────────── */}
+      {/* ── Outputs ──────────────────────────────────────────────────────── */}
       <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4 space-y-3">
-        <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">Output</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="md:col-span-2">
-            <Label className="text-xs">Item</Label>
-            {!outputItem && outputSearch.trim() === "" && suggestedComponents.length > 0 && (
-              <div className="mb-1.5 rounded-md border border-blue-200 bg-blue-50 p-2">
-                <p className="text-[10px] font-semibold text-blue-700 uppercase tracking-wide mb-1">
-                  Suggested for {firstInputItem?.item_code}
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {suggestedComponents.map((s) => (
-                    <button
-                      key={s.item_id}
-                      type="button"
-                      disabled={suggestionLoadingId === s.item_id}
-                      onClick={() => selectSuggestedComponent(s)}
-                      className="text-xs bg-white border border-blue-200 rounded px-2 py-1 hover:bg-blue-100 transition-colors disabled:opacity-50"
-                    >
-                      <span className="font-mono">{s.item_code}</span> — {s.description}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            <ItemSuggest
-              value={outputItem ? `${outputItem.item_code} — ${outputItem.description}` : outputSearch}
-              onChange={(v) => { setOutputSearch(v); setOutputItem(null); }}
-              onSelect={(item) => { setOutputItem(item); setOutputSearch(""); setOutputAltQty(""); }}
-              placeholder="Search output item..."
-            />
-          </div>
-          <div>
-            <Label className="text-xs">Qty produced {outputItem ? `(${outputItem.unit})` : ""}</Label>
-            <Input
-              type="number"
-              min={0}
-              value={outputQty}
-              onChange={(e) => setOutputQty(e.target.value)}
-              disabled={!outputItem}
-            />
-          </div>
-          {outputItem?.alt_unit && (
-            <div>
-              <Label className="text-xs text-indigo-600 dark:text-indigo-400">
-                Alt Qty ({outputItem.alt_unit})
-              </Label>
-              <Input
-                type="number"
-                min={0}
-                value={outputAltQty}
-                onChange={(e) => setOutputAltQty(e.target.value)}
-                className="border-indigo-200 focus-visible:ring-indigo-400"
-              />
-            </div>
-          )}
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">Outputs</h2>
+          <Button variant="outline" size="sm" onClick={addOutput} className="gap-1.5">
+            <Plus className="h-3.5 w-3.5" /> Add Output
+          </Button>
         </div>
+
+        {remainingSuggestions.length > 0 && (
+          <div className="rounded-md border border-blue-200 bg-blue-50 p-2">
+            <p className="text-[10px] font-semibold text-blue-700 uppercase tracking-wide mb-1">
+              Suggested for {firstInputItem?.item_code} — tap to add
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {remainingSuggestions.map((s) => (
+                <button
+                  key={s.item_id}
+                  type="button"
+                  disabled={suggestionLoadingId === s.item_id}
+                  onClick={() => selectSuggestedComponent(s)}
+                  className="text-xs text-left bg-white border border-blue-200 rounded px-2 py-1 hover:bg-blue-100 transition-colors disabled:opacity-50"
+                >
+                  <span className="font-mono">{s.item_code}</span> — {s.description}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-3">
+          {outputs.map((o, idx) => {
+            const isDuplicate = !!o.item && duplicateOutputItemIds.has(o.item.id);
+            return (
+              <div key={o.key} className="rounded-lg border border-slate-200 p-3 space-y-2">
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <Label className="text-xs">Output {idx + 1} — Item</Label>
+                    <ItemSuggest
+                      value={o.item ? `${o.item.item_code} — ${o.item.description}` : o.itemSearch}
+                      onChange={(v) => updateOutput(o.key, { itemSearch: v, item: null })}
+                      onSelect={(item) => updateOutput(o.key, { item, itemSearch: "", altQty: "" })}
+                      placeholder="Search drawing no. or description..."
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeOutput(o.key)}
+                    disabled={outputs.length <= 1}
+                    className="mt-6 h-8 w-8 flex items-center justify-center rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+                    title="Remove output"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {o.item && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 items-end">
+                    <div>
+                      <Label className="text-xs">Qty produced ({o.item.unit})</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={o.qty}
+                        onChange={(e) => updateOutput(o.key, { qty: e.target.value })}
+                      />
+                    </div>
+                    {o.item.alt_unit && (
+                      <div>
+                        <Label className="text-xs text-indigo-600 dark:text-indigo-400">
+                          Alt Qty ({o.item.alt_unit})
+                        </Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={o.altQty}
+                          onChange={(e) => updateOutput(o.key, { altQty: e.target.value })}
+                          className="border-indigo-200 focus-visible:ring-indigo-400"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {isDuplicate && (
+                  <div className="flex items-start gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                    <span>This item is on more than one output line — combine it into one line.</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
         <div>
           <Label className="text-xs">Notes</Label>
           <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
