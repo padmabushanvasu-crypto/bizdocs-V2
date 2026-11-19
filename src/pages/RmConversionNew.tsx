@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { ChevronLeft, Plus, Trash2, AlertTriangle } from "lucide-react";
@@ -117,6 +117,19 @@ export default function RmConversionNew() {
     setOutputs((prev) => (prev.length <= 1 ? prev : prev.filter((o) => o.key !== key)));
   };
   const addOutput = () => setOutputs((prev) => [...prev, newOutputRow()]);
+
+  // A newly added output row lands at the bottom of the page, where the item
+  // picker's dropdown would open below the screen edge. Bring the new row to
+  // the middle of the screen so its search results are visible straight away.
+  const outputRowRefs = useRef(new Map<string, HTMLDivElement>());
+  const prevOutputCountRef = useRef(outputs.length);
+  useEffect(() => {
+    if (outputs.length > prevOutputCountRef.current) {
+      const last = outputs[outputs.length - 1];
+      outputRowRefs.current.get(last.key)?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    }
+    prevOutputCountRef.current = outputs.length;
+  }, [outputs]);
 
   // Items chosen on more than one output row. The RPC rejects this too
   // ("listed more than once") — flagged inline so it is fixed before posting.
@@ -530,7 +543,14 @@ export default function RmConversionNew() {
           {outputs.map((o, idx) => {
             const isDuplicate = !!o.item && duplicateOutputItemIds.has(o.item.id);
             return (
-              <div key={o.key} className="rounded-lg border border-slate-200 p-3 space-y-2">
+              <div
+                key={o.key}
+                ref={(el) => {
+                  if (el) outputRowRefs.current.set(o.key, el);
+                  else outputRowRefs.current.delete(o.key);
+                }}
+                className="rounded-lg border border-slate-200 p-3 space-y-2"
+              >
                 <div className="flex items-start gap-2">
                   <div className="flex-1 min-w-0">
                     <Label className="text-xs">Output {idx + 1} — Item</Label>
@@ -540,6 +560,18 @@ export default function RmConversionNew() {
                       onSelect={(item) => updateOutput(o.key, { item, itemSearch: "", altQty: "" })}
                       placeholder="Search drawing no. or description..."
                     />
+                    {o.item && (
+                      // Several parts share a drawing no. and differ only by the
+                      // length in the description, and a phone-width box cuts the
+                      // description off — so spell it out, with the store qty, to
+                      // confirm the right item was picked.
+                      <div className="mt-1 text-xs text-slate-500">
+                        <p className="md:hidden break-words">{o.item.description}</p>
+                        <p>
+                          In store now: {formatNumber(o.item.stock_free ?? 0)} {o.item.unit}
+                        </p>
+                      </div>
+                    )}
                   </div>
                   <button
                     type="button"
