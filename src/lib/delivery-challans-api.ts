@@ -774,6 +774,28 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
     }
   }
 
+  // Fail loud, before any write: the in-place UPDATE used for GRN-referenced
+  // lines (below) deliberately never writes item_id — existing GRN lines and
+  // their stock postings are keyed to the line's original item. Re-picking a
+  // different item on such a line used to save the new item_code/description
+  // while silently keeping the old item_id, so the DC's text and its stock
+  // link disagreed (DC-26-27/1349: GRN conversion options followed the old
+  // item, and the legacy delta below posted a one-sided return). Deleted GRNs
+  // still hold the reference, so they count. Only a genuine swap between two
+  // linked items is blocked — a line that was or becomes unlinked is left to
+  // the existing checks.
+  for (const lineId of grnReferencedLineIds) {
+    const orig = originalLines.find((l) => l.id === lineId);
+    const incoming = lineItems.find((li) => li.id === lineId);
+    if (orig?.item_id && incoming?.item_id && incoming.item_id !== orig.item_id) {
+      const label = orig.serial_number != null ? `Line ${orig.serial_number}` : 'This line';
+      throw new Error(
+        `${label}: the item can't be changed because a GRN has already been raised against this line (deleted GRNs count too). ` +
+        `Nothing was saved. Put the original item back to save your other changes, and ask the admin to re-link the line to the new item.`
+      );
+    }
+  }
+
   if (isIssued) {
     // Validate everything BEFORE any write — fail loud, never half-edit.
     for (const orig of existingJobCardLines) {
