@@ -29,8 +29,7 @@ interface InputRow {
   grnLine: GrnLineAvailableForConversion | null;
   qty: string; // primary qty, in the item's own base unit
   altQty: string;
-  scrapQty: string;
-  returnQty: string;
+  scrapQty: string; // offcut/scrap — a part OF qty, not on top of it
   notes: string;
   pickerOpen: boolean;
   // "GRN-direct" is off by default and hidden behind a disclosure link —
@@ -49,7 +48,6 @@ function newInputRow(): InputRow {
     qty: "",
     altQty: "",
     scrapQty: "0",
-    returnQty: "0",
     notes: "",
     pickerOpen: false,
     showSourceToggle: false,
@@ -198,9 +196,11 @@ export default function RmConversionNew() {
         }
         const altQty = r.altQty.trim() !== "" ? Number(r.altQty) : null;
         const scrap = Number(r.scrapQty || 0);
-        const ret = Number(r.returnQty || 0);
-        if (scrap + ret > qty) {
-          throw new Error(`${r.item.item_code}: scrap + return cannot exceed the drawn quantity.`);
+        if (!(scrap >= 0)) {
+          throw new Error(`${r.item.item_code}: scrap quantity cannot be negative.`);
+        }
+        if (scrap > qty) {
+          throw new Error(`${r.item.item_code}: scrap cannot exceed the quantity used.`);
         }
         inputs.push({
           item_id: r.item.id,
@@ -213,7 +213,6 @@ export default function RmConversionNew() {
           qty_alt: altQty,
           alt_unit: altQty != null ? (r.item.alt_unit ?? null) : null,
           scrap_qty_base: scrap,
-          return_qty_base: ret,
           notes: r.notes.trim() || null,
         });
       }
@@ -458,21 +457,12 @@ export default function RmConversionNew() {
                       )}
 
                       <div>
-                        <Label className="text-xs">Scrap Qty</Label>
+                        <Label className="text-xs">Of which scrap / offcut ({row.item.unit})</Label>
                         <Input
                           type="number"
                           min={0}
                           value={row.scrapQty}
                           onChange={(e) => updateRow(row.key, { scrapQty: e.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-xs">Return Qty</Label>
-                        <Input
-                          type="number"
-                          min={0}
-                          value={row.returnQty}
-                          onChange={(e) => updateRow(row.key, { returnQty: e.target.value })}
                         />
                       </div>
                     </div>

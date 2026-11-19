@@ -84,8 +84,7 @@ function InputsDetail({ rmConversionId }: { rmConversionId: string }) {
           <th className="px-3 py-1.5 text-left font-semibold text-slate-500 uppercase tracking-wide">Source</th>
           <th className="px-3 py-1.5 text-right font-semibold text-slate-500 uppercase tracking-wide">Qty</th>
           <th className="px-3 py-1.5 text-right font-semibold text-indigo-600 uppercase tracking-wide">Alt Qty</th>
-          <th className="px-3 py-1.5 text-right font-semibold text-slate-500 uppercase tracking-wide">Scrap</th>
-          <th className="px-3 py-1.5 text-right font-semibold text-slate-500 uppercase tracking-wide">Return</th>
+          <th className="px-3 py-1.5 text-right font-semibold text-slate-500 uppercase tracking-wide">Of which scrap</th>
         </tr>
       </thead>
       <tbody>
@@ -101,7 +100,6 @@ function InputsDetail({ rmConversionId }: { rmConversionId: string }) {
               {i.qty_alt != null ? `${formatNumber(i.qty_alt)} ${i.alt_unit ?? ""}` : "—"}
             </td>
             <td className="px-3 py-1.5 text-right font-mono tabular-nums">{i.scrap_qty_base > 0 ? formatNumber(i.scrap_qty_base) : "—"}</td>
-            <td className="px-3 py-1.5 text-right font-mono tabular-nums">{i.return_qty_base > 0 ? formatNumber(i.return_qty_base) : "—"}</td>
           </tr>
         ))}
       </tbody>

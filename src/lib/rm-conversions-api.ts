@@ -79,8 +79,12 @@ export interface RmConversionInputPayload {
   qty_base: number;
   qty_alt?: number | null;
   alt_unit?: string | null;
+  // Offcut/scrap is a part OF qty_base (the whole drawn quantity leaves the
+  // store once); the RPC records it as a label on that draw, not a second
+  // deduction. There is deliberately no "return" quantity: the RPC rejects
+  // one, because the returned part was never put back into stock — enter
+  // only what was actually used as the quantity.
   scrap_qty_base: number;
-  return_qty_base: number;
   notes?: string | null;
 }
 
@@ -373,7 +377,6 @@ export interface RmConversionInputRow {
   alt_unit: string | null;
   implied_factor: number | null;
   scrap_qty_base: number;
-  return_qty_base: number;
   notes: string | null;
 }
 
@@ -385,7 +388,7 @@ export async function fetchRmConversionInputs(rmConversionId: string): Promise<R
   const { data, error } = await (supabase as any)
     .from("rm_conversion_inputs")
     .select(
-      "id, item_id, source, grn_line_item_id, entered_qty, entered_unit, qty_base, qty_alt, alt_unit, implied_factor, scrap_qty_base, return_qty_base, notes, items(item_code, description)"
+      "id, item_id, source, grn_line_item_id, entered_qty, entered_unit, qty_base, qty_alt, alt_unit, implied_factor, scrap_qty_base, notes, items(item_code, description)"
     )
     .eq("company_id", companyId)
     .eq("rm_conversion_id", rmConversionId)
@@ -406,7 +409,6 @@ export async function fetchRmConversionInputs(rmConversionId: string): Promise<R
     alt_unit: r.alt_unit ?? null,
     implied_factor: r.implied_factor != null ? Number(r.implied_factor) : null,
     scrap_qty_base: Number(r.scrap_qty_base ?? 0),
-    return_qty_base: Number(r.return_qty_base ?? 0),
     notes: r.notes ?? null,
   }));
 }
