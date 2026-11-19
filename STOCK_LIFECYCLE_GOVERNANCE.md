@@ -174,6 +174,15 @@ Reopening closed QC follows reverse-then-repost: reverse the prior rejection leg
 
 Merge pattern: repoint order/transaction tables to the keeper; **never repoint `stock_ledger`** (each item's balance chain is internally consistent); fold stranded stock via `manual_adjustment` with `item_merge` reference. `~MERGED` / `~DUPLICATE-IMPORT` suffixes mark retired records. Watch `bom_processing_routes` unique constraint on repoints. Duplicate items are the root cause of phantom-shortage bugs (BOM lines pointing at inactive duplicates create ghost MIR lines) — the structural fix (unique functional index on normalized `item_code`) is designed but not yet applied.
 
+### 3.8 DC edit after issue — the database owns the stock (2026-11-19)
+
+Editing is an integral part of issuing a DC: the team edits issued DCs as normal work and an edit must never affect stock adversely. The model:
+
+- An edit always re-saves the DC as `pending_approval` with `issued_at` NULL. `trg_dc_line_stock_sync` is inert in that state; **stock does not move at edit time**.
+- Stock follows the document when it is re-approved: `rpc_issue_dc_plain_lines` nets every item the DC has posted (`dc_issue`/`dc_return` keyed `reference_type='delivery_challan'`) to the current plain lines — changed qty, added item, **and items no longer on the DC** (item swapped out, line removed). The last case was added 2026-11-19; before that a swapped-out item stayed At Vendor.
+- **The frontend must never post stock for a DC edit.** The client-side `manual_adjustment` "DC quantity edited after issuance — net delta applied" (in `updateDeliveryChallan`) was removed 2026-11-19: the DB reconciliation ignores `manual_adjustment` rows, so every such row was a second movement on top of the DB's own. This path caused the Jul-2026 and Oct-2026 double-posting incidents as well. Do not reintroduce it.
+- GRN-referenced DC lines are updated in place (FK is `ON DELETE RESTRICT`; deleted GRNs still hold it). An item change on such a line is saved (`item_id` written) when only deleted/cancelled GRNs reference it, and refused before any write when a live GRN does. Never save `item_code`/`description` without `item_id` — that is the silent text-vs-link split behind DC-26-27/1349.
+
 ---
 
 ## 4. Ownership Map: Who Writes What
