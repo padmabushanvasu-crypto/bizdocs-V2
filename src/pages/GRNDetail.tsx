@@ -414,6 +414,30 @@ function VerdictBadge({ verdict }: { verdict: string | null | undefined }) {
   );
 }
 
+// ── Live item master text for GRN lines ───────────────────────────────────────
+// grn_line_items.description / drawing_number are copies taken from the DC/PO
+// line when the GRN was created, so a later correction in the item master never
+// reached the screen. The tables below show the linked item's CURRENT master
+// code + description instead (display only — nothing here is saved back), and
+// fall back to the stored text when the line has no item or the lookup hasn't
+// resolved. The stored document text stays available on hover when it differs.
+type ItemMasterText = { item_code: string | null; description: string | null };
+
+function lineDisplayText(
+  line: { item_id: string | null; item_code: string; description: string },
+  itemMaster?: Map<string, ItemMasterText>,
+): { code: string; description: string; documentText: string | null } {
+  const m = line.item_id ? itemMaster?.get(line.item_id) : undefined;
+  const code = (m?.item_code ?? "").trim() || line.item_code;
+  const description = (m?.description ?? "").trim() || line.description;
+  const norm = (v: string | null | undefined) => (v ?? "").replace(/\s+/g, " ").trim().toUpperCase();
+  const differs = norm(code) !== norm(line.item_code) || norm(description) !== norm(line.description);
+  const documentText = differs
+    ? `On document: ${[line.item_code, line.description].filter(Boolean).join(" — ")}`
+    : null;
+  return { code, description, documentText };
+}
+
 // ── Stage 1 — editable table ───────────────────────────────────────────────────
 
 function Stage1Table({
@@ -426,7 +450,9 @@ function Stage1Table({
   conversionOptions = {},
   onConvertItem,
   transformLineIds = [],
+  itemMaster,
 }: {
+  itemMaster?: Map<string, ItemMasterText>;
   lines: S1Line[];
   onChange: (idx: number, field: keyof S1Line, value: unknown) => void;
   disabled?: boolean;
@@ -499,9 +525,14 @@ function Stage1Table({
               <React.Fragment key={line.id}>
                 <tr className={`transition-colors border-l-4 ${rowAccent} ${rowBg}`}>
                   <td className="px-3 py-2 text-slate-400 text-xs">{idx + 1}</td>
-                  <td className="px-3 py-2 font-mono text-xs text-slate-500">{line.item_code || "—"}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-slate-500">{lineDisplayText(line, itemMaster).code || "—"}</td>
                   <td className="px-3 py-2 font-medium text-slate-800 dark:text-slate-100 min-w-[220px] max-w-[300px]">
-                    <span className="block line-clamp-2 leading-snug whitespace-normal break-words" title={line.description}>{line.description}</span>
+                    <span
+                      className="block line-clamp-2 leading-snug whitespace-normal break-words"
+                      title={lineDisplayText(line, itemMaster).documentText ?? lineDisplayText(line, itemMaster).description}
+                    >
+                      {lineDisplayText(line, itemMaster).description}
+                    </span>
                     {line.nature_of_process && (
                       <p className="text-xs text-muted-foreground mt-0.5 truncate" title={line.nature_of_process}>
                         Process: {line.nature_of_process}
@@ -815,8 +846,9 @@ function Stage1Table({
 // ── Stage 1 — read-only table ──────────────────────────────────────────────────
 
 function Stage1ReadOnly({
-  lines, isDcGrn, jobCardIdByDcLine, onReverse,
+  lines, isDcGrn, jobCardIdByDcLine, onReverse, itemMaster,
 }: {
+  itemMaster?: Map<string, ItemMasterText>;
   lines: S1Line[];
   isDcGrn?: boolean;
   jobCardIdByDcLine?: Map<string, string>;
@@ -853,9 +885,12 @@ function Stage1ReadOnly({
               <React.Fragment key={l.id}>
                 <tr className={l.received_qty !== (l.ordered_live ?? l.po_quantity) ? "bg-yellow-50/40" : "bg-white"}>
                   <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left">{idx + 1}</td>
-                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-xs text-slate-500">{l.item_code || "—"}</td>
-                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium text-slate-800">
-                    {l.description}
+                  <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-mono text-xs text-slate-500">{lineDisplayText(l, itemMaster).code || "—"}</td>
+                  <td
+                    className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-left font-medium text-slate-800"
+                    title={lineDisplayText(l, itemMaster).documentText ?? undefined}
+                  >
+                    {lineDisplayText(l, itemMaster).description}
                     {l.nature_of_process && (
                       <p className="text-xs text-muted-foreground mt-0.5">Process: {l.nature_of_process}</p>
                     )}
@@ -2286,6 +2321,29 @@ export default function GRNDetail() {
     enabled: dcLineIds.length > 0,
   });
 
+  // Current item-master code + description for this GRN's lines — display
+  // only (see lineDisplayText). Company-scoped; a failed/unresolved lookup
+  // simply leaves the stored line text on screen.
+  const grnCompanyId = (grn as { company_id?: string } | undefined)?.company_id;
+  const lineItemIds = [...new Set(s1Lines.map(l => l.item_id).filter(Boolean))].sort() as string[];
+  const { data: itemMasterById } = useQuery({
+    queryKey: ["grn-line-item-master", grnCompanyId, lineItemIds.join(",")],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("items")
+        .select("id, item_code, description")
+        .eq("company_id", grnCompanyId as string)
+        .in("id", lineItemIds);
+      if (error) throw error;
+      const m = new Map<string, ItemMasterText>();
+      for (const row of data ?? []) {
+        m.set(row.id, { item_code: row.item_code ?? null, description: row.description ?? null });
+      }
+      return m;
+    },
+    enabled: !!grnCompanyId && lineItemIds.length > 0,
+  });
+
   // ── Stage 2 state ─────────────────────────────────────────────────────────
 
   const [qcRows,        setQcRows]        = useState<QCRow[]>([]);
@@ -3588,6 +3646,7 @@ export default function GRNDetail() {
               conversionOptions={conversionOptions}
               onConvertItem={convertS1LineItem}
               transformLineIds={transformLineIds}
+              itemMaster={itemMasterById}
             />
           ) : (
             <Stage1ReadOnly
@@ -3595,6 +3654,7 @@ export default function GRNDetail() {
               isDcGrn={!!g.linked_dc_id}
               jobCardIdByDcLine={jobCardIdByDcLine}
               onReverse={setReverseGrnLine}
+              itemMaster={itemMasterById}
             />
           )}
 
