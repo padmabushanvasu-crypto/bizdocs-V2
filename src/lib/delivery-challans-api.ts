@@ -2,13 +2,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
 import { addStockLedgerEntry } from "@/lib/assembly-orders-api";
 import { getNextDocNumber } from "@/lib/doc-number-utils";
-import { updateStockBucket } from "@/lib/items-api";
 import { logAudit } from "@/lib/audit-api";
 import { STOCK_STATE } from "@/lib/stock-states";
-
-const RETURNABLE_DC_TYPES = new Set([
-  'job_work_143', 'job_work_out', 'job_work', 'sample', 'loan_borrow', 'returnable',
-]);
 
 /**
  * Resolve the items-master row for a document line, LOUDLY.
@@ -1009,72 +1004,15 @@ export async function updateDeliveryChallan(id: string, { dc, lineItems }: Creat
     }
   }
 
-  // Part 7: apply stock bucket deltas when editing an issued returnable DC.
-  // Job-card-linked lines are excluded — under the new model an issued
-  // line's qty is a re-allocation of stock that already left free at the
-  // job card's own open time (rpc_open_job_card); it never moves stock_free
-  // again here, and rpc_update_dc_line_qty above correctly posts zero stock
-  // writes of its own. Applying this legacy delta on top would move stock
-  // that never actually left the building a second time.
-  if (isIssued && RETURNABLE_DC_TYPES.has(dc.dc_type) && originalLines.length > 0) {
-    const today = new Date().toISOString().split('T')[0];
-
-    // Build item_id → original qty map (job-card lines excluded — see above)
-    const origMap = new Map<string, number>();
-    for (const ol of originalLines) {
-      if (ol.item_id && !ol.job_card_id) {
-        origMap.set(ol.item_id, (ol.qty_nos ?? ol.quantity ?? 0));
-      }
-    }
-
-    // Build item_id → new qty map (job-card lines excluded — see above)
-    const newMap = new Map<string, number>();
-    for (const nl of lineItems) {
-      if (nl.item_id && !nl.job_card_id) {
-        const qty = (nl.qty_nos ?? nl.quantity ?? 0);
-        newMap.set(nl.item_id, (newMap.get(nl.item_id) ?? 0) + qty);
-      }
-    }
-
-    const allItemIds = new Set([...origMap.keys(), ...newMap.keys()]);
-    for (const itemId of allItemIds) {
-      const origQty = origMap.get(itemId) ?? 0;
-      const newQty = newMap.get(itemId) ?? 0;
-      const delta = newQty - origQty;
-      if (delta === 0) continue;
-
-      // Ledger-first, then bucket moves. Errors propagate to the operator.
-      await addStockLedgerEntry({
-        item_id: itemId,
-        item_code: null,
-        item_description: null,
-        transaction_date: today,
-        transaction_type: 'manual_adjustment',
-        qty_in: delta < 0 ? Math.abs(delta) : 0,
-        qty_out: delta > 0 ? delta : 0,
-        balance_qty: 0,
-        unit_cost: 0,
-        total_value: 0,
-        reference_type: 'delivery_challan',
-        reference_id: id,
-        reference_number: dc.dc_number,
-        notes: 'DC quantity edited after issuance — net delta applied',
-        created_by: null,
-        // delta>0 = more issued (free→in_process); delta<0 = returned (in_process→free)
-        from_state: delta > 0 ? STOCK_STATE.FREE : STOCK_STATE.IN_PROCESS,
-        to_state: delta > 0 ? STOCK_STATE.IN_PROCESS : STOCK_STATE.FREE,
-      });
-      if (delta > 0) {
-        // Quantity increased — deduct more from free, add to in_process
-        await updateStockBucket(itemId, 'free', -delta);
-        await updateStockBucket(itemId, 'in_process', +delta);
-      } else {
-        // Quantity decreased or item removed — return from in_process to free
-        await updateStockBucket(itemId, 'in_process', delta);
-        await updateStockBucket(itemId, 'free', Math.abs(delta));
-      }
-    }
-  }
+  // Stock is NOT touched here. An edit always re-saves the DC as
+  // pending_approval (issued_at null), and the stock follows the document when
+  // it is re-approved: rpc_issue_dc_plain_lines nets every item the DC has
+  // posted — changed qty, added item, swapped-out item, removed line — to the
+  // current lines. The client-side "DC quantity edited after issuance"
+  // manual_adjustment that used to live here posted the same delta a second
+  // time (the DB reconciliation ignores manual_adjustment rows), so every
+  // post-issue edit moved stock twice. Removed 19 Nov 2026 — do not add a
+  // client-side stock write back to this function.
 
   return { warnings: sourceWarnings };
 }
