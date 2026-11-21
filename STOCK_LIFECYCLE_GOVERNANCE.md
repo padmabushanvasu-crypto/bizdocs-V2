@@ -58,6 +58,10 @@ Canonical transitions (verified against live ledger data):
 | QC rejection, return-to-vendor | `vendor_return` leg pattern | source → `returned_to_vendor` (ledger-only leg) |
 | Dispatch Record confirmed | `invoice_dispatch` | `in_fg_ready → dispatched` (resale: `free → dispatched`) |
 | Consumables | `consumable_issue` / `consumable_return` | `free → consumed` / `consumed → free` |
+| RM Conversion: raw material used | `assembly_consumption` (`reference_type='rm_conversion'`) | `free → consumed` — the whole quantity used, once |
+| RM Conversion: offcut/scrap inside that draw | `scrap_write_off` | `consumed → scrap` (a label on the draw; FREE untouched) |
+| RM Conversion: each item produced | `assembly_output` | `null → free`, one row per output line |
+| RM Conversion reversed | `assembly_return` (+ `manual_adjustment` for the scrap label) | outputs out of `free`; inputs `consumed → free`; `scrap → consumed` |
 | Opening stock | `opening_stock` | `null → free` |
 | Corrections, merges, reconciliations | `manual_adjustment` | any → any, with explicit states |
 
@@ -119,6 +123,16 @@ Both live in `assembly_work_orders`, discriminated by `awo_type`. The type decid
 4. **Return / scrap** via `rpc_return_or_scrap_wip` / `returnAssemblyComponents`: capped at `issued − returned − damage`, tracks `returned_qty`, posts `assembly_return` (WIP → free) or `scrap_write_off` (WIP → scrap), bucket chosen by `awo_type`, ledger-first, idempotent.
 5. **Acceptance** via `rpc_accept_awo_and_produce`: consumes components (`assembly_consumption`, WIP → `consumed`) and produces output (`assembly_output`, `null → free` for sub-assemblies, `null → in_fg_ready` for FGs). Verified live 2026-10-03: no silent clamping — it raises if the WIP bucket is short of the consumable quantity (WIP/ledger drift).
 6. **Deletion** via `rpc_delete_awo`: state-machine-aware soft delete (`deleted_at`). Draft = simple delete; in-progress/awaiting-store = WIP return per disposition; **completed = component reversal via `assembly_return` with `consumed → free`** and output reversal. The delete dialog sends `reverseOutput=true` for completed WOs and offers a Keep/Return choice for the consumed components (default Keep = components stay consumed; Return posts `consumed → free`). All AWO list/stat queries must filter `deleted_at IS NULL`.
+
+### Stage D2 — RM Conversion (raw material → one or more produced items)
+
+Recorded **after the fact**: the shop converts physically, the office enters the actuals. No conversion factor and no output template — one purchase item (a tube, rod or sheet) may come out as one item or many, in any quantities.
+
+1. One conversion = one atomic posting via `rpc_post_rm_conversion`: inputs out (`free → consumed`, from Store or drawn off a GRN-held line), every output line in (`null → free`). Header in `rm_conversions`, inputs in `rm_conversion_inputs`, **every produced item in `rm_conversion_outputs`**. The header's `output_item_id` / `output_qty_base` mirror the *first* line only — never read them as the whole conversion.
+2. Per output line the RPC requires a positive qty in the item's own base unit, and an item may appear on one line only. Raw-material value is shared across lines by quantity.
+3. **Scrap/offcut is part of the quantity used**, not on top of it: the full draw leaves Store once and the scrap portion is a `consumed → scrap` label. There is no "return" quantity — the RPC rejects one; enter only what was actually used.
+4. **Reversal** via `rpc_reverse_rm_conversion` is all-or-nothing: every output line comes back out of Store and every input goes back. If any output item is short (already issued or used), nothing is reversed.
+5. Both RPCs are ledger-only for `stock_free` (no direct `items` writes), take item locks in one fixed order, restrict a logged-in caller to their own company, and are not executable anonymously. `rm_conversion_outputs` is read-only to the app.
 
 ### Stage E — Finished Goods, Invoice, Dispatch (the least-built stage)
 
@@ -198,7 +212,7 @@ Single-writer discipline is non-negotiable. Verified live:
 | Bucket columns on `items` | Ledger RPC stack | No direct writes |
 | GRN reject handling | `saveQualityStage` (single writer; the dormant duplicate was removed) | Do not reintroduce parallel writers |
 | Document numbers | `*_assign_number` BEFORE INSERT triggers | Never client-generated |
-| Stock movement RPCs | `rpc_confirm_material_issue`, `rpc_confirm_mir`, `rpc_return_or_scrap_wip`, `rpc_accept_awo_and_produce`, `rpc_record_grn`, `rpc_delete_awo`, `rpc_create_awo` | Client code orchestrates, never re-implements |
+| Stock movement RPCs | `rpc_confirm_material_issue`, `rpc_confirm_mir`, `rpc_return_or_scrap_wip`, `rpc_accept_awo_and_produce`, `rpc_record_grn`, `rpc_delete_awo`, `rpc_create_awo`, `rpc_post_rm_conversion`, `rpc_reverse_rm_conversion` | Client code orchestrates, never re-implements |
 
 **Before touching any trigger-owned or single-writer value:** search every other function that writes it (`pg_get_functiondef(p.oid)` over `pg_proc`), then dry-run the most common end-to-end workflow — not just the reported case. This rule exists because RPC-vs-trigger double-writes have caused real race conditions here.
 
@@ -244,6 +258,8 @@ Each of these is known, parked, and awaiting its own dedicated session. Encounte
 - **GRN-1 / GRN-245 (MS Bright Bar, 54 KGS)**: store-confirmed but never posted; backfill teed up, not executed.
 - **V-item family** (V869, V876, V904, V907 A, V923 A) and parked dedup clusters (E98, E277, E106, E119, E309, E310, ~23 others): duplicate rows with conflicting stock.
 - **INS-3 sheet**: 71 items absent from items master.
+- **RM Conversion, pre-allocated GRN-direct branch**: `rpc_post_rm_conversion` still has a path for an input that carries an `allocation_id` (material parked in `subassembly_wip` by a separate allocate call). It writes `stock_in_subassembly_wip` directly with a `GREATEST(0, …)` clamp. The screen never uses it (it always self-allocates), so it was left untouched on 2026-11-19 — do not start using it without fixing the clamp first.
+- **Tank-frame tube parts with duplicate active codes**: `230370 DB R1` (4 active items, two different lengths) and `230381 DB R1` (2 active). The RM Conversion output picker shows drawing no. and description together, but these need a dedup pass before the cutting list is loaded as suggestions.
 - **`updateStockBucket` → `rpc_increment_stock_bucket`** uncommitted; **unique `item_code` index** unapplied; **stock-alerts pagination** unpatched; **`min_stock` vs `min_stock_override`** mapping; **multi-batch DC**; **weldment pool** (designed in `SUBSTORE_ARCHITECTURE.md`, blocked on client mapping sheet).
 
 ---

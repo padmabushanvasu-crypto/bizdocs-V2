@@ -12,6 +12,7 @@ import {
   fetchRmConversions,
   fetchRmConversionInputs,
   type RmConversionRow,
+  type RmConversionOutputRow,
 } from "@/lib/rm-conversions-api";
 
 function StatusBadge({ status }: { status: string }) {
@@ -23,6 +24,42 @@ function StatusBadge({ status }: { status: string }) {
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap ${cls}`}>
       {status === "reversed" ? "Reversed" : "Posted"}
     </span>
+  );
+}
+
+// Every item the conversion produced. Rendered from the rows already loaded
+// with the register page — no extra request.
+function OutputsDetail({ outputs }: { outputs: RmConversionOutputRow[] }) {
+  return (
+    <table className="w-full text-xs border-collapse">
+      <thead>
+        <tr className="bg-slate-50">
+          <th className="px-3 py-1.5 text-left font-semibold text-slate-500 uppercase tracking-wide">Output Item</th>
+          <th className="px-3 py-1.5 text-right font-semibold text-slate-500 uppercase tracking-wide">Qty Produced</th>
+          <th className="px-3 py-1.5 text-right font-semibold text-indigo-600 uppercase tracking-wide">Alt Qty</th>
+          <th className="px-3 py-1.5 text-right font-semibold text-slate-500 uppercase tracking-wide">Unit Cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        {outputs.map((o) => (
+          <tr key={o.line_no} className="border-t border-slate-100">
+            <td className="px-3 py-1.5">
+              <span className="font-mono text-slate-700">{o.item_code}</span>
+              {o.description && <span className="text-slate-500 ml-1">{o.description}</span>}
+            </td>
+            <td className="px-3 py-1.5 text-right font-mono tabular-nums">
+              {formatNumber(o.qty_base)} {o.unit}
+            </td>
+            <td className="px-3 py-1.5 text-right font-mono tabular-nums text-indigo-600">
+              {o.qty_alt != null ? `${formatNumber(o.qty_alt)} ${o.alt_unit ?? ""}` : "—"}
+            </td>
+            <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-600">
+              {o.unit_cost != null ? formatCurrency(o.unit_cost) : "—"}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -43,12 +80,11 @@ function InputsDetail({ rmConversionId }: { rmConversionId: string }) {
     <table className="w-full text-xs border-collapse">
       <thead>
         <tr className="bg-slate-50">
-          <th className="px-3 py-1.5 text-left font-semibold text-slate-500 uppercase tracking-wide">Item</th>
+          <th className="px-3 py-1.5 text-left font-semibold text-slate-500 uppercase tracking-wide">Input Item</th>
           <th className="px-3 py-1.5 text-left font-semibold text-slate-500 uppercase tracking-wide">Source</th>
           <th className="px-3 py-1.5 text-right font-semibold text-slate-500 uppercase tracking-wide">Qty</th>
           <th className="px-3 py-1.5 text-right font-semibold text-indigo-600 uppercase tracking-wide">Alt Qty</th>
-          <th className="px-3 py-1.5 text-right font-semibold text-slate-500 uppercase tracking-wide">Scrap</th>
-          <th className="px-3 py-1.5 text-right font-semibold text-slate-500 uppercase tracking-wide">Return</th>
+          <th className="px-3 py-1.5 text-right font-semibold text-slate-500 uppercase tracking-wide">Of which scrap</th>
         </tr>
       </thead>
       <tbody>
@@ -64,7 +100,6 @@ function InputsDetail({ rmConversionId }: { rmConversionId: string }) {
               {i.qty_alt != null ? `${formatNumber(i.qty_alt)} ${i.alt_unit ?? ""}` : "—"}
             </td>
             <td className="px-3 py-1.5 text-right font-mono tabular-nums">{i.scrap_qty_base > 0 ? formatNumber(i.scrap_qty_base) : "—"}</td>
-            <td className="px-3 py-1.5 text-right font-mono tabular-nums">{i.return_qty_base > 0 ? formatNumber(i.return_qty_base) : "—"}</td>
           </tr>
         ))}
       </tbody>
@@ -98,7 +133,7 @@ export default function RmConversionRegister() {
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">RM Conversions</h1>
-          <p className="text-sm text-slate-500 mt-1">Raw material conversions — consumed inputs and the item produced.</p>
+          <p className="text-sm text-slate-500 mt-1">Raw material conversions — consumed inputs and the items produced.</p>
         </div>
         {canEdit && (
           <Button onClick={() => navigate("/rm-conversions/new")} className="gap-1.5">
@@ -114,7 +149,7 @@ export default function RmConversionRegister() {
               <tr>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left"></th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Posted</th>
-                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Output Item</th>
+                <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left">Output Items</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right">Qty Produced</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-right hidden md:table-cell">Unit Cost</th>
                 <th className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50 border-b border-slate-200 text-left hidden md:table-cell">Posted By</th>
@@ -130,6 +165,8 @@ export default function RmConversionRegister() {
               ) : (
                 rows.map((r) => {
                   const expanded = expandedId === r.id;
+                  const first = r.outputs[0];
+                  const extra = r.outputs.length - 1;
                   return (
                     <Fragment key={r.id}>
                       <tr
@@ -143,13 +180,22 @@ export default function RmConversionRegister() {
                           {(() => { try { return format(new Date(r.posted_at), "dd MMM yyyy, HH:mm"); } catch { return r.posted_at; } })()}
                         </td>
                         <td className="px-3 py-2 border-b border-slate-100">
-                          <span className="font-mono text-slate-700">{r.output_item_code}</span>
-                          {r.output_item_description && (
-                            <span className="text-slate-500 ml-1">{r.output_item_description}</span>
+                          <span className="font-mono text-slate-700">{first?.item_code}</span>
+                          {first?.description && (
+                            <span className="text-slate-500 ml-1">{first.description}</span>
+                          )}
+                          {extra > 0 && (
+                            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-[11px] font-semibold border bg-blue-50 text-blue-700 border-blue-200 whitespace-nowrap">
+                              +{extra} more
+                            </span>
                           )}
                         </td>
                         <td className="px-3 py-2 border-b border-slate-100 text-right font-mono tabular-nums">
-                          {formatNumber(r.output_qty_base)} {r.output_unit}
+                          {extra > 0
+                            ? `${r.outputs.length} items`
+                            : first
+                              ? `${formatNumber(first.qty_base)} ${first.unit}`
+                              : "—"}
                         </td>
                         <td className="px-3 py-2 border-b border-slate-100 text-right font-mono tabular-nums text-slate-600 hidden md:table-cell">
                           {r.output_unit_cost != null ? formatCurrency(r.output_unit_cost) : "—"}
@@ -172,6 +218,7 @@ export default function RmConversionRegister() {
                       {expanded && (
                         <tr>
                           <td colSpan={8} className="p-0 border-b border-slate-100 bg-slate-50/50">
+                            <OutputsDetail outputs={r.outputs} />
                             <InputsDetail rmConversionId={r.id} />
                             {r.status === "reversed" && r.reversal_reason && (
                               <p className="text-xs text-slate-500 px-4 pb-3">
@@ -209,7 +256,7 @@ export default function RmConversionRegister() {
         open={!!reverseTarget}
         onOpenChange={(open) => { if (!open) setReverseTarget(null); }}
         rmConversionId={reverseTarget?.id ?? null}
-        outputItemLabel={reverseTarget?.output_item_code}
+        outputs={reverseTarget?.outputs ?? []}
       />
     </div>
   );
