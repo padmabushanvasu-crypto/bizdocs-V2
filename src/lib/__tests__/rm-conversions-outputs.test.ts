@@ -20,8 +20,12 @@ function builder(table: string) {
   queries.push(q);
   const resolve = () => {
     if (tableErrors[table]) return { data: null, error: tableErrors[table], count: null };
-    let rows = (tables[table] ?? []).filter((r) =>
-      Object.entries(q.in).every(([k, vals]) => vals.includes(r[k]))
+    // .in() always filters; .eq() filters only on keys the fixture row has
+    // (fixtures leave out company_id; the scoping is asserted separately).
+    let rows = (tables[table] ?? []).filter(
+      (r) =>
+        Object.entries(q.in).every(([k, vals]) => vals.includes(r[k])) &&
+        Object.entries(q.eq).every(([k, v]) => !(k in r) || r[k] === v)
     );
     const count = rows.length;
     if (q.range) rows = rows.slice(q.range[0], q.range[1] + 1);
@@ -51,7 +55,7 @@ vi.mock("@/integrations/supabase/client", () => ({
   },
 }));
 
-import { fetchRmConversions, postRmConversion } from "@/lib/rm-conversions-api";
+import { fetchRmConversions, fetchSuggestedComponents, postRmConversion } from "@/lib/rm-conversions-api";
 
 const header = (id: string, itemId: string, qty: number) => ({
   id,
@@ -200,5 +204,59 @@ describe("postRmConversion — multi-output payload", () => {
     await expect(postRmConversion(payload, "key-1")).rejects.toThrow(
       "Output item code-a is listed more than once -- combine it into one line"
     );
+  });
+});
+
+describe("fetchSuggestedComponents — cutting list", () => {
+  const mapRow = (component_item_id: string, group: string | null, sl_no: number | null) => ({
+    component_item_id,
+    raw_material_size_text: group,
+    sl_no,
+    raw_material_item_id: "tube",
+    match_status: "fully_matched",
+  });
+  const part = (id: string, item_code: string, status = "active") => ({ id, item_code, description: `desc ${id}`, unit: "NOS", status });
+
+  it("returns the list in sheet order: group, then serial no., with the group label", async () => {
+    tables = {
+      item_conversion_map: [
+        mapRow("p14", "22 KV PIPE", 14),
+        mapRow("p2", "11 KV PIPE", 2),
+        mapRow("p7", "22 KV PIPE", 7),
+        mapRow("p1", "11 KV PIPE", 1),
+      ],
+      items: [part("p1", "Z-1"), part("p2", "A-2"), part("p7", "M-7"), part("p14", "B-14")],
+    };
+
+    const list = await fetchSuggestedComponents("tube");
+
+    expect(list.map((s) => [s.group, s.sl_no, s.item_code])).toEqual([
+      ["11 KV PIPE", 1, "Z-1"],
+      ["11 KV PIPE", 2, "A-2"],
+      ["22 KV PIPE", 7, "M-7"],
+      ["22 KV PIPE", 14, "B-14"],
+    ]);
+    const mapQuery = queries.find((x) => x.table === "item_conversion_map")!;
+    expect(mapQuery.eq).toMatchObject({ company_id: "c1", raw_material_item_id: "tube", match_status: "fully_matched" });
+    expect(queries.find((x) => x.table === "items")!.eq).toMatchObject({ company_id: "c1", status: "active" });
+  });
+
+  it("leaves out inactive items and lists a part only once", async () => {
+    tables = {
+      item_conversion_map: [mapRow("p1", "11 KV PIPE", 1), mapRow("old", "11 KV PIPE", 2), mapRow("p1", "33 KV PIPE", 6)],
+      items: [part("p1", "LEG"), part("old", "RETIRED", "inactive")],
+    };
+
+    const list = await fetchSuggestedComponents("tube");
+
+    expect(list).toEqual([
+      { item_id: "p1", item_code: "LEG", description: "desc p1", unit: "NOS", group: "11 KV PIPE", sl_no: 1 },
+    ]);
+  });
+
+  it("returns nothing for a raw material with no list, without querying items", async () => {
+    tables = { item_conversion_map: [] };
+    expect(await fetchSuggestedComponents("tube")).toEqual([]);
+    expect(queries.some((x) => x.table === "items")).toBe(false);
   });
 });

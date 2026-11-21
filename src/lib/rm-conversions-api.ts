@@ -30,6 +30,9 @@ export interface SuggestedComponent {
   item_code: string;
   description: string;
   unit: string;
+  /** Group heading from the source list, e.g. "11 KV PIPE" on the tank cutting list. */
+  group: string | null;
+  sl_no: number | null;
 }
 
 export async function fetchSuggestedComponents(rawItemId: string): Promise<SuggestedComponent[]> {
@@ -38,30 +41,50 @@ export async function fetchSuggestedComponents(rawItemId: string): Promise<Sugge
 
   const { data: mapRows, error: mapError } = await (supabase as any)
     .from("item_conversion_map")
-    .select("component_item_id")
+    .select("component_item_id, raw_material_size_text, sl_no")
     .eq("company_id", companyId)
     .eq("raw_material_item_id", rawItemId)
     .eq("match_status", "fully_matched")
     .not("component_item_id", "is", null);
   if (mapError) throw mapError;
 
-  const itemIds = [...new Set((mapRows ?? []).map((r: any) => r.component_item_id as string))];
+  const map = (mapRows ?? []) as any[];
+  const itemIds = [...new Set(map.map((r) => r.component_item_id as string))];
   if (itemIds.length === 0) return [];
 
+  // Only active items are offered — an inactive item can't be posted to.
   const { data: items, error: itemsError } = await (supabase as any)
     .from("items")
     .select("id, item_code, description, unit")
     .eq("company_id", companyId)
-    .in("id", itemIds)
-    .order("item_code", { ascending: true });
+    .eq("status", "active")
+    .in("id", itemIds);
   if (itemsError) throw itemsError;
+  const itemById = new Map(((items ?? []) as any[]).map((i) => [i.id as string, i]));
 
-  return ((items ?? []) as any[]).map((i) => ({
-    item_id: i.id,
-    item_code: i.item_code ?? "",
-    description: i.description ?? "",
-    unit: i.unit ?? "NOS",
-  }));
+  // Source-list order: group heading, then the list's own serial no., then
+  // code. An item listed under two groups appears once, under the first.
+  const ordered = map
+    .filter((r) => itemById.has(r.component_item_id))
+    .map((r) => {
+      const i = itemById.get(r.component_item_id);
+      return {
+        item_id: i.id as string,
+        item_code: (i.item_code ?? "") as string,
+        description: (i.description ?? "") as string,
+        unit: (i.unit ?? "NOS") as string,
+        group: (r.raw_material_size_text ?? "").trim() || null,
+        sl_no: r.sl_no != null ? Number(r.sl_no) : null,
+      };
+    })
+    .sort(
+      (a, b) =>
+        (a.group ?? "").localeCompare(b.group ?? "", undefined, { numeric: true }) ||
+        (a.sl_no ?? Number.MAX_SAFE_INTEGER) - (b.sl_no ?? Number.MAX_SAFE_INTEGER) ||
+        a.item_code.localeCompare(b.item_code)
+    );
+  const seen = new Set<string>();
+  return ordered.filter((s) => (seen.has(s.item_id) ? false : (seen.add(s.item_id), true)));
 }
 
 // ── rpc_post_rm_conversion payload ──────────────────────────────────────────────

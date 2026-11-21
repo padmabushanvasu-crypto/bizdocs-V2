@@ -63,11 +63,17 @@ interface OutputRow {
   itemSearch: string;
   qty: string; // in the item's own base unit
   altQty: string;
+  // "list" = pick from the raw material's cutting list (dropdown);
+  // "search" = free search across every item. The list is used whenever the
+  // raw material has one; search is always one tap away.
+  mode: "list" | "search";
 }
 
 function newOutputRow(): OutputRow {
-  return { key: crypto.randomUUID(), item: null, itemSearch: "", qty: "", altQty: "" };
+  return { key: crypto.randomUUID(), item: null, itemSearch: "", qty: "", altQty: "", mode: "list" };
 }
+
+const SEARCH_OTHER = "__search_other__";
 
 function isBlankOutputRow(o: OutputRow): boolean {
   return !o.item && o.itemSearch.trim() === "" && o.qty.trim() === "" && o.altQty.trim() === "";
@@ -98,7 +104,7 @@ export default function RmConversionNew() {
   const [rows, setRows] = useState<InputRow[]>([newInputRow()]);
   const [outputs, setOutputs] = useState<OutputRow[]>([newOutputRow()]);
   const [notes, setNotes] = useState("");
-  const [suggestionLoadingId, setSuggestionLoadingId] = useState<string | null>(null);
+  const [suggestionLoading, setSuggestionLoading] = useState(false);
 
   // Suggested output components for the first input row's raw material
   // (item_conversion_map, fully_matched links only). Purely a shortcut —
@@ -144,28 +150,68 @@ export default function RmConversionNew() {
     return dup;
   }, [outputs]);
 
-  // Suggestions not yet on an output row.
-  const remainingSuggestions = useMemo(() => {
-    const chosen = new Set(outputs.map((o) => o.item?.id).filter(Boolean) as string[]);
-    return suggestedComponents.filter((s) => !chosen.has(s.item_id));
-  }, [suggestedComponents, outputs]);
+  // The raw material's cutting list, grouped by its heading (e.g. 11 KV PIPE),
+  // in the list's own order.
+  const suggestionGroups = useMemo(() => {
+    const groups: { label: string; items: SuggestedComponent[] }[] = [];
+    for (const s of suggestedComponents) {
+      const label = s.group ?? "Parts";
+      let g = groups.find((x) => x.label === label);
+      if (!g) groups.push((g = { label, items: [] }));
+      g.items.push(s);
+    }
+    return groups;
+  }, [suggestedComponents]);
+  const suggestionIds = useMemo(() => new Set(suggestedComponents.map((s) => s.item_id)), [suggestedComponents]);
+  const chosenOutputIds = useMemo(
+    () => new Set(outputs.map((o) => o.item?.id).filter(Boolean) as string[]),
+    [outputs]
+  );
 
-  // Adds a suggested item as an output row: fills the first blank row if
-  // there is one, otherwise appends. Never replaces a row already in use.
-  const selectSuggestedComponent = async (s: SuggestedComponent) => {
-    setSuggestionLoadingId(s.item_id);
+  // Picks an item from the cutting list onto one output row.
+  const pickFromList = async (key: string, itemId: string) => {
+    if (itemId === SEARCH_OTHER) {
+      updateOutput(key, { mode: "search", item: null, itemSearch: "", altQty: "" });
+      return;
+    }
+    if (!itemId) {
+      updateOutput(key, { item: null, altQty: "" });
+      return;
+    }
+    setSuggestionLoading(true);
     try {
-      const item = await fetchItem(s.item_id);
-      setOutputs((prev) => {
-        if (prev.some((o) => o.item?.id === item.id)) return prev;
-        const blankIdx = prev.findIndex(isBlankOutputRow);
-        if (blankIdx === -1) return [...prev, { ...newOutputRow(), item }];
-        return prev.map((o, i) => (i === blankIdx ? { ...o, item, itemSearch: "", altQty: "" } : o));
-      });
+      const item = await fetchItem(itemId);
+      updateOutput(key, { item, itemSearch: "", altQty: "" });
     } catch (err: any) {
       toast({ title: "Could not load item", description: err.message, variant: "destructive" });
     } finally {
-      setSuggestionLoadingId(null);
+      setSuggestionLoading(false);
+    }
+  };
+
+  // Adds every part of one list group that is not already on a row: fills
+  // blank rows first, then appends. Rows already in use are never replaced.
+  // The office then enters each quantity and removes any part not cut.
+  const addWholeGroup = async (items: SuggestedComponent[]) => {
+    const missing = items.filter((s) => !chosenOutputIds.has(s.item_id));
+    if (missing.length === 0) return;
+    setSuggestionLoading(true);
+    try {
+      const loaded = await Promise.all(missing.map((s) => fetchItem(s.item_id)));
+      setOutputs((prev) => {
+        const next = [...prev];
+        for (const item of loaded) {
+          if (next.some((o) => o.item?.id === item.id)) continue;
+          const blankIdx = next.findIndex(isBlankOutputRow);
+          if (blankIdx === -1) next.push({ ...newOutputRow(), item });
+          else next[blankIdx] = { ...next[blankIdx], item, itemSearch: "", altQty: "", mode: "list" };
+        }
+        return next;
+      });
+    } catch (err: any) {
+      toast({ title: "Could not load items", description: err.message, variant: "destructive" });
+    } finally {
+      setSuggestionLoading(false);
     }
   };
 
@@ -518,23 +564,27 @@ export default function RmConversionNew() {
           </Button>
         </div>
 
-        {remainingSuggestions.length > 0 && (
-          <div className="rounded-md border border-blue-200 bg-blue-50 p-2">
-            <p className="text-[10px] font-semibold text-blue-700 uppercase tracking-wide mb-1">
-              Suggested for {firstInputItem?.item_code} — tap to add
+        {suggestionGroups.length > 0 && (
+          <div className="rounded-md border border-blue-200 bg-blue-50 p-2 space-y-1.5">
+            <p className="text-[10px] font-semibold text-blue-700 uppercase tracking-wide">
+              Cutting list for {firstInputItem?.item_code} — pick each part from the dropdown, or add a whole set
             </p>
             <div className="flex flex-wrap gap-1.5">
-              {remainingSuggestions.map((s) => (
-                <button
-                  key={s.item_id}
-                  type="button"
-                  disabled={suggestionLoadingId === s.item_id}
-                  onClick={() => selectSuggestedComponent(s)}
-                  className="text-xs text-left bg-white border border-blue-200 rounded px-2 py-1 hover:bg-blue-100 transition-colors disabled:opacity-50"
-                >
-                  <span className="font-mono">{s.item_code}</span> — {s.description}
-                </button>
-              ))}
+              {suggestionGroups.map((g) => {
+                const left = g.items.filter((s) => !chosenOutputIds.has(s.item_id)).length;
+                return (
+                  <button
+                    key={g.label}
+                    type="button"
+                    disabled={suggestionLoading || left === 0}
+                    onClick={() => addWholeGroup(g.items)}
+                    className="inline-flex items-center gap-1 text-xs bg-white border border-blue-200 rounded px-2 py-1 hover:bg-blue-100 transition-colors disabled:opacity-50"
+                  >
+                    <Plus className="h-3 w-3" />
+                    All {g.label} ({g.items.length})
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -554,12 +604,52 @@ export default function RmConversionNew() {
                 <div className="flex items-start gap-2">
                   <div className="flex-1 min-w-0">
                     <Label className="text-xs">Output {idx + 1} — Item</Label>
-                    <ItemSuggest
-                      value={o.item ? `${o.item.item_code} — ${o.item.description}` : o.itemSearch}
-                      onChange={(v) => updateOutput(o.key, { itemSearch: v, item: null })}
-                      onSelect={(item) => updateOutput(o.key, { item, itemSearch: "", altQty: "" })}
-                      placeholder="Search drawing no. or description..."
-                    />
+                    {o.mode === "list" && suggestionGroups.length > 0 && (!o.item || suggestionIds.has(o.item.id)) ? (
+                      // Native select: opens the phone's own picker on mobile.
+                      <select
+                        aria-label={`Output ${idx + 1} item`}
+                        value={o.item?.id ?? ""}
+                        disabled={suggestionLoading}
+                        onChange={(e) => pickFromList(o.key, e.target.value)}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
+                      >
+                        <option value="">Select part from {firstInputItem?.item_code} list…</option>
+                        {suggestionGroups.map((g) => (
+                          <optgroup key={g.label} label={g.label}>
+                            {g.items.map((s) => (
+                              <option
+                                key={s.item_id}
+                                value={s.item_id}
+                                disabled={chosenOutputIds.has(s.item_id) && o.item?.id !== s.item_id}
+                              >
+                                {s.item_code} — {s.description}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ))}
+                        <optgroup label="Not on the list">
+                          <option value={SEARCH_OTHER}>Other item — search all items…</option>
+                        </optgroup>
+                      </select>
+                    ) : (
+                      <>
+                        <ItemSuggest
+                          value={o.item ? `${o.item.item_code} — ${o.item.description}` : o.itemSearch}
+                          onChange={(v) => updateOutput(o.key, { itemSearch: v, item: null })}
+                          onSelect={(item) => updateOutput(o.key, { item, itemSearch: "", altQty: "" })}
+                          placeholder="Search drawing no. or description..."
+                        />
+                        {suggestionGroups.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => updateOutput(o.key, { mode: "list", item: null, itemSearch: "", altQty: "" })}
+                            className="mt-1 text-xs text-blue-700 hover:underline"
+                          >
+                            Back to the {firstInputItem?.item_code} list
+                          </button>
+                        )}
+                      </>
+                    )}
                     {o.item && (
                       // Several parts share a drawing no. and differ only by the
                       // length in the description, and a phone-width box cuts the
