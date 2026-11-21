@@ -35,6 +35,7 @@ import { useToast } from "@/hooks/use-toast";
 import { fetchItems } from "@/lib/items-api";
 import { fetchBomVariants } from "@/lib/bom-api";
 import { createAssemblyWorkOrder } from "@/lib/production-api";
+import { UserQtyFields, useBomUserQtyLines, userQtyError, toUserQtys, type UserQtyValues } from "@/components/UserQtyFields";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -411,6 +412,8 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
   // Work order dialog state
   const [woDialogOpen, setWoDialogOpen] = useState(false);
   const [woForm, setWoForm] = useState<WoFormState>(defaultWoForm);
+  // User-entered qty lines (e.g. vacuum bottles) — no defaults, always typed in.
+  const [userQtyValues, setUserQtyValues] = useState<UserQtyValues>({});
 
   // Filter state — dashboard defaults to "needs_action", full-height page defaults to "all"
   type FilterKey = "all" | "needs_action" | "po_raised" | "production_started";
@@ -446,6 +449,12 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
     enabled: !!woForm.item_id,
   });
 
+  const { data: userQtyLines = [], isLoading: userQtyLoading } = useBomUserQtyLines(
+    woDialogOpen ? woForm.item_id || null : null,
+    woForm.bom_variant_id || null,
+  );
+  const userQtyProblem = userQtyError(userQtyLines, userQtyValues);
+
   const createWOMutation = useMutation({
     mutationFn: () =>
       createAssemblyWorkOrder({
@@ -458,12 +467,14 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
         planned_date: woForm.planned_date || undefined,
         work_order_ref: woForm.work_order_ref || undefined,
         notes: woForm.notes || undefined,
+        user_qtys: userQtyLines.length > 0 ? toUserQtys(userQtyLines, userQtyValues) : undefined,
       }),
     onSuccess: (newId) => {
       queryClient.invalidateQueries({ queryKey: ["awo", "sub_assembly"] });
       toast({ title: "Work order created", description: "Sub-assembly work order raised." });
       setWoDialogOpen(false);
       setWoForm(defaultWoForm);
+      setUserQtyValues({});
       navigate(`/assembly-work-orders/${newId}`);
     },
     onError: (err: Error) => {
@@ -472,6 +483,7 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
   });
 
   const openWoDialog = (row: StockAlertBoardRow) => {
+    setUserQtyValues({});
     setWoForm({
       item_id: row.id,
       item_code: row.item_code,
@@ -488,6 +500,7 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
   const closeWoDialog = () => {
     setWoDialogOpen(false);
     setWoForm(defaultWoForm);
+    setUserQtyValues({});
   };
 
   const totalBelow         = rows.length;
@@ -858,6 +871,7 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
                       item_description: item.description,
                       bom_variant_id: "",
                     }));
+                    setUserQtyValues({});
                   }
                 }}
               >
@@ -911,6 +925,9 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
               </div>
             )}
 
+            {/* User-entered qty lines (e.g. vacuum bottles) */}
+            <UserQtyFields lines={userQtyLines} values={userQtyValues} onChange={setUserQtyValues} />
+
             {/* Planned Date */}
             <div className="space-y-1">
               <Label>Planned Date (optional)</Label>
@@ -947,7 +964,13 @@ export function StockAlertsBoard({ companyId, fullHeight = false }: Props) {
             </Button>
             <Button
               onClick={() => createWOMutation.mutate()}
-              disabled={!woForm.item_id || woForm.quantity_to_build < 1 || createWOMutation.isPending}
+              disabled={
+                !woForm.item_id ||
+                woForm.quantity_to_build < 1 ||
+                userQtyLoading ||
+                !!userQtyProblem ||
+                createWOMutation.isPending
+              }
             >
               {createWOMutation.isPending ? "Raising…" : "Raise Work Order"}
             </Button>
