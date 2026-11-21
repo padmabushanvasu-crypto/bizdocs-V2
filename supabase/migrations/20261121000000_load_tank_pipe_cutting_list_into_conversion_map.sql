@@ -1,0 +1,12 @@
+-- Applied live 2026-11-21 via apply_migration (name: load_tank_pipe_cutting_list_into_conversion_map).
+-- Data only (suggestions for RM Conversion; no stock): the tank pipe cutting list shared by Vasu on 19 Nov 2026,
+-- 21 sheet rows -> 35 item_conversion_map rows (source_file = 'TANK PIPE CUTTING LIST (Vasu, 19 Nov 2026)').
+--   * 11 KV + 22 KV parts -> both 40x40 2mm tube items: MSSQTUBE (bought) and RM-MS-SQ-TUBE-SQ-40X40 (BOM raw material).
+--   * 33 KV parts -> ITEM-0020 (MS square pipe 40x40x3).
+--   * Each row resolved to exactly one active item by code + length in the description (aborts otherwise).
+--   * Duplicate codes: 230370 DB R1 (vertical 1030 mm) -> the item with stock/history (88882cd9…);
+--     230381 DB R1 -> the item with stock/history (0a244cad…).
+--   * 22 KV rows 13/14 (sheet: F1/F2 RH&LH, 132/177 mm) -> 230331 F1 RH&LH V2 (132 mm) and 230331 F2 RH&LH V (171 mm),
+--     by length (Vasu's choice). The sheet's 177 mm vs the item's 171 mm is unconfirmed.
+-- Inverse: DELETE FROM public.item_conversion_map WHERE source_file = 'TANK PIPE CUTTING LIST (Vasu, 19 Nov 2026)';
+-- The exact statement applied is kept in supabase_migrations.schema_migrations.
