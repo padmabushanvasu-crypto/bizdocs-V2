@@ -10,17 +10,24 @@ const ITEMS: Record<string, any> = {
   a: { id: "a", item_code: "DRG-A", description: "Width wise 454 mm", unit: "NOS", stock_free: 4, alt_unit: null },
   b: { id: "b", item_code: "DRG-B", description: "Vertical cover 850 mm", unit: "NOS", stock_free: 69, alt_unit: null },
   c: { id: "c", item_code: "DRG-C", description: "Top mid support 1518 mm", unit: "NOS", stock_free: 3, alt_unit: null },
+  d: { id: "d", item_code: "DRG-D", description: "Width wise 453 mm", unit: "NOS", stock_free: 0, alt_unit: null },
 };
+
+// The tube's cutting list, as fetchSuggestedComponents returns it: grouped,
+// in the sheet's order.
+const CUTTING_LIST = [
+  { item_id: "a", item_code: "DRG-A", description: "Width wise 454 mm", unit: "NOS", group: "11 KV PIPE", sl_no: 1 },
+  { item_id: "b", item_code: "DRG-B", description: "Vertical cover 850 mm", unit: "NOS", group: "11 KV PIPE", sl_no: 2 },
+  { item_id: "d", item_code: "DRG-D", description: "Width wise 453 mm", unit: "NOS", group: "22 KV PIPE", sl_no: 7 },
+];
+const fetchSuggestedComponents = vi.fn();
 
 const postRmConversion = vi.fn();
 const toast = vi.fn();
 
 vi.mock("@/lib/rm-conversions-api", () => ({
   postRmConversion: (...args: unknown[]) => postRmConversion(...args),
-  fetchSuggestedComponents: vi.fn(async () => [
-    { item_id: "a", item_code: "DRG-A", description: "Width wise 454 mm", unit: "NOS" },
-    { item_id: "b", item_code: "DRG-B", description: "Vertical cover 850 mm", unit: "NOS" },
-  ]),
+  fetchSuggestedComponents: (...args: unknown[]) => fetchSuggestedComponents(...args),
 }));
 vi.mock("@/lib/items-api", () => ({
   fetchItem: vi.fn(async (id: string) => ITEMS[id]),
@@ -77,10 +84,18 @@ beforeEach(() => {
   postRmConversion.mockReset();
   postRmConversion.mockResolvedValue({ rm_conversion_id: "conv-1", output_item_code: "DRG-A", output_qty_base: 10, output_unit_cost: 0 });
   toast.mockReset();
+  // Most tests use an input with no cutting list (free search on every row).
+  fetchSuggestedComponents.mockReset();
+  fetchSuggestedComponents.mockResolvedValue([]);
 });
+
+/** The output-row dropdowns (only rendered while the raw material has a list). */
+const listSelects = () => screen.queryAllByRole("combobox") as HTMLSelectElement[];
+const choose = (select: HTMLSelectElement, value: string) => fireEvent.change(select, { target: { value } });
 
 describe("New RM Conversion — multiple outputs", () => {
   it("posts one input and three outputs as a single payload", async () => {
+    fetchSuggestedComponents.mockResolvedValue(CUTTING_LIST);
     renderScreen();
 
     // Input: 100 KGS of tube, 2 KGS of it offcut.
@@ -88,12 +103,17 @@ describe("New RM Conversion — multiple outputs", () => {
     fireEvent.change(numberBoxes(/qty used/i)[0], { target: { value: "100" } });
     fireEvent.change(numberBoxes(/of which scrap/i)[0], { target: { value: "2" } });
 
-    // Outputs: two from the suggestions, one searched.
-    fireEvent.click(await screen.findByRole("button", { name: /DRG-A/ }));
-    fireEvent.click(await screen.findByRole("button", { name: /DRG-B/ }));
-    await waitFor(() => expect(screen.getAllByTestId("item-suggest")).toHaveLength(3));
+    // Outputs: two picked from the tube's list, one searched via "Other item".
+    await waitFor(() => expect(listSelects()).toHaveLength(1));
+    choose(listSelects()[0], "a");
+    await waitFor(() => expect(numberBoxes(/qty produced/i)).toHaveLength(1));
     fireEvent.click(screen.getByRole("button", { name: /add output/i }));
-    pick(3, "c");
+    choose(listSelects()[1], "b");
+    await waitFor(() => expect(numberBoxes(/qty produced/i)).toHaveLength(2));
+    fireEvent.click(screen.getByRole("button", { name: /add output/i }));
+    choose(listSelects()[2], "__search_other__");
+    await waitFor(() => expect(screen.getAllByTestId("item-suggest")).toHaveLength(2));
+    pick(1, "c");
 
     const qty = numberBoxes(/qty produced/i);
     expect(qty).toHaveLength(3);
@@ -132,15 +152,81 @@ describe("New RM Conversion — multiple outputs", () => {
     expect(screen.queryByText(/return qty/i)).toBeNull();
   });
 
-  it("uses a suggestion once: it fills a blank row and leaves the suggestion list", async () => {
+  it("shows the tube's cutting list as a grouped dropdown on each output row", async () => {
+    fetchSuggestedComponents.mockResolvedValue(CUTTING_LIST);
+    renderScreen();
+    // No list until a raw material is picked.
+    expect(listSelects()).toHaveLength(0);
+    pick(0, "tube");
+
+    const [select] = await waitFor(() => {
+      const s = listSelects();
+      expect(s).toHaveLength(1);
+      return s;
+    });
+    const groups = [...select.querySelectorAll("optgroup")].map((g) => g.label);
+    expect(groups).toEqual(["11 KV PIPE", "22 KV PIPE", "Not on the list"]);
+    const options = [...select.querySelectorAll("option")].map((o) => o.textContent);
+    expect(options).toEqual([
+      "Select part from MSSQTUBE list…",
+      "DRG-A — Width wise 454 mm",
+      "DRG-B — Vertical cover 850 mm",
+      "DRG-D — Width wise 453 mm",
+      "Other item — search all items…",
+    ]);
+    // Only the output rows use the list; the input picker is still free search.
+    expect(screen.getAllByTestId("item-suggest")).toHaveLength(1);
+  });
+
+  it("disables a part on other rows once it is picked", async () => {
+    fetchSuggestedComponents.mockResolvedValue(CUTTING_LIST);
     renderScreen();
     pick(0, "tube");
-    fireEvent.click(await screen.findByRole("button", { name: /DRG-A/ }));
-    // Filled the one blank output row rather than adding a second.
+    await waitFor(() => expect(listSelects()).toHaveLength(1));
+    choose(listSelects()[0], "a");
     await waitFor(() => expect(numberBoxes(/qty produced/i)).toHaveLength(1));
-    expect(screen.getAllByTestId("item-suggest")).toHaveLength(2);
-    expect(screen.queryByRole("button", { name: /DRG-A/ })).toBeNull();
-    expect(screen.getByRole("button", { name: /DRG-B/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /add output/i }));
+
+    const second = listSelects()[1];
+    const optA = second.querySelector('option[value="a"]') as HTMLOptionElement;
+    const optB = second.querySelector('option[value="b"]') as HTMLOptionElement;
+    expect(optA.disabled).toBe(true);
+    expect(optB.disabled).toBe(false);
+    // ...but stays selectable on the row that has it.
+    expect((listSelects()[0].querySelector('option[value="a"]') as HTMLOptionElement).disabled).toBe(false);
+    expect(listSelects()[0].value).toBe("a");
+  });
+
+  it("adds a whole tank set at once, filling the blank row first and skipping parts already added", async () => {
+    fetchSuggestedComponents.mockResolvedValue(CUTTING_LIST);
+    renderScreen();
+    pick(0, "tube");
+    await waitFor(() => expect(listSelects()).toHaveLength(1));
+    choose(listSelects()[0], "b");
+    await waitFor(() => expect(listSelects()[0].value).toBe("b"));
+
+    fireEvent.click(screen.getByRole("button", { name: /all 11 kv pipe \(2\)/i }));
+    await waitFor(() => expect(listSelects()).toHaveLength(2));
+    expect(listSelects().map((s) => s.value)).toEqual(["b", "a"]);
+    // Nothing left to add from that set.
+    expect(screen.getByRole("button", { name: /all 11 kv pipe \(2\)/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /all 22 kv pipe \(1\)/i })).not.toBeDisabled();
+  });
+
+  it("lets a row switch to free search and back to the list", async () => {
+    fetchSuggestedComponents.mockResolvedValue(CUTTING_LIST);
+    renderScreen();
+    pick(0, "tube");
+    await waitFor(() => expect(listSelects()).toHaveLength(1));
+    choose(listSelects()[0], "__search_other__");
+    await waitFor(() => expect(listSelects()).toHaveLength(0));
+    pick(1, "c");
+    expect(numberBoxes(/qty produced/i)).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /back to the mssqtube list/i }));
+    await waitFor(() => expect(listSelects()).toHaveLength(1));
+    expect(listSelects()[0].value).toBe("");
+    expect(screen.queryAllByText(/qty produced/i)).toHaveLength(0);
   });
 
   it("blocks the same item on two output lines and flags it inline", async () => {
