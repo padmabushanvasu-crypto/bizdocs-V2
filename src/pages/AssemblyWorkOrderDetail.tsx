@@ -49,6 +49,7 @@ import { ReportDamageDialog } from "@/components/ReportDamageDialog";
 import { DispositionDamageDialog } from "@/components/DispositionDamageDialog";
 import { AwoDeleteDialog } from "@/components/AwoDeleteDialog";
 import { AwoSerialsPanel } from "@/components/AwoSerialsPanel";
+import { AwoUserQtyPanel } from "@/components/AwoUserQtyPanel";
 import { format, differenceInDays, parseISO } from "date-fns";
 
 type StockAction = 'none' | 'return_all' | 'partial' | 'scrap_all';
@@ -556,6 +557,9 @@ export default function AssemblyWorkOrderDetail() {
           </div>
         </div>
       </div>
+
+      {/* User-entered qty lines (e.g. vacuum bottles) — change on draft / pending materials */}
+      <AwoUserQtyPanel awo={awo} />
 
       {/* FIX 5D: Warning banner — shown when in_progress with unfulfilled lines */}
       {awo.status === 'in_progress' && hasUnfulfilled && (
