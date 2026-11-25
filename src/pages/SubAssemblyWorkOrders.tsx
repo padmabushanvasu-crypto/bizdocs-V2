@@ -32,6 +32,7 @@ import {
 import { fetchItems } from "@/lib/items-api";
 import { fetchBomVariants } from "@/lib/bom-api";
 import { AwoDeleteDialog } from "@/components/AwoDeleteDialog";
+import { UserQtyFields, useBomUserQtyLines, userQtyError, toUserQtys, type UserQtyValues } from "@/components/UserQtyFields";
 import { formatNumber } from "@/lib/gst-utils";
 import { format, differenceInDays, parseISO } from "date-fns";
 
@@ -77,6 +78,8 @@ export default function SubAssemblyWorkOrders() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<FormState>(defaultForm);
+  // User-entered qty lines (e.g. vacuum bottles) — no defaults, always typed in.
+  const [userQtyValues, setUserQtyValues] = useState<UserQtyValues>({});
 
   // Pre-populate from route state (e.g. "Raise Assembly Order" from Dashboard/StockRegister)
   useEffect(() => {
@@ -138,6 +141,12 @@ export default function SubAssemblyWorkOrders() {
     enabled: !!form.item_id,
   });
 
+  const { data: userQtyLines = [], isLoading: userQtyLoading } = useBomUserQtyLines(
+    form.item_id || null,
+    form.bom_variant_id || null,
+  );
+  const userQtyProblem = userQtyError(userQtyLines, userQtyValues);
+
   const createMutation = useMutation({
     mutationFn: () =>
       createAssemblyWorkOrder({
@@ -150,12 +159,14 @@ export default function SubAssemblyWorkOrders() {
         planned_date: form.planned_date || undefined,
         work_order_ref: form.work_order_ref || undefined,
         notes: form.notes || undefined,
+        user_qtys: userQtyLines.length > 0 ? toUserQtys(userQtyLines, userQtyValues) : undefined,
       }),
     onSuccess: (newId) => {
       queryClient.invalidateQueries({ queryKey: ["awo", "sub_assembly"] });
       toast({ title: "Work order created", description: "Sub-assembly work order raised." });
       setDialogOpen(false);
       setForm(defaultForm);
+      setUserQtyValues({});
       navigate(`/assembly-work-orders/${newId}`);
     },
     onError: (err: Error) => {
@@ -185,6 +196,7 @@ export default function SubAssemblyWorkOrders() {
         item_description: item.description,
         bom_variant_id: "",
       }));
+      setUserQtyValues({});
     }
   };
 
@@ -377,7 +389,7 @@ export default function SubAssemblyWorkOrders() {
       </div>
 
       {/* Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setForm(defaultForm); }}>
+      <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) { setForm(defaultForm); setUserQtyValues({}); } }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Raise New Sub-Assembly Work Order</DialogTitle>
@@ -433,6 +445,9 @@ export default function SubAssemblyWorkOrders() {
               </div>
             )}
 
+            {/* User-entered qty lines (e.g. vacuum bottles) */}
+            <UserQtyFields lines={userQtyLines} values={userQtyValues} onChange={setUserQtyValues} />
+
             {/* Planned Date */}
             <div className="space-y-1">
               <Label>Planned Date (optional)</Label>
@@ -467,7 +482,13 @@ export default function SubAssemblyWorkOrders() {
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button
               onClick={() => createMutation.mutate()}
-              disabled={!form.item_id || form.quantity_to_build < 1 || createMutation.isPending}
+              disabled={
+                !form.item_id ||
+                form.quantity_to_build < 1 ||
+                userQtyLoading ||
+                !!userQtyProblem ||
+                createMutation.isPending
+              }
             >
               {createMutation.isPending ? "Raising…" : "Raise Work Order"}
             </Button>

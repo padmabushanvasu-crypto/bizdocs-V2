@@ -265,6 +265,8 @@ export async function createAssemblyWorkOrder(data: {
   work_order_ref?: string;
   notes?: string;
   serial_number?: string;
+  /** User-entered qty lines (BOM lines with qty_group): { child item_id: total qty for the WO }. */
+  user_qtys?: Record<string, number>;
 }): Promise<string> {
   const companyId = await getCompanyId();
   if (!companyId) throw new Error("Not authenticated");
@@ -286,6 +288,7 @@ export async function createAssemblyWorkOrder(data: {
     p_notes: data.notes ?? null,
     p_serial_number: data.serial_number ?? null,
     p_raised_by_user_id: user.id,
+    p_user_qtys: data.user_qtys && Object.keys(data.user_qtys).length > 0 ? data.user_qtys : null,
   });
 
   if (error) throw new Error(error.message);
@@ -294,6 +297,39 @@ export async function createAssemblyWorkOrder(data: {
   if (!awoId) throw new Error("rpc_create_awo returned no awo_id");
 
   return awoId;
+}
+
+// ── User-entered quantity lines (e.g. vacuum bottles: Import vs CG Power) ─────
+// A BOM line with qty_group set has no fixed qty: whoever raises the WO enters the
+// total qty for each line in the group (0 allowed, group total > 0). The DB
+// (rpc_create_awo / rpc_set_awo_user_qty) enforces this; the screen mirrors it.
+
+export interface BomUserQtyLine {
+  qty_group: string;
+  item_id: string;
+  item_code: string;
+  description: string;
+  unit: string;
+  bom_qty: number;
+}
+
+export async function fetchBomUserQtyLines(itemId: string, bomVariantId?: string | null): Promise<BomUserQtyLine[]> {
+  const { data, error } = await (supabase as any).rpc("rpc_get_bom_user_qty_lines", {
+    p_item_id: itemId,
+    p_bom_variant_id: bomVariantId || null,
+  });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as any[]).map((r) => ({ ...r, bom_qty: Number(r.bom_qty ?? 0) })) as BomUserQtyLine[];
+}
+
+/** Change the user-entered qty of one line on a draft / pending-materials WO. Also updates the open material request. */
+export async function setAwoUserQty(awoId: string, itemId: string, qty: number): Promise<void> {
+  const { error } = await (supabase as any).rpc("rpc_set_awo_user_qty", {
+    p_awo_id: awoId,
+    p_item_id: itemId,
+    p_qty: qty,
+  });
+  if (error) throw new Error(error.message);
 }
 
 // ── updateAssemblyWorkOrder ───────────────────────────────────────────────────
