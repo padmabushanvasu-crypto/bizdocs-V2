@@ -2815,6 +2815,10 @@ export interface GrnLineNextAction {
   next_action: "done" | "issued_on_dc" | "post_goods_receipt" | "post_to_store";
   action_label: string;
   after_message: string | null;
+  // Qty already taken straight off this GRN line by a DC / RM conversion /
+  // sub-assembly WO / job card, and where it went (e.g. "SA-WO-2627-669 (34)").
+  drawn_qty: number;
+  drawn_on: string | null;
 }
 
 /**
@@ -2853,6 +2857,11 @@ export interface AwaitingStoreLineItem {
   remaining_qty: number;
   damaged_reason: string | null;
   store_confirmation_notes: string | null;
+  // From v_grn_line_next_action — explains a remaining qty smaller than the
+  // GRN qty (part of the line already used on a DC / WO / conversion / job card).
+  drawn_qty: number;
+  drawn_on: string | null;
+  after_message: string | null;
 }
 
 export async function fetchAwaitingStoreLineItems(): Promise<AwaitingStoreLineItem[]> {
@@ -2910,6 +2919,9 @@ export async function fetchAwaitingStoreLineItems(): Promise<AwaitingStoreLineIt
         remaining_qty: heldAvailable != null ? Math.max(0, Number(heldAvailable)) : fallbackRemaining,
         damaged_reason: l.damaged_reason ?? null,
         store_confirmation_notes: l.store_confirmation_notes ?? null,
+        drawn_qty: Number(nextActionMap.get(l.id)?.drawn_qty ?? 0),
+        drawn_on: nextActionMap.get(l.id)?.drawn_on ?? null,
+        after_message: nextActionMap.get(l.id)?.after_message ?? null,
       };
     });
 }
@@ -3355,6 +3367,8 @@ export interface GrnStoreReceiptCardLine {
   action_label: string | null;
   issued_on_dcs: string | null;
   after_message: string | null;
+  drawn_qty: number;
+  drawn_on: string | null;
 }
 
 export interface GrnStoreReceiptCard {
@@ -3518,6 +3532,8 @@ export async function fetchGrnStoreReceiptQueue(
         action_label: nextAction?.action_label ?? null,
         issued_on_dcs: nextAction?.issued_on_dcs ?? null,
         after_message: nextAction?.after_message ?? null,
+        drawn_qty: Number(nextAction?.drawn_qty ?? 0),
+        drawn_on: nextAction?.drawn_on ?? null,
         store_confirmed: Boolean(l.store_confirmed),
         store_confirmed_at: l.store_confirmed_at ?? null,
         store_confirmed_by: l.store_confirmed_by ?? null,
