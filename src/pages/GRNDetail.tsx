@@ -68,6 +68,8 @@ import { isFinalBatch } from "@/lib/dc-receipt-utils";
 import { GRNFinanceApproval } from "@/components/GRNFinanceApproval";
 import { ReverseGrnReturnDialog } from "@/components/ReverseGrnReturnDialog";
 import { GrnNcPendingPanel } from "@/components/GrnNcPendingPanel";
+import { fetchGrnLineNextActions } from "@/lib/grn-api";
+import { getCompanyId } from "@/lib/auth-helpers";
 
 // ── Lookup tables ──────────────────────────────────────────────────────────────
 
@@ -859,6 +861,19 @@ function Stage1ReadOnly({
   // final or not, so is_final_grn no longer gates whether the column shows.
   const hasStoreTracking = lines.length > 0;
   const hasJigData = isDcGrn && lines.some(l => l.jig_confirmed === true);
+  // Where part of a line was already used (DC / work order / RM conversion /
+  // job card) straight off the GRN — explains a Store qty below the GRN qty.
+  const lineIds = lines.map((l) => l.id).filter(Boolean);
+  const { data: nextActions } = useQuery({
+    queryKey: ["grn-line-next-actions", lineIds.join(",")],
+    queryFn: async () => {
+      const companyId = await getCompanyId();
+      return companyId ? fetchGrnLineNextActions(lineIds, companyId) : [];
+    },
+    enabled: hasStoreTracking && lineIds.length > 0,
+    staleTime: 30_000,
+  });
+  const nextActionById = new Map((nextActions ?? []).map((a) => [a.grn_line_item_id, a]));
   return (
     <div className="overflow-x-auto rounded-lg border border-blue-100">
       <table className="w-full text-sm border-collapse">
@@ -928,9 +943,23 @@ function Stage1ReadOnly({
                           )}
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-amber-600 font-medium">
-                          ⏳ Awaiting
-                        </span>
+                        (() => {
+                          const na = nextActionById.get(l.id);
+                          const drawn = Number(na?.drawn_qty ?? 0);
+                          if (na?.next_action === "issued_on_dc") {
+                            return <span className="text-slate-500 italic">{na.action_label}</span>;
+                          }
+                          return (
+                            <span className="inline-flex flex-col items-center gap-0.5">
+                              <span className="inline-flex items-center gap-1 text-amber-600 font-medium">⏳ Awaiting</span>
+                              {drawn > 0 && na && (
+                                <span className="text-[11px] font-normal text-amber-700 leading-snug max-w-[180px]">
+                                  {formatNumber(Number(na.held_available))} to post · {formatNumber(drawn)} used on {na.drawn_on}
+                                </span>
+                              )}
+                            </span>
+                          );
+                        })()
                       )}
                     </td>
                   )}
