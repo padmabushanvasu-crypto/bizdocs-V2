@@ -346,7 +346,7 @@ export default function GrnStoreQueue() {
           const s = form.items[item.id];
           return {
             id: item.id,
-            storeQty: s?.storeQty ? Number(s.storeQty) : item.conforming_qty,
+            storeQty: s?.storeQty ? Number(s.storeQty) : item.remaining_qty,
             location: s?.location || null,
             damagedQty: s?.damagedQty ? Number(s.damagedQty) : null,
             damagedReason: s?.damagedReason || null,
@@ -390,8 +390,9 @@ export default function GrnStoreQueue() {
       // trg_guard_grn_line_conversion_invariant raises this when the line
       // was already drawn off by a DC (or RM conversion) — translate its
       // raw Postgres wording into something the storekeeper can act on.
-      const description = typeof err?.message === "string" && err.message.includes("already drawn by DC/RM conversion")
-        ? "This material was already sent out on a DC, so it cannot be posted to Store. Nothing to do."
+      const description = typeof err?.message === "string" &&
+        (err.message.includes("already drawn by DC/RM conversion") || err.message.includes("already used on DC / RM conversion"))
+        ? "Part of this material was already used on a DC, work order, RM conversion or job card. Refresh and post only the remaining qty."
         : err.message;
       toast({ title: "Error confirming receipt", description, variant: "destructive" });
       // A batch can be partly committed (the failed lines are left unchanged,
@@ -791,7 +792,7 @@ export default function GrnStoreQueue() {
                                 {item.drawing_number || "—"}
                               </td>
                               <td colSpan={6} className="px-3 py-2.5 text-xs text-slate-500 dark:text-slate-400 italic">
-                                {item.issued_on_dcs ? `Issued on ${item.issued_on_dcs}` : "Issued on a DC"}
+                                {item.action_label || (item.issued_on_dcs ? `Issued on ${item.issued_on_dcs}` : "Issued on a DC")}
                               </td>
                             </tr>
                           );
@@ -829,6 +830,11 @@ export default function GrnStoreQueue() {
                                 <p className="text-[11px] text-emerald-600 mt-0.5">
                                   Already received: {formatNumber(item.store_confirmed_qty)} of{" "}
                                   {formatNumber(item.conforming_qty)}
+                                </p>
+                              )}
+                              {item.drawn_qty > 0 && item.after_message && (
+                                <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-0.5">
+                                  {item.after_message}
                                 </p>
                               )}
                             </td>
