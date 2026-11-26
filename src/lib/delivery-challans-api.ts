@@ -1779,8 +1779,9 @@ export async function recordEnhancedReturn(
 
 // ─── DC Approval Workflow ─────────────────────────────────────────────────────
 
-// TODO: Add RLS policy to restrict UPDATE of approved_at/approved_by columns to
-// admin, finance, and purchase_team roles so this guard is enforced server-side.
+// Server-side enforcement: trigger guard_dc_approval_columns() allows only admin, finance
+// and purchase_team to set approval columns, and refuses issuing an unapproved DC
+// (migration 20261126161930_sec_po_dc_approval_guards).
 export async function approveDC(id: string, approvedBy: string): Promise<void> {
   const { error } = await supabase
     .from('delivery_challans')
