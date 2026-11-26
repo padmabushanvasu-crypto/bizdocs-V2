@@ -659,11 +659,13 @@ interface StockStatusRowLike {
   standard_cost?: number | null;
   stock_free?: number | null;
   stock_in_process?: number | null;
+  stock_on_grn?: number | null;
   stock_in_subassembly_wip?: number | null;
   stock_in_fg_wip?: number | null;
   stock_in_fg_ready?: number | null;
   cost_free?: number | null;
   cost_in_process?: number | null;
+  cost_on_grn?: number | null;
   cost_in_subassembly_wip?: number | null;
   cost_in_fg_wip?: number | null;
   cost_in_fg_ready?: number | null;
@@ -705,6 +707,7 @@ export function buildStockRegisterWorkbook(
     "Standard Cost (₹)",          // 5
     "Stock — In Store",           // 6
     "Stock — At Vendor",          // 7
+    "Stock — On GRN (not in Store)", // 7b
     "Stock — Sub-Assy WIP",       // 8
     "Stock — FG WIP",             // 9
     "Stock — FG Ready",           // 10
@@ -712,6 +715,7 @@ export function buildStockRegisterWorkbook(
     "Closing Stock Value (₹)",    // 12  (free stock × standard cost = cost_free)
     "Cost — In Store (₹)",        // 13
     "Cost — At Vendor (₹)",       // 13
+    "Cost — On GRN (₹)",          // 13b
     "Cost — Sub-Assy WIP (₹)",    // 14
     "Cost — FG WIP (₹)",          // 15
     "Cost — FG Ready (₹)",        // 16
@@ -731,12 +735,14 @@ export function buildStockRegisterWorkbook(
     std: number;
     s_free: number;
     s_proc: number;
+    s_grn: number;
     s_sa: number;
     s_fgwip: number;
     s_fgr: number;
     s_total: number;
     c_free: number;
     c_proc: number;
+    c_grn: number;
     c_sa: number;
     c_fgwip: number;
     c_fgr: number;
@@ -748,6 +754,7 @@ export function buildStockRegisterWorkbook(
   const rowVals: RowVals[] = rows.map((r) => {
     const s_free   = Number(r.stock_free               ?? 0);
     const s_proc   = Number(r.stock_in_process         ?? 0);
+    const s_grn    = Number(r.stock_on_grn             ?? 0);
     const s_sa     = Number(r.stock_in_subassembly_wip ?? 0);
     const s_fgwip  = Number(r.stock_in_fg_wip          ?? 0);
     const s_fgr    = Number(r.stock_in_fg_ready        ?? 0);
@@ -757,12 +764,13 @@ export function buildStockRegisterWorkbook(
       type:    humanize(r.item_type ?? ""),
       uom:     r.unit ?? "",
       std:     Number(r.standard_cost ?? 0),
-      s_free, s_proc, s_sa, s_fgwip, s_fgr,
+      s_free, s_proc, s_grn, s_sa, s_fgwip, s_fgr,
       // Closing stock = free stock only (matches the Stock Register page). The
       // other buckets stay in their own columns; none count toward closing stock.
       s_total: s_free,
       c_free:  Number(r.cost_free               ?? 0),
       c_proc:  Number(r.cost_in_process         ?? 0),
+      c_grn:   Number(r.cost_on_grn             ?? 0),
       c_sa:    Number(r.cost_in_subassembly_wip ?? 0),
       c_fgwip: Number(r.cost_in_fg_wip          ?? 0),
       c_fgr:   Number(r.cost_in_fg_ready        ?? 0),
@@ -779,6 +787,7 @@ export function buildStockRegisterWorkbook(
     (v) =>
       Number.isInteger(v.s_free) &&
       Number.isInteger(v.s_proc) &&
+      Number.isInteger(v.s_grn) &&
       Number.isInteger(v.s_sa) &&
       Number.isInteger(v.s_fgwip) &&
       Number.isInteger(v.s_fgr) &&
@@ -793,19 +802,21 @@ export function buildStockRegisterWorkbook(
     4:  RUPEE_FMT, // Standard Cost
     5:  qtyFmt,    // Stock — In Store
     6:  qtyFmt,    // Stock — At Vendor
-    7:  qtyFmt,    // Stock — Sub-Assy WIP
-    8:  qtyFmt,    // Stock — FG WIP
-    9:  qtyFmt,    // Stock — FG Ready
-    10: qtyFmt,    // Stock — Closing Stock
-    11: RUPEE_FMT, // Closing Stock Value
-    12: RUPEE_FMT, // Cost — In Store
-    13: RUPEE_FMT, // Cost — At Vendor
-    14: RUPEE_FMT, // Cost — Sub-Assy WIP
-    15: RUPEE_FMT, // Cost — FG WIP
-    16: RUPEE_FMT, // Cost — FG Ready
-    17: RUPEE_FMT, // Cost — TOTAL
-    18: qtyFmt,    // Min Required
-    19: qtyFmt,    // Aimed Stock
+    7:  qtyFmt,    // Stock — On GRN
+    8:  qtyFmt,    // Stock — Sub-Assy WIP
+    9:  qtyFmt,    // Stock — FG WIP
+    10: qtyFmt,    // Stock — FG Ready
+    11: qtyFmt,    // Stock — Closing Stock
+    12: RUPEE_FMT, // Closing Stock Value
+    13: RUPEE_FMT, // Cost — In Store
+    14: RUPEE_FMT, // Cost — At Vendor
+    15: RUPEE_FMT, // Cost — On GRN
+    16: RUPEE_FMT, // Cost — Sub-Assy WIP
+    17: RUPEE_FMT, // Cost — FG WIP
+    18: RUPEE_FMT, // Cost — FG Ready
+    19: RUPEE_FMT, // Cost — TOTAL
+    20: qtyFmt,    // Min Required
+    21: qtyFmt,    // Aimed Stock
   };
 
   // Build AOA: header + rows + totals
@@ -814,9 +825,9 @@ export function buildStockRegisterWorkbook(
     aoa.push([
       v.code, v.desc, v.type, v.uom,
       v.std,
-      v.s_free, v.s_proc, v.s_sa, v.s_fgwip, v.s_fgr, v.s_total,
+      v.s_free, v.s_proc, v.s_grn, v.s_sa, v.s_fgwip, v.s_fgr, v.s_total,
       v.c_free, // Closing Stock Value = closing stock (free) valued at standard cost
-      v.c_free, v.c_proc, v.c_sa, v.c_fgwip, v.c_fgr, v.c_total,
+      v.c_free, v.c_proc, v.c_grn, v.c_sa, v.c_fgwip, v.c_fgr, v.c_total,
       v.minreq, v.aimed,
       humanize(v.alert),
     ]);
@@ -829,9 +840,9 @@ export function buildStockRegisterWorkbook(
   const footer: any[] = [
     "TOTAL", "", "", "",
     "",                    // standard cost — meaningless to sum
-    sum("s_free"), sum("s_proc"), sum("s_sa"), sum("s_fgwip"), sum("s_fgr"), sum("s_total"),
+    sum("s_free"), sum("s_proc"), sum("s_grn"), sum("s_sa"), sum("s_fgwip"), sum("s_fgr"), sum("s_total"),
     sum("c_free"),
-    sum("c_free"), sum("c_proc"), sum("c_sa"), sum("c_fgwip"), sum("c_fgr"), sum("c_total"),
+    sum("c_free"), sum("c_proc"), sum("c_grn"), sum("c_sa"), sum("c_fgwip"), sum("c_fgr"), sum("c_total"),
     "", "", "",
   ];
   aoa.push(footer);
@@ -900,6 +911,7 @@ export function buildStockRegisterWorkbook(
     { wch: 16 }, // Standard Cost
     { wch: 16 }, // Stock — In Store
     { wch: 16 }, // Stock — At Vendor
+    { wch: 18 }, // Stock — On GRN
     { wch: 18 }, // Stock — Sub-Assy WIP
     { wch: 16 }, // Stock — FG WIP
     { wch: 16 }, // Stock — FG Ready
@@ -907,6 +919,7 @@ export function buildStockRegisterWorkbook(
     { wch: 20 }, // Closing Stock Value
     { wch: 18 }, // Cost — In Store
     { wch: 18 }, // Cost — At Vendor
+    { wch: 18 }, // Cost — On GRN
     { wch: 20 }, // Cost — Sub-Assy WIP
     { wch: 18 }, // Cost — FG WIP
     { wch: 18 }, // Cost — FG Ready

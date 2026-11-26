@@ -430,7 +430,7 @@ function StockRegisterInner() {
     if (zeroStock) {
       result = result.filter(
         (r) =>
-          (r.stock_free + r.stock_in_process + r.stock_in_subassembly_wip +
+          (r.stock_free + r.stock_in_process + r.stock_on_grn + r.stock_in_subassembly_wip +
             r.stock_in_fg_wip + r.wip_qty + r.queued_qty +
             r.queued_for_other_builds_qty + r.stock_in_fg_ready) === 0
       );
@@ -730,7 +730,11 @@ function StockRegisterInner() {
                 />
                 <ColHeader
                   label="At Vendor"
-                  tip="Sent for processing via Delivery Challan, expected to return"
+                  tip="Sent for processing via Delivery Challan and not yet back. Lots already back in the factory on a GRN are shown under On GRN instead."
+                />
+                <ColHeader
+                  label="On GRN"
+                  tip="Back in the factory on a GRN (QC done) but not posted to Store. Not closing stock. 'Not finished' parts still have an outside process left on their route — they go on the next DC and are never used in assembly."
                 />
                 <ColHeader
                   label="WIP"
@@ -781,13 +785,13 @@ function StockRegisterInner() {
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={10 + (showReorder ? 1 : 0) + (showAimed ? 1 : 0) - (hideCosts ? 1 : 0)} className="text-center py-12 text-slate-400 text-sm">
+                  <td colSpan={11 + (showReorder ? 1 : 0) + (showAimed ? 1 : 0) - (hideCosts ? 1 : 0)} className="text-center py-12 text-slate-400 text-sm">
                     Loading…
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={10 + (showReorder ? 1 : 0) + (showAimed ? 1 : 0) - (hideCosts ? 1 : 0)} className="py-16">
+                  <td colSpan={11 + (showReorder ? 1 : 0) + (showAimed ? 1 : 0) - (hideCosts ? 1 : 0)} className="py-16">
                     <div className="flex flex-col items-center gap-3">
                       <Package className="h-10 w-10 text-slate-300" />
                       <div className="text-center">
@@ -843,6 +847,16 @@ function StockRegisterInner() {
                       {/* At Vendor */}
                       <td className="px-3 py-3 text-right">
                         <Num value={row.stock_in_process} />
+                      </td>
+
+                      {/* On GRN */}
+                      <td className="px-3 py-3 text-right" title={row.on_grn_grns ?? undefined}>
+                        <Num value={row.stock_on_grn} />
+                        {row.stock_on_grn_unfinished > 0 && (
+                          <p className="text-[10px] leading-tight text-red-700 whitespace-nowrap">
+                            {formatNumber(row.stock_on_grn_unfinished)} not finished
+                          </p>
+                        )}
                       </td>
 
                       {/* WIP */}
@@ -919,6 +933,7 @@ function StockRegisterInner() {
                               totalStock={
                                 row.stock_free +
                                 row.stock_in_process +
+                                row.stock_on_grn +
                                 row.stock_in_subassembly_wip +
                                 row.stock_in_fg_wip +
                                 row.stock_in_fg_ready
@@ -1034,6 +1049,8 @@ function StockRegisterInner() {
                 <td className="px-3 py-3" />
                 {/* At Vendor qty */}
                 <td className="px-3 py-3" />
+                {/* On GRN qty */}
+                <td className="px-3 py-3" />
                 {/* WIP qty */}
                 <td className="px-3 py-3" />
                 {/* Queued qty */}
@@ -1123,6 +1140,18 @@ function StockRegisterInner() {
                 </span>
                 <span className="text-sm text-slate-500">{selectedItem.unit} in store</span>
               </div>
+              {selectedItem.stock_on_grn > 0 && (
+                <p className="text-xs mt-0.5">
+                  <span className="text-slate-500">{formatNumber(selectedItem.stock_on_grn)} on GRN, not in Store</span>
+                  {selectedItem.stock_on_grn_unfinished > 0 && (
+                    <span className="text-red-700">
+                      {" "}· {formatNumber(selectedItem.stock_on_grn_unfinished)} not finished
+                      {selectedItem.on_grn_next_processes ? ` (next: ${selectedItem.on_grn_next_processes})` : ""}
+                    </span>
+                  )}
+                  {selectedItem.on_grn_grns && <span className="text-slate-400"> — {selectedItem.on_grn_grns}</span>}
+                </p>
+              )}
               {(selectedItem.stock_in_process > 0 || (selectedItem.stock_in_subassembly_wip + selectedItem.stock_in_fg_wip) > 0) && (
                 <p className="text-xs text-slate-400 mt-0.5">
                   {selectedItem.stock_in_process > 0 && `${formatNumber(selectedItem.stock_in_process)} at vendor`}
@@ -1144,6 +1173,8 @@ function StockRegisterInner() {
                     <span className="text-right font-mono tabular-nums text-slate-600">{formatCurrency(selectedItem.cost_free)}</span>
                     <span className="text-slate-500">At Vendor</span>
                     <span className="text-right font-mono tabular-nums text-slate-600">{formatCurrency(selectedItem.cost_in_process)}</span>
+                    <span className="text-slate-500">On GRN</span>
+                    <span className="text-right font-mono tabular-nums text-slate-600">{formatCurrency(selectedItem.cost_on_grn)}</span>
                     <span className="text-slate-500">Sub-Assy WIP</span>
                     <span className="text-right font-mono tabular-nums text-slate-600">{formatCurrency(selectedItem.cost_in_subassembly_wip)}</span>
                     <span className="text-slate-500">FG WIP</span>
