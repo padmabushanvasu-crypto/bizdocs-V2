@@ -952,9 +952,14 @@ function Stage1ReadOnly({
                           return (
                             <span className="inline-flex flex-col items-center gap-0.5">
                               <span className="inline-flex items-center gap-1 text-amber-600 font-medium">⏳ Awaiting</span>
+                              {na?.route_finished === false && na.route_next_process && (
+                                <span className="text-[11px] font-medium text-red-700 leading-snug max-w-[180px]">
+                                  Not finished — next: {na.route_next_process}. Send on DC; not for assembly.
+                                </span>
+                              )}
                               {drawn > 0 && na && (
                                 <span className="text-[11px] font-normal text-amber-700 leading-snug max-w-[180px]">
-                                  {formatNumber(Number(na.held_available))} to post · {formatNumber(drawn)} used on {na.drawn_on}
+                                  {formatNumber(Number(na.held_available))} on GRN · {formatNumber(drawn)} used on {na.drawn_on}
                                 </span>
                               )}
                             </span>

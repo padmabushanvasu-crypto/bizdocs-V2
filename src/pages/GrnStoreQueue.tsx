@@ -832,7 +832,7 @@ export default function GrnStoreQueue() {
                                   {formatNumber(item.conforming_qty)}
                                 </p>
                               )}
-                              {item.drawn_qty > 0 && item.after_message && (
+                              {(item.drawn_qty > 0 || item.route_unfinished) && item.after_message && (
                                 <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-0.5">
                                   {item.after_message}
                                 </p>

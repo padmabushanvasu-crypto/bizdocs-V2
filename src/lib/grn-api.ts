@@ -2819,6 +2819,10 @@ export interface GrnLineNextAction {
   // sub-assembly WO / job card, and where it went (e.g. "SA-WO-2627-669 (34)").
   drawn_qty: number;
   drawn_on: string | null;
+  // Item route position: next external process still to do, and whether the
+  // part is finished (false = not usable in assembly yet; null = no data).
+  route_next_process: string | null;
+  route_finished: boolean | null;
 }
 
 /**
@@ -2862,6 +2866,8 @@ export interface AwaitingStoreLineItem {
   drawn_qty: number;
   drawn_on: string | null;
   after_message: string | null;
+  // true when the item's route still has an external process left (from the view).
+  route_unfinished: boolean;
 }
 
 export async function fetchAwaitingStoreLineItems(): Promise<AwaitingStoreLineItem[]> {
@@ -2922,6 +2928,7 @@ export async function fetchAwaitingStoreLineItems(): Promise<AwaitingStoreLineIt
         drawn_qty: Number(nextActionMap.get(l.id)?.drawn_qty ?? 0),
         drawn_on: nextActionMap.get(l.id)?.drawn_on ?? null,
         after_message: nextActionMap.get(l.id)?.after_message ?? null,
+        route_unfinished: nextActionMap.get(l.id)?.route_finished === false,
       };
     });
 }
@@ -3369,6 +3376,7 @@ export interface GrnStoreReceiptCardLine {
   after_message: string | null;
   drawn_qty: number;
   drawn_on: string | null;
+  route_unfinished: boolean;
 }
 
 export interface GrnStoreReceiptCard {
@@ -3534,6 +3542,7 @@ export async function fetchGrnStoreReceiptQueue(
         after_message: nextAction?.after_message ?? null,
         drawn_qty: Number(nextAction?.drawn_qty ?? 0),
         drawn_on: nextAction?.drawn_on ?? null,
+        route_unfinished: nextAction?.route_finished === false,
         store_confirmed: Boolean(l.store_confirmed),
         store_confirmed_at: l.store_confirmed_at ?? null,
         store_confirmed_by: l.store_confirmed_by ?? null,
