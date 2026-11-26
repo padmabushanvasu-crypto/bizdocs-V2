@@ -1,0 +1,74 @@
+# Quality gates. Human-readable version: ERP-ENGINEERING-KNOWLEDGE/16-ENGINEERING-QUALITY-GATES.md
+# auto_checks map to CI job names (see rules/checks/README.md). Any failing auto check or open blocker fails the gate.
+version: 1
+gates:
+  - id: G-01
+    name: Requirements approval
+    entry: [discovery complete]
+    evidence: [REQUIREMENTS-REGISTER.md, BUSINESS-RULES-REGISTER.md, PROJECT-CHARTER.md, process maps, exception catalogue]
+    blockers: [open Q affecting stock, money or security, BR without owner/date]
+    approver: [owner, customer sponsor]
+    auto_checks: []
+  - id: G-02
+    name: Architecture approval
+    entry: [G-01]
+    evidence: [ADRs, domain model, state machines, movement table, operations with reverses, walk-through record]
+    blockers: [movement with two recording documents, operation without reverse, inherited BizDocs category D/E/F item]
+    approver: [owner, reviewer]
+    auto_checks: []
+  - id: G-03
+    name: Database schema approval
+    entry: [G-02]
+    evidence: [migrations, DATA-DICTIONARY.md with single-writer map, invariant views]
+    blockers: [delete+reinsert children, overloaded flag, table without RLS, FK without explicit ON DELETE, float quantity/money]
+    approver: [reviewer]
+    auto_checks: [migrations:fresh-build, schema:lint]
+  - id: G-04
+    name: Module implementation
+    entry: [G-03 for module tables]
+    evidence: [MODULE-SPECIFICATION, ACCEPTANCE-CRITERIA results, DB tests forward/reverse/idempotency/permissions]
+    blockers: [missing reverse path, placeholder logic, test changed without requirement id]
+    approver: [reviewer]
+    auto_checks: [typecheck, lint, test:unit, test:db, test:permissions, evidence:pr-template, tests:changed-require-id]
+  - id: G-05
+    name: Module integration
+    entry: [G-04 for all modules in flow]
+    evidence: [end-to-end flow tests incl. reverse]
+    blockers: [double effect at a seam]
+    approver: [reviewer]
+    auto_checks: [test:e2e, invariants:check]
+  - id: G-06
+    name: Security validation
+    entry: [design at G-02; validation before G-08]
+    evidence: [security checklist, advisor output, permission matrix tests]
+    blockers: [advisor ERROR, direct-API bypass of any privileged operation, anon access to business tables]
+    approver: [owner, security reviewer]
+    auto_checks: [security:advisor, test:permissions, secrets:scan]
+  - id: G-07
+    name: Regression and simulation
+    entry: [G-05]
+    evidence: [full suite, simulation report at 3-year volume]
+    blockers: [any invariant row, performance miss without ADR]
+    approver: [reviewer]
+    auto_checks: [test:unit, test:db, test:e2e, invariants:check, perf:smoke]
+  - id: G-08
+    name: User acceptance
+    entry: [G-06, G-07]
+    evidence: [UAT log per role]
+    blockers: [open Critical/High]
+    approver: [customer sponsor]
+    auto_checks: []
+  - id: G-09
+    name: Production deployment
+    entry: [G-08, data migration reconciled]
+    evidence: [PRODUCTION-READINESS-CHECKLIST PR-01..PR-12]
+    blockers: [any checklist item without evidence]
+    approver: [owner]
+    auto_checks: [typecheck, lint, test:unit, test:db, test:permissions, test:e2e, schema:diff, security:advisor, secrets:scan, invariants:check]
+  - id: G-10
+    name: Subsequent release
+    entry: [change on release branch]
+    evidence: [CI run, migration dry-run on production copy, inverse SQL, CHANGELOG entry, workflow smoke test, post-release invariant check]
+    blockers: [invariant row, data change without inverse SQL]
+    approver: [owner]
+    auto_checks: [typecheck, lint, test:unit, test:db, test:permissions, schema:diff, security:advisor, invariants:check]

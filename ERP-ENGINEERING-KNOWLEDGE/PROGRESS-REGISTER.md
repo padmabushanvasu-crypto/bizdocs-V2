@@ -16,7 +16,7 @@ Repository HEAD at start: `1d21062` (main, 26 Nov 2026). 1,016 commits, 18 Mar �
 | 4–12 | Blueprint, DB, business logic, security, UX, requirements, methodology, testing, edge cases, readiness, gates, AI governance | `06`–`17` | DONE |
 | 13 | Starter kit + machine-readable rules/gates | `NEW-ERP-STARTER-KIT/` | DONE |
 | 14 | Traceability register | `19` | DONE |
-| 15 | Adversarial self-review and corrections | `20` §Self-review | DONE |
+| 15 | Adversarial self-review and corrections | `20` §2 | DONE |
 | 16 | Executive summary + final report | `01`, final chat report | DONE |
 
 ## Evidence sources used
@@ -37,3 +37,11 @@ Not available: issue tracker, original chat transcripts with the customer, produ
 1. Owner to review security finding BD-F-009 privately (details withheld from this public repository).
 2. Owner to answer questions Q-01..Q-08 in `20`.
 3. Independent external review of `06`–`17` (this exercise is a self-review only).
+
+## Completion log
+
+| Date | Phase | Evidence |
+|---|---|---|
+| 26 Nov 2026 | 0–16 | All 21 docs + progress register; starter kit (21 templates + PR template + README); rules YAML (67) and gates YAML (10) parse; `schema-lint.sql` and `invariants.template.sql` executed on PostgreSQL 16 against a synthetic schema; transfer script in starter-kit README executed into an empty repo (50 files copied, no BizDocs identifiers found by grep) |
+
+Self-review corrections applied: `06` §1 (logic location is an ADR), R-BL-02 / R-BL-04 wording, minimum viable enforcement in `16`, F-029 figure recounted, severity counts corrected, Part 2 of `18` excluded from transfer.

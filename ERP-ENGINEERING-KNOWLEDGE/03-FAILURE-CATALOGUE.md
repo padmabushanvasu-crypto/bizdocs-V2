@@ -294,7 +294,7 @@ Counts: 41 findings — 38 verified historical failures (6 of them still partly 
 
 ### BD-F-029 — Live database and repository schema drifted apart
 - **Layer:** Engineering process · **Sev:** High · **Type:** V and U · **Conf:** H
-- **What went wrong:** Repository: 126 migration files, 2 for September. Live history: no entries between 3 Apr and 18 Aug, while repo files exist for May–Aug (applied by hand in the SQL editor); ~120 live migrations in September with no repo file. Functions exist only live (`recompute_po_line_received_quantity`); a disabled trigger lives only in the DB; loose `.sql` files sit in the repo root. The rule "Vasu runs all SQL manually" (CLAUDE.md §4) conflicts with practice (MCP `apply_migration`).
+- **What went wrong:** Repository: 126 migration files, 2 for September. Live history: no entries between 3 Apr and 18 Aug, while repo files exist for May–Aug (applied by hand in the SQL editor); over 100 live migrations in September (counted from the live list) against 2 repo files for that month. Functions exist only live (`recompute_po_line_received_quantity`); a disabled trigger lives only in the DB; loose `.sql` files sit in the repo root. The rule "Vasu runs all SQL manually" (CLAUDE.md §4) conflicts with practice (MCP `apply_migration`).
 - **Root cause:** RC-09.
 - **Consequences:** The system cannot be rebuilt from the repository; a new environment or disaster recovery depends on the live database.
 - **Resolution:** partial — `supabase/migrations/LIVE_APPLIED_2026-11-25_26.md` records an export query.
