@@ -1,0 +1,193 @@
+# Portable engineering rules for a new ERP.
+# severity: blocker = gate fails; major = gate fails unless risk accepted in RISK-REGISTER; minor = review note.
+# enforcement: db | ci | lint | hook | review   (review = human only)
+# origin: BizDocs failure IDs (BD-F-###) or "preventive".
+version: 1
+rules:
+  # ---------- Database ----------
+  - id: R-DB-01
+    title: Single writer for every derived value
+    statement: Each cached/derived value has exactly one writer named in DATA-DICTIONARY; caches are maintained by DB triggers from the ledger; a drift view per cache returns zero rows.
+    severity: blocker
+    enforcement: [db, ci]
+    checks: [invariants:check, grants:no-app-update-on-cache-columns]
+    tests: [T-INV-06, T-INV-03]
+    origin: [BD-F-012, BD-F-013, BD-F-015, BD-F-016]
+  - id: R-DB-02
+    title: One transaction per business operation
+    statement: Multi-row business writes run in one server-side function; client code never loops business writes.
+    severity: blocker
+    enforcement: [db, lint]
+    checks: [lint:no-client-write-loops]
+    tests: [T-INV-04]
+    origin: [BD-F-002, BD-F-014, BD-F-017]
+  - id: R-DB-03
+    title: Document numbering in the database
+    statement: Numbers assigned by BEFORE INSERT trigger under a lock on (tenant, series, FY); unique index; padding never truncates; FY from document date.
+    severity: blocker
+    enforcement: [db]
+    tests: [T-DB-03, T-DB-04]
+    origin: [BD-F-002, BD-F-003]
+  - id: R-DB-04
+    title: No silent clamping
+    statement: Balances carry CHECK >= 0; functions RAISE on shortage; negatives allowed only for transaction types listed in settings and recorded as BR.
+    severity: blocker
+    enforcement: [db, lint]
+    checks: [lint:no-clamp-before-write]
+    tests: [T-DB-01]
+    origin: [BD-F-017]
+  - id: R-DB-05
+    title: Edit in place
+    statement: Child rows keep ids on edit (upsert by stable key); business FKs ON DELETE RESTRICT.
+    severity: blocker
+    enforcement: [db, review]
+    checks: [schema:lint-fk-policy]
+    tests: [T-BL-02]
+    origin: [BD-F-010, BD-F-011]
+  - id: R-DB-06
+    title: Compute, do not store, derived values
+    statement: Stored derived values need an ADR with owner and refresh rule; legal snapshots named *_at_issue.
+    severity: major
+    enforcement: [review]
+    tests: [T-BL-03, T-INV-08]
+    origin: [BD-F-019, BD-F-020]
+  - id: R-DB-07
+    title: One meaning per field
+    statement: No flag consulted by unrelated decisions; no near-duplicate column names; legacy columns renamed legacy_* then dropped.
+    severity: major
+    enforcement: [ci, review]
+    checks: [schema:lint-name-similarity]
+    tests: [T-DB-05]
+    origin: [BD-F-021, BD-F-022]
+  - id: R-DB-08
+    title: Master-data identity and units
+    statement: Natural codes normalised and unique by functional index; unit of measure NOT NULL without default; inactive masters blocked from new use.
+    severity: blocker
+    enforcement: [db]
+    tests: [T-DB-06]
+    origin: [BD-F-027, BD-F-028]
+  - id: R-DB-09
+    title: Schema as code
+    statement: Every DDL change is a migration file in the repo; CI builds a fresh DB from migrations and diffs it against staging/production; non-empty diff fails.
+    severity: blocker
+    enforcement: [ci]
+    checks: [migrations:fresh-build, schema:diff]
+    tests: [T-DB-07]
+    origin: [BD-F-029]
+  - id: R-DB-10
+    title: Idempotent postings
+    statement: Every posting has a deterministic source key with a unique index; resubmit returns the existing result.
+    severity: blocker
+    enforcement: [db]
+    tests: [T-INV-02]
+    origin: [BD-F-013, BD-F-014]
+  - id: R-DB-11
+    title: Append-only ledger
+    statement: No UPDATE/DELETE on ledger rows; reversals reference the original; sum reversed <= original.
+    severity: blocker
+    enforcement: [db]
+    tests: [T-INV-09]
+    origin: [preventive]
+  - id: R-DB-12
+    title: Complete reads
+    statement: Every list read uses the shared paginated helper; truncation raises.
+    severity: major
+    enforcement: [lint]
+    checks: [lint:list-calls-use-helper]
+    tests: [T-API-01]
+    origin: [BD-F-004]
+  - id: R-DB-13
+    title: Operational tables isolated
+    statement: Backups, correction logs and archives live in a non-exposed schema with RLS and a retention date.
+    severity: major
+    enforcement: [ci]
+    checks: [security:advisor, schema:lint-exposed-tables]
+    tests: [T-SEC-03]
+    origin: [BD-F-037]
+  - id: R-DB-14
+    title: Precision
+    statement: numeric types for quantity and money, never float; discrete units integer-checked; rounding only in one display formatter.
+    severity: major
+    enforcement: [db, lint]
+    tests: [T-DB-09]
+    origin: [BD-F-041]
+  - id: R-DB-15
+    title: Time
+    statement: timestamptz in UTC; business date as date in company time zone; jobs scheduled in company time zone.
+    severity: major
+    enforcement: [review]
+    tests: [T-DB-08]
+    origin: [BD-F-036]
+  - id: R-DB-16
+    title: Lock order
+    statement: Stock postings lock items in sorted id order.
+    severity: major
+    enforcement: [review]
+    tests: [T-INV-10]
+    origin: [preventive]
+  - id: R-DB-17
+    title: Definer-rights hygiene
+    statement: Elevated functions set search_path, check role/tenant inside, and revoke EXECUTE from anon/public.
+    severity: blocker
+    enforcement: [ci]
+    checks: [security:advisor]
+    tests: [T-SEC-03]
+    origin: [BD-F-009]
+  # ---------- Business logic ----------
+  - {id: R-BL-01, title: Ledger first, statement: "All quantity effects post through the Inventory posting function; documents never update balances.", severity: blocker, enforcement: [db], tests: [T-INV-01], origin: [BD-F-001, BD-F-012]}
+  - {id: R-BL-02, title: Reverse path with every forward path, statement: "Edit/cancel/delete/reverse implemented and net-zero tested before a document type is done, or declared irreversible with reason and correction route.", severity: blocker, enforcement: [ci, review], tests: [T-BL-01], origin: [BD-F-038]}
+  - {id: R-BL-03, title: One consumption event per movement, statement: "Each physical movement is recorded by exactly one document type (ADR); reconciliation view = 0.", severity: blocker, enforcement: [db, review], tests: [T-INV-07], origin: [BD-F-018]}
+  - {id: R-BL-04, title: Status is derived, statement: "Progress statuses computed by DB from events; human decisions recorded via operations; clients cannot write status columns.", severity: major, enforcement: [db], tests: [T-MFG-04], origin: [BD-F-021, BD-F-024]}
+  - {id: R-BL-05, title: No auto-commit heuristics, statement: "Fuzzy or first-match logic may suggest only; commit needs exact key or explicit choice.", severity: major, enforcement: [review], tests: [T-BL-05], origin: [BD-F-006, BD-F-024]}
+  - {id: R-BL-06, title: Fail loud on ambiguity, statement: "Lookups that can match >1 raise with candidates; errors are never swallowed.", severity: major, enforcement: [lint, review], tests: [T-BL-05], origin: [BD-F-006, BD-F-011]}
+  - {id: R-BL-07, title: Model validated before UI, statement: "Every flow walked forward and reverse with realistic data before screens are built.", severity: blocker, enforcement: [review], tests: [T-SIM-01], origin: [BD-F-023, BD-F-027, BD-F-040]}
+  - {id: R-BL-08, title: Gate policy is a business rule, statement: "Block vs warn decided by owner, recorded as BR, implemented as a setting.", severity: major, enforcement: [review], tests: [T-BL-06], origin: [BD-F-017, BD-F-026]}
+  - {id: R-BL-09, title: Reversal nets prior compensation, statement: "Reversals account for manual adjustments already linked to the document.", severity: major, enforcement: [db], tests: [T-BL-07], origin: [BD-F-038]}
+  - {id: R-BL-10, title: Consumption respects state, statement: "Consumption only from states permitted for the consuming document; unknown state = refused.", severity: major, enforcement: [db], tests: [T-MFG-05], origin: [BD-F-040]}
+  - {id: R-BL-11, title: Primary unit for stock, statement: "Stock arithmetic in primary unit only; alternate captured as measured.", severity: major, enforcement: [db], tests: [T-UOM-01], origin: [BD-F-027]}
+  # ---------- Security ----------
+  - {id: R-SEC-01, title: Server-side authorization, statement: "RLS + role checks inside every privileged operation; UI hiding is not control.", severity: blocker, enforcement: [db, ci], tests: [T-SEC-01], origin: [BD-F-007]}
+  - {id: R-SEC-02, title: RLS on creation, statement: "Every exposed table has RLS enabled when created.", severity: blocker, enforcement: [ci], checks: [security:advisor], tests: [T-SEC-03], origin: [BD-F-009]}
+  - {id: R-SEC-03, title: Definer functions locked down, statement: "See R-DB-17.", severity: blocker, enforcement: [ci], tests: [T-SEC-03], origin: [BD-F-009]}
+  - {id: R-SEC-04, title: Invoker-rights views, statement: "Exposed views run with invoker rights.", severity: blocker, enforcement: [ci], tests: [T-SEC-03], origin: [BD-F-009]}
+  - {id: R-SEC-05, title: Deny by default, statement: "Unknown role = no access; sign-up disabled at provider; no auto-provisioned tenant/role.", severity: blocker, enforcement: [db, review], tests: [T-SEC-02], origin: [BD-F-008]}
+  - {id: R-SEC-06, title: One permission source, statement: "Role x operation table drives DB checks, routes, desktop and mobile navigation, buttons.", severity: major, enforcement: [ci], tests: [T-SEC-05], origin: [BD-F-007, BD-F-035]}
+  - {id: R-SEC-07, title: Secrets server-side, statement: "No service keys in client or repo; customer repos private by default.", severity: blocker, enforcement: [ci], checks: [secrets:scan], tests: [T-SEC-06], origin: [preventive]}
+  - {id: R-SEC-08, title: Audit trail, statement: "Who/when/before/after on business tables and privileged actions.", severity: major, enforcement: [db], tests: [T-SEC-07], origin: [preventive]}
+  - {id: R-SEC-09, title: Never trust client-computed values, statement: "Totals, numbers, statuses recomputed server-side.", severity: blocker, enforcement: [db], tests: [T-SEC-08], origin: [BD-F-002, BD-F-024]}
+  - {id: R-SEC-11, title: Integrations authenticate, statement: "Dashboards, scripts and integrations use their own least-privilege account; never the public anon key with anon policies.", severity: blocker, enforcement: [ci, review], tests: [T-SEC-04], origin: [BD-F-042]}
+  - {id: R-SEC-10, title: Upload policy, statement: "Allow-list, size limit, private storage, signed URLs.", severity: major, enforcement: [review], tests: [T-SEC-09], origin: [preventive]}
+  # ---------- Data migration ----------
+  - {id: R-MIG-01, title: Idempotent baselined corrections, statement: "Backfills/cutovers record a baseline, key every posting to its source, dry-run with reconciliation, and post zero on a second run.", severity: blocker, enforcement: [ci, review], tests: [T-MIG-02], origin: [BD-F-025]}
+  - {id: R-MIG-02, title: Imports reconcile, statement: "Stage -> validate -> report -> commit; rows in = created + rejected; exact matching only.", severity: blocker, enforcement: [review], tests: [T-MIG-01], origin: [BD-F-005, BD-F-039]}
+  - {id: R-MIG-03, title: Opening balance once, statement: "One dated opening per item; later changes via approved counts.", severity: major, enforcement: [db], tests: [T-INV-05], origin: [BD-F-015, BD-F-039]}
+  # ---------- Quality ----------
+  - {id: R-QA-01, title: Strict build, statement: "Build runs strict type-check and lint; CI blocks merge on failure.", severity: blocker, enforcement: [ci], checks: [typecheck, lint], tests: [T-QA-01], origin: [BD-F-030, BD-F-032]}
+  - {id: R-QA-02, title: DB tests, statement: "Every operation and trigger has DB tests in a fresh DB: success, guards, idempotency, reversal, permissions.", severity: blocker, enforcement: [ci], checks: [test:db], tests: [T-QA-02], origin: [BD-F-031]}
+  - {id: R-QA-03, title: Invariants, statement: "Invariant views run in CI on seeded data and nightly in production; any row alerts.", severity: blocker, enforcement: [ci], checks: [invariants:check], tests: [T-INV-06], origin: [BD-F-016]}
+  - {id: R-QA-04, title: Regression test per defect, statement: "Test named with defect ID merged with the fix.", severity: major, enforcement: [review], origin: [BD-F-031]}
+  - {id: R-QA-05, title: Blast radius for guard changes, statement: "Changing a guard lists every caller and effect.", severity: major, enforcement: [review], origin: [BD-F-017]}
+  # ---------- Frontend ----------
+  - {id: R-FE-01, title: Forms own copies, statement: "Never mutate cached objects; no refetch over dirty forms.", severity: major, enforcement: [lint, review], tests: [T-FE-01], origin: [BD-F-032]}
+  - {id: R-FE-02, title: Unique typed query keys, statement: "Query key encodes data shape; one hook per key.", severity: major, enforcement: [lint], tests: [T-FE-02], origin: [BD-F-032]}
+  - {id: R-FE-03, title: Request budget, statement: "Polling intervals budgeted; prefer invalidation after mutations.", severity: minor, enforcement: [review], tests: [T-FE-03], origin: [BD-F-033]}
+  # ---------- Process ----------
+  - {id: R-PR-01, title: Model and posting before modules, statement: "Domain model, ledger, posting function and reverse paths precede document screens; build vertical slices.", severity: blocker, enforcement: [review], origin: [BD-F-001, BD-F-034]}
+  - {id: R-PR-02, title: Explicit retirement, statement: "Retiring a module is a tracked change: stop writes, migrate readers, remove UI, drop.", severity: minor, enforcement: [review], origin: [BD-F-034]}
+  # ---------- AI governance (see 17) ----------
+  - {id: R-AI-01, title: Evidence for done, statement: "Paste real output; list unverified items.", severity: blocker, enforcement: [ci, review], checks: [evidence:pr-template]}
+  - {id: R-AI-02, title: Discovery before change, statement: "Read CLAUDE.md, PROJECT-STATE, module spec; read-only discovery of touched paths.", severity: blocker, enforcement: [hook, review]}
+  - {id: R-AI-03, title: Dependencies listed, statement: "Affected modules, operations, reverse paths listed before coding.", severity: major, enforcement: [ci], checks: [evidence:pr-template]}
+  - {id: R-AI-04, title: Tests not edited to pass, statement: "Test changes cite FR/BR ID.", severity: blocker, enforcement: [ci], checks: [tests:changed-require-id]}
+  - {id: R-AI-05, title: No invented requirements, statement: "Unknowns become Q-### and stop work if they touch stock/money/security.", severity: blocker, enforcement: [review]}
+  - {id: R-AI-06, title: Blast radius, statement: "See R-QA-05.", severity: major, enforcement: [review]}
+  - {id: R-AI-07, title: Behaviour changes reported, statement: "State exactly what now behaves differently.", severity: major, enforcement: [ci], checks: [evidence:pr-template]}
+  - {id: R-AI-08, title: Controlled DB changes, statement: "Migrations in repo only; destructive SQL needs approval + inverse SQL.", severity: blocker, enforcement: [hook, ci], checks: [schema:diff]}
+  - {id: R-AI-09, title: Run tests after change, statement: "Relevant unit/DB/render tests run and output included.", severity: blocker, enforcement: [ci]}
+  - {id: R-AI-10, title: No unrelated changes, statement: "Scope limited to the task.", severity: major, enforcement: [review]}
+  - {id: R-AI-11, title: Approval for architecture changes, statement: "ADR + owner approval.", severity: major, enforcement: [review]}
+  - {id: R-AI-12, title: No duplicate functionality, statement: "Search before adding.", severity: minor, enforcement: [review]}
+  - {id: R-AI-13, title: No hidden placeholders, statement: "New TODO/stub requires ticket ID and is listed in report.", severity: major, enforcement: [ci], checks: [lint:todo-requires-id]}
+  - {id: R-AI-14, title: Update project state, statement: "PROJECT-STATE and SESSION-HANDOVER updated each session.", severity: major, enforcement: [hook]}
+  - {id: R-AI-15, title: Remove over patch, statement: "Repeatedly failing code is simplified, under the same gates.", severity: minor, enforcement: [review]}
+  - {id: R-AI-16, title: Inert by default, statement: "Workflow changes ship default-off.", severity: major, enforcement: [review]}

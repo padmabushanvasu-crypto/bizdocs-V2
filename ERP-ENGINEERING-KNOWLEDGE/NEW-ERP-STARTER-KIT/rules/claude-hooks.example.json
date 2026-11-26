@@ -1,0 +1,26 @@
+{
+  "_comment": "Example Claude Code hooks. Copy into .claude/settings.json of the new repo and adjust paths. Hook scripts live in rules/checks/. Verify hook syntax against the current Claude Code documentation before use.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "bash rules/checks/block-destructive-sql.sh" }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          { "type": "command", "command": "bash rules/checks/block-applied-migration-edit.sh" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "bash rules/checks/require-project-state-update.sh" }
+        ]
+      }
+    ]
+  }
+}
