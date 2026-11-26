@@ -34,7 +34,7 @@ Not available: issue tracker, original chat transcripts with the customer, produ
 
 ## Open items for a future session
 
-1. Owner to review security finding BD-F-009 privately (details withheld from this public repository).
+1. ~~Security finding BD-F-009~~ — fixed 26 Nov 2026 (branch `claude/security-hardening-20261126`). New BD-F-042 (dashboard anon read) partly open.
 2. Owner to answer questions Q-01..Q-08 in `20`.
 3. Independent external review of `06`–`17` (this exercise is a self-review only).
 

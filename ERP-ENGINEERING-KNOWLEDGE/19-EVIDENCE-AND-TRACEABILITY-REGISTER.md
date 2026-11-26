@@ -13,7 +13,7 @@ IDs are permanent. Rules are defined in `NEW-ERP-STARTER-KIT/rules/engineering-r
 | BD-F-006 | RC-11 | R-BL-05, R-BL-06 | exact-key commit; ambiguity raises | T-BL-05 | G-04 | `772ca60`, `6cd1879`, `0c244e9`, `1f026a2` |
 | BD-F-007 | RC-08 | R-SEC-01, R-SEC-06 | role checks inside operations; permission tests | T-SEC-01 | G-06 | `65e7dab`, `61cd1d3`, `delivery-challans-api.ts` TODO |
 | BD-F-008 | RC-08 | R-SEC-05 | default deny; provider sign-up off | T-SEC-02 | G-06 | `7685ec5`, `f91434c`, `134799a` |
-| BD-F-009 | RC-08, RC-09 | R-SEC-02..04, R-DB-17, R-DB-13 | advisor gate in CI | T-SEC-03, T-SEC-04 | G-06, G-10 | advisor run 26 Nov 2026 (private to owner) |
+| BD-F-009 | RC-08, RC-09 | R-SEC-02..04, R-DB-17, R-DB-13 | advisor gate in CI | T-SEC-03, T-SEC-04 | G-06, G-10 | advisor runs 26 Nov 2026; migrations `20261126161815`–`162127` |
 | BD-F-010 | RC-04 | R-DB-05 | upsert by stable key; RESTRICT FKs | T-BL-02 | G-03 | `6b4ee93`, `9b626a2`, `4ead7e5`; governance §3.1 |
 | BD-F-011 | RC-04, RC-03 | R-DB-05, R-BL-06 | same + throw on error | T-BL-02 | G-03 | `c3ee67d`, `13bc245`, `20e1c02`; redesign §2.4 |
 | BD-F-012 | RC-01 | R-DB-01, R-BL-01 | DB owns edit netting; client grants denied | T-INV-03 | G-05 | `d764b9e`; governance §3.8; live `dc_reissue_nets_items_no_longer_on_dc` |
@@ -45,6 +45,7 @@ IDs are permanent. Rules are defined in `NEW-ERP-STARTER-KIT/rules/engineering-r
 | BD-F-038 | RC-13 | R-BL-02, R-BL-09 | reverse paths in module DoD | T-BL-01, T-BL-07 | G-04 | `b21d9b6`, `28bb2ed`, `891e9c9`; governance §3.5 |
 | BD-F-039 | RC-10 | R-MIG-02, R-MIG-03 | master cleanup before go-live; reconciliation | T-MIG-01 | G-09 | project notes Sept |
 | BD-F-040 | RC-07 | R-BL-10 | state-permitted consumption | T-MFG-05 | G-02, G-04 | governance B2.4; live `awo_draws_only_finished_parts_route_aware` |
+| BD-F-042 | RC-08 | R-SEC-01, R-SEC-05, R-SEC-11 | integrations sign in as their own read-only account | T-SEC-04 | G-06 | `pg_policies`; migration `20261126162021` |
 | BD-F-041 | RC-03 | R-DB-14 | one formatter; numeric types; discrete check | T-DB-09 | G-03 | 15 Jul commits; standards §2 |
 
 ## Coverage check

@@ -46,4 +46,4 @@ Institutional engineering knowledge from BizDocs, packaged for building **differ
 `BD-F-###` failures · `RC-##` root causes · `R-<AREA>-##` rules · `T-<AREA>-##` tests · `EC-##` edge cases · `G-##` gates · `PR-##` readiness criteria · `AP-##` anti-patterns · `TD-##` BizDocs debt · `Q-##` open questions. Never renumber; retire with a note.
 
 ## Confidentiality
-The BizDocs repository is public. These documents contain no customer, vendor or staff details beyond what was already in the repository. Security-sensitive specifics were withheld (see `03` BD-F-009).
+The BizDocs repository is public. These documents contain no customer, vendor or staff details beyond what was already in the repository. Security-sensitive specifics were withheld while open; BD-F-009 was fixed on 26 Nov 2026 before being described in detail.

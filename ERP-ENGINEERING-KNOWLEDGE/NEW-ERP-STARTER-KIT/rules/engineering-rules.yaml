@@ -155,6 +155,7 @@ rules:
   - {id: R-SEC-07, title: Secrets server-side, statement: "No service keys in client or repo; customer repos private by default.", severity: blocker, enforcement: [ci], checks: [secrets:scan], tests: [T-SEC-06], origin: [preventive]}
   - {id: R-SEC-08, title: Audit trail, statement: "Who/when/before/after on business tables and privileged actions.", severity: major, enforcement: [db], tests: [T-SEC-07], origin: [preventive]}
   - {id: R-SEC-09, title: Never trust client-computed values, statement: "Totals, numbers, statuses recomputed server-side.", severity: blocker, enforcement: [db], tests: [T-SEC-08], origin: [BD-F-002, BD-F-024]}
+  - {id: R-SEC-11, title: Integrations authenticate, statement: "Dashboards, scripts and integrations use their own least-privilege account; never the public anon key with anon policies.", severity: blocker, enforcement: [ci, review], tests: [T-SEC-04], origin: [BD-F-042]}
   - {id: R-SEC-10, title: Upload policy, statement: "Allow-list, size limit, private storage, signed URLs.", severity: major, enforcement: [review], tests: [T-SEC-09], origin: [preventive]}
   # ---------- Data migration ----------
   - {id: R-MIG-01, title: Idempotent baselined corrections, statement: "Backfills/cutovers record a baseline, key every posting to its source, dry-run with reconciliation, and post zero on a second run.", severity: blocker, enforcement: [ci, review], tests: [T-MIG-02], origin: [BD-F-025]}

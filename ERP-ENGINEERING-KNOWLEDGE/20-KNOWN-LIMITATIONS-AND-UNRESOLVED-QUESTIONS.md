@@ -52,13 +52,14 @@
 
 | ID | Question | Why it matters |
 |---|---|---|
-| Q-01 | Review the security-advisor findings sent in chat (tables without row-level security, definer-rights views/functions callable anonymously) and decide remediation order | BD-F-009 is Critical and live |
-| Q-02 | Should the `bizdocs-V2` repository be private? It is public and contains project identifiers and incident history | R-SEC-07 |
-| Q-03 | Are PO approval and DC approval enforced server-side today? (Repo suggests not) | BD-F-007 |
+| Q-01 | ~~Remediate advisor findings~~ — done 26 Nov 2026 (BD-F-009) | — |
+| Q-02 | ~~Make `bizdocs-V2` private~~ — owner approved 26 Nov 2026 | R-SEC-07 |
+| Q-03 | ~~Server-side PO/DC approval~~ — DC was partly enforced; both enforced 26 Nov 2026 | BD-F-007 |
 | Q-04 | Is the DB-side auto-link of DC lines to an unambiguous job card (live migration, 21 Sept) still active and intended? | BD-F-024 consistency |
 | Q-05 | For the next ERP: single-tenant per customer confirmed? On-premise or cloud? | ADR-002 default in `06` §8 |
 | Q-06 | Who receives nightly invariant alerts, and what is the response time? | `15` §6 |
 | Q-07 | Is a full accounting ledger ever in scope for the next customers, or always export to their accounting system? | `08` §9 |
+| Q-09 | When will the OLTC Dashboard sign in with its own read-only account so the last 7 anonymous read policies can be dropped? | BD-F-042 |
 | Q-08 | Should the 344 historical double-credited GRN lines (project notes, 24 Sept) be included in the BizDocs debt register as Critical? | TD-15 severity |
 
 ## 5. Areas needing human or independent technical review

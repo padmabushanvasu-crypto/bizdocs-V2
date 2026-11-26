@@ -17,9 +17,9 @@ Customer, vendor and staff names are deliberately omitted. Document numbers and 
 | BD-F-004 | Silent 1,000-row API truncation | High | V/U | H | RC-03 |
 | BD-F-005 | Silent import failures | High | V | H | RC-03 |
 | BD-F-006 | Fuzzy item resolution picked the wrong item | High | V | H | RC-11 |
-| BD-F-007 | Authorization moved to the UI only | Critical | V/U | H | RC-08 |
+| BD-F-007 | Authorization moved to the UI only (PO); DC guard had a NULL-role gap | Critical | V | H | RC-08 |
 | BD-F-008 | New-user provisioning and unknown-role fallback granted access | Critical | V | M | RC-08 |
-| BD-F-009 | Database exposure findings from security advisors | Critical | U | H | RC-08 |
+| BD-F-009 | Database exposure findings from security advisors | Critical | V (resolved 26 Nov) | H | RC-08 |
 | BD-F-010 | PO edit deleted and re-inserted lines | High | V | H | RC-04 |
 | BD-F-011 | DC edit deleted and re-inserted lines | High | V | H | RC-04 |
 | BD-F-012 | DC edit double-posted stock from the client | Critical | V | H | RC-01 |
@@ -52,8 +52,9 @@ Customer, vendor and staff names are deliberately omitted. Document numbers and 
 | BD-F-039 | Go-live data imported with duplicates; early history unreconcilable | High | V | H | RC-10 |
 | BD-F-040 | Material with processing left was consumed by assembly | High | V | H | RC-07 |
 | BD-F-041 | Rounding and precision handled per screen | Medium | V/U | H | RC-03 |
+| BD-F-042 | Anonymous read access granted for a companion dashboard | Critical | V/U | H | RC-08 |
 
-Counts: 41 findings — 38 verified historical failures (6 of them still partly open: F-004, 007, 028, 029, 031, 041) and 3 existing unresolved risks with no historical incident (F-009, 030, 037). No inferred-only findings were admitted to the catalogue; inferences appear in `04` and `20`. Severity: 12 Critical, 19 High, 8 Medium, 2 Low.
+Counts: 42 findings — 40 verified historical failures (6 still partly open: F-004, 028, 029, 031, 041, 042) and 2 existing unresolved risks with no historical incident (F-030, 037). F-007 and F-009 were fixed on 26 Nov 2026 (migrations `20261126161815`–`162127`). No inferred-only findings were admitted; inferences appear in `04` and `20`. Severity: 13 Critical, 19 High, 8 Medium, 2 Low.
 
 ---
 
@@ -124,15 +125,14 @@ Counts: 41 findings — 38 verified historical failures (6 of them still partly 
 - **Root cause addressed?** Yes for those paths. Heuristic lookup still exists for imports.
 - **Rule:** R-BL-05, R-BL-06 · **Test:** T-BL-05 · **Evidence:** commits above, `dece153` body (three-level matcher)
 
-### BD-F-007 — Authorization moved to the UI only
-- **Layer:** Security · **Sev:** Critical · **Recurrence:** High · **Type:** V and U · **Conf:** H
+### BD-F-007 — Authorization moved to the UI only (PO); DC guard had a NULL-role gap
+- **Layer:** Security · **Sev:** Critical · **Recurrence:** High · **Type:** V · **Conf:** H
 - **Original assumption:** Hiding buttons by role is access control.
-- **What went wrong:** A failing server-side role check on PO approval and DC approve/reject was removed and "role enforced at UI layer" (`65e7dab`, `61cd1d3`). A code TODO still records that DC approval columns are not protected server-side (`src/lib/delivery-challans-api.ts`, `approveDC`).
-- **Root cause:** RC-08 — a broken server check was deleted instead of fixed.
-- **Consequences:** Any authenticated user with the public API key and a session can call the same updates directly.
-- **Resolution:** Partial — later DB gates exist for specific actions (e.g. stock-count approver function, project notes Sept 22). Not verified for PO/DC approval.
-- **Root cause addressed?** No (as far as the repository shows). **Still vulnerable?** Presumed yes — needs verification.
-- **Rule:** R-SEC-01, R-SEC-06 · **Test:** T-SEC-01 (direct API call as each role for every privileged action) · **Evidence:** `65e7dab`, `61cd1d3`, `delivery-challans-api.ts` TODO
+- **What went wrong:** A failing server-side role check on PO approval and DC approve/reject was removed and "role enforced at UI layer" (`65e7dab`, `61cd1d3`). For DCs a DB trigger (`guard_dc_approval_columns`) was later added, but `actor_role NOT IN (...)` evaluates to NULL for a user with no role, so such users passed; it also ignored INSERT. **POs had no server-side check at all**: any signed-in user could approve, reject, or issue an unapproved PO through the API. (Correction 26 Nov: the first version of this entry said DC approval was also UI-only; discovery showed the DB guard.)
+- **Root cause:** RC-08 — a broken server check was deleted instead of fixed; `NOT IN` with NULL.
+- **Resolution (26 Nov 2026):** migration `20261126161930_sec_po_dc_approval_guards` — PO guard (admin/finance approve; others may only submit; issuing requires approval) and DC guard fixed (NULL role refused, INSERT covered, unapproved issue refused). Behaviour tested as purchase, finance and inward roles in a rolled-back transaction: 7/7 as designed.
+- **Root cause addressed?** Yes for PO/DC approval. Other privileged actions rely on per-function checks — not audited one by one.
+- **Rule:** R-SEC-01, R-SEC-06 · **Test:** T-SEC-01 · **Evidence:** `65e7dab`, `61cd1d3`, live `guard_dc_approval_columns` (pre-fix), migration `20261126161930`
 
 ### BD-F-008 — New-user provisioning and unknown-role fallback granted access
 - **Layer:** Security / auth · **Sev:** Critical · **Type:** V · **Conf:** M
@@ -143,13 +143,12 @@ Counts: 41 findings — 38 verified historical failures (6 of them still partly 
 - **Rule:** R-SEC-05 · **Test:** T-SEC-02 · **Evidence:** commits above
 
 ### BD-F-009 — Database exposure findings from security advisors
-- **Layer:** Security / database · **Sev:** Critical · **Type:** U · **Conf:** H (advisor output, 26 Nov 2026; not exploit-tested)
-- **Finding (class level only):** The platform's security advisor reports tables in the API-exposed schema without row-level security (including some operational tables, not only backups), views running with definer rights, a large number of definer-rights functions executable by the anonymous role, functions without a fixed `search_path`, and leaked-password protection disabled.
-- **Why withheld:** This repository is public. The table and function list was given to the owner privately and is not reproduced here.
-- **Root cause:** RC-08 + RC-09 — tables created ad hoc in live SQL sessions without a "RLS on creation" check; no automated advisor gate.
-- **Consequences:** Potential read/write of tenant data with only the public client key, depending on grants.
-- **Resolution:** None yet. **Still vulnerable?** Yes until verified.
-- **Rule:** R-SEC-02, R-SEC-03, R-SEC-04, R-DB-13 · **Test:** T-SEC-03 (advisor = zero ERROR in CI), T-SEC-04 (anon role cannot select/insert any business table) · **Evidence:** security advisor run 26 Nov 2026 (owner has the detail)
+- **Layer:** Security / database · **Sev:** Critical · **Type:** V, resolved 26 Nov 2026 · **Conf:** H
+- **What it was:** 22 API-exposed tables without row-level security (5 operational, 1 reference, 16 backup/log), 18 views running with owner (RLS-bypassing) rights, 131 definer-rights functions executable by the anonymous role, 37 functions without a fixed search path. With only the public client key these could be read or written across companies.
+- **Root cause:** RC-08 + RC-09 — tables and views created ad hoc in live SQL sessions with no "RLS on creation" check and no advisor gate.
+- **Resolution:** migrations `20261126161815`–`20261126162127` (see `supabase/migrations/LIVE_APPLIED_2026-11-26_security.md`), each dry-run first as three staff roles and anon with identical row counts. Advisor ERROR findings 40 → 0. Default privileges changed so new functions are not anon-executable.
+- **Still open:** leaked-password protection (dashboard setting); `pg_net`/`pg_trgm` in public (relocation is disruptive); authenticated-executable definer helpers (by design for the RPC surface, not reviewed individually).
+- **Rule:** R-SEC-02, R-SEC-03, R-SEC-04, R-DB-17, R-DB-13 · **Test:** T-SEC-03, T-SEC-04 · **Evidence:** advisor runs before/after 26 Nov 2026; migration files
 
 ### BD-F-010 — PO edit deleted and re-inserted lines
 - **Layer:** Business logic / data integrity · **Sev:** High · **Type:** V · **Conf:** H
@@ -351,6 +350,14 @@ Counts: 41 findings — 38 verified historical failures (6 of them still partly 
 
 ### BD-F-041 — Rounding and precision handled per screen
 - **Sev:** Medium · **Type:** V and U · **Conf:** H · **What:** ~15 commits on 15 Jul alone fixed 2-dp display per screen; 113 discrete-unit items carry fractional balances. · **Root cause:** RC-03 (no single formatting/precision policy). · **Rule:** R-DB-14 · **Test:** T-DB-09 · **Evidence:** commits 15 Jul; standards §2
+
+### BD-F-042 — Anonymous read access granted for a companion dashboard
+- **Layer:** Security / integration · **Sev:** Critical · **Type:** V and U · **Conf:** H
+- **Original assumption:** A desktop dashboard can read the database with the public (anon) key if policies restrict rows to one company.
+- **What went wrong:** 13 tables carried `"OLTC dashboard read"` policies for the anonymous role. The anon key is public (it ships in the web app bundle), so anyone could read vendors/customers, POs, GRNs, DCs, invoices, items and the stock ledger. The dashboard used only 7 of them.
+- **Root cause:** RC-08 — an integration authenticated as "nobody" instead of as a service account.
+- **Resolution:** partial (26 Nov 2026) — the 6 unused anon policies removed (`20261126162021`). The 7 used ones remain until the dashboard signs in with its own read-only account.
+- **Rule:** R-SEC-01, R-SEC-05, R-SEC-11 · **Test:** T-SEC-04 · **Evidence:** `pg_policies`; oltc-dashboard `electron/services/bizdocs-service.ts`
 
 ---
 

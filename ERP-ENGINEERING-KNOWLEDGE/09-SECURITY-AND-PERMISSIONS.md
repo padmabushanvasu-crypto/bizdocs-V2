@@ -17,6 +17,7 @@
 | R-SEC-07 | Secrets only server-side; service keys never in client code or repo; repository visibility reviewed (private by default for customer projects) | CI secret scan | T-SEC-06 |
 | R-SEC-08 | Audit trail on every business table and every privileged action (who, when, before/after for edits) | DB triggers | T-SEC-07 |
 | R-SEC-09 | Input validation at the API (shape) and the DB (constraints); never trust client-computed totals, numbers or statuses | DB | T-SEC-08 |
+| R-SEC-11 | Integrations (dashboards, scripts, BI tools) sign in with their own least-privilege account; no data is readable with the public client key alone | DB + review | T-SEC-04 |
 | R-SEC-10 | File uploads: type/size allow-list, stored outside web root/public bucket, served via signed URLs, virus scan if from external parties | storage policy | T-SEC-09 |
 
 ## 3. Model
@@ -47,6 +48,8 @@
 7. Sign-up hidden in UI but enabled at provider (F-008).
 8. Mobile navigation without the same guards as desktop (F-035).
 9. Public repository containing project identifiers and internal incident history.
+10. A companion app reading with the public key through anonymous-role policies (BD-F-042).
+11. `NOT IN (...)` role checks that let a NULL role through (BD-F-007).
 
 ## 5. Mandatory security validation checklist (gate G-06)
 

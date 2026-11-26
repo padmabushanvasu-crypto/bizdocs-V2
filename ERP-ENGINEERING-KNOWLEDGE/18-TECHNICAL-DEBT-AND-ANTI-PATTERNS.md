@@ -34,8 +34,8 @@ Each anti-pattern has a detection signal so a reviewer or an automated check can
 | ID | Debt | Where (as of 26 Nov 2026) | Risk | Suggested direction |
 |---|---|---|---|---|
 | TD-01 | Schema not reproducible from repo | `supabase/migrations` vs live history | DR, new environments | Export live functions/migrations; drift check |
-| TD-02 | Security advisor findings | live DB (detail with owner) | Exposure | Fix before other work (see `20` Q-01) |
-| TD-03 | UI-only approvals | `approveDC` TODO; PO approval | Privilege bypass | DB function with role check |
+| TD-02 | ~~Security advisor findings~~ — fixed 26 Nov 2026 | live DB | — | Keep advisor = 0 ERROR as a release gate |
+| TD-03 | ~~UI-only approvals~~ — PO/DC enforced in DB 26 Nov 2026 | guard triggers | — | Audit other privileged RPCs for internal role checks |
 | TD-04 | Type-check absent, strict off | `package.json`, `tsconfig*` | Runtime crashes | `tsc --noEmit` in build; strict incrementally |
 | TD-05 | No DB tests, no CI | — | Regressions | pgTAP or SQL test harness on a branch DB |
 | TD-06 | WIP buckets delta-maintained | items WIP columns | Drift | Make ledger-owned like free/in-process |
@@ -47,4 +47,5 @@ Each anti-pattern has a detection signal so a reviewer or an automated check can
 | TD-12 | Disabled trigger kept in DB | `trg_grn_stage_update` | Accidental re-enable double-posts | Drop |
 | TD-13 | Loose SQL files in repo root | `*.sql` at root | Confusion about truth | Move to migrations or archive |
 | TD-14 | Pagination not enforced | list call sites | F-004 recurrence | Lint rule |
+| TD-16 | OLTC Dashboard reads 7 tables with the anon key | anon RLS policies | Public data exposure | Dashboard signs in with a read-only account, then drop anon policies |
 | TD-15 | 344 historical double-credited GRN lines | project notes 24 Sept | Overstated stock | Reviewed reversal |
