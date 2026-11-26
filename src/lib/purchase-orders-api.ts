@@ -349,6 +349,9 @@ export async function duplicatePurchaseOrder(id: string) {
   });
 }
 
+// Server-side enforcement: trigger guard_po_approval_columns() allows only admin and finance
+// to approve/reject, and refuses issuing an unapproved PO for other roles
+// (migration 20261126161930_sec_po_dc_approval_guards).
 export async function approvePurchaseOrder(id: string, approvedBy: string) {
   const { error } = await supabase
     .from("purchase_orders")
