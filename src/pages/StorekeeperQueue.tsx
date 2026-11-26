@@ -17,6 +17,17 @@ import { useAuth } from "@/hooks/useAuth";
 import { formatNumber } from "@/lib/gst-utils";
 import { format, parseISO } from "date-fns";
 import { fetchInStockSerials } from "@/lib/dispatch-api";
+import { fetchItemGrnHeldMap, type ItemGrnHeld } from "@/lib/stock-free-api";
+
+// Store is short → rpc_confirm_material_issue draws the shortfall beyond
+// max(Store, 0) from FINISHED GRN-held lines only (unfinished parts still have
+// an outside process left and are never used). Mirror that here so the
+// warning and the resulting figure match what the database will post.
+function issueOutcome(avail: number, amountNow: number, held?: ItemGrnHeld) {
+  const finished = held?.held_finished_qty ?? 0;
+  const fromGrn = Math.min(finished, Math.max(0, amountNow - Math.max(avail, 0)));
+  return { fromGrn, resulting: avail + fromGrn - amountNow };
+}
 
 function mirStatusBadge(status: string) {
   const map: Record<string, { label: string; className: string }> = {
@@ -87,6 +98,13 @@ export default function StorekeeperQueue() {
     staleTime: 30_000,
   });
 
+  const { data: grnHeldByItem } = useQuery({
+    queryKey: ["mir-line-grn-held", serialItemIds.join(",")],
+    queryFn: () => fetchItemGrnHeldMap(serialItemIds),
+    enabled: serialItemIds.length > 0,
+    staleTime: 30_000,
+  });
+
   // Initialize lineEdits when mirDetail loads (replaces deprecated onSuccess)
   useEffect(() => {
     if (mirDetail?.line_items) {
@@ -116,10 +134,11 @@ export default function StorekeeperQueue() {
         const amountNow = lineEdits[li.id]?.issued_qty
           ?? Math.max(0, li.requested_qty - alreadyIssued);
         const avail = li.stock_free ?? 0;
-        if (amountNow > 0 && amountNow > avail) {
+        const outcome = issueOutcome(avail, amountNow, li.item_id ? grnHeldByItem?.get(li.item_id) : undefined);
+        if (amountNow > 0 && amountNow > Math.max(avail, 0) + outcome.fromGrn) {
           negativeLines.push({
             label: li.item_description ?? li.item_code ?? li.drawing_number ?? "Item",
-            resulting: avail - amountNow,
+            resulting: outcome.resulting,
           });
         }
         return {
@@ -284,8 +303,9 @@ export default function StorekeeperQueue() {
     const remaining = Math.max(0, li.requested_qty - (li.issued_qty ?? 0));
     const amountNow = lineEdits[li.id]?.issued_qty ?? remaining;
     const avail = li.stock_free ?? 0;
-    if (amountNow > 0 && amountNow > avail) {
-      overIssueByLine[li.id] = { avail, amountNow, resulting: avail - amountNow };
+    const outcome = issueOutcome(avail, amountNow, li.item_id ? grnHeldByItem?.get(li.item_id) : undefined);
+    if (amountNow > 0 && amountNow > Math.max(avail, 0) + outcome.fromGrn) {
+      overIssueByLine[li.id] = { avail, amountNow, resulting: outcome.resulting };
     }
   }
   const hasOverIssue = Object.keys(overIssueByLine).length > 0;
@@ -360,6 +380,23 @@ export default function StorekeeperQueue() {
                           {formatNumber(li.stock_free ?? 0)}
                         </span>
                       ) : "—"}
+                      {(() => {
+                        const held = li.item_id ? grnHeldByItem?.get(li.item_id) : undefined;
+                        if (!held) return null;
+                        return (
+                          <div className="text-[10px] leading-tight font-sans mt-0.5 space-y-0.5">
+                            {held.held_finished_qty > 0 && (
+                              <p className="text-emerald-700">+{formatNumber(held.held_finished_qty)} finished on GRN (used if Store is short)</p>
+                            )}
+                            {held.held_unfinished_qty > 0 && (
+                              <p className="text-red-700">
+                                {formatNumber(held.held_unfinished_qty)} on GRN not finished
+                                {held.unfinished_next_processes ? ` — needs ${held.unfinished_next_processes}` : ""}; not usable
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="px-3 py-2 text-sm text-slate-700 border-b border-slate-100 text-right">
                       {mirDetail.status === "issued" || fullyIssued ? (

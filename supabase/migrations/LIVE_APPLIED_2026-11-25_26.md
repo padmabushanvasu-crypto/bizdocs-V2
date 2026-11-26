@@ -21,5 +21,7 @@ where version between '20261125000000' and '20261126235959' order by version;
 | 20261126062000 | awo_draws_only_finished_parts_route_aware | `_grn_line_route_position`; WOs draw finished GRN-held parts only |
 | 20261126062055 | grn_next_action_shows_next_route_process | View: `route_next_process`, `route_finished`, "Not finished — still needs …" message |
 | 20261126062117 | grn_next_action_message_wording | Message wording |
+| (26 Nov) | undo_awo_draws_of_unfinished_parts_grn_3050_3051_3052 | WO-669 returned 34 unfinished 230248 BR; draws on GRN-3050/3051/3052 released |
+| (26 Nov) | v_item_grn_held_finished_split | Per-item GRN-held view (finished / not finished) for Stock Register and MIR |
 
 Rules these implement: STOCK_LIFECYCLE_GOVERNANCE.md §2 Stage B2.

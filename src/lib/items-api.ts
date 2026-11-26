@@ -1,3 +1,4 @@
+import { fetchItemGrnHeldMap, type ItemGrnHeld } from "@/lib/stock-free-api";
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanyId, sanitizeSearchTerm } from "@/lib/auth-helpers";
 import { normalizeItemType, normalizeUnit, type SkipReason } from "@/lib/import-utils";
@@ -105,10 +106,20 @@ export interface StockStatusRow {
   stock_alert_level: 'critical' | 'warning' | 'watch' | 'locked' | 'healthy';
   // Phase 13 stock buckets (fetched from items table)
   stock_free: number;
+  // At Vendor as displayed: ledger stock_in_process minus DC returns already back
+  // in the factory on a GRN line (those are shown under stock_on_grn instead).
   stock_in_process: number;
+  stock_in_process_ledger: number;
   stock_in_subassembly_wip: number;
   stock_in_fg_wip: number;
   stock_in_fg_ready: number;
+  // Back in the factory on a GRN line, QC done, not posted to Store (v_item_grn_held).
+  // Not closing stock. stock_on_grn_unfinished = still has an outside process left.
+  stock_on_grn: number;
+  stock_on_grn_unfinished: number;
+  on_grn_next_processes: string | null;
+  on_grn_grns: string | null;
+  cost_on_grn: number;
   // Per-bucket stock value = bucket qty × standard_cost. Computed in
   // fetchStockStatus so the page and any export read from one source.
   // The AWO-derived fields below are intentionally excluded — costs
@@ -475,6 +486,15 @@ export async function fetchStockStatus() {
   const pendingVerificationMap = new Map<string, StockPendingVerification>(
     pendingVerification.map((row) => [row.item_id, row])
   );
+  // ── GRN-held overlay (v_item_grn_held) ─────────────────────────────────────
+  // Material back on a GRN line and not posted to Store. Display-only; a failure
+  // must not take the register down, but is logged loudly.
+  let grnHeldMap = new Map<string, ItemGrnHeld>();
+  try {
+    grnHeldMap = await fetchItemGrnHeldMap();
+  } catch (ghError) {
+    console.error("[fetchStockStatus] GRN-held query error:", ghError);
+  }
 
   // Compute stock_status and effective_min_stock client-side (same logic as the view)
   const rows = itemRows.map((item: any) => {
@@ -486,15 +506,27 @@ export async function fetchStockStatus() {
     else if (effectiveMin > 0 && item.current_stock <= effectiveMin) stock_status = "amber";
     // Per-bucket stock value (qty × standard_cost) — physical buckets only.
     const cost = Number(item.standard_cost ?? 0);
+    const held = grnHeldMap.get(item.id);
+    const stock_on_grn = held?.held_qty ?? 0;
+    const stock_in_process_ledger = Number(item.stock_in_process ?? 0);
+    const stock_in_process = stock_in_process_ledger - (held?.held_from_vendor_qty ?? 0);
     const cost_free                = Number(item.stock_free ?? 0)                * cost;
-    const cost_in_process          = Number(item.stock_in_process ?? 0)          * cost;
+    const cost_in_process          = stock_in_process                            * cost;
+    const cost_on_grn              = stock_on_grn                                * cost;
     const cost_in_subassembly_wip  = Number(item.stock_in_subassembly_wip ?? 0)  * cost;
     const cost_in_fg_wip           = Number(item.stock_in_fg_wip ?? 0)           * cost;
     const cost_in_fg_ready         = Number(item.stock_in_fg_ready ?? 0)         * cost;
     const cost_total =
-      cost_free + cost_in_process + cost_in_subassembly_wip + cost_in_fg_wip + cost_in_fg_ready;
+      cost_free + cost_in_process + cost_on_grn + cost_in_subassembly_wip + cost_in_fg_wip + cost_in_fg_ready;
     return {
       ...item,
+      stock_in_process,
+      stock_in_process_ledger,
+      stock_on_grn,
+      stock_on_grn_unfinished: held?.held_unfinished_qty ?? 0,
+      on_grn_next_processes: held?.unfinished_next_processes ?? null,
+      on_grn_grns: held?.grn_numbers ?? null,
+      cost_on_grn,
       effective_min_stock: effectiveMin,
       stock_status,
       stock_alert_level: item.stock_alert_level ?? 'healthy',
